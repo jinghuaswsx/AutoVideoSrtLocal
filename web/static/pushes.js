@@ -2098,6 +2098,7 @@
     const respPre = el('pre', { class: 'pm-json' });
     const respMkIdTip = el('div', { class: 'pm-mk-id-tip', hidden: true });
     const respLocalizedTextTip = el('div', { class: 'pm-localized-text-result', hidden: true });
+    const respProductLinksTip = el('div', { class: 'pm-product-links-result', hidden: true });
     const respLocalizedTargetUrl = el('div', { class: 'pm-localized-text-target-url', hidden: true });
     const respLocalizedPayloadWrap = el('div', { class: 'pm-localized-text-payload-wrap', hidden: true });
     const respLocalizedPayloadTitle = el('div', { class: 'pm-localized-text-payload-title' }, '文案推送报文');
@@ -2109,6 +2110,7 @@
     respBody.appendChild(respPre);
     respBody.appendChild(respMkIdTip);
     respBody.appendChild(respLocalizedTextTip);
+    respBody.appendChild(respProductLinksTip);
     respBody.appendChild(respLocalizedTargetUrl);
     respBody.appendChild(respLocalizedPayloadWrap);
     respWrap.appendChild(respHeader);
@@ -2341,6 +2343,9 @@
       respLocalizedTextTip.hidden = true;
       respLocalizedTextTip.textContent = '';
       respLocalizedTextTip.classList.remove('is-success', 'is-error');
+      respProductLinksTip.hidden = true;
+      respProductLinksTip.textContent = '';
+      respProductLinksTip.classList.remove('is-success', 'is-error');
       respLocalizedTargetUrl.hidden = true;
       respLocalizedTargetUrl.textContent = '';
       respLocalizedPayloadWrap.hidden = true;
@@ -2403,6 +2408,35 @@
       respLocalizedTextTip.textContent = localizedTextPushResultMessage(result);
       renderLocalizedTextPushTargetUrl(result.target_url);
       renderLocalizedTextPushPayload(result.payload);
+    }
+
+    function productLinksPushResultMessage(result) {
+      if (!result) return '';
+      const status = result.upstream_status ? `HTTP ${result.upstream_status}` : '';
+      if (result.ok) {
+        return `链接推送结果：成功${status ? `（${status}）` : ''}`;
+      }
+      let detail = result.detail || result.message || result.response_body || result.error || '未知失败';
+      if (result.error === 'push_product_links_base_url_missing') {
+        detail = '未配置投放链接接口';
+      } else if (result.error === 'push_product_links_credentials_missing') {
+        detail = '未配置投放链接账号密码';
+      } else if (result.error === 'product_not_listed') {
+        detail = '产品已下架，不能推送链接';
+      } else if (result.error === 'product_links_empty') {
+        detail = '当前暂无可推送链接';
+      } else if (result.error === 'downstream_error' && status) {
+        detail = (result.response_body || '').slice(0, 200) || '下游返回失败';
+      }
+      return `链接推送结果：失败${status ? `（${status}）` : ''} - ${detail}`;
+    }
+
+    function showProductLinksPushResult(result) {
+      if (!result) return;
+      respProductLinksTip.hidden = false;
+      respProductLinksTip.classList.toggle('is-success', !!result.ok);
+      respProductLinksTip.classList.toggle('is-error', !result.ok);
+      respProductLinksTip.textContent = productLinksPushResultMessage(result);
     }
 
     function renderLocalizedTextPushTargetUrl(targetUrl) {
@@ -2758,7 +2792,9 @@
             headers: { 'Content-Type': 'application/json' },
           });
           showResponse(body, !body.ok, body.ok ? '推送链接响应' : '推送链接失败');
+          showProductLinksPushResult(body);
           productLinksPushed = !!body.ok;
+          anyPushSucceeded = anyPushSucceeded || !!body.ok;
         } else if (isLocalizedMode()) {
           await pushLocalizedTexts();
         } else {
@@ -2770,8 +2806,10 @@
           showResponse(body, false, '素材推送响应');
           showMkIdMatch(body.mk_id_match);
           showLocalizedTextPushResult(body.localized_texts_push);
+          showProductLinksPushResult(body.product_links_push);
           materialPushed = true;
           localizedPushed = !!(body.localized_texts_push && body.localized_texts_push.ok);
+          productLinksPushed = !!(body.product_links_push && body.product_links_push.ok);
           anyPushSucceeded = true;
           // mk_id 匹配成功 → 同步刷新顶部信息 + 文案 pane + JSON 预览 + 推送按钮状态
           if (body.mk_id_match && body.mk_id_match.mk_id) {

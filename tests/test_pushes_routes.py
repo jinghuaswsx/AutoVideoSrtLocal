@@ -1491,6 +1491,87 @@ def test_push_material_success_syncs_localized_texts_no_db(
     ]
 
 
+def test_push_material_success_syncs_texts_then_product_links_no_db(
+    authed_client_no_db,
+    monkeypatch,
+):
+    item = {"id": 7, "product_id": 18, "lang": "fr", "pushed_at": None}
+    product = {"id": 18, "product_code": "sync-text-rjc", "mk_id": 66}
+    localized_payload = {
+        "texts": [{"lang": "French", "title": "T", "message": "M", "description": "D"}],
+    }
+    calls = []
+
+    monkeypatch.setattr("web.routes.pushes.pushes.get_push_target_url", lambda: "http://downstream.invalid/push")
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr("web.routes.pushes.medias.is_product_listed", lambda product: True)
+    monkeypatch.setattr("web.routes.pushes.pushes.compute_readiness", lambda item, product: {"ready": True})
+    monkeypatch.setattr("web.routes.pushes.pushes.is_ready", lambda readiness: True)
+    monkeypatch.setattr("web.routes.pushes.pushes.build_product_link", lambda lang, code: "https://ad.example/item")
+    monkeypatch.setattr("web.routes.pushes.pushes.probe_ad_url", lambda url: (True, None))
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item, product: {"mode": "create", "item_id": item["id"]},
+    )
+    monkeypatch.setattr("web.routes.pushes.pushes.record_push_success", lambda **kwargs: 101)
+    monkeypatch.setattr("web.routes.pushes.pushes.lookup_mk_id", lambda product_code: (None, "no_match"))
+    monkeypatch.setattr("web.routes.pushes.pushes.get_exact_product_mk_id", lambda product: product["mk_id"])
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_target_url",
+        lambda mk_id: f"https://os.wedev.vip/api/marketing/medias/{mk_id}/texts",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_headers",
+        lambda: {"Content-Type": "application/json", "Authorization": "Bearer token"},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_localized_texts_request",
+        lambda item: localized_payload,
+    )
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+
+    def fake_post_json_payload(target_url, payload, *, headers=None, timeout=30):
+        if target_url.endswith("/texts"):
+            calls.append("copywriting")
+            return {
+                "ok": True,
+                "upstream_status": 200,
+                "response_body": '{"text":true}',
+                "response_body_full": '{"text":true}',
+            }
+        calls.append("material")
+        return {
+            "ok": True,
+            "upstream_status": 201,
+            "response_body": "created",
+            "response_body_full": "created-full",
+        }
+
+    def fake_push_product_links(product_arg):
+        calls.append("links")
+        assert product_arg == product
+        return {
+            "ok": True,
+            "upstream_status": 200,
+            "response_body": "{\"code\":0}",
+            "target_url": "https://os.wedev.vip/dify/shopify/medias/links",
+        }
+
+    monkeypatch.setattr("web.routes.pushes.pushes.post_json_payload", fake_post_json_payload)
+    monkeypatch.setattr("web.routes.pushes.pushes.push_product_links", fake_push_product_links)
+
+    response = authed_client_no_db.post("/pushes/api/items/7/push")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["ok"] is True
+    assert calls == ["material", "copywriting", "links"]
+    assert body["localized_texts_push"]["ok"] is True
+    assert body["product_links_push"]["ok"] is True
+    assert body["product_links_push"]["target_url"] == "https://os.wedev.vip/dify/shopify/medias/links"
+
+
 def test_push_material_success_reports_localized_texts_failure_no_db(
     authed_client_no_db,
     monkeypatch,
@@ -2468,6 +2549,9 @@ def test_pushes_modal_displays_backend_localized_texts_result_after_material_pus
     assert "renderLocalizedTextPushTargetUrl(result.target_url)" in script
     assert "renderLocalizedTextPushPayload(result.payload)" in script
     assert "文案推送报文" in script
+    assert "showProductLinksPushResult(body.product_links_push);" in script
+    assert "链接推送结果" in script
+    assert "pm-product-links-result" in script
     assert "pm-response-toggle" in script
     assert "收起" in script
     assert "展开推送信息" in script
@@ -2476,6 +2560,7 @@ def test_pushes_modal_displays_backend_localized_texts_result_after_material_pus
     assert ".pm-localized-text-result" in style
     assert ".pm-localized-text-target-url" in style
     assert ".pm-localized-text-payload" in style
+    assert ".pm-product-links-result" in style
     assert ".pm-response.is-collapsed" in style
     assert ".pm-response-summary" in style
     localized_result_style = style.split(".pm-localized-text-result {", 1)[1].split("}", 1)[0]

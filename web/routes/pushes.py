@@ -49,15 +49,38 @@ def admin_required(fn):
     return _wrap
 
 
-def _product_links_push_error_response(exc: Exception):
+def _product_links_push_error_payload(exc: Exception) -> tuple[dict, int]:
     message = str(exc)
     if isinstance(exc, pushes.ProductNotListedError):
-        return _json_response({"error": "product_not_listed", "message": "产品已下架，不能推送投放链接"}, 409)
+        return {
+            "ok": False,
+            "error": "product_not_listed",
+            "message": "产品已下架，不能推送投放链接",
+            "status_code": 409,
+        }, 409
     if isinstance(exc, pushes.ProductLinksPushConfigError):
-        return _json_response({"error": message or "push_product_links_config_missing"}, 500)
+        return {
+            "ok": False,
+            "error": message or "push_product_links_config_missing",
+            "status_code": 500,
+        }, 500
     if isinstance(exc, pushes.ProductLinksPayloadError):
-        return _json_response({"error": message or "product_links_payload_invalid"}, 400)
-    return _json_response({"error": "product_links_push_failed", "message": message}, 500)
+        return {
+            "ok": False,
+            "error": message or "product_links_payload_invalid",
+            "status_code": 400,
+        }, 400
+    return {
+        "ok": False,
+        "error": "product_links_push_failed",
+        "message": message,
+        "status_code": 500,
+    }, 500
+
+
+def _product_links_push_error_response(exc: Exception):
+    payload, status = _product_links_push_error_payload(exc)
+    return _json_response(payload, status)
 
 
 @bp.route("/")
@@ -178,6 +201,33 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
         "payload": body,
         "status_code": 502,
     }, 502
+
+
+def _push_product_links_result(item_id: int, product: dict) -> tuple[dict, int]:
+    try:
+        result = pushes.push_product_links(product)
+    except Exception as exc:
+        result, status = _product_links_push_error_payload(exc)
+        _audit_push_action(
+            item_id,
+            "push_product_links_failed",
+            status="failed",
+            detail={"error": result.get("error"), "http_status": status},
+        )
+        return result, status
+
+    status = 200 if result.get("ok") else 502
+    result = dict(result)
+    _audit_push_action(
+        item_id,
+        "push_product_links_succeeded" if result.get("ok") else "push_product_links_failed",
+        status="success" if result.get("ok") else "failed",
+        detail={
+            "http_status": status,
+            "upstream_status": result.get("upstream_status"),
+        },
+    )
+    return result, status
 
 
 def _serialize_ai_score(value):
@@ -760,12 +810,27 @@ def api_push(item_id: int):
                 "status_code": 500,
             }
 
+        try:
+            product_links_push, _product_links_status = _push_product_links_result(
+                item_id,
+                localized_texts_product,
+            )
+        except Exception as exc:  # defensive: link push result must not mask material success
+            log.warning("push product links after material push failed unexpectedly: %s", exc, exc_info=True)
+            product_links_push = {
+                "ok": False,
+                "error": "product_links_push_unexpected_error",
+                "message": str(exc),
+                "status_code": 500,
+            }
+
         return _json_response({
             "ok": True,
             "upstream_status": post_result.get("upstream_status"),
             "response_body": post_result.get("response_body") or "",
             "mk_id_match": mk_id_match,
             "localized_texts_push": localized_texts_push,
+            "product_links_push": product_links_push,
             "manual_link_confirmed": manual_link_confirmed,
         })
 
@@ -933,17 +998,7 @@ def api_push_product_links(item_id: int):
     product = medias.get_product(item["product_id"])
     if not product:
         return _json_response({"error": "product_not_found"}, 404)
-    try:
-        result = pushes.push_product_links(product)
-    except Exception as exc:
-        return _product_links_push_error_response(exc)
-    status = 200 if result.get("ok") else 502
-    _audit_push_action(
-        item_id,
-        "push_product_links_succeeded" if result.get("ok") else "push_product_links_failed",
-        status="success" if result.get("ok") else "failed",
-        detail={"http_status": status},
-    )
+    result, status = _push_product_links_result(item_id, product)
     return _json_response(result, status)
 
 

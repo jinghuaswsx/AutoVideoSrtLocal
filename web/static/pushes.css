@@ -1773,7 +1773,16 @@
   line-height: 1.55;
   word-break: break-word;
 }
-.pm-localized-text-result.is-error {
+.pm-product-links-result {
+  margin-top: var(--oc-sp-3);
+  color: #0f67d1;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.pm-localized-text-result.is-error,
+.pm-product-links-result.is-error {
   color: #0f67d1;
 }
 .pm-localized-text-target-url {
