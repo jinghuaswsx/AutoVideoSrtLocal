@@ -108,6 +108,9 @@ class TabcutLoginCredentials:
     password: str
 
 
+CredentialStoreLoader = Callable[[], TabcutLoginCredentials | None]
+
+
 def _first_env_value(env: Mapping[str, str], keys: tuple[str, ...]) -> str | None:
     for key in keys:
         value = str(env.get(key) or "").strip()
@@ -116,13 +119,50 @@ def _first_env_value(env: Mapping[str, str], keys: tuple[str, ...]) -> str | Non
     return None
 
 
-def resolve_tabcut_login_credentials(env: Mapping[str, str] | None = None) -> TabcutLoginCredentials | None:
-    source = os.environ if env is None else env
-    username = _first_env_value(source, TABCUT_USERNAME_ENV_KEYS)
-    password = _first_env_value(source, TABCUT_PASSWORD_ENV_KEYS)
+def _resolve_stored_tabcut_login_credentials() -> TabcutLoginCredentials | None:
+    try:
+        from appcore import browser_login_credentials
+
+        stored = browser_login_credentials.get_tabcut_credential()
+    except Exception:
+        return None
+    if stored is None:
+        return None
+    username = (stored.username or "").strip()
+    password = (stored.password or "").strip()
     if not username or not password:
         return None
     return TabcutLoginCredentials(username=username, password=password)
+
+
+def resolve_tabcut_login_credentials(
+    env: Mapping[str, str] | None = None,
+    *,
+    store_loader: CredentialStoreLoader | None = None,
+) -> TabcutLoginCredentials | None:
+    source = os.environ if env is None else env
+    username = _first_env_value(source, TABCUT_USERNAME_ENV_KEYS)
+    password = _first_env_value(source, TABCUT_PASSWORD_ENV_KEYS)
+    if username and password:
+        return TabcutLoginCredentials(username=username, password=password)
+    if env is not None and store_loader is None:
+        return None
+    loader = store_loader or _resolve_stored_tabcut_login_credentials
+    return loader()
+
+
+def _mark_tabcut_login_result(status: str, error: str | None = None) -> None:
+    try:
+        from appcore import browser_login_credentials
+
+        browser_login_credentials.mark_login_result(
+            browser_login_credentials.TABCUT_ENV_CODE,
+            browser_login_credentials.TABCUT_PROVIDER,
+            status,
+            error,
+        )
+    except Exception:
+        return
 
 
 def classify_tabcut_login_state(url: str, body_text: str = "") -> str:
@@ -285,25 +325,32 @@ def ensure_tabcut_login_on_page(
     if state == "logged_in" and _page_has_visible_login_entry(page):
         state = "login_required"
     if state == "logged_in":
+        _mark_tabcut_login_result("already_logged_in", None)
         return {"status": "already_logged_in", "title": _page_title(page), "current_url": getattr(page, "url", "")}
     if state == "needs_human":
+        _mark_tabcut_login_result("needs_human", "human_verification_required")
         raise RuntimeError("Tabcut login requires human verification; open the TABCUT browser and complete the challenge.")
 
     credential = credentials or resolve_tabcut_login_credentials()
     if credential is None:
+        _mark_tabcut_login_result("failed", "missing_credential")
         raise RuntimeError(
             "Tabcut login required but credentials are not configured. "
-            "Set TABCUT_LOGIN_ACCOUNT and TABCUT_LOGIN_PASSWORD."
+            "Configure TABCUT / tabcut in /settings?tab=browser_credentials, "
+            "or set TABCUT_LOGIN_ACCOUNT and TABCUT_LOGIN_PASSWORD."
         )
 
     clicked_login = _click_first_visible(page, TABCUT_LOGIN_ENTRY_SELECTORS, timeout_ms=timeout_ms)
     clicked_password_mode = _click_first_visible(page, TABCUT_PASSWORD_LOGIN_SELECTORS, timeout_ms=timeout_ms)
     if not clicked_login and not clicked_password_mode:
+        _mark_tabcut_login_result("failed", "login_button_not_found")
         raise RuntimeError("Tabcut login required but the login button was not found.")
 
     if not _fill_first_visible(page, TABCUT_ACCOUNT_INPUT_SELECTORS, credential.username, timeout_ms=timeout_ms):
+        _mark_tabcut_login_result("failed", "account_input_not_found")
         raise RuntimeError("Tabcut login form account input was not found.")
     if not _fill_first_visible(page, TABCUT_PASSWORD_INPUT_SELECTORS, credential.password, timeout_ms=timeout_ms):
+        _mark_tabcut_login_result("failed", "password_input_not_found")
         raise RuntimeError("Tabcut login form password input was not found.")
 
     if not _press_first_visible(page, TABCUT_PASSWORD_INPUT_SELECTORS, "Enter", timeout_ms=timeout_ms):
@@ -316,9 +363,12 @@ def ensure_tabcut_login_on_page(
 
     final_state = classify_tabcut_login_state(getattr(page, "url", ""), _page_body_text(page))
     if final_state == "needs_human":
+        _mark_tabcut_login_result("needs_human", "human_verification_required")
         raise RuntimeError("Tabcut login requires human verification after submitting credentials.")
     if final_state == "login_required" or _page_has_visible_login_entry(page):
+        _mark_tabcut_login_result("failed", "login_still_required")
         raise RuntimeError("Tabcut login did not complete; check credentials or complete any browser challenge.")
+    _mark_tabcut_login_result("success", None)
     return {"status": "success", "title": _page_title(page), "current_url": getattr(page, "url", "")}
 
 

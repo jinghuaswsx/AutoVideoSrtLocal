@@ -86,6 +86,30 @@ def test_settings_browser_credentials_tab_renders_masked_username(admin_no_db_cl
     assert "plain-password" not in body
 
 
+def test_settings_browser_credentials_tab_uses_provider_specific_labels(admin_no_db_client):
+    row = {
+        "env_code": "TABCUT",
+        "provider": "tabcut",
+        "provider_label": "TABCUT",
+        "username_label": "TABCUT account",
+        "password_label": "TABCUT password",
+        "username_mask": "tabc********.com",
+        "password_present": False,
+        "enabled": True,
+        "last_login_status": None,
+        "last_error": None,
+    }
+    with patch("web.routes.settings._provider_rows_by_group", return_value=[]), \
+         patch("web.routes.settings.browser_login_credentials.list_credentials_view", return_value=[row]):
+        resp = admin_no_db_client.get("/settings?tab=browser_credentials")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "TABCUT account" in body
+    assert "TABCUT password" in body
+    assert "Facebook 账号" not in body
+
+
 def test_settings_post_browser_credentials_blank_password_preserves_old(admin_no_db_client):
     saved = []
     with patch(

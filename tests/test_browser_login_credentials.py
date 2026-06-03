@@ -39,6 +39,23 @@ def test_get_credential_reads_enabled_plaintext_row(monkeypatch):
     assert captured["args"] == ("DXM01-Meta", "facebook")
 
 
+def test_list_credentials_view_includes_tabcut_default_row(monkeypatch):
+    from appcore import browser_login_credentials as creds
+
+    monkeypatch.setattr(creds, "list_credentials", lambda: [])
+
+    rows = creds.list_credentials_view()
+
+    keys = {(row["env_code"], row["provider"]) for row in rows}
+    assert ("DXM01-Meta", "facebook") in keys
+    assert ("TABCUT", "tabcut") in keys
+
+    tabcut_row = next(row for row in rows if row["provider"] == "tabcut")
+    assert tabcut_row["provider_label"] == "TABCUT"
+    assert tabcut_row["username_label"] == "TABCUT account"
+    assert tabcut_row["password_label"] == "TABCUT password"
+
+
 def test_save_credential_writes_plaintext_password(monkeypatch):
     from appcore import browser_login_credentials as creds
 

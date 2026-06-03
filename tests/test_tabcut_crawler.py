@@ -1,4 +1,5 @@
 from urllib.parse import unquote
+from types import SimpleNamespace
 
 import pytest
 
@@ -75,6 +76,40 @@ def test_tabcut_login_credentials_resolve_from_environment_aliases():
     )
 
 
+def test_tabcut_login_credentials_resolve_from_browser_store_when_env_missing():
+    credentials = client.resolve_tabcut_login_credentials(
+        {},
+        store_loader=lambda: client.TabcutLoginCredentials(
+            username="stored-tabcut@example.com",
+            password="stored-secret",
+        ),
+    )
+
+    assert credentials == client.TabcutLoginCredentials(
+        username="stored-tabcut@example.com",
+        password="stored-secret",
+    )
+
+
+def test_tabcut_login_credentials_default_loader_reads_browser_store(monkeypatch):
+    from appcore import browser_login_credentials
+
+    for key in client.TABCUT_USERNAME_ENV_KEYS + client.TABCUT_PASSWORD_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(
+        browser_login_credentials,
+        "get_tabcut_credential",
+        lambda: SimpleNamespace(username="db-tabcut@example.com", password="db-secret"),
+    )
+
+    credentials = client.resolve_tabcut_login_credentials()
+
+    assert credentials == client.TabcutLoginCredentials(
+        username="db-tabcut@example.com",
+        password="db-secret",
+    )
+
+
 def test_classify_tabcut_login_state_detects_guest_and_human_required():
     assert (
         client.classify_tabcut_login_state(
@@ -105,8 +140,34 @@ def test_ensure_tabcut_login_on_page_requires_credentials_for_guest():
             assert selector == "body"
             return FakeLocator()
 
-    with pytest.raises(RuntimeError, match="TABCUT_LOGIN_ACCOUNT"):
+    with pytest.raises(RuntimeError, match="browser_credentials"):
         client.ensure_tabcut_login_on_page(FakePage(), credentials=None)
+
+
+def test_ensure_tabcut_login_marks_missing_credentials(monkeypatch):
+    statuses = []
+    monkeypatch.setattr(
+        client,
+        "_mark_tabcut_login_result",
+        lambda status, error=None: statuses.append((status, error)),
+        raising=False,
+    )
+
+    class FakeLocator:
+        def inner_text(self, timeout=None):
+            return "login / register"
+
+    class FakePage:
+        url = "https://www.tabcut.com/zh-CN/workbench"
+
+        def locator(self, selector):
+            assert selector == "body"
+            return FakeLocator()
+
+    with pytest.raises(RuntimeError, match="browser_credentials"):
+        client.ensure_tabcut_login_on_page(FakePage(), credentials=None)
+
+    assert statuses == [("failed", "missing_credential")]
 
 
 def test_cdp_fetcher_checks_tabcut_login_once_before_fetch():

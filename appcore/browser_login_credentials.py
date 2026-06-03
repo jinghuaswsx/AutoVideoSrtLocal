@@ -12,6 +12,25 @@ from appcore.db import execute, query, query_one
 
 DEFAULT_ENV_CODE = "DXM01-Meta"
 DEFAULT_PROVIDER = "facebook"
+TABCUT_ENV_CODE = "TABCUT"
+TABCUT_PROVIDER = "tabcut"
+
+SUPPORTED_CREDENTIAL_DEFAULTS = (
+    (DEFAULT_ENV_CODE, DEFAULT_PROVIDER),
+    (TABCUT_ENV_CODE, TABCUT_PROVIDER),
+)
+PROVIDER_LABELS = {
+    DEFAULT_PROVIDER: "Facebook",
+    TABCUT_PROVIDER: "TABCUT",
+}
+USERNAME_LABELS = {
+    DEFAULT_PROVIDER: "Facebook account",
+    TABCUT_PROVIDER: "TABCUT account",
+}
+PASSWORD_LABELS = {
+    DEFAULT_PROVIDER: "Facebook password",
+    TABCUT_PROVIDER: "TABCUT password",
+}
 
 
 @dataclass(frozen=True)
@@ -82,22 +101,39 @@ def list_credentials() -> list[BrowserLoginCredential]:
 
 def list_credentials_view() -> list[dict[str, Any]]:
     rows = list_credentials()
-    if not rows:
-        rows = [
-            BrowserLoginCredential(
+    by_key = {(row.env_code, row.provider): row for row in rows}
+    ordered_rows: list[BrowserLoginCredential] = []
+    seen: set[tuple[str, str]] = set()
+
+    for env_code, provider in SUPPORTED_CREDENTIAL_DEFAULTS:
+        key = (env_code, provider)
+        ordered_rows.append(
+            by_key.get(key)
+            or BrowserLoginCredential(
                 id=None,
-                env_code=DEFAULT_ENV_CODE,
-                provider=DEFAULT_PROVIDER,
+                env_code=env_code,
+                provider=provider,
                 username="",
                 password="",
                 enabled=True,
             )
-        ]
+        )
+        seen.add(key)
+
+    for row in rows:
+        key = (row.env_code, row.provider)
+        if key not in seen:
+            ordered_rows.append(row)
+            seen.add(key)
+
     return [
         {
             "id": row.id,
             "env_code": row.env_code,
             "provider": row.provider,
+            "provider_label": PROVIDER_LABELS.get(row.provider, row.provider or row.env_code),
+            "username_label": USERNAME_LABELS.get(row.provider, "Login account"),
+            "password_label": PASSWORD_LABELS.get(row.provider, "Login password"),
             "username_mask": mask_username(row.username),
             "username_value": row.username,
             "password_present": bool(row.password),
@@ -106,8 +142,12 @@ def list_credentials_view() -> list[dict[str, Any]]:
             "last_login_status": row.last_login_status,
             "last_error": row.last_error,
         }
-        for row in rows
+        for row in ordered_rows
     ]
+
+
+def get_tabcut_credential(*, enabled_only: bool = True) -> BrowserLoginCredential | None:
+    return get_credential(TABCUT_ENV_CODE, TABCUT_PROVIDER, enabled_only=enabled_only)
 
 
 def save_credential(

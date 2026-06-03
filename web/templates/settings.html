@@ -1090,7 +1090,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
 
 {# ═════════════════════════════════════════════════════════════
    Tab · 浏览器登录凭据（superadmin-only）
-   DXM01-Meta/Facebook 明文存储；页面不回显密码，账号只展示掩码。
+   浏览器自动登录凭据明文存储；页面不回显密码，账号只展示掩码。
    ═════════════════════════════════════════════════════════════ #}
 {% if can_manage_pricing and active_tab == 'browser_credentials' %}
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
@@ -1098,7 +1098,7 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   </div>
 
   <div class="bindings-hint">
-    用于服务器浏览器会话掉线后的临时自动填登录。当前仅接入 <code>DXM01-Meta / facebook</code>；
+    用于服务器浏览器会话掉线后的临时自动填登录。当前接入 <code>DXM01-Meta / facebook</code> 与 <code>TABCUT / tabcut</code>；
     密码按本次需求明文存入 MySQL，页面和日志不回显密码。
   </div>
 
@@ -1123,17 +1123,17 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
       </label>
     </div>
 
-    <label for="browser_username_{{ loop.index }}">Facebook 账号</label>
+    <label for="browser_username_{{ loop.index }}">{{ row.username_label or '登录账号' }}</label>
     <input type="text"
            id="browser_username_{{ loop.index }}"
            name="browser_username"
            value=""
-           placeholder="{{ '留空保留当前账号' if row.username_mask else '输入 Facebook 账号' }}"
+           placeholder="{{ '留空保留当前账号' if row.username_mask else '输入' ~ (row.username_label or '登录账号') }}"
            autocomplete="off"
            spellcheck="false">
     <p class="hint">页面只展示账号掩码；需要更换账号时重新输入完整账号。</p>
 
-    <label for="browser_password_{{ loop.index }}">Facebook 密码</label>
+    <label for="browser_password_{{ loop.index }}">{{ row.password_label or '登录密码' }}</label>
     <input type="password"
            id="browser_password_{{ loop.index }}"
            name="browser_password"
