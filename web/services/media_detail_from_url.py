@@ -263,12 +263,33 @@ def build_detail_images_from_url_worker(
                 ),
             )
         else:
-            limit_counts = dict(detail_image_existing_counts_fn(product_id, lang))
-            update(
-                status="downloading",
-                total=len(images),
-                message=f"found {len(images)} images, starting download",
-            )
+            existing_counts = dict(detail_image_existing_counts_fn(product_id, lang))
+            if _detail_image_count_total(existing_counts) > 0:
+                try:
+                    cleared = soft_delete_detail_images_by_lang_fn(product_id, lang)
+                except Exception as exc:
+                    update(
+                        status="failed",
+                        error=str(exc),
+                        message=f"failed to clear existing detail images: {exc}",
+                    )
+                    return
+                limit_counts = dict(detail_image_empty_counts_fn())
+                update(
+                    status="downloading",
+                    total=len(images),
+                    message=(
+                        f"cleared {cleared} existing detail images before re-import; "
+                        f"found {len(images)} images, starting download"
+                    ),
+                )
+            else:
+                limit_counts = existing_counts
+                update(
+                    status="downloading",
+                    total=len(images),
+                    message=f"found {len(images)} images, starting download",
+                )
 
         created: list[dict] = []
         errors: list[str] = []
@@ -334,3 +355,13 @@ def _image_source_url(image: object) -> str:
     if isinstance(image, Mapping):
         return str(image.get("source_url") or "")
     return ""
+
+
+def _detail_image_count_total(counts: Mapping[str, object]) -> int:
+    total = 0
+    for value in counts.values():
+        try:
+            total += int(value or 0)
+        except (TypeError, ValueError):
+            continue
+    return total

@@ -226,6 +226,15 @@ def upsert_preselection(payload: Mapping[str, Any], *, user_id: int) -> dict[str
         """,
         tuple(row_values[column] for column in columns),
     )
+    code = row_values.get("product_code")
+    cn = row_values.get("product_name")
+    en = row_values.get("product_english_name")
+    if code and (cn or en):
+        try:
+            from appcore.product_name_dictionary import sync_names
+            sync_names(code, cn, en)
+        except Exception:
+            pass
     return get_preselection(material_key) or _serialize_row(row_values) or {}
 
 

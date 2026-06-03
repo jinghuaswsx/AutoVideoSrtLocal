@@ -209,12 +209,21 @@ def create_product(user_id: int, name: str, color_people: str | None = None,
                    cover_object_key: str | None = None) -> int:
     if not source:
         source = "明空"
-    return execute(
+    product_id = execute(
         "INSERT INTO media_products "
         "(user_id, name, product_code, color_people, source, cover_object_key) "
         "VALUES (%s,%s,%s,%s,%s,%s)",
         (user_id, name, product_code, color_people, source, cover_object_key),
     )
+    if product_code and name:
+        try:
+            from appcore.product_name_dictionary import sync_names
+            cn = name if any("\u4e00" <= char <= "\u9fff" for char in name) else None
+            en = name if not any("\u4e00" <= char <= "\u9fff" for char in name) else None
+            sync_names(product_code, cn, en)
+        except Exception:
+            pass
+    return product_id
 
 
 def get_product(product_id: int) -> dict | None:
@@ -640,7 +649,22 @@ def update_product(product_id: int, **fields) -> int:
         return v
     set_sql = ", ".join(f"{k}=%s" for k in keys)
     args = tuple(_val(k) for k in keys) + (product_id,)
-    return execute(f"UPDATE media_products SET {set_sql} WHERE id=%s", args)
+    res = execute(f"UPDATE media_products SET {set_sql} WHERE id=%s", args)
+    if "product_code" in fields or "name" in fields or "shopify_title" in fields:
+        try:
+            p = get_product(product_id)
+            if p:
+                code = str(p.get("product_code") or "").strip()
+                nm = str(p.get("name") or "").strip()
+                st = str(p.get("shopify_title") or "").strip()
+                if code:
+                    from appcore.product_name_dictionary import sync_names
+                    cn = nm if any("\u4e00" <= char <= "\u9fff" for char in nm) else None
+                    en = st or (nm if not any("\u4e00" <= char <= "\u9fff" for char in nm) else None)
+                    sync_names(code, cn, en)
+        except Exception:
+            pass
+    return res
 
 
 def soft_delete_product(product_id: int) -> int:

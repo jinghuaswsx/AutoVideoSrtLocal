@@ -260,6 +260,43 @@ def test_pair_carousel_images_prefers_filename_match_when_source_indices_include
     ]
 
 
+def test_pair_carousel_images_allows_duplicate_filename_candidates_for_same_source():
+    product_images = [
+        {"src": "https://cdn.shopify.com/files/71-cWpHcYBL._AC_SL1500_54e6b37c-cfd3-4ddc-b8da-e6d03bb01c67.jpg?v=1"},
+    ]
+    localized_images = [
+        {
+            **_localized(
+                "20260603_5369f71f_20260603_430923cc_from_url_en_15_"
+                "71-cWpHcYBL._AC_SL1500_54e6b37c-cfd3-4ddc-b8da-e6d03bb01c67.jpg"
+            ),
+            "id": "detail-23703",
+        },
+        {
+            **_localized(
+                "20260603_e366c054_20260603_520d2ca7_from_url_en_15_"
+                "71-cWpHcYBL._AC_SL1500_54e6b37c-cfd3-4ddc-b8da-e6d03bb01c67.jpg"
+            ),
+            "id": "detail-23719",
+        },
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == [
+        (
+            0,
+            str(
+                Path("C:/tmp")
+                / (
+                    "20260603_e366c054_20260603_520d2ca7_from_url_en_15_"
+                    "71-cWpHcYBL._AC_SL1500_54e6b37c-cfd3-4ddc-b8da-e6d03bb01c67.jpg"
+                )
+            ),
+        ),
+    ]
+
+
 def test_pair_carousel_images_uses_domain_alias_source_index_when_target_token_differs():
     canonical_product = {
         "images": [

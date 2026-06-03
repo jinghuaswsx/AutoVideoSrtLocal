@@ -91,3 +91,40 @@ def test_run_collection_records_scheduled_task_failure(monkeypatch, tmp_path):
     assert events[1][0:2] == ("finish", 7)
     assert events[1][2]["status"] == "failed"
     assert events[1][2]["error_message"] == "tabcut cdp unavailable"
+
+
+def test_run_collection_delegates_goods_rankings_mode(monkeypatch, tmp_path):
+    from tools.tabcut_crawler import main
+
+    args = SimpleNamespace(
+        mode="goods-rankings",
+        cdp_url="http://127.0.0.1:9227",
+        output_dir=str(tmp_path),
+        days=30,
+        pages=6,
+        page_size=100,
+        sort_field="video_sold_count",
+        video_create_time_begin=None,
+        video_create_time_end=None,
+        min_interval_seconds=3.3,
+        no_persist=True,
+        no_record_run=True,
+        biz_date="2026-05-31",
+    )
+    captured = {}
+
+    result = main.run_collection(
+        args,
+        collect_goods_rankings_fn=lambda **kwargs: captured.update(kwargs) or {"ok": True, "goods_count": 600},
+    )
+
+    assert result == {"ok": True, "goods_count": 600}
+    assert captured == {
+        "cdp_url": "http://127.0.0.1:9227",
+        "output_dir": tmp_path,
+        "biz_date": "2026-05-31",
+        "pages": 6,
+        "page_size": 100,
+        "persist": False,
+        "min_interval_seconds": 3.3,
+    }

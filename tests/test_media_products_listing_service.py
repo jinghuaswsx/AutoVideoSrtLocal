@@ -90,6 +90,7 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
         "xmyc_match": "matched",
         "roas_status": "complete",
         "delivery_status": "active",
+        "product_source": "all",
         "created_from": None,
         "created_to": None,
     }

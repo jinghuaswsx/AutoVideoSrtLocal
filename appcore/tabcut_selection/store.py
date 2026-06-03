@@ -25,11 +25,29 @@ VIDEO_SORTS = {
 
 GOODS_SORTS = {
     "sold_count_7d": "COALESCE(s.sold_count_7d, s.sold_count_period)",
+    "sold_count_period": "s.sold_count_period",
+    "sold_count_30d": "COALESCE(s.sold_count_30d, s.sold_count_period)",
     "gmv_7d": "COALESCE(s.gmv_7d, s.gmv_period)",
+    "gmv_period": "s.gmv_period",
+    "gmv_30d": "COALESCE(s.gmv_30d, s.gmv_period)",
     "sold_count_total": "s.sold_count_total",
     "gmv_total": "s.gmv_total",
     "sold_growth_rate_7d": "s.sold_growth_rate_7d",
+    "sold_growth_rate_period": "s.sold_growth_rate_period",
     "related_video_count": "s.related_video_count",
+}
+
+GOODS_RANK_KINDS = {"hot", "new"}
+GOODS_RANK_PERIODS = {"1d", "7d", "30d"}
+GOODS_RANK_PERIOD_SALES_COLUMNS = {
+    "1d": "COALESCE(s.sold_count_1d, s.sold_count_period)",
+    "7d": "COALESCE(s.sold_count_7d, s.sold_count_period)",
+    "30d": "COALESCE(s.sold_count_30d, s.sold_count_period)",
+}
+GOODS_RANK_PERIOD_GMV_COLUMNS = {
+    "1d": "COALESCE(s.gmv_1d, s.gmv_period)",
+    "7d": "COALESCE(s.gmv_7d, s.gmv_period)",
+    "30d": "COALESCE(s.gmv_30d, s.gmv_period)",
 }
 
 SOURCE_RANKS = {
@@ -85,6 +103,14 @@ def _mark_status_arg(args: Mapping[str, Any]) -> str | None:
     if value in {"bad", "fail", "no", "不行"}:
         return "bad"
     return None
+
+
+def goods_rank_source(kind: Any, period: Any) -> str | None:
+    normalized_kind = str(kind or "").strip()
+    normalized_period = str(period or "").strip()
+    if normalized_kind not in GOODS_RANK_KINDS or normalized_period not in GOODS_RANK_PERIODS:
+        return None
+    return f"goods_{normalized_kind}_{normalized_period}"
 
 
 def _append_mark_status_filter(
@@ -294,10 +320,16 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
             )"""
         )
 
-    source_category = goods_category_source(_text_arg(args, "source_category"))
-    if source_category:
+    rank_period = _text_arg(args, "goods_rank_period")
+    rank_source = goods_rank_source(_text_arg(args, "goods_rank_kind"), rank_period)
+    if rank_source:
         where.append("s.source = %s")
-        params.append(source_category)
+        params.append(rank_source)
+    else:
+        source_category = goods_category_source(_text_arg(args, "source_category"))
+        if source_category:
+            where.append("s.source = %s")
+            params.append(source_category)
 
     for arg_name, column in [
         ("category_l1", "g.category_l1_name"),
@@ -310,9 +342,15 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
             params.append(value)
 
     min_sales = _int_arg(args, "min_sales_7d", 0, 0, 10**12)
-    if min_sales:
+    if min_sales and not (rank_period and rank_period != "7d"):
         where.append("COALESCE(s.sold_count_7d, s.sold_count_period) >= %s")
         params.append(min_sales)
+
+    if rank_period in GOODS_RANK_PERIOD_SALES_COLUMNS:
+        period_sales = _int_arg(args, f"min_sales_{rank_period}", 0, 0, 10**12)
+        if period_sales:
+            where.append(f"{GOODS_RANK_PERIOD_SALES_COLUMNS[rank_period]} >= %s")
+            params.append(period_sales)
 
     max_sales = _int_arg(args, "max_sales_7d", 0, 0, 10**12)
     if max_sales:
@@ -320,9 +358,15 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
         params.append(max_sales)
 
     min_gmv = _float_arg(args, "min_gmv_7d")
-    if min_gmv is not None:
+    if min_gmv is not None and not (rank_period and rank_period != "7d"):
         where.append("COALESCE(s.gmv_7d, s.gmv_period) >= %s")
         params.append(min_gmv)
+
+    if rank_period in GOODS_RANK_PERIOD_GMV_COLUMNS:
+        period_gmv = _float_arg(args, f"min_gmv_{rank_period}")
+        if period_gmv is not None:
+            where.append(f"{GOODS_RANK_PERIOD_GMV_COLUMNS[rank_period]} >= %s")
+            params.append(period_gmv)
 
     min_price = _float_arg(args, "min_price")
     if min_price is not None:

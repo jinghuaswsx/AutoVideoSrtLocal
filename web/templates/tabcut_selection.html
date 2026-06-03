@@ -17,6 +17,11 @@
 .tabcut-view-tabs-left { display:flex; gap:8px; }
 .tabcut-view-tab { height:34px; padding:0 14px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#475569; font-weight:700; cursor:pointer; }
 .tabcut-view-tab.active { border-color:#0f766e; background:#ecfdf5; color:#0f766e; }
+.tabcut-goods-rank-tabs { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin:-2px 0 12px; padding:10px 12px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
+.tabcut-goods-rank-tabs[hidden] { display:none !important; }
+.tabcut-goods-rank-group { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.tabcut-rank-tab { height:34px; padding:0 14px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#334155; font-weight:800; cursor:pointer; }
+.tabcut-rank-tab.active { border-color:#2563eb; background:#eff6ff; color:#2563eb; }
 #zoomToggleBtn.active { border-color:#0f766e; background:#ecfdf5; color:#0f766e; font-weight:700; }
 .tabcut-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 12px; color:#64748b; font-size:13px; }
 .tabcut-results { border:1px solid #d8dee8; border-radius:8px; background:#eef2f7; overflow:hidden; }
@@ -215,6 +220,7 @@
         <option value="score">Score</option>
         <option value="item_sold_count">Video Sales</option>
         <option value="goods_sold_count_7d">Product Sales</option>
+        <option value="sold_count_period">周期销量</option>
         <option value="goods_gmv_7d">GMV</option>
       </select>
     </div>
@@ -238,6 +244,20 @@
       <button class="tabcut-view-tab" type="button" data-view="goods" onclick="setTabcutView('goods')">商品榜</button>
     </div>
     <button class="tabcut-view-tab" id="zoomToggleBtn" type="button" onclick="toggleCardZoom()" style="border-color:#cbd5e1; color:#475569;">2x 放大</button>
+  </div>
+
+  <div class="tabcut-goods-rank-tabs" id="goodsRankTabs" hidden>
+    <input id="goodsRankKind" type="hidden" value="hot">
+    <input id="goodsRankPeriod" type="hidden" value="30d">
+    <div class="tabcut-goods-rank-group" aria-label="商品榜类型">
+      <button class="tabcut-rank-tab active" type="button" data-goods-rank-kind="hot" onclick="setGoodsRankKind('hot')">商品热销榜</button>
+      <button class="tabcut-rank-tab" type="button" data-goods-rank-kind="new" onclick="setGoodsRankKind('new')">新品榜</button>
+    </div>
+    <div class="tabcut-goods-rank-group" aria-label="商品榜周期">
+      <button class="tabcut-rank-tab" type="button" data-goods-rank-period="1d" onclick="setGoodsRankPeriod('1d')">日榜</button>
+      <button class="tabcut-rank-tab" type="button" data-goods-rank-period="7d" onclick="setGoodsRankPeriod('7d')">周榜</button>
+      <button class="tabcut-rank-tab active" type="button" data-goods-rank-period="30d" onclick="setGoodsRankPeriod('30d')">月榜</button>
+    </div>
   </div>
 
   <div class="tabcut-status">
@@ -280,6 +300,19 @@ let tabcutPage = 1;
 function qs(id) { return document.getElementById(id); }
 function fmtInt(v) { const n = Number(v || 0); return n ? n.toLocaleString() : ""; }
 function fmtMoney(v) { const n = Number(v || 0); return n ? "$" + n.toLocaleString(undefined, {maximumFractionDigits: 0}) : ""; }
+function fmtDecimalMoney(v) { const n = Number(v || 0); return n ? "$" + n.toLocaleString(undefined, {maximumFractionDigits: 2}) : ""; }
+function fmtPercent(v) { const n = Number(v); return Number.isFinite(n) ? `${n.toLocaleString(undefined, {maximumFractionDigits: 2})}%` : ""; }
+function goodsPeriod() { return qs("goodsRankPeriod")?.value || "30d"; }
+function goodsPeriodValue(row, base) {
+  const period = goodsPeriod();
+  return row[`${base}_${period}`] ?? row[base + "_period"] ?? row[`${base}_7d`];
+}
+function goodsPriceText(row) {
+  const min = Number(row.price_min || 0);
+  const max = Number(row.price_max || 0);
+  if (min && max && min !== max) return `${fmtDecimalMoney(min)} - ${fmtDecimalMoney(max)}`;
+  return fmtDecimalMoney(min || max);
+}
 function fmtCompact(v) {
   const n = Number(v || 0);
   if (!n) return "0";
@@ -448,6 +481,22 @@ function setTabcutView(view) {
   loadTabcut(1);
 }
 
+function setGoodsRankKind(kind) {
+  qs("goodsRankKind").value = kind;
+  document.querySelectorAll("[data-goods-rank-kind]").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.goodsRankKind === kind);
+  });
+  loadTabcut(1);
+}
+
+function setGoodsRankPeriod(period) {
+  qs("goodsRankPeriod").value = period;
+  document.querySelectorAll("[data-goods-rank-period]").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.goodsRankPeriod === period);
+  });
+  loadTabcut(1);
+}
+
 function updateDateFilterState() {
   const disabled = tabcutView !== "videos";
   ["publishDateFrom", "publishDateTo", "sourceRank"].forEach(id => {
@@ -457,20 +506,39 @@ function updateDateFilterState() {
   ["goodsBizDate", "sourceCategory"].forEach(id => {
     qs(id).disabled = goodsDisabled;
   });
+  qs("goodsRankTabs").hidden = goodsDisabled;
 }
 
 function paramsFor(page) {
-  const params = new URLSearchParams({ page, page_size: qs("pageSize").value, sort: qs("sortBy").value });
+  let sortValue = qs("sortBy").value;
+  if (tabcutView === "goods" && ["play_count", "score", "item_sold_count", "goods_sold_count_7d", "goods_gmv_7d"].includes(sortValue)) {
+    sortValue = "sold_count_period";
+  }
+  const params = new URLSearchParams({ page, page_size: qs("pageSize").value, sort: sortValue });
   if (qs("categoryL1").value.trim()) params.set("category_l1", qs("categoryL1").value.trim());
   if (tabcutView === "videos" && qs("sourceRank").value) params.set("source_rank", qs("sourceRank").value);
-  if (tabcutView === "goods" && qs("sourceCategory").value) params.set("source_category", qs("sourceCategory").value);
-  if (tabcutView === "goods" && qs("goodsBizDate").value) params.set("biz_date", qs("goodsBizDate").value);
+  if (tabcutView === "goods") {
+    params.set("goods_rank_kind", qs("goodsRankKind").value || "hot");
+    params.set("goods_rank_period", qs("goodsRankPeriod").value || "30d");
+    if (qs("sourceCategory").value) params.set("source_category", qs("sourceCategory").value);
+    if (qs("goodsBizDate").value) params.set("biz_date", qs("goodsBizDate").value);
+  }
   if (tabcutView === "videos" && qs("publishDateFrom").value) params.set("publish_date_from", qs("publishDateFrom").value);
   if (tabcutView === "videos" && qs("publishDateTo").value) params.set("publish_date_to", qs("publishDateTo").value);
   if (qs("minVideoSales").value) params.set("min_video_sales", qs("minVideoSales").value);
-  if (qs("minGoodsSales").value) params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", qs("minGoodsSales").value);
+  if (qs("minGoodsSales").value) {
+    params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", qs("minGoodsSales").value);
+    if (tabcutView === "goods" && qs("goodsRankPeriod").value !== "7d") {
+      params.set(`min_sales_${qs("goodsRankPeriod").value}`, qs("minGoodsSales").value);
+    }
+  }
   if (qs("maxGoodsSales").value) params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", qs("maxGoodsSales").value);
-  if (qs("minGmv").value) params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", qs("minGmv").value);
+  if (qs("minGmv").value) {
+    params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", qs("minGmv").value);
+    if (tabcutView === "goods" && qs("goodsRankPeriod").value !== "7d") {
+      params.set(`min_gmv_${qs("goodsRankPeriod").value}`, qs("minGmv").value);
+    }
+  }
   if (qs("minPrice").value) params.set(tabcutView === "videos" ? "min_item_price" : "min_price", qs("minPrice").value);
   if (qs("maxPrice").value) params.set(tabcutView === "videos" ? "max_item_price" : "max_price", qs("maxPrice").value);
   if (qs("markStatus").value) params.set("mark_status", qs("markStatus").value);
@@ -503,20 +571,20 @@ function renderTabcut(data) {
   } else {
     qs("tabcutVideoGrid").hidden = true;
     qs("tabcutTableWrap").hidden = false;
-    qs("tabcutHead").innerHTML = "<tr><th></th><th>#</th><th>商品</th><th>标注</th><th>数据日期</th><th>采集类目</th><th>原始类目</th><th class='tabcut-num'>销量</th><th class='tabcut-num'>GMV</th><th class='tabcut-num'>总销量</th><th class='tabcut-num'>关联视频</th></tr>";
+    qs("tabcutHead").innerHTML = "<tr><th></th><th>排名</th><th>商品</th><th>价格</th><th>佣金比例</th><th class='tabcut-num'>总销量</th><th class='tabcut-num'>周期内销量</th><th class='tabcut-num'>周期内销售额</th><th class='tabcut-num'>周期内销量增长率</th><th class='tabcut-num'>总关联视频(90天)</th><th>操作</th></tr>";
     qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
       <tr>
         <td>${row.item_pic_url ? `<a href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><img class="tabcut-product-cover" src="${esc(row.item_pic_url)}" loading="lazy" alt=""></a>` : ""}</td>
-        <td>${(data.page - 1) * data.page_size + idx + 1}</td>
-        <td class="tabcut-name"><a class="tabcut-product-link" href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><strong>${esc(row.item_name)}</strong></a><div class="tabcut-muted">${esc(row.item_id)}</div></td>
-        <td>${renderMarkOptions(row, "goods")}</td>
-        <td>${esc(row.biz_date || "")}</td>
-        <td>${esc(row.source_category_label || "")}</td>
-        <td>${esc([row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / "))}</td>
-        <td class="tabcut-num">${fmtInt(row.sold_count_7d || row.sold_count_period)}</td>
-        <td class="tabcut-num">${fmtMoney(row.gmv_7d || row.gmv_period)}</td>
+        <td>${row.rank_position || ((data.page - 1) * data.page_size + idx + 1)}</td>
+        <td class="tabcut-name"><a class="tabcut-product-link" href="${esc(productHref(row))}" target="_blank" rel="noopener noreferrer"><strong>${esc(row.item_name)}</strong></a><div class="tabcut-muted">${esc([row.goods_rank_kind_label, row.goods_rank_period_label, row.category_l1_name].filter(Boolean).join(" / "))}</div><div class="tabcut-muted">${esc(row.item_id)}</div></td>
+        <td>${esc(goodsPriceText(row))}</td>
+        <td>${esc(fmtPercent(row.commission_rate))}</td>
         <td class="tabcut-num">${fmtInt(row.sold_count_total)}</td>
+        <td class="tabcut-num">${fmtInt(goodsPeriodValue(row, "sold_count"))}</td>
+        <td class="tabcut-num">${fmtMoney(goodsPeriodValue(row, "gmv"))}</td>
+        <td class="tabcut-num">${fmtPercent(row.sold_growth_rate_period || row.sold_growth_rate_30d || row.sold_growth_rate_7d || row.sold_growth_rate_1d)}</td>
         <td class="tabcut-num">${fmtInt(row.related_video_count)}</td>
+        <td>${renderMarkOptions(row, "goods")}</td>
       </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='11'>No data</td></tr>";
   }
   renderPager(data);

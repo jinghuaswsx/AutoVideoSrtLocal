@@ -214,7 +214,7 @@ def test_medias_toolbar_compacts_actions_and_filters():
     assert 'id="createBtn"' in action_block
     assert "oc-tool-download-btn" in action_block
 
-    assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr 1.4fr;" in html
+    assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr 1fr 1.4fr;" in html
     mobile_start = html.index("@media (max-width: 760px)")
     mobile_end = html.index("/* ────────── Buttons", mobile_start)
     mobile_block = html[mobile_start:mobile_end]

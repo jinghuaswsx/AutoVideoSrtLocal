@@ -186,7 +186,6 @@ def _fetch_top500_candidates(limit: int) -> list[dict[str, Any]]:
               WHERE r2.status = 'success'
           )
           ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
-          LIMIT 500
         ) top500
         LEFT JOIN mingkong_fine_ai_auto_evaluations a
           ON a.material_key = top500.material_key
@@ -211,7 +210,6 @@ def _fetch_yesterday_top100_candidates(limit: int) -> list[dict[str, Any]]:
             FROM mingkong_material_daily_top100
           )
           ORDER BY t.display_position ASC, t.rank_position ASC, t.id ASC
-          LIMIT 100
         ) top100
         LEFT JOIN mingkong_fine_ai_auto_evaluations a
           ON a.material_key = top100.material_key

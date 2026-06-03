@@ -260,6 +260,49 @@ def test_list_goods_filters_by_snapshot_date_source_category_and_sales():
     assert data_params[:4] == ["US", "2026-05-11", "goods_cat_25", 50]
 
 
+def test_list_goods_filters_by_goods_rank_kind_and_period():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_goods(
+        {
+            "goods_rank_kind": "new",
+            "goods_rank_period": "30d",
+            "min_sales_30d": "5000",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "s.source = %s" in data_sql
+    assert "COALESCE(s.sold_count_30d, s.sold_count_period) >= %s" in data_sql
+    assert data_params[:3] == ["US", "goods_new_30d", 5000]
+
+
+def test_list_goods_rejects_unknown_goods_rank_source():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_goods(
+        {
+            "goods_rank_kind": "new; DROP TABLE tabcut_goods",
+            "goods_rank_period": "30d",
+        },
+        query_fn=fake_query,
+    )
+
+    data_sql, data_params = calls[-1]
+    assert "s.source = %s" not in data_sql
+    assert "DROP TABLE" not in data_sql
+    assert data_params == ["US", 50, 0]
+
+
 def test_list_goods_filters_by_display_price_range():
     calls = []
 
@@ -335,6 +378,25 @@ def test_build_goods_response_hydrates_source_category_label(monkeypatch):
 
     assert result.payload["items"][0]["source_category_label"] == "五金工具"
     assert result.payload["items"][0]["source_category_name"] == "Tools & Hardware"
+
+
+def test_build_goods_response_hydrates_rank_labels(monkeypatch):
+    monkeypatch.setattr(
+        store,
+        "list_goods",
+        lambda args: {
+            "items": [{"item_id": "i1", "source": "goods_new_30d"}],
+            "total": 1,
+        },
+    )
+
+    result = service.build_goods_response({})
+
+    item = result.payload["items"][0]
+    assert item["goods_rank_kind"] == "new"
+    assert item["goods_rank_kind_label"] == "新品榜"
+    assert item["goods_rank_period"] == "30d"
+    assert item["goods_rank_period_label"] == "月榜"
 
 
 def test_build_videos_response_hydrates_raw_card_fields(monkeypatch):
