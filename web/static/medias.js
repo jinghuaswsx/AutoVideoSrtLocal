@@ -631,6 +631,16 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
+  function fmtDateTimeLines(s) {
+    if (!s) return '<span class="muted">—</span>';
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return '<span class="muted">—</span>';
+    const pad = (n) => String(n).padStart(2, '0');
+    const datePart = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const timePart = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `<div style="line-height:1.25;">${datePart}</div><div style="line-height:1.25; font-size:11px; opacity:0.8;">${timePart}</div>`;
+  }
+
   function escapeHtml(s) {
     return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
@@ -2649,17 +2659,15 @@
         <colgroup>
         <col style="width:48px">
         <col style="width:128px">
-        <col style="width:130px">
-        <col style="width:120px">
-        <col style="width:160px">
+        <col style="width:320px">
         <col style="width:140px">
         <col style="width:80px">
-        <col style="width:68px">
-        <col style="width:120px">
+        <col style="width:130px">
         <col style="width:80px">
         <col style="width:88px">
         <col style="width:56px">
         <col style="width:300px">
+        <col style="width:92px">
         <col style="width:92px">
         <col style="width:92px">
         <col style="width:104px">
@@ -2669,18 +2677,16 @@
         <tr>
           <th>ID</th>
           <th>主图</th>
-          <th>产品名称</th>
-          <th>产品 ID</th>
-          <th>英文名</th>
+          <th>产品信息</th>
           <th>ERP SKU</th>
           <th>明空 ID</th>
-          <th>AI评分</th>
-          <th>AI评估结果</th>
+          <th>AI评估</th>
           <th>上架</th>
           <th>负责人</th>
           <th>素材数</th>
           <th>语种和投放情况</th>
           <th>投放情况</th>
+          <th>创建时间</th>
           <th>修改时间</th>
           <th>投放推送</th>
           <th>操作</th>
@@ -3146,10 +3152,45 @@
     const coverCell = productDetailHref
       ? `<a class="oc-thumb-link" href="${productDetailHref}" title="${escapeHtml(p.name)}">${cover}</a>`
       : cover;
-    const nameCell = (productDetailHref
-      ? `<a href="${productDetailHref}" title="${escapeHtml(p.name)}" style="vertical-align:middle;">${escapeHtml(p.name)}</a>`
-      : `<span title="${escapeHtml(p.name)}" style="vertical-align:middle;">${escapeHtml(p.name)}</span>`)
-      + ` <button type="button" class="oc-btn text sm oc-product-name-copy" data-product-name="${escapeHtml(p.name)}" data-copy-label="" title="复制产品名称" aria-label="复制产品名称" style="display:inline-flex; vertical-align:middle; margin-left:4px; padding:2px; height:20px; min-width:20px; width:auto; justify-content:center; align-items:center;">${icon('copy', 12)}</button>`;
+
+    // --- Line 1: Chinese Name ---
+    const nameText = p.name || '';
+    const nameLine = `
+      <div class="prod-info-line" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 4px;">
+        <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(nameText)}">
+          ${productDetailHref
+            ? `<a href="${productDetailHref}">${escapeHtml(nameText)}</a>`
+            : `<span>${escapeHtml(nameText)}</span>`
+          }
+        </span>
+        ${nameText ? `<button type="button" class="oc-btn text sm oc-product-name-copy" data-product-name="${escapeHtml(nameText)}" data-copy-label="" title="复制产品名称" aria-label="复制产品名称" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
+      </div>`;
+
+    // --- Line 2: English Name ---
+    const shopifyTitle = (p.shopify_title || '').trim();
+    const englishLine = `
+      <div class="prod-info-line" style="display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 4px;">
+        <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(shopifyTitle)}">
+          ${shopifyTitle ? escapeHtml(shopifyTitle) : '<span class="muted">—</span>'}
+        </span>
+        ${shopifyTitle ? `<button type="button" class="oc-btn text sm oc-product-english-copy" data-product-english-name="${escapeHtml(shopifyTitle)}" data-copy-label="复制" title="复制英文名" aria-label="复制英文名" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
+      </div>`;
+
+    // --- Line 3: Product Code / ID ---
+    const productUrl = _defaultProductUrl('en', productCode);
+    const codeLine = `
+      <div class="prod-info-line" style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+        <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(productCode)}">
+          ${productCode
+            ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a>`
+            : '<span class="muted">—</span>'
+          }
+        </span>
+        ${productCode ? `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
+      </div>`;
+
+    const productInfoCell = `<div class="product-info-cell" style="display: flex; flex-direction: column;">${nameLine}${englishLine}${codeLine}</div>`;
+
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
     const ownerUid = (p.user_id === null || p.user_id === undefined) ? '' : String(p.user_id);
@@ -3160,37 +3201,33 @@
     const mkIdCell = mkIdText
       ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
       : `<span class="mk-id-text"><span class="muted">—</span></span>`;
-    const productUrl = _defaultProductUrl('en', productCode);
-    const productCodeCell = productCode
-      ? `<div class="oc-product-id-main"><a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a></div>`
-        + `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID">${icon('copy', 12)}<span>复制</span></button>`
-      : '<span class="muted">—</span>';
-    const shopifyTitle = (p.shopify_title || '').trim();
-    const shopifyTitleCell = shopifyTitle
-      ? `<div class="shopify-title-main" title="${escapeHtml(shopifyTitle)}" style="line-height:1.35; overflow-wrap:anywhere; word-break:break-all;">${escapeHtml(shopifyTitle)}</div>`
-        + `<button type="button" class="oc-btn text sm oc-product-english-copy" data-product-english-name="${escapeHtml(shopifyTitle)}" data-copy-label="复制" title="复制英文名" aria-label="复制英文名">${icon('copy', 12)}<span>复制</span></button>`
-      : '<span class="muted">—</span>';
     const skuCell = renderSkuSummary(p);
+
+    // --- AI Evaluation cell ---
+    const aiScoreText = p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>';
+    const aiResultText = compactCellText(p.ai_evaluation_result);
+    const aiEvalCell = `
+      <div class="ai-eval-cell" style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+        <div class="ai-score" style="font-weight: bold; font-family: monospace;">${aiScoreText}</div>
+        <div class="ai-result-text" title="${escapeHtml(p.ai_evaluation_result || '')}" style="font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${aiResultText}</div>
+        <button type="button" class="oc-btn sm ghost ai-detail-btn" data-ai-detail="${p.id}" style="margin-top: 2px;">评估详情</button>
+      </div>`;
+
     return `
       <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${coverCell}</div></td>
-        <td class="name wrap">${nameCell}</td>
-        <td class="mono wrap oc-product-id-cell" title="${escapeHtml(productCode)}">${productCodeCell}</td>
-        <td class="wrap shopify-title-cell">${shopifyTitleCell}</td>
+        <td class="wrap">${productInfoCell}</td>
         <td class="wrap sku-summary-cell" title="${escapeHtml(skuCellTooltip(p))}">${skuCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
-        <td class="mono ai-score">${p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>'}</td>
-        <td class="wrap ai-result" title="${escapeHtml(p.ai_evaluation_result || '')}">
-          <div class="ai-result-text">${compactCellText(p.ai_evaluation_result)}</div>
-          <button type="button" class="oc-btn sm ghost ai-detail-btn" data-ai-detail="${p.id}">评估详情</button>
-        </td>
+        <td class="wrap">${aiEvalCell}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
-        <td class="muted">${fmtDate(p.updated_at)}</td>
+        <td class="muted mono">${fmtDateTimeLines(p.created_at)}</td>
+        <td class="muted mono">${fmtDateTimeLines(p.updated_at)}</td>
         <td class="product-push-cell">
           <div class="product-push-actions">
             <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">
