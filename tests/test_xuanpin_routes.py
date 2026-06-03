@@ -137,6 +137,10 @@ def test_xuanpin_mk_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert '<option value="video_imported">' in body
     assert '<option value="video_not_imported">' in body
     assert "mkLibraryStatusQueryParam()" in body
+    assert 'id="mkAdDeliveryFilter"' in body
+    assert '<option value="exclude" selected>' in body
+    assert '<option value="all">' in body
+    assert "mkAdDeliveryQueryParam()" in body
     assert "/xuanpin/api/mk-material-library" in body
     assert "/xuanpin/api/mk-yesterday-top300" in body
 
@@ -1173,7 +1177,7 @@ def test_xuanpin_mk_material_library_api_reads_local_archive(
 
     resp = authed_client_no_db.get(
         "/xuanpin/api/mk-material-library?keyword=tooth&page=2&page_size=24&snapshot=2026-05-18&range=this_week"
-        "&library_status=video_not_imported"
+        "&library_status=video_not_imported&ad_delivery=all"
     )
 
     assert resp.status_code == 200
@@ -1187,6 +1191,7 @@ def test_xuanpin_mk_material_library_api_reads_local_archive(
         "page_size": "24",
         "library_status": "video_not_imported",
         "sort_by": "",
+        "ad_delivery_filter": "all",
     }
 
 
@@ -1253,7 +1258,7 @@ def test_xuanpin_mk_yesterday_top300_api_reads_archive(
     # 2. Test GET fetches and passes the preference
     resp = authed_client_no_db.get(
         "/xuanpin/api/mk-yesterday-top300?page=1&page_size=100&snapshot=2026-05-18&keyword=baseball"
-        "&library_status=product_imported"
+        "&library_status=product_imported&ad_delivery=all"
     )
 
     assert resp.status_code == 200
@@ -1268,6 +1273,7 @@ def test_xuanpin_mk_yesterday_top300_api_reads_archive(
         "page_size": "100",
         "sort_order": "normal",
         "library_status": "product_imported",
+        "ad_delivery_filter": "all",
     }
 
 

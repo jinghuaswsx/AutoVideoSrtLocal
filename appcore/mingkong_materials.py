@@ -24,6 +24,9 @@ from web.services.media_mk_selection import normalize_mk_media_path
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)
 _COVER_CACHE_PREFIX = "artifacts/mingkong-material-covers"
 _COVER_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+_AD_DELIVERY_FILENAME_MARKERS = ("\u8521\u9756\u534e",)
+_AD_DELIVERY_PRODUCT_SUFFIX = "-rjc"
+_AD_DELIVERY_FILTER_ALL = "all"
 _SECONDS_PER_DAY = 24 * 60 * 60
 # Legacy table/helper names still say top100; the business archive now keeps Top300.
 YESTERDAY_SPEND_TOP_LIMIT = 300
@@ -112,6 +115,78 @@ def _trim(value: Any, limit: int) -> str:
 
 def _strip_rjc(value: Any) -> str:
     return _RJC_SUFFIX_RE.sub("", str(value or "").strip()).lower()
+
+
+def _is_ad_delivery_filename(value: Any) -> bool:
+    text = str(value or "")
+    return any(marker in text for marker in _AD_DELIVERY_FILENAME_MARKERS)
+
+
+def _is_ad_delivery_product_code(value: Any) -> bool:
+    return str(value or "").strip().lower().endswith(_AD_DELIVERY_PRODUCT_SUFFIX)
+
+
+def _is_ad_delivery_material(item: dict[str, Any]) -> bool:
+    for key in ("video_name", "video_path", "filename", "display_name"):
+        if _is_ad_delivery_filename(item.get(key)):
+            return True
+    metadata = _metadata_for_row(item)
+    if isinstance(metadata, dict):
+        for key in ("video_name", "video_path", "filename", "name", "path"):
+            if _is_ad_delivery_filename(metadata.get(key)):
+                return True
+
+    for key in ("product_code", "product_handle", "handle"):
+        if _is_ad_delivery_product_code(item.get(key)):
+            return True
+    if isinstance(metadata, dict):
+        for key in ("product_code", "product_handle", "handle"):
+            if _is_ad_delivery_product_code(metadata.get(key)):
+                return True
+    return False
+
+
+def _normalize_ad_delivery_filter(value: Any) -> str:
+    return _AD_DELIVERY_FILTER_ALL if str(value or "").strip().lower() == _AD_DELIVERY_FILTER_ALL else "exclude"
+
+
+def _should_filter_ad_delivery_materials(value: Any) -> bool:
+    return _normalize_ad_delivery_filter(value) != _AD_DELIVERY_FILTER_ALL
+
+
+def _filter_ad_delivery_materials(
+    items: list[dict[str, Any]],
+    ad_delivery_filter: Any = "exclude",
+) -> list[dict[str, Any]]:
+    if not _should_filter_ad_delivery_materials(ad_delivery_filter):
+        return items
+    return [item for item in items if not _is_ad_delivery_material(item)]
+
+
+def _material_visibility_condition(alias: str) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    args: list[Any] = []
+    for column in ("video_name", "video_path"):
+        for marker in _AD_DELIVERY_FILENAME_MARKERS:
+            clauses.append(f"COALESCE({alias}.{column}, '') NOT LIKE %s")
+            args.append(f"%{marker}%")
+    clauses.append(f"LOWER(TRIM(COALESCE({alias}.product_code, ''))) NOT LIKE %s")
+    args.append(f"%{_AD_DELIVERY_PRODUCT_SUFFIX}")
+    return "(" + " AND ".join(clauses) + ")", args
+
+
+def _append_material_visibility_condition(
+    where: list[str],
+    args: list[Any],
+    *,
+    alias: str,
+    ad_delivery_filter: Any,
+) -> None:
+    if not _should_filter_ad_delivery_materials(ad_delivery_filter):
+        return
+    visibility_sql, visibility_args = _material_visibility_condition(alias)
+    where.append(visibility_sql)
+    args.extend(visibility_args)
 
 
 def _product_handle(value: Any) -> str:
@@ -1815,6 +1890,7 @@ def _list_all_historical_material_library(
     offset: int,
     status_filter: str,
     sort_by: str = "spend_90",
+    ad_delivery_filter: str = "exclude",
 ) -> dict[str, Any]:
     where = ["r.status = 'success'"]
     args: list[Any] = []
@@ -1822,6 +1898,12 @@ def _list_all_historical_material_library(
     if keyword_sql:
         where.append(keyword_sql)
         args.extend(keyword_args)
+    _append_material_visibility_condition(
+        where,
+        args,
+        alias="s",
+        ad_delivery_filter=ad_delivery_filter,
+    )
     where_sql = " AND ".join(where)
 
     count_row = {}
@@ -1875,7 +1957,10 @@ def _list_all_historical_material_library(
         """,
         tuple(query_args),
     )
-    serialized = [_serialize_material_row(row) for row in rows or []]
+    serialized = _filter_ad_delivery_materials(
+        [_serialize_material_row(row) for row in rows or []],
+        ad_delivery_filter,
+    )
     for grouped_items in _group_items_by_snapshot(serialized).values():
         first = grouped_items[0]
         _enrich_material_yesterday_delta(
@@ -1988,6 +2073,7 @@ def _list_live_mingkong_material_library(
     offset: int,
     status_filter: str,
     sort_by: str = "spend_90",
+    ad_delivery_filter: str = "exclude",
     timeout_seconds: int = 20,
 ) -> dict[str, Any]:
     headers = _mk_headers()
@@ -2040,9 +2126,10 @@ def _list_live_mingkong_material_library(
             _as_int(previous.get("video_ads_count")),
         ):
             deduped[key] = row
+    visible_rows = _filter_ad_delivery_materials(list(deduped.values()), ad_delivery_filter)
     if sort_by == "ads_count":
         sorted_rows = sorted(
-            deduped.values(),
+            visible_rows,
             key=lambda item: (
                 _as_int(item.get("video_ads_count")),
                 _as_float(item.get("cumulative_90_spend")),
@@ -2052,7 +2139,7 @@ def _list_live_mingkong_material_library(
         )
     else:  # spend_90 or spend_yesterday (fallback)
         sorted_rows = sorted(
-            deduped.values(),
+            visible_rows,
             key=lambda item: (
                 _as_float(item.get("cumulative_90_spend")),
                 _as_int(item.get("video_ads_count")),
@@ -2309,6 +2396,7 @@ def list_material_library(
     page_size: int | str | None = 100,
     library_status: str = "",
     sort_by: str = "spend_90",
+    ad_delivery_filter: str = "exclude",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     normalized_range_key = str(range_key or "").strip().lower().replace("-", "_")
@@ -2325,6 +2413,7 @@ def list_material_library(
                 offset=offset,
                 status_filter=status_filter,
                 sort_by=sort_by,
+                ad_delivery_filter=ad_delivery_filter,
             )
         return _list_all_historical_material_library(
             keyword=kw,
@@ -2333,6 +2422,7 @@ def list_material_library(
             offset=offset,
             status_filter=status_filter,
             sort_by=sort_by,
+            ad_delivery_filter=ad_delivery_filter,
         )
 
     range_bounds = _material_range_bounds(range_key)
@@ -2357,6 +2447,12 @@ def list_material_library(
         if keyword_sql:
             where.append(keyword_sql)
             args.extend(keyword_args)
+        _append_material_visibility_condition(
+            where,
+            args,
+            alias="s",
+            ad_delivery_filter=ad_delivery_filter,
+        )
         where_sql = " AND ".join(where)
         count_row = {}
         if not status_filter:
@@ -2408,7 +2504,10 @@ def list_material_library(
             """,
             tuple(query_args),
         )
-        serialized = [_serialize_material_row(row) for row in rows or []]
+        serialized = _filter_ad_delivery_materials(
+            [_serialize_material_row(row) for row in rows or []],
+            ad_delivery_filter,
+        )
         for grouped_items in _group_items_by_snapshot(serialized).values():
             first = grouped_items[0]
             _enrich_material_yesterday_delta(
@@ -2454,6 +2553,12 @@ def list_material_library(
     if keyword_sql:
         where.append(keyword_sql)
         args.extend(keyword_args)
+    _append_material_visibility_condition(
+        where,
+        args,
+        alias="s",
+        ad_delivery_filter=ad_delivery_filter,
+    )
     where_sql = " AND ".join(where)
     count_row = {}
     if not status_filter:
@@ -2489,7 +2594,10 @@ def list_material_library(
         """,
         tuple(query_args),
     )
-    serialized = [_serialize_material_row(row) for row in rows or []]
+    serialized = _filter_ad_delivery_materials(
+        [_serialize_material_row(row) for row in rows or []],
+        ad_delivery_filter,
+    )
     items = _filter_by_library_status(_enrich_material_card_items(
         _enrich_material_yesterday_delta(
             serialized,
@@ -2582,6 +2690,7 @@ def list_yesterday_top100(
     page_size: int | str | None = 100,
     sort_order: str = "new_entry_first",
     library_status: str = "",
+    ad_delivery_filter: str = "exclude",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     identity = _latest_snapshot_identity(
@@ -2611,6 +2720,12 @@ def list_yesterday_top100(
     if keyword_sql:
         where.append(keyword_sql)
         base_args.extend(keyword_args)
+    _append_material_visibility_condition(
+        where,
+        base_args,
+        alias="t",
+        ad_delivery_filter=ad_delivery_filter,
+    )
     where_sql = " AND ".join(where)
     status_filter = _normalize_library_status_filter(library_status)
     page_num, size, offset = _page_bounds(page, page_size)
@@ -2647,9 +2762,13 @@ def list_yesterday_top100(
         """,
         tuple(query_args),
     )
+    serialized = _filter_ad_delivery_materials(
+        [_serialize_top100_row(row) for row in rows or []],
+        ad_delivery_filter,
+    )
     items = _filter_by_library_status(
         enrich_and_fetch_english_titles(
-            _enrich_material_card_items([_serialize_top100_row(row) for row in rows or []])
+            _enrich_material_card_items(serialized)
         ),
         status_filter,
     )

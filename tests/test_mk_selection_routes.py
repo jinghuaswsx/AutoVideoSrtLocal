@@ -297,6 +297,8 @@ def test_mk_selection_material_archive_filters_use_explicit_scope_and_single_day
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
     assert template.index('id="snapshotRangeSelect"') < template.index('id="snapshotSelect"')
+    assert template.index('id="mkAdDeliveryFilter"') > template.index('id="mkInventoryFilter"')
+    assert "function mkAdDeliveryQueryParam()" in template
     assert '<option value="all">全部</option>' in template
     assert "function syncMkSnapshotModeControls()" in template
     assert "function loadMkMaterialSnapshots()" in template
@@ -310,11 +312,11 @@ def test_mk_selection_material_archive_filters_use_explicit_scope_and_single_day
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-material-library?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}${mkSortQueryParam()}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkSortQueryParam()}`;"
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-yesterday-top300?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}${mkSortQueryParam()}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkSortQueryParam()}`;"
     ) in template
     assert "/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}" not in template
 

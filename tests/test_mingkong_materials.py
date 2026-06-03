@@ -1057,6 +1057,77 @@ def test_list_material_library_serializes_latest_snapshot(monkeypatch):
     )
 
 
+def test_list_material_library_hides_ad_delivery_materials(monkeypatch):
+    marker_filename = "2026.06.01-\u8521\u9756\u534e-demo.mp4"
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_enrich_material_yesterday_delta", lambda items, **_: items)
+    monkeypatch.setattr(mm, "_enrich_material_card_items", lambda items: items)
+
+    def row(material_key, product_code, video_name):
+        return {
+            "id": len(material_key),
+            "snapshot_date": date(2026, 5, 18),
+            "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+            "snapshot_slot": "1800",
+            "ranking_snapshot_date": date(2026, 5, 17),
+            "material_key": material_key,
+            "product_code": product_code,
+            "rank_position": 7,
+            "video_name": video_name,
+            "video_path": f"uploads2/{video_name}",
+            "video_image_path": "uploads2/winner.jpg",
+            "local_cover_object_key": "",
+            "cover_cached_at": None,
+            "cover_cache_error": None,
+            "cumulative_90_spend": 12000,
+            "video_ads_count": 9,
+            "mk_video_metadata_json": "{}",
+            "created_at": None,
+            "updated_at": None,
+        }
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1 if "video_name" in sql and "product_code" in sql else 3}
+        if "mingkong_material_sync_runs" in sql:
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "summary_json": "{}",
+            }
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        return [
+            row("normal", "cool-widget", "winner.mp4"),
+            row("filename-hidden", "cool-widget", marker_filename),
+            row("rjc-hidden", "cool-widget-rjc", "other.mp4"),
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(page=1, page_size=100)
+
+    assert result["total"] == 1
+    assert [item["material_key"] for item in result["items"]] == ["normal"]
+
+    result_all = mm.list_material_library(page=1, page_size=100, ad_delivery_filter="all")
+
+    assert result_all["total"] == 3
+    assert [item["material_key"] for item in result_all["items"]] == [
+        "normal",
+        "filename-hidden",
+        "rjc-hidden",
+    ]
+
+
 def test_list_material_library_keyword_matches_product_code_rjc_variants(monkeypatch):
     captured = []
 
@@ -1319,9 +1390,10 @@ def test_list_material_library_all_keyword_uses_live_search_and_rjc_variant(monk
     assert keyword in searched
     assert base_code in searched
     assert set(fetched_ids) == {3337, 3754}
-    assert result["total"] == 2
+    assert result["total"] == 1
     names = [item["video_name"] for item in result["items"]]
     assert "2026.03.20-五指洗车手套-原素材-指派-李文龙.mp4" in names
+    assert all(item["product_code"] != keyword for item in result["items"])
     original = next(
         item for item in result["items"]
         if item["mk_product_id"] == 3337
@@ -2089,10 +2161,88 @@ def test_list_yesterday_top100_keyword_uses_shared_material_filter(monkeypatch):
     assert "%baseball-cap-organizer-rjc%" in count_args
 
 
+def test_list_yesterday_top100_hides_ad_delivery_materials(monkeypatch):
+    marker_filename = "2026.06.01-\u8521\u9756\u534e-demo.mp4"
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_enrich_material_card_items", lambda items: items)
+    monkeypatch.setattr(mm, "enrich_and_fetch_english_titles", lambda items: items)
+
+    def top_row(material_key, product_code, video_name):
+        return {
+            "id": len(material_key),
+            "snapshot_date": "2026-05-18",
+            "snapshot_at": "2026-05-18 18:00:00",
+            "snapshot_slot": "1800",
+            "previous_snapshot_date": "2026-05-17",
+            "previous_snapshot_at": "2026-05-17 18:01:00",
+            "previous_snapshot_slot": "1800",
+            "comparison_interval_seconds": 86340,
+            "material_key": material_key,
+            "product_code": product_code,
+            "rank_position": 4,
+            "display_position": 1,
+            "video_name": video_name,
+            "video_path": f"uploads2/{video_name}",
+            "local_cover_object_key": "",
+            "cover_cached_at": None,
+            "cover_cache_error": None,
+            "current_cumulative_90_spend": 1000,
+            "previous_cumulative_90_spend": 800,
+            "yesterday_spend_delta": 200,
+            "video_ads_count": 5,
+            "is_new_material": 0,
+            "is_new_top100_entry": 0,
+            "mk_video_metadata_json": "{}",
+            "created_at": None,
+        }
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_top100" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": "2026-05-18",
+                "snapshot_at": "2026-05-18 18:00:00",
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1 if "video_name" in sql and "product_code" in sql else 3}
+        if "mingkong_material_sync_runs" in sql:
+            return None
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        return [
+            top_row("normal", "cool-widget", "winner.mp4"),
+            top_row("filename-hidden", "cool-widget", marker_filename),
+            top_row("rjc-hidden", "cool-widget-rjc", "other.mp4"),
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_yesterday_top100(page=1, page_size=100)
+
+    assert result["total"] == 1
+    assert [item["material_key"] for item in result["items"]] == ["normal"]
+
+    result_all = mm.list_yesterday_top100(page=1, page_size=100, ad_delivery_filter="all")
+
+    assert result_all["total"] == 3
+    assert [item["material_key"] for item in result_all["items"]] == [
+        "normal",
+        "filename-hidden",
+        "rjc-hidden",
+    ]
+
+
 def test_list_yesterday_top100_filters_library_status_before_pagination(monkeypatch):
     captured = []
 
     monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "enrich_and_fetch_english_titles", lambda items: items)
 
     def top_row(material_key, product_code, video_name):
         return {
