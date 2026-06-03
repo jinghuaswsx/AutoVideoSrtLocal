@@ -627,18 +627,52 @@ def _resolve_gemini_image_credentials(channel: str) -> tuple[str, str, str, str 
     location = (extra.get("location") or "global").strip() if channel in {"cloud", "cloud_adc"} else ""
     if channel == "cloud_adc":
         if not project:
+            # fallback to gemini_vertex_adc_text
+            try:
+                text_cfg = require_provider_config("gemini_vertex_adc_text")
+                text_extra = text_cfg.extra_config or {}
+                fallback_project = (text_extra.get("project") or "").strip()
+                if fallback_project:
+                    project = fallback_project
+                    location = (text_extra.get("location") or "global").strip()
+            except Exception:
+                pass
+        if not project:
             raise GeminiImageError(
                 f"缺少供应商配置 {provider_code}.extra_config.project，请在 /settings 填写。"
             )
         return "", project, location or "global", (cfg.model_id or None)
     if channel == "cloud" and not (api_key or project):
-        raise GeminiImageError(
-            f"缺少供应商配置 {provider_code}.api_key 或 extra_config.project，请在 /settings 填写。"
-        )
+        # fallback to gemini_cloud_text
+        try:
+            text_cfg = require_provider_config("gemini_cloud_text")
+            fallback_key = (text_cfg.api_key or "").strip()
+            text_extra = text_cfg.extra_config or {}
+            fallback_project = (text_extra.get("project") or "").strip()
+            if fallback_key or fallback_project:
+                api_key = fallback_key
+                project = fallback_project
+                location = (text_extra.get("location") or "global").strip()
+        except Exception:
+            pass
+        if not (api_key or project):
+            raise GeminiImageError(
+                f"缺少供应商配置 {provider_code}.api_key 或 extra_config.project，请在 /settings 填写。"
+            )
     if channel != "cloud" and not api_key:
-        raise GeminiImageError(
-            f"缺少供应商配置 {provider_code}.api_key，请在 /settings 填写。"
-        )
+        if provider_code == "gemini_aistudio_image":
+            # fallback to gemini_aistudio_text
+            try:
+                text_cfg = require_provider_config("gemini_aistudio_text")
+                fallback_key = (text_cfg.api_key or "").strip()
+                if fallback_key:
+                    api_key = fallback_key
+            except Exception:
+                pass
+        if not api_key:
+            raise GeminiImageError(
+                f"缺少供应商配置 {provider_code}.api_key，请在 /settings 填写。"
+            )
     return api_key, project, location, (cfg.model_id or None)
 
 
