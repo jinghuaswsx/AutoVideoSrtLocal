@@ -277,3 +277,18 @@ def test_manual_link_confirm_does_not_refresh_shopify_badges():
     assert "manual_confirm: true" in confirm_fn
     assert "fetchJSON('/medias/api/products/' + pid)" not in confirm_fn
     assert "edSetProductData" not in confirm_fn
+
+
+def test_ad_lang_precheck_uses_cached_manual_confirmation_before_probe():
+    js = open("web/static/medias.js", encoding="utf-8").read()
+    precheck_fn = js[
+        js.index("async function edRunAdLangPrecheck"):
+        js.index("function edOpenAdLangPrecheckModal")
+    ]
+
+    assert "async function edGetAdLangAvailability" in js
+    assert "function edAvailabilityItemsAllOk" in js
+    assert "const cached = await edGetAdLangAvailability(pid, lang);" in precheck_fn
+    assert "if (edAvailabilityItemsAllOk(cached)) return cached;" in precheck_fn
+    assert "manual_confirmed" in js
+    assert "method: 'POST'" in precheck_fn

@@ -380,6 +380,25 @@ def test_task_detail_readiness_exposes_inline_ad_language_controls(authed_client
     assert "background:color-mix(in oklch, var(--tc-accent-subtle) 62%, var(--tc-accent) 38%);" in body
 
 
+def test_task_detail_ad_language_precheck_uses_cached_manual_confirmation_before_probe(
+    authed_client_no_db,
+):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    precheck_fn = body[
+        body.index("async function tcRunAdLangPrecheck"):
+        body.index("async function tcSaveAdSupportedLangs")
+    ]
+
+    assert "async function tcGetAdLangAvailability" in body
+    assert "function tcAvailabilityItemsAllOk" in body
+    assert "const cached = await tcGetAdLangAvailability(productId, lang);" in precheck_fn
+    assert "if (tcAvailabilityItemsAllOk(cached)) return cached;" in precheck_fn
+    assert "manual_confirmed" in body
+    assert "{method: 'POST', body: JSON.stringify({})}" in precheck_fn
+
+
 def test_task_detail_readiness_embeds_product_link_manager(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")

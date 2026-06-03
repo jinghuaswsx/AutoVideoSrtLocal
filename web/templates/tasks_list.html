@@ -1967,9 +1967,18 @@ function tcCollectAdSupportedLangs(productId) {
     .map(function(input) { return String(input.dataset.lang || input.value || '').trim().toLowerCase(); })
     .filter(Boolean);
 }
+function tcActiveAvailabilityItems(data) {
+  return (Array.isArray(data && data.items) ? data.items : []).filter(function(item) {
+    return !(item && item.stale);
+  });
+}
+function tcAvailabilityItemsAllOk(data) {
+  const items = tcActiveAvailabilityItems(data);
+  return items.length > 0 && items.every(function(item) { return item && item.ok; });
+}
 function tcAdLangFailureMessage(lang, data) {
   const label = tcLanguageLabel(lang);
-  const items = Array.isArray(data && data.items) ? data.items : [];
+  const items = tcActiveAvailabilityItems(data);
   if (!items.length) {
     return label + ' 当前未启用任何域名，无法启用广告语言。';
   }
@@ -1981,7 +1990,15 @@ function tcAdLangFailureMessage(lang, data) {
     return '- ' + domain + ': ' + reason;
   }).join('\n');
 }
+async function tcGetAdLangAvailability(productId, lang) {
+  return tcFetchJson(
+    '/medias/api/products/' + encodeURIComponent(productId) + '/link-availability/' + encodeURIComponent(lang),
+    {method: 'GET'}
+  );
+}
 async function tcRunAdLangPrecheck(productId, lang) {
+  const cached = await tcGetAdLangAvailability(productId, lang);
+  if (tcAvailabilityItemsAllOk(cached)) return cached;
   return tcFetchJson(
     '/medias/api/products/' + encodeURIComponent(productId) + '/link-availability/' + encodeURIComponent(lang),
     {method: 'POST', body: JSON.stringify({})}

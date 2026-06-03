@@ -5623,7 +5623,7 @@
 
     try {
       const data = await edRunAdLangPrecheck(product.id, lang);
-      const items = Array.isArray(data && data.items) ? data.items : [];
+      const items = edActiveAvailabilityItems(data);
       if (!items.length) {
         // No enabled domains.
         edOpenAdLangPrecheckModal({ lang, kind: 'empty', issues: [] });
@@ -5654,7 +5654,25 @@
     }
   }
 
+  function edActiveAvailabilityItems(data) {
+    return (Array.isArray(data && data.items) ? data.items : []).filter((item) => !item.stale);
+  }
+
+  function edAvailabilityItemsAllOk(data) {
+    const items = edActiveAvailabilityItems(data);
+    return items.length > 0 && items.every((item) => item && item.ok);
+  }
+
+  async function edGetAdLangAvailability(pid, lang) {
+    return await fetchJSON(
+      `/medias/api/products/${encodeURIComponent(pid)}/link-availability/${encodeURIComponent(lang)}`,
+      { method: 'GET' },
+    );
+  }
+
   async function edRunAdLangPrecheck(pid, lang) {
+    const cached = await edGetAdLangAvailability(pid, lang);
+    if (edAvailabilityItemsAllOk(cached)) return cached;
     return await fetchJSON(
       `/medias/api/products/${encodeURIComponent(pid)}/link-availability/${encodeURIComponent(lang)}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) },
