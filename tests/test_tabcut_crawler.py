@@ -181,6 +181,104 @@ def test_goods_ranking_url_accepts_category_id_for_top50_category_page():
     assert '"pageSize": 50' in decoded
 
 
+def test_goods_ranking_url_maps_hot_new_and_periods():
+    hot_month = unquote(
+        client.goods_ranking_url(
+            biz_date="20260531",
+            rank_kind="hot",
+            rank_period="30d",
+            page_no=2,
+            page_size=100,
+        )
+    ).replace("+", " ")
+    new_week = unquote(
+        client.goods_ranking_url(
+            biz_date="20260531",
+            rank_kind="new",
+            rank_period="7d",
+            page_no=1,
+            page_size=100,
+        )
+    ).replace("+", " ")
+
+    assert '"rankType": 3' in hot_month
+    assert '"orderType": "1"' in hot_month
+    assert '"rankType": 2' in new_week
+    assert '"orderType": "2"' in new_week
+
+
+def test_build_goods_ranking_plan_collects_hot_and_new_daily_weekly_monthly():
+    plan = runner.build_goods_ranking_plan("20260531", pages=3, page_size=100)
+
+    assert [source.source for source in plan] == [
+        "goods_hot_1d",
+        "goods_hot_7d",
+        "goods_hot_30d",
+        "goods_new_1d",
+        "goods_new_7d",
+        "goods_new_30d",
+    ]
+    assert all(source.kind == "goods" for source in plan)
+    assert all(source.biz_date == "20260531" for source in plan)
+    assert all(source.pages == 3 for source in plan)
+    assert all(source.page_size == 100 for source in plan)
+    decoded_month_url = unquote(plan[2].url_for_page(1)).replace("+", " ")
+    assert '"rankType": 3' in decoded_month_url
+    assert '"orderType": "1"' in decoded_month_url
+
+
+def test_collect_goods_rankings_normalizes_and_persists(monkeypatch, tmp_path):
+    persisted_goods = []
+    persisted_snapshots = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def fetch_items(self, url):
+            decoded = unquote(url)
+            source_marker = "new" if '"orderType":"2"' in decoded.replace(" ", "") else "hot"
+            period_marker = "30d" if '"rankType":3' in decoded.replace(" ", "") else ("7d" if '"rankType":2' in decoded.replace(" ", "") else "1d")
+            return (
+                [
+                    {
+                        "itemId": f"{source_marker}-{period_marker}",
+                        "itemName": f"{source_marker} {period_marker}",
+                        "rank": 1,
+                        "soldCount30d": 6000,
+                        "priceList": [{"local": 12.34}],
+                    }
+                ],
+                1,
+            )
+
+    monkeypatch.setattr(runner, "TabcutApiClient", FakeClient)
+    monkeypatch.setattr(runner.store, "upsert_goods", lambda row: persisted_goods.append(row))
+    monkeypatch.setattr(runner.store, "upsert_goods_snapshot", lambda row: persisted_snapshots.append(row))
+
+    summary = runner.collect_goods_rankings(
+        cdp_url="http://127.0.0.1:9227",
+        output_dir=tmp_path,
+        biz_date="2026-05-31",
+        pages=1,
+        persist=True,
+        min_interval_seconds=3.0,
+    )
+
+    assert summary["ok"] is True
+    assert summary["goods_count"] == 6
+    assert {row["source"] for row in persisted_snapshots} == {
+        "goods_hot_1d",
+        "goods_hot_7d",
+        "goods_hot_30d",
+        "goods_new_1d",
+        "goods_new_7d",
+        "goods_new_30d",
+    }
+    assert len(persisted_goods) == 6
+    assert all(row["biz_date"] == "2026-05-31" for row in persisted_snapshots)
+
+
 def test_analysis_video_search_payload_uses_page_size_100_and_filters():
     payload = client.analysis_video_search_payload(
         page_no=2,

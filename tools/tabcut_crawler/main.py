@@ -10,6 +10,7 @@ from appcore import scheduled_tasks
 from .runner import (
     DEFAULT_DAYS,
     collect_analysis_video_search,
+    collect_goods_rankings,
     collect_recent7,
     import_analysis_video_search_output,
 )
@@ -22,6 +23,7 @@ def run_collection(
     args: argparse.Namespace,
     *,
     collect_recent7_fn=collect_recent7,
+    collect_goods_rankings_fn=collect_goods_rankings,
     collect_analysis_video_search_fn=collect_analysis_video_search,
     import_analysis_video_search_fn=import_analysis_video_search_output,
 ) -> dict:
@@ -37,6 +39,16 @@ def run_collection(
                 pages=args.pages,
                 page_size=args.page_size,
                 sort_field=args.sort_field,
+                persist=not args.no_persist,
+                min_interval_seconds=args.min_interval_seconds,
+            )
+        elif args.mode == "goods-rankings":
+            summary = collect_goods_rankings_fn(
+                cdp_url=args.cdp_url,
+                output_dir=output_dir,
+                biz_date=args.biz_date,
+                pages=args.pages,
+                page_size=args.page_size,
                 persist=not args.no_persist,
                 min_interval_seconds=args.min_interval_seconds,
             )
@@ -75,7 +87,7 @@ def run_collection(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Collect Tabcut US recent selection data.")
-    parser.add_argument("--mode", choices=["recent7", "analysis-video-search", "import-analysis-video-search"], default="recent7")
+    parser.add_argument("--mode", choices=["recent7", "goods-rankings", "analysis-video-search", "import-analysis-video-search"], default="recent7")
     parser.add_argument("--cdp-url", default=os.environ.get("TABCUT_CDP_URL", "http://127.0.0.1:9227"))
     parser.add_argument("--output-dir", default=os.environ.get("TABCUT_OUTPUT_DIR"))
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS)

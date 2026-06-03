@@ -10,6 +10,15 @@ from . import store
 
 MARK_STATUS_OK = "ok"
 MARK_STATUS_BAD = "bad"
+GOODS_RANK_KIND_LABELS = {
+    "hot": "商品热销榜",
+    "new": "新品榜",
+}
+GOODS_RANK_PERIOD_LABELS = {
+    "1d": "日榜",
+    "7d": "周榜",
+    "30d": "月榜",
+}
 
 
 @dataclass(frozen=True)
@@ -117,9 +126,27 @@ def _hydrate_goods_items(payload: dict[str, Any]) -> dict[str, Any]:
             item["source_category_id"] = category.id
             item["source_category_label"] = category.label
             item["source_category_name"] = category.name
+        rank_info = _goods_rank_info(item.get("source"))
+        if rank_info:
+            item.update(rank_info)
         items.append(item)
     hydrated["items"] = items
     return hydrated
+
+
+def _goods_rank_info(source: Any) -> dict[str, str] | None:
+    parts = str(source or "").split("_")
+    if len(parts) != 3 or parts[0] != "goods":
+        return None
+    kind, period = parts[1], parts[2]
+    if kind not in GOODS_RANK_KIND_LABELS or period not in GOODS_RANK_PERIOD_LABELS:
+        return None
+    return {
+        "goods_rank_kind": kind,
+        "goods_rank_kind_label": GOODS_RANK_KIND_LABELS[kind],
+        "goods_rank_period": period,
+        "goods_rank_period_label": GOODS_RANK_PERIOD_LABELS[period],
+    }
 
 
 def _fill_missing(row: dict[str, Any], key: str, value: Any) -> None:

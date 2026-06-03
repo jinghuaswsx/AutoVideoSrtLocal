@@ -29,8 +29,12 @@ VIDEO_PAGE_SIZE = 100
 VIDEO_PAGES_PER_SOURCE = 10
 GOODS_PAGE_SIZE = 50
 GOODS_PAGES_PER_DAY = 1
+GOODS_RANKING_PAGE_SIZE = 100
+GOODS_RANKING_PAGES = 20
 VIDEO_RANK_DAYS = (1, 7, 30)
 VIDEO_SORTS = ((10, "play"), (60, "sales"))
+GOODS_RANK_KINDS = ("hot", "new")
+GOODS_RANK_PERIODS = ("1d", "7d", "30d")
 
 
 @dataclass(frozen=True)
@@ -91,6 +95,117 @@ def build_recent7_plan(biz_dates: list[str]) -> list[CrawlSource]:
                 )
             )
     return plan
+
+
+def goods_ranking_source(rank_kind: str, rank_period: str) -> str:
+    kind = str(rank_kind or "hot")
+    period = str(rank_period or "1d")
+    if kind not in GOODS_RANK_KINDS:
+        kind = "hot"
+    if period not in GOODS_RANK_PERIODS:
+        period = "1d"
+    return f"goods_{kind}_{period}"
+
+
+def build_goods_ranking_plan(
+    biz_date: str,
+    *,
+    pages: int = GOODS_RANKING_PAGES,
+    page_size: int = GOODS_RANKING_PAGE_SIZE,
+) -> list[CrawlSource]:
+    plan: list[CrawlSource] = []
+    for rank_kind in GOODS_RANK_KINDS:
+        for rank_period in GOODS_RANK_PERIODS:
+            plan.append(
+                CrawlSource(
+                    goods_ranking_source(rank_kind, rank_period),
+                    max(1, int(pages)),
+                    lambda page, rank_kind=rank_kind, rank_period=rank_period: goods_ranking_url(
+                        biz_date=biz_date,
+                        page_no=page,
+                        page_size=page_size,
+                        category_id="0",
+                        rank_kind=rank_kind,
+                        rank_period=rank_period,
+                    ),
+                    "goods",
+                    biz_date=biz_date,
+                    page_size=page_size,
+                )
+            )
+    return plan
+
+
+def collect_goods_rankings(
+    *,
+    cdp_url: str = "http://127.0.0.1:9227",
+    output_dir: str | Path | None = None,
+    biz_date: str | None = None,
+    pages: int = GOODS_RANKING_PAGES,
+    page_size: int = GOODS_RANKING_PAGE_SIZE,
+    persist: bool = True,
+    min_interval_seconds: float = 3.3,
+) -> dict[str, Any]:
+    target_biz_date = (biz_date or recent_biz_dates(1)[0]).replace("-", "")
+    target_biz_date_iso = _ymd_to_iso(target_biz_date)
+    output_path = Path(output_dir or Path("data") / "tabcut" / f"goods-rankings-{datetime.now(BEIJING):%Y%m%d-%H%M%S}")
+    output_path.mkdir(parents=True, exist_ok=True)
+    api = TabcutApiClient(cdp_url=cdp_url, min_interval_seconds=min_interval_seconds)
+    datasets: dict[str, dict[str, Any]] = {}
+    request_count = 0
+
+    for source in build_goods_ranking_plan(target_biz_date, pages=pages, page_size=page_size):
+        items: list[dict[str, Any]] = []
+        page_summaries: list[dict[str, Any]] = []
+        for page_no in range(1, source.pages + 1):
+            page_items, total = api.fetch_items(source.url_for_page(page_no))
+            request_count += 1
+            page_summaries.append({"pageNo": page_no, "count": len(page_items), "total": total})
+            items.extend(page_items)
+            _write_json(output_path / f"{source.source}.json", {"source": source.source, "pages": page_summaries, "items": items})
+            if not page_items:
+                break
+        datasets[source.source] = {
+            "source": source.source,
+            "kind": source.kind,
+            "biz_date": source.biz_date,
+            "pages": page_summaries,
+            "items": items,
+        }
+
+    goods: list[dict[str, Any]] = []
+    seen_snapshot_keys: set[tuple[str, str]] = set()
+    for dataset in datasets.values():
+        source = str(dataset["source"])
+        for index, row in enumerate(dataset["items"], start=1):
+            normalized = normalize_goods_row(row, source=source)
+            item_id = str(normalized.get("item_id") or "").strip()
+            if not item_id:
+                continue
+            key = (source, item_id)
+            if key in seen_snapshot_keys:
+                continue
+            seen_snapshot_keys.add(key)
+            normalized["biz_date"] = target_biz_date_iso
+            normalized["rank_position"] = normalized.get("rank_position") or index
+            goods.append(normalized)
+
+    normalized_payload = {"videos": [], "goods": goods, "candidates": []}
+    _write_json(output_path / "tabcut_goods_rankings_snapshot.json", {"datasets": datasets, "normalized": normalized_payload})
+    _write_csv(output_path / "goods_rankings.csv", goods)
+    if persist:
+        _persist_normalized(normalized_payload)
+
+    summary = {
+        "ok": True,
+        "output_dir": str(output_path),
+        "biz_date": target_biz_date,
+        "request_count": request_count,
+        "goods_count": len(goods),
+        "sources": list(datasets.keys()),
+    }
+    _write_json(output_path / "manifest.json", summary)
+    return summary
 
 
 def collect_recent7(

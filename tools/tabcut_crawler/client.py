@@ -14,6 +14,16 @@ from urllib.parse import urlencode
 
 FetchFn = Callable[[str, str], dict[str, Any]]
 
+GOODS_RANK_PERIOD_TO_TYPE = {
+    "1d": 1,
+    "7d": 2,
+    "30d": 3,
+}
+GOODS_RANK_KIND_TO_ORDER_TYPE = {
+    "hot": "1",
+    "new": "2",
+}
+
 TABCUT_USERNAME_ENV_KEYS = (
     "TABCUT_LOGIN_ACCOUNT",
     "TABCUT_LOGIN_USERNAME",
@@ -397,14 +407,18 @@ def goods_ranking_url(
     page_no: int,
     page_size: int = 100,
     category_id: str | int = "0",
+    rank_kind: str = "hot",
+    rank_period: str = "1d",
 ) -> str:
+    rank_type = GOODS_RANK_PERIOD_TO_TYPE.get(str(rank_period), 1)
+    order_type = GOODS_RANK_KIND_TO_ORDER_TYPE.get(str(rank_kind), "1")
     return trpc_url(
         "ranking.goods.rankingData",
         {
             "region": "US",
             "bizDate": biz_date,
-            "rankType": 1,
-            "orderType": "1",
+            "rankType": rank_type,
+            "orderType": order_type,
             "categoryId": str(category_id),
             "pageNo": page_no,
             "pageSize": page_size,

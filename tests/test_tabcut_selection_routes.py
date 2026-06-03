@@ -14,6 +14,12 @@ def test_tabcut_selection_page_renders_tabs(authed_client_no_db):
     assert "数据来源" in body
     assert "goodsBizDate" in body
     assert "sourceCategory" in body
+    assert "goodsRankKind" in body
+    assert "goodsRankPeriod" in body
+    assert "商品热销榜" in body
+    assert "新品榜" in body
+    assert "goods_rank_kind" in body
+    assert "goods_rank_period" in body
     assert "publishDateFrom" in body
     assert "tabcut-video-cover-link" in body
     assert "发布时间" in body

@@ -987,6 +987,10 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert '<input class="tabcut-input" id="minGoodsSales" type="number"' in body
     assert '<input class="tabcut-input" id="maxGoodsSales" type="number"' in body
     assert 'id="markStatus"' in body
+    assert 'id="goodsRankKind"' in body
+    assert 'id="goodsRankPeriod"' in body
+    assert "商品热销榜" in body
+    assert "新品榜" in body
     assert '<option value="ok">行</option>' in body
     assert '<option value="bad">不行</option>' in body
     assert 'params.set(tabcutView === "videos" ? "min_item_price" : "min_price", qs("minPrice").value)' in body
