@@ -158,6 +158,40 @@ def test_latest_top500_products_use_latest_dianxiaomi_snapshot(monkeypatch):
     assert calls[0][1] == ("2026-05-17", 500)
 
 
+def test_latest_top_products_defaults_to_uncapped_latest_dianxiaomi_snapshot(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        mm,
+        "query_one",
+        lambda sql, args=(): {"snapshot_date": date(2026, 5, 18)},
+    )
+
+    def fake_query(sql, args=()):
+        calls.append((sql, args))
+        return [
+            {
+                "rank_position": 1,
+                "product_id": "gid-1",
+                "product_name": "Cool Widget",
+                "product_url": "https://shop.example/products/cool-widget-rjc",
+                "store": "7662984",
+                "sales_count": 12,
+                "order_count": 8,
+                "revenue_main": "123.45",
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    snapshot, rows = mm.latest_top_products()
+
+    assert snapshot == "2026-05-18"
+    assert rows[0]["product_code"] == "cool-widget"
+    assert "LIMIT" not in calls[0][0]
+    assert calls[0][1] == ("2026-05-18",)
+
+
 def test_flatten_mingkong_materials_keeps_all_visible_videos():
     product = {
         "id": 901,

@@ -1,5 +1,7 @@
 # Mingkong Product Local Aggregate Stats Design
 
+2026-06-03 update: the upstream Dianxiaomi source set is now the latest DXM02 30-day `paidProductCount > 10` archive, not a Top500 cap; see `2026-06-03-dxm02-listing-30d-min-sales-design.md`.
+
 Last updated: 2026-05-20
 
 ## Context

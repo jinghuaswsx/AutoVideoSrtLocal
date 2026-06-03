@@ -29,7 +29,7 @@ After backfill, the durable task is a systemd timer at Beijing time `12:40`:
 - `autovideosrt-dianxiaomi-listing-ranking-sync.service`
 - Task code: `dianxiaomi_listing_ranking_sync`
 
-The timer runs `--mode rolling --rolling-days 7 --daily-offset-days 0`, meaning the 12:40 run refreshes the latest seven natural dates including today. Each date is collected independently with `beginDate=endDate`, stores up to 1000 rows, and persists the rows that Dianxiaomi can currently return.
+2026-06-03 update: the production timer now runs the DXM02 archive as one daily snapshot for the current day with `--snapshot-window-days 30 --target-rows 0 --min-sales-count 10`; see `2026-06-03-dxm02-listing-30d-min-sales-design.md` for the current source definition.
 
 ## Guardrails
 

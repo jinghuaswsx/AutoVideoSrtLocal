@@ -145,15 +145,16 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     },
     "dianxiaomi_listing_ranking_sync": {
         "code": "dianxiaomi_listing_ranking_sync",
-        "name": "店小秘 Listing 近7天销量 Top500 归档",
+        "name": "店小秘 Listing 近30天销量 >10 全量归档",
         "description": (
-            "每天 12:40 使用 DXM02-MK 店小秘登录态，滚动刷新最近 7 个快照日；"
-            "每个 snapshot_date 代表截至当日的近 7 天窗口，按 paidProductCount 倒序只采集前 500 名 Listing，"
+            "每天 12:40 使用 DXM02-MK 店小秘登录态刷新当天快照；"
+            "每个 snapshot_date 代表截至当日的近 30 天窗口，按 paidProductCount 倒序采集所有销量大于 10 的 Listing，"
             "快照事实写入 dianxiaomi_rankings；商品主图、详情图和明空素材中文名按产品维度写入 dianxiaomi_product_assets。"
             "Docs-anchor: docs/superpowers/specs/2026-05-18-dianxiaomi-full-listing-archive-design.md；"
-            "docs/superpowers/specs/2026-05-19-mingkong-product-assets-dedup-top500-design.md"
+            "docs/superpowers/specs/2026-05-19-mingkong-product-assets-dedup-top500-design.md；"
+            "docs/superpowers/specs/2026-06-03-dxm02-listing-30d-min-sales-design.md"
         ),
-        "schedule": "每天 12:40（北京时间，刷新最近 7 天最新榜单）",
+        "schedule": "每天 12:40（北京时间，刷新当天 30 天销量大于 10 的 Listing）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-dianxiaomi-listing-ranking-sync.timer",
@@ -165,10 +166,11 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "mingkong_material_daily_snapshot",
         "name": "明空素材每日快照",
         "description": (
-            "每天 05:00、17:00 读取店小秘 Listing 最新可用快照 Top500 产品 code，"
+            "每天 05:00、17:00 读取店小秘 Listing 最新可用快照中近30天销量大于10的全部产品 code，"
             "按产品全量同步明空后台视频素材库，并归档累计 90 消耗、昨日消耗差额和昨日消耗前300。"
             "Docs-anchor: "
-            "docs/superpowers/specs/2026-05-20-mingkong-product-local-aggregate-stats-design.md"
+            "docs/superpowers/specs/2026-05-20-mingkong-product-local-aggregate-stats-design.md；"
+            "docs/superpowers/specs/2026-06-03-dxm02-listing-30d-min-sales-design.md"
         ),
         "schedule": "每天 05:00、17:00（北京时间，每轮跑完前500产品后结束）",
         "source_type": "systemd",

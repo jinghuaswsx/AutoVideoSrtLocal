@@ -126,7 +126,7 @@ def _build_mk_video_proxy_response(media_path: str, guessed_type: str):
 @bp.route("/api/mk-selection", methods=["GET"])
 @login_required
 def api_mk_selection():
-    """返回店小秘近 7 天有销量全量归档 + 明空消耗数据。"""
+    """返回店小秘近 30 天销量大于 10 的 Listing 归档 + 明空消耗数据。"""
     if not _is_admin():
         return _routes()._mk_admin_required_response()
     result = _routes()._build_mk_selection_response(request.args)
