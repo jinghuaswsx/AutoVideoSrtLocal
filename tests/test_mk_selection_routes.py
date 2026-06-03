@@ -389,6 +389,12 @@ def test_mk_selection_import_buttons_pass_local_asset_object_keys():
     assert "main_image_object_key: btn.dataset.mkiMainImageObjectKey || null" in template
 
 
+def test_mk_selection_extracts_cn_name_from_mixed_date_material_filename():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert r"/^\d{4}[.-]\d{2}\.\d{2}-/" in template
+
+
 def test_mk_selection_import_success_marks_all_matching_buttons():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
