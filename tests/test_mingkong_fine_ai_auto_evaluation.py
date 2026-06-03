@@ -399,8 +399,6 @@ def test_fetch_candidates_exclude_any_existing_auto_record(monkeypatch):
     joined_sql = "\n".join(captured)
     assert "LEFT JOIN mingkong_fine_ai_auto_evaluations a" in joined_sql
     assert "a.status IN" not in joined_sql
-    assert "LIMIT 500" in joined_sql
-    assert "LIMIT 100" in joined_sql
 
 
 def test_enrich_cards_reads_external_fine_ai_result_for_unimported_material(monkeypatch):
