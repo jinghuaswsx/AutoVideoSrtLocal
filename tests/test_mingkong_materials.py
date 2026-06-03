@@ -1343,6 +1343,78 @@ def test_list_material_library_all_without_keyword_reads_all_historical_snapshot
     )
 
 
+def test_list_material_library_all_enriches_cn_name_from_dictionary(monkeypatch):
+    product_code = "solarguard-3-head-motion-sensor-lights"
+    product_cn_name = "\u5ead\u9662\u592a\u9633\u80fd\u706f"
+    product_en_name = "SolarGuard 3-Head Motion Sensor Light"
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_enrich_cached_ad_statuses", lambda items: items)
+    monkeypatch.setattr(mm, "_enrich_material_yesterday_delta", lambda items, **_: items)
+    monkeypatch.setattr(mm, "enrich_items_with_preselection", lambda items, query_fn=None: items)
+
+    def fake_query_one(sql, args=()):
+        if "COUNT(*) AS cnt" in sql:
+            return {"cnt": 1}
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        if "SELECT s.*, COALESCE" in sql:
+            return [
+                {
+                    "id": 1,
+                    "snapshot_date": date(2026, 5, 18),
+                    "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                    "snapshot_slot": "1800",
+                    "ranking_snapshot_date": date(2026, 5, 17),
+                    "material_key": "abc",
+                    "product_code": product_code,
+                    "rank_position": 7,
+                    "product_name": product_en_name,
+                    "product_url": f"https://joyeloo.com/products/{product_code}",
+                    "mk_product_id": 901,
+                    "mk_product_name": "",
+                    "mk_product_link": f"https://joyeloo.com/products/{product_code}",
+                    "video_name": "2024-new-motion-sensor-solar-lights-173340.mp4",
+                    "video_path": "uploads2/2024-new-motion-sensor-solar-lights-173340.mp4",
+                    "video_image_path": "uploads2/2024-new-motion-sensor-solar-lights-173340.jpg",
+                    "local_cover_object_key": "",
+                    "cover_cached_at": None,
+                    "cover_cache_error": None,
+                    "cumulative_90_spend": 34900,
+                    "video_ads_count": 69,
+                    "mk_video_metadata_json": "{}",
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            ]
+        if "FROM media_products" in sql:
+            return []
+        if "FROM dianxiaomi_product_assets" in sql:
+            return []
+        if "FROM product_name_dictionary" in sql:
+            return [
+                {
+                    "product_code": product_code,
+                    "product_cn_name": product_cn_name,
+                    "product_en_name": product_en_name,
+                }
+            ]
+        if "INSERT INTO product_name_dictionary" in sql:
+            return 1
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(range_key="all", page=1, page_size=100)
+
+    item = result["items"][0]
+    assert item["video_name"] == "2024-new-motion-sensor-solar-lights-173340.mp4"
+    assert item["product_cn_name"] == product_cn_name
+    assert item["product_english_title"] == product_en_name
+
+
 def test_list_material_library_all_keyword_uses_live_search_and_rjc_variant(monkeypatch):
     searched = []
     fetched_ids = []

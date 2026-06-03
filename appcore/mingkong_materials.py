@@ -950,12 +950,23 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
 def _enrich_material_card_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     enriched = _enrich_cached_ad_statuses(items)
     try:
-        return enrich_items_with_preselection(enriched, query_fn=query)
+        enriched = enrich_items_with_preselection(enriched, query_fn=query)
     except Exception as exc:
         logger.warning("mingkong material preselection enrichment skipped: %s", exc)
         for item in enriched:
             item.setdefault("is_preselected", False)
             item.setdefault("preselection", None)
+    try:
+        return enrich_and_fetch_english_titles(
+            enriched,
+            query_fn=query,
+            schedule_missing_titles=False,
+        )
+    except Exception as exc:
+        logger.warning("mingkong material display name enrichment skipped: %s", exc)
+        for item in enriched:
+            item.setdefault("product_cn_name", "")
+            item.setdefault("product_english_title", "")
         return enriched
 
 
@@ -2769,9 +2780,7 @@ def list_yesterday_top100(
         ad_delivery_filter,
     )
     items = _filter_by_library_status(
-        enrich_and_fetch_english_titles(
-            _enrich_material_card_items(serialized)
-        ),
+        _enrich_material_card_items(serialized),
         status_filter,
     )
     total = len(items) if status_filter else _as_int(count_row.get("cnt"))
@@ -3623,10 +3632,16 @@ def resolve_and_save_english_title(product_url: str, product_code: str = None) -
             _SUBMITTED_URLS.discard(product_url)
 
 
-def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Callable = None) -> list[dict[str, Any]]:
+def enrich_and_fetch_english_titles(
+    items: list[dict[str, Any]],
+    *,
+    query_fn: Callable = None,
+    schedule_missing_titles: bool = True,
+) -> list[dict[str, Any]]:
     """Enrich items with shopify_title or product_english_title from database,
     as well as product_cn_name.
-    If missing but product_url is present, schedules background fetch to backfill.
+    If missing but product_url is present, schedules background fetch to backfill
+    when schedule_missing_titles is enabled.
     """
     if not items:
         return items
@@ -3821,7 +3836,7 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
             except Exception as e:
                 logger.warning("[english_title] failed to sync resolved names for %s: %s", code, e)
         
-        if not resolved_title and url and url.startswith(("http://", "https://")):
+        if schedule_missing_titles and not resolved_title and url and url.startswith(("http://", "https://")):
             with _SUBMITTED_LOCK:
                 if url not in _SUBMITTED_URLS:
                     _SUBMITTED_URLS.add(url)
