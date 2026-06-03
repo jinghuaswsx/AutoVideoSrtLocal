@@ -133,6 +133,20 @@ def _localized_by_source_name_key(localized_images: list[dict]) -> dict[str, lis
     return candidates
 
 
+def _candidate_recency_key(row: dict[str, Any]) -> tuple[int, str]:
+    raw_id = str(row.get("id") or "")
+    id_tail = raw_id.rsplit("-", 1)[-1]
+    try:
+        id_number = int(id_tail)
+    except (TypeError, ValueError):
+        id_number = -1
+    return (id_number, str(row.get("filename") or ""))
+
+
+def _latest_carousel_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    return max(candidates, key=_candidate_recency_key)
+
+
 def _choose_carousel_name_candidate(
     *,
     slot_idx: int,
@@ -152,12 +166,15 @@ def _choose_carousel_name_candidate(
     for preferred_index in preferred_indices:
         exact = [row for row in candidates if row.get("source_index") == preferred_index]
         if exact:
-            return exact[0]
+            return _latest_carousel_candidate(exact)
     if len(candidates) == 1:
         return candidates[0]
     no_index = [row for row in candidates if row.get("source_index") is None]
     if len(no_index) == 1:
         return no_index[0]
+    source_indices = {row.get("source_index") for row in candidates}
+    if len(source_indices) == 1:
+        return _latest_carousel_candidate(candidates)
     options = [f"{row.get('source_index')}:{row.get('filename')}" for row in candidates]
     raise ValueError(f"ambiguous carousel filename source for slot {slot_idx} key {src_key}: {options}")
 
