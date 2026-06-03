@@ -2820,13 +2820,26 @@ def test_pushes_api_history_robust_matching(authed_client_no_db, monkeypatch):
         db_calls.append((sql, args))
         if "media_push_logs" in sql:
             return rows
+        elif "meta_ad_realtime_daily_ad_metrics" in sql:
+            return []
         elif "meta_ad_daily_campaign_metrics" in sql or "meta_ad_daily_ad_metrics" in sql:
             return [
                 {
-                    "total_spend": 300.0,
-                    "total_purchase_value": 600.0,
-                    "campaign_count": 2
-                }
+                    "product_id": 317,
+                    "matched_product_code": None,
+                    "product_code": None,
+                    "ad_name": "campaign-ja-demo.mp4-a",
+                    "spend_usd": 100.0,
+                    "purchase_value_usd": 200.0,
+                },
+                {
+                    "product_id": 317,
+                    "matched_product_code": None,
+                    "product_code": None,
+                    "ad_name": "campaign-ja-demo.mp4-b",
+                    "spend_usd": 200.0,
+                    "purchase_value_usd": 400.0,
+                },
             ]
         return []
         
@@ -2881,16 +2894,14 @@ def test_pushes_api_history_includes_current_realtime_ad_metrics(authed_client_n
             return rows
         if "meta_ad_realtime_daily_ad_metrics" in sql:
             return [{
-                "total_spend": 11.59,
-                "total_purchase_value": 87.96,
-                "campaign_count": 1,
+                "product_code": None,
+                "normalized_campaign_code": "ice-ball-molds-rjc",
+                "ad_name": f"ice-ball-molds-rjc {material_name}",
+                "spend_usd": 11.59,
+                "purchase_value_usd": 87.96,
             }]
         if "meta_ad_daily_ad_metrics" in sql:
-            return [{
-                "total_spend": 0.0,
-                "total_purchase_value": 0.0,
-                "campaign_count": 0,
-            }]
+            return []
         return []
 
     monkeypatch.setattr("appcore.db.query", fake_db_query)
@@ -2904,6 +2915,76 @@ def test_pushes_api_history_includes_current_realtime_ad_metrics(authed_client_n
     assert item["ad_spend_total"] == 11.59
     assert item["ad_roas"] == pytest.approx(87.96 / 11.59)
     assert any("meta_ad_realtime_daily_ad_metrics" in sql for sql, _args in db_calls)
+
+
+def test_pushes_api_history_realtime_sql_covers_unfinalized_previous_business_days(authed_client_no_db, monkeypatch):
+    """Business-day rollover must not drop yesterday realtime before daily final arrives."""
+    material_name = "2026.06.02-diffuser-ja.mp4"
+    rows = [
+        {
+            "log_id": 993,
+            "item_id": 1813,
+            "operator_user_id": 1,
+            "status": "success",
+            "request_payload": json.dumps({
+                "videos": [{"name": material_name, "url": "a.mp4"}],
+                "texts": [],
+                "product_links": [],
+            }, ensure_ascii=False),
+            "response_body": "",
+            "pushed_at": datetime(2026, 6, 2, 21, 38, 1),
+            "lang": "ja",
+            "display_name": material_name,
+            "filename": material_name,
+            "duration_seconds": 10.0,
+            "file_size": 1000,
+            "product_id": 4339,
+            "product_name": "Diffuser",
+            "product_code": "3-in-1-himalayan-salt-rock-scent-diffuser-1-rjc",
+            "operator_username": "admin",
+            "product_owner_name": "Owner",
+            "is_new_product_push": 0,
+        }
+    ]
+
+    realtime_sql = {}
+
+    def fake_db_query(sql, args=()):
+        if "media_push_logs" in sql:
+            return rows
+        if "meta_ad_realtime_daily_ad_metrics" in sql:
+            realtime_sql["sql"] = sql
+            realtime_sql["args"] = args
+            return [
+                {
+                    "product_code": None,
+                    "normalized_campaign_code": "3-in-1-himalayan-salt-rock-scent-diffuser-1-rjc",
+                    "ad_name": f"3-in-1-himalayan-salt-rock-scent-diffuser-1-rjc {material_name} a",
+                    "spend_usd": 80.0,
+                    "purchase_value_usd": 0.0,
+                },
+                {
+                    "product_code": None,
+                    "normalized_campaign_code": "3-in-1-himalayan-salt-rock-scent-diffuser-1-rjc",
+                    "ad_name": f"3-in-1-himalayan-salt-rock-scent-diffuser-1-rjc {material_name} b",
+                    "spend_usd": 36.0,
+                    "purchase_value_usd": 0.0,
+                },
+            ]
+        if "meta_ad_daily_ad_metrics" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr("appcore.db.query", fake_db_query)
+
+    resp = authed_client_no_db.get("/pushes/api/history?page=1")
+
+    assert resp.status_code == 200
+    item = resp.get_json()["items"][0]
+    assert item["ad_spend_total"] == 116.0
+    assert item["ad_campaign_count"] == 2
+    assert "meta_ad_daily_ad_metrics daily_guard" in realtime_sql["sql"]
+    assert "WHERE business_date = %s AND data_completeness = 'realtime_partial'" not in realtime_sql["sql"]
 
 
 def test_pushes_api_history_date_range_normalization(authed_client_no_db, monkeypatch):

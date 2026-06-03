@@ -1088,20 +1088,12 @@ def _filter_links_by_lang(links: list[str], lang: str) -> list[str]:
     return filtered if filtered else links
 
 
-def _push_ads_business_date():
-    from appcore.order_analytics.meta_ads import current_meta_business_date
-
-    return current_meta_business_date()
-
-
 def _push_history_has_ad_plan_clause() -> tuple[str, tuple]:
-    business_date = _push_ads_business_date()
     clause = (
         "("
         "EXISTS ("
         "SELECT 1 FROM meta_ad_daily_ad_metrics madm "
         "WHERE COALESCE(madm.spend_usd, 0) > 0 "
-        "AND COALESCE(madm.meta_business_date, madm.report_date) < %s "
         "AND ("
         "madm.product_id = i.product_id "
         "OR (madm.matched_product_code IS NOT NULL AND LOWER(madm.matched_product_code) = LOWER(p.product_code)) "
@@ -1118,15 +1110,21 @@ def _push_history_has_ad_plan_clause() -> tuple[str, tuple]:
         "INNER JOIN ("
         "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
         "  FROM meta_ad_realtime_daily_ad_metrics "
-        "  WHERE business_date = %s AND data_completeness = 'realtime_partial' "
+        "  WHERE data_completeness = 'realtime_partial' "
         "  GROUP BY business_date, ad_account_id "
         ") latest "
         "ON m.business_date = latest.business_date "
-        "AND m.ad_account_id = latest.ad_account_id "
+        "AND (m.ad_account_id <=> latest.ad_account_id) "
         "AND m.snapshot_at = latest.max_snapshot_at "
-        "WHERE m.business_date = %s "
-        "AND m.data_completeness = 'realtime_partial' "
+        "LEFT JOIN ("
+        "  SELECT DISTINCT COALESCE(meta_business_date, report_date) AS business_date, ad_account_id "
+        "  FROM meta_ad_daily_ad_metrics daily_guard"
+        ") daily_guard "
+        "ON daily_guard.business_date = m.business_date "
+        "AND (daily_guard.ad_account_id <=> m.ad_account_id) "
+        "WHERE m.data_completeness = 'realtime_partial' "
         "AND COALESCE(m.spend_usd, 0) > 0 "
+        "AND daily_guard.business_date IS NULL "
         "AND ("
         "LOWER(COALESCE(m.product_code, '')) = LOWER(p.product_code) "
         "OR LOWER(COALESCE(m.normalized_campaign_code, '')) = LOWER(p.product_code) "
@@ -1139,7 +1137,197 @@ def _push_history_has_ad_plan_clause() -> tuple[str, tuple]:
         ")"
         ")"
     )
-    return clause, (business_date, business_date, business_date)
+    return clause, ()
+
+
+def _empty_push_ad_metric_summary() -> dict:
+    return {
+        "total_spend": 0,
+        "total_purchase_value": 0,
+        "campaign_count": 0,
+    }
+
+
+def _push_ad_metric_ad_name_matches(
+    ad_name: str | None,
+    search_filename: str | None,
+    search_display_name: str | None,
+) -> bool:
+    ad_name_lower = (ad_name or "").lower()
+    needles = {
+        (search_filename or "").strip().lower(),
+        (search_display_name or "").strip().lower(),
+    }
+    return any(needle and needle in ad_name_lower for needle in needles)
+
+
+def _push_ad_daily_metric_matches_target(row: dict, target: dict) -> bool:
+    product_code_lower = target["product_code_lower"]
+    if row.get("product_id") is not None and int(row.get("product_id") or 0) == target["product_id"]:
+        return True
+    matched_code = (row.get("matched_product_code") or "").strip().lower()
+    if product_code_lower and matched_code == product_code_lower:
+        return True
+    metric_product_code = (row.get("product_code") or "").strip().lower()
+    return bool(
+        product_code_lower
+        and len(metric_product_code) >= 8
+        and product_code_lower.startswith(metric_product_code)
+    )
+
+
+def _push_ad_realtime_metric_matches_target(row: dict, target: dict) -> bool:
+    product_code_lower = target["product_code_lower"]
+    if not product_code_lower:
+        return False
+    return (
+        (row.get("product_code") or "").strip().lower() == product_code_lower
+        or (row.get("normalized_campaign_code") or "").strip().lower() == product_code_lower
+        or (row.get("ad_name") or "").strip().lower().startswith(product_code_lower)
+    )
+
+
+def _accumulate_push_ad_metric(aggregate: dict, row: dict) -> None:
+    aggregate["total_spend"] += row.get("spend_usd") or 0
+    aggregate["total_purchase_value"] += row.get("purchase_value_usd") or 0
+    ad_name = row.get("ad_name")
+    if ad_name:
+        aggregate["ad_names"].add(ad_name)
+
+
+def _query_push_ad_metric_summaries(db_query, history_rows: list[dict]) -> dict[int, dict]:
+    targets = []
+    for r in history_rows:
+        product_code_lower = (r.get("product_code") or "").strip().lower()
+        if not product_code_lower:
+            continue
+        targets.append({
+            "log_id": int(r["log_id"]),
+            "product_id": int(r["product_id"]),
+            "product_code_lower": product_code_lower,
+            "search_filename": r.get("_search_filename") or r.get("filename"),
+            "search_display_name": (
+                r.get("_search_display_name")
+                or r.get("display_name")
+                or r.get("filename")
+            ),
+        })
+    if not targets:
+        return {}
+
+    aggregates = {
+        target["log_id"]: {
+            "total_spend": 0,
+            "total_purchase_value": 0,
+            "ad_names": set(),
+        }
+        for target in targets
+    }
+    product_ids = sorted({target["product_id"] for target in targets})
+    product_codes = sorted({target["product_code_lower"] for target in targets})
+
+    daily_clauses = []
+    daily_args: list = []
+    if product_ids:
+        daily_clauses.append(f"product_id IN ({','.join(['%s'] * len(product_ids))})")
+        daily_args.extend(product_ids)
+    if product_codes:
+        daily_clauses.append(
+            f"LOWER(matched_product_code) IN ({','.join(['%s'] * len(product_codes))})"
+        )
+        daily_args.extend(product_codes)
+        prefix_checks = " OR ".join(
+            ["%s LIKE CONCAT(LOWER(product_code), '%%')" for _ in product_codes]
+        )
+        daily_clauses.append(
+            "(product_code IS NOT NULL AND CHAR_LENGTH(product_code) >= 8 "
+            f"AND ({prefix_checks}))"
+        )
+        daily_args.extend(product_codes)
+
+    if daily_clauses:
+        daily_rows = db_query(
+            "SELECT product_id, matched_product_code, product_code, ad_name, "
+            "       spend_usd, purchase_value_usd "
+            "FROM meta_ad_daily_ad_metrics "
+            "WHERE COALESCE(spend_usd, 0) > 0 "
+            f"AND ({' OR '.join(daily_clauses)})",
+            tuple(daily_args),
+        )
+        for row in daily_rows:
+            for target in targets:
+                if (
+                    _push_ad_daily_metric_matches_target(row, target)
+                    and _push_ad_metric_ad_name_matches(
+                        row.get("ad_name"),
+                        target["search_filename"],
+                        target["search_display_name"],
+                    )
+                ):
+                    _accumulate_push_ad_metric(aggregates[target["log_id"]], row)
+
+    realtime_clauses = []
+    realtime_args: list = []
+    if product_codes:
+        placeholders = ",".join(["%s"] * len(product_codes))
+        realtime_clauses.append(f"LOWER(COALESCE(m.product_code, '')) IN ({placeholders})")
+        realtime_args.extend(product_codes)
+        realtime_clauses.append(
+            f"LOWER(COALESCE(m.normalized_campaign_code, '')) IN ({placeholders})"
+        )
+        realtime_args.extend(product_codes)
+        realtime_prefix_checks = " OR ".join(
+            ["LOWER(COALESCE(m.ad_name, '')) LIKE CONCAT(%s, '%%')" for _ in product_codes]
+        )
+        realtime_clauses.append(f"({realtime_prefix_checks})")
+        realtime_args.extend(product_codes)
+
+    if realtime_clauses:
+        realtime_rows = db_query(
+            "SELECT m.product_code, m.normalized_campaign_code, m.ad_name, "
+            "       m.spend_usd, m.purchase_value_usd "
+            "FROM meta_ad_realtime_daily_ad_metrics m "
+            "INNER JOIN ("
+            "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
+            "  FROM meta_ad_realtime_daily_ad_metrics "
+            "  WHERE data_completeness = 'realtime_partial' "
+            "  GROUP BY business_date, ad_account_id "
+            ") latest "
+            "ON m.business_date = latest.business_date "
+            "AND (m.ad_account_id <=> latest.ad_account_id) "
+            "AND m.snapshot_at = latest.max_snapshot_at "
+            "LEFT JOIN ("
+            "  SELECT DISTINCT COALESCE(meta_business_date, report_date) AS business_date, ad_account_id "
+            "  FROM meta_ad_daily_ad_metrics daily_guard"
+            ") daily_guard "
+            "ON daily_guard.business_date = m.business_date "
+            "AND (daily_guard.ad_account_id <=> m.ad_account_id) "
+            "WHERE m.data_completeness = 'realtime_partial' "
+            "AND COALESCE(m.spend_usd, 0) > 0 "
+            "AND daily_guard.business_date IS NULL "
+            f"AND ({' OR '.join(realtime_clauses)})",
+            tuple(realtime_args),
+        )
+        for row in realtime_rows:
+            for target in targets:
+                if (
+                    _push_ad_realtime_metric_matches_target(row, target)
+                    and _push_ad_metric_ad_name_matches(
+                        row.get("ad_name"),
+                        target["search_filename"],
+                        target["search_display_name"],
+                    )
+                ):
+                    _accumulate_push_ad_metric(aggregates[target["log_id"]], row)
+
+    return {
+        log_id: {
+            "total_spend": aggregate["total_spend"],
+            "total_purchase_value": aggregate["total_purchase_value"],
+            "campaign_count": len(aggregate["ad_names"]),
+        }
+        for log_id, aggregate in aggregates.items()
+    }
 
 
 def _query_push_ad_metric_summary(
@@ -1151,7 +1339,6 @@ def _query_push_ad_metric_summary(
     search_display_name: str | None,
 ) -> dict:
     product_code_lower = (product_code or "").strip().lower()
-    business_date = _push_ads_business_date()
     rows = db_query(
         "SELECT COALESCE(SUM(spend_usd), 0) AS total_spend, "
         "       COALESCE(SUM(purchase_value_usd), 0) AS total_purchase_value, "
@@ -1166,7 +1353,6 @@ def _query_push_ad_metric_summary(
         "OR (product_code IS NOT NULL AND CHAR_LENGTH(product_code) >= 8 "
         "AND %s LIKE CONCAT(LOWER(product_code), '%%'))"
         ") "
-        "AND COALESCE(meta_business_date, report_date) < %s "
         "AND ("
         "ad_name LIKE CONCAT('%%', %s, '%%') "
         "OR ad_name LIKE CONCAT('%%', %s, '%%')"
@@ -1177,15 +1363,21 @@ def _query_push_ad_metric_summary(
         "INNER JOIN ("
         "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
         "  FROM meta_ad_realtime_daily_ad_metrics "
-        "  WHERE business_date = %s AND data_completeness = 'realtime_partial' "
+        "  WHERE data_completeness = 'realtime_partial' "
         "  GROUP BY business_date, ad_account_id "
         ") latest "
         "ON m.business_date = latest.business_date "
-        "AND m.ad_account_id = latest.ad_account_id "
+        "AND (m.ad_account_id <=> latest.ad_account_id) "
         "AND m.snapshot_at = latest.max_snapshot_at "
-        "WHERE m.business_date = %s "
-        "AND m.data_completeness = 'realtime_partial' "
+        "LEFT JOIN ("
+        "  SELECT DISTINCT COALESCE(meta_business_date, report_date) AS business_date, ad_account_id "
+        "  FROM meta_ad_daily_ad_metrics daily_guard"
+        ") daily_guard "
+        "ON daily_guard.business_date = m.business_date "
+        "AND (daily_guard.ad_account_id <=> m.ad_account_id) "
+        "WHERE m.data_completeness = 'realtime_partial' "
         "AND COALESCE(m.spend_usd, 0) > 0 "
+        "AND daily_guard.business_date IS NULL "
         "AND %s <> '' "
         "AND ("
         "LOWER(COALESCE(m.product_code, '')) = %s "
@@ -1201,11 +1393,8 @@ def _query_push_ad_metric_summary(
             product_id,
             product_code_lower,
             product_code_lower,
-            business_date,
             search_filename,
             search_display_name,
-            business_date,
-            business_date,
             product_code_lower,
             product_code_lower,
             product_code_lower,
@@ -1214,11 +1403,7 @@ def _query_push_ad_metric_summary(
             search_display_name,
         ),
     )
-    return (rows or [{
-        "total_spend": 0,
-        "total_purchase_value": 0,
-        "campaign_count": 0,
-    }])[0]
+    return (rows or [_empty_push_ad_metric_summary()])[0]
 
 
 def _query_push_ad_metric_rows(
@@ -1230,7 +1415,6 @@ def _query_push_ad_metric_rows(
     search_display_name: str | None,
 ) -> list[dict]:
     product_code_lower = (product_code or "").strip().lower()
-    business_date = _push_ads_business_date()
     return db_query(
         "SELECT * FROM ("
         "SELECT ad_account_name, ad_name AS campaign_name, spend_usd, purchase_value_usd, "
@@ -1243,7 +1427,6 @@ def _query_push_ad_metric_rows(
         "OR (product_code IS NOT NULL AND CHAR_LENGTH(product_code) >= 8 "
         "AND %s LIKE CONCAT(LOWER(product_code), '%%'))"
         ") "
-        "AND COALESCE(meta_business_date, report_date) < %s "
         "AND ("
         "ad_name LIKE CONCAT('%%', %s, '%%') "
         "OR ad_name LIKE CONCAT('%%', %s, '%%')"
@@ -1256,15 +1439,21 @@ def _query_push_ad_metric_rows(
         "INNER JOIN ("
         "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at "
         "  FROM meta_ad_realtime_daily_ad_metrics "
-        "  WHERE business_date = %s AND data_completeness = 'realtime_partial' "
+        "  WHERE data_completeness = 'realtime_partial' "
         "  GROUP BY business_date, ad_account_id "
         ") latest "
         "ON m.business_date = latest.business_date "
-        "AND m.ad_account_id = latest.ad_account_id "
+        "AND (m.ad_account_id <=> latest.ad_account_id) "
         "AND m.snapshot_at = latest.max_snapshot_at "
-        "WHERE m.business_date = %s "
-        "AND m.data_completeness = 'realtime_partial' "
+        "LEFT JOIN ("
+        "  SELECT DISTINCT COALESCE(meta_business_date, report_date) AS business_date, ad_account_id "
+        "  FROM meta_ad_daily_ad_metrics daily_guard"
+        ") daily_guard "
+        "ON daily_guard.business_date = m.business_date "
+        "AND (daily_guard.ad_account_id <=> m.ad_account_id) "
+        "WHERE m.data_completeness = 'realtime_partial' "
         "AND COALESCE(m.spend_usd, 0) > 0 "
+        "AND daily_guard.business_date IS NULL "
         "AND %s <> '' "
         "AND ("
         "LOWER(COALESCE(m.product_code, '')) = %s "
@@ -1281,11 +1470,8 @@ def _query_push_ad_metric_rows(
             product_id,
             product_code_lower,
             product_code_lower,
-            business_date,
             search_filename,
             search_display_name,
-            business_date,
-            business_date,
             product_code_lower,
             product_code_lower,
             product_code_lower,
@@ -1381,7 +1567,6 @@ def api_history():
     start = (page - 1) * limit
     page_rows = rows[start:start + limit]
 
-    history_items = []
     for r in page_rows:
         payload = {}
         try:
@@ -1390,23 +1575,28 @@ def api_history():
             pass
 
         video_snap = payload.get("videos", [{}])[0] if payload.get("videos") else {}
+        snap_name = (video_snap.get("name") or "").strip()
+        r["_payload"] = payload
+        r["_video_snap"] = video_snap
+        r["_search_filename"] = snap_name or r["filename"]
+        r["_search_display_name"] = snap_name or r["display_name"] or r["filename"]
+
+    ad_summaries = _query_push_ad_metric_summaries(db_query, page_rows)
+
+    history_items = []
+    for r in page_rows:
+        payload = r.get("_payload") or {}
+        video_snap = r.get("_video_snap") or {}
         texts_snap = payload.get("texts", [])
         links_snap = payload.get("product_links", [])
-
         p_id = int(r["product_id"])
-
-        snap_name = (video_snap.get("name") or "").strip()
-        search_filename = snap_name or r["filename"]
-        search_display_name = snap_name or r["display_name"] or r["filename"]
-
-        ad_info = _query_push_ad_metric_summary(
-            db_query,
-            product_id=p_id,
-            product_code=r.get("product_code"),
-            search_filename=search_filename,
-            search_display_name=search_display_name,
+        search_filename = r.get("_search_filename") or r["filename"]
+        search_display_name = (
+            r.get("_search_display_name")
+            or r["display_name"]
+            or r["filename"]
         )
-
+        ad_info = ad_summaries.get(int(r["log_id"]), _empty_push_ad_metric_summary())
         campaign_count = int(ad_info["campaign_count"] or 0)
         spend_total = float(ad_info["total_spend"] or 0)
         purchase_value_total = float(ad_info.get("total_purchase_value") or 0)
