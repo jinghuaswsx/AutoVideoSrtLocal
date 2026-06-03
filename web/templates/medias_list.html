@@ -3140,6 +3140,46 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   outline: 3px solid rgba(14, 165, 233, .55);
   outline-offset: 3px;
 }
+
+/* 产品信息列排版微调 */
+.oc-table td.product-info-td {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+.product-info-cell {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.prod-info-line {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-bottom: 4px;
+}
+.prod-info-line:last-child {
+  margin-bottom: 0;
+}
+.prod-info-val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  max-width: calc(100% - 24px);
+}
+.prod-info-val a {
+  color: var(--oc-fg);
+  text-decoration: none;
+}
+.prod-info-val a:hover {
+  color: var(--oc-accent);
+}
+.prod-info-line .oc-btn {
+  flex-shrink: 0;
+  margin-left: 4px;
+}
 {% endblock %}
 
 {% block content %}
