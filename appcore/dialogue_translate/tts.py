@@ -3,20 +3,46 @@ from __future__ import annotations
 from typing import Any
 
 
+_SOURCE_INDEX_KEYS = ("source_index", "source_segment_index", "asr_index", "segment_index")
+_SOURCE_INDEX_LIST_KEYS = ("source_segment_indices", "source_indices", "asr_indices")
+
+
+def _coerce_index(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _segment_index(segment: Any, fallback: int) -> int:
     """Return a dialogue segment's source TTS index, falling back to list order."""
     if isinstance(segment, dict):
-        for key in ("index", "source_index", "segment_index"):
+        for key in _SOURCE_INDEX_KEYS:
             try:
                 value = segment.get(key)
             except Exception:
                 continue
-            if value is None or value == "":
-                continue
+            coerced = _coerce_index(value)
+            if coerced is not None:
+                return coerced
+
+        for key in _SOURCE_INDEX_LIST_KEYS:
             try:
-                return int(value)
-            except (TypeError, ValueError):
+                values = segment.get(key)
+            except Exception:
                 continue
+            if not isinstance(values, (list, tuple)):
+                continue
+            for value in values:
+                coerced = _coerce_index(value)
+                if coerced is not None:
+                    return coerced
+
+        coerced = _coerce_index(segment.get("index"))
+        if coerced is not None:
+            return coerced
     return fallback
 
 

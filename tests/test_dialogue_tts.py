@@ -65,6 +65,29 @@ def test_apply_speaker_voices_to_out_of_order_tts_segments_uses_tts_index_fields
     assert [segment["tts_text"] for segment in mapped] == ["third", "first", "second"]
 
 
+def test_apply_speaker_voices_prefers_source_timeline_indices_over_local_sentence_index():
+    from appcore.dialogue_translate.tts import apply_speaker_voices_to_tts_segments
+
+    tts_segments = [
+        {"index": 0, "asr_index": 4, "tts_text": "b line"},
+        {"index": 1, "source_segment_indices": [7], "tts_text": "a line"},
+    ]
+    dialogue_segments = [
+        {"index": 0, "speaker_id": "speaker_a"},
+        {"index": 4, "speaker_id": "speaker_b"},
+        {"index": 7, "speaker_id": "speaker_a"},
+    ]
+    selected = {
+        "speaker_a": {"voice_id": "voice-a", "voice_name": "Voice A"},
+        "speaker_b": {"voice_id": "voice-b", "voice_name": "Voice B"},
+    }
+
+    mapped = apply_speaker_voices_to_tts_segments(tts_segments, dialogue_segments, selected)
+
+    assert [segment["speaker_id"] for segment in mapped] == ["speaker_b", "speaker_a"]
+    assert [segment["voice_id"] for segment in mapped] == ["voice-b", "voice-a"]
+
+
 def test_apply_speaker_voices_accepts_elevenlabs_voice_id_and_preserves_existing_when_missing():
     from appcore.dialogue_translate.tts import apply_speaker_voices_to_tts_segments
 
