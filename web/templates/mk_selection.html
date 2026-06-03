@@ -176,10 +176,13 @@
 }
 .mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(248px, 248px)); gap:var(--oc-sp-3); justify-content:flex-start; }
 .mk-video-card { position:relative; width:var(--mk-video-card-w); display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
-.mk-video-status-icons { position:absolute; top:8px; right:8px; z-index:3; display:flex; align-items:center; gap:4px; }
-.mk-status-icon { width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:9999px; background:rgba(255,255,255,.92); box-shadow:0 1px 4px rgba(15,23,42,.12); }
-.mk-status-icon svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
-.mk-status-icon-emoji { font-size:15px; line-height:1; }
+.mk-status-header-row { display:flex; width:100%; height:36px; align-items:center; margin-bottom:4px; }
+.mk-status-half { flex:0 0 50%; width:50%; height:36px; display:flex; align-items:center; }
+.mk-status-half--left { justify-content:flex-end; padding-right:4px; }
+.mk-status-half--right { justify-content:flex-start; padding-left:4px; }
+.mk-status-icon { width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:9999px; background:rgba(255,255,255,.92); box-shadow:0 1px 4px rgba(15,23,42,.12); }
+.mk-status-icon svg { width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.mk-status-icon-emoji { font-size:22px; line-height:1; }
 .mk-status-icon--product { color:var(--oc-accent); }
 .mk-status-icon--video { color:var(--oc-success-fg); }
 .mk-line-clamp { display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; word-break:break-word; }
@@ -723,13 +726,15 @@
 .mk-library-panel[hidden] { display:none; }
 .mk-video-library-head { display:flex; justify-content:space-between; align-items:center; gap:var(--oc-sp-3); margin-bottom:var(--oc-sp-3); color:var(--oc-fg-muted); font-size:13px; }
 .mk-video-library-grid { min-height:180px; }
-.mk-video-product-line { display:flex; flex-direction:column; gap:4px; min-height:calc((1.35em * 4.5) + 6px); color:var(--oc-fg-muted); }
-.mk-video-product-name-link { text-decoration:none; display:block; }
-.mk-video-product-name-link:hover .mk-video-product-cn-name { text-decoration:underline; }
-.mk-video-product-name-block { display:block; }
-.mk-video-product-cn-name { color:var(--oc-accent); font-weight:700; font-size:13px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; }
-.mk-video-product-name-block .mk-video-product-cn-name { color:var(--oc-fg); }
-.mk-video-product-en-name { color:var(--oc-fg-muted); font-size:10px; font-weight:500; line-height:1.3; margin-top:1px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; opacity:0.85; }
+.mk-video-product-line { display:flex; flex-direction:column; gap:4px; min-height:76px; color:var(--oc-fg-muted); }
+.mk-video-product-name-link { text-decoration:none; display:block; min-width:0; flex:1; }
+.mk-video-product-name-link:hover { text-decoration:underline; }
+.mk-video-product-cn-row { display:flex; align-items:center; justify-content:space-between; width:100%; gap:6px; min-height:24px; }
+.mk-video-product-cn-name { color:var(--oc-accent); font-weight:700; font-size:13px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; }
+.mk-video-product-cn-name--empty { color:var(--oc-fg-subtle) !important; font-weight:normal; }
+.mk-video-product-en-row { display:flex; align-items:center; justify-content:space-between; width:100%; gap:6px; min-height:18px; margin-top:2px; }
+.mk-video-product-en-name { color:var(--oc-fg-muted); font-size:10px; font-weight:500; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0; opacity:0.85; }
+.mk-video-product-en-name--empty { color:var(--oc-fg-subtle) !important; opacity:0.6; }
 .mk-video-product-code { color:var(--oc-fg-muted); font-size:12px; line-height:1.35; }
 .mk-video-product-code-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; gap:6px; }
 .mk-video-product-actions { display:inline-flex; align-items:center; gap:4px; }
@@ -1265,6 +1270,29 @@ function renderMkStatusIconCluster(r) {
     icons.push(`<span class="mk-status-icon mk-status-icon--video" title="视频素材已在素材库" aria-label="视频素材已在素材库">${mkStatusIconSvg('video')}</span>`);
   }
   return icons.length ? `<div class="mk-video-status-icons">${icons.join('')}</div>` : '';
+}
+
+function renderMkStatusIconHeaderRow(r) {
+  const hasProductInLibrary = Boolean(r.has_local_product_in_library || (r.product_ad_status && r.product_ad_status.has_local_match));
+  const hasVideoInLibrary = Boolean(r.has_local_material_in_library);
+  
+  if (!hasProductInLibrary && !hasVideoInLibrary) {
+    return '';
+  }
+  
+  const productTitle = r.has_local_product_running_ad ? '产品已在素材库且有消耗广告计划' : '产品已在素材库';
+  const productIconHtml = hasProductInLibrary 
+    ? `<span class="mk-status-icon mk-status-icon--product" title="${productTitle}" aria-label="${productTitle}">${mkStatusIconSvg('product')}</span>` 
+    : '';
+    
+  const videoIconHtml = hasVideoInLibrary
+    ? `<span class="mk-status-icon mk-status-icon--video" title="视频素材已在素材库" aria-label="视频素材已在素材库">${mkStatusIconSvg('video')}</span>`
+    : '';
+    
+  return `<div class="mk-status-header-row">
+    <div class="mk-status-half mk-status-half--left">${productIconHtml}</div>
+    <div class="mk-status-half mk-status-half--right">${videoIconHtml}</div>
+  </div>`;
 }
 
 function renderMkMediaSearchLink(r) {
@@ -1968,6 +1996,15 @@ function extractProductCnNameFromFilename(filename) {
   return parts[0] || rest.trim();
 }
 
+function cleanEnglishProductName(enName) {
+  let val = String(enName || '').trim();
+  if (!val) return '';
+  if (val.includes(' - ')) {
+    val = val.split(' - ')[0].trim();
+  }
+  return val;
+}
+
 function mkiBuildAndInjectSharedNamesMap(items) {
   const cnNamesMap = {};
   const enNamesMap = {};
@@ -2002,7 +2039,7 @@ function mkiBuildAndInjectSharedNamesMap(items) {
       }
     }
     if (itemEn) {
-      enNamesMap[code] = itemEn;
+      enNamesMap[code] = cleanEnglishProductName(itemEn);
     }
   });
   window.currentCnNamesMap = cnNamesMap;
@@ -2048,15 +2085,18 @@ function renderMkVideoMaterialCard(r) {
   // 英文名判定：第一逻辑：全局共享字典；第二逻辑：卡片本地
   let enName = window.currentEnNamesMap && window.currentEnNamesMap[productCodeKey] || "";
   if (!enName) {
-    enName = (r.product_english_title || r.product_english_name || '').trim();
-    if (enName && /[\u4e00-\u9fa5]/.test(enName)) enName = "";
-    if (!enName) {
+    let rawEnName = (r.product_english_title || r.product_english_name || '').trim();
+    if (rawEnName && /[\u4e00-\u9fa5]/.test(rawEnName)) rawEnName = "";
+    if (!rawEnName) {
       if (r.product_name && !/[\u4e00-\u9fa5]/.test(r.product_name)) {
-        enName = r.product_name.trim();
+        rawEnName = r.product_name.trim();
       } else if (r.mk_product_name && !/[\u4e00-\u9fa5]/.test(r.mk_product_name)) {
-        enName = r.mk_product_name.trim();
+        rawEnName = r.mk_product_name.trim();
       }
     }
+    enName = cleanEnglishProductName(rawEnName);
+  } else {
+    enName = cleanEnglishProductName(enName);
   }
 
   const rawProductName = cnName || r.mk_product_name || r.product_name || '--';
@@ -2075,7 +2115,7 @@ function renderMkVideoMaterialCard(r) {
   const titleActionsHtml = (filenameCopyHtml || detailLinkHtml)
     ? `<span class="mk-video-title-actions">${detailLinkHtml}${filenameCopyHtml}</span>`
     : '';
-  const statusIconsHtml = renderMkStatusIconCluster(r);
+  const statusIconsHtml = renderMkStatusIconHeaderRow(r);
   const mediaSearchLinkHtml = renderMkMediaSearchLink(r);
   const productCodeCopyHtml = renderMkProductCodeCopyButton(rawProductHandle);
   const productCodeActionsHtml = (productCodeCopyHtml || mediaSearchLinkHtml)
@@ -2141,16 +2181,20 @@ function renderMkVideoMaterialCard(r) {
     ${preselectionPillsHtml}
     ${preselectionNoteHtml}
     <div class="mk-video-product-line">
-      ${safeProductUrl
-        ? `<a class="mk-video-product-name-link" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer">
-             ${cnName ? `<div class="mk-video-product-cn-name" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</div>` : ''}
-             ${enName ? `<div class="mk-video-product-en-name" title="${escapeHtml(enName)}"><span>${escapeHtml(enName)}</span>${englishTitleCopyHtml}</div>` : ''}
-           </a>`
-        : `<div class="mk-video-product-name-block">
-             ${cnName ? `<div class="mk-video-product-cn-name" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</div>` : ''}
-             ${enName ? `<div class="mk-video-product-en-name" title="${escapeHtml(enName)}"><span>${escapeHtml(enName)}</span>${englishTitleCopyHtml}</div>` : ''}
-           </div>`
-      }
+      <div class="mk-video-product-cn-row">
+        ${safeProductUrl
+          ? `<a class="mk-video-product-name-link mk-video-product-cn-name ${cnName ? '' : 'mk-video-product-cn-name--empty'}" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(cnName || '无中文产品名')}">${escapeHtml(cnName || '无中文产品名')}</a>`
+          : `<span class="mk-video-product-cn-name ${cnName ? '' : 'mk-video-product-cn-name--empty'}" title="${escapeHtml(cnName || '无中文产品名')}">${escapeHtml(cnName || '无中文产品名')}</span>`
+        }
+        ${cnName ? `<button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(cnName)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制中文产品名" aria-label="复制中文产品名">${mkCopyIconSvg()}</button>` : ''}
+      </div>
+      <div class="mk-video-product-en-row">
+        ${safeProductUrl
+          ? `<a class="mk-video-product-name-link mk-video-product-en-name ${enName ? '' : 'mk-video-product-en-name--empty'}" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(enName || '无英文产品名')}">${escapeHtml(enName || '无英文产品名')}</a>`
+          : `<span class="mk-video-product-en-name ${enName ? '' : 'mk-video-product-en-name--empty'}" title="${escapeHtml(enName || '无英文产品名')}">${escapeHtml(enName || '无英文产品名')}</span>`
+        }
+        ${enName ? `<button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(enName)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制英文产品名" aria-label="复制英文产品名">${mkCopyIconSvg()}</button>` : ''}
+      </div>
       <div class="mk-video-product-code-row">
         <span class="mk-video-product-code mk-line-clamp mk-line-clamp--2" title="${rankProductText}">${rankProductText}</span>
         ${productCodeActionsHtml}
@@ -4726,17 +4770,18 @@ async function mkiFineAiEvaluateFromCard(btn) {
 
 function mkiEnsureImportedStatusIcon(card) {
   if (!card || card.querySelector('.mk-status-icon--video')) return;
-  let cluster = card.querySelector('.mk-video-status-icons');
+  let cluster = card.querySelector('.mk-status-header-row');
   if (!cluster) {
     cluster = document.createElement('div');
-    cluster.className = 'mk-video-status-icons';
+    cluster.className = 'mk-status-header-row';
+    cluster.innerHTML = '<div class="mk-status-half mk-status-half--left"></div><div class="mk-status-half mk-status-half--right"></div>';
     card.insertBefore(cluster, card.firstChild);
   }
-  const title = '视频素材已在素材库';
-  cluster.insertAdjacentHTML(
-    'beforeend',
-    `<span class="mk-status-icon mk-status-icon--video" title="${title}" aria-label="${title}">${mkStatusIconSvg('video')}</span>`
-  );
+  const rightHalf = cluster.querySelector('.mk-status-half--right');
+  if (rightHalf) {
+    const title = '视频素材已在素材库';
+    rightHalf.innerHTML = `<span class="mk-status-icon mk-status-icon--video" title="${title}" aria-label="${title}">${mkStatusIconSvg('video')}</span>`;
+  }
 }
 
 function mkiMarkImportedButton(btn) {
