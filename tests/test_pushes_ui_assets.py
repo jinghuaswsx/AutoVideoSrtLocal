@@ -212,6 +212,23 @@ def test_pushes_css_has_secondary_screen_portrait_layout():
     assert ".ready-row { flex-wrap: wrap;" in css
 
 
+def test_pushes_css_has_mobile_card_layout_for_visible_data():
+    css = Path("web/static/pushes.css").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/2026-06-03-pushes-mobile-list-display-fix.md" in css
+    assert ".push-header-sticky { position: static;" in css
+    assert ".push-table-shell { max-height: none;" in css
+    assert "@media (max-width: 480px)" in css
+    assert ".push-table colgroup," in css
+    assert ".push-table thead {" in css
+    assert ".push-table tbody {" in css
+    assert ".push-table tbody tr {" in css
+    assert "grid-template-columns: 92px minmax(0, 1fr);" in css
+    assert ".push-product-cell { grid-column: 2;" in css
+    assert ".push-item-cell { grid-column: 1 / -1;" in css
+    assert ".push-action-cell { grid-column: 1 / -1;" in css
+
+
 def test_pushes_css_expands_ai_evaluation_detail_modal():
     css = Path("web/static/eval_country_table.js").read_text(encoding="utf-8")
 

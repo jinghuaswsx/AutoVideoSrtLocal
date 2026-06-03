@@ -1196,7 +1196,7 @@
 
 @media (min-width: 769px) and (orientation: portrait) {
   :root {
-    --push-table-min-w: 1198px;
+    --push-table-min-w: 1100px;
     --push-col-thumb: 100px;
     --push-col-product: 116px;
     --push-col-product-tag: 60px;
@@ -1402,10 +1402,12 @@
   :root {
     --push-table-min-w: 1160px;
   }
+  /* Docs-anchor: docs/superpowers/specs/2026-06-03-pushes-mobile-list-display-fix.md */
+  .push-header-sticky { position: static; top: auto; margin-top: 0; padding-top: 0; }
   .push-toolbar { flex-direction: column; align-items: stretch; }
   .filter-group { min-width: 0; width: 100%; }
   .filter-actions { justify-content: flex-end; }
-  .push-table-shell { overflow-x: auto; }
+  .push-table-shell { max-height: none; overflow-x: auto; }
   .push-table th,
   .push-table td { padding: var(--oc-sp-2); }
   .thumb { width: 112px; height: 112px; }
@@ -1413,19 +1415,152 @@
 }
 
 @media (max-width: 480px) {
-  /* 紧凑模式：表格保持横滚（兜底由 mobile.css 提供），列内紧凑 */
-  .push-table { font-size: 12px; }
+  /* Docs-anchor: docs/superpowers/specs/2026-06-03-pushes-mobile-list-display-fix.md */
+  :root {
+    --push-table-min-w: 0px;
+  }
+  .push-toolbar {
+    padding: 12px;
+    gap: 12px;
+  }
+  .date-range {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    width: 100%;
+  }
+  .filter-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .filter-actions button {
+    width: 100%;
+    min-width: 0;
+    padding: 0 8px;
+  }
+  .push-table-shell {
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .push-table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    border-collapse: separate;
+    background: transparent;
+    font-size: 12px;
+  }
+  .push-table colgroup,
+  .push-table thead {
+    display: none;
+  }
+  .push-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+  .push-table tbody tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 8px 12px;
+    padding: 12px;
+    border: 1px solid var(--oc-border);
+    border-radius: var(--oc-r-lg);
+    background: var(--oc-bg);
+    box-shadow: var(--oc-shadow-sm);
+  }
   .push-table th,
-  .push-table td { padding: 8px 10px; white-space: nowrap; }
-  .thumb { width: 96px; height: 96px; }
-  .audit-cell-wrap { min-width: 200px; max-width: 240px; }
-  .audit-cell-wrap .audit-cell { white-space: normal; }
-  /* 让 cell 包含的多行文字能换行 */
-  .push-table td .product-name,
-  .push-table td .item-name,
-  .push-table td .audit-line { white-space: normal; }
+  .push-table td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border-bottom: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .push-table td:not(.push-thumb-cell):not(.push-product-cell):not(.push-status-cell)::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--oc-fg-subtle);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .push-thumb-cell {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .push-product-cell { grid-column: 2; grid-row: 1; }
+  .push-status-cell { grid-column: 2; grid-row: 2; align-self: start; }
+  .push-product-tag-cell { grid-column: 1 / -1; grid-row: 3; }
+  .push-main-image-cell { grid-column: 1 / -1; grid-row: 4; }
+  .push-owner-cell { grid-column: 1 / -1; grid-row: 5; }
+  .mk-id-cell { grid-column: 1 / -1; grid-row: 6; }
+  .push-item-cell { grid-column: 1 / -1; grid-row: 7; }
+  .push-lang-cell { grid-column: 1 / -1; grid-row: 8; }
+  .push-ready-cell { grid-column: 1 / -1; grid-row: 9; }
+  .audit-cell-wrap { grid-column: 1 / -1; grid-row: 10; min-width: 0; max-width: none; }
+  .push-time-cell { grid-column: 1 / -1; grid-row: 11; }
+  .push-action-cell { grid-column: 1 / -1; grid-row: 12; display: grid; gap: 8px; }
+  .push-product-tag-cell:empty {
+    display: none;
+  }
+  .push-product-tag-cell::before { content: "标签"; }
+  .push-main-image-cell::before { content: "商品主图"; }
+  .push-owner-cell::before { content: "负责人"; }
+  .mk-id-cell::before { content: "mk_id"; }
+  .push-item-cell::before { content: "素材"; }
+  .push-lang-cell::before { content: "语种"; }
+  .push-ready-cell::before { content: "就绪"; }
+  .audit-cell-wrap::before { content: "审核信息"; }
+  .push-time-cell::before { content: "创建时间"; }
+  .push-action-cell::before { content: "操作"; }
+  .thumb {
+    width: 84px;
+    height: 84px;
+    border-radius: var(--oc-r-md);
+  }
+  .push-main-image-cell .main-image-wrap,
+  .push-main-image-cell .thumb {
+    width: 64px;
+    height: 64px;
+  }
+  .product-name-line,
+  .push-item-cell .item-name {
+    -webkit-line-clamp: 3;
+  }
+  .product-code-row,
+  .audit-line,
+  .ready-row {
+    white-space: normal;
+  }
+  .ready-cell {
+    white-space: normal;
+  }
+  .ready-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+  .ready-sep {
+    display: none;
+  }
+  .action-menu {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+    gap: 8px;
+    margin: 0;
+  }
+  .push-action-cell .btn-push,
+  .push-action-cell .btn-mini {
+    width: 100%;
+    min-height: 36px;
+    margin: 0;
+  }
   .pagination { flex-wrap: wrap; gap: 4px; }
-  /* 警告条 */
   .warning-banner { padding: 10px 12px; font-size: 12px; }
 }
 
@@ -2304,6 +2439,4 @@
   outline: 2px solid var(--oc-accent-ring);
   border-color: var(--oc-accent);
 }
-
-
 
