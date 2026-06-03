@@ -3557,6 +3557,31 @@
     }).join('\n');
   }
 
+  function renderProductLinkCheckStatusTop(p) {
+    const domains = Array.isArray(p.product_link_domains) ? p.product_link_domains : [];
+    if (!domains.length) {
+      return '';
+    }
+    return `<div class="oc-product-top-domains" style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; align-items: center;">`
+      + domains.map((d) => {
+          const domain = escapeHtml(d.domain || '');
+          const status = d.http_status;
+          const error = d.error;
+          const statusText = status || (error ? 'ERR' : '—');
+          let statusClass = '';
+          if (status) {
+            statusClass = (status >= 200 && status < 400) ? 'ok' : 'fail';
+          } else if (error) {
+            statusClass = 'fail';
+          }
+          return `<div class="oc-domain-row" data-pid="${p.id}" data-domain="${domain}" style="display: inline-flex; align-items: center; gap: 2px;">
+            <span class="oc-domain-tag" style="height: 18px; padding: 0 4px; font-size: 10px; cursor: default;" title="${domain}">${domain}</span>
+            <span class="oc-domain-status ${statusClass}" data-status-domain="${domain}" style="height: 18px; min-width: 20px; padding: 0 4px; font-size: 10px; line-height: 18px; cursor: default;" title="${escapeHtml(error || '')}">${statusText}</span>
+          </div>`;
+        }).join('')
+      + `</div>`;
+  }
+
   function rowHTML(p) {
     const count = p.items_count || 0;
     const rawCount = p.raw_sources_count || 0;
@@ -3607,7 +3632,7 @@
         ${productCode ? `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
       </div>`;
 
-    const productInfoCell = `<div class="product-info-cell" style="display: flex; flex-direction: column;">${nameLine}${englishLine}${codeLine}</div>`;
+    const productInfoCell = `<div class="product-info-cell" style="display: flex; flex-direction: column;">${renderProductLinkCheckStatusTop(p)}${nameLine}${englishLine}${codeLine}</div>`;
 
     const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();

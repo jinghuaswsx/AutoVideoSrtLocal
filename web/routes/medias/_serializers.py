@@ -115,10 +115,18 @@ def _serialize_product_skus(
 
 
 def _serialize_product_link_domains(product: dict) -> list[dict]:
+    from appcore import link_availability
     try:
         rows = product_link_domains.resolve_product_page_url_rows(product, "en")
     except Exception:
         rows = []
+    
+    try:
+        cached = link_availability.list_results(int(product.get("id") or 0), "en") or []
+        status_map = {str(item["domain"]).strip().lower(): item for item in cached if item.get("domain")}
+    except Exception:
+        status_map = {}
+
     out: list[dict] = []
     seen: set[str] = set()
     for row in rows or []:
@@ -128,7 +136,14 @@ def _serialize_product_link_domains(product: dict) -> list[dict]:
         if not domain or domain in seen:
             continue
         seen.add(domain)
-        out.append({"domain": domain})
+
+        domain_status = status_map.get(domain)
+        out.append({
+            "domain": domain,
+            "http_status": domain_status.get("http_status") if domain_status else None,
+            "error": domain_status.get("error") if domain_status else None,
+            "ok": bool(domain_status.get("ok")) if domain_status else False
+        })
     return out
 
 
