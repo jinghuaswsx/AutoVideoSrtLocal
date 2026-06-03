@@ -836,6 +836,89 @@ def test_build_mk_video_materials_response_searches_mingkong_by_product_handle()
     assert result.payload["items"][1]["video_name"] == "low.mp4"
 
 
+def test_build_mk_video_materials_response_enriches_product_names_for_cards():
+    from web.services.media_mk_selection import build_mk_video_materials_response
+
+    execute_calls = []
+
+    def fake_db_query(sql, args=()):
+        if "SELECT MAX(snapshot_date) AS snapshot_date" in sql:
+            return [{"snapshot_date": "2026-06-03"}]
+        if "SELECT COUNT(*) AS cnt" in sql:
+            return [{"cnt": 1}]
+        if "FROM dianxiaomi_rankings dr" in sql:
+            return [
+                {
+                    "rank_position": 1712,
+                    "product_id": "8068994072623",
+                    "product_name": "Upgraded Wide-Angle Solar Motion Sensor Light",
+                    "product_url": "https://shoplarke.com/products/solarguard-3-head-motion-sensor-lights",
+                    "store": "shoplarke.com",
+                    "sales_count": 0,
+                    "order_count": 0,
+                    "revenue_main": "",
+                }
+            ]
+        if "FROM media_products" in sql:
+            return []
+        if "FROM dianxiaomi_product_assets" in sql:
+            return [
+                {
+                    "product_code": "solarguard-3-head-motion-sensor-lights",
+                    "product_url": "https://shoplarke.com/products/solarguard-3-head-motion-sensor-lights",
+                    "product_name": "Upgraded Wide-Angle Solar Motion Sensor Light",
+                    "product_english_title": "Upgraded Wide-Angle Solar Motion Sensor Light",
+                    "product_cn_name": "庭院太阳能灯",
+                }
+            ]
+        if "FROM product_name_dictionary" in sql:
+            return []
+        if "INSERT INTO product_name_dictionary" in sql:
+            execute_calls.append((sql, args))
+            return 1
+        raise AssertionError(sql)
+
+    class FakeResponse:
+        @staticmethod
+        def json():
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "id": 177,
+                            "product_name": "SolarGuard 3-Head Motion Sensor Lights",
+                            "product_links": [
+                                "https://shoplarke.com/products/solarguard-3-head-motion-sensor-lights"
+                            ],
+                            "videos": [
+                                {
+                                    "name": "2024-new-motion-sensor-solar-lights-173340.mp4",
+                                    "path": "uploads/2024-new-motion-sensor-solar-lights-173340.mp4",
+                                    "spends": "3.49万",
+                                    "ads_count": 300,
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+
+    result = build_mk_video_materials_response(
+        {},
+        db_query_fn=fake_db_query,
+        build_headers_fn=lambda: {"Authorization": "Bearer synced-token"},
+        get_base_url_fn=lambda: "https://wedev.example",
+        http_get_fn=lambda *args, **kwargs: FakeResponse(),
+    )
+
+    assert result.status_code == 200
+    item = result.payload["items"][0]
+    assert item["product_handle"] == "solarguard-3-head-motion-sensor-lights"
+    assert item["product_cn_name"] == "庭院太阳能灯"
+    assert item["product_english_title"] == "Upgraded Wide-Angle Solar Motion Sensor Light"
+    assert execute_calls
+
+
 def test_build_mk_video_materials_response_searches_direct_product_code_without_db():
     from web.services.media_mk_selection import build_mk_video_materials_response
 

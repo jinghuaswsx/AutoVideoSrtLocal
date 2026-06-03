@@ -3767,8 +3767,10 @@ def enrich_and_fetch_english_titles(items: list[dict[str, Any]], *, query_fn: Ca
         code = str(item.get("product_code") or item.get("product_handle") or ad_status.get("product_code") or "").strip().lower()
         url = str(item.get("product_url") or item.get("mk_product_link") or item.get("product_link") or "").strip()
         
-        resolved_title = ""
-        resolved_cn_name = ""
+        resolved_title = str(
+            item.get("product_english_title") or item.get("product_english_name") or ""
+        ).strip()
+        resolved_cn_name = str(item.get("product_cn_name") or "").strip()
         
         # Determine Chinese name
         if mp_id:
