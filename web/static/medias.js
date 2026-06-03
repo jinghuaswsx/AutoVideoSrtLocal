@@ -2759,10 +2759,10 @@
 
     function togglePanel() {
       if (panel.hidden) {
+        openPanel();
+      } else {
         closePanel();
-        return;
       }
-      openPanel();
     }
 
     function renderCalendars() {
