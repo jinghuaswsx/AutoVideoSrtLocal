@@ -34,7 +34,7 @@ This document supersedes the Top1000 behavior in `2026-05-12-dianxiaomi-listing-
    - Product library and video material library must use the same selected `snapshot`.
    - The default remains the latest available snapshot.
 7. The daily task remains registered as `dianxiaomi_listing_ranking_sync`.
-   - Name and descriptions should say "近7天有销量全量归档", not "Top1000".
+   - 2026-06-03 update: current DXM02 archive naming should say "近30天销量 >10 全量归档"; see `2026-06-03-dxm02-listing-30d-min-sales-design.md`.
    - The systemd service should run rolling mode for the latest 7 snapshot dates and must not pass `--target-rows 1000`.
 
 ## Out Of Scope

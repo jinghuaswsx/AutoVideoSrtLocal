@@ -43,7 +43,7 @@ def test_selection_center_sidebar_label_and_mk_page_tabs(authed_client_no_db):
     assert "{% block page_title %}" not in body
     assert '<span class="selection-center-title">选品中心</span>' in body
     assert '<span class="selection-center-title-note">' in body
-    assert "店小秘近7天有销量全量归档" in body
+    assert "店小秘近30天销量 &gt;10 全量归档" in body
     assert '<h1 class="title">选品中心</h1>' not in body
     _assert_unified_selection_tabs(body, "/xuanpin/mk", "明空选品")
     assert '<div class="mk-library-tabs" role="tablist" aria-label="明空选品库类型">' in body
@@ -68,7 +68,7 @@ def test_selection_center_tabs_and_heading_on_related_pages():
 
     assert "{% block title %}选品中心 - AutoVideoSrt{% endblock %}" in mk_template
     assert '<span class="selection-center-title">选品中心</span>' in mk_template
-    assert "店小秘近7天有销量全量归档" in mk_template
+    assert "店小秘近30天销量 &gt;10 全量归档" in mk_template
     assert '<h1 class="title">选品中心</h1>' not in mk_template
     assert '{% set active = "mk" %}' in mk_template
     assert '{% include "_xuanpin_tabs.html" %}' in mk_template

@@ -769,13 +769,14 @@ def test_task_definitions_include_dianxiaomi_listing_ranking_sync():
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
     task = definitions["dianxiaomi_listing_ranking_sync"]
-    assert task["schedule"] == "每天 12:40（北京时间，刷新最近 7 天最新榜单）"
+    assert task["schedule"] == "每天 12:40（北京时间，刷新当天 30 天销量大于 10 的 Listing）"
     assert task["source_type"] == "systemd"
     assert task["source_ref"] == "autovideosrt-dianxiaomi-listing-ranking-sync.timer"
     assert task["runner"] == "tools/dianxiaomi_listing_ranking_sync.py"
     assert task["log_table"] == "scheduled_task_runs"
-    assert "近7天销量 Top500 归档" in task["name"]
+    assert "近30天销量 >10 全量归档" in task["name"]
     assert "2026-05-18-dianxiaomi-full-listing-archive-design.md" in task["description"]
+    assert "2026-06-03-dxm02-listing-30d-min-sales-design.md" in task["description"]
 
 
 def test_task_definitions_expose_control_strategy_and_log_source():

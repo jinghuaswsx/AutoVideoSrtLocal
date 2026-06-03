@@ -32,7 +32,7 @@ from tools.shopifyid_dianxiaomi_sync import _connect_existing_browser_context
 
 
 TASK_CODE = "dianxiaomi_listing_ranking_sync"
-TASK_NAME = "店小秘 Listing 近7天有销量全量归档"
+TASK_NAME = "店小秘 Listing 近30天销量 >10 全量归档"
 
 DXM02_BROWSER_CDP_URL = "http://127.0.0.1:9223"
 DXM02_BROWSER_SERVICE_NAME = "autovideosrt-dxm02-mk-vnc.service"
@@ -40,10 +40,11 @@ LISTING_PAGE_URL = "https://www.dianxiaomi.com/web/stat/salesStatistics"
 LISTING_API_URL = "https://www.dianxiaomi.com/api/stat/product/statSalesPageListNew.json"
 
 DEFAULT_START_DATE = date(2026, 4, 23)
-DEFAULT_TARGET_ROWS = 500
+DEFAULT_TARGET_ROWS = 0
 DEFAULT_PAGE_SIZE = 100
-DEFAULT_DAILY_OFFSET_DAYS = 1
-DEFAULT_SNAPSHOT_WINDOW_DAYS = 7
+DEFAULT_DAILY_OFFSET_DAYS = 0
+DEFAULT_SNAPSHOT_WINDOW_DAYS = 30
+DEFAULT_MIN_SALES_COUNT = 10
 OUTPUT_DIR = REPO_ROOT / "output" / "dianxiaomi_listing_ranking_sync"
 PRODUCT_MAIN_IMAGE_CACHE_PREFIX = "xuanpin/product-main-images"
 MAX_PRODUCT_IMAGE_BYTES = 15 * 1024 * 1024
@@ -665,12 +666,14 @@ def collect_top_rankings_for_date(
     fetch_page: ListingFetchPage,
     target_rows: int = DEFAULT_TARGET_ROWS,
     page_size: int = DEFAULT_PAGE_SIZE,
+    min_sales_count: int = DEFAULT_MIN_SALES_COUNT,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     pages_fetched = 0
     api_total_size = 0
     api_total_page = 0
     limit = max(0, int(target_rows or 0))
+    min_sales = max(0, int(min_sales_count or 0))
     page_no = 1
 
     while True:
@@ -688,7 +691,7 @@ def collect_top_rankings_for_date(
                 snapshot_date=snapshot_date,
                 rank_position=rank_position,
             )
-            if normalized["product_id"] and int(normalized.get("sales_count") or 0) > 0:
+            if normalized["product_id"] and int(normalized.get("sales_count") or 0) > min_sales:
                 rows.append(normalized)
             if limit and len(rows) >= limit:
                 break
@@ -709,6 +712,7 @@ def collect_top_rankings_for_date(
         "api_total_size": api_total_size,
         "api_total_page": api_total_page,
         "rows_fetched": len(out_rows),
+        "min_sales_count": min_sales,
     }
 
 
@@ -1123,6 +1127,7 @@ def run_collection(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
         "target_rows": int(args.target_rows),
         "page_size": int(args.page_size),
         "snapshot_window_days": int(args.snapshot_window_days),
+        "min_sales_count": int(args.min_sales_count),
         "uncapped": int(args.target_rows) <= 0,
         "selected_dates": [item.isoformat() for item in selected_dates],
         "fetched_days": 0,
@@ -1162,6 +1167,7 @@ def run_collection(args: argparse.Namespace) -> tuple[dict[str, Any], str]:
                 fetch_page=fetch_page,
                 target_rows=args.target_rows,
                 page_size=args.page_size,
+                min_sales_count=args.min_sales_count,
             )
             if not args.skip_product_assets:
                 rows = enrich_listing_rows(
@@ -1202,9 +1208,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--daily-offset-days", type=int, default=DEFAULT_DAILY_OFFSET_DAYS)
     parser.add_argument("--rolling-days", type=int, default=7)
     parser.add_argument("--max-days-per-run", type=int, default=1)
-    parser.add_argument("--target-rows", type=int, default=DEFAULT_TARGET_ROWS, help="Rows per snapshot; default 500. Use 0 only for a manual uncapped archive.")
+    parser.add_argument("--target-rows", type=int, default=DEFAULT_TARGET_ROWS, help="Rows per snapshot; default 0 means uncapped.")
     parser.add_argument("--page-size", type=int, default=DEFAULT_PAGE_SIZE)
     parser.add_argument("--snapshot-window-days", type=int, default=DEFAULT_SNAPSHOT_WINDOW_DAYS)
+    parser.add_argument("--min-sales-count", type=int, default=DEFAULT_MIN_SALES_COUNT)
     parser.add_argument("--skip-product-assets", action="store_true")
     parser.add_argument("--asset-timeout-seconds", type=int, default=20)
     parser.add_argument(
