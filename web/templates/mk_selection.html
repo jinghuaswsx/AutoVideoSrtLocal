@@ -2000,7 +2000,7 @@ function extractProductCnNameFromFilename(filename) {
   const basename = String(filename || '').split(/[/\\]/).pop().trim();
   if (!basename) return "";
   const stem = basename.replace(/\.[A-Za-z0-9]{1,8}$/, "");
-  const rest = stem.replace(/^\d{4}\.\d{2}\.\d{2}-/, "");
+  const rest = stem.replace(/^\d{4}[.-]\d{2}\.\d{2}-/, "");
   const marker = "-原素材";
   if (rest.includes(marker)) {
     return rest.split(marker)[0].trim();

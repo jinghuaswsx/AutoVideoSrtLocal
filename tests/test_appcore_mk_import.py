@@ -66,6 +66,20 @@ def test_create_product_payload_extracts_chinese_name_from_filename():
     assert payload["name"] == "轮胎压力传感器"
 
 
+def test_create_product_payload_extracts_chinese_name_from_mixed_date_filename():
+    payload = mk_import._build_create_product_payload(
+        {
+            "filename": "2026-01.26-洗衣服去毛神器-原素材-补充素材-B-苏齐齐.mp4",
+            "product_name": "Floating Lint Catcher",
+            "product_code": "floating-lint-catcher",
+            "product_link": "https://livowish.com/products/floating-lint-catcher",
+        },
+        translator_id=1,
+    )
+
+    assert payload["name"] == "洗衣服去毛神器"
+
+
 def test_import_mk_video_warns_when_product_link_probe_fails(monkeypatch, tmp_path):
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
     monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)

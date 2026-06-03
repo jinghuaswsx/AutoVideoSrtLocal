@@ -43,6 +43,7 @@ _MK_MEDIA_PROXY_PATHS = {"/xuanpin/api/mk-media", "/medias/api/mk-media"}
 _PRODUCT_LINK_HEAD_TIMEOUT_SECONDS = 2.5
 _PRODUCT_LINK_GET_TIMEOUT_SECONDS = 3.0
 _MK_DETAIL_FETCH_TIMEOUT_SECONDS = 5
+_MATERIAL_DATE_PREFIX_RE = re.compile(r"^\d{4}(?:\.\d{2}\.\d{2}|-\d{2}\.\d{2}|-\d{2}-\d{2})-")
 
 
 def _normalize_product_code(code: str | None) -> str:
@@ -612,12 +613,20 @@ def _extract_cn_product_name_from_filename(filename: str | None) -> str | None:
     if not filename:
         return None
     name = os.path.basename(filename.replace("\\", "/"))
-    parts = name.split("-")
-    if len(parts) < 2:
-        return None
-    candidate = parts[1].strip()
-    if any("\u4e00" <= char <= "\u9fff" for char in candidate):
-        return candidate
+    stem = re.sub(r"\.[A-Za-z0-9]{1,8}$", "", name)
+    candidates: list[str] = []
+
+    without_date = _MATERIAL_DATE_PREFIX_RE.sub("", stem, count=1)
+    if without_date != stem:
+        candidates.append(without_date.split("-", 1)[0].strip())
+
+    parts = stem.split("-")
+    if len(parts) >= 2:
+        candidates.append(parts[1].strip())
+
+    for candidate in candidates:
+        if any("\u4e00" <= char <= "\u9fff" for char in candidate):
+            return candidate
     return None
 
 
