@@ -104,6 +104,8 @@ def build_products_list_response(
         str(_request_arg(args, "delivery_status", "all") or "all").strip().lower()
     )
     product_source = str(_request_arg(args, "product_source", "all") or "all").strip()
+    created_from = str(_request_arg(args, "created_from", "") or "").strip()
+    created_to = str(_request_arg(args, "created_to", "") or "").strip()
 
     rows, total = list_products_fn(
         None,
@@ -115,6 +117,8 @@ def build_products_list_response(
         roas_status=roas_status,
         delivery_status=delivery_status,
         product_source=product_source,
+        created_from=created_from or None,
+        created_to=created_to or None,
     )
     pids = [row["id"] for row in rows]
     counts = count_items_by_product_fn(pids)

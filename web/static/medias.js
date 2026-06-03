@@ -2578,6 +2578,366 @@
     };
   }
 
+  // ---------- Created Date Range Picker ----------
+  function initCreatedDateRangePicker() {
+    var root = document.querySelector("[data-created-date-range]");
+    if (!root) return;
+
+    var fromInput = document.getElementById("createdFrom");
+    var toInput = document.getElementById("createdTo");
+    var trigger = root.querySelector("[data-created-date-range-trigger]");
+    var panel = root.querySelector("[data-created-date-range-panel]");
+    var label = root.querySelector("[data-created-date-range-label]");
+    var clearBtn = root.querySelector("[data-created-date-clear]");
+    var summary = root.querySelector("[data-created-date-range-summary]");
+    var previousButton = root.querySelector('[data-created-calendar-nav="prev"]');
+    var nextButton = root.querySelector('[data-created-calendar-nav="next"]');
+    var calendars = root.querySelectorAll("[data-created-calendar]");
+    var shortcutButtons = root.querySelectorAll("[data-range-shortcut]");
+
+    if (!fromInput || !toInput || !trigger || !panel || !label || !summary) return;
+
+    var monthAnchor = null;
+    var pendingStart = null;
+    var waitingForEnd = false;
+
+    function parseIsoDate(value) {
+      var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+      if (!match) return null;
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    function cloneDate(date) {
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+
+    function todayDate() {
+      return cloneDate(new Date());
+    }
+
+    function monthStart(date) {
+      return new Date(date.getFullYear(), date.getMonth(), 1);
+    }
+
+    function shiftDays(date, amount) {
+      var next = cloneDate(date);
+      next.setDate(next.getDate() + amount);
+      return next;
+    }
+
+    function formatIsoDate(date) {
+      var month = String(date.getMonth() + 1).padStart(2, "0");
+      var day = String(date.getDate()).padStart(2, "0");
+      return date.getFullYear() + "-" + month + "-" + day;
+    }
+
+    function formatLabelDate(date) {
+      var month = String(date.getMonth() + 1).padStart(2, "0");
+      var day = String(date.getDate()).padStart(2, "0");
+      return date.getFullYear() + "/" + month + "/" + day;
+    }
+
+    function formatMonthTitle(date) {
+      return date.getFullYear() + "年" + String(date.getMonth() + 1).padStart(2, "0") + "月";
+    }
+
+    function sameDate(left, right) {
+      return !!left && !!right
+        && left.getFullYear() === right.getFullYear()
+        && left.getMonth() === right.getMonth()
+        && left.getDate() === right.getDate();
+    }
+
+    function timeValue(date) {
+      return date ? date.getTime() : 0;
+    }
+
+    function currentStart() {
+      return parseIsoDate(fromInput.value);
+    }
+
+    function currentEnd() {
+      return parseIsoDate(toInput.value);
+    }
+
+    function activeStart() {
+      return waitingForEnd && pendingStart ? pendingStart : currentStart();
+    }
+
+    function activeEnd() {
+      return waitingForEnd ? null : currentEnd();
+    }
+
+    function shortcutRange(kind) {
+      var today = todayDate();
+      if (kind === "today") {
+        return { start: today, end: today };
+      }
+      if (kind === "yesterday") {
+        var yesterday = shiftDays(today, -1);
+        return { start: yesterday, end: yesterday };
+      }
+      if (kind === "last7") {
+        return { start: shiftDays(today, -6), end: today };
+      }
+      if (kind === "last30") {
+        return { start: shiftDays(today, -29), end: today };
+      }
+      return null;
+    }
+
+    function updateShortcuts() {
+      var start = currentStart();
+      var end = currentEnd();
+      shortcutButtons.forEach(function (button) {
+        var shortcutKind = button.getAttribute("data-range-shortcut");
+        if (shortcutKind === "all") {
+          button.setAttribute("aria-pressed", (!start && !end) ? "true" : "false");
+          return;
+        }
+        var range = shortcutRange(shortcutKind);
+        if (!range) return;
+        var pressed = sameDate(start, range.start) && sameDate(end, range.end);
+        button.setAttribute("aria-pressed", pressed ? "true" : "false");
+      });
+    }
+
+    function updateTriggerText() {
+      var start = currentStart();
+      var end = currentEnd();
+      if (start && end) {
+        label.textContent = "创建时间：" + formatLabelDate(start) + " - " + formatLabelDate(end);
+        if (clearBtn) clearBtn.removeAttribute('hidden');
+      } else {
+        label.textContent = "创建时间：全部";
+        if (clearBtn) clearBtn.setAttribute('hidden', 'true');
+      }
+    }
+
+    function updateSummary() {
+      if (waitingForEnd && pendingStart) {
+        summary.textContent = "已选开始：" + formatLabelDate(pendingStart) + "，请再选一个日期作为结束。";
+        return;
+      }
+      var start = currentStart();
+      var end = currentEnd();
+      if (start && end) {
+        summary.textContent = "已选范围：" + formatLabelDate(start) + " 至 " + formatLabelDate(end);
+        return;
+      }
+      summary.textContent = "点击第一个日期作为开始，第二个日期作为结束。";
+    }
+
+    function applyRange(start, end) {
+      fromInput.value = formatIsoDate(start);
+      toInput.value = formatIsoDate(end);
+      monthAnchor = monthStart(start);
+      updateTriggerText();
+      updateSummary();
+      updateShortcuts();
+      renderCalendars();
+    }
+
+    function closePanel() {
+      pendingStart = null;
+      waitingForEnd = false;
+      panel.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+      updateTriggerText();
+      updateSummary();
+      renderCalendars();
+    }
+
+    function openPanel() {
+      panel.hidden = false;
+      trigger.setAttribute("aria-expanded", "true");
+      monthAnchor = monthAnchor || monthStart(currentStart() || todayDate());
+      updateTriggerText();
+      updateSummary();
+      renderCalendars();
+    }
+
+    function togglePanel() {
+      if (panel.hidden) {
+        closePanel();
+        return;
+      }
+      openPanel();
+    }
+
+    function renderCalendars() {
+      var displayMonth = monthAnchor || monthStart(currentStart() || todayDate());
+      var selectedStart = activeStart();
+      var selectedEnd = activeEnd();
+      var today = todayDate();
+
+      calendars.forEach(function (calendar, calendarIndex) {
+        var monthDate = new Date(displayMonth.getFullYear(), displayMonth.getMonth() + calendarIndex, 1);
+        var title = calendar.querySelector("[data-created-calendar-title]");
+        var grid = calendar.querySelector("[data-created-calendar-grid]");
+        var firstWeekday = monthDate.getDay();
+        var offset = firstWeekday === 0 ? 6 : firstWeekday - 1;
+        var daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+        var rendered = 0;
+
+        if (title) {
+          title.textContent = formatMonthTitle(monthDate);
+        }
+        if (!grid) return;
+
+        grid.innerHTML = "";
+
+        while (rendered < offset) {
+          var spacer = document.createElement("span");
+          spacer.className = "oc-calendar-spacer";
+          grid.appendChild(spacer);
+          rendered += 1;
+        }
+
+        for (var day = 1; day <= daysInMonth; day += 1) {
+          var current = new Date(monthDate.getFullYear(), monthDate.getMonth(), day);
+          var dayButton = document.createElement("button");
+          dayButton.type = "button";
+          dayButton.className = "oc-calendar-day";
+          dayButton.textContent = String(day);
+          dayButton.setAttribute("data-created-calendar-day", formatIsoDate(current));
+
+          if (sameDate(current, today)) {
+            dayButton.classList.add("is-today");
+          }
+          if (selectedStart && selectedEnd && timeValue(current) > timeValue(selectedStart) && timeValue(current) < timeValue(selectedEnd)) {
+            dayButton.classList.add("is-in-range");
+          }
+          if ((selectedStart && sameDate(current, selectedStart)) || (selectedEnd && sameDate(current, selectedEnd))) {
+            dayButton.classList.add("is-selected");
+          }
+
+          grid.appendChild(dayButton);
+          rendered += 1;
+        }
+
+        while (rendered % 7 !== 0) {
+          var tail = document.createElement("span");
+          tail.className = "oc-calendar-spacer";
+          grid.appendChild(tail);
+          rendered += 1;
+        }
+      });
+    }
+
+    function applyShortcut(kind) {
+      if (kind === "all") {
+        fromInput.value = "";
+        toInput.value = "";
+        pendingStart = null;
+        waitingForEnd = false;
+        updateTriggerText();
+        updateSummary();
+        updateShortcuts();
+        renderCalendars();
+        closePanel();
+        runSearchNow();
+        return;
+      }
+      var range = shortcutRange(kind);
+      if (!range) return;
+      pendingStart = null;
+      waitingForEnd = false;
+      applyRange(range.start, range.end);
+      closePanel();
+      runSearchNow();
+    }
+
+    function selectDay(isoValue) {
+      var clickedDate = parseIsoDate(isoValue);
+      if (!clickedDate) return;
+
+      if (!waitingForEnd || !pendingStart) {
+        pendingStart = clickedDate;
+        waitingForEnd = true;
+        monthAnchor = monthStart(clickedDate);
+        updateTriggerText();
+        updateSummary();
+        renderCalendars();
+        return;
+      }
+
+      var start = pendingStart;
+      var end = clickedDate;
+      if (timeValue(end) < timeValue(start)) {
+        var swapped = start;
+        start = end;
+        end = swapped;
+      }
+
+      pendingStart = null;
+      waitingForEnd = false;
+      applyRange(start, end);
+      closePanel();
+      runSearchNow();
+    }
+
+    trigger.addEventListener("click", function (e) {
+      if (clearBtn && clearBtn.contains(e.target)) return;
+      togglePanel();
+    });
+
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        fromInput.value = "";
+        toInput.value = "";
+        pendingStart = null;
+        waitingForEnd = false;
+        updateTriggerText();
+        updateSummary();
+        updateShortcuts();
+        renderCalendars();
+        runSearchNow();
+      });
+    }
+
+    previousButton.addEventListener("click", function () {
+      var curr = monthAnchor || monthStart(currentStart() || todayDate());
+      monthAnchor = new Date(curr.getFullYear(), curr.getMonth() - 1, 1);
+      renderCalendars();
+    });
+
+    nextButton.addEventListener("click", function () {
+      var curr = monthAnchor || monthStart(currentStart() || todayDate());
+      monthAnchor = new Date(curr.getFullYear(), curr.getMonth() + 1, 1);
+      renderCalendars();
+    });
+
+    shortcutButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        applyShortcut(button.getAttribute("data-range-shortcut"));
+      });
+    });
+
+    panel.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!target || !target.hasAttribute("data-created-calendar-day")) return;
+      selectDay(target.getAttribute("data-created-calendar-day"));
+    });
+
+    document.addEventListener("mousedown", function (event) {
+      if (panel.hidden || root.contains(event.target)) return;
+      closePanel();
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !panel.hidden) {
+        closePanel();
+      }
+    });
+
+    updateTriggerText();
+    updateSummary();
+    updateShortcuts();
+    renderCalendars();
+  }
+
   // ---------- List ----------
   async function loadList() {
     const kwInput = $('kw');
@@ -2604,6 +2964,14 @@
     const productSourceEl = $('filterProductSource');
     if (productSourceEl && productSourceEl.value && productSourceEl.value !== 'all') {
       params.set('product_source', productSourceEl.value);
+    }
+    const createdFromEl = $('createdFrom');
+    const createdToEl = $('createdTo');
+    if (createdFromEl && createdFromEl.value) {
+      params.set('created_from', createdFromEl.value);
+    }
+    if (createdToEl && createdToEl.value) {
+      params.set('created_to', createdToEl.value);
     }
     renderSkeleton();
     try {
@@ -2642,6 +3010,20 @@
       url.searchParams.set('page', state.page);
     } else {
       url.searchParams.delete('page');
+    }
+    const createdFromEl = $('createdFrom');
+    const createdToEl = $('createdTo');
+    const createdFrom = createdFromEl ? createdFromEl.value : '';
+    const createdTo = createdToEl ? createdToEl.value : '';
+    if (createdFrom) {
+      url.searchParams.set('created_from', createdFrom);
+    } else {
+      url.searchParams.delete('created_from');
+    }
+    if (createdTo) {
+      url.searchParams.set('created_to', createdTo);
+    } else {
+      url.searchParams.delete('created_to');
     }
     window.history.replaceState(null, '', url);
   }
@@ -2714,7 +3096,7 @@
           <th>产品来源</th>
           <th>ERP SKU</th>
           <th>明空 ID</th>
-          <th>AI评估</th>
+          <th style="text-align: center;">AI评估</th>
           <th>上架</th>
           <th>负责人</th>
           <th>素材数</th>
@@ -3243,7 +3625,7 @@
     const aiScoreText = p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>';
     const aiResultText = compactCellText(p.ai_evaluation_result);
     const aiEvalCell = `
-      <div class="ai-eval-cell" style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">
+      <div class="ai-eval-cell" style="display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; width: 100%;">
         <div class="ai-score" style="font-weight: bold; font-family: monospace;">${aiScoreText}</div>
         <div class="ai-result-text" title="${escapeHtml(p.ai_evaluation_result || '')}" style="font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${aiResultText}</div>
         <button type="button" class="oc-btn sm ghost ai-detail-btn" data-ai-detail="${p.id}" style="margin-top: 2px;">评估详情</button>
@@ -3257,7 +3639,7 @@
         <td class="source-cell" data-pid="${p.id}" data-source="${escapeHtml(p.source || '明空')}" title="点击编辑产品来源">${productSourcePill(p.source || '明空')}</td>
         <td class="wrap sku-summary-cell" title="${escapeHtml(skuCellTooltip(p))}">${skuCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
-        <td class="wrap">${aiEvalCell}</td>
+        <td class="wrap" style="text-align: center; vertical-align: middle;">${aiEvalCell}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
@@ -9084,6 +9466,18 @@
 
   // ---------- Events ----------
   document.addEventListener('DOMContentLoaded', () => {
+    // 解析 URL 参数初始化日期
+    const url = new URL(window.location.href);
+    const initialCreatedFrom = url.searchParams.get('created_from') || '';
+    const initialCreatedTo = url.searchParams.get('created_to') || '';
+    const createdFromEl = $('createdFrom');
+    const createdToEl = $('createdTo');
+    if (createdFromEl && initialCreatedFrom) createdFromEl.value = initialCreatedFrom;
+    if (createdToEl && initialCreatedTo) createdToEl.value = initialCreatedTo;
+
+    // 初始化日期选择器
+    initCreatedDateRangePicker();
+
     const searchBtn = $('searchBtn');
     const kwInput = $('kw');
     if (kwInput && window.MEDIAS_LIST_INITIAL_QUERY && !kwInput.value) {

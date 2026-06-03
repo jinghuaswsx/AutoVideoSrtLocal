@@ -1,5 +1,7 @@
 from urllib.parse import unquote
 
+import pytest
+
 from tools.tabcut_crawler import client, runner
 
 
@@ -55,6 +57,77 @@ def test_throttled_client_waits_between_requests():
 
     assert len(calls) == 2
     assert sleeps == [2.0]
+
+
+def test_tabcut_login_credentials_resolve_from_environment_aliases():
+    credentials = client.resolve_tabcut_login_credentials(
+        {
+            "TABCUT_USERNAME": "legacy@example.com",
+            "TABCUT_PASSWORD": "legacy-secret",
+            "TABCUT_LOGIN_ACCOUNT": "tabcut@example.com",
+            "TABCUT_LOGIN_PASSWORD": "secret",
+        }
+    )
+
+    assert credentials == client.TabcutLoginCredentials(
+        username="tabcut@example.com",
+        password="secret",
+    )
+
+
+def test_classify_tabcut_login_state_detects_guest_and_human_required():
+    assert (
+        client.classify_tabcut_login_state(
+            "https://www.tabcut.com/zh-CN/workbench",
+            "游客模式，仅展示部分内容 登录 / 注册",
+        )
+        == "login_required"
+    )
+    assert (
+        client.classify_tabcut_login_state(
+            "https://www.tabcut.com/zh-CN/workbench",
+            "安全验证 请输入验证码",
+        )
+        == "needs_human"
+    )
+    assert client.classify_tabcut_login_state("https://www.tabcut.com/zh-CN/workbench", "TABCUT 工作台") == "logged_in"
+
+
+def test_ensure_tabcut_login_on_page_requires_credentials_for_guest():
+    class FakeLocator:
+        def inner_text(self, timeout=None):
+            return "游客模式，仅展示部分内容 登录 / 注册"
+
+    class FakePage:
+        url = "https://www.tabcut.com/zh-CN/workbench"
+
+        def locator(self, selector):
+            assert selector == "body"
+            return FakeLocator()
+
+    with pytest.raises(RuntimeError, match="TABCUT_LOGIN_ACCOUNT"):
+        client.ensure_tabcut_login_on_page(FakePage(), credentials=None)
+
+
+def test_cdp_fetcher_checks_tabcut_login_once_before_fetch():
+    login_calls = []
+
+    class FakePage:
+        url = "https://www.tabcut.com/zh-CN/workbench"
+
+        def evaluate(self, script, args):
+            return {"result": {"data": [{"url": args["url"]}]}}
+
+    fetcher = client._CdpFetcher(
+        "http://127.0.0.1:9227",
+        login_fn=lambda page: login_calls.append(page),
+    )
+    fetcher._page = FakePage()
+
+    fetcher("GET", "https://www.tabcut.com/api/a")
+    fetcher("GET", "https://www.tabcut.com/api/b")
+
+    assert login_calls == [fetcher._page]
 
 
 def test_recent_plan_collects_daily_weekly_monthly_video_rankings_at_1000_each():
