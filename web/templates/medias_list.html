@@ -3337,6 +3337,44 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
   .oc-range-calendars {
     grid-template-columns: 1fr;
   }
+/* 产品信息列排版微调 */
+.oc-table td.product-info-td {
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+.product-info-cell {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.prod-info-line {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-bottom: 4px;
+}
+.prod-info-line:last-child {
+  margin-bottom: 0;
+}
+.prod-info-val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  max-width: calc(100% - 24px);
+}
+.prod-info-val a {
+  color: var(--oc-fg);
+  text-decoration: none;
+}
+.prod-info-val a:hover {
+  color: var(--oc-accent);
+}
+.prod-info-line .oc-btn {
+  flex-shrink: 0;
+  margin-left: 4px;
 }
 {% endblock %}
 
@@ -3443,7 +3481,7 @@ td.sku-summary-cell:hover { background:var(--oc-bg-subtle); }
         <option value="stopped">终止投放</option>
         <option value="never">未投</option>
       </select>
-      <div class="oc-range-picker" data-created-date-range>
+<div class="oc-range-picker" data-created-date-range>
         <button
           type="button"
           class="oc-range-trigger"
