@@ -2659,7 +2659,7 @@
         <colgroup>
         <col style="width:48px">
         <col style="width:128px">
-        <col style="width:240px">
+        <col style="width:210px">
         <col style="width:140px">
         <col style="width:80px">
         <col style="width:130px">
@@ -3159,7 +3159,7 @@
       <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
         <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(nameText)}">
           ${productDetailHref
-            ? `<a href="${productDetailHref}">${escapeHtml(nameText)}</a>`
+            ? `<a href="${productDetailHref}" title="${escapeHtml(nameText)}">${escapeHtml(nameText)}</a>`
             : `<span>${escapeHtml(nameText)}</span>`
           }
         </span>
@@ -3182,7 +3182,7 @@
       <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px;">
         <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(productCode)}">
           ${productCode
-            ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productCode)}</a>`
+            ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(productCode)}">${escapeHtml(productCode)}</a>`
             : '<span class="muted">—</span>'
           }
         </span>
@@ -3217,7 +3217,7 @@
       <tr${warnCls} data-pid="${p.id}">
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${coverCell}</div></td>
-        <td class="wrap">${productInfoCell}</td>
+        <td class="wrap product-info-td">${productInfoCell}</td>
         <td class="wrap sku-summary-cell" title="${escapeHtml(skuCellTooltip(p))}">${skuCell}</td>
         <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
         <td class="wrap">${aiEvalCell}</td>
