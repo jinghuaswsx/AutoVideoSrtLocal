@@ -276,7 +276,7 @@
   </div>
   {% endif %}
   {% endif %}
-  {% if current_user.is_admin and _force_restart_api == '/api/omni-translate' %}
+  {% if current_user.is_admin and _force_restart_api in ('/api/omni-translate', '/api/dialogue-translate') %}
   {% set _auto_voice_selection_cfg = (state.plugin_config or {}).get('auto_voice_selection') %}
   {% set _sentence_loudness_cfg = (state.plugin_config or {}).get('sentence_tts_loudness_calibration') %}
   <label class="vt-toggle" title="开启后音色匹配会按大模型排名自动选择第 1 名；关闭后等待人工选音色">

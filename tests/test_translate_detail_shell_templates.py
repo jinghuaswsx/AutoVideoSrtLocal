@@ -157,6 +157,14 @@ def test_omni_force_restart_payload_includes_top_switch_values():
     assert "sentenceTtsLoudnessCalibrationCb.checked" in handler
 
 
+def test_detail_shell_auto_voice_selection_supports_dialogue_api():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+
+    assert "'/api/dialogue-translate'" in shared
+    assert "_force_restart_api in ('/api/omni-translate', '/api/dialogue-translate')" in shared
+
+
 def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")

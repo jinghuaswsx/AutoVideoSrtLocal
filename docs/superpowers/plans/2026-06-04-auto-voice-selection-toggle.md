@@ -51,3 +51,16 @@
 
 - [ ] Run `pytest tests/test_omni_plugin_config.py tests/test_web_routes_omni_create_modal.py tests/test_dialogue_runtime.py tests/test_dialogue_translate_routes.py tests/test_omni_translate_create_with_plugin_config.py -q`.
 - [ ] Confirm `git diff --check` exits 0.
+
+### Task 5: Dialogue Detail Toggle Parity
+
+**Files:**
+- Modify: `web/templates/_translate_detail_shell.html`
+- Modify: `web/routes/dialogue_translate.py`
+- Test: `tests/test_translate_detail_shell_templates.py`
+- Test: `tests/test_dialogue_translate_routes.py`
+
+- [ ] Add failing tests asserting the shared detail shell renders `autoVoiceSelectionCb` for `/api/dialogue-translate`, and that Dialogue exposes `PUT /api/dialogue-translate/<task_id>/auto-voice-selection`.
+- [ ] Reuse the existing topbar checkbox JavaScript path by allowing the auto voice selection toggle for both `/api/omni-translate` and `/api/dialogue-translate`.
+- [ ] Add the Dialogue route with the same validation and persistence contract as Omni: read `auto_voice_selection` or `enabled`, normalize through `validate_plugin_config()`, update project state, update in-memory `store`, and return `{"auto_voice_selection": <bool>}`.
+- [ ] Run `pytest tests/test_translate_detail_shell_templates.py tests/test_dialogue_translate_routes.py -q`.
