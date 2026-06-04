@@ -1122,6 +1122,35 @@ def toggle_visible_to_all(task_id: str):
     return _json_response({"visible_to_all": value})
 
 
+@bp.route("/api/omni-translate/<task_id>/sentence-tts-loudness-calibration", methods=["PUT"])
+@login_required
+@admin_required
+def toggle_sentence_tts_loudness_calibration(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    if "sentence_tts_loudness_calibration" in body:
+        raw_value = body.get("sentence_tts_loudness_calibration")
+    else:
+        raw_value = body.get("enabled", False)
+    cfg = dict(task.get("plugin_config") or {})
+    cfg["sentence_tts_loudness_calibration"] = raw_value
+    from appcore.omni_plugin_config import validate_plugin_config
+    try:
+        normalized_cfg = validate_plugin_config(cfg)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    value = bool(normalized_cfg["sentence_tts_loudness_calibration"])
+    update_project_state(
+        task_id,
+        {"plugin_config": normalized_cfg},
+        query_one_func=db_query_one,
+    )
+    store.update(task_id, plugin_config=normalized_cfg)
+    return _json_response({"sentence_tts_loudness_calibration": value})
+
+
 @bp.route("/api/omni-translate/<task_id>/artifact/<name>")
 @login_required
 def get_artifact(task_id, name):

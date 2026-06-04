@@ -276,6 +276,18 @@
   </div>
   {% endif %}
   {% endif %}
+  {% if current_user.is_admin and _force_restart_api == '/api/omni-translate' %}
+  {% set _sentence_loudness_cfg = (state.plugin_config or {}).get('sentence_tts_loudness_calibration') %}
+  <label class="vt-toggle" title="开启后，强制重新开始时会把句级 TTS 片段对齐到分离人声响度">
+    <input type="checkbox" id="sentenceTtsLoudnessCalibrationCb"
+           data-api-base="{{ _force_restart_api }}"
+           data-task-id="{{ project.id }}"
+           {% if _sentence_loudness_cfg %}checked{% endif %}
+    >
+    <span class="vt-slider"></span>
+    <span class="vt-label">句级TTS响度校准</span>
+  </label>
+  {% endif %}
   {% if is_superadmin() and _force_restart_api %}
   <label class="vt-toggle" title="开启后任何人通过链接均可查看和操作此项目">
     <input type="checkbox" id="visibleToAllCb"
@@ -534,6 +546,32 @@
     });
   }
   var visibleToAllCb = document.getElementById('visibleToAllCb');
+  var sentenceTtsLoudnessCalibrationCb = document.getElementById('sentenceTtsLoudnessCalibrationCb');
+  if (sentenceTtsLoudnessCalibrationCb) {
+    sentenceTtsLoudnessCalibrationCb.addEventListener('change', async function() {
+      var apiBase = sentenceTtsLoudnessCalibrationCb.dataset.apiBase || (btn ? btn.dataset.apiBase : '');
+      var taskId = sentenceTtsLoudnessCalibrationCb.dataset.taskId || (btn ? btn.dataset.taskId : '');
+      var csrfMeta = document.querySelector('meta[name=csrf-token]');
+      var headers = {'Content-Type': 'application/json'};
+      if (csrfMeta && csrfMeta.content) {
+        headers['X-CSRFToken'] = csrfMeta.content;
+      }
+      if (!apiBase || !taskId) {
+        sentenceTtsLoudnessCalibrationCb.checked = !sentenceTtsLoudnessCalibrationCb.checked;
+        return;
+      }
+      try {
+        var resp = await fetch(apiBase + '/' + taskId + '/sentence-tts-loudness-calibration', {
+          method: 'PUT',
+          headers: headers,
+          body: JSON.stringify({
+            sentence_tts_loudness_calibration: sentenceTtsLoudnessCalibrationCb.checked
+          })
+        });
+        if (!resp.ok) { sentenceTtsLoudnessCalibrationCb.checked = !sentenceTtsLoudnessCalibrationCb.checked; }
+      } catch (_) { sentenceTtsLoudnessCalibrationCb.checked = !sentenceTtsLoudnessCalibrationCb.checked; }
+    });
+  }
   if (visibleToAllCb) {
     visibleToAllCb.addEventListener('change', async function() {
       var apiBase = visibleToAllCb.dataset.apiBase || (btn ? btn.dataset.apiBase : '');

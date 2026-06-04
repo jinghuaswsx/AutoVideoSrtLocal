@@ -99,8 +99,17 @@ CAPABILITY_GROUPS: list[dict[str, Any]] = [
         "default": True,
     },
     {
+        "id": "sentence_tts_loudness_calibration",
+        "label": "⑨ 句级TTS响度校准",
+        "kind": "checkbox",
+        "options": [
+            {"value": True, "label": "sentence_tts_loudness_calibration", "desc": "句级 TTS 片段在拼接前对齐分离人声响度，减少单说话人句间音量忽大忽小"},
+        ],
+        "default": False,
+    },
+    {
         "id": "av_sync_audit",
-        "label": "⑨ 音画同步审计",
+        "label": "⑩ 音画同步审计",
         "kind": "radio",
         "options": [
             {"value": "off",         "label": "off",         "desc": "关闭审计，保持现有 Omni 行为"},
@@ -120,7 +129,13 @@ _RADIO_VALID_VALUES: dict[str, set[str]] = {
     "av_sync_audit":  {"off", "report_only", "safe_auto"},
 }
 
-_BOOL_FIELDS = ("shot_decompose", "source_anchored", "voice_separation", "loudness_match")
+_BOOL_FIELDS = (
+    "shot_decompose",
+    "source_anchored",
+    "voice_separation",
+    "loudness_match",
+    "sentence_tts_loudness_calibration",
+)
 
 # 全部走基线 omni 当前行为
 DEFAULT_PLUGIN_CONFIG: dict[str, Any] = {grp["id"]: grp["default"] for grp in CAPABILITY_GROUPS}
@@ -148,8 +163,9 @@ def validate_plugin_config(cfg: dict | None) -> dict:
 
     1. radio 字段（``asr_post`` / ``translate_algo`` / ``tts_strategy`` /
        ``subtitle`` / ``av_sync_audit``）必须存在且取值合法
-    2. 4 个 boolean 字段（``shot_decompose`` / ``source_anchored`` /
-       ``voice_separation`` / ``loudness_match``）缺失时用默认值补齐
+    2. boolean 字段（``shot_decompose`` / ``source_anchored`` /
+       ``voice_separation`` / ``loudness_match`` /
+       ``sentence_tts_loudness_calibration``）缺失时用默认值补齐
     3. 依赖关系（任一不满足直接拒绝）：
         * ``translate_algo == "shot_char_limit"`` 必须 ``shot_decompose == True``
         * ``subtitle == "sentence_units"`` 必须 ``tts_strategy == "sentence_reconcile"``

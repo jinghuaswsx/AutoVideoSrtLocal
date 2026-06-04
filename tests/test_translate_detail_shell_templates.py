@@ -126,11 +126,23 @@ def test_omni_detail_shell_contains_preset_summary_slot():
     assert ".omni-preset-summary" in styles
 
 
+def test_omni_detail_shell_places_sentence_tts_loudness_toggle_before_visible_to_all():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+
+    assert "sentenceTtsLoudnessCalibrationCb" in shared
+    assert "句级TTS响度校准" in shared
+    assert "sentence-tts-loudness-calibration" in shared
+    assert "sentence_tts_loudness_calibration" in shared
+    assert shared.index("sentenceTtsLoudnessCalibrationCb") < shared.index("visibleToAllCb")
+    assert "X-CSRFToken" in shared
+
+
 def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
 
-    assert "{% if detail_mode in ('multi', 'ja', 'av_sync') %}" in shared
+    assert "{% if detail_mode in ('multi', 'ja', 'av_sync')" in shared
     assert "voice_selector_multi.js" in shared
 
 

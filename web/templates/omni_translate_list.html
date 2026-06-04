@@ -346,6 +346,26 @@
 .cap-option-desc { font-size: 12px; color: var(--fg-muted, oklch(48% 0.018 230)); line-height: 1.5; margin-top: 1px; }
 .cap-option.is-disabled { opacity: 0.5; cursor: not-allowed; }
 .cap-option.is-disabled input { cursor: not-allowed; }
+.modal-toggle-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, oklch(91% 0.012 230));
+  border-radius: var(--radius, 8px);
+  background: var(--bg-subtle, oklch(97% 0.006 230));
+  cursor: pointer;
+  user-select: none;
+}
+.modal-toggle-option input { position: absolute; opacity: 0; width: 0; height: 0; }
+.modal-toggle-text { min-width: 0; }
+.modal-toggle-title { display: block; font-size: 13px; font-weight: 700; color: var(--fg, oklch(22% 0.020 235)); }
+.modal-toggle-desc { display: block; margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--fg-muted, oklch(48% 0.018 230)); }
+.modal-toggle-slider { position: relative; display: inline-block; width: 36px; height: 20px; background: #cbd5e1; border-radius: 999px; transition: background .2s; flex-shrink: 0; }
+.modal-toggle-slider::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.modal-toggle-option input:checked + .modal-toggle-slider { background: #16a34a; }
+.modal-toggle-option input:checked + .modal-toggle-slider::after { transform: translateX(16px); }
 {% endblock %}
 {% block content %}
 <div class="page-header">
@@ -559,6 +579,19 @@
           <input type="hidden" id="sourceLanguageSelect" name="source_language" value="">
           <div class="modal-hint" style="margin:6px 0 0;">请明确指定视频原始语种，路由更精准。</div>
         </div>
+        <div class="modal-field">
+          <label class="modal-toggle-option" for="sentenceTtsLoudnessCalibration">
+            <span class="modal-toggle-text">
+              <span class="modal-toggle-title">句级TTS响度校准</span>
+              <span class="modal-toggle-desc">开启后，句级 TTS 片段在拼接前对齐分离人声响度。</span>
+            </span>
+            <input type="checkbox"
+                   id="sentenceTtsLoudnessCalibration"
+                   name="sentence_tts_loudness_calibration"
+                   value="1">
+            <span class="modal-toggle-slider" aria-hidden="true"></span>
+          </label>
+        </div>
 
         {% if current_user.is_superadmin %}
         <!-- Phase 4: 超级管理员可选预设流程 -->
@@ -732,6 +765,10 @@ function _resetUploadModal() {
   var srcPills = document.querySelectorAll('#modalSourceLangPills .modal-lang-pill');
   srcPills.forEach(function(b) { b.classList.remove('active'); b.setAttribute('aria-checked', 'false'); });
   document.getElementById('sourceLanguageSelect').value = '';
+  var sentenceTtsLoudnessCalibration = document.getElementById('sentenceTtsLoudnessCalibration');
+  if (sentenceTtsLoudnessCalibration) {
+    sentenceTtsLoudnessCalibration.checked = false;
+  }
   _clearVideoPreview();
   var warning = document.getElementById('langWarning');
   if (warning) warning.classList.remove('shake');
@@ -1042,8 +1079,15 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     var nameInput = document.getElementById('projectName');
     var trimmedName = nameInput ? nameInput.value.trim() : '';
     formData.set('display_name', trimmedName);
+    var sentenceTtsLoudnessCalibration = document.getElementById('sentenceTtsLoudnessCalibration');
     // Phase 4: 把当前能力点配置作为 plugin_config 提交
-    if (__omniPresetState.loaded && __omniPresetState.currentCfg) {
+    if (!__omniPresetState.currentCfg) {
+      __omniPresetState.currentCfg = {};
+    }
+    if (sentenceTtsLoudnessCalibration) {
+      __omniPresetState.currentCfg.sentence_tts_loudness_calibration = sentenceTtsLoudnessCalibration.checked;
+    }
+    if (__omniPresetState.loaded || (sentenceTtsLoudnessCalibration && sentenceTtsLoudnessCalibration.checked)) {
       formData.set('plugin_config', JSON.stringify(__omniPresetState.currentCfg));
     }
     // 移除 cap_radio_/cap_check_ 这些前端表单字段（后端不认）

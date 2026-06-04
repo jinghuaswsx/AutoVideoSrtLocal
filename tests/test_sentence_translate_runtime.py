@@ -1,12 +1,50 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from appcore.events import EventBus
+from appcore.runtime_omni import OmniTranslateRunner
 from appcore.runtime_sentence_translate import SentenceTranslateRunner
 from web import store
 
 
 def _runner() -> SentenceTranslateRunner:
     return SentenceTranslateRunner(bus=EventBus(), user_id=1)
+
+
+def _omni_runner() -> OmniTranslateRunner:
+    return OmniTranslateRunner(bus=EventBus(), user_id=1)
+
+
+def _omni_sentence_cfg(*, sentence_tts_loudness_calibration: bool = False) -> dict:
+    return {
+        "asr_post": "asr_normalize",
+        "shot_decompose": False,
+        "translate_algo": "av_sentence",
+        "source_anchored": False,
+        "tts_strategy": "sentence_reconcile",
+        "subtitle": "sentence_units",
+        "voice_separation": True,
+        "loudness_match": True,
+        "sentence_tts_loudness_calibration": sentence_tts_loudness_calibration,
+        "av_sync_audit": "off",
+    }
+
+
+@pytest.fixture(autouse=True)
+def _stub_speech_rate_model(monkeypatch):
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.speech_rate_model.get_rate_with_source",
+        lambda voice_id, language, fallback=14.0: {
+            "chars_per_second": fallback,
+            "source": "test_fallback",
+        },
+    )
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.speech_rate_model.update_rate",
+        lambda *args, **kwargs: None,
+    )
 
 
 def test_translate_step_only_creates_initial_localized_sentences(tmp_path, monkeypatch):
@@ -169,6 +207,216 @@ def test_tts_step_runs_text_and_audio_convergence_from_initial_translation(tmp_p
         "chars": len("Dieses Serum fühlt sich frisch an."),
         "duration_seconds": 2.1,
     }
+
+
+def test_omni_sentence_tts_loudness_calibration_normalizes_segments_before_rebuild(tmp_path, monkeypatch):
+    task_id = "omni-sentence-tts-loudness-calibration"
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=None)
+    initial_sentence = {
+        "asr_index": 0,
+        "text": "Fresh on skin.",
+        "est_chars": 14,
+        "start_time": 0.0,
+        "end_time": 1.5,
+        "target_duration": 1.5,
+        "target_chars_range": [10, 18],
+    }
+    store.update(
+        task_id,
+        type="omni_translate",
+        pipeline_version="omni",
+        target_lang="de",
+        selected_voice_id="voice-1",
+        selected_voice_name="Voice One",
+        video_duration=2.0,
+        plugin_config=_omni_sentence_cfg(sentence_tts_loudness_calibration=True),
+        separation={"status": "done", "vocals_lufs": -19.5},
+        av_translate_inputs={
+            "target_language": "de",
+            "target_language_name": "German",
+            "target_market": "DE",
+            "sync_granularity": "sentence",
+            "product_overrides": {},
+        },
+        normalized_script_segments=[
+            {"index": 0, "text": "Fresh on skin.", "start_time": 0.0, "end_time": 1.5},
+        ],
+        variants={"av": {"sentences": [initial_sentence], "source_normalization": {"summary": {}}}},
+    )
+
+    class FakeEngine:
+        def synthesize_full(self, segments, voice_id, output_dir, **kwargs):
+            first_path = tmp_path / "seg_0000.mp3"
+            first_path.write_bytes(b"first")
+            return {
+                "full_audio_path": str(tmp_path / "first.mp3"),
+                "segments": [{**segments[0], "tts_path": str(first_path), "tts_duration": 1.8}],
+            }
+
+    final_audio = tmp_path / "tts_full.av.mp3"
+    final_audio.write_bytes(b"audio")
+    rebuilt_segments = []
+    normalize_calls = []
+
+    monkeypatch.setattr("appcore.tts_engines.get_engine", lambda code: FakeEngine())
+    monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.validate_tts_script_language_or_raise",
+        lambda **kwargs: {"is_target_language": True},
+    )
+
+    def fake_reconcile_duration(**kwargs):
+        rewrite_path = tmp_path / "seg_0000.rewrite.mp3"
+        rewrite_path.write_bytes(b"rewrite")
+        return [
+            {
+                **kwargs["av_output"]["sentences"][0],
+                "tts_path": str(rewrite_path),
+                "tts_duration": 1.42,
+                "duration_ratio": 0.947,
+                "status": "ok",
+            }
+        ]
+
+    def fake_normalize(input_path, output_path, *, target_lufs, **kwargs):
+        normalize_calls.append(
+            {"input_path": input_path, "output_path": output_path, "target_lufs": target_lufs}
+        )
+        Path(output_path).write_bytes(b"normalized")
+        return SimpleNamespace(
+            input_lufs=-28.0,
+            target_lufs=target_lufs,
+            output_lufs=target_lufs,
+            deviation_lu=0.0,
+            deviation_pct=0.0,
+            output_path=output_path,
+            converged=True,
+        )
+
+    def fake_rebuild(task_dir, segments, variant="av", **kwargs):
+        rebuilt_segments.extend([dict(segment) for segment in segments])
+        return str(final_audio)
+
+    monkeypatch.setattr("pipeline.duration_reconcile.reconcile_duration", fake_reconcile_duration)
+    monkeypatch.setattr("appcore.audio_loudness.normalize_to_lufs", fake_normalize)
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile._rebuild_tts_full_audio_from_segments",
+        fake_rebuild,
+    )
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.speech_rate_model.update_rate",
+        lambda *args, **kwargs: None,
+    )
+
+    _omni_runner()._step_tts(task_id, str(tmp_path))
+
+    saved = store.get(task_id)
+    calibration = saved["final_compose_summary"]["sentence_tts_loudness_calibration"]
+    assert normalize_calls[0]["target_lufs"] == pytest.approx(-19.5)
+    assert rebuilt_segments[0]["tts_path"] == normalize_calls[0]["output_path"]
+    assert Path(rebuilt_segments[0]["tts_path"]).parent.name == "av"
+    assert Path(rebuilt_segments[0]["tts_path"]).parent.parent.name == "tts_loudness_segments"
+    assert rebuilt_segments[0]["sentence_tts_loudness_calibration"]["status"] == "done"
+    assert calibration["status"] == "done"
+    assert calibration["target_lufs"] == pytest.approx(-19.5)
+    assert calibration["normalized_segment_count"] == 1
+    assert saved["variants"]["av"]["av_debug"]["sentence_tts_loudness_calibration"]["status"] == "done"
+
+
+def test_omni_sentence_tts_loudness_calibration_skips_without_vocals_lufs(tmp_path, monkeypatch):
+    task_id = "omni-sentence-tts-loudness-missing-vocals"
+    store.create(task_id, "video.mp4", str(tmp_path), user_id=None)
+    initial_sentence = {
+        "asr_index": 0,
+        "text": "Fresh on skin.",
+        "est_chars": 14,
+        "start_time": 0.0,
+        "end_time": 1.5,
+        "target_duration": 1.5,
+        "target_chars_range": [10, 18],
+    }
+    store.update(
+        task_id,
+        type="omni_translate",
+        pipeline_version="omni",
+        target_lang="de",
+        selected_voice_id="voice-1",
+        selected_voice_name="Voice One",
+        video_duration=2.0,
+        plugin_config=_omni_sentence_cfg(sentence_tts_loudness_calibration=True),
+        separation={"status": "done"},
+        av_translate_inputs={
+            "target_language": "de",
+            "target_language_name": "German",
+            "target_market": "DE",
+            "sync_granularity": "sentence",
+            "product_overrides": {},
+        },
+        normalized_script_segments=[
+            {"index": 0, "text": "Fresh on skin.", "start_time": 0.0, "end_time": 1.5},
+        ],
+        variants={"av": {"sentences": [initial_sentence], "source_normalization": {"summary": {}}}},
+    )
+
+    class FakeEngine:
+        def synthesize_full(self, segments, voice_id, output_dir, **kwargs):
+            first_path = tmp_path / "seg_0000.mp3"
+            first_path.write_bytes(b"first")
+            return {
+                "full_audio_path": str(tmp_path / "first.mp3"),
+                "segments": [{**segments[0], "tts_path": str(first_path), "tts_duration": 1.8}],
+            }
+
+    final_audio = tmp_path / "tts_full.av.mp3"
+    final_audio.write_bytes(b"audio")
+    rebuilt_segments = []
+
+    monkeypatch.setattr("appcore.tts_engines.get_engine", lambda code: FakeEngine())
+    monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.validate_tts_script_language_or_raise",
+        lambda **kwargs: {"is_target_language": True},
+    )
+
+    def fake_reconcile_duration(**kwargs):
+        rewrite_path = tmp_path / "seg_0000.rewrite.mp3"
+        rewrite_path.write_bytes(b"rewrite")
+        return [
+            {
+                **kwargs["av_output"]["sentences"][0],
+                "tts_path": str(rewrite_path),
+                "tts_duration": 1.42,
+                "duration_ratio": 0.947,
+                "status": "ok",
+            }
+        ]
+
+    def fake_rebuild(task_dir, segments, variant="av", **kwargs):
+        rebuilt_segments.extend([dict(segment) for segment in segments])
+        return str(final_audio)
+
+    monkeypatch.setattr("pipeline.duration_reconcile.reconcile_duration", fake_reconcile_duration)
+    monkeypatch.setattr(
+        "appcore.audio_loudness.normalize_to_lufs",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("normalize should not run")),
+    )
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile._rebuild_tts_full_audio_from_segments",
+        fake_rebuild,
+    )
+    monkeypatch.setattr(
+        "appcore.tts_strategies.sentence_reconcile.speech_rate_model.update_rate",
+        lambda *args, **kwargs: None,
+    )
+
+    _omni_runner()._step_tts(task_id, str(tmp_path))
+
+    saved = store.get(task_id)
+    calibration = saved["final_compose_summary"]["sentence_tts_loudness_calibration"]
+    assert calibration["status"] == "skipped_missing_vocals_lufs"
+    assert calibration["enabled"] is True
+    assert calibration["normalized_segment_count"] == 0
+    assert rebuilt_segments[0]["tts_path"].endswith("seg_0000.rewrite.mp3")
 
 
 def test_omni_tts_step_applies_speech_shot_alignment_before_rebuild(tmp_path, monkeypatch):

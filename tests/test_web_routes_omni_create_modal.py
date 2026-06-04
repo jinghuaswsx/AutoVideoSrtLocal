@@ -133,6 +133,19 @@ def test_javascript_appends_plugin_config_to_form_data(omni_list_html):
     assert "formData.set('plugin_config'," in omni_list_html
 
 
+def test_create_modal_contains_sentence_tts_loudness_toggle_default_off(omni_list_html):
+    assert "句级TTS响度校准" in omni_list_html
+    assert 'id="sentenceTtsLoudnessCalibration"' in omni_list_html
+    assert 'name="sentence_tts_loudness_calibration"' in omni_list_html
+    assert 'id="sentenceTtsLoudnessCalibration" checked' not in omni_list_html
+
+
+def test_create_modal_writes_sentence_tts_loudness_to_plugin_config(omni_list_html):
+    assert "sentence_tts_loudness_calibration" in omni_list_html
+    assert "sentenceTtsLoudnessCalibration.checked" in omni_list_html
+    assert "__omniPresetState.currentCfg.sentence_tts_loudness_calibration" in omni_list_html
+
+
 def test_javascript_upload_submit_handles_non_json_error_response(omni_list_html):
     """后端 500/HTML 错误页不能被 res.json() 二次盖成 JSON 解析错误。"""
     assert "async function _readOmniJsonResponse" in omni_list_html

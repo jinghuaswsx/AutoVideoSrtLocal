@@ -15,16 +15,16 @@ from appcore.omni_plugin_config import (
 # ---------------------------------------------------------------------------
 
 
-def test_capability_groups_have_9_entries():
-    """9 分组：8 个 Omni 基线能力点 + AV 同步审计。"""
-    assert len(CAPABILITY_GROUPS) == 9
+def test_capability_groups_have_10_entries():
+    """10 分组：8 个 Omni 基线能力点 + 句级响度校准 + AV 同步审计。"""
+    assert len(CAPABILITY_GROUPS) == 10
 
 
 def test_default_plugin_config_has_all_keys():
     expected = {
         "asr_post", "shot_decompose", "translate_algo", "source_anchored",
         "tts_strategy", "subtitle", "voice_separation", "loudness_match",
-        "av_sync_audit",
+        "sentence_tts_loudness_calibration", "av_sync_audit",
     }
     assert set(DEFAULT_PLUGIN_CONFIG) == expected
 
@@ -39,6 +39,7 @@ def test_default_matches_omni_current_baseline():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "sentence_tts_loudness_calibration": False,
         "av_sync_audit": "off",
     }
 
@@ -81,6 +82,7 @@ def test_validate_fills_missing_boolean_with_default():
     out = validate_plugin_config(cfg)
     assert out["voice_separation"] is True
     assert out["loudness_match"] is True
+    assert out["sentence_tts_loudness_calibration"] is False
     assert out["shot_decompose"] is False
     assert out["source_anchored"] is True
 
@@ -137,6 +139,14 @@ def test_validate_coerces_boolean_friendly_inputs(value, expected):
     cfg["loudness_match"] = value if expected else False  # 满足 ⑦/⑧ 依赖
     out = validate_plugin_config(cfg)
     assert out["voice_separation"] is expected
+
+
+@pytest.mark.parametrize("value", [True, 1, "true", "1", "True"])
+def test_validate_accepts_sentence_tts_loudness_calibration_enabled(value):
+    cfg = dict(DEFAULT_PLUGIN_CONFIG)
+    cfg["sentence_tts_loudness_calibration"] = value
+    out = validate_plugin_config(cfg)
+    assert out["sentence_tts_loudness_calibration"] is True
 
 
 def test_validate_rejects_garbage_boolean():
@@ -255,6 +265,7 @@ def test_baseline_preset_multi_like_validates():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "sentence_tts_loudness_calibration": False,
         "av_sync_audit": "off",
     }
     assert validate_plugin_config(cfg) == cfg
@@ -270,6 +281,7 @@ def test_baseline_preset_omni_current_validates():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "sentence_tts_loudness_calibration": False,
         "av_sync_audit": "off",
     }
     assert validate_plugin_config(cfg) == cfg
@@ -285,6 +297,7 @@ def test_baseline_preset_av_sync_current_validates():
         "subtitle": "sentence_units",
         "voice_separation": True,
         "loudness_match": True,
+        "sentence_tts_loudness_calibration": False,
         "av_sync_audit": "off",
     }
     assert validate_plugin_config(cfg) == cfg
@@ -300,6 +313,7 @@ def test_baseline_preset_lab_current_validates():
         "subtitle": "asr_realign",
         "voice_separation": True,
         "loudness_match": True,
+        "sentence_tts_loudness_calibration": False,
         "av_sync_audit": "off",
     }
     assert validate_plugin_config(cfg) == cfg
