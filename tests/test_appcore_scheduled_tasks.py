@@ -730,22 +730,34 @@ def test_task_definitions_include_server_and_app_timers():
     assert definitions["roi_hourly_sync"]["schedule"] == "每 20 分钟（每小时 :00/:20/:40）"
     assert definitions["dianxiaomi_order_import"]["schedule"] == "每 20 分钟（随 ROI :00/:20/:40 触发）；12:00/weekly 补拉编排也会调用"
     assert definitions["meta_realtime_import"]["schedule"] == "每 20 分钟（随 ROI :00/:20/:40 触发）"
+    assert "每 1 小时" not in definitions["dianxiaomi_order_import"]["description"]
+    assert ":02" not in definitions["dianxiaomi_order_import"]["description"]
+    assert "每 1 小时" not in definitions["meta_realtime_import"]["description"]
+    assert ":02" not in definitions["meta_realtime_import"]["description"]
     assert definitions["shopifyid"]["source_ref"] == "autovideosrt-shopifyid-sync.timer"
     assert definitions["roi_hourly_sync"]["source_ref"] == "autovideosrt-roi-realtime-sync.timer"
     assert definitions["meta_daily_final"]["schedule"] == "每天 16:10 同步；19:00 二次同步确认"
     assert "16:10" in definitions["meta_daily_final"]["description"]
     assert "19:00" in definitions["meta_daily_final"]["description"]
     assert "autovideosrt-meta-daily-final-sync.timer" in definitions["meta_daily_final"]["source_ref"]
-    assert "--include-adsets" in definitions["meta_daily_final"]["runner"]
+    assert definitions["meta_daily_final"]["runner"] == "tools/meta_daily_final_sync.py --mode run --include-adsets"
     assert "Ad Set" in definitions["meta_daily_final"]["description"]
     assert definitions["ad_order_previous_business_day_sync"]["schedule"] == "每天 12:00（Meta 业务日口径）"
     assert (
         definitions["ad_order_previous_business_day_sync"]["source_ref"]
         == "autovideosrt-ad-order-previous-business-day-sync.timer"
     )
+    assert (
+        definitions["ad_order_previous_business_day_sync"]["runner"]
+        == "tools/ad_order_sync_orchestrator.py --mode previous-business-day"
+    )
     assert definitions["ad_order_previous_business_day_sync"]["log_table"] == "scheduled_task_runs"
     assert definitions["ad_order_previous_week_sync"]["schedule"] == "每周一 20:30（上一 ISO 周 7 个 Meta 业务日）"
     assert definitions["ad_order_previous_week_sync"]["source_ref"] == "autovideosrt-ad-order-previous-week-sync.timer"
+    assert (
+        definitions["ad_order_previous_week_sync"]["runner"]
+        == "tools/ad_order_sync_orchestrator.py --mode previous-week --max-scan-pages 500"
+    )
     assert definitions["ad_order_previous_week_sync"]["log_table"] == "scheduled_task_runs"
     assert definitions["cdp_environment_watchdog"]["schedule"] == "每 1 分钟"
     assert definitions["cdp_environment_watchdog"]["source_ref"] == "autovideosrt-cdp-environment-watchdog.timer"
