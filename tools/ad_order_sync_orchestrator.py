@@ -13,7 +13,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from appcore import dxm_order_import_lock
 from appcore import scheduled_tasks
+from appcore.browser_automation_lock import BrowserAutomationLockTimeout
 from tools import dianxiaomi_order_import
 from tools import meta_daily_final_sync
 
@@ -69,19 +71,37 @@ def run_one_business_day(
 ) -> dict[str, Any]:
     bj_dates = covered_bj_dates(target_date)
     order_report: dict[str, Any]
+    lock_path = dxm_order_import_lock.default_dxm_order_import_lock_path()
     try:
-        order_report = dianxiaomi_order_import.run_import_from_server_browser(
-            start_date_text=bj_dates[0].isoformat(),
-            end_date_text=bj_dates[-1].isoformat(),
-            site_codes=site_codes or DEFAULT_SITE_CODES,
-            states=[""],
-            dxm_env=dxm_env,
-            dry_run=False,
-            skip_login_prompt=True,
-            date_filter_mode="recent-scan",
-            max_scan_pages=max_scan_pages,
-        )
+        with dxm_order_import_lock.dxm_order_import_lock(
+            task_code="ad_order_sync_orchestrator",
+            timeout_seconds=dxm_order_import_lock.BACKFILL_LOCK_TIMEOUT_SECONDS,
+            command="python tools/ad_order_sync_orchestrator.py",
+            lock_path=lock_path,
+        ):
+            order_report = dianxiaomi_order_import.run_import_from_server_browser(
+                start_date_text=bj_dates[0].isoformat(),
+                end_date_text=bj_dates[-1].isoformat(),
+                site_codes=site_codes or DEFAULT_SITE_CODES,
+                states=[""],
+                dxm_env=dxm_env,
+                dry_run=False,
+                skip_login_prompt=True,
+                date_filter_mode="recent-scan",
+                max_scan_pages=max_scan_pages,
+            )
         order_report.setdefault("status", "success")
+    except BrowserAutomationLockTimeout as exc:
+        lock_report = dxm_order_import_lock.lock_timeout_summary(
+            lock_path,
+            timeout_seconds=dxm_order_import_lock.BACKFILL_LOCK_TIMEOUT_SECONDS,
+            error_message=str(exc),
+        )
+        order_report = {
+            **lock_report,
+            "status": "failed",
+            "lock_timeout": lock_report,
+        }
     except Exception as exc:
         order_report = {"status": "failed", "error": str(exc)}
 

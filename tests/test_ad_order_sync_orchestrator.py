@@ -1,4 +1,18 @@
+from contextlib import contextmanager
 from datetime import date, datetime
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def stub_dxm_order_import_lock(monkeypatch):
+    from tools import ad_order_sync_orchestrator as orch
+
+    @contextmanager
+    def unlocked(**kwargs):
+        yield "/tmp/dxm-order-import.lock"
+
+    monkeypatch.setattr(orch.dxm_order_import_lock, "dxm_order_import_lock", unlocked)
 
 
 def test_previous_business_day_uses_meta_completed_business_day(monkeypatch):
@@ -124,6 +138,56 @@ def test_run_one_business_day_continues_meta_when_order_import_fails(monkeypatch
     assert result["order_import"]["status"] == "failed"
     assert "dxm unavailable" in result["order_import"]["error"]
     assert meta_calls == [date(2026, 6, 2)]
+
+
+def test_run_one_business_day_marks_order_failed_on_lock_timeout_and_keeps_meta(monkeypatch):
+    from appcore.browser_automation_lock import BrowserAutomationLockTimeout
+    from tools import ad_order_sync_orchestrator as orch
+
+    meta_calls = []
+
+    def fake_import(**kwargs):
+        raise AssertionError("order import should be lock-guarded")
+
+    def fake_lock(**kwargs):
+        assert kwargs["task_code"] == "ad_order_sync_orchestrator"
+        assert kwargs["timeout_seconds"] == 600
+        assert kwargs["command"] == "python tools/ad_order_sync_orchestrator.py"
+        raise BrowserAutomationLockTimeout("browser automation lock timeout after 600s")
+
+    def fake_final(target_date, *, mode, include_adsets):
+        meta_calls.append({"target_date": target_date, "mode": mode, "include_adsets": include_adsets})
+        return {"status": "success", "run_id": 22, "profit_backfill": {"status": "success"}}
+
+    monkeypatch.setattr(orch.dianxiaomi_order_import, "run_import_from_server_browser", fake_import)
+    monkeypatch.setattr(orch.dxm_order_import_lock, "dxm_order_import_lock", fake_lock)
+    monkeypatch.setattr(
+        orch.dxm_order_import_lock,
+        "default_dxm_order_import_lock_path",
+        lambda: "/tmp/dxm-order-import.lock",
+    )
+    monkeypatch.setattr(
+        orch.dxm_order_import_lock,
+        "lock_timeout_summary",
+        lambda path, timeout_seconds, error_message: {
+            "status": "skipped_lock_timeout",
+            "lock_path": str(path),
+            "timeout_seconds": timeout_seconds,
+            "error": error_message,
+        },
+    )
+    monkeypatch.setattr(orch.meta_daily_final_sync, "run_final_sync", fake_final)
+
+    result = orch.run_one_business_day(date(2026, 6, 2), max_scan_pages=220)
+
+    assert result["status"] == "failed"
+    assert result["order_import"]["status"] == "failed"
+    assert result["order_import"]["lock_timeout"]["status"] == "skipped_lock_timeout"
+    assert result["order_import"]["lock_timeout"]["timeout_seconds"] == 600
+    assert result["meta_daily_final"]["status"] == "success"
+    assert meta_calls == [
+        {"target_date": date(2026, 6, 2), "mode": "run", "include_adsets": True}
+    ]
 
 
 def test_run_orchestrator_records_scheduled_task_run(monkeypatch):
