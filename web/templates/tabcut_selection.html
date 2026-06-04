@@ -94,6 +94,14 @@
 .tabcut-table th { position:sticky; top:0; padding:10px; border-bottom:1px solid #d8dee8; background:#f8fafc; color:#64748b; text-align:left; white-space:nowrap; }
 .tabcut-table td { padding:10px; border-bottom:1px solid #edf2f7; vertical-align:top; }
 .tabcut-table tr:hover td { background:#f8fafc; }
+.recommended-table-layout th,
+.recommended-table-layout td {
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+.recommended-table-layout .tabcut-name {
+  text-align: center !important;
+}
 .tabcut-name { max-width:360px; line-height:1.35; word-break:break-word; }
 .tabcut-num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .tabcut-muted { color:#64748b; }
@@ -634,12 +642,13 @@ const recommendedProducts = [
 function renderRecommendedProducts() {
   qs("tabcutVideoGrid").hidden = true;
   qs("tabcutTableWrap").hidden = false;
+  qs("tabcutTableWrap").classList.add("recommended-table-layout");
   qs("tabcutStatus").textContent = "20 rows";
   
   qs("tabcutHead").innerHTML = `
     <tr>
-      <th>图片</th>
       <th>排名</th>
+      <th>图片</th>
       <th>商品名称 / 翻译对照</th>
       <th>德法意西平均分</th>
       <th>售价</th>
@@ -651,8 +660,8 @@ function renderRecommendedProducts() {
     
   const rowsHtml = recommendedProducts.map(row => `
     <tr>
-      <td>${row.mainImage ? `<a href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer"><img class="tabcut-product-cover" src="${esc(row.mainImage)}" style="width:108px; height:108px; object-fit:cover;" loading="lazy" alt=""></a>` : ""}</td>
       <td><strong>${row.rank}</strong></td>
+      <td>${row.mainImage ? `<a href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer"><img class="tabcut-product-cover" src="${esc(row.mainImage)}" style="width:108px; height:108px; object-fit:cover;" loading="lazy" alt=""></a>` : ""}</td>
       <td class="tabcut-name">
         <a class="tabcut-product-link" href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer">
           <strong>${esc(row.name)}</strong>
@@ -998,6 +1007,7 @@ function renderTabcut(data) {
   } else {
     qs("tabcutVideoGrid").hidden = true;
     qs("tabcutTableWrap").hidden = false;
+    qs("tabcutTableWrap").classList.remove("recommended-table-layout");
     qs("tabcutHead").innerHTML = "<tr><th></th><th>排名</th><th>商品</th><th>价格</th><th>佣金比例</th><th class='tabcut-num'>总销量</th><th class='tabcut-num'>周期内销量</th><th class='tabcut-num'>周期内销售额</th><th class='tabcut-num'>周期内销量增长率</th><th class='tabcut-num'>总关联视频(90天)</th><th>操作</th></tr>";
     qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
       <tr>
