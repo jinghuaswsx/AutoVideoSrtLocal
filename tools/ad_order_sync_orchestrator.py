@@ -102,3 +102,101 @@ def run_one_business_day(
         "meta_daily_final": meta_report,
         "profit_backfill": meta_report.get("profit_backfill") or {},
     }
+
+
+def task_code_for_mode(mode: str) -> str:
+    if mode == "previous-business-day":
+        return TASK_PREVIOUS_BUSINESS_DAY
+    if mode == "previous-week":
+        return TASK_PREVIOUS_WEEK
+    raise ValueError(f"unsupported sync mode: {mode}")
+
+
+def run_orchestrator(
+    *,
+    mode: str,
+    now: datetime | None = None,
+    max_scan_pages: int,
+    site_codes: list[str] | None = None,
+    dxm_env: str = "DXM03-RJC",
+) -> dict[str, Any]:
+    started = time.time()
+    targets = target_dates_for_mode(mode, now=now)
+    task_code = task_code_for_mode(mode)
+    run_id = scheduled_tasks.start_run(task_code)
+    summary: dict[str, Any] = {
+        "mode": mode,
+        "target_dates": [item.isoformat() for item in targets],
+        "timezone": TIMEZONE,
+        "meta_cutover_hour_bj": META_CUTOVER_HOUR_BJ,
+        "max_scan_pages": max_scan_pages,
+        "days": [],
+    }
+    status = "success"
+    error_message = None
+    try:
+        for target in targets:
+            day_report = run_one_business_day(
+                target,
+                max_scan_pages=max_scan_pages,
+                site_codes=site_codes,
+                dxm_env=dxm_env,
+            )
+            summary["days"].append(day_report)
+            if day_report.get("status") != "success":
+                status = "failed"
+        if status == "failed":
+            failed_dates = [
+                day.get("target_date")
+                for day in summary["days"]
+                if day.get("status") != "success"
+            ]
+            error_message = "ad/order sync failed for target_dates=" + ",".join(failed_dates)
+        return {**summary, "status": status, "run_id": run_id}
+    except Exception as exc:
+        status = "failed"
+        error_message = str(exc)
+        summary["error"] = error_message
+        raise
+    finally:
+        summary["duration_seconds"] = round(time.time() - started, 2)
+        scheduled_tasks.finish_run(
+            run_id,
+            status=status,
+            summary=summary,
+            error_message=error_message,
+        )
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Sync ad daily-final data and Dianxiaomi orders by Meta business day."
+    )
+    parser.add_argument("--mode", choices=("previous-business-day", "previous-week"), required=True)
+    parser.add_argument("--max-scan-pages", type=int, default=None)
+    parser.add_argument("--sites", default=",".join(DEFAULT_SITE_CODES))
+    parser.add_argument("--dxm-env", default="DXM03-RJC")
+    return parser
+
+
+def _csv_list(value: str) -> list[str]:
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    max_scan_pages = args.max_scan_pages
+    if max_scan_pages is None:
+        max_scan_pages = 500 if args.mode == "previous-week" else 220
+    result = run_orchestrator(
+        mode=args.mode,
+        max_scan_pages=max(1, int(max_scan_pages)),
+        site_codes=_csv_list(args.sites),
+        dxm_env=args.dxm_env,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=json_default))
+    return 0 if result.get("status") == "success" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
