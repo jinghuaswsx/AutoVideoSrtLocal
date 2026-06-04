@@ -1040,6 +1040,7 @@ def test_dialogue_translate_start_creates_task_and_starts_runner(
         "separate",
         "asr_clean",
         "speaker_detect",
+        "speaker_confirm",
         "voice_match_ab",
         "alignment",
         "translate",
@@ -1123,6 +1124,7 @@ def test_dialogue_translate_start_accepts_plugin_config_snapshot(
         "asr",
         "asr_normalize",
         "speaker_detect",
+        "speaker_confirm",
         "voice_match_ab",
         "alignment",
         "translate",
@@ -1599,3 +1601,104 @@ def test_dialogue_translate_confirm_voices_persists_selection_and_resumes_alignm
     assert updated["steps"]["voice_match_ab"] == "done"
     assert updated["current_review_step"] == ""
     assert resumed == {"task_id": task_id, "start_step": "alignment", "user_id": 1}
+
+
+def test_dialogue_translate_confirm_speakers_persists_assignment_and_resumes_voice_match(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-confirm-speakers-ok"
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-confirm-speakers-ok", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        target_lang="de",
+        video_path="/tmp/demo.mp4",
+        task_dir="/tmp/dialogue-confirm-speakers-ok",
+        dialogue_segments=[
+            {"index": 0, "speaker_id": "A", "start_time": 0.0, "end_time": 1.0},
+            {"index": 1, "speaker_id": "B", "start_time": 1.0, "end_time": 2.0},
+        ],
+        steps={
+            "speaker_detect": "done",
+            "speaker_confirm": "waiting",
+            "voice_match_ab": "pending",
+        },
+        current_review_step="speaker_confirm",
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "state_json": json.dumps(store.get(task_id), ensure_ascii=False),
+            "user_id": 1,
+        },
+    )
+    
+    fake_build_result = {
+        "dialogue_segments": [
+            {"index": 0, "speaker_id": "B", "start_time": 0.0, "end_time": 1.0, "source_audio_relpath": "seg0.wav"},
+            {"index": 1, "speaker_id": "A", "start_time": 1.0, "end_time": 2.0, "source_audio_relpath": "seg1.wav"},
+        ],
+        "dialogue_segment_audio_manifest": {"manifest": "fake"},
+        "speaker_audio_tracks": {
+            "A": {"relative_path": "trackA.wav"},
+            "B": {"relative_path": "trackB.wav"},
+        },
+    }
+    monkeypatch.setattr(
+        "appcore.dialogue_translate.segment_audio.build_dialogue_segment_audio_assets",
+        lambda *args, **kwargs: fake_build_result,
+    )
+    
+    saved: dict[str, object] = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.save_project_state",
+        lambda saved_task_id, state, **kwargs: saved.update(
+            {"task_id": saved_task_id, "state": json.loads(json.dumps(state))}
+        ),
+    )
+    
+    resumed: dict[str, object] = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda resumed_task_id, start_step, user_id=None: resumed.update(
+            {
+                "task_id": resumed_task_id,
+                "start_step": start_step,
+                "user_id": user_id,
+            }
+        ),
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/confirm-speakers",
+        json={
+            "dialogue_segments": [
+                {"index": 0, "speaker_id": "B"},
+                {"index": 1, "speaker_id": "A"},
+            ],
+            "speaker_aliases": {
+                "A": "男声",
+                "B": "女声",
+            }
+        },
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["speaker_aliases"] == {"A": "男声", "B": "女声"}
+    assert len(payload["dialogue_segments"]) == 2
+    
+    assert saved["task_id"] == task_id
+    assert saved["state"]["steps"]["speaker_confirm"] == "done"
+    assert saved["state"]["speaker_aliases"] == {"A": "男声", "B": "女声"}
+    assert saved["state"]["current_review_step"] == ""
+    assert saved["state"]["status"] == "running"
+    
+    updated = store.get(task_id)
+    assert updated["steps"]["speaker_confirm"] == "done"
+    assert updated["speaker_aliases"] == {"A": "男声", "B": "女声"}
+    assert updated["current_review_step"] == ""
+    assert resumed == {"task_id": task_id, "start_step": "voice_match_ab", "user_id": 1}
+

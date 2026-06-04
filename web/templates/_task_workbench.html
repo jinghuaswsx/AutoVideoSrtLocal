@@ -1,4 +1,4 @@
-﻿{% if show_back_link %}
+{% if show_back_link %}
 <a class="back-link" href="{{ url_for('projects.index') }}">← 返回项目列表</a>
 {% endif %}
 {% set _default_source_language = default_source_language|default('zh') %}
@@ -524,6 +524,7 @@
   {% set show_asr_normalize_step = pipeline_kind == 'multi_translate' or ('asr_normalize' in pipeline_steps) %}
   {% set show_asr_clean_step = 'asr_clean' in pipeline_steps %}
   {% set show_speaker_detect_step = 'speaker_detect' in pipeline_steps %}
+  {% set show_speaker_confirm_step = 'speaker_confirm' in pipeline_steps %}
   {% set show_voice_match_ab_step = 'voice_match_ab' in pipeline_steps %}
   {% set show_av_sync_audit_step = 'av_sync_audit' in pipeline_steps %}
   {% set show_loudness_step = (extended_pipeline and not pipeline_steps) or ('loudness_match' in pipeline_steps) %}
@@ -743,10 +744,25 @@
       <div class="step-preview" id="preview-speaker_detect"></div>
     </div>
     {% endif %}
+    {% if show_speaker_confirm_step %}
+    <div class="step" id="step-speaker_confirm">
+      <div class="step-main">
+        <div class="step-icon" id="icon-speaker_confirm">{{ step_icon('speaker_confirm', 5) }}</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">说话人与别名确认</span>
+            <button class="resume-btn hidden" id="resume-speaker_confirm" data-step="speaker_confirm">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-speaker_confirm">等待中...<span class="step-model-tag hidden" id="model-tag-speaker_confirm"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-speaker_confirm"></div>
+    </div>
+    {% endif %}
     {% if show_voice_match_ab_step %}
     <div class="step" id="step-voice_match_ab">
       <div class="step-main">
-        <div class="step-icon" id="icon-voice_match_ab">{{ step_icon('voice_match_ab', 5) }}</div>
+        <div class="step-icon" id="icon-voice_match_ab">{{ step_icon('voice_match_ab', 6) }}</div>
         <div style="flex:1">
           <div class="step-name-row">
             <span class="step-name">A/B 音色匹配</span>
