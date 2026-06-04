@@ -520,6 +520,12 @@
       payload.source_language = ctx.sourceLanguageOverride !== null
         ? ctx.sourceLanguageOverride
         : currentLang;
+      if (typeof autoVoiceSelectionCb !== 'undefined' && autoVoiceSelectionCb) {
+        payload.auto_voice_selection = !!autoVoiceSelectionCb.checked;
+      }
+      if (typeof sentenceTtsLoudnessCalibrationCb !== 'undefined' && sentenceTtsLoudnessCalibrationCb) {
+        payload.sentence_tts_loudness_calibration = !!sentenceTtsLoudnessCalibrationCb.checked;
+      }
       if (!payload.source_language) {
         alert('请选择原始语言');
         confirmBtn.disabled = false;

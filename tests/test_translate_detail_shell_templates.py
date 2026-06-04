@@ -143,6 +143,20 @@ def test_omni_detail_shell_places_auto_voice_selection_before_sentence_loudness_
     assert "X-CSRFToken" in shared
 
 
+def test_omni_force_restart_payload_includes_top_switch_values():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+
+    handler = shared[
+        shared.index("confirmBtn.addEventListener('click'"):
+        shared.index("var visibleToAllCb = document.getElementById('visibleToAllCb')")
+    ]
+    assert "payload.auto_voice_selection" in handler
+    assert "autoVoiceSelectionCb.checked" in handler
+    assert "payload.sentence_tts_loudness_calibration" in handler
+    assert "sentenceTtsLoudnessCalibrationCb.checked" in handler
+
+
 def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")

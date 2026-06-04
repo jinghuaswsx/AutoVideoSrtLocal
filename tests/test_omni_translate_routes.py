@@ -1597,6 +1597,38 @@ def test_admin_can_restart_other_users_task_uses_owner_user_id(authed_client_no_
     assert mock_restart.call_args.kwargs["user_id"] == 99
 
 
+def test_restart_applies_top_switches_to_plugin_config_for_new_run(authed_client_no_db):
+    fake_task = {
+        "_user_id": 1,
+        "source_language": "en",
+        "plugin_config": {
+            **CFG_ASR_CLEAN,
+            "auto_voice_selection": True,
+            "sentence_tts_loudness_calibration": False,
+        },
+    }
+    with patch("web.routes.omni_translate.store") as mock_store, \
+         patch("web.services.task_restart.restart_task") as mock_restart:
+        mock_store.get.return_value = fake_task
+        mock_restart.return_value = {"status": "restarted"}
+        resp = authed_client_no_db.post(
+            "/api/omni-translate/t-1/restart",
+            json={
+                "voice_id": "auto",
+                "source_language": "en",
+                "auto_voice_selection": False,
+                "sentence_tts_loudness_calibration": True,
+            },
+        )
+
+    assert resp.status_code == 200, resp.get_json()
+    extra_reset_fields = mock_restart.call_args.kwargs["extra_reset_fields"]
+    cfg = extra_reset_fields["plugin_config"]
+    assert cfg["asr_post"] == CFG_ASR_CLEAN["asr_post"]
+    assert cfg["auto_voice_selection"] is False
+    assert cfg["sentence_tts_loudness_calibration"] is True
+
+
 def test_admin_can_start_other_users_task_uses_owner_user_id(authed_client_no_db):
     """admin 调 start 操作 _user_id=99 的 task → 200，runner 收到 user_id=99。"""
     fake_task = {"_user_id": 99}

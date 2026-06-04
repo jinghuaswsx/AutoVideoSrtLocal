@@ -20,6 +20,8 @@
 
 全能视频翻译创建弹窗新增 `大模型自动音色选择` 开关，位置在 `句级TTS响度校准` 左边。开关默认开启，并随提交写入 `plugin_config.auto_voice_selection`。
 
+任务详情页顶部同样展示 `大模型自动音色选择` 和 `句级TTS响度校准`。点击“强制重新开始”时，前端必须把当前两个开关值带入 restart 请求；后端在重置任务状态前将请求值合并并校验到 `plugin_config`，确保新一轮 runner 读取的是用户当前看到的开关状态，而不是上一轮旧快照。
+
 ## 运行时
 
 `DialogueTranslateRunner._step_voice_match_ab()` 继续生成 A/B 候选、相似度、语速参考和大模型排名。
@@ -32,5 +34,6 @@
 
 - 配置校验默认补 `auto_voice_selection = true`。
 - 创建弹窗展示并提交该开关，默认 checked。
+- 详情页强制重新开始请求携带顶部开关值，并在 restart reset 中写入 `plugin_config`。
 - `voice_match_ab` 在开关开启时自动选择排名第一并继续。
 - `voice_match_ab` 在开关关闭时保持等待人工选择。
