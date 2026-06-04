@@ -202,6 +202,56 @@
 .tabcut-toolbar .tabcut-btn { display: none !important; }
 {% endif %}
 
+.inline-video-container {
+  width: 180px;
+  height: 320px;
+  position: relative;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+  margin: 0 auto;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.inline-video-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+}
+.inline-video-cover {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.inline-video-play-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+.inline-video-container:hover .inline-video-play-btn {
+  transform: scale(1.15);
+  background: rgba(0, 0, 0, 0.85);
+}
+.inline-video-play-btn::after {
+  content: "";
+  display: block;
+  margin-left: 4px;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-left: 16px solid #fff;
+}
 {% endblock %}
 
 {% block content %}
@@ -657,6 +707,18 @@ const recommendedProducts = [
   }
 ];
 
+function parseVideoId(url) {
+  if (!url) return "";
+  const match = url.match(/\/video\/(\d+)/);
+  return match ? match[1] : "";
+}
+
+function playInlineVideo(coverEl, videoUrl) {
+  const container = coverEl.parentElement;
+  if (!container) return;
+  container.innerHTML = `<video src="${esc(videoUrl)}" controls autoplay playsinline style="width:100%; height:100%; object-fit:contain; background:#000; outline:none; border:none;"></video>`;
+}
+
 function renderRecommendedProducts() {
   qs("tabcutVideoGrid").hidden = true;
   qs("tabcutTableWrap").hidden = false;
@@ -667,6 +729,7 @@ function renderRecommendedProducts() {
     <tr>
       <th>排名</th>
       <th>图片</th>
+      <th>视频封面</th>
       <th>商品名称 / 翻译对照</th>
       <th>德法意西平均分</th>
       <th>售价</th>
@@ -676,10 +739,27 @@ function renderRecommendedProducts() {
       <th>链接与详情</th>
     </tr>`;
     
-  const rowsHtml = recommendedProducts.map(row => `
+  const rowsHtml = recommendedProducts.map(row => {
+    const videoId = parseVideoId(row.videoLink);
+    const coverUrl = videoId ? `/xuanpin/api/tabcut/videos/${encodeURIComponent(videoId)}/local-cover` : "";
+    const videoUrl = videoId ? `/xuanpin/api/tabcut/videos/${encodeURIComponent(videoId)}/local-video` : "";
+    const coverBgStyle = coverUrl 
+      ? `background-image: url('${esc(coverUrl)}'), url('${esc(row.mainImage)}');`
+      : `background-image: url('${esc(row.mainImage)}');`;
+
+    return `
     <tr>
       <td><strong>${row.rank}</strong></td>
       <td>${row.mainImage ? `<a href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer"><img class="tabcut-product-cover" src="${esc(row.mainImage)}" style="width:108px; height:108px; object-fit:cover;" loading="lazy" alt=""></a>` : ""}</td>
+      <td>
+        ${videoId ? `
+        <div class="inline-video-container">
+          <div class="inline-video-cover" style="${coverBgStyle}" onclick="playInlineVideo(this, '${esc(videoUrl)}')">
+            <button class="inline-video-play-btn" type="button" aria-label="播放视频"></button>
+          </div>
+        </div>
+        ` : `<div style="color:#94a3b8; font-size:12px;">无视频</div>`}
+      </td>
       <td class="tabcut-name">
         <a class="tabcut-product-link" href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer">
           <strong>${esc(row.name)}</strong>
@@ -697,8 +777,8 @@ function renderRecommendedProducts() {
           <a href="${esc(row.tabcutLink)}" target="_blank" rel="noopener noreferrer" class="tabcut-btn secondary" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; height:24px; font-size:11px; padding:0 8px; line-height:24px;">Tabcut详情</a>
         </div>
       </td>
-    </tr>
-  `).join("");
+    </tr>`;
+  }).join("");
   
   qs("tabcutBody").innerHTML = rowsHtml;
   
