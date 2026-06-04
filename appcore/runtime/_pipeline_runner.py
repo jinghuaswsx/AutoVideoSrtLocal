@@ -2837,6 +2837,15 @@ class PipelineRunner:
                 voice_priority_variants.append(voice_priority_summary)
             variant_background_volumes.append(variant_bg_volume)
 
+            bg_volume_arg = variant_bg_volume
+            if voice_priority_enabled and variant_bg_volume < profile_summary["background_volume"]:
+                from appcore.audio_loudness import build_ducking_volume_expression
+                bg_volume_arg = build_ducking_volume_expression(
+                    segments=list(variant_state.get("segments") or []),
+                    background_volume=variant_bg_volume,
+                    standard_volume=profile_summary["background_volume"],
+                )
+
             source_backup_origin = self._prepare_loudness_source_audio(
                 audio_path=audio_path,
                 loudness_dir=loudness_dir,
@@ -2857,7 +2866,7 @@ class PipelineRunner:
                         audio_path=audio_path,
                         accompaniment_path=accompaniment_for_mix,
                         video_lufs=float(video_lufs),
-                        bg_volume=variant_bg_volume,
+                        bg_volume=bg_volume_arg,
                         loudness_dir=loudness_dir,
                         variant_name=variant_name,
                     )
@@ -3936,6 +3945,21 @@ class PipelineRunner:
             profile == LOUDNESS_PROFILE_CLEAN_BACKGROUND
             or bool(cleanup.get("enabled"))
         )
+
+        standard_volume = float(separation.get("background_volume") or settings.background_volume)
+        voice_priority_enabled = sentence_tts_loudness_enabled(task)
+        bg_volume_arg = background_volume
+        if voice_priority_enabled and background_volume < standard_volume:
+            from appcore.audio_loudness import build_ducking_volume_expression
+            variants = dict(task.get("variants") or {})
+            variant_state = variants.get(variant) or {}
+            segments = list(variant_state.get("segments") or [])
+            bg_volume_arg = build_ducking_volume_expression(
+                segments=segments,
+                background_volume=background_volume,
+                standard_volume=standard_volume,
+            )
+
         if cleanup_enabled:
             cleaned_path = separation.get("cleaned_accompaniment_path")
             if not cleaned_path or not os.path.isfile(cleaned_path):
@@ -3966,7 +3990,7 @@ class PipelineRunner:
                 main_path=tts_audio_path,
                 background_path=background_path,
                 output_path=mixed_path,
-                background_volume=background_volume,
+                background_volume=bg_volume_arg,
                 duration="longest",
             )
         except Exception as exc:  # noqa: BLE001
