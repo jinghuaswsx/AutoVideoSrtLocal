@@ -961,6 +961,35 @@
     })[String(reason || "")] || (reason || "--");
   }
 
+  function speechShotAlignmentPendingSummary() {
+    const cfg = currentTask?.plugin_config || {};
+    const reasons = [];
+    if (cfg.shot_decompose !== true) {
+      reasons.push("未启用镜头分镜");
+    }
+    if (!["sentence_reconcile", "sentence_reconcile_v2"].includes(String(cfg.tts_strategy || ""))) {
+      reasons.push("未使用句级 TTS 收敛");
+    }
+    if (!reasons.length) return {};
+    return {
+      speech_shot_alignment_enabled: false,
+      speech_shot_alignment_applied: false,
+      speech_shot_alignment_synthetic: true,
+      speech_shot_alignment_status: "skipped_not_omni_sentence_reconcile",
+      speech_shot_alignment_status_detail: reasons.join(" / "),
+      speech_shot_alignment_note: `不适用：${reasons.join(" / ")}。语音镜头对齐只在启用镜头分镜和句级 TTS 收敛时运行。`,
+      speech_shot_alignment_config_reasons: reasons,
+      speech_shot_alignment_analyzed_boundaries: 0,
+      speech_shot_alignment_decisions: [],
+      shot_anchor_cut_count: 0,
+      shot_anchor_extra_silence_total: 0,
+      shot_anchor_aligned_boundary_count: 0,
+      shot_anchor_extra_silence_budget: 0,
+      shot_anchor_skip_reasons: {},
+      speech_shot_alignment_max_final_gap: 0,
+    };
+  }
+
   function speechShotAlignmentSummary() {
     const av = currentTask?.variants?.av || {};
     const avDebug = currentTask?.av_debug || av.av_debug || {};
@@ -971,9 +1000,10 @@
       av.final_compose_summary,
       avDebug.final_compose_summary,
     ];
-    return candidates.find(item => (
+    const persisted = candidates.find(item => (
       item && Object.prototype.hasOwnProperty.call(item, "speech_shot_alignment_status")
-    )) || {};
+    ));
+    return persisted || speechShotAlignmentPendingSummary();
   }
 
   function renderSpeechShotAlignmentCard() {
@@ -983,7 +1013,8 @@
     if (!card || !body || !msg) return;
 
     const summary = speechShotAlignmentSummary();
-    const hasSummary = Object.prototype.hasOwnProperty.call(summary, "speech_shot_alignment_status");
+    const hasSummary = Object.prototype.hasOwnProperty.call(summary, "speech_shot_alignment_status")
+      && !summary.speech_shot_alignment_synthetic;
     const ttsStatus = String(currentTask?.steps?.tts || "");
     const shouldShow = TASK_WORKBENCH_CONFIG.apiBase === "/api/omni-translate"
       && (hasSummary || ["running", "done", "error", "failed"].includes(ttsStatus));
@@ -1005,6 +1036,11 @@
           ${escapeHtml(speechShotAlignmentReasonLabel(reason))} × ${escapeHtml(count)}
         </span>
       `).join("");
+    const configReasonRows = Array.isArray(summary.speech_shot_alignment_config_reasons)
+      ? summary.speech_shot_alignment_config_reasons.map(reason => `
+        <span class="speech-shot-reason-chip">${escapeHtml(reason)}</span>
+      `).join("")
+      : "";
     const decisionRows = decisions.slice(0, 16).map(row => {
       const decision = row.decision === "applied" ? "已优化" : "未改动";
       const finalGap = row.final_gap ?? row.required_final_gap ?? null;
@@ -1042,10 +1078,15 @@
       ? `<div class="speech-shot-more">还有 ${escapeHtml(decisions.length - 16)} 条决策已省略。</div>`
       : "";
 
-    msg.innerHTML = `状态：<span class="duration-status-tag ${escapeAttr(status.className)}">${escapeHtml(status.label)}</span>`;
+    const statusDetail = summary.speech_shot_alignment_status_detail
+      ? `：${escapeHtml(summary.speech_shot_alignment_status_detail)}`
+      : "";
+    const summaryNote = summary.speech_shot_alignment_note
+      || "没有使用大模型；这里仅结合收敛后的语音时间轴、原有紧凑静音和镜头切点做确定性判断。";
+    msg.innerHTML = `状态：<span class="duration-status-tag ${escapeAttr(status.className)}">${escapeHtml(status.label)}</span>${statusDetail}`;
     body.innerHTML = `
       <div class="speech-shot-note">
-        没有使用大模型；这里仅结合收敛后的语音时间轴、原有紧凑静音和镜头切点做确定性判断。
+        ${escapeHtml(summaryNote)}
       </div>
       <div class="speech-shot-metrics">
         <div><span>分析断点</span><strong>${escapeHtml(summary.speech_shot_alignment_analyzed_boundaries ?? 0)}</strong></div>
@@ -1056,7 +1097,7 @@
         <div><span>预算</span><strong>${formatAvDuration(summary.shot_anchor_extra_silence_budget)}</strong></div>
       </div>
       <div class="speech-shot-subtitle">为什么没做</div>
-      <div class="speech-shot-reasons">${skipRows || '<span class="speech-shot-reason-chip">没有跳过项</span>'}</div>
+      <div class="speech-shot-reasons">${skipRows || configReasonRows || '<span class="speech-shot-reason-chip">没有跳过项</span>'}</div>
       <div class="speech-shot-subtitle">逐句决策</div>
       ${decisionTable}
       ${moreRows}

@@ -1145,7 +1145,6 @@ def toggle_visible_to_all(task_id: str):
 
 @bp.route("/api/omni-translate/<task_id>/sentence-tts-loudness-calibration", methods=["PUT"])
 @login_required
-@admin_required
 def toggle_sentence_tts_loudness_calibration(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1174,7 +1173,6 @@ def toggle_sentence_tts_loudness_calibration(task_id: str):
 
 @bp.route("/api/omni-translate/<task_id>/auto-voice-selection", methods=["PUT"])
 @login_required
-@admin_required
 def toggle_auto_voice_selection(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:

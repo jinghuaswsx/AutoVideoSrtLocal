@@ -140,6 +140,8 @@ def test_omni_detail_shell_places_auto_voice_selection_before_sentence_loudness_
     assert "sentence_tts_loudness_calibration" in shared
     assert shared.index("autoVoiceSelectionCb") < shared.index("sentenceTtsLoudnessCalibrationCb")
     assert shared.index("sentenceTtsLoudnessCalibrationCb") < shared.index("visibleToAllCb")
+    assert "current_user.is_admin and _force_restart_api" not in shared
+    assert "{% if is_superadmin() and _force_restart_api %}" in shared
     assert "X-CSRFToken" in shared
 
 
@@ -519,6 +521,11 @@ def test_omni_speech_shot_alignment_card_is_rendered_between_tts_and_subtitle():
         < template.index('id="step-subtitle"')
     )
     assert "renderSpeechShotAlignmentCard" in script
+    assert "speechShotAlignmentPendingSummary" in script
+    assert "未启用镜头分镜" in script
+    assert "未使用句级 TTS 收敛" in script
+    assert "speech_shot_alignment_synthetic" in script
+    assert "!summary.speech_shot_alignment_synthetic" in script
     assert "speech_shot_alignment_decisions" in script
     assert "没有使用大模型" in script
     assert "为什么没做" in script

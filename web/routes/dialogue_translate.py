@@ -28,7 +28,7 @@ from pipeline.languages.registry import (
     normalize_enabled_target_langs,
 )
 from web import store
-from web.auth import admin_required, permission_required
+from web.auth import permission_required
 from web.services import dialogue_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.llm_debug import build_llm_debug_payload
@@ -1305,7 +1305,6 @@ def toggle_visible_to_all(task_id: str):
 
 @bp.route("/api/dialogue-translate/<task_id>/auto-voice-selection", methods=["PUT"])
 @login_required
-@admin_required
 def toggle_auto_voice_selection(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:

@@ -193,6 +193,22 @@ def test_dialogue_toggle_auto_voice_selection_updates_plugin_config(authed_clien
     mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
 
 
+def test_dialogue_toggle_auto_voice_selection_allows_task_operator(authed_user_client_no_db):
+    fake_task = {"_user_id": 2, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-operator/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    mock_store.update.assert_called_once_with("t-operator", plugin_config=updated_cfg)
+
+
 def test_dialogue_translate_audio_extract_artifact_falls_back_to_task_audio_file(
     authed_client_no_db,
     monkeypatch,
