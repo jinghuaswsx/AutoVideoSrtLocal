@@ -147,6 +147,18 @@
 .tc-badge--completed { background:var(--tc-success-bg); color:var(--tc-success-fg); }
 .tc-badge--terminated { background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
 .tc-badge--urgent { background:var(--tc-danger-bg); color:var(--tc-danger-fg); font-weight:700; }
+.tc-badge--rework {
+  background: var(--tc-danger-bg);
+  color: var(--tc-danger-fg);
+  font-weight: 800;
+  font-size: 22px;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  border: 2px solid var(--tc-danger-fg);
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
 .tc-empty { padding:60px 20px; text-align:center; color:var(--tc-fg-muted); }
 #tcDetailDrawer {
   display:none;
@@ -2440,7 +2452,7 @@ function tcBuildTaskRowHtml(it, users) {
     <td>
       <div class="tc-task-name-row" style="display:flex; align-items:center; gap:6px;">
         <div class="tc-task-name" title="${tcAttr(it.product_name || '')}" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${tcEsc(it.product_name)}</div>
-        ${tcUrgentBadge(it)}
+        ${tcReworkBadge(it)}${tcUrgentBadge(it)}
         ${tcCopyIconButton(it.product_name, '复制产品中文名', 'tc-task-name-copy')}
       </div>
       <div class="tc-task-meta" style="display:flex; align-items:center; gap:6px; margin-top:3px;">
@@ -2588,6 +2600,11 @@ function tcTaskActionGroup(actions) {
 function tcUrgentBadge(task) {
   return task && task.is_urgent
     ? '<span class="tc-badge tc-badge--urgent">紧急</span>'
+    : '';
+}
+function tcReworkBadge(task) {
+  return task && task.is_rework
+    ? '<span class="tc-badge tc-badge--rework">打回重做</span>'
     : '';
 }
 function tcDetailTaskAction(id) {
@@ -3025,7 +3042,7 @@ function tcRenderDetail(task, events, reviewAssets) {
               <h3>${tcEsc(task.product_name)}</h3>
               ${identityRows}
             </div>
-            <div class="tc-detail-status">${tcUrgentBadge(task)} <span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcTaskStatusLabel(task))}</div>
+            <div class="tc-detail-status">${tcReworkBadge(task)}${tcUrgentBadge(task)} <span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcTaskStatusLabel(task))}</div>
             <div class="tc-detail-meta">
               ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
               负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}

@@ -2246,3 +2246,38 @@ def test_api_stats_endpoint_delegates_to_tasks_service(authed_client_no_db, monk
     rsp = authed_client_no_db.get("/tasks/api/stats?start_date=2026-05-01&end_date=2026-05-15")
     assert rsp.status_code == 200
     assert captured[1] == ("2026-05-01", "2026-05-15")
+
+
+def test_rework_badge_is_rendered_in_templates(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    assert rsp.status_code == 200
+    body = rsp.data.decode("utf-8")
+    assert "function tcReworkBadge" in body
+    assert ".tc-badge--rework" in body
+    assert "tcReworkBadge(it)" in body
+    assert "tcReworkBadge(task)" in body
+
+
+def test_api_list_returns_is_rework_field(authed_user_client_no_db, monkeypatch):
+    captured = {}
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {
+            "items": [{
+                "id": 11,
+                "status": "assigned",
+                "high_level": "in_progress",
+                "is_rework": True,
+            }],
+            "page": 1,
+            "page_size": 50,
+        }
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+    rsp = authed_user_client_no_db.get("/tasks/api/list?tab=mine")
+    assert rsp.status_code == 200
+    data = rsp.get_json()
+    assert data["items"][0]["is_rework"] is True
