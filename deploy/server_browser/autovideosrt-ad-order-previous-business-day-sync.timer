@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt ad/order previous Meta business day sync at 12:00 Beijing time
+
+[Timer]
+OnCalendar=*-*-* 12:00:00
+Persistent=true
+Unit=autovideosrt-ad-order-previous-business-day-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt ad/order previous ISO week sync on Monday evening
+
+[Timer]
+OnCalendar=Mon *-*-* 20:30:00
+Persistent=true
+Unit=autovideosrt-ad-order-previous-week-sync.service
+
+[Install]
+WantedBy=timers.target

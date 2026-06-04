@@ -1,0 +1,19 @@
+[Unit]
+Description=AutoVideoSrt ad/order previous ISO week sync
+After=network-online.target autovideosrt-dxm01-meta-vnc.service autovideosrt-dxm03-rjc-vnc.service
+Wants=network-online.target autovideosrt-dxm01-meta-vnc.service autovideosrt-dxm03-rjc-vnc.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=META_AD_EXPORT_CDP_URL=http://127.0.0.1:9222
+Environment=DXM_ORDER_BROWSER_CDP_URL=http://127.0.0.1:9225
+ExecStartPre=/usr/bin/install -d -o root -g root -m 02775 /opt/autovideosrt/output/meta_daily_final_exports
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/ad_order_sync_orchestrator.py --mode previous-week --max-scan-pages 500
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=43200

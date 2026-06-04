@@ -184,11 +184,28 @@ def test_meta_daily_final_units_use_dxm01_meta_without_shared_lock_and_staggered
         assert "ExecStartPre=/usr/bin/install -d -o root -g root -m 02775 /opt/autovideosrt/output/meta_daily_final_exports" in service
 
     assert "--mode run" in sync_service
-    assert "--mode check" in check_service
+    assert "--mode run" in check_service
+    assert "--mode check" not in check_service
     assert "--include-adsets" in sync_service
     assert "--include-adsets" in check_service
-    assert "OnCalendar=*-*-* 16:30:00" in sync_timer
-    assert "OnCalendar=*-*-* 17:00:00" in check_timer
+    assert "OnCalendar=*-*-* 16:10:00" in sync_timer
+    assert "OnCalendar=*-*-* 19:00:00" in check_timer
+
+
+def test_ad_order_backfill_units_are_registered_with_expected_schedules():
+    daily_service = _read("deploy/server_browser/autovideosrt-ad-order-previous-business-day-sync.service")
+    daily_timer = _read("deploy/server_browser/autovideosrt-ad-order-previous-business-day-sync.timer")
+    weekly_service = _read("deploy/server_browser/autovideosrt-ad-order-previous-week-sync.service")
+    weekly_timer = _read("deploy/server_browser/autovideosrt-ad-order-previous-week-sync.timer")
+
+    assert "tools/ad_order_sync_orchestrator.py --mode previous-business-day" in daily_service
+    assert "tools/ad_order_sync_orchestrator.py --mode previous-week --max-scan-pages 500" in weekly_service
+    assert "autovideosrt-dxm03-rjc-vnc.service" in daily_service
+    assert "autovideosrt-dxm01-meta-vnc.service" in daily_service
+    assert "autovideosrt-dxm03-rjc-vnc.service" in weekly_service
+    assert "autovideosrt-dxm01-meta-vnc.service" in weekly_service
+    assert "OnCalendar=*-*-* 12:00:00" in daily_timer
+    assert "OnCalendar=Mon *-*-* 20:30:00" in weekly_timer
 
 
 def test_browser_automation_timers_are_staggered_to_reduce_lock_contention():
