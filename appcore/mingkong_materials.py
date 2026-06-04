@@ -3782,6 +3782,67 @@ def resolve_and_save_english_title(product_url: str, product_code: str = None) -
             _SUBMITTED_URLS.discard(product_url)
 
 
+def _has_chinese(text: str | None) -> bool:
+    if not text:
+        return False
+    import re
+    return bool(re.search(r'[\u4e00-\u9fff]', text))
+
+
+def _fetch_chinese_names_from_materials(product_codes: list[str], q_fn: Callable) -> dict[str, str]:
+    if not product_codes:
+        return {}
+    clean_codes = [c.strip().lower() for c in product_codes if c and isinstance(c, str) and c.strip()]
+    if not clean_codes:
+        return {}
+
+    placeholders = ",".join(["%s"] * len(clean_codes))
+    rows = []
+    try:
+        rows.extend(q_fn(
+            f"""
+            SELECT DISTINCT product_code, mk_product_name, product_name
+            FROM mingkong_material_daily_snapshots
+            WHERE LOWER(product_code) IN ({placeholders})
+              AND (
+                (mk_product_name IS NOT NULL AND mk_product_name <> '')
+                OR (product_name IS NOT NULL AND product_name <> '')
+              )
+            """,
+            tuple(clean_codes)
+        ) or [])
+    except Exception as e:
+        logger.warning("Failed to query snapshots for Chinese names fallback: %s", e)
+
+    try:
+        rows.extend(q_fn(
+            f"""
+            SELECT DISTINCT product_code, mk_product_name, product_name
+            FROM mingkong_material_daily_top100
+            WHERE LOWER(product_code) IN ({placeholders})
+              AND (
+                (mk_product_name IS NOT NULL AND mk_product_name <> '')
+                OR (product_name IS NOT NULL AND product_name <> '')
+              )
+            """,
+            tuple(clean_codes)
+        ) or [])
+    except Exception as e:
+        logger.warning("Failed to query top100 for Chinese names fallback: %s", e)
+
+    resolved: dict[str, str] = {}
+    for r in rows:
+        code = str(r.get("product_code") or "").strip().lower()
+        if not code:
+            continue
+        for field in ("mk_product_name", "product_name"):
+            val = str(r.get(field) or "").strip()
+            if _has_chinese(val):
+                if code not in resolved or len(val) > len(resolved[code]):
+                    resolved[code] = val
+    return resolved
+
+
 def enrich_and_fetch_english_titles(
     items: list[dict[str, Any]],
     *,
@@ -3925,6 +3986,11 @@ def enrich_and_fetch_english_titles(
         except Exception as e:
             logger.warning("[english_title] failed to fetch names from dictionary: %s", e)
 
+    # 2.6 Fetch from historical video materials as a fallback
+    fallback_cn_names: dict[str, str] = {}
+    if product_codes:
+        fallback_cn_names = _fetch_chinese_names_from_materials(list(product_codes), q_fn)
+
     # 3. Map back and schedule fetch if missing
     for item in items:
         ad_status = item.get("product_ad_status") or {}
@@ -3955,6 +4021,9 @@ def enrich_and_fetch_english_titles(
             
         if not resolved_cn_name and code:
             resolved_cn_name = dict_cn_names.get(code) or ""
+
+        if not resolved_cn_name and code:
+            resolved_cn_name = fallback_cn_names.get(code) or ""
             
         item["product_cn_name"] = resolved_cn_name
 
