@@ -1058,6 +1058,7 @@ def test_build_item_payload_filters_small_langs_without_pending_materials(monkey
     )
     # mock resolve_push_texts
     monkeypatch.setattr(pushes, "resolve_push_texts", lambda product_id: [])
+    monkeypatch.setattr(pushes, "resolve_localized_text_payload", lambda item: None)
     # mock build_media_public_url
     monkeypatch.setattr(pushes, "build_media_public_url", lambda key: f"https://media.test/{key}")
     # mock build_product_link
