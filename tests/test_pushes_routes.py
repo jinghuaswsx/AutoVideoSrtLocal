@@ -2593,7 +2593,10 @@ def test_pushes_modal_material_button_opens_three_step_progress_workbench():
     assert "pm-pipeline-json" in script
     assert "pm-pipeline-result" in script
     assert ".pm-overlay.pm-overlay--pipeline .pm-modal" in style
-    assert "grid-template-rows: repeat(3, minmax(0, 1fr))" in style
+    assert ".pm-shell[hidden]" in style
+    workbench_style = style.split(".pm-pipeline-workbench {", 1)[1].split("}", 1)[0]
+    assert "grid-template-columns: minmax(0, 36fr) minmax(0, 36fr) minmax(0, 28fr)" in workbench_style
+    assert "grid-template-rows: repeat(3, minmax(0, 1fr))" not in workbench_style
     assert "grid-template-rows: auto minmax(0, 7fr) minmax(0, 3fr)" in style
     assert ".pm-pipeline-status" in style
     assert "font-size: 2em" in style
