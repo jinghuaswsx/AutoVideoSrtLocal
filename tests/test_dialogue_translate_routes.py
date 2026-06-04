@@ -8,6 +8,21 @@ from unittest.mock import patch
 from web import store
 
 
+CFG_DIALOGUE_AUTO_VOICE = {
+    "asr_post": "asr_clean",
+    "shot_decompose": False,
+    "translate_algo": "av_sentence",
+    "source_anchored": False,
+    "tts_strategy": "sentence_reconcile",
+    "subtitle": "sentence_units",
+    "voice_separation": True,
+    "loudness_match": True,
+    "auto_voice_selection": True,
+    "sentence_tts_loudness_calibration": False,
+    "av_sync_audit": "off",
+}
+
+
 def test_dialogue_translate_index_requires_login(authed_client_no_db):
     client = authed_client_no_db.application.test_client()
 
@@ -83,6 +98,9 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert "/api/dialogue-translate" in body
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body
+    assert 'id="autoVoiceSelectionCb"' in body
+    assert "大模型自动音色选择" in body
+    assert "auto-voice-selection" in body
     assert 'id="voice-selector-multi"' not in body
     assert "dialogue_translate.localize" not in body
 
@@ -147,12 +165,32 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
         ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/attempt/<int:attempt>", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/<kind>", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/restart", ("OPTIONS", "POST")),
+        ("/api/dialogue-translate/<task_id>/auto-voice-selection", ("OPTIONS", "PUT")),
         ("/api/dialogue-translate/<task_id>/visible-to-all", ("OPTIONS", "PUT")),
         ("/api/dialogue-translate/<task_id>/analysis/run", ("OPTIONS", "POST")),
         ("/api/dialogue-translate/<task_id>/loudness-profile", ("OPTIONS", "POST")),
     }
 
     assert expected <= rules
+
+
+def test_dialogue_toggle_auto_voice_selection_updates_plugin_config(authed_client_no_db):
+    fake_task = {"_user_id": 1, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_client_no_db.put(
+            "/api/dialogue-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["auto_voice_selection"] is False
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    assert updated_cfg["asr_post"] == CFG_DIALOGUE_AUTO_VOICE["asr_post"]
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
 
 
 def test_dialogue_translate_audio_extract_artifact_falls_back_to_task_audio_file(
