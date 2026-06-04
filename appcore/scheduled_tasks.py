@@ -78,7 +78,10 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "roi_hourly_sync": {
         "code": "roi_hourly_sync",
         "name": "店小秘订单与 ROAS 实时同步",
-        "description": "每 20 分钟同步店小秘订单、Meta 广告数据，并刷新真实 ROAS 小时事实与日内快照。",
+        "description": (
+            "每 20 分钟同步店小秘近期订单、Meta 日内广告数据，并刷新真实 ROAS 日内快照。"
+            "Docs-anchor: docs/superpowers/specs/2026-06-04-ad-order-sync-schedule-design.md"
+        ),
         "schedule": "每 20 分钟（每小时 :00/:20/:40）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
@@ -90,8 +93,11 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "dianxiaomi_order_import": {
         "code": "dianxiaomi_order_import",
         "name": "店小秘订单导入",
-        "description": "ROI 实时同步中的店小秘订单导入子任务，记录订单抓取、明细入库和跳过数量。",
-        "schedule": "每 1 小时（随 ROI :02 触发）",
+        "description": (
+            "ROI 实时同步中的店小秘订单导入子任务；12:00/weekly 补拉编排也复用同一导入入口，"
+            "且通过 DXM 订单导入锁避免并发操作 DXM03 浏览器。"
+        ),
+        "schedule": "每 20 分钟（随 ROI :00/:20/:40 触发）；12:00/weekly 补拉编排也会调用",
         "source_type": "subtask",
         "source_label": "ROI 同步子任务",
         "source_ref": "autovideosrt-roi-realtime-sync.timer",
@@ -218,7 +224,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "meta_realtime_import",
         "name": "Meta 实时广告导入",
         "description": "ROI 实时同步中的 Meta 实时广告导入子任务，记录导入行数、消耗金额和跳过状态。",
-        "schedule": "每 1 小时（随 ROI :02 触发）",
+        "schedule": "每 20 分钟（随 ROI :00/:20/:40 触发）",
         "source_type": "subtask",
         "source_label": "ROI 同步子任务",
         "source_ref": "autovideosrt-roi-realtime-sync.timer",
@@ -230,16 +236,47 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "meta_daily_final",
         "name": "Meta 收盘日数据",
         "description": (
-            "每天北京时间 16:30 抓取刚收盘的 Meta 广告整日数据（Campaign / Ad Set / Ad），"
-            "17:00 做成功检测和补跑；spec: "
-            "docs/superpowers/specs/2026-05-28-meta-daily-final-adset-steady-sync-design.md。"
+            "每天北京时间 16:10 抓取刚收盘的 Meta 广告整日数据（Campaign / Ad Set / Ad），"
+            "19:00 对同一目标日做二次同步确认；spec: "
+            "docs/superpowers/specs/2026-06-04-ad-order-sync-schedule-design.md；"
+            "Ad Set steady sync: docs/superpowers/specs/2026-05-28-meta-daily-final-adset-steady-sync-design.md。"
         ),
-        "schedule": "每天 16:30 同步；17:00 检查补跑",
+        "schedule": "每天 16:10 同步；19:00 二次同步确认",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-meta-daily-final-sync.timer / autovideosrt-meta-daily-final-check.timer",
-        "runner": "tools/meta_daily_final_sync.py --include-adsets",
+        "runner": "tools/meta_daily_final_sync.py --mode run --include-adsets",
         "deployment": "线上已启用",
+        "log_table": "scheduled_task_runs",
+    },
+    "ad_order_previous_business_day_sync": {
+        "code": "ad_order_previous_business_day_sync",
+        "name": "广告订单上一业务日补拉",
+        "description": (
+            "每天 12:00 按 Meta 业务日口径补拉上一完整业务日：店小秘订单导入、Meta 日终广告同步、"
+            "订单利润重算。Docs-anchor: docs/superpowers/specs/2026-06-04-ad-order-sync-schedule-design.md"
+        ),
+        "schedule": "每天 12:00（Meta 业务日口径）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-ad-order-previous-business-day-sync.timer",
+        "runner": "tools/ad_order_sync_orchestrator.py --mode previous-business-day",
+        "deployment": "线上待启用",
+        "log_table": "scheduled_task_runs",
+    },
+    "ad_order_previous_week_sync": {
+        "code": "ad_order_previous_week_sync",
+        "name": "广告订单上一周补拉",
+        "description": (
+            "每周一 20:30 补拉上一 ISO 周 7 个 Meta 业务日：店小秘订单导入、Meta 日终广告同步、"
+            "订单利润重算。Docs-anchor: docs/superpowers/specs/2026-06-04-ad-order-sync-schedule-design.md"
+        ),
+        "schedule": "每周一 20:30（上一 ISO 周 7 个 Meta 业务日）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-ad-order-previous-week-sync.timer",
+        "runner": "tools/ad_order_sync_orchestrator.py --mode previous-week --max-scan-pages 500",
+        "deployment": "线上待启用",
         "log_table": "scheduled_task_runs",
     },
     "cdp_environment_watchdog": {
