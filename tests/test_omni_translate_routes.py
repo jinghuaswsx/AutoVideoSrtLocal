@@ -560,6 +560,49 @@ def test_omni_detail_query_includes_visible_to_all_for_permitted_users(authed_us
     assert args == ("shared-task", 2, "omni_translate")
 
 
+def test_omni_detail_visible_task_shows_top_switches_for_normal_user(authed_user_client_no_db):
+    task_id = "omni-visible-switches"
+    state = {
+        "id": task_id,
+        "_user_id": 1,
+        "type": "omni_translate",
+        "display_name": "Shared Omni",
+        "source_language": "en",
+        "target_lang": "de",
+        "visible_to_all": True,
+        "plugin_config": {
+            **CFG_ASR_CLEAN,
+            "auto_voice_selection": True,
+            "sentence_tts_loudness_calibration": False,
+        },
+        "steps": {"extract": "done", "voice_match": "waiting", "export": "pending"},
+    }
+    with patch("web.routes.omni_translate.db_query_one", return_value={
+        "id": task_id,
+        "user_id": 1,
+        "original_filename": "shared.mp4",
+        "display_name": "Shared Omni",
+        "task_dir": "/tmp/omni-visible-switches",
+        "state_json": json.dumps(state, ensure_ascii=False),
+        "status": "running",
+        "thumbnail_path": "",
+        "created_at": None,
+        "expires_at": None,
+        "deleted_at": None,
+    }), \
+         patch("web.routes.omni_translate.recover_project_if_needed"):
+        resp = authed_user_client_no_db.get(f"/omni-translate/{task_id}")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Shared Omni" in body
+    assert 'id="autoVoiceSelectionCb"' in body
+    assert 'id="sentenceTtsLoudnessCalibrationCb"' in body
+    assert "大模型自动音色选择" in body
+    assert "句级TTS响度校准" in body
+    assert 'id="visibleToAllCb"' not in body
+
+
 def test_loudness_profile_route_saves_standard_without_starting_runner(
     authed_client_no_db,
 ):
@@ -1158,6 +1201,24 @@ def test_toggle_sentence_tts_loudness_calibration_allows_task_operator(authed_us
     mock_store.update.assert_called_once_with("t-operator", plugin_config=updated_cfg)
 
 
+def test_toggle_sentence_tts_loudness_calibration_allows_viewable_normal_user(authed_user_client_no_db):
+    fake_task = {"_user_id": 1, "visible_to_all": True, "plugin_config": CFG_ASR_CLEAN}
+    with patch("web.routes.omni_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.omni_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.omni_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/omni-translate/t-1/sentence-tts-loudness-calibration",
+            json={"sentence_tts_loudness_calibration": True},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["sentence_tts_loudness_calibration"] is True
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["sentence_tts_loudness_calibration"] is True
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
 def test_toggle_auto_voice_selection_updates_plugin_config(authed_client_no_db):
     fake_task = {"_user_id": 1, "plugin_config": CFG_ASR_CLEAN}
     with patch("web.routes.omni_translate._get_viewable_task", return_value=fake_task), \
@@ -1191,6 +1252,36 @@ def test_toggle_auto_voice_selection_allows_task_operator(authed_user_client_no_
     updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
     assert updated_cfg["auto_voice_selection"] is False
     mock_store.update.assert_called_once_with("t-operator", plugin_config=updated_cfg)
+
+
+def test_toggle_auto_voice_selection_allows_viewable_normal_user(authed_user_client_no_db):
+    fake_task = {"_user_id": 1, "visible_to_all": True, "plugin_config": CFG_ASR_CLEAN}
+    with patch("web.routes.omni_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.omni_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.omni_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/omni-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["auto_voice_selection"] is False
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
+def test_toggle_auto_voice_selection_rejects_unviewable_task(authed_user_client_no_db):
+    with patch("web.routes.omni_translate._get_viewable_task", return_value=None), \
+         patch("web.routes.omni_translate.update_project_state") as mock_update_project_state:
+        resp = authed_user_client_no_db.put(
+            "/api/omni-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 404
+    mock_update_project_state.assert_not_called()
 
 
 def test_update_source_language_rejects_unsupported_lang(authed_client_no_db):

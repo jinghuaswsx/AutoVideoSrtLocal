@@ -164,7 +164,9 @@ def test_detail_shell_auto_voice_selection_supports_dialogue_api():
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
 
     assert "'/api/dialogue-translate'" in shared
-    assert "_force_restart_api in ('/api/omni-translate', '/api/dialogue-translate')" in shared
+    assert "{% if _force_restart_api in ('/api/omni-translate', '/api/dialogue-translate') %}" in shared
+    assert "current_user.is_admin and _force_restart_api in ('/api/omni-translate', '/api/dialogue-translate')" not in shared
+    assert "{% if is_superadmin() and _force_restart_api %}" in shared
 
 
 def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
