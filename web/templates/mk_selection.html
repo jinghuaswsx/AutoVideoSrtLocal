@@ -5557,7 +5557,10 @@ function mkiImportProgressRenderDomainRows(domains) {
         <input type="checkbox" value="${escapeHtml(domainId)}" data-mki-progress-domain-checkbox ${checked ? 'checked' : ''} ${globallyEnabled ? '' : 'disabled'}>
         <span class="mki-progress-domain-name">${escapeHtml(item.domain || '')}</span>
       </label>
-      ${status}
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="mki-progress-domain-link-check mki-progress-info-status mki-progress-info-status--checking" data-domain-id="${domainId}">检测中</span>
+        ${status}
+      </div>
     </div>`;
   }).join('');
 }
@@ -5588,6 +5591,39 @@ function mkiImportProgressEffectiveDomainIds() {
   return selectedIds.length ? selectedIds : mkiImportProgressDefaultDomainIds();
 }
 
+function mkiImportProgressDetectAllDomains(domains) {
+  if (!Array.isArray(domains)) return;
+  domains.forEach(item => {
+    const domainId = item.id;
+    const url = item.url;
+    const statusEl = document.querySelector(`.mki-progress-domain-link-check[data-domain-id="${domainId}"]`);
+    if (!statusEl) return;
+    if (!url) {
+      statusEl.className = 'mki-progress-domain-link-check mki-progress-info-status mki-progress-info-status--fail';
+      statusEl.textContent = '无链接';
+      return;
+    }
+    statusEl.className = 'mki-progress-domain-link-check mki-progress-info-status mki-progress-info-status--checking';
+    statusEl.textContent = '检测中';
+
+    fetch('/mk-import/probe-url?url=' + encodeURIComponent(url))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) {
+          statusEl.className = 'mki-progress-domain-link-check mki-progress-info-status mki-progress-info-status--ok';
+          statusEl.textContent = '200';
+        } else {
+          statusEl.className = 'mki-progress-domain-link-check mki-progress-info-status mki-progress-info-status--fail';
+          statusEl.textContent = data.status_code ? String(data.status_code) : (data.detail || '不可达');
+        }
+      })
+      .catch(function() {
+        statusEl.className = 'mki-progress-domain-link-check mki-progress-info-status mki-progress-info-status--fail';
+        statusEl.textContent = '检测失败';
+      });
+  });
+}
+
 async function mkiImportProgressLoadDomains(productId) {
   const panel = document.getElementById('mkiImportProgressDomains');
   const list = document.getElementById('mkiImportProgressDomainList');
@@ -5606,6 +5642,7 @@ async function mkiImportProgressLoadDomains(productId) {
     if (!rsp.ok) throw new Error(data.message || data.error || rsp.statusText);
     mkiImportProgressDomainOptions = data.domains || [];
     list.innerHTML = mkiImportProgressRenderDomainRows(mkiImportProgressDomainOptions);
+    mkiImportProgressDetectAllDomains(mkiImportProgressDomainOptions);
     submit.disabled = false;
     mkiImportProgressSetStep('domains', 'running', '请确认该产品后续要发布到哪些域名');
   } catch (err) {
@@ -5636,7 +5673,10 @@ async function mkiImportProgressSaveDomains() {
     if (!rsp.ok) throw new Error(data.message || data.error || rsp.statusText);
     const list = document.getElementById('mkiImportProgressDomainList');
     mkiImportProgressDomainOptions = data.domains || [];
-    if (list) list.innerHTML = mkiImportProgressRenderDomainRows(mkiImportProgressDomainOptions);
+    if (list) {
+      list.innerHTML = mkiImportProgressRenderDomainRows(mkiImportProgressDomainOptions);
+      mkiImportProgressDetectAllDomains(mkiImportProgressDomainOptions);
+    }
     const domainDetail = enabledIds.length
       ? `已同步 ${enabledIds.length} 个发布域名到链接管理`
       : '未找到默认发布域名';

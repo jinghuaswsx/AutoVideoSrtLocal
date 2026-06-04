@@ -320,7 +320,16 @@ def _product_domain_rows(product_id: int) -> dict[int, bool]:
     return {int(row.get("domain_id") or 0): bool(row.get("enabled")) for row in rows}
 
 
-def list_product_domain_options(product_id: int) -> list[dict[str, Any]]:
+def list_product_domain_options(product_id: int, product: dict | None = None) -> list[dict[str, Any]]:
+    if not product and product_id:
+        try:
+            from appcore import medias
+            product = medias.get_product(product_id)
+        except Exception:
+            product = None
+    product_code = str(product.get("product_code") or "").strip() if product else ""
+    link_map = _localized_link_map(product).get("en", {}) if product else {}
+
     domains = list_domains(include_disabled=True)
     overrides = _product_domain_rows(product_id)
     customized = bool(overrides)
@@ -328,17 +337,28 @@ def list_product_domain_options(product_id: int) -> list[dict[str, Any]]:
     options: list[dict[str, Any]] = []
     for row in domains:
         domain_id = int(row["id"])
+        domain_name = row["domain"]
         global_enabled = bool(row["enabled"])
         if customized:
             product_enabled = overrides.get(domain_id, False)
         else:
-            product_enabled = row["domain"] in default_product_domains
+            product_enabled = domain_name in default_product_domains
+
+        url = (link_map.get(domain_name) or "").strip()
+        if not url:
+            legacy_url = (link_map.get("") or "").strip()
+            if legacy_url and domain_from_url(legacy_url) == domain_name:
+                url = legacy_url
+        if not url and product_code:
+            url = build_product_page_url(domain_name, "en", product_code)
+
         options.append({
             **row,
             "enabled": global_enabled,
             "product_enabled": bool(product_enabled),
             "effective_enabled": bool(global_enabled and product_enabled),
             "customized": customized,
+            "url": url,
         })
     return options
 
