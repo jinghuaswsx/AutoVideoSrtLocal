@@ -61,7 +61,7 @@ def build_stitched_audio(
             )
     mix_inputs = "".join(f"[a{i}]" for i in range(len(segments)))
     filter_graph = ";".join(filter_parts) + (
-        f";{mix_inputs}amix=inputs={len(segments)}:duration=longest[aout]"
+        f";{mix_inputs}amix=inputs={len(segments)}:duration=longest:normalize=0[aout]"
     )
 
     cmd = [

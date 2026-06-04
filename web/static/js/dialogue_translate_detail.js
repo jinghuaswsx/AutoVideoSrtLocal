@@ -8,7 +8,15 @@
   var timelineEl = document.getElementById("dialogueSegmentTimeline");
   var feedbackEl = document.getElementById("dialogueVoiceFeedback");
   var confirmBtn = document.getElementById("dialogueVoiceConfirmBtn");
-  if (!panel || !taskId || !statusEl || !gridEl || !timelineEl || !feedbackEl || !confirmBtn) {
+
+  var speakerConfirmPanel = document.getElementById("dialogueSpeakerConfirmPanel");
+  var speakerAliasAInput = document.getElementById("speakerAliasA");
+  var speakerAliasBInput = document.getElementById("speakerAliasB");
+  var speakerConfirmList = document.getElementById("dialogueSpeakerConfirmList");
+  var speakerConfirmBtn = document.getElementById("dialogueSpeakerConfirmBtn");
+  var speakerFeedbackEl = document.getElementById("dialogueSpeakerFeedback");
+
+  if (!panel || !taskId || !statusEl || !gridEl || !timelineEl || !feedbackEl || !confirmBtn || !speakerConfirmPanel || !speakerConfirmList || !speakerConfirmBtn) {
     return;
   }
 
@@ -337,16 +345,28 @@
     return reasons.length ? reasons.join(" / ") : "";
   }
 
-  function repositionPanel() {
-    var anchor =
-      document.getElementById("step-voice_match_ab") ||
-      document.getElementById("step-speaker_detect") ||
-      document.getElementById("step-asr_clean") ||
-      document.getElementById("step-asr_normalize") ||
-      document.getElementById("step-asr");
-    if (!anchor || !anchor.parentNode) return;
-    if (anchor.nextSibling !== panel) {
-      anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+  function repositionPanel(task) {
+    var steps = task && task.steps ? task.steps : {};
+    var confirmStatus = String(steps.speaker_confirm || "pending");
+    var currentReviewStep = String((task && task.current_review_step) || "");
+    var voiceStatus = voiceMatchStatus(task);
+
+    if (confirmStatus === "waiting" || currentReviewStep === "speaker_confirm") {
+      var anchor = document.getElementById("step-speaker_confirm");
+      if (anchor && anchor.parentNode && speakerConfirmPanel) {
+        if (anchor.nextSibling !== speakerConfirmPanel) {
+          anchor.parentNode.insertBefore(speakerConfirmPanel, anchor.nextSibling);
+        }
+      }
+    }
+
+    if (currentReviewStep === "voice_match_ab" || voiceStatus === "waiting" || voiceStatus === "done") {
+      var anchor = document.getElementById("step-voice_match_ab");
+      if (anchor && anchor.parentNode && panel) {
+        if (anchor.nextSibling !== panel) {
+          anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+        }
+      }
     }
   }
 
@@ -355,12 +375,17 @@
     var steps = task && task.steps ? task.steps : {};
     var voiceStatus = voiceMatchStatus(task);
     var speakerStatus = String(steps.speaker_detect || "pending");
+    var confirmStatus = String(steps.speaker_confirm || "pending");
+    if (confirmStatus === "waiting" || currentReviewStep === "speaker_confirm") {
+      statusEl.textContent = "第一步：等待确认说话人分配和别名设置。";
+      return;
+    }
     if (voiceStatus === "waiting") {
-      statusEl.textContent = "A/B 候选音色已就绪，确认后将从 alignment 继续。";
+      statusEl.textContent = "第二步：A/B 候选音色已就绪，确认后将从 alignment 继续。";
       return;
     }
     if (currentReviewStep === "voice_match_ab") {
-      statusEl.textContent = "等待确认 A/B 音色。";
+      statusEl.textContent = "第二步：等待确认 A/B 音色。";
       return;
     }
     if (voiceStatus === "done") {
@@ -375,11 +400,15 @@
       statusEl.textContent = "正在识别对话说话人...";
       return;
     }
+    if (confirmStatus === "running") {
+      statusEl.textContent = "正在保存并处理说话人确认...";
+      return;
+    }
     if (voiceStatus === "running") {
       statusEl.textContent = "正在为 Speaker A / B 匹配候选音色...";
       return;
     }
-    statusEl.textContent = "等待 speaker_detect / voice_match_ab 完成。";
+    statusEl.textContent = "等待 speaker_detect / speaker_confirm / voice_match_ab 完成。";
   }
 
   function updateConfirmState() {
@@ -682,7 +711,9 @@
     if (!options || options.showSpeaker !== false) {
       var speaker = document.createElement("span");
       speaker.className = "dialogue-segment-speaker";
-      speaker.textContent = "Speaker " + (segment.speaker_id || "?");
+      var aliases = lastTask && lastTask.speaker_aliases ? lastTask.speaker_aliases : {};
+      var alias = aliases[segment.speaker_id];
+      speaker.textContent = "Speaker " + (segment.speaker_id || "?") + (alias ? " (" + alias + ")" : "");
       header.appendChild(speaker);
     }
 
@@ -822,7 +853,9 @@
     var header = document.createElement("header");
     var titleWrap = document.createElement("div");
     var title = document.createElement("h4");
-    title.textContent = "Speaker " + speaker;
+    var aliases = task && task.speaker_aliases ? task.speaker_aliases : {};
+    var alias = aliases[speaker];
+    title.textContent = "Speaker " + speaker + (alias ? " (" + alias + ")" : "");
     var subtitle = document.createElement("small");
     var aiCount = (Array.isArray(profile.voice_ai_rankings) ? profile.voice_ai_rankings : [])
       .filter(function (row) { return normalizedRank(row && row.llm_rank) !== null; })
@@ -1046,16 +1079,117 @@
     timelineEl.appendChild(list);
   }
 
+  function renderSpeakerConfirmItem(segment, position, task) {
+    var item = document.createElement("li");
+    item.className = "dialogue-segment-item";
+
+    var header = document.createElement("header");
+    
+    var time = document.createElement("span");
+    time.className = "dialogue-segment-meta";
+    time.textContent = formatTime(segment.start_time) + " - " + formatTime(segment.end_time);
+    header.appendChild(time);
+
+    if (segment.speaker_confidence != null) {
+      var confidence = document.createElement("span");
+      confidence.className = "dialogue-segment-meta";
+      confidence.textContent = "置信度 " + Math.round(Number(segment.speaker_confidence || 0) * 100) + "%";
+      header.appendChild(confidence);
+    }
+    
+    var select = document.createElement("select");
+    select.className = "dialogue-speaker-selector";
+    select.dataset.index = segment.index;
+    
+    var aliases = task.speaker_aliases || {};
+    var aliasA = speakerAliasAInput.value.trim() || aliases.A || "";
+    var aliasB = speakerAliasBInput.value.trim() || aliases.B || "";
+    var suffixA = aliasA ? " (" + aliasA + ")" : "";
+    var suffixB = aliasB ? " (" + aliasB + ")" : "";
+
+    var optA = document.createElement("option");
+    optA.value = "A";
+    optA.textContent = "Speaker A" + suffixA;
+    if (segment.speaker_id === "B") {
+      optA.selected = false;
+    } else {
+      optA.selected = true;
+    }
+    select.appendChild(optA);
+
+    var optB = document.createElement("option");
+    optB.value = "B";
+    optB.textContent = "Speaker B" + suffixB;
+    if (segment.speaker_id === "B") {
+      optB.selected = true;
+    }
+    select.appendChild(optB);
+
+    select.addEventListener("change", function () {
+      segment.speaker_id = select.value;
+    });
+
+    header.appendChild(select);
+    item.appendChild(header);
+
+    appendSegmentTextAndAudio(item, segment, position);
+    return item;
+  }
+
+  function renderSpeakerConfirmPanel(task) {
+    if (!task) return;
+    
+    if (document.activeElement !== speakerAliasAInput && !speakerAliasAInput.value && task.speaker_aliases && task.speaker_aliases.A) {
+      speakerAliasAInput.value = task.speaker_aliases.A;
+    }
+    if (document.activeElement !== speakerAliasBInput && !speakerAliasBInput.value && task.speaker_aliases && task.speaker_aliases.B) {
+      speakerAliasBInput.value = task.speaker_aliases.B;
+    }
+
+    var segments = Array.isArray(task.dialogue_segments) ? task.dialogue_segments : [];
+    speakerConfirmList.innerHTML = "";
+
+    if (!segments.length) {
+      var empty = document.createElement("div");
+      empty.className = "dialogue-segment-empty";
+      empty.textContent = "未找到对话文本片段。";
+      speakerConfirmList.appendChild(empty);
+      return;
+    }
+
+    segments.forEach(function (segment, position) {
+      if (!segment || typeof segment !== "object") return;
+      speakerConfirmList.appendChild(renderSpeakerConfirmItem(segment, position, task));
+    });
+  }
+
   function render(task) {
     lastTask = task || {};
-    repositionPanel();
+    repositionPanel(task || {});
     updateStatus(task || {});
-    gridEl.innerHTML = "";
-    speakers.forEach(function (speaker) {
-      gridEl.appendChild(renderSpeakerCard(task || {}, speaker));
-    });
-    renderSegmentTimeline(task || {});
-    updateConfirmState();
+
+    var steps = task && task.steps ? task.steps : {};
+    var confirmStatus = String(steps.speaker_confirm || "pending");
+    var currentReviewStep = String((task && task.current_review_step) || "");
+
+    if (confirmStatus === "waiting" || currentReviewStep === "speaker_confirm") {
+      speakerConfirmPanel.style.display = "grid";
+      panel.style.display = "none";
+      renderSpeakerConfirmPanel(task);
+    } else if (currentReviewStep === "voice_match_ab" || steps.voice_match_ab === "waiting" || steps.voice_match_ab === "done") {
+      speakerConfirmPanel.style.display = "none";
+      panel.style.display = "grid";
+
+      gridEl.innerHTML = "";
+      speakers.forEach(function (speaker) {
+        gridEl.appendChild(renderSpeakerCard(task || {}, speaker));
+      });
+      renderSegmentTimeline(task || {});
+      updateConfirmState();
+    } else {
+      speakerConfirmPanel.style.display = "none";
+      panel.style.display = "none";
+    }
   }
 
   function renderFromRefresh(task) {
@@ -1065,6 +1199,11 @@
     }
     if (hasActiveDialogueAudio()) {
       return;
+    }
+    if (lastTask && lastTask.steps && lastTask.steps.speaker_confirm === "waiting" && task.steps && task.steps.speaker_confirm === "waiting") {
+      if (lastTask.status === task.status && lastTask.current_review_step === task.current_review_step) {
+        return;
+      }
     }
     render(task);
     lastRefreshRenderSignature = signature;
@@ -1176,6 +1315,90 @@
       isSubmitting = false;
       confirmBtn.textContent = "确认 A/B 音色并继续";
       updateConfirmState();
+    }
+  });
+
+  speakerAliasAInput.addEventListener("input", function() {
+    var val = speakerAliasAInput.value.trim();
+    var suffix = val ? " (" + val + ")" : "";
+    speakerConfirmList.querySelectorAll(".dialogue-speaker-selector").forEach(function(select) {
+      if (select.options[0]) {
+        select.options[0].textContent = "Speaker A" + suffix;
+      }
+    });
+  });
+
+  speakerAliasBInput.addEventListener("input", function() {
+    var val = speakerAliasBInput.value.trim();
+    var suffix = val ? " (" + val + ")" : "";
+    speakerConfirmList.querySelectorAll(".dialogue-speaker-selector").forEach(function(select) {
+      if (select.options[1]) {
+        select.options[1].textContent = "Speaker B" + suffix;
+      }
+    });
+  });
+
+  speakerConfirmBtn.addEventListener("click", async function () {
+    var steps = lastTask && lastTask.steps ? lastTask.steps : {};
+    var confirmStatus = String(steps.speaker_confirm || "pending");
+    if (isSubmitting || confirmStatus !== "waiting") {
+      return;
+    }
+
+    isSubmitting = true;
+    speakerConfirmBtn.disabled = true;
+    speakerConfirmBtn.textContent = "正在处理...";
+    speakerFeedbackEl.textContent = "正在保存说话人设置并生成音频样本...";
+    speakerFeedbackEl.dataset.state = "";
+
+    try {
+      var segments = lastTask && lastTask.dialogue_segments ? lastTask.dialogue_segments : [];
+      var segmentsPayload = segments.map(function(seg) {
+        return {
+          index: seg.index,
+          speaker_id: seg.speaker_id
+        };
+      });
+
+      var aliasA = speakerAliasAInput.value.trim();
+      var aliasB = speakerAliasBInput.value.trim();
+
+      var response = await fetch(
+        apiBase + "/" + encodeURIComponent(taskId) + "/confirm-speakers",
+        {
+          method: "POST",
+          headers: requestHeaders(),
+          body: JSON.stringify({
+            dialogue_segments: segmentsPayload,
+            speaker_aliases: {
+              A: aliasA,
+              B: aliasB
+            }
+          })
+        }
+      );
+
+      var payload = {};
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        payload = {};
+      }
+
+      if (!response.ok) {
+        throw new Error(payload.error || ("HTTP " + response.status));
+      }
+
+      speakerFeedbackEl.textContent = "说话人确认成功，即将进入音色匹配。";
+      speakerFeedbackEl.dataset.state = "success";
+      await refresh();
+    } catch (error) {
+      speakerFeedbackEl.textContent = error && error.message ? error.message : "确认失败";
+      speakerFeedbackEl.dataset.state = "error";
+    } finally {
+      isSubmitting = false;
+      speakerConfirmBtn.disabled = false;
+      speakerConfirmBtn.textContent = "确认说话人与别名并继续";
     }
   });
 

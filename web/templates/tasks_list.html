@@ -38,10 +38,12 @@
   position: relative;
   width: 120px;
   height: 90px;
+  padding: 0;
   border: 1px solid var(--tc-border-strong);
   border-radius: var(--tc-r);
   overflow: hidden;
   background: var(--tc-bg-muted);
+  cursor: pointer;
   transition: transform 0.2s ease, border-color 0.2s ease;
 }
 .tc-event-screenshot:hover {
@@ -186,6 +188,17 @@
 .tc-detail-status { margin-top:10px; font-size:13px; }
 .tc-detail-meta { margin-top:6px; font-size:13px; color:var(--tc-fg-muted); }
 .tc-detail-reason { background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-top:10px; font-size:13px; }
+.tc-admin-feedback-card { margin-top:14px; padding:14px; border:2px solid var(--tc-danger); border-radius:var(--tc-r-md); background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
+.tc-admin-feedback-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.tc-admin-feedback-title { font-size:15px; font-weight:800; line-height:1.3; }
+.tc-admin-feedback-source { font-size:12px; font-weight:700; color:var(--tc-danger-fg); opacity:.86; }
+.tc-admin-feedback-body { font-size:13px; line-height:1.55; overflow-wrap:anywhere; }
+.tc-admin-feedback-issues { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
+.tc-admin-feedback-issue { display:inline-flex; align-items:center; min-height:22px; padding:2px 8px; border:1px solid var(--tc-danger); border-radius:999px; background:var(--tc-bg); color:var(--tc-danger-fg); font-size:12px; font-weight:700; }
+.tc-admin-feedback-images { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:10px; margin-top:12px; }
+.tc-admin-feedback-image-btn { display:block; width:100%; min-width:0; padding:6px; border:1px solid var(--tc-danger); border-radius:var(--tc-r-md); background:var(--tc-bg); cursor:pointer; }
+.tc-admin-feedback-image-btn:hover { border-color:var(--tc-danger-fg); background:var(--tc-bg-subtle); }
+.tc-admin-feedback-image { display:block; width:100%; max-height:520px; object-fit:contain; border-radius:var(--tc-r); background:var(--tc-bg-muted); }
 .tc-detail-toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
 .tc-detail-title-block { margin-bottom:8px; }
 .tc-detail-title-block h3 { margin:0 0 8px; font-size:20px; line-height:1.3; overflow-wrap:anywhere; }
@@ -390,6 +403,12 @@
 .tc-manual-result-status { display:none; margin-top:12px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r); background:var(--tc-bg-subtle); font-size:13px; line-height:1.5; }
 .tc-manual-result-status.is-success { display:block; border-color:transparent; background:var(--tc-success-bg); color:var(--tc-success-fg); }
 .tc-manual-result-status.is-error { display:block; border-color:transparent; background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
+.tc-feedback-image-modal { display:none; position:fixed; inset:0; align-items:center; justify-content:center; padding:24px; background:rgba(15, 23, 42, .72); z-index:1800; }
+.tc-feedback-image-modal.is-open { display:flex; }
+.tc-feedback-image-dialog { position:relative; max-width:calc(100vw - 48px); max-height:calc(100dvh - 48px); display:grid; gap:10px; justify-items:end; }
+.tc-feedback-image-close { min-height:32px; padding:0 14px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg); cursor:pointer; font-size:13px; }
+.tc-feedback-image-close:hover { background:var(--tc-bg-muted); }
+.tc-feedback-image-full { display:block; max-width:calc(100vw - 48px); max-height:calc(100dvh - 96px); object-fit:contain; border-radius:var(--tc-r-md); background:var(--tc-bg); box-shadow:0 18px 44px rgba(15, 23, 42, .28); }
 
 @media (max-width: 1100px) {
   #tcDetailDrawer { width:min(760px, 82vw); min-width:0; }
@@ -419,6 +438,7 @@
   /* 详情抽屉移动端全宽 */
   #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; min-width:0 !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
   .tc-manual-result-modal { width: 100vw !important; min-width:0 !important; }
+  .tc-admin-feedback-images { grid-template-columns:1fr; }
   .tc-readiness-portrait-card { width:min(270px, 100%); height:auto; aspect-ratio:9 / 16; }
   /* 表格走 mobile.css 兜底横滚；这里只调字号和间距 */
   .tc-table-scroll { overflow-x: auto; }
@@ -623,6 +643,13 @@
         <button class="tc-btn" onclick="tcCloseManualRawResult()">关闭</button>
         <button class="tc-btn tc-btn--primary" id="tcManualRawResultSubmit" onclick="tcSubmitManualRawResult()">提交并入库</button>
       </div>
+    </div>
+  </div>
+
+  <div id="tcFeedbackImageModal" class="tc-feedback-image-modal" aria-hidden="true" onclick="if (event.target === this) tcCloseFeedbackImageModal();">
+    <div class="tc-feedback-image-dialog" role="dialog" aria-modal="true" aria-label="管理员反馈截图">
+      <button type="button" class="tc-feedback-image-close" onclick="tcCloseFeedbackImageModal()">关闭</button>
+      <img id="tcFeedbackImageFull" class="tc-feedback-image-full" alt="管理员反馈截图">
     </div>
   </div>
 
@@ -1174,6 +1201,87 @@ function tcHumanEvent(event, index) {
     tech: Object.keys(payload).length ? JSON.stringify(payload, null, 2) : '',
   };
 }
+function tcNormalizeFeedbackImageUrls(urls) {
+  return (Array.isArray(urls) ? urls : [])
+    .map(function(url) { return tcSafeHref(url); })
+    .filter(Boolean);
+}
+function tcRenderFeedbackImageButtons(urls, options) {
+  const safeUrls = tcNormalizeFeedbackImageUrls(urls);
+  if (!safeUrls.length) return '';
+  const opts = options || {};
+  const wrapClass = opts.wrapClass || 'tc-admin-feedback-images';
+  const buttonClass = opts.buttonClass || 'tc-admin-feedback-image-btn';
+  const imageClass = opts.imageClass || 'tc-admin-feedback-image';
+  const label = opts.label || '管理员反馈截图';
+  return '<div class="' + tcAttr(wrapClass) + '">'
+    + safeUrls.map(function(url, index) {
+        const alt = label + (safeUrls.length > 1 ? ' ' + (index + 1) : '');
+        return '<button type="button" class="' + tcAttr(buttonClass) + '" data-feedback-image-url="' + tcAttr(url) + '" data-feedback-image-label="' + tcAttr(alt) + '" onclick="tcOpenFeedbackImageModal(this.dataset.feedbackImageUrl, this.dataset.feedbackImageLabel)">'
+          + '<img class="' + tcAttr(imageClass) + '" src="' + tcAttr(url) + '" alt="' + tcAttr(alt) + '">'
+          + '</button>';
+      }).join('')
+    + '</div>';
+}
+function tcLatestAdminFeedback(task, events) {
+  const lastReason = String((task && task.last_reason) || '').trim();
+  const list = Array.isArray(events) ? events : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const event = list[i] || {};
+    const eventType = String(event.event_type || '');
+    if (eventType !== 'push_rework_rejected' && eventType !== 'rejected') continue;
+    const payload = tcParsePayload(event.payload_json);
+    const reason = String((payload && payload.reason) || '').trim();
+    const issueLabels = Array.isArray(payload.issue_labels) ? payload.issue_labels.filter(Boolean).map(String) : [];
+    const imageUrls = tcNormalizeFeedbackImageUrls(payload.image_urls || []);
+    return {
+      source: eventType === 'push_rework_rejected' ? '推送管理打回' : '任务审核打回',
+      message: lastReason || (reason ? '打回原因：' + reason : '管理员已打回该任务，请按反馈修改后重新提交。'),
+      reason,
+      issueLabels,
+      imageUrls,
+      actor: event.actor_display_name || event.actor_username || '管理员',
+      time: tcFormatTime(event.created_at),
+    };
+  }
+  if (lastReason && lastReason.includes('管理员已拒绝')) {
+    return {
+      source: '管理员打回',
+      message: lastReason,
+      reason: '',
+      issueLabels: [],
+      imageUrls: [],
+      actor: '管理员',
+      time: '',
+    };
+  }
+  return null;
+}
+function tcRenderAdminFeedbackCard(task, events) {
+  const feedback = tcLatestAdminFeedback(task, events);
+  if (!feedback) return '';
+  const meta = [feedback.source, feedback.actor, feedback.time].filter(Boolean).join(' · ');
+  const issues = feedback.issueLabels.length
+    ? '<div class="tc-admin-feedback-issues">'
+      + feedback.issueLabels.map(function(label) {
+          return '<span class="tc-admin-feedback-issue">' + tcEsc(label) + '</span>';
+        }).join('')
+      + '</div>'
+    : '';
+  const reason = feedback.reason && feedback.message.indexOf(feedback.reason) < 0
+    ? '<div class="tc-admin-feedback-body" style="margin-top:6px;">批注：' + tcEsc(feedback.reason) + '</div>'
+    : '';
+  return '<section class="tc-admin-feedback-card" aria-label="管理员反馈">'
+    + '<div class="tc-admin-feedback-head">'
+    + '<div class="tc-admin-feedback-title">管理员反馈</div>'
+    + '<div class="tc-admin-feedback-source">' + tcEsc(meta) + '</div>'
+    + '</div>'
+    + '<div class="tc-admin-feedback-body">' + tcEsc(feedback.message) + '</div>'
+    + reason
+    + issues
+    + tcRenderFeedbackImageButtons(feedback.imageUrls, {label: '管理员反馈截图'})
+    + '</section>';
+}
 function tcReviewAssetsByEvent(reviewAssets) {
   const map = {};
   ((reviewAssets && reviewAssets.steps) || []).forEach(function(step) {
@@ -1543,15 +1651,12 @@ function tcRenderEventTimeline(task, events, reviewAssets) {
     const isPushReworkRejected = String(event && event.event_type || '') === 'push_rework_rejected';
     let imageListHtml = '';
     if (isPushReworkRejected && payload && Array.isArray(payload.image_urls) && payload.image_urls.length) {
-      imageListHtml = '<div class="tc-event-screenshots">'
-        + payload.image_urls.map(function(url) {
-            return '<div class="tc-event-screenshot">'
-              + '<a class="tc-event-screenshot-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
-              + '<img class="tc-event-screenshot-img" src="' + tcAttr(url) + '" alt="打回截图">'
-              + '</a>'
-              + '</div>';
-          }).join('')
-        + '</div>';
+      imageListHtml = tcRenderFeedbackImageButtons(payload.image_urls, {
+        wrapClass: 'tc-event-screenshots',
+        buttonClass: 'tc-event-screenshot',
+        imageClass: 'tc-event-screenshot-img',
+        label: '打回截图',
+      });
     }
     const reviewStep = reviewByEvent[event.event_type] || null;
     const reviewAttrs = reviewStep ? ' id="tcReviewStep-' + tcAttr(event.event_type || '') + '"' : '';
@@ -3009,6 +3114,40 @@ async function tcRefreshDetail(id, btn) {
 }
 function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; TC_DETAIL_CURRENT_TASK = null; }
 
+let TC_FEEDBACK_IMAGE_LAST_FOCUS = null;
+function tcOpenFeedbackImageModal(url, label) {
+  const safeUrl = tcSafeHref(url);
+  if (!safeUrl) return;
+  const modal = document.getElementById('tcFeedbackImageModal');
+  const image = document.getElementById('tcFeedbackImageFull');
+  if (!modal || !image) return;
+  TC_FEEDBACK_IMAGE_LAST_FOCUS = document.activeElement;
+  image.src = safeUrl;
+  image.alt = label || '管理员反馈截图';
+  modal.classList.add('is-open');
+  modal.setAttribute('aria-hidden', 'false');
+  const closeBtn = modal.querySelector('.tc-feedback-image-close');
+  if (closeBtn && closeBtn.focus) closeBtn.focus({preventScroll:true});
+}
+function tcCloseFeedbackImageModal() {
+  const modal = document.getElementById('tcFeedbackImageModal');
+  const image = document.getElementById('tcFeedbackImageFull');
+  if (!modal) return;
+  modal.classList.remove('is-open');
+  modal.setAttribute('aria-hidden', 'true');
+  if (image) image.removeAttribute('src');
+  const lastFocus = TC_FEEDBACK_IMAGE_LAST_FOCUS;
+  TC_FEEDBACK_IMAGE_LAST_FOCUS = null;
+  if (lastFocus && lastFocus.focus) lastFocus.focus({preventScroll:true});
+}
+document.addEventListener('keydown', function(event) {
+  if (event.key !== 'Escape') return;
+  const modal = document.getElementById('tcFeedbackImageModal');
+  if (modal && modal.classList.contains('is-open')) {
+    tcCloseFeedbackImageModal();
+  }
+});
+
 function tcRenderDetailIdentityRows(task, isParent) {
   const filename = String(task.source_media_filename || '').trim();
   const productCode = String(task.product_code || '').trim();
@@ -3033,6 +3172,10 @@ function tcRenderDetail(task, events, reviewAssets) {
   const eventTimeline = tcRenderEventTimeline(task, events, reviewAssets);
   const identityRows = tcRenderDetailIdentityRows(task, isParent);
   const taskId = Number(task.id || 0);
+  const adminFeedback = tcRenderAdminFeedbackCard(task, events);
+  const fallbackReason = !adminFeedback && task.last_reason
+    ? `<div class="tc-detail-reason">备注：${tcEsc(task.last_reason)}</div>`
+    : '';
   return `
     <div class="tc-detail-shell">
       <div class="tc-detail-sticky">
@@ -3047,7 +3190,7 @@ function tcRenderDetail(task, events, reviewAssets) {
               ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
               负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
             </div>
-            ${task.last_reason ? `<div class="tc-detail-reason">备注：${tcEsc(task.last_reason)}</div>` : ''}
+            ${adminFeedback || fallbackReason}
           </div>
           <div class="tc-detail-sticky-actions">
             <button class="tc-btn" onclick="tcCloseDetail()">关闭</button>

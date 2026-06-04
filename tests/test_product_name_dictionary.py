@@ -149,3 +149,47 @@ def test_preselections_sync(monkeypatch):
     }
     upsert_preselection(payload, user_id=1)
     assert ("presel-code", "预选中文", "Presel English") in synced
+
+
+def test_enrich_fallback_chinese_from_materials_and_sync(monkeypatch):
+    execute_calls = []
+    
+    def mock_query(sql, args=()):
+        if "INSERT INTO product_name_dictionary" in sql:
+            execute_calls.append((sql, args))
+            return 1
+        if "media_products" in sql:
+            return []
+        if "FROM dianxiaomi_product_assets" in sql:
+            return []
+        if "FROM product_name_dictionary" in sql:
+            return []
+        if "mingkong_material_daily_snapshots" in sql:
+            # mock database snapshots check
+            return [
+                {"product_code": "fallback-code", "mk_product_name": "测试中文品名", "product_name": "en-name"}
+            ]
+        if "mingkong_material_daily_top100" in sql:
+            return []
+        return []
+
+    # Mock DB functions used inside enrichment
+    monkeypatch.setattr("appcore.mingkong_materials.query", mock_query)
+    monkeypatch.setattr("appcore.mingkong_materials.execute", mock_query)
+
+    items = [
+        {
+            "product_code": "fallback-code",
+            "product_url": "https://example.com/p1",
+        }
+    ]
+
+    enrich_and_fetch_english_titles(items, query_fn=mock_query)
+
+    # Verify fallback resolved Chinese name from snapshots
+    assert items[0]["product_cn_name"] == "测试中文品名"
+
+    # Verify synchronization happened back to product_name_dictionary
+    synced_codes = [call[1][0] for call in execute_calls]
+    assert "fallback-code" in synced_codes
+    assert execute_calls[0][1][1] == "测试中文品名"

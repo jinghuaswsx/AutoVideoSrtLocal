@@ -661,11 +661,95 @@
       justify-content: flex-start;
     }
   }
+  .dialogue-speaker-confirm-panel {
+    display: grid;
+    gap: 16px;
+  }
+  .dialogue-alias-row {
+    display: flex;
+    gap: 16px;
+    background: var(--bg-body);
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border-main);
+  }
+  .dialogue-alias-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+  .dialogue-alias-field label {
+    font-weight: 700;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .dialogue-alias-field input {
+    flex: 1;
+    min-height: 34px;
+    border: 1.5px solid var(--border-main);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    padding: 0 10px;
+    font: inherit;
+    font-size: 13px;
+  }
+  .dialogue-speaker-selector {
+    min-height: 30px;
+    border: 1.5px solid var(--border-main);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    padding: 0 6px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
 </style>
 {% endblock %}
 
 {% block detail_before_workbench %}
 {% if not project.deleted_at %}
+<section
+  id="dialogueSpeakerConfirmPanel"
+  class="card dialogue-speaker-confirm-panel"
+  style="display: none;"
+>
+  <div class="dialogue-voice-panel-head">
+    <div>
+      <h3>第一步：确认说话人与设置别名</h3>
+      <p>手动调整系统识别的 A/B 说话人分段并设置别名</p>
+    </div>
+  </div>
+  <div class="dialogue-alias-row">
+    <div class="dialogue-alias-field">
+      <label for="speakerAliasA">Speaker A 别名</label>
+      <input type="text" id="speakerAliasA" placeholder="例如：男声 / 主播 / 顾客A">
+    </div>
+    <div class="dialogue-alias-field">
+      <label for="speakerAliasB">Speaker B 别名</label>
+      <input type="text" id="speakerAliasB" placeholder="例如：女声 / 主播B / 顾客B">
+    </div>
+  </div>
+  <div class="dialogue-segment-timeline">
+    <div class="dialogue-segment-timeline-head">
+      <div>
+        <h4>对话文本时间线</h4>
+        <small>在每句右侧可重新指定 Speaker A 或 Speaker B</small>
+      </div>
+    </div>
+    <ol class="dialogue-segment-list" id="dialogueSpeakerConfirmList">
+      <!-- Generated via JS -->
+    </ol>
+  </div>
+  <div class="dialogue-voice-actions">
+    <button id="dialogueSpeakerConfirmBtn" type="button">确认说话人与别名并继续</button>
+    <span id="dialogueSpeakerFeedback" class="dialogue-voice-feedback" aria-live="polite"></span>
+  </div>
+</section>
+
 <section
   id="dialogueVoicePanel"
   class="card dialogue-voice-panel"

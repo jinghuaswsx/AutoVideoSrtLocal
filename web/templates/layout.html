@@ -1140,6 +1140,7 @@
       {% endif %}
     </nav>
     <div class="sidebar-footer">
+      {% if current_user.is_authenticated %}
       <div class="sidebar-user">
         <div class="sidebar-user-avatar">{{ current_user.username[0] | upper }}</div>
         <div class="sidebar-user-info">
@@ -1147,6 +1148,7 @@
           <a href="{{ url_for('auth.logout') }}" class="sidebar-logout">退出登录</a>
         </div>
       </div>
+      {% endif %}
     </div>
   </aside>
 
@@ -1184,11 +1186,13 @@
       <button id="themeToggleBtn" class="theme-btn" style="margin-right: 12px;">
         <span class="icon">☀️</span> 亮色
       </button>
+      {% if current_user.is_authenticated %}
       <div class="topbar-user">
         <div class="topbar-user-dot">{{ current_user.username[0] | upper }}</div>
         {{ current_user.username }}
       </div>
       <a href="{{ url_for('auth.logout') }}" class="topbar-logout-btn">退出登录</a>
+      {% endif %}
     </header>
     {% if scheduled_task_failure_alert %}
     <div class="scheduled-failure-alert" data-scheduled-alert-id="{{ scheduled_task_failure_alert.id }}">

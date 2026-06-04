@@ -337,6 +337,21 @@ def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_
     assert "管理员批注" in body
 
 
+def test_task_detail_admin_feedback_card_highlights_rejection_with_modal(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-admin-feedback-card" in body
+    assert "function tcLatestAdminFeedback" in body
+    assert "function tcRenderAdminFeedbackCard" in body
+    assert "管理员反馈" in body
+    assert "push_rework_rejected" in body
+    assert "payload.image_urls" in body
+    assert "tcOpenFeedbackImageModal" in body
+    assert "tcFeedbackImageModal" in body
+    assert "keydown" in body
+
+
 def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")

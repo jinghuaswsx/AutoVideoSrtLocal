@@ -153,3 +153,29 @@ def test_tabcut_goods_mark_api_delegates(monkeypatch, authed_client_no_db):
     assert resp.status_code == 200
     assert resp.get_json()["mark_status"] == "bad"
     assert captured == {"entity_type": "goods", "entity_id": "i1"}
+
+
+def test_tabcut_share_routes_render_without_login_no_db(monkeypatch):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+
+    from web.app import create_app
+    app = create_app()
+    client = app.test_client()
+
+    resp = client.get("/xuanpin/tabcut/share/recommended")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "TABCUT" in body
+    assert "recommended" in body
+
+    resp_goods = client.get("/xuanpin/tabcut/share/goods")
+    assert resp_goods.status_code == 200
+
+    resp_videos = client.get("/xuanpin/tabcut/share/videos")
+    assert resp_videos.status_code == 200

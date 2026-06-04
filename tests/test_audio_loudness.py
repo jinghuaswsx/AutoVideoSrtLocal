@@ -178,3 +178,63 @@ def test_is_likely_silence_threshold():
     assert is_likely_silence(SILENCE_LUFS_THRESHOLD - 0.1) is True
     assert is_likely_silence(SILENCE_LUFS_THRESHOLD + 0.1) is False
     assert is_likely_silence(-23.0) is False
+
+
+def test_build_ducking_volume_expression():
+    from appcore.audio_loudness import build_ducking_volume_expression
+
+    # Case 1: No segments
+    assert build_ducking_volume_expression(
+        segments=[], background_volume=0.3, standard_volume=0.6,
+    ) == "0.6000"
+
+    # Case 2: background_volume >= standard_volume
+    assert build_ducking_volume_expression(
+        segments=[{"start": 1.0, "end": 2.0}],
+        background_volume=0.6, standard_volume=0.6,
+    ) == "0.6000"
+
+    # Case 3: Standard single speech window [5.0, 10.0] -> [4.8, 10.4]
+    expr = build_ducking_volume_expression(
+        segments=[{"audio_start_time": 5.0, "audio_end_time": 10.0}],
+        background_volume=0.2, standard_volume=0.8,
+        attack=0.2, release=0.4,
+    )
+    assert "0.8000-0.6000*(" in expr
+    assert "between(t,4.800,10.400)" in expr
+    assert "lt(t,5.000)" in expr
+    assert "gt(t,10.000)" in expr
+
+    # Case 4: Overlapping windows merged
+    # [1.0, 3.0] -> extended [0.8, 3.4]
+    # [2.8, 4.0] -> extended [2.6, 4.4]
+    # Merged -> [0.8, 4.4]
+    expr_merge = build_ducking_volume_expression(
+        segments=[
+            {"start": 1.0, "end": 3.0},
+            {"start": 2.8, "end": 4.0},
+        ],
+        background_volume=0.3, standard_volume=0.6,
+        attack=0.2, release=0.4,
+    )
+    # L = 0.8 + 0.2 = 1.0
+    # R = 4.4 - 0.4 = 4.0
+    assert "between(t,0.800,4.400)" in expr_merge
+    assert "lt(t,1.000)" in expr_merge
+    assert "gt(t,4.000)" in expr_merge
+    # verify only 1 term is generated (no addition plus sign)
+    assert "+" not in expr_merge.split("*(")[1]
+
+    # Case 5: Extremely short interval (clipped at 0) -> mid point crossover
+    # segment [0.1, 0.3] -> duration=0.2 (>= 0.15s)
+    # attack=0.4, release=0.6 -> extended [0.0, 0.9] -> duration = 0.9 (<= attack + release)
+    expr_short = build_ducking_volume_expression(
+        segments=[{"start": 0.1, "end": 0.3}],
+        background_volume=0.3, standard_volume=0.6,
+        attack=0.4, release=0.6,
+    )
+    # duration = 0.9. L = R = 0.0 + 0.9 * (0.4 / 1.0) = 0.36
+    assert "between(t,0.000,0.900)" in expr_short
+    assert "lt(t,0.360)" in expr_short
+    assert "gt(t,0.360)" in expr_short
+

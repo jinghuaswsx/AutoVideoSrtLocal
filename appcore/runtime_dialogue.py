@@ -13,7 +13,7 @@ def _replace_voice_match_steps(names: list[str]) -> list[str]:
     out: list[str] = []
     for name in names:
         if name == "voice_match":
-            out.extend(["speaker_detect", "voice_match_ab"])
+            out.extend(["speaker_detect", "speaker_confirm", "voice_match_ab"])
         else:
             out.append(name)
     return out
@@ -220,6 +220,7 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
         for name, fn in steps:
             if name == "voice_match":
                 out.append(("speaker_detect", lambda: self._step_speaker_detect(task_id)))
+                out.append(("speaker_confirm", lambda: self._step_speaker_confirm(task_id)))
                 out.append(("voice_match_ab", lambda: self._step_voice_match_ab(task_id)))
             else:
                 out.append((name, fn))
@@ -262,6 +263,12 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
 
         task_state.update(task_id, **result)
         self._set_step(task_id, "speaker_detect", "done", "A/B speaker detection complete")
+
+    def _step_speaker_confirm(self, task_id: str) -> None:
+        task = task_state.get(task_id) or {}
+        task_state.update(task_id, status="waiting", error="")
+        task_state.set_current_review_step(task_id, "speaker_confirm")
+        self._set_step(task_id, "speaker_confirm", "waiting", "等待确认说话人与别名")
 
     def _step_voice_match_ab(self, task_id: str) -> None:
         from appcore.dialogue_translate.voice_match import (
