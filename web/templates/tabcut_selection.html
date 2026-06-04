@@ -651,7 +651,7 @@ function renderRecommendedProducts() {
     
   const rowsHtml = recommendedProducts.map(row => `
     <tr>
-      <td>${row.mainImage ? `<a href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer"><img class="tabcut-product-cover" src="${esc(row.mainImage)}" style="width:54px; height:54px; object-fit:cover;" loading="lazy" alt=""></a>` : ""}</td>
+      <td>${row.mainImage ? `<a href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer"><img class="tabcut-product-cover" src="${esc(row.mainImage)}" style="width:108px; height:108px; object-fit:cover;" loading="lazy" alt=""></a>` : ""}</td>
       <td><strong>${row.rank}</strong></td>
       <td class="tabcut-name">
         <a class="tabcut-product-link" href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer">
