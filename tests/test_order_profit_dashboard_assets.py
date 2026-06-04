@@ -38,6 +38,20 @@ def test_order_profit_dashboard_escapes_api_backed_html_fields():
     for snippet in expected_escaped_paths:
         assert snippet in TEMPLATE
 
+
+def test_order_profit_uses_shared_analytics_date_range_picker():
+    assert "analytics_date_range_picker.js" in TEMPLATE
+    assert 'data-analytics-date-range' in TEMPLATE
+    assert 'data-range-start-id="{{ start_id }}"' in TEMPLATE
+    assert 'data-range-end-id="{{ end_id }}"' in TEMPLATE
+    assert '<input type="hidden" id="{{ start_id }}"' in TEMPLATE
+    assert '<input type="hidden" id="{{ end_id }}"' in TEMPLATE
+    assert "{{ analytics_date_range('订单利润', 'opDateFrom', 'opDateTo') }}" in TEMPLATE
+    assert '<input type="date" id="opDateFrom"' not in TEMPLATE
+    assert '<input type="date" id="opDateTo"' not in TEMPLATE
+    assert "window.AnalyticsDateRangePicker.initAll()" in TEMPLATE
+    assert "window.AnalyticsDateRangePicker.syncAll()" in TEMPLATE
+
 def test_order_profit_campaign_product_picker_is_searchable_and_tall():
     assert ".op-product-picker-trigger" in TEMPLATE
     assert "min-height: 60px" in TEMPLATE

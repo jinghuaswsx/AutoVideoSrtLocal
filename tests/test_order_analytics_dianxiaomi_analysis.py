@@ -533,8 +533,12 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert 'data-country-range="lastWeek"' in body
     assert 'data-country-range="thisMonth"' in body
     assert 'data-country-range="lastMonth"' in body
-    assert 'id="countryStartDate"' in body
-    assert 'id="countryEndDate"' in body
+    assert 'data-range-start-id="countryStartDate"' in body
+    assert 'data-range-end-id="countryEndDate"' in body
+    assert '<input type="hidden" id="countryStartDate"' in body
+    assert '<input type="hidden" id="countryEndDate"' in body
+    assert '<input type="date" id="countryStartDate"' not in body
+    assert '<input type="date" id="countryEndDate"' not in body
     assert "setCountryRange('today'" in body
     assert "start_date: start" in body
     assert "end_date: end" in body
@@ -556,10 +560,14 @@ def test_data_analysis_page_dianxiaomi_uses_compact_country_style_toolbar(authed
         assert f'data-dxm-range="{preset}"' in panel, f"缺时间预设 {preset}"
     # 默认"本月"高亮
     assert 'class="oad-seg is-active" data-dxm-range="thisMonth"' in panel
-    # 紧凑 range picker（含分隔符"至"）
-    assert 'id="dxmStartDate"' in panel
-    assert 'id="dxmEndDate"' in panel
-    assert 'oad-date-range-sep' in panel
+    # 统一 range picker：一个触发器 + 原 id 隐藏字段
+    assert 'data-analytics-date-range' in panel
+    assert 'data-range-start-id="dxmStartDate"' in panel
+    assert 'data-range-end-id="dxmEndDate"' in panel
+    assert '<input type="hidden" id="dxmStartDate"' in panel
+    assert '<input type="hidden" id="dxmEndDate"' in panel
+    assert '<input type="date" id="dxmStartDate"' not in panel
+    assert '<input type="date" id="dxmEndDate"' not in panel
     # 查询按钮换成 .oad-btn-primary
     assert 'class="oad-btn-primary" id="dxmOrderRefresh"' in panel
     # 店铺下拉仍在

@@ -1,4 +1,14 @@
 {% extends "layout.html" %}
+{% macro analytics_date_range(label, start_id='', end_id='', start_attrs='', end_attrs='', class_name='analytics-range-picker oad-date-range-field') -%}
+<div class="{{ class_name }}" data-analytics-date-range data-range-label="{{ label }}"{% if start_id %} data-range-start-id="{{ start_id }}"{% endif %}{% if end_id %} data-range-end-id="{{ end_id }}"{% endif %}>
+  <button type="button" class="analytics-range-trigger" data-range-trigger aria-haspopup="dialog" aria-expanded="false" title="{{ label }}">
+    <span class="analytics-range-trigger-text" data-range-label-text>{{ label }}：请选择日期范围</span>
+    <span class="analytics-range-trigger-caret" aria-hidden="true">▼</span>
+  </button>
+  <input type="hidden"{% if start_id %} id="{{ start_id }}"{% endif %} data-range-start {{ start_attrs|safe }}>
+  <input type="hidden"{% if end_id %} id="{{ end_id }}"{% endif %} data-range-end {{ end_attrs|safe }}>
+</div>
+{%- endmacro %}
 {% block title %}数据分析 — AutoVideoSrt{% endblock %}
 {% block page_title %}
 <span class="oa-page-heading">数据分析</span>
@@ -1615,11 +1625,7 @@
         <button type="button" class="oad-seg" data-realtime-range="thisYear" aria-pressed="false">今年</button>
         <button type="button" class="oad-seg" data-realtime-range="lastYear" aria-pressed="false">去年</button>
       </div>
-      <div class="oad-date-range-field" role="group" aria-label="实时大盘自定义日期范围">
-        <input type="date" id="realtimeStartDate" aria-label="开始日期">
-        <span class="oad-date-range-sep">至</span>
-        <input type="date" id="realtimeEndDate" aria-label="结束日期">
-      </div>
+      {{ analytics_date_range('实时大盘', 'realtimeStartDate', 'realtimeEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
       <div class="oar-realtime-actions">
         <button type="button" class="oad-btn-primary" id="realtimeRefresh">查询</button>
       </div>
@@ -2014,11 +2020,7 @@
         <button type="button" class="oad-seg" data-npl-range="thisYear" aria-pressed="false">今年</button>
         <button type="button" class="oad-seg" data-npl-range="lastYear" aria-pressed="false">去年</button>
       </div>
-      <div class="oad-date-range">
-        <input type="date" id="nplStartDate" aria-label="新品投放分析开始日期">
-        <span>至</span>
-        <input type="date" id="nplEndDate" aria-label="新品投放分析结束日期">
-      </div>
+      {{ analytics_date_range('新品投放分析', 'nplStartDate', 'nplEndDate', 'aria-label="新品投放分析开始日期"', 'aria-label="新品投放分析结束日期"', 'analytics-range-picker oad-date-range') }}
       <div class="oar-realtime-actions">
         <button type="button" class="oad-btn-primary" id="nplRefresh">查询</button>
       </div>
@@ -2228,11 +2230,7 @@
       <button type="button" class="oad-seg" data-dashboard-range="lastYear" aria-pressed="false">去年</button>
     </div>
 
-    <div class="oad-date-range-field" role="group" aria-label="产品看板自定义日期范围">
-      <input type="date" id="oadStartDate" aria-label="开始日期">
-      <span class="oad-date-range-sep">至</span>
-      <input type="date" id="oadEndDate" aria-label="结束日期">
-    </div>
+    {{ analytics_date_range('产品看板', 'oadStartDate', 'oadEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
 
     <select id="oadCountry">
       <option value="">所有国家</option>
@@ -2376,8 +2374,8 @@
     var selected = range || 'today';
     var bounds = resolveDashboardRange(selected);
     oad.state.range = selected;
-    document.getElementById('oadStartDate').value = formatOadDateInput(bounds.start);
-    document.getElementById('oadEndDate').value = formatOadDateInput(bounds.end);
+    setInputValue('oadStartDate', formatOadDateInput(bounds.start));
+    setInputValue('oadEndDate', formatOadDateInput(bounds.end));
     syncDashboardRangeSelection();
     if (!skipRefresh) oad.refresh();
   }
@@ -2594,7 +2592,7 @@
   };
 
   // ===== 北京时间范围标注（业务日按 16:00 切日 → 北京时间 [start 16:00, end+1 16:00)）=====
-  // 自动扫描所有 input[type="date"]，按 id 后缀 StartDate/EndDate（或 Start/End）配对，
+  // 自动扫描所有日期范围组件，按 id 后缀 StartDate/EndDate（或 Start/End）配对，
   // 在外层容器之后插入 hint，并通过轮询同步（兼容快捷按钮直接 .value= 不触发 change）。
   function describeBjWindow(startStr, endStr) {
     if (!startStr || !endStr) return '';
@@ -2611,6 +2609,15 @@
   }
   function findDateInputPairs() {
     var pairs = {};
+    document.querySelectorAll('[data-analytics-date-range][data-range-start-id][data-range-end-id]').forEach(function(root) {
+      var start = document.getElementById(root.dataset.rangeStartId || '');
+      var end = document.getElementById(root.dataset.rangeEndId || '');
+      if (!start || !end) return;
+      var m = (root.dataset.rangeStartId || '').match(/^(.+?)(StartDate|Start|From)$/);
+      var key = m ? m[1] : (root.dataset.rangeStartId || '').replace(/(?:StartDate|Start|From)$/, '');
+      if (!key) return;
+      pairs[key] = { start: start, end: end, anchor: root };
+    });
     document.querySelectorAll('input[type="date"]').forEach(function(inp) {
       var m = inp.id.match(/^(.+?)(StartDate|EndDate|Start|End)$/);
       if (!m) return;
@@ -2625,7 +2632,7 @@
     Object.keys(pairs).forEach(function(key) {
       var pair = pairs[key];
       if (!pair.start || !pair.end) return;
-      var anchor = pair.end.closest('.oad-date-range-field, .oad-toolbar-row, label, span') || pair.end.parentElement;
+      var anchor = pair.anchor || pair.end.closest('.analytics-range-picker, .oad-date-range-field, .oad-toolbar-row, label, span') || pair.end.parentElement;
       var hint = document.getElementById(key + 'BjHint');
       if (!hint) {
         hint = document.createElement('div');
@@ -2642,6 +2649,7 @@
     });
   }
   function syncAllBjHints() {
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
     var pairs = findDateInputPairs();
     Object.keys(pairs).forEach(function(key) {
       var hint = document.getElementById(key + 'BjHint');
@@ -2704,11 +2712,7 @@
         <button type="button" class="oad-seg" data-country-range="thisYear" aria-pressed="false">今年</button>
         <button type="button" class="oad-seg" data-country-range="lastYear" aria-pressed="false">去年</button>
       </div>
-      <div class="oad-date-range-field" role="group" aria-label="国家看板自定义日期范围">
-        <input type="date" id="countryStartDate" aria-label="开始日期">
-        <span class="oad-date-range-sep">至</span>
-        <input type="date" id="countryEndDate" aria-label="结束日期">
-      </div>
+      {{ analytics_date_range('国家看板', 'countryStartDate', 'countryEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
       <button type="button" class="oad-btn-primary" id="countryRefresh">刷新</button>
     </div>
   </div>
@@ -2730,11 +2734,7 @@
         <button type="button" class="oad-seg" data-true-roas-range="thisYear" aria-pressed="false">今年</button>
         <button type="button" class="oad-seg" data-true-roas-range="lastYear" aria-pressed="false">去年</button>
       </div>
-      <div class="oad-date-range-field" role="group" aria-label="真实 ROAS 自定义日期范围">
-        <input type="date" id="trueRoasStart" aria-label="开始日期">
-        <span class="oad-date-range-sep">至</span>
-        <input type="date" id="trueRoasEnd" aria-label="结束日期">
-      </div>
+      {{ analytics_date_range('真实 ROAS', 'trueRoasStart', 'trueRoasEnd', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
       <button type="button" class="oad-btn-primary" id="trueRoasRefresh">刷新</button>
     </div>
   </div>
@@ -2983,11 +2983,7 @@
         <button type="button" class="oad-seg" data-dxm-range="thisYear" aria-pressed="false">今年</button>
         <button type="button" class="oad-seg" data-dxm-range="lastYear" aria-pressed="false">去年</button>
       </div>
-      <div class="oad-date-range-field" role="group" aria-label="订单分析自定义日期范围">
-        <input type="date" id="dxmStartDate" aria-label="开始日期">
-        <span class="oad-date-range-sep">至</span>
-        <input type="date" id="dxmEndDate" aria-label="结束日期">
-      </div>
+      {{ analytics_date_range('订单分析', 'dxmStartDate', 'dxmEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
       <button type="button" class="oad-btn-primary" id="dxmOrderRefresh">查询</button>
     </div>
     <div class="oad-toolbar-row">
@@ -3146,14 +3142,10 @@
       <div class="maa-sync-panel" id="metaAdSyncSettingsPanel">
         <div class="maa-sync-form">
           <div class="maa-sync-account" id="metaAdSyncAccount"></div>
-          <label class="maa-sync-field">
-            开始日期
-            <input type="date" id="metaAdSyncStartDate">
-          </label>
-          <label class="maa-sync-field">
-            结束日期
-            <input type="date" id="metaAdSyncEndDate">
-          </label>
+          <div class="maa-sync-field">
+            <span>同步日期范围</span>
+            {{ analytics_date_range('Meta 同步', 'metaAdSyncStartDate', 'metaAdSyncEndDate', '', '', 'analytics-range-picker') }}
+          </div>
           <label class="maa-sync-field">
             间隔秒数
             <input type="number" id="metaAdSyncInterval" min="0" max="3600" step="1" value="20">
@@ -3316,11 +3308,7 @@
             <button type="button" class="oad-seg" data-ad-range="thisYear" aria-pressed="false">今年</button>
             <button type="button" class="oad-seg" data-ad-range="lastYear" aria-pressed="false">去年</button>
           </div>
-          <div class="oad-date-range-field" role="group" aria-label="广告分析自定义日期范围">
-            <input type="date" id="adStartDate" aria-label="开始日期">
-            <span class="oad-date-range-sep">至</span>
-            <input type="date" id="adEndDate" aria-label="结束日期">
-          </div>
+          {{ analytics_date_range('广告分析', 'adStartDate', 'adEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
           <button type="button" class="oad-btn-primary" id="adRefresh">查询</button>
         </div>
       </div>
@@ -3385,11 +3373,7 @@
           <button type="button" class="oad-seg" data-ad-unmatched-range="thisYear" aria-pressed="false">今年</button>
           <button type="button" class="oad-seg" data-ad-unmatched-range="lastYear" aria-pressed="false">去年</button>
         </div>
-        <div class="oad-date-range-field" role="group" aria-label="未匹配产品广告计划自定义日期范围">
-          <input type="date" id="adUnmatchedStartDate" aria-label="开始日期">
-          <span class="oad-date-range-sep">至</span>
-          <input type="date" id="adUnmatchedEndDate" aria-label="结束日期">
-        </div>
+        {{ analytics_date_range('未匹配产品广告计划', 'adUnmatchedStartDate', 'adUnmatchedEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
         <button type="button" class="oad-btn-primary" id="adUnmatchedRefresh">查询</button>
       </div>
     </div>
@@ -3441,11 +3425,7 @@
           <button type="button" class="oad-seg" data-ads-level-range="thisYear" data-ads-level="{{ level }}" aria-pressed="false">今年</button>
           <button type="button" class="oad-seg" data-ads-level-range="lastYear" data-ads-level="{{ level }}" aria-pressed="false">去年</button>
         </div>
-        <div class="oad-date-range-field" role="group" aria-label="{{ label }} 日期范围">
-          <input type="date" data-ads-list-start="{{ level }}" aria-label="开始日期">
-          <span class="oad-date-range-sep">至</span>
-          <input type="date" data-ads-list-end="{{ level }}" aria-label="结束日期">
-        </div>
+        {{ analytics_date_range(label ~ ' 列表', '', '', 'data-ads-list-start="' ~ level ~ '" aria-label="开始日期"', 'data-ads-list-end="' ~ level ~ '" aria-label="结束日期"') }}
         <button type="button" class="oad-btn-primary" data-ads-list-refresh="{{ level }}">查询</button>
       </div>
       <div class="oa-warning-banner" data-ads-list-quality="{{ level }}" hidden></div>
@@ -3528,11 +3508,7 @@
             <option value="">全部广告户</option>
           </select>
         </label>
-        <div class="oad-date-range-field" role="group" aria-label="{{ label }} 详情日期范围">
-          <input type="date" data-ads-detail-start="{{ level }}" aria-label="开始日期">
-          <span class="oad-date-range-sep">至</span>
-          <input type="date" data-ads-detail-end="{{ level }}" aria-label="结束日期">
-        </div>
+        {{ analytics_date_range(label ~ ' 详情', '', '', 'data-ads-detail-start="' ~ level ~ '" aria-label="开始日期"', 'data-ads-detail-end="' ~ level ~ '" aria-label="结束日期"') }}
         <button type="button" class="oad-btn-primary" data-ads-detail-refresh="{{ level }}">刷新</button>
       </div>
       <div class="oa-warning-banner" data-ads-detail-quality="{{ level }}" hidden></div>
@@ -3572,11 +3548,7 @@
   <div class="oa-subpanel" data-subpanel="manual-input">
     <div class="oad-toolbar">
       <div class="oad-toolbar-row">
-        <div class="oad-date-range-field" role="group" aria-label="人工录入日期范围">
-          <input type="date" id="amsListFrom" aria-label="开始日期">
-          <span class="oad-date-range-sep">至</span>
-          <input type="date" id="amsListTo" aria-label="结束日期">
-        </div>
+        {{ analytics_date_range('人工录入', 'amsListFrom', 'amsListTo', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
         <button type="button" class="oad-btn-primary" id="amsRefresh">刷新</button>
         <button type="button" class="oad-btn-primary" id="amsAdd">+ 新增 / 编辑</button>
       </div>
@@ -3673,12 +3645,14 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='analytics_date_range_picker.js') }}"></script>
 <script>
 (function() {
   var currentProductId = null;
   var currentProductName = null;
   var lastMonthData = null;
   var searchTimer = null;
+  if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.initAll();
 
   // ── Tab 切换 ──────────────────────────────────────
   var tabs = document.querySelectorAll('.oa-tab');
@@ -4165,6 +4139,7 @@
   function setInputValue(id, value) {
     var el = document.getElementById(id);
     if (el) el.value = value;
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
   }
 
   function addDays(date, days) {
@@ -8279,6 +8254,7 @@
     if (endListEl && !endListEl.value) endListEl.value = adsDefaultEndIso(level);
     if (startDetailEl && !startDetailEl.value) startDetailEl.value = adsDefaultStartIso(level);
     if (endDetailEl && !endDetailEl.value) endDetailEl.value = adsDefaultEndIso(level);
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
   }
 
   function adsSetLevelRange(level, range) {
@@ -8287,6 +8263,7 @@
     var endEl = document.querySelector('[data-ads-list-end="' + level + '"]');
     if (startEl) startEl.value = formatDateInput(bounds.start);
     if (endEl) endEl.value = formatDateInput(bounds.end);
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
     adsSyncLevelRangeSelection(level);
     adsLevelState[level].listPage = 1;
     adsLoadList(level);
@@ -8318,6 +8295,7 @@
     var endDetailEl = document.querySelector('[data-ads-detail-end="' + level + '"]');
     if (startDetailEl) startDetailEl.value = adsRecentMonthStartIso();
     if (endDetailEl) endDetailEl.value = adsDefaultEndIso(level);
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
   }
 
   function adsLoadList(level) {
@@ -8432,6 +8410,7 @@
     var toEnd = document.querySelector('[data-ads-list-end="' + toLevel + '"]');
     if (fromStart && toStart) toStart.value = fromStart.value;
     if (fromEnd && toEnd) toEnd.value = fromEnd.value;
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
     var toAccount = document.querySelector('[data-ads-account-filter="' + toLevel + '"]');
     if (toAccount) {
       toAccount.value = adsNormalizeAccountId(accountId) ||
@@ -9229,12 +9208,8 @@
       </label>
       <div class="ppr-dialog-row">
         <label>
-          <span>开始日期</span>
-          <input type="date" name="date_from" id="ppr-date-from" required>
-        </label>
-        <label>
-          <span>结束日期</span>
-          <input type="date" name="date_to" id="ppr-date-to" required>
+          <span>报表日期范围</span>
+          {{ analytics_date_range('产品盈亏报表', 'ppr-date-from', 'ppr-date-to', 'name="date_from" required', 'name="date_to" required', 'analytics-range-picker') }}
         </label>
       </div>
       <div class="ppr-dialog-result" id="ppr-report-result">

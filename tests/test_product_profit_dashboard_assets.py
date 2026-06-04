@@ -122,6 +122,20 @@ def test_product_profit_date_filters_label_meta_business_day():
     assert "北京时间16:00切日" in TEMPLATE
 
 
+def test_product_profit_uses_shared_analytics_date_range_picker():
+    assert "analytics_date_range_picker.js" in TEMPLATE
+    assert 'data-analytics-date-range' in TEMPLATE
+    assert 'data-range-start-id="{{ start_id }}"' in TEMPLATE
+    assert 'data-range-end-id="{{ end_id }}"' in TEMPLATE
+    assert '<input type="hidden" id="{{ start_id }}"' in TEMPLATE
+    assert '<input type="hidden" id="{{ end_id }}"' in TEMPLATE
+    assert "{{ analytics_date_range('产品盈亏', 'ppd-from', 'ppd-to') }}" in TEMPLATE
+    assert '<input type="date" id="ppd-from"' not in TEMPLATE
+    assert '<input type="date" id="ppd-to"' not in TEMPLATE
+    assert "window.AnalyticsDateRangePicker.initAll()" in TEMPLATE
+    assert "window.AnalyticsDateRangePicker.syncAll()" in TEMPLATE
+
+
 def test_product_profit_has_product_country_analysis_tab_matrix():
     assert 'data-tab="product-country"' in TEMPLATE
     assert 'data-panel="product-country"' in TEMPLATE

@@ -1007,12 +1007,19 @@ def test_analytics_range_controls_match_country_dashboard(authed_client_no_db):
         assert f'data-dashboard-range="{key}"' in body
         assert f'data-true-roas-range="{key}"' in body
         assert f'data-ad-range="{key}"' in body
-    assert 'id="oadStartDate"' in body
-    assert 'id="oadEndDate"' in body
-    assert 'id="trueRoasStart"' in body
-    assert 'id="trueRoasEnd"' in body
-    assert 'id="adStartDate"' in body
-    assert 'id="adEndDate"' in body
+    for start_id, end_id in (
+        ("oadStartDate", "oadEndDate"),
+        ("trueRoasStart", "trueRoasEnd"),
+        ("adStartDate", "adEndDate"),
+        ("adUnmatchedStartDate", "adUnmatchedEndDate"),
+    ):
+        assert f'data-range-start-id="{start_id}"' in body
+        assert f'data-range-end-id="{end_id}"' in body
+        assert f'<input type="hidden" id="{start_id}"' in body
+        assert f'<input type="hidden" id="{end_id}"' in body
+        assert f'<input type="date" id="{start_id}"' not in body
+        assert f'<input type="date" id="{end_id}"' not in body
+    assert 'data-analytics-date-range' in body
     assert 'id="adPeriodSelect"' not in body
     assert '/order-analytics/ad-summary?start_date=' in body
 

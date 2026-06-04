@@ -24,6 +24,16 @@
    └─────────────────────────────────────────────────────────────────┘
 #}
 {% extends "layout.html" %}
+{% macro analytics_date_range(label, start_id, end_id, class_name='analytics-range-picker op-date-range-field') -%}
+<div class="{{ class_name }}" data-analytics-date-range data-range-label="{{ label }}" data-range-start-id="{{ start_id }}" data-range-end-id="{{ end_id }}">
+  <button type="button" class="analytics-range-trigger" data-range-trigger aria-haspopup="dialog" aria-expanded="false" title="{{ label }}">
+    <span class="analytics-range-trigger-text" data-range-label-text>{{ label }}：请选择日期范围</span>
+    <span class="analytics-range-trigger-caret" aria-hidden="true">▼</span>
+  </button>
+  <input type="hidden" id="{{ start_id }}" data-range-start>
+  <input type="hidden" id="{{ end_id }}" data-range-end>
+</div>
+{%- endmacro %}
 {% block title %}订单利润核算 — AutoVideoSrt{% endblock %}
 {% block page_title %}<span class="op-page-heading">订单利润核算</span>{% endblock %}
 
@@ -467,11 +477,7 @@ button.op-aux-chip:focus-visible { outline: none; border-color: var(--accent); b
       <button type="button" class="op-seg" data-op-range="thisYear">今年</button>
       <button type="button" class="op-seg" data-op-range="lastYear">去年</button>
     </div>
-    <span class="op-date-range-field">
-      <input type="date" id="opDateFrom" aria-label="开始日期">
-      <span class="op-date-range-sep">至</span>
-      <input type="date" id="opDateTo" aria-label="结束日期">
-    </span>
+    {{ analytics_date_range('订单利润', 'opDateFrom', 'opDateTo') }}
     <button type="button" id="opRefreshBtn" class="op-btn-primary">刷新</button>
     <span style="color: var(--fg-subtle); font-size: 12px; margin-left: auto;">
       汇率：system_settings.material_roas_rmb_per_usd ｜ 退货占用 1% ｜ 手续费策略 C
@@ -712,6 +718,7 @@ button.op-aux-chip:focus-visible { outline: none; border-color: var(--accent); b
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='analytics_date_range_picker.js') }}"></script>
 <script>
 const fmtUSD = v => v == null ? '-' : '$' + Number(v).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const fmtInt = v => v == null ? '-' : Number(v).toLocaleString('en-US');
@@ -780,6 +787,7 @@ function syncBjHint() {
   const f = document.getElementById('opDateFrom').value;
   const t = document.getElementById('opDateTo').value;
   document.getElementById('opTimeWindowHint').textContent = describeBjWindow(f, t);
+  if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
   // 同步快捷按钮 active 状态
   let matched = '';
   ['today','yesterday','thisWeek','lastWeek','thisMonth','lastMonth','thisYear','lastYear'].forEach(r => {
@@ -1505,6 +1513,7 @@ function refreshAll() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.initAll();
   // 默认选"今天"（=Meta 业务日今天，北京时间 16:00 后是当日，之前是昨天）
   setOpRange('today');
 

@@ -1,4 +1,14 @@
 {% extends "layout.html" %}
+{% macro analytics_date_range(label, start_id, end_id, class_name='analytics-range-picker') -%}
+<div class="{{ class_name }}" data-analytics-date-range data-range-label="{{ label }}" data-range-start-id="{{ start_id }}" data-range-end-id="{{ end_id }}">
+  <button type="button" class="analytics-range-trigger" data-range-trigger aria-haspopup="dialog" aria-expanded="false" title="{{ label }}">
+    <span class="analytics-range-trigger-text" data-range-label-text>{{ label }}：请选择日期范围</span>
+    <span class="analytics-range-trigger-caret" aria-hidden="true">▼</span>
+  </button>
+  <input type="hidden" id="{{ start_id }}" data-range-start>
+  <input type="hidden" id="{{ end_id }}" data-range-end>
+</div>
+{%- endmacro %}
 {% block title %}产品盈亏看板 — AutoVideoSrt{% endblock %}
 {% block page_title %}
 <span class="ppd-page-heading">产品盈亏看板</span>
@@ -879,12 +889,8 @@
       </select>
     </label>
     <label data-filter-control="from">
-      <span>开始日期（Meta业务日）<small style="color: var(--text-user-badge); font-weight: normal; font-size: 11px">北京时间16:00切日</small></span>
-      <input type="date" id="ppd-from">
-    </label>
-    <label data-filter-control="to">
-      <span>结束日期（Meta业务日）</span>
-      <input type="date" id="ppd-to">
+      <span>开始日期（Meta业务日） / 结束日期（Meta业务日）<small style="color: var(--text-user-badge); font-weight: normal; font-size: 11px">北京时间16:00切日</small></span>
+      {{ analytics_date_range('产品盈亏', 'ppd-from', 'ppd-to') }}
     </label>
     <div class="ppd-quick-dates" data-filter-control="quick-date">
       <span class="ppd-quick-label">快速选择：</span>
@@ -1283,6 +1289,7 @@
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='analytics_date_range_picker.js') }}"></script>
 <script>
 (function() {
   'use strict';
@@ -1366,6 +1373,10 @@
   var activeCountry = '';
   var globalUnmatchedAdsMode = false;
 
+  function syncAnalyticsDateRangePicker() {
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
+  }
+
   // 产品选择器用 modal 实现搜索：
   //   - input.value 是用户看到的字符串："product_code — 产品中文名"
   //   - productLabelToId 把 label 映射回 product_id（提交时反查）
@@ -1407,6 +1418,7 @@
     var today = currentMetaBusinessDate();
     dateFromInput.value = fmt(today);
     dateToInput.value = fmt(today);
+    syncAnalyticsDateRangePicker();
   })();
 
   // ── 快速日期选择处理与双向智能绑定 ─────────────────────
@@ -1459,6 +1471,7 @@
     
     dateFromInput.value = fmt(fromDate);
     dateToInput.value = fmt(toDate);
+    syncAnalyticsDateRangePicker();
     
     // 更新高亮
     updateQuickDateButtons(range);
@@ -3292,10 +3305,12 @@
   dateFromInput.addEventListener('change', function() {
     syncUrlState();
     detectAndHighlightActiveQuickDate();
+    syncAnalyticsDateRangePicker();
   });
   dateToInput.addEventListener('change', function() {
     syncUrlState();
     detectAndHighlightActiveQuickDate();
+    syncAnalyticsDateRangePicker();
   });
 
   // 初始化产品选择器和国家胶囊，再走 switchTab 触发当前 Tab 的 load 函数
@@ -3325,6 +3340,8 @@
     if (wantFrom) dateFromInput.value = wantFrom;
     var wantTo = urlParams.get('date_to');
     if (wantTo) dateToInput.value = wantTo;
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.initAll();
+    syncAnalyticsDateRangePicker();
     var wantSite = urlParams.get('site_code');
     if (wantSite === 'newjoy' || wantSite === 'omurio') {
       siteSelect.value = wantSite;
