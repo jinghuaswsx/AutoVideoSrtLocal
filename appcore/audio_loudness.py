@@ -249,6 +249,82 @@ def resolve_voice_priority_background_volume(
     return summary
 
 
+def build_ducking_volume_expression(
+    *,
+    segments: list[dict],
+    background_volume: float,
+    standard_volume: float,
+    attack: float = 0.2,
+    release: float = 0.4,
+) -> str:
+    """Build a dynamic ffmpeg volume expression to duck background music during speech.
+
+    Ducks background to `background_volume` during speech segments plus `attack` lead-in
+    and `release` tail-out times, and keeps it at `standard_volume` when no voice is playing.
+    Transitions are linear. Overlapping intervals are merged to prevent multiple fades.
+    """
+    background_volume = float(background_volume)
+    standard_volume = float(standard_volume)
+
+    if background_volume >= standard_volume:
+        return f"{standard_volume:.4f}"
+
+    raw_windows = []
+    for fallback_index, segment in enumerate(segments or []):
+        res = _segment_audio_window(segment, fallback_index)
+        if res is not None:
+            _, start, end = res
+            raw_windows.append((start, end))
+
+    if not raw_windows:
+        return f"{standard_volume:.4f}"
+
+    # Merge overlapping extended windows [start - attack, end + release]
+    extended = [[max(0.0, s - attack), e + release] for s, e in raw_windows]
+    extended.sort(key=lambda x: x[0])
+
+    merged = []
+    for item in extended:
+        if not merged:
+            merged.append(item)
+        else:
+            prev = merged[-1]
+            if item[0] <= prev[1]:
+                prev[1] = max(prev[1], item[1])
+            else:
+                merged.append(item)
+
+    # Build piecewise expression F_i(t) for each merged interval
+    terms = []
+    for S, E in merged:
+        duration = E - S
+        if duration <= 0:
+            continue
+        if duration <= attack + release:
+            L = S + duration * (attack / (attack + release))
+            R = L
+        else:
+            L = S + attack
+            R = E - release
+
+        L_diff = max(0.001, L - S)
+        R_diff = max(0.001, E - R)
+
+        term = (
+            f"if(between(t,{S:.3f},{E:.3f}),"
+            f"if(lt(t,{L:.3f}),(t-{S:.3f})/{L_diff:.3f},"
+            f"if(gt(t,{R:.3f}),({E:.3f}-t)/{R_diff:.3f},1)),0)"
+        )
+        terms.append(term)
+
+    if not terms:
+        return f"{standard_volume:.4f}"
+
+    diff = standard_volume - background_volume
+    sum_terms = "+".join(terms)
+    return f"{standard_volume:.4f}-{diff:.4f}*({sum_terms})"
+
+
 def _segment_audio_window(segment: dict, fallback_index: int) -> tuple[int, float, float] | None:
     start = None
     for key in ("audio_start_time", "start_time", "source_start_time", "start"):
@@ -655,9 +731,10 @@ def mix_with_background(
     # 让 mp4 整体 ≈ 原视频整体"）破坏巨大：测得的 pre_amix_lufs 偏低 6 dB →
     # delta 偏大 → 反推 TTS target 偏高 → 触发 ffmpeg loudnorm 上限报错。
     # 加 normalize=0 让 amix 直接相加（保留真实响度），与人感知 mix 一致。
+    bg_vol_str = f"'{background_volume}'" if isinstance(background_volume, str) else str(background_volume)
     filter_graph = (
         f"[0:a]volume={main_volume}[m];"
-        f"[1:a]volume={background_volume}[b];"
+        f"[1:a]volume={bg_vol_str}[b];"
         f"[m][b]amix=inputs=2:duration={duration}:dropout_transition=0:normalize=0[out]"
     )
     cmd = [
