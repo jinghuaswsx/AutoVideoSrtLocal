@@ -1392,7 +1392,6 @@ class PipelineRunner:
                 )
 
             # persist rounds incrementally so UI survives page refresh
-            import appcore.task_state as task_state
             rounds.append(round_record)
             round_products.append({
                 "localized_translation": localized_translation,
@@ -1603,7 +1602,6 @@ class PipelineRunner:
 
         # All allowed rounds completed without landing in a final stage-1 result.
         # Pick the round whose audio_duration is closest to the final target range.
-        import appcore.task_state as task_state
         eligible_indices = [
             i for i, rec in enumerate(rounds)
             if rec.get("audio_duration") is not None

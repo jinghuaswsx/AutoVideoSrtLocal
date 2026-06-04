@@ -1,7 +1,42 @@
 """Tests for TTS duration convergence helpers."""
+import ast
+from pathlib import Path
+
 import pytest
 
 from appcore.runtime import _compute_next_target
+
+
+def test_run_tts_duration_loop_does_not_shadow_task_state_import():
+    source = Path("appcore/runtime/_pipeline_runner.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_run_tts_duration_loop"
+    )
+
+    shadowing_imports = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Import):
+            shadowing_imports.extend(
+                node.lineno
+                for alias in node.names
+                if alias.name == "appcore.task_state"
+                and alias.asname == "task_state"
+            )
+        elif isinstance(node, ast.ImportFrom) and node.module in {
+            "appcore",
+            "appcore.task_state",
+        }:
+            shadowing_imports.extend(
+                node.lineno
+                for alias in node.names
+                if alias.name == "task_state" or alias.asname == "task_state"
+            )
+
+    assert shadowing_imports == []
 
 
 class TestComputeNextTarget:
