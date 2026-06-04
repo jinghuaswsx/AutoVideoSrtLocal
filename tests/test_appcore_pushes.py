@@ -227,6 +227,61 @@ def test_compute_readiness_applies_active_push_rework_overrides(monkeypatch):
     assert pushes.is_ready(readiness) is False
 
 
+def test_compute_readiness_applies_manual_child_confirmations_after_rework(monkeypatch):
+    monkeypatch.setattr("appcore.pushes.medias.is_product_listed", lambda product: False)
+    monkeypatch.setattr("appcore.pushes.medias.parse_ad_supported_langs", lambda value: {"fr"})
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: None)
+    monkeypatch.setattr("appcore.pushes._has_valid_en_push_texts", lambda product_id: False)
+    monkeypatch.setattr(
+        "appcore.pushes.shopify_image_tasks.is_confirmed_for_push",
+        lambda product, lang: (False, "domain failed"),
+    )
+    monkeypatch.setattr(
+        "appcore.pushes.shopify_image_tasks.domain_statuses_for_push",
+        lambda product, lang: [{"domain": "newjoyloo.com", "ok": False}],
+    )
+    monkeypatch.setattr(
+        "appcore.tasks.active_push_rework_readiness_keys",
+        lambda task_id: ["has_object", "has_push_texts"] if task_id == 44 else [],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "appcore.tasks.manual_confirmed_child_readiness_keys",
+        lambda task_id: {
+            "has_object",
+            "has_cover",
+            "has_copywriting",
+            "has_push_texts",
+            "is_listed",
+            "lang_supported",
+            "shopify_image_confirmed",
+        } if task_id == 44 else set(),
+        raising=False,
+    )
+
+    readiness = pushes.compute_readiness(
+        {
+            "id": 10,
+            "task_id": 44,
+            "product_id": 20,
+            "lang": "de",
+            "object_key": "",
+            "cover_object_key": "",
+        },
+        {"id": 20, "ad_supported_langs": "fr", "listing_status": "下架"},
+    )
+
+    assert readiness["has_object"] is True
+    assert readiness["has_cover"] is True
+    assert readiness["has_copywriting"] is True
+    assert readiness["has_push_texts"] is True
+    assert readiness["is_listed"] is True
+    assert readiness["lang_supported"] is True
+    assert readiness["shopify_image_confirmed"] is True
+    assert "shopify_image_domain_details" not in readiness
+    assert pushes.is_ready(readiness) is True
+
+
 def test_compute_status_pushed(product_with_item):
     pid, item_id = product_with_item
     db_execute("UPDATE media_items SET pushed_at=NOW() WHERE id=%s", (item_id,))

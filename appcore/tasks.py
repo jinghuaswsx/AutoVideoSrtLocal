@@ -9,11 +9,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Iterable
 from urllib.parse import quote, urlencode
 
 from appcore import user_notifications as notifications_svc
 from appcore.db import execute, get_conn, query_one, query_all
+
+log = logging.getLogger(__name__)
 
 # ---- 状态常量 ----
 PARENT_PENDING = "pending"
@@ -87,6 +90,16 @@ PUSH_REWORK_ISSUE_DEFS = {
     },
 }
 PUSH_REWORK_ISSUE_KEYS = tuple(PUSH_REWORK_ISSUE_DEFS)
+CHILD_ACCEPTANCE_READINESS_KEYS = {
+    "translated_video": "has_object",
+    "translated_cover": "has_cover",
+    "translated_copywriting": "has_copywriting",
+    "push_texts": "has_push_texts",
+    "product_listed": "is_listed",
+    "shopify_images": "shopify_image_confirmed",
+    "language_supported": "lang_supported",
+}
+CHILD_MANUAL_CONFIRM_REASON = "人工确认完成"
 CHILD_ACCEPTANCE_MISSING_ALIASES = {
     "localized_media_item": "lang_item_missing",
 }
@@ -2531,6 +2544,65 @@ def _manual_confirmed_child_step_keys(task_id: int) -> set[str]:
     return confirmed
 
 
+def _manual_confirmed_child_step_keys_by_task_id(task_ids: Iterable[int]) -> dict[int, set[str]]:
+    ids_set: set[int] = set()
+    for raw_task_id in task_ids or []:
+        try:
+            task_id = int(raw_task_id or 0)
+        except (TypeError, ValueError):
+            continue
+        if task_id > 0:
+            ids_set.add(task_id)
+    ids = sorted(ids_set)
+    if not ids:
+        return {}
+    placeholders = ", ".join(["%s"] * len(ids))
+    rows = query_all(
+        f"SELECT task_id, payload_json FROM task_events "
+        f"WHERE task_id IN ({placeholders}) AND event_type=%s ORDER BY task_id, id ASC",
+        tuple(ids + [CHILD_MANUAL_STEP_CONFIRMED_EVENT]),
+    )
+    confirmed_by_task: dict[int, set[str]] = {task_id: set() for task_id in ids}
+    for row in rows or []:
+        try:
+            task_id = int(row.get("task_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        payload = _parse_event_payload_obj(row.get("payload_json"))
+        try:
+            key = _normalize_child_acceptance_step_key(payload.get("key") or "")
+        except ValueError:
+            continue
+        confirmed_by_task.setdefault(task_id, set()).add(key)
+    return confirmed_by_task
+
+
+def _readiness_keys_for_manual_child_steps(step_keys: Iterable[str]) -> set[str]:
+    readiness_keys: set[str] = set()
+    for step_key in step_keys or []:
+        key = str(step_key or "").strip()
+        readiness_key = CHILD_ACCEPTANCE_READINESS_KEYS.get(key)
+        if readiness_key:
+            readiness_keys.add(readiness_key)
+    return readiness_keys
+
+
+def manual_confirmed_child_readiness_keys(task_id: int) -> set[str]:
+    return _readiness_keys_for_manual_child_steps(
+        _manual_confirmed_child_step_keys(int(task_id))
+    )
+
+
+def manual_confirmed_child_readiness_keys_by_task_id(
+    task_ids: Iterable[int],
+) -> dict[int, set[str]]:
+    confirmed_by_task = _manual_confirmed_child_step_keys_by_task_id(task_ids)
+    return {
+        task_id: _readiness_keys_for_manual_child_steps(step_keys)
+        for task_id, step_keys in confirmed_by_task.items()
+    }
+
+
 def _normalize_push_rework_issue_keys(issue_keys: Iterable[Any]) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
@@ -2659,7 +2731,25 @@ def _apply_child_manual_confirmations(
         if key not in normalized_confirmed:
             continue
         check["manual_confirmed"] = True
+        check["ok"] = True
+        check["reason"] = CHILD_MANUAL_CONFIRM_REASON
+        check.pop("admin_rejected", None)
     return checks
+
+
+def _apply_child_manual_confirmations_to_readiness(
+    readiness: dict,
+    *,
+    confirmed_keys: set[str],
+) -> dict:
+    result = dict(readiness or {})
+    for readiness_key in _readiness_keys_for_manual_child_steps(confirmed_keys):
+        result[readiness_key] = True
+    if "shopify_image_confirmed" in result and result.get("shopify_image_confirmed"):
+        if "shopify_images" in (confirmed_keys or set()):
+            result["shopify_image_reason"] = CHILD_MANUAL_CONFIRM_REASON
+            result.pop("shopify_image_domain_details", None)
+    return result
 
 
 def _missing_child_acceptance_keys(checks: list[dict]) -> list[str]:
@@ -3134,6 +3224,10 @@ def _child_acceptance_payload(
             lang=lang,
         )
         checks = _missing_item_child_acceptance_checks()
+        checks = _apply_child_push_rework_rejections(
+            checks,
+            rejection=rework_rejection,
+        )
         checks = _apply_child_manual_confirmations(
             checks,
             confirmed_keys=manual_confirmed_keys,
@@ -3142,10 +3236,6 @@ def _child_acceptance_payload(
             product_code=product_code,
             lang=lang,
             item=None,
-        )
-        checks = _apply_child_push_rework_rejections(
-            checks,
-            rejection=rework_rejection,
         )
         missing = _missing_child_acceptance_keys(checks)
         return {
@@ -3166,6 +3256,10 @@ def _child_acceptance_payload(
         task_id=task_id,
         product_id=product_id,
         lang=lang,
+    )
+    readiness = _apply_child_manual_confirmations_to_readiness(
+        readiness,
+        confirmed_keys=manual_confirmed_keys,
     )
     detail_status = _detail_images_status(product_id, lang)
     link_status = _product_link_availability_status(product_id, lang, product)
@@ -3307,6 +3401,10 @@ def _child_acceptance_payload(
             if include_evidence
             else []
         )
+    checks = _apply_child_push_rework_rejections(
+        checks,
+        rejection=rework_rejection,
+    )
     checks = _apply_child_manual_confirmations(
         checks,
         confirmed_keys=manual_confirmed_keys,
@@ -3315,10 +3413,6 @@ def _child_acceptance_payload(
         product_code=product_code,
         lang=lang,
         item=item,
-    )
-    checks = _apply_child_push_rework_rejections(
-        checks,
-        rejection=rework_rejection,
     )
     missing = _missing_child_acceptance_keys(checks)
     return {
@@ -3476,6 +3570,26 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
     }
 
 
+def _refresh_push_status_cache_for_child_task(task_id: int, row: dict) -> None:
+    try:
+        from appcore import pushes
+
+        item = _find_child_task_target_lang_item(
+            task_id=int(task_id),
+            row=row,
+            allow_source_fallback=True,
+        )
+        item_id = _positive_int((item or {}).get("id"))
+        if item_id is not None:
+            pushes.refresh_push_status_cache_for_item(int(item_id))
+    except Exception:
+        log.debug(
+            "refresh push status cache after child manual confirmation failed task_id=%s",
+            task_id,
+            exc_info=True,
+        )
+
+
 def confirm_child_step(
     *,
     task_id: int,
@@ -3486,7 +3600,8 @@ def confirm_child_step(
     """Record a manual fallback confirmation for one child acceptance step."""
     normalized_key = _normalize_child_acceptance_step_key(step_key)
     row = query_one(
-        "SELECT id, assignee_id, status FROM tasks "
+        "SELECT id, assignee_id, status, media_product_id, media_item_id, country_code "
+        "FROM tasks "
         "WHERE id=%s AND parent_task_id IS NOT NULL",
         (int(task_id),),
     )
@@ -3515,6 +3630,7 @@ def confirm_child_step(
             raise
     finally:
         conn.close()
+    _refresh_push_status_cache_for_child_task(int(task_id), row)
     return {"step_key": normalized_key}
 
 

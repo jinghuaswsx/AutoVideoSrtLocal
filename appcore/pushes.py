@@ -359,6 +359,7 @@ def _empty_push_list_context() -> dict[str, Any]:
         "valid_push_text_product_ids": set(),
         "failed_latest_push_ids": set(),
         "rework_readiness_by_task_id": {},
+        "manual_confirmed_readiness_by_task_id": {},
     }
 
 
@@ -503,6 +504,18 @@ def _prefetch_rework_readiness_by_task_id(task_ids: set[int]) -> dict[int, set[s
         return {}
 
 
+def _prefetch_manual_confirmed_readiness_by_task_id(task_ids: set[int]) -> dict[int, set[str]]:
+    if not task_ids:
+        return {}
+    try:
+        from appcore import tasks as tasks_svc
+
+        return tasks_svc.manual_confirmed_child_readiness_keys_by_task_id(task_ids)
+    except Exception:
+        log.debug("prefetch manual confirmed push readiness failed", exc_info=True)
+        return {}
+
+
 def build_push_list_context(rows: list[dict] | tuple[dict, ...]) -> dict[str, Any]:
     context = _empty_push_list_context()
     product_ids: set[int] = set()
@@ -536,6 +549,9 @@ def build_push_list_context(rows: list[dict] | tuple[dict, ...]) -> dict[str, An
     context["valid_push_text_product_ids"] = _prefetch_valid_en_push_text_product_ids(product_ids)
     context["failed_latest_push_ids"] = _prefetch_failed_latest_push_ids(latest_push_ids)
     context["rework_readiness_by_task_id"] = _prefetch_rework_readiness_by_task_id(task_ids)
+    context["manual_confirmed_readiness_by_task_id"] = (
+        _prefetch_manual_confirmed_readiness_by_task_id(task_ids)
+    )
     return context
 
 
@@ -560,6 +576,35 @@ def _push_rework_readiness_overrides(
     except Exception:
         log.debug(
             "load push rework readiness overrides failed task_id=%s",
+            task_id,
+            exc_info=True,
+        )
+        return set()
+
+
+def _manual_confirmed_readiness_overrides(
+    item: dict,
+    *,
+    context: dict[str, Any] | None = None,
+) -> set[str]:
+    task_id = (item or {}).get("task_id")
+    if not task_id:
+        return set()
+    try:
+        task_id_int = int(task_id)
+    except (TypeError, ValueError):
+        return set()
+    prefetched = _context_lookup(context, "manual_confirmed_readiness_by_task_id")
+    if prefetched is not _CONTEXT_MISSING:
+        return set((prefetched or {}).get(task_id_int) or set())
+    if context is not None:
+        return set()
+    try:
+        from appcore import tasks as tasks_svc
+        return set(tasks_svc.manual_confirmed_child_readiness_keys(task_id_int))
+    except Exception:
+        log.debug(
+            "load manual confirmed readiness overrides failed task_id=%s",
             task_id,
             exc_info=True,
         )
@@ -631,7 +676,14 @@ def compute_readiness(
         for key in _push_rework_readiness_overrides(item, context=context):
             if key in result:
                 result[key] = False
-    if shopify_image_domain_details:
+    manual_overrides = _manual_confirmed_readiness_overrides(item, context=context)
+    for key in manual_overrides:
+        if key in result:
+            result[key] = True
+    if "shopify_image_confirmed" in manual_overrides:
+        result["shopify_image_reason"] = "人工确认完成"
+        result.pop("shopify_image_domain_details", None)
+    if shopify_image_domain_details and "shopify_image_confirmed" not in manual_overrides:
         result["shopify_image_domain_details"] = shopify_image_domain_details
     return result
 

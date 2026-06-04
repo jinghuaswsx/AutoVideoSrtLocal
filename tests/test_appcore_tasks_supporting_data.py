@@ -1813,7 +1813,7 @@ def test_get_child_readiness_uses_task_specific_video_item(monkeypatch):
     assert seen["item_id"] == 44
 
 
-def test_get_child_readiness_keeps_manual_confirmations_as_legacy_metadata(monkeypatch):
+def test_get_child_readiness_manual_confirmation_marks_step_ready(monkeypatch):
     from appcore import pushes, tasks
 
     monkeypatch.setattr(
@@ -1871,12 +1871,12 @@ def test_get_child_readiness_keeps_manual_confirmations_as_legacy_metadata(monke
     payload = tasks.get_child_readiness(44)
     checks = {check["key"]: check for check in payload["checks"]}
 
-    assert payload["ready"] is False
-    assert payload["missing"] == ["translated_cover"]
+    assert payload["ready"] is True
+    assert payload["missing"] == []
     assert payload["manual_confirmed_steps"] == ["translated_cover"]
-    assert checks["translated_cover"]["ok"] is False
+    assert checks["translated_cover"]["ok"] is True
     assert checks["translated_cover"]["manual_confirmed"] is True
-    assert "人工确认完成" not in checks["translated_cover"]["reason"]
+    assert "人工确认完成" in checks["translated_cover"]["reason"]
 
 
 def test_get_child_readiness_labels_unconfirmed_final_material_step(monkeypatch):
