@@ -1207,11 +1207,11 @@
     if (!window.PUSH_IS_ADMIN) return '';
     if (it.status === 'pushed') {
       const date = (it.pushed_at || '').slice(0, 10);
-      return `<span class="pushed-text">✓ 已推送 ${date}</span>
-              <div class="action-menu">
-                <button class="btn-mini" data-action="open-modal" data-id="${it.id}">查看/重推</button>
-                <button class="btn-mini" data-action="view-logs" data-id="${it.id}">历史</button>
-                <button class="btn-mini" data-action="reset" data-id="${it.id}">重置</button>
+      return `<div class="push-action-btn-group">
+                <span class="pushed-text" style="font-size: 12px; font-weight: 500; text-align: center; white-space: nowrap; margin-bottom: 2px;">✓ 已推送 ${date}</span>
+                <button type="button" class="btn-action-capsule btn-capsule-white" data-action="open-modal" data-id="${it.id}">查看/重推</button>
+                <button type="button" class="btn-action-capsule btn-capsule-white" data-action="view-logs" data-id="${it.id}">历史</button>
+                <button type="button" class="btn-action-capsule btn-capsule-white" data-action="reset" data-id="${it.id}">重置</button>
               </div>`;
     }
 

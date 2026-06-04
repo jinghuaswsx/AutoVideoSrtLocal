@@ -2501,27 +2501,32 @@
   cursor: not-allowed;
 }
 
-/* 3. Skip Button / Unskip Button (White Capsule with borders) */
-.push-action-btn-group .btn-action-capsule.btn-skip-white {
+/* 3. Skip Button / Unskip Button / Pushed Action Buttons (White Capsule with borders) */
+.push-action-btn-group .btn-action-capsule.btn-skip-white,
+.push-action-btn-group .btn-action-capsule.btn-capsule-white {
   background: var(--oc-bg);
   color: var(--oc-fg-muted);
   border: 1px solid var(--oc-border-strong);
 }
-.push-action-btn-group .btn-action-capsule.btn-skip-white:hover:not(:disabled) {
+.push-action-btn-group .btn-action-capsule.btn-skip-white:hover:not(:disabled),
+.push-action-btn-group .btn-action-capsule.btn-capsule-white:hover:not(:disabled) {
   background: var(--oc-bg-muted);
   color: var(--oc-fg);
   border-color: var(--oc-border-strong);
 }
-.push-action-btn-group .btn-action-capsule.btn-skip-white.btn-unskip {
+.push-action-btn-group .btn-action-capsule.btn-skip-white.btn-unskip,
+.push-action-btn-group .btn-action-capsule.btn-capsule-white.btn-unskip {
   color: var(--oc-accent);
   border-color: var(--oc-accent-subtle);
 }
-.push-action-btn-group .btn-action-capsule.btn-skip-white.btn-unskip:hover:not(:disabled) {
+.push-action-btn-group .btn-action-capsule.btn-skip-white.btn-unskip:hover:not(:disabled),
+.push-action-btn-group .btn-action-capsule.btn-capsule-white.btn-unskip:hover:not(:disabled) {
   background: var(--oc-accent-subtle);
   color: var(--oc-accent);
   border-color: var(--oc-accent);
 }
-.push-action-btn-group .btn-action-capsule.btn-skip-white:disabled {
+.push-action-btn-group .btn-action-capsule.btn-skip-white:disabled,
+.push-action-btn-group .btn-action-capsule.btn-capsule-white:disabled {
   background: var(--oc-bg-muted);
   color: var(--oc-fg-subtle);
   border-color: var(--oc-border);
