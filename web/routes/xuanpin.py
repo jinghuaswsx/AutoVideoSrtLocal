@@ -340,6 +340,7 @@ def api_mk_material_library():
         ad_delivery_filter=(
             request.args.get("ad_delivery") or request.args.get("ad_delivery_filter") or ""
         ).strip(),
+        uploader=(request.args.get("uploader") or "").strip(),
     )
     return jsonify(result)
 
@@ -378,6 +379,7 @@ def api_mk_yesterday_top300():
         ad_delivery_filter=(
             request.args.get("ad_delivery") or request.args.get("ad_delivery_filter") or ""
         ).strip(),
+        uploader=(request.args.get("uploader") or "").strip(),
     )
     result["sort_order"] = sort_order
     return jsonify(result)
@@ -1078,4 +1080,3 @@ def api_tabcut_video_cover(video_id: str):
         return redirect(original_cover_url)
 
     abort(404, description="No cover available")
-

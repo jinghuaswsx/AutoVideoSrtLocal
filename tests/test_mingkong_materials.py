@@ -1162,6 +1162,74 @@ def test_list_material_library_hides_ad_delivery_materials(monkeypatch):
     ]
 
 
+def test_list_material_library_filters_uploader_before_pagination(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_enrich_material_yesterday_delta", lambda items, **_: items)
+    monkeypatch.setattr(mm, "_enrich_material_card_items", lambda items: items)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_snapshots" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            assert "s.video_author LIKE %s" in sql
+            assert "%Alice%" in args
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return {
+                "status": "success",
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "summary_json": "{}",
+            }
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        assert "s.video_author LIKE %s" in sql
+        assert "%Alice%" in args
+        return [
+            {
+                "id": 1,
+                "snapshot_date": date(2026, 5, 18),
+                "snapshot_at": datetime(2026, 5, 18, 18, 0, 0),
+                "snapshot_slot": "1800",
+                "ranking_snapshot_date": date(2026, 5, 17),
+                "material_key": "alice-video",
+                "product_code": "cool-widget",
+                "rank_position": 7,
+                "video_name": "winner.mp4",
+                "video_path": "uploads2/winner.mp4",
+                "video_image_path": "uploads2/winner.jpg",
+                "local_cover_object_key": "",
+                "cover_cached_at": None,
+                "cover_cache_error": None,
+                "cumulative_90_spend": 12000,
+                "video_ads_count": 9,
+                "video_author": "Alice",
+                "mk_video_metadata_json": "{}",
+                "created_at": None,
+                "updated_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_material_library(page=1, page_size=100, uploader="Alice")
+
+    assert result["total"] == 1
+    assert result["items"][0]["video_author"] == "Alice"
+    assert any("%Alice%" in item[2] for item in captured if item[0] == "query")
+
+
 def test_list_material_library_keyword_matches_product_code_rjc_variants(monkeypatch):
     captured = []
 
@@ -2225,6 +2293,70 @@ def test_list_yesterday_top100_orders_new_entries_first(monkeypatch):
         for item in captured
         if item[0] == "query"
     )
+
+
+def test_list_yesterday_top100_filters_uploader_before_pagination(monkeypatch):
+    captured = []
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm, "_enrich_material_card_items", lambda items: items)
+
+    def fake_query_one(sql, args=()):
+        captured.append(("query_one", sql, args))
+        if "FROM mingkong_material_daily_top100" in sql and "GROUP BY" in sql:
+            return {
+                "snapshot_date": "2026-05-18",
+                "snapshot_at": "2026-05-18 18:00:00",
+                "snapshot_slot": "1800",
+            }
+        if "COUNT(*) AS cnt" in sql:
+            assert "t.video_author LIKE %s" in sql
+            assert "%Alice%" in args
+            return {"cnt": 1}
+        if "mingkong_material_sync_runs" in sql:
+            return None
+        raise AssertionError(sql)
+
+    def fake_query(sql, args=()):
+        captured.append(("query", sql, args))
+        assert "t.video_author LIKE %s" in sql
+        assert "%Alice%" in args
+        return [
+            {
+                "id": 1,
+                "snapshot_date": "2026-05-18",
+                "snapshot_at": "2026-05-18 18:00:00",
+                "snapshot_slot": "1800",
+                "previous_snapshot_date": "2026-05-17",
+                "previous_snapshot_at": "2026-05-17 18:01:00",
+                "previous_snapshot_slot": "1800",
+                "comparison_interval_seconds": 86340,
+                "material_key": "abc",
+                "rank_position": 4,
+                "display_position": 1,
+                "video_name": "fresh.mp4",
+                "video_path": "uploads2/fresh.mp4",
+                "local_cover_object_key": "",
+                "cover_cached_at": None,
+                "cover_cache_error": None,
+                "current_cumulative_90_spend": 1000,
+                "yesterday_spend_delta": 250,
+                "is_new_material": 0,
+                "is_new_top100_entry": 1,
+                "video_author": "Alice",
+                "mk_video_metadata_json": "{}",
+                "created_at": None,
+            }
+        ]
+
+    monkeypatch.setattr(mm, "query_one", fake_query_one)
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    result = mm.list_yesterday_top100(page=1, page_size=100, uploader="Alice")
+
+    assert result["total"] == 1
+    assert result["items"][0]["video_author"] == "Alice"
+    assert any("%Alice%" in item[2] for item in captured if item[0] == "query")
 
 
 def test_list_yesterday_top100_keyword_uses_shared_material_filter(monkeypatch):

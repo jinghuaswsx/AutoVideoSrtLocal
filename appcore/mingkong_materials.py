@@ -1276,6 +1276,24 @@ def _material_keyword_condition(alias: str, keyword: str) -> tuple[str, list[Any
     return "(" + " OR ".join(clauses) + ")", args
 
 
+def _material_uploader_condition(alias: str, uploader: str) -> tuple[str, list[Any]]:
+    name = str(uploader or "").strip()
+    if not name:
+        return "", []
+    return f"{alias}.video_author LIKE %s", [f"%{name}%"]
+
+
+def _filter_materials_by_uploader(items: list[dict[str, Any]], uploader: str) -> list[dict[str, Any]]:
+    name = str(uploader or "").strip().lower()
+    if not name:
+        return items
+    return [
+        item
+        for item in items
+        if name in str(item.get("video_author") or "").lower()
+    ]
+
+
 def _material_live_search_terms(keyword: str) -> list[str]:
     kw = str(keyword or "").strip()
     if not kw:
@@ -1904,6 +1922,7 @@ def _list_all_historical_material_library(
     status_filter: str,
     sort_by: str = "spend_90",
     ad_delivery_filter: str = "exclude",
+    uploader: str = "",
 ) -> dict[str, Any]:
     where = ["r.status = 'success'"]
     args: list[Any] = []
@@ -1911,6 +1930,10 @@ def _list_all_historical_material_library(
     if keyword_sql:
         where.append(keyword_sql)
         args.extend(keyword_args)
+    uploader_sql, uploader_args = _material_uploader_condition("s", uploader)
+    if uploader_sql:
+        where.append(uploader_sql)
+        args.extend(uploader_args)
     _append_material_visibility_condition(
         where,
         args,
@@ -2194,6 +2217,7 @@ def _list_live_mingkong_material_library(
     status_filter: str,
     sort_by: str = "spend_90",
     ad_delivery_filter: str = "exclude",
+    uploader: str = "",
     timeout_seconds: int = 20,
 ) -> dict[str, Any]:
     headers = _mk_headers()
@@ -2246,7 +2270,10 @@ def _list_live_mingkong_material_library(
             _as_int(previous.get("video_ads_count")),
         ):
             deduped[key] = row
-    visible_rows = _filter_ad_delivery_materials(list(deduped.values()), ad_delivery_filter)
+    visible_rows = _filter_materials_by_uploader(
+        _filter_ad_delivery_materials(list(deduped.values()), ad_delivery_filter),
+        uploader,
+    )
     if sort_by == "ads_count":
         sorted_rows = sorted(
             visible_rows,
@@ -2517,6 +2544,7 @@ def list_material_library(
     library_status: str = "",
     sort_by: str = "spend_90",
     ad_delivery_filter: str = "exclude",
+    uploader: str = "",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     normalized_range_key = str(range_key or "").strip().lower().replace("-", "_")
@@ -2534,6 +2562,7 @@ def list_material_library(
                 status_filter=status_filter,
                 sort_by=sort_by,
                 ad_delivery_filter=ad_delivery_filter,
+                uploader=uploader,
             )
         return _list_all_historical_material_library(
             keyword=kw,
@@ -2543,6 +2572,7 @@ def list_material_library(
             status_filter=status_filter,
             sort_by=sort_by,
             ad_delivery_filter=ad_delivery_filter,
+            uploader=uploader,
         )
 
     range_bounds = _material_range_bounds(range_key)
@@ -2567,6 +2597,10 @@ def list_material_library(
         if keyword_sql:
             where.append(keyword_sql)
             args.extend(keyword_args)
+        uploader_sql, uploader_args = _material_uploader_condition("s", uploader)
+        if uploader_sql:
+            where.append(uploader_sql)
+            args.extend(uploader_args)
         _append_material_visibility_condition(
             where,
             args,
@@ -2673,6 +2707,10 @@ def list_material_library(
     if keyword_sql:
         where.append(keyword_sql)
         args.extend(keyword_args)
+    uploader_sql, uploader_args = _material_uploader_condition("s", uploader)
+    if uploader_sql:
+        where.append(uploader_sql)
+        args.extend(uploader_args)
     _append_material_visibility_condition(
         where,
         args,
@@ -2811,6 +2849,7 @@ def list_yesterday_top100(
     sort_order: str = "new_entry_first",
     library_status: str = "",
     ad_delivery_filter: str = "exclude",
+    uploader: str = "",
 ) -> dict[str, Any]:
     guard_against_windows_local_mysql()
     identity = _latest_snapshot_identity(
@@ -2840,6 +2879,10 @@ def list_yesterday_top100(
     if keyword_sql:
         where.append(keyword_sql)
         base_args.extend(keyword_args)
+    uploader_sql, uploader_args = _material_uploader_condition("t", uploader)
+    if uploader_sql:
+        where.append(uploader_sql)
+        base_args.extend(uploader_args)
     _append_material_visibility_condition(
         where,
         base_args,
