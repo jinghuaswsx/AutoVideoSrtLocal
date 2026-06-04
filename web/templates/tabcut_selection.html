@@ -15,7 +15,7 @@
 .tabcut-btn.secondary { border-color:#cbd5e1; background:#fff; color:#334155; }
 .tabcut-view-tabs { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
 .tabcut-view-tabs-left { display:flex; gap:8px; }
-.tabcut-view-tab { height:34px; padding:0 14px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#475569; font-weight:700; cursor:pointer; }
+.tabcut-view-tab { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; box-sizing: border-box; height:34px; padding:0 14px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#475569; font-weight:700; cursor:pointer; }
 .tabcut-view-tab.active { border-color:#0f766e; background:#ecfdf5; color:#0f766e; }
 .tabcut-goods-rank-tabs { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin:-2px 0 12px; padding:10px 12px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
 .tabcut-goods-rank-tabs[hidden] { display:none !important; }
@@ -193,6 +193,15 @@
   align-items: center;
   margin-top: 4px;
 }
+{% if share_mode %}
+.sidebar, .topbar, .sidebar-backdrop { display: none !important; }
+.main-content { margin-left: 0 !important; width: 100% !important; padding: 14px !important; }
+.tabcut-toolbar { margin-top: 14px !important; }
+.tabcut-mark-options { display: none !important; }
+.tabcut-fine-ai-btn { display: none !important; }
+.tabcut-toolbar .tabcut-btn { display: none !important; }
+{% endif %}
+
 {% endblock %}
 
 {% block content %}
@@ -298,9 +307,15 @@
 
   <div class="tabcut-view-tabs">
     <div class="tabcut-view-tabs-left">
-      <button class="tabcut-view-tab active" type="button" data-view="videos" onclick="setTabcutView('videos')">视频榜</button>
-      <button class="tabcut-view-tab" type="button" data-view="goods" onclick="setTabcutView('goods')">商品榜</button>
-      <button class="tabcut-view-tab" type="button" data-view="recommended" onclick="setTabcutView('recommended')">推荐产品20个</button>
+      {% if share_mode %}
+        <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_videos_page') }}">视频榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_goods_page') }}">商品榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_recommended_page') }}">推荐产品20个</a>
+      {% else %}
+        <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_videos_page') }}">视频榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_goods_page') }}">商品榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_recommended_page') }}">推荐产品20个</a>
+      {% endif %}
     </div>
     <button class="tabcut-view-tab" id="zoomToggleBtn" type="button" onclick="toggleCardZoom()" style="border-color:#cbd5e1; color:#475569;">2x 放大</button>
   </div>
@@ -321,7 +336,10 @@
 
   <div class="tabcut-status">
     <span id="tabcutStatus">Ready</span>
-    <button class="tabcut-btn secondary" type="button" onclick="refreshTabcut()">Refresh</button>
+    {% if not share_mode %}
+      <button class="tabcut-btn secondary" type="button" onclick="copyShareUrl()" style="margin-right: 8px;">分享</button>
+      <button class="tabcut-btn secondary" type="button" onclick="refreshTabcut()">刷新</button>
+    {% endif %}
   </div>
 
   <div class="tabcut-results">
@@ -353,7 +371,7 @@
 </div>
 
 <script>
-let tabcutView = "videos";
+let tabcutView = "{{ initial_view or 'videos' }}";
 let tabcutPage = 1;
 
 const recommendedProducts = [
@@ -984,7 +1002,9 @@ async function loadTabcut(page) {
   }
   tabcutPage = page;
   qs("tabcutStatus").textContent = "Loading...";
-  const endpoint = tabcutView === "videos" ? "/xuanpin/api/tabcut/videos" : "/xuanpin/api/tabcut/goods";
+  const endpoint = tabcutView === "videos" 
+    ? "{% if share_mode %}/xuanpin/api/tabcut/share/videos{% else %}/xuanpin/api/tabcut/videos{% endif %}"
+    : "{% if share_mode %}/xuanpin/api/tabcut/share/goods{% else %}/xuanpin/api/tabcut/goods{% endif %}";
   const resp = await fetch(`${endpoint}?${paramsFor(page).toString()}`);
   const data = await resp.json();
   if (!resp.ok) {
@@ -1117,6 +1137,28 @@ function resetTabcut() {
   ["categoryL1", "sourceCategory", "markStatus", "goodsBizDate", "publishDateFrom", "publishDateTo", "sourceRank", "minVideoSales", "minGoodsSales", "maxGoodsSales", "minGmv", "minPrice", "maxPrice"].forEach(id => qs(id).value = "");
   qs("sortBy").value = "play_count";
   loadTabcut(1);
+}
+
+async function copyShareUrl() {
+  const shareBase = window.location.origin + "/xuanpin/tabcut/share/";
+  const shareUrl = shareBase + tabcutView;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(shareUrl);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = shareUrl;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    mkiToast("success", "分享链接已复制到剪贴板！");
+  } catch (err) {
+    mkiToast("error", "复制失败，请手动复制：" + shareUrl);
+  }
 }
 
 async function loadCategoryOptions() {
@@ -1685,7 +1727,7 @@ async function mkiFineAiEvaluateFromCard(btn) {
 // =========================================================================
 
 applyCardZoom();
-updateDateFilterState();
-loadCategoryOptions().finally(() => loadTabcut(1));
+setTabcutView(tabcutView);
+loadCategoryOptions();
 </script>
 {% endblock %}
