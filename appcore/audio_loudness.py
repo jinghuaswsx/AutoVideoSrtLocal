@@ -48,6 +48,7 @@ VOICE_PRIORITY_TARGET_GAP_LU = 12.0
 VOICE_PRIORITY_MAX_WINDOWS = 80
 VOICE_PRIORITY_MIN_WINDOW_SECONDS = 0.15
 VOICE_PRIORITY_DOMINANT_WINDOW_LIMIT = 5
+VOICE_PRIORITY_MAX_ATTENUATION_LU = 6.0
 BACKGROUND_CLEANUP_MODE_DE_ELECTRIC = "de_electric"
 DE_ELECTRIC_BACKGROUND_FILTER = (
     "highpass=f=80,"
@@ -231,14 +232,18 @@ def resolve_voice_priority_background_volume(
         summary["fallback_reason"] = "already_below_target_gap"
         return summary
 
-    required_attenuation = _round_audio_metric(target_delta - max_delta, 2)
+    raw_required_attenuation = _round_audio_metric(target_delta - max_delta, 2)
+    required_attenuation = max(-VOICE_PRIORITY_MAX_ATTENUATION_LU, raw_required_attenuation)
+    attenuation_capped = required_attenuation > raw_required_attenuation
     scale = 10 ** (float(required_attenuation) / 20.0)
     effective_volume = standard_volume * scale
     summary.update({
         "enabled": True,
         "fallback_reason": None,
         "effective_volume": effective_volume,
+        "raw_required_attenuation_lu": raw_required_attenuation,
         "required_attenuation_lu": required_attenuation,
+        "attenuation_capped": attenuation_capped,
         "scale": scale,
     })
     return summary
