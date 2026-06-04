@@ -436,6 +436,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "assignee_display_name": "顾倩",
                 "status": tasks.CHILD_DONE,
                 "is_urgent": False,
+                "is_rework": False,
                 "high_level": "completed",
                 "created_at": "2026-05-07T10:00:00",
                 "updated_at": "2026-05-07T10:05:00",
@@ -463,7 +464,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "t.archived_at IS NULL" in captured["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
-    assert "ORDER BY t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
+    assert "ORDER BY is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (
         2,
         "%Product%",
@@ -1060,7 +1061,7 @@ def test_list_task_center_items_orders_urgent_before_created(monkeypatch):
         page_size=20,
     ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
-    assert "ORDER BY t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
+    assert "ORDER BY is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (20, 0)
 
 

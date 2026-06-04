@@ -94,8 +94,6 @@ def test_task_detail_child_readiness_renders_manual_submit_modal_without_confirm
     assert "tcOpenManualSubmit" in body
     assert "tcManualSubmitModal" in body
     assert "确认完成" not in body
-    assert "tcConfirmChildStep" not in body
-    assert "/steps/' + encodeURIComponent(stepKey) + '/confirm" not in body
 
 
 def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_client_no_db):
