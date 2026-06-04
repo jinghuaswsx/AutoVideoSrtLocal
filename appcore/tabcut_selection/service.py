@@ -112,8 +112,128 @@ def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:
             _fill_missing(item, "primary_item_url", _raw_item_url(raw_item))
         _fill_missing(item, "primary_item_url", _tiktok_product_url(item.get("primary_item_id")))
         items.append(item)
+    _tabcut_attach_fine_ai_evaluation(items)
     hydrated["items"] = items
     return hydrated
+
+
+def _tabcut_attach_fine_ai_evaluation(items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    from appcore.db import query
+    import logging
+
+    video_ids = [str(item.get("video_id") or "").strip() for item in items if item.get("video_id")]
+    local_video_paths = [str(item.get("local_video_path") or "").strip() for item in items if item.get("local_video_path")]
+    
+    # 1. 查找自动任务的 run_id
+    auto_evals = {}
+    if video_ids:
+        placeholders = ",".join(["%s"] * len(video_ids))
+        try:
+            auto_rows = query(
+                f"""
+                SELECT video_id, evaluation_run_id
+                FROM tabcut_fine_ai_auto_evaluations
+                WHERE video_id IN ({placeholders})
+                  AND status IN ('completed', 'partially_completed')
+                  AND evaluation_run_id IS NOT NULL
+                  AND evaluation_run_id <> ''
+                """,
+                tuple(video_ids)
+            )
+            for r in auto_rows:
+                auto_evals[str(r["video_id"]).strip()] = str(r["evaluation_run_id"]).strip()
+        except Exception:
+            logging.getLogger("appcore.tabcut_selection").exception("failed to load tabcut fine AI auto evaluations")
+
+    # 2. 查找 evaluation runs
+    run_rows = []
+    params = []
+    where_clauses = []
+    
+    if video_ids:
+        video_placeholders = ",".join(["%s"] * len(video_ids))
+        where_clauses.append(f"JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.video_id')) IN ({video_placeholders})")
+        params.extend(video_ids)
+        
+    if local_video_paths:
+        path_placeholders = ",".join(["%s"] * len(local_video_paths))
+        where_clauses.append(f"JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.card_video_path')) IN ({path_placeholders})")
+        where_clauses.append(f"JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.external_card_video.path')) IN ({path_placeholders})")
+        where_clauses.append(f"JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.video_path')) IN ({path_placeholders})")
+        params.extend(local_video_paths)
+        params.extend(local_video_paths)
+        params.extend(local_video_paths)
+        
+    runs_by_video_id = {}
+    runs_by_path = {}
+    
+    if where_clauses:
+        or_sql = " OR ".join(where_clauses)
+        sql = f"""
+            SELECT id, evaluation_run_id, status, metadata_json, summary_json, frontend_json
+            FROM ai_evaluation_runs
+            WHERE ({or_sql})
+              AND status IN ('completed', 'partially_completed')
+            ORDER BY created_at DESC, id DESC
+        """
+        try:
+            run_rows = query(sql, tuple(params))
+            for row in run_rows:
+                meta = {}
+                try:
+                    meta = json.loads(row["metadata_json"] or "{}")
+                except Exception:
+                    pass
+                
+                r_vid = meta.get("video_id")
+                if r_vid:
+                    runs_by_video_id.setdefault(str(r_vid).strip(), []).append(row)
+                    
+                r_path = meta.get("card_video_path") or (meta.get("external_card_video") or {}).get("path") or meta.get("video_path")
+                if r_path:
+                    runs_by_path.setdefault(str(r_path).strip(), []).append(row)
+        except Exception:
+            logging.getLogger("appcore.tabcut_selection").exception("failed to load AI evaluation runs for Tabcut")
+            
+    # 3. 关联回 item
+    for item in items:
+        vid = str(item.get("video_id") or "").strip()
+        path = str(item.get("local_video_path") or "").strip()
+        
+        run = None
+        auto_run_id = auto_evals.get(vid)
+        if auto_run_id:
+            for row in run_rows:
+                if row["evaluation_run_id"] == auto_run_id:
+                    run = row
+                    break
+                    
+        if not run and vid in runs_by_video_id:
+            run = runs_by_video_id[vid][0]
+            
+        if not run and path and path in runs_by_path:
+            run = runs_by_path[path][0]
+            
+        if run:
+            try:
+                frontend_data = json.loads(run["frontend_json"] or "{}")
+                summary_data = json.loads(run["summary_json"] or "{}")
+                item["fine_ai_evaluation"] = {
+                    "evaluation_run_id": run["evaluation_run_id"],
+                    "run_id": run["evaluation_run_id"],
+                    "status": run["status"],
+                    "has_result": True,
+                    "summary": summary_data,
+                    "frontend": frontend_data,
+                    "countries": frontend_data.get("countries", {})
+                }
+            except Exception:
+                item["fine_ai_evaluation"] = None
+        else:
+            item["fine_ai_evaluation"] = None
+
 
 
 def _hydrate_goods_items(payload: dict[str, Any]) -> dict[str, Any]:
