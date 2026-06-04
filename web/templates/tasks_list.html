@@ -122,6 +122,9 @@
 .tc-manual-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; margin-left:auto; }
 .tc-manual-action { display:inline-flex; align-items:center; justify-content:center; min-height:26px; height:auto; padding:4px 9px; font-size:12px; line-height:1.2; text-decoration:none; white-space:nowrap; }
 .tc-manual-confirmed { color:var(--tc-success-fg); background:var(--tc-success-bg); border-color:var(--tc-success-bg); cursor:default; }
+.tc-manual-confirm-pill { display:inline-flex; align-items:center; justify-content:center; min-height:24px; height:24px; padding:0 10px; border:1px solid var(--tc-border-strong); border-radius:999px; background:#fff; color:var(--tc-fg); font-size:11px; font-weight:700; line-height:1; white-space:nowrap; cursor:pointer; box-shadow:0 1px 2px oklch(22% 0.020 235 / .06); }
+.tc-manual-confirm-pill:hover { background:var(--tc-bg-muted); border-color:var(--tc-accent); color:var(--tc-accent); }
+.tc-manual-confirm-pill:disabled { cursor:not-allowed; background:#fff; border-color:var(--tc-success-fg); color:var(--tc-success-fg); opacity:.82; }
 .tc-manual-modal-field { margin-bottom:10px; }
 .tc-manual-modal-field label { display:block; font-size:12px; font-weight:700; color:var(--tc-fg-muted); margin-bottom:4px; }
 .tc-manual-modal-status { min-height:18px; margin-top:8px; font-size:12px; color:var(--tc-fg-muted); }
@@ -333,7 +336,8 @@
 .tc-product-link-combo-check.is-bad { border-color:var(--tc-danger); background:var(--tc-danger-bg); }
 .tc-product-link-combo-icon { font-weight:800; line-height:1.4; }
 .tc-product-link-combo-body { min-width:0; }
-.tc-product-link-combo-body > span { font-weight:700; }
+.tc-product-link-combo-check-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.tc-product-link-combo-check-title { font-weight:700; }
 .tc-product-link-combo .tc-readiness-evidence { margin-left:0; }
 .tc-product-link-combo .tc-product-link-manager { margin:0; }
 .tc-product-link-manager { margin:10px 0 2px 20px; padding:10px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
@@ -1611,7 +1615,7 @@ function tcIsProductLinkCombinedCheck(check) {
 }
 function tcReadinessCheckOk(check) {
   if (!check) return false;
-  return !!(check && check.ok) || (!check.required && check.ok !== false);
+  return !!(check && (check.ok || check.manual_confirmed)) || (!check.required && check.ok !== false);
 }
 function tcReadinessCheckStateClass(check) {
   if (tcReadinessCheckOk(check)) return ' is-ok';
@@ -1635,6 +1639,20 @@ function tcProductLinkComboStateClass(checks) {
   if (!list.length) return '';
   return list.every(tcReadinessCheckOk) ? ' is-ok' : ' is-bad';
 }
+function tcRenderManualConfirmButton(taskId, check) {
+  const numericTaskId = Number(taskId || 0);
+  const stepKey = String((check && check.key) || '').trim();
+  if (!numericTaskId || !stepKey) return '';
+  const confirmed = !!(check && check.manual_confirmed);
+  const label = confirmed ? '已人工确认' : '人工确认';
+  const disabled = confirmed ? ' disabled' : '';
+  const title = confirmed ? '该步骤已通过人工确认' : '不管当前检查结果，人工标注该步骤已做好';
+  return '<button type="button" class="tc-manual-confirm-pill" title="' + tcAttr(title) + '"'
+    + disabled
+    + ' onclick="tcConfirmChildStep(' + numericTaskId + ', \'' + tcInlineArg(stepKey) + '\', this)">'
+    + tcEsc(label)
+    + '</button>';
+}
 function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
   const opts = options || {};
   const ok = tcReadinessCheckOk(check);
@@ -1657,12 +1675,16 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
   const langControls = String(check.key || '') === 'language_supported'
     ? tcRenderAdSupportedLangControls(data, task)
     : '';
+  const manualConfirmButton = tcRenderManualConfirmButton(id, check);
   if (opts.mode === 'product-link-combo') {
     const stateClass = tcReadinessCheckOk(check) ? ' is-ok' : ' is-bad';
     return '<div class="' + 'tc-product-link-combo-check' + stateClass + '">'
       + '<div class="tc-product-link-combo-icon" style="color:' + color + ';">' + icon + '</div>'
       + '<div class="tc-product-link-combo-body">'
-      + '<span style="color:' + color + ';">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
+      + '<div class="tc-product-link-combo-check-head">'
+      + '<span class="tc-product-link-combo-check-title" style="color:' + color + ';">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
+      + manualConfirmButton
+      + '</div>'
       + reason + links + evidence
       + '</div>'
       + '</div>';
@@ -1674,6 +1696,7 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
     + '<div class="tc-readiness-check-body">'
     + '<div class="tc-readiness-check-head">'
     + '<span class="tc-readiness-check-title">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
+    + manualConfirmButton
     + '</div>'
     + hint + reason + links + evidence + langControls
     + ((manualActions || actions) ? '<div class="tc-readiness-check-actions">' + manualActions + actions + '</div>' : '')
@@ -1682,8 +1705,9 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
 }
 function tcRenderProductLinkCombinedCard(data, task, checks) {
   const linkCombinedChecks = Array.isArray(checks) ? checks : [];
+  const taskId = Number((task && task.id) || 0);
   const rows = linkCombinedChecks.map(function(check) {
-    return tcRenderReadinessCheckRow(null, check, data, task, '', {mode: 'product-link-combo'});
+    return tcRenderReadinessCheckRow(taskId, check, data, task, '', {mode: 'product-link-combo'});
   }).join('');
   const manager = tcRenderProductLinkManagerShell(data, task);
   if (!rows && !manager) return '';
@@ -2143,6 +2167,32 @@ async function tcSubmitManualOutput() {
     btn.disabled = false;
     status.textContent = '提交失败：' + (e.message || 'unknown');
     status.className = 'tc-manual-modal-status is-error';
+  }
+}
+async function tcConfirmChildStep(taskId, stepKey, btn) {
+  taskId = Number(taskId || 0);
+  stepKey = String(stepKey || '').trim();
+  if (!taskId || !stepKey) return;
+  const oldText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '确认中';
+  }
+  try {
+    await tcFetchJson('/tasks/api/child/' + taskId + '/steps/' + encodeURIComponent(stepKey) + '/confirm', {
+      method: 'POST',
+      body: '{}',
+    });
+    await tcRefreshTaskRow(taskId);
+    if (TC_DETAIL_TASK_ID === taskId) {
+      await tcLoadDetail(taskId, {forceRefresh: true, keepContent: true});
+    }
+  } catch (e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText || '人工确认';
+    }
+    alert('人工确认失败：' + (e.message || 'unknown'));
   }
 }
 async function tcFetchJson(url, opts) {
