@@ -203,6 +203,82 @@ def test_run_orchestrator_previous_week_continues_after_failed_day(monkeypatch):
     assert [day["status"] for day in result["days"]] == ["success", "failed", "success"]
 
 
+def test_run_orchestrator_previous_week_continues_after_day_exception(monkeypatch):
+    from tools import ad_order_sync_orchestrator as orch
+
+    finished = []
+    monkeypatch.setattr(orch.scheduled_tasks, "start_run", lambda task_code: 101)
+    monkeypatch.setattr(
+        orch.scheduled_tasks,
+        "finish_run",
+        lambda run_id, status, summary, error_message=None, output_file=None: finished.append(
+            {"status": status, "summary": summary, "error_message": error_message}
+        ),
+    )
+    monkeypatch.setattr(
+        orch,
+        "target_dates_for_mode",
+        lambda mode, now=None: [date(2026, 6, 1), date(2026, 6, 2), date(2026, 6, 3)],
+    )
+    seen = []
+
+    def fake_day(target_date, max_scan_pages, site_codes=None, dxm_env="DXM03-RJC"):
+        seen.append(target_date)
+        if target_date == date(2026, 6, 2):
+            raise RuntimeError("unexpected day crash")
+        return {"target_date": target_date.isoformat(), "status": "success"}
+
+    monkeypatch.setattr(orch, "run_one_business_day", fake_day)
+
+    result = orch.run_orchestrator(
+        mode="previous-week",
+        now=datetime(2026, 6, 8, 20, 30, 0),
+        max_scan_pages=500,
+    )
+
+    assert seen == [date(2026, 6, 1), date(2026, 6, 2), date(2026, 6, 3)]
+    assert result["status"] == "failed"
+    assert result["days"][1]["target_date"] == "2026-06-02"
+    assert result["days"][1]["status"] == "failed"
+    assert "unexpected day crash" in result["days"][1]["error"]
+    assert "2026-06-02" in result["error_message"]
+    assert finished[0]["status"] == "failed"
+    assert "2026-06-02" in finished[0]["error_message"]
+
+
+def test_run_orchestrator_failed_result_includes_error_and_duration(monkeypatch):
+    from tools import ad_order_sync_orchestrator as orch
+
+    finished = []
+    monkeypatch.setattr(orch.scheduled_tasks, "start_run", lambda task_code: 102)
+    monkeypatch.setattr(
+        orch.scheduled_tasks,
+        "finish_run",
+        lambda run_id, status, summary, error_message=None, output_file=None: finished.append(
+            {"status": status, "summary": summary, "error_message": error_message}
+        ),
+    )
+    monkeypatch.setattr(orch, "target_dates_for_mode", lambda mode, now=None: [date(2026, 6, 2)])
+    monkeypatch.setattr(
+        orch,
+        "run_one_business_day",
+        lambda target_date, max_scan_pages, site_codes=None, dxm_env="DXM03-RJC": {
+            "target_date": target_date.isoformat(),
+            "status": "failed",
+            "order_import": {"status": "failed"},
+        },
+    )
+
+    result = orch.run_orchestrator(mode="previous-business-day", max_scan_pages=220)
+
+    assert result["status"] == "failed"
+    assert result["error_message"] == "ad/order sync failed for target_dates=2026-06-02"
+    assert isinstance(result["duration_seconds"], float)
+    assert finished[0]["status"] == "failed"
+    assert finished[0]["error_message"] == result["error_message"]
+    assert finished[0]["summary"]["duration_seconds"] == result["duration_seconds"]
+
+
 def test_cli_forwards_mode_and_max_scan_pages(monkeypatch, capsys):
     from tools import ad_order_sync_orchestrator as orch
 
@@ -219,3 +295,39 @@ def test_cli_forwards_mode_and_max_scan_pages(monkeypatch, capsys):
     assert calls[0]["mode"] == "previous-week"
     assert calls[0]["max_scan_pages"] == 500
     assert '"status": "success"' in capsys.readouterr().out
+
+
+def test_cli_returns_one_and_prints_json_when_orchestrator_fails(monkeypatch, capsys):
+    from tools import ad_order_sync_orchestrator as orch
+
+    monkeypatch.setattr(
+        orch,
+        "run_orchestrator",
+        lambda **kwargs: {
+            "status": "failed",
+            "error_message": "ad/order sync failed for target_dates=2026-06-02",
+        },
+    )
+
+    rc = orch.main(["--mode", "previous-business-day"])
+
+    output = capsys.readouterr().out
+    assert rc == 1
+    assert '"status": "failed"' in output
+    assert "2026-06-02" in output
+
+
+def test_cli_returns_one_and_prints_json_when_orchestrator_raises(monkeypatch, capsys):
+    from tools import ad_order_sync_orchestrator as orch
+
+    def fail(**kwargs):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(orch, "run_orchestrator", fail)
+
+    rc = orch.main(["--mode", "previous-business-day"])
+
+    output = capsys.readouterr().out
+    assert rc == 1
+    assert '"status": "failed"' in output
+    assert '"error": "database unavailable"' in output

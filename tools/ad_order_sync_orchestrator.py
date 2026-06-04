@@ -136,12 +136,19 @@ def run_orchestrator(
     error_message = None
     try:
         for target in targets:
-            day_report = run_one_business_day(
-                target,
-                max_scan_pages=max_scan_pages,
-                site_codes=site_codes,
-                dxm_env=dxm_env,
-            )
+            try:
+                day_report = run_one_business_day(
+                    target,
+                    max_scan_pages=max_scan_pages,
+                    site_codes=site_codes,
+                    dxm_env=dxm_env,
+                )
+            except Exception as exc:
+                day_report = {
+                    "target_date": target.isoformat(),
+                    "status": "failed",
+                    "error": str(exc),
+                }
             summary["days"].append(day_report)
             if day_report.get("status") != "success":
                 status = "failed"
@@ -152,7 +159,6 @@ def run_orchestrator(
                 if day.get("status") != "success"
             ]
             error_message = "ad/order sync failed for target_dates=" + ",".join(failed_dates)
-        return {**summary, "status": status, "run_id": run_id}
     except Exception as exc:
         status = "failed"
         error_message = str(exc)
@@ -166,6 +172,10 @@ def run_orchestrator(
             summary=summary,
             error_message=error_message,
         )
+    result = {**summary, "status": status, "run_id": run_id}
+    if error_message:
+        result["error_message"] = error_message
+    return result
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -188,12 +198,15 @@ def main(argv: list[str] | None = None) -> int:
     max_scan_pages = args.max_scan_pages
     if max_scan_pages is None:
         max_scan_pages = 500 if args.mode == "previous-week" else 220
-    result = run_orchestrator(
-        mode=args.mode,
-        max_scan_pages=max(1, int(max_scan_pages)),
-        site_codes=_csv_list(args.sites),
-        dxm_env=args.dxm_env,
-    )
+    try:
+        result = run_orchestrator(
+            mode=args.mode,
+            max_scan_pages=max(1, int(max_scan_pages)),
+            site_codes=_csv_list(args.sites),
+            dxm_env=args.dxm_env,
+        )
+    except Exception as exc:
+        result = {"status": "failed", "error": str(exc)}
     print(json.dumps(result, ensure_ascii=False, indent=2, default=json_default))
     return 0 if result.get("status") == "success" else 1
 
