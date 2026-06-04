@@ -3,7 +3,7 @@ import json
 from functools import wraps
 
 from flask import abort
-from flask_login import LoginManager, UserMixin, current_user
+from flask_login import LoginManager, UserMixin, AnonymousUserMixin, current_user
 
 from appcore.users import get_by_id
 from appcore.permissions import (
@@ -14,9 +14,27 @@ from appcore.permissions import (
     merge_with_defaults,
 )
 
+class AnonymousUser(AnonymousUserMixin):
+    @property
+    def username(self) -> str:
+        return "Guest"
+
+    @property
+    def is_admin(self) -> bool:
+        return False
+
+    @property
+    def is_superadmin(self) -> bool:
+        return False
+
+    def has_permission(self, code: str) -> bool:
+        return False
+
+
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
 login_manager.login_message = "请先登录"
+login_manager.anonymous_user = AnonymousUser
 
 
 def _coerce_permissions(raw) -> dict | None:
