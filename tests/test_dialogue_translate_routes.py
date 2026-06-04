@@ -293,6 +293,18 @@ def test_dialogue_translate_detail_js_renders_sentence_audio_timeline():
     assert "audio.controls = true" in js
 
 
+def test_dialogue_translate_detail_js_poll_refresh_preserves_audio_playback():
+    js = Path("web/static/js/dialogue_translate_detail.js").read_text(encoding="utf-8")
+
+    assert "lastRefreshRenderSignature" in js
+    assert "function hasActiveDialogueAudio()" in js
+    assert "audio.paused === false && audio.ended === false" in js
+    assert "function renderFromRefresh(task)" in js
+    assert "if (signature === lastRefreshRenderSignature)" in js
+    assert "if (hasActiveDialogueAudio())" in js
+    assert "renderFromRefresh(task);" in js
+
+
 def test_dialogue_translate_detail_js_renders_speaker_sentence_review_in_voice_cards():
     js = Path("web/static/js/dialogue_translate_detail.js").read_text(encoding="utf-8")
 

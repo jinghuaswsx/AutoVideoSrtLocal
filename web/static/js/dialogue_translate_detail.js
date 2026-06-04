@@ -21,6 +21,7 @@
   };
   var lastTask = null;
   var isSubmitting = false;
+  var lastRefreshRenderSignature = "";
 
   function csrfToken() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -236,6 +237,20 @@
     var editable = canEditVoices(lastTask || {});
     confirmBtn.hidden = isVoiceMatchDone(lastTask || {});
     confirmBtn.disabled = isSubmitting || !editable || !selection.A || !selection.B;
+  }
+
+  function taskRenderSignature(task) {
+    try {
+      return JSON.stringify(task || {});
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function hasActiveDialogueAudio() {
+    return Array.prototype.some.call(panel.querySelectorAll("audio"), function (audio) {
+      return audio.paused === false && audio.ended === false;
+    });
   }
 
   function ensureSelectedOption(select, selectedId, profile) {
@@ -894,6 +909,18 @@
     updateConfirmState();
   }
 
+  function renderFromRefresh(task) {
+    var signature = taskRenderSignature(task);
+    if (signature === lastRefreshRenderSignature) {
+      return;
+    }
+    if (hasActiveDialogueAudio()) {
+      return;
+    }
+    render(task);
+    lastRefreshRenderSignature = signature;
+  }
+
   async function fetchTaskState() {
     var response = await fetch(apiBase + "/" + encodeURIComponent(taskId), {
       credentials: "same-origin"
@@ -907,7 +934,7 @@
   async function refresh() {
     try {
       var task = await fetchTaskState();
-      render(task);
+      renderFromRefresh(task);
     } catch (error) {
       statusEl.textContent = "加载 A/B 音色状态失败。";
       setFeedback(error && error.message ? error.message : "加载失败", "error");
