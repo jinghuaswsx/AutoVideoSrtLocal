@@ -699,10 +699,12 @@ def import_mk_video(
     """
     started = time.monotonic()
     step_results: dict[str, list[dict]] = {}
-    meta = mk_video_metadata
+    meta = dict(mk_video_metadata)
     filename = meta.get("filename")
     if not filename:
         raise StorageError("filename missing in mk_video_metadata")
+    filename = filename.replace(" ", "")
+    meta["filename"] = filename
 
     # 1. Dedup by filename
     if _is_video_already_imported(filename):
