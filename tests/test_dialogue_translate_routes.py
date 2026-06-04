@@ -152,6 +152,44 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
     assert expected <= rules
 
 
+def test_dialogue_translate_audio_extract_artifact_falls_back_to_task_audio_file(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    task_id = "dialogue-audio-extract"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    audio_path = task_dir / f"{task_id}_audio.mp3"
+    audio_path.write_bytes(b"dialogue-audio")
+    task = store.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    store.update(task_id, type="dialogue_translate", preview_files={})
+
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "id": task_id,
+            "user_id": 1,
+            "original_filename": "video.mp4",
+            "display_name": "Dialogue Audio",
+            "task_dir": str(task_dir),
+            "state_json": json.dumps(task, ensure_ascii=False),
+            "status": "done",
+            "thumbnail_path": "",
+            "created_at": None,
+            "expires_at": None,
+            "deleted_at": None,
+        },
+    )
+
+    resp = authed_client_no_db.get(
+        f"/api/dialogue-translate/{task_id}/artifact/audio_extract"
+    )
+
+    assert resp.status_code == 200
+    assert resp.data == b"dialogue-audio"
+
+
 def test_dialogue_list_query_includes_visible_to_all_for_permitted_users(
     authed_user_client_no_db,
 ):
@@ -912,6 +950,7 @@ def test_dialogue_translate_start_accepts_plugin_config_snapshot(
         "subtitle": "sentence_units",
         "voice_separation": False,
         "loudness_match": False,
+        "sentence_tts_loudness_calibration": False,
         "av_sync_audit": "off",
     }
     monkeypatch.setattr("web.routes.dialogue_translate.OUTPUT_DIR", str(tmp_path / "output"))

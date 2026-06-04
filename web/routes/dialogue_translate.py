@@ -1312,6 +1312,7 @@ def get_artifact(task_id: str, name: str):
     variant = request.args.get("variant") or None
     from web.services.artifact_download import (
         preview_artifact_tos_redirect,
+        resolve_preview_artifact_path,
         safe_task_file_response,
     )
 
@@ -1319,10 +1320,7 @@ def get_artifact(task_id: str, name: str):
     if tos_resp is not None:
         return tos_resp
 
-    preview_files = task.get("preview_files") or {}
-    if variant:
-        preview_files = (task.get("variants") or {}).get(variant, {}).get("preview_files", {})
-    path = preview_files.get(name)
+    path = resolve_preview_artifact_path(task_id, name, task, variant=variant)
     if not path and name in {"separation_vocals", "separation_accompaniment"}:
         separation = task.get("separation") or {}
         path = (

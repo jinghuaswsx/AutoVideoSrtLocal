@@ -4993,6 +4993,13 @@
     el.textContent = cur + " / " + dur;
   }
 
+  function _showAudioPlaybackError(gid) {
+    const el = document.getElementById(gid + "-time");
+    if (el) el.textContent = "播放失败";
+    _setAudioBtns(gid, false);
+    if (_audioTimeInterval) { clearInterval(_audioTimeInterval); _audioTimeInterval = null; }
+  }
+
   function playAudio(gid, src) {
     _resetOldAudio();
     if (_audioTimeInterval) { clearInterval(_audioTimeInterval); _audioTimeInterval = null; }
@@ -5003,11 +5010,18 @@
     _previewAudio.onplay = _previewAudio.onplaying = () => { _setAudioBtns(gid, true); };
     _previewAudio.onpause = () => { _setAudioBtns(gid, false); };
     _previewAudio.onended = () => { _setAudioBtns(gid, false); clearInterval(_audioTimeInterval); _updateAudioTime(gid); };
-    _previewAudio.onerror = () => { clearInterval(_audioTimeInterval); };
-    _previewAudio.oncanplaythrough = () => { _previewAudio.play().catch(() => {}); };
+    _previewAudio.onerror = () => { _showAudioPlaybackError(gid); };
     _audioTimeInterval = setInterval(() => _updateAudioTime(gid), 500);
     _previewAudio.src = src;
     _previewAudio.load();
+    try {
+      const playPromise = _previewAudio.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => { _showAudioPlaybackError(gid); });
+      }
+    } catch (err) {
+      _showAudioPlaybackError(gid);
+    }
   }
 
   function pauseAudio(gid) {

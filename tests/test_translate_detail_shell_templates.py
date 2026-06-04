@@ -444,6 +444,21 @@ def test_tts_speedup_players_render_as_readable_preview_cards():
     assert "minmax(260px, 1fr)" in styles
 
 
+def test_shared_audio_player_starts_playback_from_click_without_waiting_canplaythrough():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    play_audio = script[
+        script.index("function playAudio"):
+        script.index("function pauseAudio")
+    ]
+
+    assert "_previewAudio.src = src;" in play_audio
+    assert "_previewAudio.load();" in play_audio
+    assert "const playPromise = _previewAudio.play();" in play_audio
+    assert "playPromise.catch" in play_audio
+    assert "oncanplaythrough" not in play_audio
+
+
 def test_tts_card_has_expand_collapse_control():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
