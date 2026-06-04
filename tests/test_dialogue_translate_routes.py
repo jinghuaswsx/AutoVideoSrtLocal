@@ -962,6 +962,7 @@ def test_dialogue_translate_start_accepts_plugin_config_snapshot(
         "subtitle": "sentence_units",
         "voice_separation": False,
         "loudness_match": False,
+        "auto_voice_selection": True,
         "sentence_tts_loudness_calibration": False,
         "av_sync_audit": "off",
     }

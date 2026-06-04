@@ -61,12 +61,70 @@ def _selected_voice_from_candidate(candidate: object) -> dict | None:
     voice_id = _voice_id_from(candidate)
     if not voice_id:
         return None
-    selected = {
-        "voice_id": voice_id,
-        "name": _voice_name_from(candidate, voice_id),
+    selected = dict(candidate) if isinstance(candidate, dict) else {}
+    selected["voice_id"] = voice_id
+    selected.setdefault("name", _voice_name_from(candidate, voice_id))
+    return selected
+
+
+def _rank_from(value: object) -> int | None:
+    try:
+        rank = int(value)
+    except (TypeError, ValueError):
+        return None
+    return rank if rank > 0 else None
+
+
+def _select_rank_one_voice(profile: object) -> dict | None:
+    if not isinstance(profile, dict):
+        return None
+    candidates = profile.get("candidates") or []
+    candidate_by_voice_id = {
+        _voice_id_from(candidate): candidate
+        for candidate in candidates
+        if _voice_id_from(candidate)
     }
-    if isinstance(candidate, dict) and candidate.get("voice_name"):
-        selected["voice_name"] = candidate["voice_name"]
+    rankings = profile.get("voice_ai_rankings") or []
+    for row in rankings:
+        if not isinstance(row, dict):
+            continue
+        if _rank_from(row.get("llm_rank", row.get("rank"))) != 1:
+            continue
+        candidate = candidate_by_voice_id.get(_voice_id_from(row))
+        if candidate is None:
+            candidate = row
+        selected = _selected_voice_from_candidate(candidate)
+        if selected is not None:
+            return selected
+    for candidate in candidates:
+        if isinstance(candidate, dict) and _rank_from(candidate.get("llm_rank", candidate.get("rank"))) == 1:
+            selected = _selected_voice_from_candidate(candidate)
+            if selected is not None:
+                return selected
+    return None
+
+
+def _auto_voice_selection_enabled(task: dict) -> bool:
+    cfg = task.get("plugin_config") if isinstance(task.get("plugin_config"), dict) else {}
+    try:
+        from appcore.omni_plugin_config import validate_plugin_config
+
+        return bool(validate_plugin_config(cfg).get("auto_voice_selection", True))
+    except Exception:
+        log.warning("[dialogue] invalid plugin_config for auto voice selection; using default", exc_info=True)
+        return True
+
+
+def _auto_select_speaker_voices(profiles: dict[str, dict]) -> dict[str, dict]:
+    selected: dict[str, dict] = {}
+    for speaker in ("A", "B"):
+        profile = profiles.get(speaker)
+        voice = _select_rank_one_voice(profile)
+        if voice is None:
+            return {}
+        selected[speaker] = voice
+        if isinstance(profile, dict):
+            profile["selected_voice"] = voice
     return selected
 
 
@@ -242,8 +300,19 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
             task_id,
             speaker_sample_specs=sample_specs,
             speaker_profiles=profiles,
-            selected_voice_by_speaker={},
         )
+        if _auto_voice_selection_enabled(task):
+            selected_voice_by_speaker = _auto_select_speaker_voices(profiles)
+            if selected_voice_by_speaker:
+                task_state.update(
+                    task_id,
+                    speaker_profiles=profiles,
+                    selected_voice_by_speaker=selected_voice_by_speaker,
+                )
+                task_state.set_current_review_step(task_id, "")
+                self._set_step(task_id, "voice_match_ab", "done", "A/B speaker voices auto-selected")
+                return
+        task_state.update(task_id, selected_voice_by_speaker={})
         task_state.update(task_id, status="waiting", error="")
         task_state.set_current_review_step(task_id, "voice_match_ab")
         self._set_step(task_id, "voice_match_ab", "waiting", "A/B speaker voice rankings ready")

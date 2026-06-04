@@ -99,8 +99,17 @@ CAPABILITY_GROUPS: list[dict[str, Any]] = [
         "default": True,
     },
     {
+        "id": "auto_voice_selection",
+        "label": "⑨ 大模型自动音色选择",
+        "kind": "checkbox",
+        "options": [
+            {"value": True, "label": "auto_voice_selection", "desc": "音色匹配完成后由大模型排名自动选择第 1 名；关闭时停下来等待人工选音色"},
+        ],
+        "default": True,
+    },
+    {
         "id": "sentence_tts_loudness_calibration",
-        "label": "⑨ 句级TTS响度校准",
+        "label": "⑩ 句级TTS响度校准",
         "kind": "checkbox",
         "options": [
             {"value": True, "label": "sentence_tts_loudness_calibration", "desc": "句级 TTS 片段在拼接前对齐分离人声响度，减少单说话人句间音量忽大忽小"},
@@ -134,6 +143,7 @@ _BOOL_FIELDS = (
     "source_anchored",
     "voice_separation",
     "loudness_match",
+    "auto_voice_selection",
     "sentence_tts_loudness_calibration",
 )
 

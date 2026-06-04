@@ -1142,6 +1142,25 @@ def test_toggle_sentence_tts_loudness_calibration_updates_plugin_config(authed_c
     mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
 
 
+def test_toggle_auto_voice_selection_updates_plugin_config(authed_client_no_db):
+    fake_task = {"_user_id": 1, "plugin_config": CFG_ASR_CLEAN}
+    with patch("web.routes.omni_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.omni_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.omni_translate.store") as mock_store:
+        resp = authed_client_no_db.put(
+            "/api/omni-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["auto_voice_selection"] is False
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    assert updated_cfg["asr_post"] == CFG_ASR_CLEAN["asr_post"]
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
 def test_update_source_language_rejects_unsupported_lang(authed_client_no_db):
     """body.source_language='ru' → 400 不在 5 选项。"""
     fake_task = {"_user_id": 1}

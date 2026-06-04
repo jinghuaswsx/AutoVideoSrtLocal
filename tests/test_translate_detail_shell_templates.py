@@ -126,14 +126,19 @@ def test_omni_detail_shell_contains_preset_summary_slot():
     assert ".omni-preset-summary" in styles
 
 
-def test_omni_detail_shell_places_sentence_tts_loudness_toggle_before_visible_to_all():
+def test_omni_detail_shell_places_auto_voice_selection_before_sentence_loudness_and_visible_to_all():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
 
+    assert "autoVoiceSelectionCb" in shared
+    assert "大模型自动音色选择" in shared
+    assert "auto-voice-selection" in shared
+    assert "auto_voice_selection" in shared
     assert "sentenceTtsLoudnessCalibrationCb" in shared
     assert "句级TTS响度校准" in shared
     assert "sentence-tts-loudness-calibration" in shared
     assert "sentence_tts_loudness_calibration" in shared
+    assert shared.index("autoVoiceSelectionCb") < shared.index("sentenceTtsLoudnessCalibrationCb")
     assert shared.index("sentenceTtsLoudnessCalibrationCb") < shared.index("visibleToAllCb")
     assert "X-CSRFToken" in shared
 

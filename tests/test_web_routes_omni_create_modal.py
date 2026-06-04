@@ -140,10 +140,33 @@ def test_create_modal_contains_sentence_tts_loudness_toggle_default_off(omni_lis
     assert 'id="sentenceTtsLoudnessCalibration" checked' not in omni_list_html
 
 
+def test_create_modal_contains_auto_voice_selection_toggle_default_on(omni_list_html):
+    assert "大模型自动音色选择" in omni_list_html
+    assert 'id="autoVoiceSelection"' in omni_list_html
+    assert 'name="auto_voice_selection"' in omni_list_html
+    assert 'id="autoVoiceSelection"\n                   name="auto_voice_selection"\n                   value="1"\n                   checked' in omni_list_html
+    assert omni_list_html.index('id="autoVoiceSelection"') < omni_list_html.index('id="sentenceTtsLoudnessCalibration"')
+    assert 'class="modal-field modal-toggle-grid"' in omni_list_html
+    assert ".modal-toggle-grid" in omni_list_html
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in omni_list_html
+
+
 def test_create_modal_writes_sentence_tts_loudness_to_plugin_config(omni_list_html):
     assert "sentence_tts_loudness_calibration" in omni_list_html
     assert "sentenceTtsLoudnessCalibration.checked" in omni_list_html
     assert "__omniPresetState.currentCfg.sentence_tts_loudness_calibration" in omni_list_html
+
+
+def test_create_modal_writes_auto_voice_selection_to_plugin_config(omni_list_html):
+    assert "auto_voice_selection" in omni_list_html
+    assert "autoVoiceSelection.checked" in omni_list_html
+    assert "__omniPresetState.currentCfg.auto_voice_selection" in omni_list_html
+
+
+def test_create_modal_reset_restores_auto_voice_selection_default_on(omni_list_html):
+    assert "function _resetUploadModal()" in omni_list_html
+    assert "var autoVoiceSelection = document.getElementById('autoVoiceSelection');" in omni_list_html
+    assert "autoVoiceSelection.checked = true;" in omni_list_html
 
 
 def test_javascript_upload_submit_handles_non_json_error_response(omni_list_html):
