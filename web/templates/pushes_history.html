@@ -1243,7 +1243,8 @@
               <span style="font-size:13px; color:var(--oc-fg, #111827); font-variant-numeric:tabular-nums; font-weight:500;">${escapeHtml(pushedDate)}</span>
             </td>
             <td class="col-owner">
-              <span style="font-size:13px; color:var(--oc-fg, #111827); font-weight:500;">${escapeHtml(it.product_owner_name)}</span>
+              <div style="font-size:13px; color:var(--oc-fg, #111827); font-weight:500;">${escapeHtml(it.product_owner_name)}</div>
+              ${it.task_id ? `<a href="/tasks/detail/${encodeURIComponent(it.task_id)}" class="push-task-badge" title="查看任务 #${escapeHtml(it.task_id)}" target="_blank" rel="noopener noreferrer">任务#${escapeHtml(it.task_id)}</a>` : ''}
             </td>
             <td class="col-operator">
               <span style="font-size:13px; color:var(--oc-fg, #111827); font-weight:500;">${escapeHtml(it.operator_username)}</span>

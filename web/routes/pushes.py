@@ -1604,7 +1604,7 @@ def api_history():
     owner_name_expr = medias._media_product_owner_name_expr().replace("u.", "owner_u.")
     rows = db_query(
         "SELECT l.id AS log_id, l.item_id, l.operator_user_id, l.status, l.request_payload, l.response_body, l.created_at AS pushed_at, "
-        "       i.lang, i.display_name, i.filename, i.duration_seconds, i.file_size, i.product_id, "
+        "       i.lang, i.display_name, i.filename, i.duration_seconds, i.file_size, i.product_id, i.task_id, "
         "       l.is_new_product_push, "
         f"       p.name AS product_name, p.product_code, u.username AS operator_username, {owner_name_expr} AS product_owner_name "
         "FROM media_push_logs l "
@@ -1680,6 +1680,7 @@ def api_history():
             "ad_roas": ad_roas,
             "is_new_product_push": bool(r.get("is_new_product_push")),
             "request_payload": payload,
+            "task_id": r.get("task_id"),
         }
         history_items.append(history_item)
 
