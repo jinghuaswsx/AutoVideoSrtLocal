@@ -9,6 +9,8 @@ from appcore.audio_loudness import (
     LOUDNESS_PROFILE_MANUAL_BOOST,
     LOUDNESS_PROFILE_STANDARD,
     LOUDNESS_PROFILE_VOICE_ONLY,
+    VOICE_PRIORITY_TARGET_GAP_LU,
+    resolve_voice_priority_background_volume,
     resolve_background_volume_profile,
     validate_loudness_profile,
 )
@@ -28,6 +30,40 @@ def test_standard_profile_uses_current_background_volume():
     assert result["effective_background_volume"] == 0.8
     assert result["background_boost"]["enabled"] is False
     assert result["manual_boost"]["enabled"] is False
+
+
+def test_voice_priority_suppresses_background_when_sentence_window_masks_voice():
+    result = resolve_voice_priority_background_volume(
+        background_volume=1.0,
+        window_loudness=[
+            {"index": 46, "voice_lufs": -16.4, "background_lufs": -16.4},
+            {"index": 47, "voice_lufs": -17.0, "background_lufs": -13.1},
+        ],
+    )
+
+    assert result["enabled"] is True
+    assert result["target_gap_lu"] == VOICE_PRIORITY_TARGET_GAP_LU
+    assert result["risky_window_count"] == 2
+    assert result["max_background_minus_voice_lu"] == 3.9
+    assert result["required_attenuation_lu"] == -15.9
+    assert math.isclose(result["effective_volume"], 10 ** (-15.9 / 20), rel_tol=1e-6)
+    assert result["effective_volume"] < 0.17
+    assert result["dominant_windows"][0]["index"] == 47
+
+
+def test_voice_priority_keeps_background_when_already_below_target_gap():
+    result = resolve_voice_priority_background_volume(
+        background_volume=0.6,
+        window_loudness=[
+            {"index": 1, "voice_lufs": -16.0, "background_lufs": -33.0},
+            {"index": 2, "voice_lufs": -15.0, "background_lufs": -31.5},
+        ],
+    )
+
+    assert result["enabled"] is False
+    assert result["fallback_reason"] == "already_below_target_gap"
+    assert result["effective_volume"] == 0.6
+    assert result["risky_window_count"] == 0
 
 
 def test_voice_only_profile_suppresses_background_volume():

@@ -59,7 +59,10 @@ from appcore.preview_artifacts import (
     build_translate_artifact,
     build_tts_artifact,
 )
-from appcore.tts_loudness_calibration import apply_sentence_tts_loudness_calibration
+from appcore.tts_loudness_calibration import (
+    apply_sentence_tts_loudness_calibration,
+    sentence_tts_loudness_enabled,
+)
 from appcore.tts_language_guard import (
     TtsLanguageValidationError,
     extract_tts_script_text,
@@ -2715,6 +2718,7 @@ class PipelineRunner:
 
         import shutil
         from appcore.audio_loudness import (
+            calibrate_voice_priority_background_volume,
             clean_electronic_background,
             measure_integrated_lufs,
             mix_with_background,
@@ -2785,6 +2789,9 @@ class PipelineRunner:
 
         variants = dict(task.get("variants") or {})
         summaries: list[dict] = []
+        voice_priority_enabled = sentence_tts_loudness_enabled(task)
+        voice_priority_variants: list[dict] = []
+        variant_background_volumes: list[float] = []
         for variant_name, variant_state in list(variants.items()):
             if not isinstance(variant_state, dict):
                 continue
@@ -2795,6 +2802,41 @@ class PipelineRunner:
             # B 算法会 in-place 修改 audio_path（TTS 文件）。如果 B 跑完发现
             # 偏差过大需要切 A 兜底，A 必须用原始 TTS 而不是 B 改过的版本，
             # 否则 A 跑出的响度也偏。先备份 TTS 原始 mp3。
+            variant_bg_volume = effective_bg_volume
+            if voice_priority_enabled and variant_bg_volume > 0:
+                try:
+                    voice_priority_summary = calibrate_voice_priority_background_volume(
+                        tts_audio_path=audio_path,
+                        background_path=accompaniment_for_mix,
+                        segments=list(variant_state.get("segments") or []),
+                        background_volume=variant_bg_volume,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "[loudness_match] task=%s variant=%s voice-priority background calibration failed: %s",
+                        task_id, variant_name, exc,
+                    )
+                    voice_priority_summary = {
+                        "enabled": False,
+                        "mode": "voice_priority_sentence_windows",
+                        "fallback_reason": "measure_failed",
+                        "error": str(exc)[:200],
+                        "standard_volume": variant_bg_volume,
+                        "effective_volume": variant_bg_volume,
+                    }
+                voice_priority_summary = dict(voice_priority_summary)
+                voice_priority_summary["variant"] = variant_name
+                next_bg_volume = voice_priority_summary.get("effective_volume")
+                try:
+                    next_bg_volume = round(float(next_bg_volume), 10)
+                except (TypeError, ValueError):
+                    next_bg_volume = variant_bg_volume
+                if next_bg_volume < variant_bg_volume:
+                    variant_bg_volume = next_bg_volume
+                voice_priority_summary["effective_volume"] = variant_bg_volume
+                voice_priority_variants.append(voice_priority_summary)
+            variant_background_volumes.append(variant_bg_volume)
+
             source_backup_origin = self._prepare_loudness_source_audio(
                 audio_path=audio_path,
                 loudness_dir=loudness_dir,
@@ -2815,7 +2857,7 @@ class PipelineRunner:
                         audio_path=audio_path,
                         accompaniment_path=accompaniment_for_mix,
                         video_lufs=float(video_lufs),
-                        bg_volume=effective_bg_volume,
+                        bg_volume=variant_bg_volume,
                         loudness_dir=loudness_dir,
                         variant_name=variant_name,
                     )
@@ -2883,8 +2925,41 @@ class PipelineRunner:
             if not summary:
                 continue
             summary["variant"] = variant_name
+            summary["effective_background_volume"] = variant_bg_volume
             summary["source_backup_origin"] = source_backup_origin
             summaries.append(summary)
+
+        if variant_background_volumes:
+            effective_bg_volume = round(min(variant_background_volumes), 10)
+            profile_summary["effective_background_volume"] = effective_bg_volume
+            if isinstance(profile_summary.get("manual_boost"), dict):
+                if "effective_volume" in profile_summary["manual_boost"]:
+                    profile_summary["manual_boost"]["effective_volume"] = effective_bg_volume
+            if isinstance(profile_summary.get("background_boost"), dict):
+                if "effective_volume" in profile_summary["background_boost"]:
+                    profile_summary["background_boost"]["effective_volume"] = effective_bg_volume
+            if isinstance(profile_summary.get("background_suppression"), dict):
+                if "effective_volume" in profile_summary["background_suppression"]:
+                    profile_summary["background_suppression"]["effective_volume"] = effective_bg_volume
+
+        voice_priority_background = {
+            "enabled": any(bool(v.get("enabled")) for v in voice_priority_variants),
+            "mode": "voice_priority_sentence_windows",
+            "source": "sentence_tts_loudness_calibration",
+            "variants": voice_priority_variants,
+        }
+        background_suppression = profile_summary["background_suppression"]
+        if voice_priority_background["enabled"]:
+            first_voice_priority = voice_priority_variants[0] if voice_priority_variants else {}
+            background_suppression = {
+                "enabled": True,
+                "mode": "voice_priority_sentence_windows",
+                "source": "sentence_tts_loudness_calibration",
+                "target_gap_lu": first_voice_priority.get("target_gap_lu"),
+                "standard_volume": first_voice_priority.get("standard_volume"),
+                "effective_volume": effective_bg_volume,
+                "variant_count": len(voice_priority_variants),
+            }
 
         separation = dict(separation)
         separation["tts_loudness"] = {
@@ -2897,8 +2972,9 @@ class PipelineRunner:
             "effective_background_volume": effective_bg_volume,
             "background_boost": profile_summary["background_boost"],
             "manual_boost": profile_summary["manual_boost"],
-            "background_suppression": profile_summary["background_suppression"],
+            "background_suppression": background_suppression,
             "background_cleanup": profile_summary["background_cleanup"],
+            "voice_priority_background": voice_priority_background,
             "variants": summaries,
         }
         # 暴露 background_volume 给 UI（前端 separation_card 直接读）
