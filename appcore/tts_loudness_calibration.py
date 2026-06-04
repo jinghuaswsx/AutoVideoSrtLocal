@@ -4,8 +4,16 @@ from __future__ import annotations
 import logging
 import math
 import os
+import subprocess
+
+from appcore.audio_loudness import measure_integrated_lufs
 
 log = logging.getLogger(__name__)
+
+POST_GAIN_DEVIATION_THRESHOLD_LU = 2.0
+POST_GAIN_MAX_GAIN_DB = 8.0
+POST_GAIN_LIMIT = 0.891
+SENTENCE_CLOSE_ENOUGH_LU = 1.5
 
 
 def _finite_float(value) -> float | None:
@@ -23,6 +31,19 @@ def _round_finite(value, digits: int = 3) -> float | None:
     if numeric is None:
         return None
     return round(numeric, digits)
+
+
+def _deviation_pct(deviation_lu: float | None, target_lufs: float | None) -> float | None:
+    deviation = _finite_float(deviation_lu)
+    target = _finite_float(target_lufs)
+    if deviation is None or target is None or abs(target) <= 1e-6:
+        return None
+    return abs(deviation / target) * 100.0
+
+
+def _sentence_close_enough(deviation_lu: float | None) -> bool:
+    deviation = _finite_float(deviation_lu)
+    return deviation is not None and abs(deviation) <= SENTENCE_CLOSE_ENOUGH_LU
 
 
 def _segment_index(row: dict, fallback: int) -> int:
@@ -71,6 +92,78 @@ def _normalization_record(
         "output_path": output_path or "",
         "target_lufs": _round_finite(target_lufs),
     }
+
+
+def _apply_post_gain_correction(
+    *,
+    output_path: str,
+    target_lufs: float,
+    output_lufs: float | None,
+) -> tuple[str, float | None, float | None, dict | None]:
+    current_lufs = _finite_float(output_lufs)
+    target = _finite_float(target_lufs)
+    if current_lufs is None or target is None:
+        return output_path, current_lufs, None, None
+
+    deviation_lu = current_lufs - target
+    if abs(deviation_lu) < POST_GAIN_DEVIATION_THRESHOLD_LU:
+        return output_path, current_lufs, deviation_lu, None
+
+    gain_db = max(
+        -POST_GAIN_MAX_GAIN_DB,
+        min(POST_GAIN_MAX_GAIN_DB, target - current_lufs),
+    )
+    correction = {
+        "applied": False,
+        "threshold_lu": POST_GAIN_DEVIATION_THRESHOLD_LU,
+        "gain_db": _round_finite(gain_db),
+        "before_output_lufs": _round_finite(current_lufs),
+        "before_deviation_lu": _round_finite(deviation_lu),
+    }
+    tmp_path = f"{output_path}.postgain.tmp.mp3"
+    audio_filter = f"volume={gain_db:.6f}dB,alimiter=limit={POST_GAIN_LIMIT}"
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats", "-y",
+        "-i", output_path,
+        "-af", audio_filter,
+        "-ar", "44100", "-ac", "2",
+        tmp_path,
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            correction["error"] = f"ffmpeg rc={proc.returncode}: {proc.stderr[-300:]}"
+            return output_path, current_lufs, deviation_lu, correction
+
+        corrected_lufs = _finite_float(measure_integrated_lufs(tmp_path))
+        corrected_deviation = (
+            corrected_lufs - target if corrected_lufs is not None else None
+        )
+        correction.update(
+            {
+                "corrected_output_lufs": _round_finite(corrected_lufs),
+                "corrected_deviation_lu": _round_finite(corrected_deviation),
+            }
+        )
+        if (
+            corrected_deviation is not None
+            and abs(corrected_deviation) < abs(deviation_lu)
+        ):
+            os.replace(tmp_path, output_path)
+            correction["applied"] = True
+            return output_path, corrected_lufs, corrected_deviation, correction
+
+        correction["reason"] = "no_improvement"
+        return output_path, current_lufs, deviation_lu, correction
+    except Exception as exc:  # noqa: BLE001
+        correction["error"] = str(exc)[:300]
+        return output_path, current_lufs, deviation_lu, correction
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 def apply_sentence_tts_loudness_calibration(
@@ -141,17 +234,28 @@ def apply_sentence_tts_loudness_calibration(
         try:
             result = normalize_to_lufs(input_path, output_path, target_lufs=target_lufs)
             normalized_path = str(getattr(result, "output_path", "") or output_path)
+            output_lufs = _finite_float(getattr(result, "output_lufs", None))
+            deviation_lu = _finite_float(getattr(result, "deviation_lu", None))
+            normalized_path, output_lufs, deviation_lu, post_gain_correction = _apply_post_gain_correction(
+                output_path=normalized_path,
+                target_lufs=target_lufs,
+                output_lufs=output_lufs,
+            )
+            deviation_pct = _deviation_pct(deviation_lu, target_lufs)
+            converged = bool(getattr(result, "converged", False)) or _sentence_close_enough(deviation_lu)
             record.update(
                 {
-                    "status": "done" if bool(getattr(result, "converged", False)) else "warning_not_converged",
+                    "status": "done" if converged else "warning_not_converged",
                     "output_path": normalized_path,
                     "input_lufs": _round_finite(getattr(result, "input_lufs", None)),
-                    "output_lufs": _round_finite(getattr(result, "output_lufs", None)),
-                    "deviation_lu": _round_finite(getattr(result, "deviation_lu", None)),
-                    "deviation_pct": _round_finite(getattr(result, "deviation_pct", None)),
-                    "converged": bool(getattr(result, "converged", False)),
+                    "output_lufs": _round_finite(output_lufs),
+                    "deviation_lu": _round_finite(deviation_lu),
+                    "deviation_pct": _round_finite(deviation_pct),
+                    "converged": converged,
                 }
             )
+            if post_gain_correction is not None:
+                record["post_gain_correction"] = post_gain_correction
             segment["tts_path"] = normalized_path
             summary["normalized_segment_count"] += 1
         except Exception as exc:  # noqa: BLE001

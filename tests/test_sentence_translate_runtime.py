@@ -323,6 +323,61 @@ def test_omni_sentence_tts_loudness_calibration_normalizes_segments_before_rebui
     assert saved["variants"]["av"]["av_debug"]["sentence_tts_loudness_calibration"]["status"] == "done"
 
 
+def test_sentence_tts_loudness_calibration_post_gain_corrects_quiet_outlier(tmp_path, monkeypatch):
+    from appcore import tts_loudness_calibration as cal
+
+    raw_path = tmp_path / "raw.mp3"
+    raw_path.write_bytes(b"raw")
+
+    def fake_normalize(input_path, output_path, *, target_lufs, **kwargs):
+        Path(output_path).write_bytes(b"normalized-low")
+        return SimpleNamespace(
+            input_lufs=-24.0,
+            target_lufs=target_lufs,
+            output_lufs=-21.0,
+            deviation_lu=-5.2,
+            deviation_pct=32.9,
+            output_path=output_path,
+            converged=False,
+        )
+
+    post_gain_commands = []
+
+    def fake_run(cmd, capture_output, text):
+        post_gain_commands.append(cmd)
+        Path(cmd[-1]).write_bytes(b"corrected")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    def fake_measure(path):
+        if Path(path).read_bytes() == b"corrected":
+            return -15.7
+        return -21.0
+
+    monkeypatch.setattr("appcore.audio_loudness.normalize_to_lufs", fake_normalize)
+    monkeypatch.setattr(cal, "subprocess", SimpleNamespace(run=fake_run), raising=False)
+    monkeypatch.setattr(cal, "measure_integrated_lufs", fake_measure, raising=False)
+
+    segments, summary = cal.apply_sentence_tts_loudness_calibration(
+        task={
+            "id": "quiet-outlier",
+            "plugin_config": _omni_sentence_cfg(sentence_tts_loudness_calibration=True),
+            "separation": {"vocals_lufs": -15.8},
+        },
+        task_dir=str(tmp_path),
+        final_tts_segments=[{"index": 0, "tts_path": str(raw_path)}],
+        variant="normal",
+    )
+
+    record = summary["segments"][0]
+    assert post_gain_commands
+    assert Path(segments[0]["tts_path"]).read_bytes() == b"corrected"
+    assert record["status"] == "done"
+    assert record["output_lufs"] == pytest.approx(-15.7)
+    assert record["deviation_lu"] == pytest.approx(0.1)
+    assert record["post_gain_correction"]["applied"] is True
+    assert record["post_gain_correction"]["gain_db"] == pytest.approx(5.2)
+
+
 def test_omni_sentence_tts_loudness_calibration_skips_without_vocals_lufs(tmp_path, monkeypatch):
     task_id = "omni-sentence-tts-loudness-missing-vocals"
     store.create(task_id, "video.mp4", str(tmp_path), user_id=None)
