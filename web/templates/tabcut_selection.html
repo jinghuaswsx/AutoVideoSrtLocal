@@ -969,6 +969,10 @@ function paramsFor(page) {
 }
 
 async function loadTabcut(page) {
+  if (tabcutView === "recommended") {
+    renderRecommendedProducts();
+    return;
+  }
   tabcutPage = page;
   qs("tabcutStatus").textContent = "Loading...";
   const endpoint = tabcutView === "videos" ? "/xuanpin/api/tabcut/videos" : "/xuanpin/api/tabcut/goods";
