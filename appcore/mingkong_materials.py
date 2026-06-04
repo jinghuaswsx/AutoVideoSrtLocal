@@ -2029,25 +2029,29 @@ def _enrich_live_material_yesterday_archive(items: list[dict[str, Any]]) -> list
             snapshot_where = "snapshot_date = %s"
             snapshot_arg = snapshot_date
         else:
-            return items
+            snapshot_where = ""
+            snapshot_arg = ""
 
-        placeholders = ",".join(["%s"] * len(keys))
-        rows = query(
-            f"""
-            SELECT material_key, snapshot_date, snapshot_at, snapshot_slot,
-                   previous_snapshot_date, previous_snapshot_at, previous_snapshot_slot,
-                   comparison_interval_seconds, previous_cumulative_90_spend,
-                   current_cumulative_90_spend, yesterday_spend_delta,
-                   is_new_material, is_new_top100_entry
-            FROM mingkong_material_daily_top100
-            WHERE {snapshot_where}
-              AND material_key IN ({placeholders})
-            """,
-            tuple([snapshot_arg] + keys),
-        )
+        if snapshot_where:
+            placeholders = ",".join(["%s"] * len(keys))
+            rows = query(
+                f"""
+                SELECT material_key, snapshot_date, snapshot_at, snapshot_slot,
+                       previous_snapshot_date, previous_snapshot_at, previous_snapshot_slot,
+                       comparison_interval_seconds, previous_cumulative_90_spend,
+                       current_cumulative_90_spend, yesterday_spend_delta,
+                       is_new_material, is_new_top100_entry
+                FROM mingkong_material_daily_top100
+                WHERE {snapshot_where}
+                  AND material_key IN ({placeholders})
+                """,
+                tuple([snapshot_arg] + keys),
+            )
+        else:
+            rows = []
     except Exception as exc:
         logger.warning("mingkong live material yesterday archive enrichment skipped: %s", exc)
-        return items
+        rows = []
 
     archived_by_key = {
         str(row.get("material_key") or ""): row
@@ -2075,6 +2079,109 @@ def _enrich_live_material_yesterday_archive(items: list[dict[str, Any]]) -> list
         )
         item["is_new_material"] = bool(archived.get("is_new_material"))
         item["is_new_top100_entry"] = bool(archived.get("is_new_top100_entry"))
+
+    # Fallback to querying mingkong_material_daily_snapshots for missing keys
+    missing_keys = [
+        str(item.get("material_key") or "")
+        for item in items
+        if str(item.get("material_key") or "") and str(item.get("material_key") or "") not in archived_by_key
+    ]
+    if missing_keys:
+        try:
+            snap_identity = _latest_snapshot_identity("mingkong_material_daily_snapshots")
+            snapshot_at = snap_identity.get("snapshot_at") or ""
+            snapshot_date = snap_identity.get("snapshot_date") or ""
+            if snapshot_at:
+                current_run = _snapshot_run_metadata(_coerce_datetime(snapshot_at))
+                previous_snapshot = _previous_material_snapshot_for(
+                    snapshot_date=_coerce_date(snapshot_date),
+                    snapshot_at=_coerce_datetime(snapshot_at),
+                    min_source_product_count=_as_int(current_run.get("source_product_count")),
+                    min_source_product_limit=_as_int(current_run.get("source_product_limit")),
+                )
+                if previous_snapshot:
+                    previous_snapshot_at = previous_snapshot["snapshot_at"]
+                    
+                    placeholders = ",".join(["%s"] * len(missing_keys))
+                    c_rows = query(
+                        f"""
+                        SELECT material_key, cumulative_90_spend, product_code, mk_video_metadata_json
+                        FROM mingkong_material_daily_snapshots
+                        WHERE snapshot_at = %s AND material_key IN ({placeholders})
+                        """,
+                        tuple([snapshot_at] + missing_keys),
+                    )
+                    p_rows = query(
+                        f"""
+                        SELECT material_key, cumulative_90_spend, mk_video_metadata_json
+                        FROM mingkong_material_daily_snapshots
+                        WHERE snapshot_at = %s AND material_key IN ({placeholders})
+                        """,
+                        tuple([previous_snapshot_at] + missing_keys),
+                    )
+                    
+                    c_by_key = {str(r["material_key"]): r for r in c_rows or [] if r.get("material_key")}
+                    p_by_key = {str(r["material_key"]): r for r in p_rows or [] if r.get("material_key")}
+                    
+                    product_codes = sorted({
+                        _normalized_product_code(r.get("product_code"))
+                        for r in c_rows or [] if r.get("product_code")
+                    })
+                    previous_product_codes = set()
+                    if product_codes:
+                        pc_placeholders = ",".join(["%s"] * len(product_codes))
+                        pc_rows = query(
+                            f"""
+                            SELECT DISTINCT product_code
+                            FROM mingkong_material_daily_snapshots
+                            WHERE snapshot_at = %s AND product_code IN ({pc_placeholders})
+                            """,
+                            tuple([previous_snapshot_at] + product_codes),
+                        )
+                        previous_product_codes = {
+                            _normalized_product_code(r.get("product_code"))
+                            for r in pc_rows or [] if r.get("product_code")
+                        }
+                    
+                    for item in items:
+                        m_key = str(item.get("material_key") or "")
+                        if m_key in archived_by_key or m_key not in c_by_key:
+                            continue
+                        
+                        c_row = c_by_key[m_key]
+                        p_row = p_by_key.get(m_key)
+                        
+                        current_spend = _spend_from_row(c_row, "cumulative_90_spend", _metadata_for_row(c_row))
+                        previous_spend = (
+                            None
+                            if p_row is None
+                            else _spend_from_row(p_row, "cumulative_90_spend", _metadata_for_row(p_row))
+                        )
+                        
+                        delta = _delta_from_previous_baseline(
+                            current_spend=current_spend,
+                            previous_spend=previous_spend,
+                            product_code=c_row.get("product_code"),
+                            previous_product_codes=previous_product_codes,
+                            has_previous_snapshot=True,
+                        )
+                        
+                        item["yesterday_spend_delta"] = round(delta, 2)
+                        item["current_cumulative_90_spend"] = current_spend
+                        item["previous_cumulative_90_spend"] = previous_spend
+                        item["previous_snapshot_date"] = _coerce_date(previous_snapshot.get("snapshot_date"))
+                        item["previous_snapshot_at"] = _coerce_datetime(previous_snapshot_at)
+                        item["previous_snapshot_slot"] = str(previous_snapshot.get("snapshot_slot") or "")
+                        item["comparison_interval_seconds"] = (
+                            None
+                            if previous_snapshot.get("comparison_interval_seconds") is None
+                            else _as_int(previous_snapshot.get("comparison_interval_seconds"))
+                        )
+                        item["is_new_material"] = p_row is None
+                        item["is_new_top100_entry"] = False
+        except Exception as exc:
+            logger.warning("mingkong live material yesterday snapshot enrichment failed: %s", exc)
+
     return items
 
 

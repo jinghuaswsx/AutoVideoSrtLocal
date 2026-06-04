@@ -2173,11 +2173,9 @@ function renderMkVideoMaterialCard(r) {
   const playButtonHtml = videoUrl
     ? '<button type="button" class="mk-video-play-btn" data-mk-video-play aria-label="播放视频" title="播放视频"></button>'
     : '';
-  const hasYesterdayDelta = Object.prototype.hasOwnProperty.call(r, 'yesterday_spend_delta');
-  const yesterdayDelta = Number(r.yesterday_spend_delta || 0);
-  const yesterdayDeltaHtml = hasYesterdayDelta
-    ? `<span class="mk-video-summary-item"><span class="label">昨日消耗:</span><span class="value">${escapeHtml(fmtMkSpendText('', yesterdayDelta))}</span></span>`
-    : '';
+  const yesterdayDeltaVal = r.yesterday_spend_delta;
+  const hasYesterdayDelta = yesterdayDeltaVal !== undefined && yesterdayDeltaVal !== null;
+  const yesterdayDeltaHtml = `<span class="mk-video-summary-item"><span class="label">昨日消耗:</span><span class="value">${hasYesterdayDelta ? escapeHtml(fmtMkSpendText('', Number(yesterdayDeltaVal))) : '-'}</span></span>`;
   const newTop100Html = r.is_new_top100_entry
     ? '<span class="mk-video-summary-item"><span class="value"><span class="oc-badge oc-badge--linked">新进Top300</span></span></span>'
     : '';

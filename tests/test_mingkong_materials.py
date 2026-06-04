@@ -2637,3 +2637,71 @@ def test_run_daily_snapshot_marks_material_run_failed_on_fatal_error(monkeypatch
     assert any("UPDATE mingkong_material_sync_runs" in sql and "status='failed'" in sql for sql, _ in writes)
     assert any(args[-1] == 42 for _, args in writes)
     assert finishes == [(77, {"status": "failed", "error_message": "no token"})]
+
+
+def test_enrich_live_material_yesterday_archive_fallback(monkeypatch):
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    
+    # Mock snapshot identities
+    def fake_latest_snapshot_identity(table):
+        return {
+            "snapshot_date": "2026-06-04",
+            "snapshot_at": "2026-06-04 05:00:00",
+            "snapshot_slot": "0500",
+        }
+    monkeypatch.setattr(mm, "_latest_snapshot_identity", fake_latest_snapshot_identity)
+
+    # Mock sync runs metadata and previous snapshot logic
+    monkeypatch.setattr(mm, "_snapshot_run_metadata", lambda snapshot_at: {
+        "source_product_count": 300,
+        "source_product_limit": 300,
+    })
+    monkeypatch.setattr(mm, "_previous_material_snapshot_for", lambda **kwargs: {
+        "snapshot_date": "2026-06-03",
+        "snapshot_at": "2026-06-03 05:00:00",
+        "snapshot_slot": "0500",
+        "comparison_interval_seconds": 86400,
+    })
+
+    # Mock database queries
+    queries_made = []
+    def fake_query(sql, args=()):
+        queries_made.append((sql, args))
+        # Top 100 query
+        if "FROM mingkong_material_daily_top100" in sql:
+            return []  # Return empty so it triggers fallback
+        
+        # Current snapshot query
+        if "FROM mingkong_material_daily_snapshots" in sql and "snapshot_at = %s" in sql:
+            if args[0] == "2026-06-04 05:00:00":
+                return [
+                    {
+                        "material_key": "winner_key",
+                        "cumulative_90_spend": 1000.0,
+                        "product_code": "cool-widget",
+                        "mk_video_metadata_json": "{}",
+                    }
+                ]
+            elif args[0] == "2026-06-03 05:00:00":
+                if "DISTINCT product_code" in sql:
+                    return [{"product_code": "cool-widget"}]
+                return [
+                    {
+                        "material_key": "winner_key",
+                        "cumulative_90_spend": 800.0,
+                        "product_code": "cool-widget",
+                        "mk_video_metadata_json": "{}",
+                    }
+                ]
+        raise AssertionError(f"Unexpected query: {sql} with args: {args}")
+
+    monkeypatch.setattr(mm, "query", fake_query)
+
+    items = [{"material_key": "winner_key", "product_code": "cool-widget"}]
+    enriched = mm._enrich_live_material_yesterday_archive(items)
+
+    assert enriched[0]["yesterday_spend_delta"] == 200.0
+    assert enriched[0]["current_cumulative_90_spend"] == 1000.0
+    assert enriched[0]["previous_cumulative_90_spend"] == 800.0
+    assert enriched[0]["previous_snapshot_date"] == "2026-06-03"
+    assert enriched[0]["is_new_material"] is False
