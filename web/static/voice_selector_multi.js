@@ -415,16 +415,13 @@
   let voiceAiRankStatus = "";
   let voiceAiRankRecovery = null;
   let voiceAiRankCacheKey = "all";
-  let voiceAiAutoSelectEnabled = true;
   let voiceAiRankRerunning = false;
   let voiceMatchRerunning = false;
   let voiceAiRankRequestState = "";
   let voiceSelectionMode = "ai_rank";
-  let autoConfirmingVoice = false;
   let selectedVoiceId = null;
   let selectedVoiceName = null;
   let persistedSelectedVoiceId = null;
-  let voiceMatchStepStatus = "";
   let launched = false;
   let pollHandle = null;
   let pollDelay = 3000;
@@ -661,7 +658,6 @@
       ? "speed_fallback"
       : (data.voice_ai_rank_status || "");
     voiceAiRankRecovery = data.voice_ai_rank_recovery || null;
-    voiceAiAutoSelectEnabled = data.voice_ai_auto_select_enabled !== false;
     voiceAiRankCacheKey = data.voice_ai_rank_cache_key || currentVoiceAiRankGender() || "all";
     updateVoiceAiRankControls();
   }
@@ -880,10 +876,7 @@
     if (isVoiceAiRankInterruptedStatus(voiceAiRankStatus)) {
       return "AI音色排名因服务中断未完成，请点击“重新AI排名”、 “强制音色语速匹配排序”，或“从音色选择重新跑”";
     }
-    if (voiceAiAutoSelectEnabled && currentVoiceSelectionMode() === "ai_rank") {
-      return "等待 AI 音色排名完成后自动继续，或点击“强制音色语速匹配排序”接管";
-    }
-    return "等待 AI 音色排名完成，或点击“强制音色语速匹配排序”继续";
+    return "等待 AI 音色排名完成后，请人工选择音色，或点击“强制音色语速匹配排序”继续";
   }
 
   function shouldSkipAutomaticLibraryRefresh() {
@@ -1001,7 +994,6 @@
         const selected = allItems.find(v => v.voice_id === selectedVoiceId);
         selectedVoiceName = selected ? (selected.name || selected.voice_id) : null;
       }
-      voiceMatchStepStatus = (data.pipeline && data.pipeline.voice_match) || "";
       voiceTotal = Number(data.total || 0);
       const responsePage = Number(data.page || pageToLoad);
       const responsePageSize = Number(data.page_size || VOICE_PAGE_SIZE);
@@ -1028,7 +1020,6 @@
 
       updateLaunchState();
       applyPendingReloadState();
-      await maybeAutoConfirmTopAiVoice();
     } catch (err) {
       console.error("[voice-selector] load failed:", err);
       listEl.innerHTML = `<div class="vs-loading">网络错误，5s 后重试</div>`;
@@ -1357,31 +1348,6 @@
     selectVoice(voiceSelect.value, option.dataset.voiceName || option.textContent);
   }
 
-  function canAutoConfirmTopAiVoice() {
-    if (launched || autoConfirmingVoice) return false;
-    if (persistedSelectedVoiceId) return false;
-    if (voiceMatchStepStatus !== "waiting") return false;
-    if (!voiceAiAutoSelectEnabled || currentVoiceSelectionMode() !== "ai_rank") return false;
-    return hasUsableVoiceAiRank();
-  }
-
-  async function maybeAutoConfirmTopAiVoice() {
-    if (!canAutoConfirmTopAiVoice()) return false;
-    const topAiRow = sortedVoiceRows().find(({ rec, aiRank }) => !!rec && aiRank === 1);
-    if (!topAiRow || !topAiRow.v || !topAiRow.v.voice_id) return false;
-    selectedVoiceId = topAiRow.v.voice_id;
-    selectedVoiceName = topAiRow.v.name || topAiRow.v.voice_id;
-    render();
-    updateLaunchState();
-    autoConfirmingVoice = true;
-    try {
-      await launch();
-      return true;
-    } finally {
-      autoConfirmingVoice = false;
-    }
-  }
-
   async function forceSpeedMatchSorting() {
     voiceSelectionMode = "speed_fallback";
     voiceAiRankStatus = "speed_fallback";
@@ -1470,8 +1436,7 @@
       mergeVoiceItems(allItems, data.extra_items || [], loadedVoiceIds);
       render();
       setVoiceAiRankRequestState("success");
-      const autoConfirmed = await maybeAutoConfirmTopAiVoice();
-      if (!autoConfirmed) openVoiceAiRankModal("result");
+      openVoiceAiRankModal("result");
     } catch (err) {
       console.error("[voice-selector] AI ranking failed:", err);
       setVoiceAiRankRequestState("failed");
@@ -1639,7 +1604,6 @@
         // 候选可能不在已加载的 30 个普通音色里，但仍要置顶可选。
         mergeVoiceItems(allItems, data.extra_items || [], loadedVoiceIds);
         render();
-        await maybeAutoConfirmTopAiVoice();
       } else if (resp.status !== 409) {
         console.warn("rematch failed:", await resp.text());
       }

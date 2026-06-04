@@ -207,9 +207,9 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
 
     def _step_voice_match_ab(self, task_id: str) -> None:
         from appcore.dialogue_translate.voice_match import (
-            auto_select_speaker_voices_with_ai,
             build_speaker_sample_windows,
             match_voices_for_speakers,
+            rank_speaker_voices_with_ai,
         )
 
         task = task_state.get(task_id) or {}
@@ -230,7 +230,7 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
             sample_specs=sample_specs,
             user_id=self.user_id,
         )
-        profiles, selected = auto_select_speaker_voices_with_ai(
+        profiles = rank_speaker_voices_with_ai(
             task_id=task_id,
             task=task,
             profiles=profiles,
@@ -238,30 +238,15 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
             dialogue_segments=dialogue_segments,
             user_id=self.user_id,
         )
-        required_speakers = ("A", "B")
-        missing_speakers = [
-            speaker for speaker in required_speakers
-            if not _voice_id_from(selected.get(speaker))
-        ]
         task_state.update(
             task_id,
             speaker_sample_specs=sample_specs,
             speaker_profiles=profiles,
-            selected_voice_by_speaker=selected,
+            selected_voice_by_speaker={},
         )
-        if missing_speakers:
-            message = (
-                "A/B voice auto-selection failed for speaker(s): "
-                + ", ".join(missing_speakers)
-            )
-            task_state.update(task_id, status="error", error=message)
-            task_state.set_current_review_step(task_id, "")
-            self._set_step(task_id, "voice_match_ab", "failed", message)
-            return
-
-        task_state.update(task_id, status="running", error="")
-        task_state.set_current_review_step(task_id, "")
-        self._set_step(task_id, "voice_match_ab", "done", "A/B speaker voices auto-selected")
+        task_state.update(task_id, status="waiting", error="")
+        task_state.set_current_review_step(task_id, "voice_match_ab")
+        self._set_step(task_id, "voice_match_ab", "waiting", "A/B speaker voice rankings ready")
 
     def _prepare_tts_segments_for_audio_gen(self, task: dict, tts_segments: list[dict]) -> list[dict]:
         from appcore.dialogue_translate.tts import apply_speaker_voices_to_tts_segments

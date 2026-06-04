@@ -151,7 +151,7 @@ def test_step_speaker_detect_marks_failed_when_diarization_unavailable(monkeypat
     assert state["steps"]["speaker_detect"] == "failed"
 
 
-def test_step_voice_match_ab_persists_profiles_and_auto_selects(monkeypatch, tmp_path):
+def test_step_voice_match_ab_persists_profiles_and_waits_for_manual_choice(monkeypatch, tmp_path):
     from appcore import task_state
     from appcore.events import EventBus
     from appcore.runtime_dialogue import DialogueTranslateRunner
@@ -238,25 +238,15 @@ def test_step_voice_match_ab_persists_profiles_and_auto_selects(monkeypatch, tmp
 
     state = task_state.get(task_id)
     assert state["speaker_sample_specs"] == sample_specs
-    assert state["selected_voice_by_speaker"] == {
-        "A": {
-            "voice_id": "voice-a",
-            "name": "Voice A",
-            "llm_rank": 1,
-            "llm_reason_summary": "auto",
-        },
-        "B": {
-            "voice_id": "voice-b",
-            "name": "Voice B",
-            "llm_rank": 1,
-            "llm_reason_summary": "auto",
-        },
-    }
+    assert state["selected_voice_by_speaker"] == {}
     assert state["speaker_profiles"]["A"]["voice_ai_rank_status"] == "done"
-    assert state["speaker_profiles"]["A"]["selected_voice"]["voice_id"] == "voice-a"
-    assert state["speaker_profiles"]["B"]["selected_voice"]["voice_id"] == "voice-b"
-    assert state["current_review_step"] == ""
-    assert state["steps"]["voice_match_ab"] == "done"
+    assert state["speaker_profiles"]["A"]["selected_voice"] is None
+    assert state["speaker_profiles"]["A"]["voice_ai_rankings"][0]["voice_id"] == "voice-a"
+    assert state["speaker_profiles"]["B"]["selected_voice"] is None
+    assert state["speaker_profiles"]["B"]["voice_ai_rankings"][0]["voice_id"] == "voice-b"
+    assert state["status"] == "waiting"
+    assert state["current_review_step"] == "voice_match_ab"
+    assert state["steps"]["voice_match_ab"] == "waiting"
     assert [call["task"]["dialogue_speaker_id"] for call in rank_calls] == ["A", "B"]
     assert calls[0] == ("samples", state["dialogue_segments"])
     assert calls[1] == (
@@ -272,7 +262,7 @@ def test_step_voice_match_ab_persists_profiles_and_auto_selects(monkeypatch, tmp
     )
 
 
-def test_step_voice_match_ab_fails_when_ai_cannot_select_required_speaker(monkeypatch, tmp_path):
+def test_step_voice_match_ab_waits_even_when_ai_cannot_rank_required_speaker(monkeypatch, tmp_path):
     from appcore import task_state
     from appcore.events import EventBus
     from appcore.runtime_dialogue import DialogueTranslateRunner
@@ -323,12 +313,12 @@ def test_step_voice_match_ab_fails_when_ai_cannot_select_required_speaker(monkey
     assert state["speaker_profiles"]["A"]["selected_voice"] is None
     assert state["speaker_profiles"]["A"]["voice_ai_rank_status"] == "skipped"
     assert "voice_ai_selection_failed" in state["speaker_profiles"]["A"]["match_warnings"]
-    assert state["status"] == "error"
-    assert state["current_review_step"] == ""
-    assert state["steps"]["voice_match_ab"] == "failed"
+    assert state["status"] == "waiting"
+    assert state["current_review_step"] == "voice_match_ab"
+    assert state["steps"]["voice_match_ab"] == "waiting"
 
 
-def test_step_voice_match_ab_ai_selects_per_speaker_voices_and_continues(
+def test_step_voice_match_ab_ai_ranks_per_speaker_voices_and_waits_for_manual_choice(
     monkeypatch,
     tmp_path,
 ):
@@ -431,25 +421,16 @@ def test_step_voice_match_ab_ai_selects_per_speaker_voices_and_continues(
         str(tmp_path / "speaker_A_voice_sample.wav"),
         str(tmp_path / "speaker_B_voice_sample.wav"),
     ]
-    assert state["selected_voice_by_speaker"] == {
-        "A": {
-            "voice_id": "a-ai",
-            "name": "A AI",
-            "llm_rank": 1,
-            "llm_reason_summary": "更贴近原声",
-        },
-        "B": {
-            "voice_id": "b-ai",
-            "name": "B AI",
-            "llm_rank": 1,
-            "llm_reason_summary": "更贴近原声",
-        },
-    }
+    assert state["selected_voice_by_speaker"] == {}
     assert state["speaker_profiles"]["A"]["voice_ai_rank_status"] == "done"
+    assert state["speaker_profiles"]["A"]["selected_voice"] is None
     assert state["speaker_profiles"]["A"]["voice_ai_rankings"][0]["voice_id"] == "a-ai"
     assert state["speaker_profiles"]["B"]["voice_ai_rank_status"] == "done"
-    assert state["current_review_step"] == ""
-    assert state["steps"]["voice_match_ab"] == "done"
+    assert state["speaker_profiles"]["B"]["selected_voice"] is None
+    assert state["speaker_profiles"]["B"]["voice_ai_rankings"][0]["voice_id"] == "b-ai"
+    assert state["status"] == "waiting"
+    assert state["current_review_step"] == "voice_match_ab"
+    assert state["steps"]["voice_match_ab"] == "waiting"
 
 
 def test_dialogue_pipeline_runner_import_registers_dispatch_start_and_resume(monkeypatch):

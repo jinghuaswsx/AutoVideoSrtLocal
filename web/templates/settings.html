@@ -1299,14 +1299,14 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   <div class="binding-row" style="padding:14px 0 6px;">
     <div>
       <div class="binding-label">自动音色选择</div>
-      <div class="binding-desc">开启后 AI 排名完成会自动选中 AI #1 并继续后续步骤；关闭则挂起等待人工干预。</div>
+      <div class="binding-desc">AI 排名完成后只作为推荐排序展示，任务会等待人工确认音色后再继续。</div>
       <div class="binding-code">voice_ai_auto_select_enabled</div>
     </div>
     <div style="grid-column: span 2;">
       <label style="display:flex;align-items:center;gap:8px;margin-top:20px;">
         <input type="checkbox" name="voice_ai_auto_select_enabled" value="1"
                {{ 'checked' if voice_ai_auto_select_enabled else '' }}>
-        <span>默认自动选择 AI 排名第一音色</span>
+        <span>保留旧配置项（当前流程始终人工确认）</span>
       </label>
     </div>
     <div></div>

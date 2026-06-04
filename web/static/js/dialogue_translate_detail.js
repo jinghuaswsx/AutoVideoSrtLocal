@@ -214,7 +214,7 @@
       return;
     }
     if (voiceStatus === "done") {
-      statusEl.textContent = "A/B 音色已自动匹配，任务会继续推进后续步骤。";
+      statusEl.textContent = "A/B 音色已确认，任务会继续推进后续步骤。";
       return;
     }
     if (speakerStatus === "failed" || voiceStatus === "failed") {

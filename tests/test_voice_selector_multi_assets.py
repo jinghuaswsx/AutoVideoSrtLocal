@@ -285,7 +285,7 @@ def test_voice_selector_multi_force_fallback_cancels_ai_polling_and_persists_byp
     assert '"X-CSRFToken": csrfToken()' in force_block
 
 
-def test_voice_selector_multi_auto_confirms_top_ai_voice_when_enabled():
+def test_voice_selector_multi_ai_rank_never_auto_confirms_top_voice():
     load_block = SCRIPT[
         SCRIPT.index("async function loadVoicePage"):
         SCRIPT.index("async function loadLibrary")
@@ -295,37 +295,26 @@ def test_voice_selector_multi_auto_confirms_top_ai_voice_when_enabled():
         SCRIPT.index("function updateLaunchState")
     ]
 
-    assert 'let voiceAiAutoSelectEnabled = true;' in SCRIPT
-    assert 'let autoConfirmingVoice = false;' in SCRIPT
-    assert "function maybeAutoConfirmTopAiVoice()" in SCRIPT
-    assert "voiceAiAutoSelectEnabled = data.voice_ai_auto_select_enabled !== false;" in SCRIPT
-    assert 'if (!voiceAiAutoSelectEnabled || currentVoiceSelectionMode() !== "ai_rank") return false;' in SCRIPT
-    assert "await launch();" in SCRIPT
-    assert "maybeAutoConfirmTopAiVoice();" in load_block
-    assert "await maybeAutoConfirmTopAiVoice();" in rerun_block
+    assert "maybeAutoConfirmTopAiVoice" not in SCRIPT
+    assert "canAutoConfirmTopAiVoice" not in SCRIPT
+    assert "autoConfirmingVoice" not in SCRIPT
+    assert "voiceAiAutoSelectEnabled" not in SCRIPT
+    assert "await launch();" not in rerun_block
+    assert "maybeAutoConfirmTopAiVoice" not in load_block
+    assert "openVoiceAiRankModal(\"result\");" in rerun_block
 
 
-def test_voice_selector_multi_auto_confirm_is_waiting_only_and_idempotent():
+def test_voice_selector_multi_ai_rank_preserves_manual_selection_state():
     load_block = SCRIPT[
         SCRIPT.index("async function loadVoicePage"):
         SCRIPT.index("async function loadLibrary")
     ]
-    gate_block = SCRIPT[
-        SCRIPT.index("function canAutoConfirmTopAiVoice"):
-        SCRIPT.index("async function maybeAutoConfirmTopAiVoice")
-    ]
 
     assert "let persistedSelectedVoiceId = null;" in SCRIPT
-    assert 'let voiceMatchStepStatus = "";' in SCRIPT
     assert "persistedSelectedVoiceId = data.selected_voice_id || null;" in load_block
     assert "selectedVoiceId = persistedSelectedVoiceId;" in load_block
-    assert 'voiceMatchStepStatus = (data.pipeline && data.pipeline.voice_match) || "";' in load_block
-    assert "function canAutoConfirmTopAiVoice()" in SCRIPT
-    assert "if (launched || autoConfirmingVoice) return false;" in gate_block
-    assert "if (persistedSelectedVoiceId) return false;" in gate_block
-    assert 'if (voiceMatchStepStatus !== "waiting") return false;' in gate_block
-    assert 'if (!voiceAiAutoSelectEnabled || currentVoiceSelectionMode() !== "ai_rank") return false;' in gate_block
-    assert "if (!canAutoConfirmTopAiVoice()) return false;" in SCRIPT
+    assert "selectedVoiceId = topAiRow.v.voice_id;" not in SCRIPT
+    assert "selectedVoiceName = topAiRow.v.name || topAiRow.v.voice_id;" not in SCRIPT
 
 
 def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads():
@@ -341,7 +330,7 @@ def test_voice_selector_multi_reranks_current_gender_and_applies_cached_payloads
     assert "fetch(`${apiBase}/${taskId}/voice-ai-ranking`, {" in SCRIPT
     assert "body: JSON.stringify({ gender: currentVoiceAiRankGender() })," in SCRIPT
     assert "applyVoiceAiRankPayload(data);" in rematch_block
-    assert "await maybeAutoConfirmTopAiVoice();" in rematch_block
+    assert "maybeAutoConfirmTopAiVoice" not in rematch_block
 
 
 def test_voice_selector_multi_enables_manual_ai_ranking_for_multi_and_omni_translate():

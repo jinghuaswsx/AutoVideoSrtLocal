@@ -400,7 +400,6 @@ def test_compute_progress_counts_new_statuses(runtime_env):
 def test_run_scheduler_enters_waiting_manual_for_voice_selection(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(mod, "generate_plan", lambda *args, **kwargs: [_item(0, kind="videos")])
-    monkeypatch.setattr(mod, "_voice_ai_auto_select_enabled", lambda: False, raising=False)
 
     task_id = mod.create_bulk_translate_task(
         user_id=1,
@@ -444,7 +443,7 @@ def test_run_scheduler_enters_waiting_manual_for_voice_selection(runtime_env, mo
     assert state["plan"][0]["status"] == "awaiting_voice"
 
 
-def test_sync_auto_confirms_top_ai_voice_instead_of_waiting_manual(runtime_env, monkeypatch):
+def test_sync_waits_for_manual_voice_choice_after_ai_ranking(runtime_env, monkeypatch):
     mod, fake_db = runtime_env
     monkeypatch.setattr(
         mod,
@@ -494,39 +493,19 @@ def test_sync_auto_confirms_top_ai_voice_instead_of_waiting_manual(runtime_env, 
         ),
         "created_at": None,
     }
-    resumes = []
-    monkeypatch.setattr(mod, "_voice_ai_auto_select_enabled", lambda: True, raising=False)
-    monkeypatch.setattr(
-        mod,
-        "_next_step_after_voice_match",
-        lambda child_task_type, child_task_id, child_state, user_id: "alignment",
-        raising=False,
-    )
-    monkeypatch.setattr(
-        mod,
-        "_resume_voice_child_runner",
-        lambda child_task_type, child_task_id, next_step, user_id: resumes.append(
-            (child_task_type, child_task_id, next_step, user_id)
-        ) or True,
-        raising=False,
-    )
-
     result = mod.sync_task_with_children_once(task_id, user_id=1)
 
-    assert "auto_confirm_voice" in result["actions"]
-    assert resumes == [("omni_translate", "omni-1", "alignment", 1)]
+    assert "auto_confirm_voice" not in result["actions"]
     child_state = json.loads(fake_db.rows["omni-1"]["state_json"])
-    assert child_state["selected_voice_id"] == "voice-top"
-    assert child_state["selected_voice_name"] == "Top Pick"
-    assert child_state["voice_id"] == "voice-top"
-    assert child_state["subtitle_size"] == 18
-    assert child_state["subtitle_position_y"] == 0.55
-    assert child_state["steps"]["voice_match"] == "done"
-    assert child_state["current_review_step"] == ""
+    assert "selected_voice_id" not in child_state
+    assert "selected_voice_name" not in child_state
+    assert "voice_id" not in child_state
+    assert child_state["steps"]["voice_match"] == "waiting"
+    assert child_state["current_review_step"] == "voice_match"
     parent_state = _load_state(fake_db, task_id)
-    assert parent_state["plan"][0]["status"] == "running"
-    assert parent_state["plan"][0]["auto_voice_confirmed_voice_id"] == "voice-top"
-    assert fake_db.rows[task_id]["status"] == "running"
+    assert parent_state["plan"][0]["status"] == "awaiting_voice"
+    assert "auto_voice_confirmed_voice_id" not in parent_state["plan"][0]
+    assert fake_db.rows[task_id]["status"] == "waiting_manual"
 
 
 def test_sync_keeps_voice_ai_ranking_pending_as_running_progress(runtime_env, monkeypatch):
@@ -572,8 +551,6 @@ def test_sync_keeps_voice_ai_ranking_pending_as_running_progress(runtime_env, mo
         ),
         "created_at": None,
     }
-    monkeypatch.setattr(mod, "_voice_ai_auto_select_enabled", lambda: True, raising=False)
-
     result = mod.sync_task_with_children_once(task_id, user_id=1)
 
     assert result["actions"] == []

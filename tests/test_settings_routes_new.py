@@ -1045,7 +1045,7 @@ def test_settings_omni_preset_renders_voice_ai_auto_select_checkbox_checked_by_d
     body = resp.get_data(as_text=True)
     assert resp.status_code == 200
     assert 'name="voice_ai_auto_select_enabled"' in body
-    assert '默认自动选择 AI 排名第一音色' in body
+    assert '保留旧配置项（当前流程始终人工确认）' in body
     assert '视频翻译设置' in body
     assert 'Omni 实验预设' not in body
     assert 'name="voice_ai_auto_select_enabled" value="1"' in body

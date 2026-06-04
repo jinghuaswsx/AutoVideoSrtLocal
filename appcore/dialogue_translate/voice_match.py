@@ -284,91 +284,12 @@ def _voice_id_from(value: object) -> str:
     return ""
 
 
-def _voice_name_from(value: object, voice_id: str) -> str:
-    if isinstance(value, dict):
-        for key in ("name", "voice_name", "label"):
-            name = str(value.get(key) or "").strip()
-            if name:
-                return name
-    return voice_id
-
-
 def _rank_from(value: object) -> int | None:
     try:
         rank = int(value)
     except (TypeError, ValueError):
         return None
     return rank if rank > 0 else None
-
-
-def _selected_voice_from_candidate(candidate: object) -> dict | None:
-    voice_id = _voice_id_from(candidate)
-    if not voice_id:
-        return None
-
-    selected = {
-        "voice_id": voice_id,
-        "name": _voice_name_from(candidate, voice_id),
-    }
-    if not isinstance(candidate, dict):
-        return selected
-
-    for key in (
-        "voice_name",
-        "elevenlabs_voice_id",
-        "id",
-        "language",
-        "gender",
-        "similarity",
-        "preview_url",
-        "provider",
-        "llm_rank",
-        "llm_reason_summary",
-    ):
-        value = candidate.get(key)
-        if value not in (None, ""):
-            selected[key] = value
-    reason = candidate.get("reason_summary")
-    if reason and not selected.get("llm_reason_summary"):
-        selected["llm_reason_summary"] = reason
-    return selected
-
-
-def _merge_ranking_row(candidate: object, row: dict) -> dict:
-    merged = dict(candidate) if isinstance(candidate, dict) else {}
-    voice_id = str(row.get("voice_id") or "").strip()
-    if voice_id:
-        merged.setdefault("voice_id", voice_id)
-    rank = _rank_from(row.get("llm_rank", row.get("rank")))
-    if rank is not None:
-        merged["llm_rank"] = rank
-    reason = row.get("reason_summary") or row.get("reason")
-    if reason and not merged.get("llm_reason_summary"):
-        merged["llm_reason_summary"] = reason
-    return merged
-
-
-def _llm_rank_one_candidate(candidates: Iterable[dict], rankings: Iterable[dict]) -> dict | None:
-    candidate_rows = [dict(candidate) for candidate in candidates or [] if isinstance(candidate, dict)]
-    for candidate in candidate_rows:
-        if _rank_from(candidate.get("llm_rank")) == 1 and _voice_id_from(candidate):
-            return candidate
-
-    by_voice_id = {
-        _voice_id_from(candidate): candidate
-        for candidate in candidate_rows
-        if _voice_id_from(candidate)
-    }
-    for row in rankings or []:
-        if not isinstance(row, dict):
-            continue
-        if _rank_from(row.get("llm_rank", row.get("rank"))) != 1:
-            continue
-        voice_id = str(row.get("voice_id") or "").strip()
-        if not voice_id:
-            continue
-        return _merge_ranking_row(by_voice_id.get(voice_id) or {}, row)
-    return None
 
 
 def _speaker_task_for_voice_ai(task: dict, speaker: str, profile: dict, dialogue_segments: list[dict]) -> dict:
@@ -383,7 +304,7 @@ def _speaker_task_for_voice_ai(task: dict, speaker: str, profile: dict, dialogue
     return speaker_task
 
 
-def auto_select_speaker_voices_with_ai(
+def rank_speaker_voices_with_ai(
     *,
     task_id: str,
     task: dict,
@@ -391,15 +312,14 @@ def auto_select_speaker_voices_with_ai(
     task_dir: str | Path,
     dialogue_segments: list[dict],
     user_id: int | None = None,
-) -> tuple[dict[str, dict], dict[str, dict]]:
-    """Run the normal voice AI ranking once per dialogue speaker and select rank 1."""
+) -> dict[str, dict]:
+    """Run the normal voice AI ranking once per dialogue speaker without selecting a voice."""
     from appcore.voice_ai_ranking import rank_voice_candidates
 
     normalized_profiles: dict[str, dict] = {
         speaker: dict(profile) if isinstance(profile, dict) else {}
         for speaker, profile in (profiles or {}).items()
     }
-    selected_by_speaker: dict[str, dict] = {}
     base_task_dir = Path(task_dir or ".")
 
     for speaker in _SPEAKERS:
@@ -452,9 +372,7 @@ def auto_select_speaker_voices_with_ai(
 
         ranked_candidates = ai_result.get("candidates") or candidates
         rankings = ai_result.get("rankings") or []
-        selected_candidate = _llm_rank_one_candidate(ranked_candidates, rankings)
-        selected_voice = _selected_voice_from_candidate(selected_candidate)
-        if selected_voice is None:
+        if not any(_rank_from(row.get("llm_rank", row.get("rank"))) == 1 for row in rankings if isinstance(row, dict)):
             _append_warning(warnings, VOICE_AI_SELECTION_FAILED_REASON)
 
         profile.update(
@@ -468,13 +386,11 @@ def auto_select_speaker_voices_with_ai(
                 "voice_ai_rank_candidate_limit": ai_result.get("candidate_limit"),
                 "voice_ai_rank_usage_log_id": ai_result.get("usage_log_id"),
                 "voice_ai_rank_debug": ai_result.get("debug"),
-                "selected_voice": selected_voice,
+                "selected_voice": None,
             }
         )
-        if selected_voice is not None:
-            selected_by_speaker[speaker] = selected_voice
 
-    return normalized_profiles, selected_by_speaker
+    return normalized_profiles
 
 
 def _window_duration(window: Any) -> float:

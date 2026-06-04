@@ -45,7 +45,7 @@ def test_build_product_translation_tasks_response_syncs_and_projects_tasks():
     ]
 
 
-def test_build_product_translation_tasks_response_resumes_after_auto_voice(monkeypatch):
+def test_build_product_translation_tasks_response_does_not_resume_after_voice_ranking(monkeypatch):
     from web.services import media_product_translate as svc
 
     scheduler_calls = []
@@ -66,17 +66,7 @@ def test_build_product_translation_tasks_response_resumes_after_auto_voice(monke
     )
 
     assert result.status_code == 200
-    assert scheduler_calls == [
-        (
-            ("bt-1",),
-            {
-                "user_id": 7,
-                "entrypoint": "medias.translation_tasks.sync",
-                "action": "resume_after_auto_voice_confirm",
-                "details": {"source": "medias_translation_tasks"},
-            },
-        )
-    ]
+    assert scheduler_calls == []
 
 
 def test_build_product_translate_response_maps_success_and_errors():
