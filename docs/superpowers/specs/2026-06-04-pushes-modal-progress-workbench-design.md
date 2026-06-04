@@ -18,7 +18,11 @@ The workbench lets the operator see the request JSON, the returned data, and the
 ## Behavior
 
 - The progress workbench uses the same modal envelope size as the existing push page modal.
-- The workbench is split vertically into three equal step sections.
+- On desktop, the workbench is split horizontally into three columns from left to right:
+  - 素材推送: 36%.
+  - 文案推送: 36%.
+  - 链接推送: 28%.
+- On narrow screens, the same three sections may stack vertically to avoid text overlap.
 - Every step has a title bar. The right side of the title bar shows a large status label:
   - `排队中` with a queue icon.
   - `推送中` with a loading animation.
