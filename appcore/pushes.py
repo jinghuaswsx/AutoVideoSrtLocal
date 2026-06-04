@@ -1244,6 +1244,8 @@ def push_product_links(product: dict | None) -> dict:
             "ok": False,
             "error": "downstream_unreachable",
             "detail": str(exc),
+            "target_url": target_url,
+            "payload": payload,
         }
 
     body_text = resp.text or ""
@@ -1260,6 +1262,8 @@ def push_product_links(product: dict | None) -> dict:
         "ok": ok,
         "upstream_status": resp.status_code,
         "response_body": body_text[:4000],
+        "target_url": target_url,
+        "payload": payload,
     }
     if parsed:
         result["downstream_response"] = parsed
