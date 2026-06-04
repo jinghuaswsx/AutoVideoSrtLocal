@@ -835,6 +835,13 @@
 
 /* ---------- 就绪文字（视频|封面|文案|链接） ---------- */
 .ready-cell { white-space: nowrap; }
+.ready-cell-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  text-align: left;
+}
 .ready-row {
   display: inline-flex;
   align-items: center;

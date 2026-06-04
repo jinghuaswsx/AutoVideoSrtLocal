@@ -11,7 +11,7 @@
     has_cover: '封面',
     has_copywriting: '文案',
     lang_supported: '链接',
-    has_push_texts: '英文文案格式正确',
+    has_push_texts: '英文文案格式',
     shopify_image_confirmed: '图片/链接确认',
   };
   const REWORK_ISSUES = [
@@ -373,8 +373,8 @@
   }
 
   function renderReadinessText(readiness) {
-    const line1Keys = ['has_object', 'has_cover', 'has_copywriting', 'lang_supported'];
-    const line2Keys = ['has_push_texts', 'shopify_image_confirmed'];
+    const line1Keys = ['has_object', 'has_cover', 'has_copywriting', 'has_push_texts'];
+    const line2Keys = ['shopify_image_confirmed'];
 
     const line1Parts = line1Keys.map(key => {
       const label = READINESS_LABELS[key];
@@ -388,8 +388,9 @@
       return `<span class="ready-item ${ok ? 'ready-ok' : 'ready-bad'}">${label}</span>`;
     });
 
-    let html = `<div class="ready-row">${line1Parts.join('<span class="ready-sep">|</span>')}</div>`;
-    html += `<div class="ready-row" style="margin-top: 4px;">${line2Parts.join('<span class="ready-sep">|</span>')}</div>`;
+    let html = `<div class="ready-cell-container">`;
+    html += `<div class="ready-row">${line1Parts.join('<span class="ready-sep">|</span>')}</div>`;
+    html += `<div class="ready-row">${line2Parts.join('<span class="ready-sep">|</span>')}</div>`;
 
     if (readiness.shopify_image_domain_details && readiness.shopify_image_domain_details.length > 0) {
       const domainParts = readiness.shopify_image_domain_details.map(d => {
@@ -398,8 +399,9 @@
         }
         return `<span class="ready-item ready-bad">${escapeHtml(d.domain)} ❌</span>`;
       });
-      html += `<div class="ready-row ready-row-domain" style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;">${domainParts.map(p => `<div>${p}</div>`).join('')}</div>`;
+      html += `<div class="ready-row ready-row-domain" style="display: flex; flex-direction: column; gap: 2px; align-items: flex-start;">${domainParts.map(p => `<div>${p}</div>`).join('')}</div>`;
     }
+    html += `</div>`;
     return html;
   }
 
