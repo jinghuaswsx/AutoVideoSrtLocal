@@ -826,13 +826,14 @@ def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch)
     }
     assert "COUNT(*) AS total" in captured_count["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured_count["sql"]
-    assert "t.status IN (%s, %s)" in captured_count["sql"]
+    assert "t.status IN (%s, %s, %s)" in captured_count["sql"]
     assert captured_count["args"] == (
         2,
         "%Product%",
         "%Product%",
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.CHILD_ASSIGNED,
+        tasks.CHILD_BLOCKED,
     )
     assert captured_list["args"] == (
         2,
@@ -840,6 +841,7 @@ def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch)
         "%Product%",
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.CHILD_ASSIGNED,
+        tasks.CHILD_BLOCKED,
         5,
         10,
     )
@@ -940,10 +942,11 @@ def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
     ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.parent_task_id IS NULL" in captured["sql"]
-    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.CHILD_ASSIGNED,
+        tasks.CHILD_BLOCKED,
         20,
         0,
     )
@@ -1257,11 +1260,12 @@ def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypat
 
     assert "t.assignee_id=%s" in captured["sql"]
     assert "t.parent_task_id IS NULL AND t.status=%s" not in captured["sql"]
-    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
         7,
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.CHILD_ASSIGNED,
+        tasks.CHILD_BLOCKED,
         20,
         0,
     )

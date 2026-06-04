@@ -807,8 +807,8 @@ def list_task_center_items(
         where.append("t.status=%s")
         args.append(PARENT_CANCELLED)
     if bucket == "todo":
-        where.append("t.status IN (%s, %s)")
-        args.extend([PARENT_RAW_IN_PROGRESS, CHILD_ASSIGNED])
+        where.append("t.status IN (%s, %s, %s)")
+        args.extend([PARENT_RAW_IN_PROGRESS, CHILD_ASSIGNED, CHILD_BLOCKED])
     elif bucket == "review":
         where.append("t.status IN (%s, %s)")
         args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
