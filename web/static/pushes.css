@@ -530,8 +530,11 @@
 .audit-cell {
   display: flex;
   flex-direction: column;
-  gap: var(--oc-sp-1);
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   line-height: 1.45;
+  text-align: center;
 }
 .audit-line {
   display: flex;
@@ -539,16 +542,41 @@
   gap: var(--oc-sp-2);
   flex-wrap: wrap;
 }
-.audit-status,
-.audit-result {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 2px 8px;
-  border-radius: var(--oc-r-full);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
+.audit-cell .audit-status,
+.audit-cell .audit-result,
+.audit-cell .audit-detail-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 120px !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  line-height: 26px !important;
+  padding: 0 8px !important;
+  border-radius: var(--oc-r-full, 9999px) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  margin: 0 !important;
+  border: none !important;
+}
+.audit-cell .audit-status {
+  cursor: default !important;
+}
+.audit-cell .audit-result {
+  cursor: default !important;
+}
+.audit-cell .audit-detail-btn {
+  background: var(--oc-accent-subtle) !important;
+  color: var(--oc-accent) !important;
+  cursor: pointer !important;
+  transition: all var(--oc-dur-fast) var(--oc-ease) !important;
+}
+.audit-cell .audit-detail-btn:hover {
+  background: var(--oc-accent) !important;
+  color: #fff !important;
 }
 .audit-status-on,
 .audit-result-good {
@@ -580,6 +608,7 @@
   font-size: 12px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  word-break: break-all;
 }
 .audit-detail-btn {
   width: max-content;
@@ -1514,7 +1543,7 @@
   .mk-id-cell::before { content: "mk_id"; }
   .push-item-cell::before { content: "素材"; }
   .push-lang-cell::before { content: "语种"; }
-  .push-ready-cell::before { content: "就绪"; }
+  .push-ready-cell::before { content: "推送必要条件状态"; }
   .audit-cell-wrap::before { content: "审核信息"; }
   .push-time-cell::before { content: "创建时间"; }
   .push-action-cell::before { content: "操作"; }

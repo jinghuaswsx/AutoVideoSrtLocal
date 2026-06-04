@@ -373,11 +373,24 @@
   }
 
   function renderReadinessText(readiness) {
-    const parts = Object.entries(READINESS_LABELS).map(([key, label]) => {
+    const line1Keys = ['has_object', 'has_cover', 'has_copywriting', 'lang_supported'];
+    const line2Keys = ['has_push_texts', 'shopify_image_confirmed'];
+
+    const line1Parts = line1Keys.map(key => {
+      const label = READINESS_LABELS[key];
       const ok = readiness[key];
       return `<span class="ready-item ${ok ? 'ready-ok' : 'ready-bad'}">${label}</span>`;
     });
-    let html = `<div class="ready-row">${parts.join('<span class="ready-sep">|</span>')}</div>`;
+
+    const line2Parts = line2Keys.map(key => {
+      const label = READINESS_LABELS[key];
+      const ok = readiness[key];
+      return `<span class="ready-item ${ok ? 'ready-ok' : 'ready-bad'}">${label}</span>`;
+    });
+
+    let html = `<div class="ready-row">${line1Parts.join('<span class="ready-sep">|</span>')}</div>`;
+    html += `<div class="ready-row" style="margin-top: 4px;">${line2Parts.join('<span class="ready-sep">|</span>')}</div>`;
+
     if (readiness.shopify_image_domain_details && readiness.shopify_image_domain_details.length > 0) {
       const domainParts = readiness.shopify_image_domain_details.map(d => {
         if (d.confirmed) {
@@ -385,7 +398,7 @@
         }
         return `<span class="ready-item ready-bad">${escapeHtml(d.domain)} ❌</span>`;
       });
-      html += `<div class="ready-row ready-row-domain">${domainParts.join('<span class="ready-sep">|</span>')}</div>`;
+      html += `<div class="ready-row ready-row-domain" style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px; align-items: flex-start;">${domainParts.map(p => `<div>${p}</div>`).join('')}</div>`;
     }
     return html;
   }
@@ -1179,13 +1192,11 @@
       : result.includes('适合') ? 'audit-result-good' : 'audit-result-empty';
 
     return `<div class="audit-cell">
-      <div class="audit-line">
-        ${renderListingStatusBadge(it.listing_status)}
-        <span class="audit-result ${resultClass}">${escapeHtml(result)}</span>
-      </div>
       <div class="audit-score">AI评分: <span>${escapeHtml(formatAuditScore(it.ai_score))}</span></div>
       <div class="audit-remark" title="${escapeAttr(remark)}">${escapeHtml(remark)}</div>
-      <button type="button" class="btn-mini audit-detail-btn" data-action="ai-detail" data-id="${it.id}">AI 评估详情</button>
+      ${renderListingStatusBadge(it.listing_status)}
+      <span class="audit-result ${resultClass}">${escapeHtml(result)}</span>
+      <button type="button" class="btn-mini audit-detail-btn" data-action="ai-detail" data-id="${it.id}">AI评估详情</button>
     </div>`;
   }
 
