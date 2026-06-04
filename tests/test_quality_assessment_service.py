@@ -317,3 +317,40 @@ def test_run_assessment_writes_failed_row_on_exception(db_clean):
     )
     assert row["status"] == "failed"
     assert "boom" in (row["error_text"] or "")
+
+
+def test_build_inputs_fallback_from_disk(tmp_path):
+    import json
+    # Create temp files to simulate task_dir
+    task_dir = tmp_path
+    
+    # 1. localized_translation.normal.json
+    loc_file = task_dir / "localized_translation.normal.json"
+    loc_file.write_text(json.dumps({
+        "full_text": "C'est une traduction normale sur disque."
+    }), encoding="utf-8")
+    
+    # 2. corrected_subtitle.normal.json
+    sub_file = task_dir / "corrected_subtitle.normal.json"
+    sub_file.write_text(json.dumps({
+        "chunks": [
+            {"text": "C'est la reconnaissance"},
+            {"text": "sur disque."}
+        ]
+    }), encoding="utf-8")
+
+    task = {
+        "task_dir": str(task_dir),
+        "utterances": [{"text": "Hello world"}],
+        "source_language": "en",
+        "target_lang": "fr",
+        # Empty in task state to trigger disk fallback
+        "localized_translation": None,
+        "english_asr_result": None
+    }
+    
+    inputs = svc._build_inputs(task)
+    assert inputs["original_asr"] == "Hello world"
+    assert inputs["translation"] == "C'est une traduction normale sur disque."
+    assert inputs["tts_recognition"] == "C'est la reconnaissance sur disque."
+
