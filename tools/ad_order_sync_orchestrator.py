@@ -47,3 +47,58 @@ def target_dates_for_mode(mode: str, *, now: datetime | None = None) -> list[dat
         previous_monday = this_monday - timedelta(days=7)
         return [previous_monday + timedelta(days=offset) for offset in range(7)]
     raise ValueError(f"unsupported sync mode: {mode}")
+
+
+def _status_from_day_parts(order_report: dict[str, Any], meta_report: dict[str, Any]) -> str:
+    if order_report.get("status") == "failed":
+        return "failed"
+    if meta_report.get("status") != "success":
+        return "failed"
+    profit = meta_report.get("profit_backfill") or {}
+    if profit.get("status") not in ("success", None):
+        return "failed"
+    return "success"
+
+
+def run_one_business_day(
+    target_date: date,
+    *,
+    max_scan_pages: int,
+    site_codes: list[str] | None = None,
+    dxm_env: str = "DXM03-RJC",
+) -> dict[str, Any]:
+    bj_dates = covered_bj_dates(target_date)
+    order_report: dict[str, Any]
+    try:
+        order_report = dianxiaomi_order_import.run_import_from_server_browser(
+            start_date_text=bj_dates[0].isoformat(),
+            end_date_text=bj_dates[-1].isoformat(),
+            site_codes=site_codes or DEFAULT_SITE_CODES,
+            states=[""],
+            dxm_env=dxm_env,
+            dry_run=False,
+            skip_login_prompt=True,
+            date_filter_mode="recent-scan",
+            max_scan_pages=max_scan_pages,
+        )
+        order_report.setdefault("status", "success")
+    except Exception as exc:
+        order_report = {"status": "failed", "error": str(exc)}
+
+    try:
+        meta_report = meta_daily_final_sync.run_final_sync(
+            target_date,
+            mode="run",
+            include_adsets=True,
+        )
+    except Exception as exc:
+        meta_report = {"status": "failed", "error": str(exc)}
+
+    return {
+        "target_date": target_date.isoformat(),
+        "covered_bj_dates": [item.isoformat() for item in bj_dates],
+        "status": _status_from_day_parts(order_report, meta_report),
+        "order_import": order_report,
+        "meta_daily_final": meta_report,
+        "profit_backfill": meta_report.get("profit_backfill") or {},
+    }
