@@ -5039,7 +5039,11 @@ const mkiXiaoProductOwnerIdCache = new Map();
 
 function mkiUserLabel(user) {
   const fallback = user && user.id ? `用户 #${user.id}` : '';
-  return String((user && (user.display_name || user.username)) || fallback).trim();
+  const baseName = String((user && (user.display_name || user.username)) || fallback).trim();
+  if (user && user.todo_count !== undefined && user.urgent_count !== undefined && user.completed_today_count !== undefined) {
+    return `${baseName}  待处理 ${user.todo_count}  紧急 ${user.urgent_count}  今天已完成 ${user.completed_today_count}`;
+  }
+  return baseName;
 }
 
 function mkiUserOption(user) {

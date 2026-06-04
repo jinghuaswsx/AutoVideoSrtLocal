@@ -122,6 +122,33 @@ def list_translators() -> list[dict]:
 
 
 def list_translation_work_users() -> list[dict]:
+    import datetime
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    counts_map = {}
+    try:
+        counts_rows = query(
+            "SELECT assignee_id, "
+            "  SUM(CASE WHEN status IN ('pending', 'raw_in_progress', 'assigned') AND archived_at IS NULL THEN 1 ELSE 0 END) AS todo_count, "
+            "  SUM(CASE WHEN status IN ('pending', 'raw_in_progress', 'assigned') AND archived_at IS NULL AND is_urgent = 1 THEN 1 ELSE 0 END) AS urgent_count, "
+            "  SUM(CASE WHEN ( "
+            "    (parent_task_id IS NULL AND status IN ('raw_done', 'all_done')) OR "
+            "    (parent_task_id IS NOT NULL AND status = 'done') "
+            "  ) AND DATE(completed_at) = %s THEN 1 ELSE 0 END) AS completed_today_count "
+            "FROM tasks "
+            "WHERE assignee_id IS NOT NULL "
+            "GROUP BY assignee_id",
+            (today_str,)
+        )
+        for row in counts_rows:
+            if "assignee_id" in row:
+                counts_map[int(row["assignee_id"])] = {
+                    "todo_count": int(row.get("todo_count") or 0),
+                    "urgent_count": int(row.get("urgent_count") or 0),
+                    "completed_today_count": int(row.get("completed_today_count") or 0),
+                }
+    except Exception:
+        pass
+
     expr = _user_display_name_expr()
     rows = query(
         f"SELECT id, username, {expr} AS display_name, role, permissions "
@@ -133,10 +160,14 @@ def list_translation_work_users() -> list[dict]:
             _has_effective_bool_permission(row, "can_translate")
             and _has_effective_bool_permission(row, "work_scope_translation")
         ):
+            stats = counts_map.get(int(row["id"]), {"todo_count": 0, "urgent_count": 0, "completed_today_count": 0})
             users.append({
                 "id": int(row["id"]),
                 "username": row["username"],
                 "display_name": row.get("display_name") or row["username"],
+                "todo_count": stats["todo_count"],
+                "urgent_count": stats["urgent_count"],
+                "completed_today_count": stats["completed_today_count"],
             })
     return users
 
