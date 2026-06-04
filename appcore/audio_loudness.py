@@ -280,9 +280,9 @@ def _select_voice_priority_windows(
     segments: list[dict],
     *,
     max_windows: int = VOICE_PRIORITY_MAX_WINDOWS,
-) -> list[tuple[int, float, float]]:
+) -> list[tuple[int, float, float, dict]]:
     windows = [
-        window
+        (window[0], window[1], window[2], segment)
         for fallback_index, segment in enumerate(segments or [])
         if isinstance(segment, dict)
         for window in [_segment_audio_window(segment, fallback_index)]
@@ -290,7 +290,7 @@ def _select_voice_priority_windows(
     ]
     if len(windows) <= max_windows:
         return windows
-    selected: list[tuple[int, float, float]] = []
+    selected: list[tuple[int, float, float, dict]] = []
     used_positions: set[int] = set()
     for sample_index in range(max_windows):
         pos = int(sample_index * len(windows) / max_windows)
@@ -338,9 +338,22 @@ def measure_voice_priority_background_windows(
 ) -> list[dict]:
     """Measure matching TTS/background LUFS windows from TTS segment timings."""
     records: list[dict] = []
-    for index, start, end in _select_voice_priority_windows(segments, max_windows=max_windows):
+    for index, start, end, segment in _select_voice_priority_windows(segments, max_windows=max_windows):
         try:
-            voice_lufs = measure_window_lufs(tts_audio_path, start, end)
+            segment_tts_path = str(segment.get("tts_path") or "").strip()
+            if segment_tts_path and Path(segment_tts_path).is_file():
+                voice_duration = _finite_float(segment.get("tts_duration"))
+                if voice_duration is None:
+                    voice_duration = _finite_float(segment.get("duration"))
+                if voice_duration is None:
+                    voice_duration = max(0.0, end - start)
+                voice_lufs = measure_window_lufs(
+                    segment_tts_path,
+                    0.0,
+                    max(VOICE_PRIORITY_MIN_WINDOW_SECONDS, voice_duration),
+                )
+            else:
+                voice_lufs = measure_window_lufs(tts_audio_path, start, end)
             background_lufs = measure_window_lufs(background_path, start, end)
         except Exception as exc:  # noqa: BLE001
             log.warning(
