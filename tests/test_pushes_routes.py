@@ -2569,6 +2569,38 @@ def test_pushes_modal_displays_backend_localized_texts_result_after_material_pus
     assert "overflow: auto" in style
 
 
+def test_pushes_modal_material_button_opens_three_step_progress_workbench():
+    from pathlib import Path
+
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    style = Path("web/static/pushes.css").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/2026-06-04-pushes-modal-progress-workbench-design.md" in script
+    assert "const pushProgressWorkbench = buildPushProgressWorkbench();" in script
+    assert "showPushProgressWorkbench();" in script
+    assert "setPipelineStepStatus('material', 'running');" in script
+    assert "setPipelineStepStatus('texts', 'queued');" in script
+    assert "setPipelineStepStatus('links', 'queued');" in script
+    assert "setPipelineStepStatus('texts', body.localized_texts_push && body.localized_texts_push.ok ? 'done' : 'error');" in script
+    assert "setPipelineStepStatus('links', body.product_links_push && body.product_links_push.ok ? 'done' : 'error');" in script
+
+    for label in ("素材推送", "文案推送", "链接推送"):
+        assert label in script
+    for label in ("排队中", "推送中", "已完成 ✅", "推送错误 ❌"):
+        assert label in script
+
+    assert "pm-pipeline-workbench" in script
+    assert "pm-pipeline-json" in script
+    assert "pm-pipeline-result" in script
+    assert ".pm-overlay.pm-overlay--pipeline .pm-modal" in style
+    assert "grid-template-rows: repeat(3, minmax(0, 1fr))" in style
+    assert "grid-template-rows: auto minmax(0, 7fr) minmax(0, 3fr)" in style
+    assert ".pm-pipeline-status" in style
+    assert "font-size: 2em" in style
+    assert "@keyframes pm-pipeline-spin" in style
+    assert "animation: pm-pipeline-spin" in style
+
+
 # ================================================================
 # mk_id 回填（推送成功 → lookup_mk_id → 写回 media_products）
 # ================================================================
