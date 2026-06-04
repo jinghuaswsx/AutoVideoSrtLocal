@@ -996,11 +996,11 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "新品榜" in body
     assert '<option value="ok">行</option>' in body
     assert '<option value="bad">不行</option>' in body
-    assert 'params.set(tabcutView === "videos" ? "min_item_price" : "min_price", qs("minPrice").value)' in body
-    assert 'params.set(tabcutView === "videos" ? "max_item_price" : "max_price", qs("maxPrice").value)' in body
-    assert 'params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", qs("minGoodsSales").value)' in body
-    assert 'params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", qs("maxGoodsSales").value)' in body
-    assert 'params.set("mark_status", qs("markStatus").value)' in body
+    assert 'params.set(tabcutView === "videos" ? "min_item_price" : "min_price", val("minPrice"))' in body
+    assert 'params.set(tabcutView === "videos" ? "max_item_price" : "max_price", val("maxPrice"))' in body
+    assert 'params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", val("minGoodsSales"))' in body
+    assert 'params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", val("maxGoodsSales"))' in body
+    assert 'params.set("mark_status", val("markStatus"))' in body
     assert "tabcut-video-grid" in body
     assert "function normalizeTabcutGotoPage(raw, totalPages)" in body
     assert 'class="tabcut-pager-goto"' in body
