@@ -361,6 +361,39 @@ class LinkCheckRuntime:
         except Exception:
             pass
 
+        # 1.5. GIF 动图免检校验：如果是 GIF 动图，直接绿色放行，避免误报
+        is_gif = False
+        try:
+            from urllib.parse import urlparse
+            import os
+            url_path = urlparse(item.get("source_url", "")).path.lower()
+            if url_path.endswith(".gif"):
+                is_gif = True
+            elif os.path.exists(item["local_path"]):
+                with open(item["local_path"], "rb") as f:
+                    header = f.read(6)
+                if header in {b"GIF87a", b"GIF89a"}:
+                    is_gif = True
+        except Exception:
+            pass
+
+        if is_gif:
+            result["binary_quick_check"] = _skipped_binary("GIF 动图免检二值快检")
+            result["same_image_llm"] = _skipped_same_image("GIF 动图免检同图判断")
+            result["analysis"] = {
+                "decision": "pass",
+                "decision_source": "gif_bypass",
+                "has_text": False,
+                "detected_language": "",
+                "language_match": True,
+                "text_summary": "免检动图：GIF 动图不进行链接检查与图片对比。",
+                "quality_score": 100,
+                "quality_reason": "检测到当前图片为 GIF 动图，按规则免检直接放行。",
+                "needs_replacement": False,
+            }
+            result["is_replaced"] = None
+            return
+
         # 2. Shopify CDN URL 精确匹配短路（Green Pass）
         matched_ref = None
         if reference_index:
