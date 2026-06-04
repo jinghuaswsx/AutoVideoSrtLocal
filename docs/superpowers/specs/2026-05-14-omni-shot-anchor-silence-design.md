@@ -352,6 +352,20 @@ later step should recompute alignment from the current TTS sentences before
 subtitle/compose. Resume from an earlier step naturally clears downstream state
 through the existing restart/resume cleanup.
 
+## UI Diagnostic Semantics
+
+The detail-page card must not show `等待分析` for tasks whose configuration can
+never run speech-shot alignment. If the task has no persisted
+`speech_shot_alignment_status`, the UI should inspect `plugin_config` before
+falling back to a pending state.
+
+For Omni tasks with `tts=done` but either `shot_decompose=false` or
+`tts_strategy` not in `sentence_reconcile` / `sentence_reconcile_v2`, synthesize
+a local, read-only diagnostic summary with status
+`skipped_not_omni_sentence_reconcile`. The status line should read as
+not-applicable and include concrete reasons such as `未启用镜头分镜` and
+`未使用句级 TTS 收敛`.
+
 ## Verification
 
 Unit tests:

@@ -64,3 +64,19 @@
 - [ ] Reuse the existing topbar checkbox JavaScript path by allowing the auto voice selection toggle for both `/api/omni-translate` and `/api/dialogue-translate`.
 - [ ] Add the Dialogue route with the same validation and persistence contract as Omni: read `auto_voice_selection` or `enabled`, normalize through `validate_plugin_config()`, update project state, update in-memory `store`, and return `{"auto_voice_selection": <bool>}`.
 - [ ] Run `pytest tests/test_translate_detail_shell_templates.py tests/test_dialogue_translate_routes.py -q`.
+
+### Task 6: Viewable User Toggle Permissions
+
+**Files:**
+- Modify: `web/templates/_translate_detail_shell.html`
+- Modify: `web/routes/omni_translate.py`
+- Modify: `web/routes/dialogue_translate.py`
+- Test: `tests/test_translate_detail_shell_templates.py`
+- Test: `tests/test_omni_translate_routes.py`
+- Test: `tests/test_dialogue_translate_routes.py`
+
+- [ ] Add failing tests proving a normal user who can view a task sees the automatic voice and sentence loudness switches, and can persist their values through the Omni and Dialogue APIs.
+- [ ] Remove the frontend `current_user.is_admin` gate from the automatic voice and sentence loudness switch group while leaving `visibleToAllCb` under its existing superadmin gate.
+- [ ] Remove `@admin_required` from the automatic voice and sentence loudness PUT routes that already call `_get_viewable_task()`, so task visibility remains the permission boundary.
+- [ ] Add Dialogue's missing `PUT /api/dialogue-translate/<task_id>/sentence-tts-loudness-calibration` route with the same validation and persistence contract as Omni.
+- [ ] Run `pytest tests/test_translate_detail_shell_templates.py tests/test_omni_translate_routes.py tests/test_dialogue_translate_routes.py -q`.

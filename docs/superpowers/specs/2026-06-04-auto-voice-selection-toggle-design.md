@@ -24,6 +24,12 @@
 
 详情页顶部工具栏也必须暴露同一个开关。`/omni-translate/<task_id>` 与 `/dialogue-translate/<task_id>` 都复用 `_translate_detail_shell.html`，因此开关渲染条件不能只绑定 Omni API；对话式详情页应使用 `/api/dialogue-translate/<task_id>/auto-voice-selection` 持久化同一字段。开关只负责更新 `plugin_config.auto_voice_selection`，不触发重跑，不改变当前步骤状态。
 
+## 权限
+
+`大模型自动音色选择` 和 `句级TTS响度校准` 是任务级运行配置，不是后台管理配置。只要用户能通过任务详情页查看该视频翻译任务，就可以看到并操作这两个开关；后端接口以 `_get_viewable_task()` 为准校验可见性，而不是额外要求 `admin`。Dialogue 详情页既然复用同一组顶部开关，也必须提供 `/api/dialogue-translate/<task_id>/sentence-tts-loudness-calibration` 保存接口，避免按钮可见但点击 404。
+
+`对所有人可见` 是共享范围开关，仍保持原有超级管理员限制；本设计不改变它的展示条件或接口权限。
+
 ## 运行时
 
 `DialogueTranslateRunner._step_voice_match_ab()` 继续生成 A/B 候选、相似度、语速参考和大模型排名。
@@ -38,5 +44,7 @@
 - 创建弹窗展示并提交该开关，默认 checked。
 - 详情页强制重新开始请求携带顶部开关值，并在 restart reset 中写入 `plugin_config`。
 - Omni 与 Dialogue 详情页右上角展示该开关，并通过各自 API 保存到任务 `plugin_config`。
+- 普通任务操作者可修改 `大模型自动音色选择` 和 `句级TTS响度校准`；`对所有人可见` 仍只允许超级管理员修改。
+- 普通用户只要能查看任务，也能看到并保存自动音色/句级响度开关；不可查看的任务仍拒绝访问。
 - `voice_match_ab` 在开关开启时自动选择排名第一并继续。
 - `voice_match_ab` 在开关关闭时保持等待人工选择。

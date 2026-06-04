@@ -99,7 +99,9 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body
     assert 'id="autoVoiceSelectionCb"' in body
+    assert 'id="sentenceTtsLoudnessCalibrationCb"' in body
     assert "大模型自动音色选择" in body
+    assert "句级TTS响度校准" in body
     assert "auto-voice-selection" in body
     assert 'id="voice-selector-multi"' not in body
     assert "dialogue_translate.localize" not in body
@@ -166,6 +168,7 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
         ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/<kind>", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/restart", ("OPTIONS", "POST")),
         ("/api/dialogue-translate/<task_id>/auto-voice-selection", ("OPTIONS", "PUT")),
+        ("/api/dialogue-translate/<task_id>/sentence-tts-loudness-calibration", ("OPTIONS", "PUT")),
         ("/api/dialogue-translate/<task_id>/visible-to-all", ("OPTIONS", "PUT")),
         ("/api/dialogue-translate/<task_id>/analysis/run", ("OPTIONS", "POST")),
         ("/api/dialogue-translate/<task_id>/loudness-profile", ("OPTIONS", "POST")),
@@ -191,6 +194,70 @@ def test_dialogue_toggle_auto_voice_selection_updates_plugin_config(authed_clien
     assert updated_cfg["auto_voice_selection"] is False
     assert updated_cfg["asr_post"] == CFG_DIALOGUE_AUTO_VOICE["asr_post"]
     mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
+def test_dialogue_toggle_auto_voice_selection_allows_task_operator(authed_user_client_no_db):
+    fake_task = {"_user_id": 2, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-operator/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    mock_store.update.assert_called_once_with("t-operator", plugin_config=updated_cfg)
+
+
+def test_dialogue_toggle_sentence_tts_loudness_calibration_allows_viewable_normal_user(authed_user_client_no_db):
+    fake_task = {"_user_id": 1, "visible_to_all": True, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-1/sentence-tts-loudness-calibration",
+            json={"sentence_tts_loudness_calibration": True},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["sentence_tts_loudness_calibration"] is True
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["sentence_tts_loudness_calibration"] is True
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
+def test_dialogue_toggle_auto_voice_selection_allows_viewable_normal_user(authed_user_client_no_db):
+    fake_task = {"_user_id": 1, "visible_to_all": True, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["auto_voice_selection"] is False
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
+def test_dialogue_toggle_auto_voice_selection_rejects_unviewable_task(authed_user_client_no_db):
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=None), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 404
+    mock_update_project_state.assert_not_called()
 
 
 def test_dialogue_translate_audio_extract_artifact_falls_back_to_task_audio_file(
