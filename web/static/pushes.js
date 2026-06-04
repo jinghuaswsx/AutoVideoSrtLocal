@@ -373,7 +373,7 @@
   }
 
   function renderReadinessText(readiness) {
-    const line1Keys = ['has_object', 'has_cover', 'has_copywriting', 'has_push_texts'];
+    const line1Keys = ['has_object', 'has_cover', 'has_copywriting', 'lang_supported', 'has_push_texts'];
     const line2Keys = ['shopify_image_confirmed'];
 
     const line1Parts = line1Keys.map(key => {
