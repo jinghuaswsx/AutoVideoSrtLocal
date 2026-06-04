@@ -59,6 +59,7 @@ from appcore.preview_artifacts import (
     build_translate_artifact,
     build_tts_artifact,
 )
+from appcore.tts_loudness_calibration import apply_sentence_tts_loudness_calibration
 from appcore.tts_language_guard import (
     TtsLanguageValidationError,
     extract_tts_script_text,
@@ -3521,6 +3522,13 @@ class PipelineRunner:
                     max_gap=0.25,
                     preserve_gap_threshold=1.0,
                 )
+                task_for_loudness = task_state.get(task_id) or task
+                scheduled_segments, sentence_loudness_summary = apply_sentence_tts_loudness_calibration(
+                    task=task_for_loudness,
+                    task_dir=task_dir,
+                    final_tts_segments=scheduled_segments,
+                    variant=variant,
+                )
                 final_audio_path = _rebuild_tts_full_audio_from_segments(
                     task_dir,
                     scheduled_segments,
@@ -3531,11 +3539,28 @@ class PipelineRunner:
                 loop_result["tts_segments"] = scheduled_segments
                 timeline_manifest = None
             else:
-                if os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
+                task_for_loudness = task_state.get(task_id) or task
+                calibrated_segments, sentence_loudness_summary = apply_sentence_tts_loudness_calibration(
+                    task=task_for_loudness,
+                    task_dir=task_dir,
+                    final_tts_segments=loop_result["tts_segments"],
+                    variant=variant,
+                )
+                if sentence_loudness_summary.get("normalized_segment_count", 0) > 0:
+                    final_audio_path = _rebuild_tts_full_audio_from_segments_legacy_concat(
+                        task_dir,
+                        calibrated_segments,
+                        variant=variant,
+                    )
+                    loop_result["tts_audio_path"] = final_audio_path
+                    loop_result["tts_segments"] = calibrated_segments
+                elif os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
                     shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
                 timeline_manifest = build_timeline_manifest(
                     loop_result["tts_segments"], video_duration=video_duration,
                 )
+            final_compose_summary = dict(variant_state.get("final_compose_summary") or {})
+            final_compose_summary["sentence_tts_loudness_calibration"] = sentence_loudness_summary
             variant_state.update({
                 "segments": loop_result["tts_segments"],
                 "tts_script": loop_result["tts_script"],
@@ -3545,6 +3570,7 @@ class PipelineRunner:
                 "localized_translation": loop_result["localized_translation"],
                 "audio_timeline_mode": gap_analysis["timeline_mode"],
                 "asr_window_gap_analysis": gap_analysis,
+                "final_compose_summary": final_compose_summary,
             })
             variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_audio_path
             variant_state.setdefault("artifacts", {})["tts"] = build_tts_artifact(
@@ -3565,6 +3591,7 @@ class PipelineRunner:
                 "final_audio_path": final_audio_path,
                 "audio_timeline_mode": gap_analysis["timeline_mode"],
                 "asr_window_gap_analysis": gap_analysis,
+                "final_compose_summary": final_compose_summary,
             }
 
         if not variant_results:
@@ -3577,6 +3604,7 @@ class PipelineRunner:
         primary_audio_path = primary_result["final_audio_path"]
         primary_audio_timeline_mode = primary_result.get("audio_timeline_mode")
         primary_gap_analysis = primary_result.get("asr_window_gap_analysis")
+        primary_final_compose_summary = primary_result.get("final_compose_summary") or {}
 
         task_state.set_preview_file(task_id, "tts_full_audio", primary_audio_path)
         _save_json(task_dir, "tts_duration_rounds.json", primary_loop_result["rounds"])
@@ -3593,6 +3621,7 @@ class PipelineRunner:
             tts_duration_rounds=primary_loop_result["rounds"],
             audio_timeline_mode=primary_audio_timeline_mode,
             asr_window_gap_analysis=primary_gap_analysis,
+            final_compose_summary=primary_final_compose_summary,
         )
 
         task_state.set_artifact(
@@ -4150,6 +4179,7 @@ from ._av_helpers import (
     _normalize_av_sentences,
     _build_av_localized_translation,
     _build_av_tts_segments,
+    _rebuild_tts_full_audio_from_segments_legacy_concat,
     _rebuild_tts_full_audio_from_segments,
     _build_av_debug_state,
     _fail_localize,
