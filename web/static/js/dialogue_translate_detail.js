@@ -22,6 +22,28 @@
   var lastTask = null;
   var isSubmitting = false;
   var lastRefreshRenderSignature = "";
+  var subtitleDragging = false;
+  var subtitleSize = 14;
+  var subtitleRefs = {
+    font: document.getElementById("dialogueSubtitleFont"),
+    sizeGroup: document.getElementById("dialogueSubtitleSizeGroup"),
+    position: document.getElementById("dialogueSubtitlePositionY"),
+    positionHint: document.getElementById("dialogueSubtitlePositionHint"),
+    previewFrame: document.getElementById("dialogueSubtitlePreviewFrame"),
+    previewVideo: document.getElementById("dialogueSubtitlePreviewVideo"),
+    previewBlock: document.getElementById("dialogueSubtitlePreviewBlock"),
+    previewNote: document.getElementById("dialogueSubtitlePreviewNote"),
+    lineA: document.getElementById("dialogueSubtitleLineA"),
+    lineB: document.getElementById("dialogueSubtitleLineB")
+  };
+  var subtitleFontFamilies = {
+    "Impact": 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',
+    "Oswald Bold": '"Oswald", Impact, "Arial Narrow Bold", sans-serif',
+    "Bebas Neue": '"Bebas Neue", Impact, "Arial Narrow Bold", sans-serif',
+    "Montserrat ExtraBold": '"Montserrat", "Arial Black", sans-serif',
+    "Poppins Bold": '"Poppins", "Arial Black", sans-serif',
+    "Anton": '"Anton", Impact, sans-serif'
+  };
 
   function csrfToken() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -119,6 +141,133 @@
       return parsed.pathname + parsed.search + parsed.hash;
     } catch (_error) {
       return "";
+    }
+  }
+
+  function coerceSubtitleSize(value) {
+    var next = parseInt(value, 10);
+    return Number.isFinite(next) ? next : 14;
+  }
+
+  function coerceSubtitlePositionY(value) {
+    var next = parseFloat(value);
+    if (!Number.isFinite(next)) return 0.68;
+    return Math.max(0.12, Math.min(0.92, next));
+  }
+
+  function setSubtitlePreviewNote(message, mode) {
+    if (!subtitleRefs.previewNote) return;
+    subtitleRefs.previewNote.textContent = message || "";
+    subtitleRefs.previewNote.dataset.mode = mode || "note";
+  }
+
+  function setSubtitleSampleLines(lines) {
+    var values = Array.isArray(lines) && lines.length
+      ? lines.slice(0, 2)
+      : ["Tiktok and facebook shot videos!", "Tiktok and facebook shot videos!"];
+    while (values.length < 2) {
+      values.push("Tiktok and facebook shot videos!");
+    }
+    if (subtitleRefs.lineA) subtitleRefs.lineA.textContent = values[0];
+    if (subtitleRefs.lineB) subtitleRefs.lineB.textContent = values[1];
+  }
+
+  function attachSubtitlePreviewVideo(src) {
+    if (!subtitleRefs.previewVideo) return false;
+    var videoSrc = safeMediaSrc(src);
+    if (!videoSrc) return false;
+    if (subtitleRefs.previewVideo.getAttribute("src") === videoSrc) return true;
+    subtitleRefs.previewVideo.preload = "metadata";
+    subtitleRefs.previewVideo.src = videoSrc;
+    subtitleRefs.previewVideo.load();
+    return true;
+  }
+
+  function setSubtitleFont(value) {
+    if (!subtitleRefs.font) return;
+    var next = value || "Impact";
+    var option = Array.prototype.find.call(subtitleRefs.font.options || [], function (opt) {
+      return opt.value === next;
+    });
+    subtitleRefs.font.value = option ? option.value : "Impact";
+    syncSubtitlePreview();
+  }
+
+  function setSubtitleSize(value) {
+    subtitleSize = coerceSubtitleSize(value);
+    if (subtitleRefs.sizeGroup) {
+      subtitleRefs.sizeGroup.querySelectorAll("button[data-size]").forEach(function (button) {
+        button.classList.toggle("is-active", coerceSubtitleSize(button.dataset.size) === subtitleSize);
+      });
+    }
+    syncSubtitlePreview();
+  }
+
+  function setSubtitlePositionY(value) {
+    var next = coerceSubtitlePositionY(value);
+    if (subtitleRefs.position) {
+      subtitleRefs.position.value = String(next);
+    }
+    if (subtitleRefs.positionHint) {
+      subtitleRefs.positionHint.textContent = Math.round(next * 100) + "%";
+    }
+    syncSubtitlePreview();
+  }
+
+  function currentSubtitlePositionY() {
+    return coerceSubtitlePositionY(subtitleRefs.position ? subtitleRefs.position.value : 0.68);
+  }
+
+  function syncSubtitlePreview() {
+    if (!subtitleRefs.previewBlock) return;
+    var font = subtitleRefs.font ? (subtitleRefs.font.value || "Impact") : "Impact";
+    subtitleRefs.previewBlock.style.fontFamily = subtitleFontFamilies[font] || subtitleFontFamilies.Impact;
+    subtitleRefs.previewBlock.style.fontSize = coerceSubtitleSize(subtitleSize) + "px";
+    subtitleRefs.previewBlock.style.top = (currentSubtitlePositionY() * 100) + "%";
+  }
+
+  function updateSubtitlePositionFromClientY(clientY) {
+    if (!subtitleRefs.previewFrame) return;
+    var rect = subtitleRefs.previewFrame.getBoundingClientRect();
+    if (!rect.height) return;
+    setSubtitlePositionY((clientY - rect.top) / rect.height);
+  }
+
+  function getSubtitlePayload() {
+    return {
+      subtitle_font: subtitleRefs.font ? (subtitleRefs.font.value || "Impact") : "Impact",
+      subtitle_size: coerceSubtitleSize(subtitleSize),
+      subtitle_position_y: currentSubtitlePositionY(),
+      subtitle_position: "bottom"
+    };
+  }
+
+  async function loadSubtitlePreviewPayload() {
+    if (!subtitleRefs.previewFrame) return;
+    setSubtitlePreviewNote("正在加载当前任务源视频预览...", "note");
+    try {
+      var response = await fetch(
+        apiBase + "/" + encodeURIComponent(taskId) + "/subtitle-preview",
+        { cache: "no-store", credentials: "same-origin" }
+      );
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+      var payload = await response.json();
+      setSubtitleFont(payload.subtitle_font || "Impact");
+      setSubtitleSize(payload.subtitle_size == null ? 14 : payload.subtitle_size);
+      setSubtitlePositionY(payload.subtitle_position_y == null ? 0.68 : payload.subtitle_position_y);
+      setSubtitleSampleLines(payload.sample_lines);
+      if (attachSubtitlePreviewVideo(payload.video_url || "")) {
+        setSubtitlePreviewNote("已加载当前任务源视频，可直接检查字幕位置、字体和字号。", "success");
+      } else {
+        setSubtitlePreviewNote("源视频预览暂不可用，字幕位置仍会按同一坐标保存。", "note");
+      }
+    } catch (error) {
+      setSubtitlePreviewNote(
+        "源视频预览加载失败，字幕设置仍会保存到后续生成流程。",
+        "error"
+      );
     }
   }
 
@@ -941,6 +1090,53 @@
     }
   }
 
+  if (subtitleRefs.font) {
+    subtitleRefs.font.addEventListener("change", function () {
+      syncSubtitlePreview();
+    });
+  }
+
+  if (subtitleRefs.sizeGroup) {
+    subtitleRefs.sizeGroup.addEventListener("click", function (event) {
+      var button = event.target.closest("button[data-size]");
+      if (!button) return;
+      setSubtitleSize(button.dataset.size);
+    });
+  }
+
+  if (subtitleRefs.position) {
+    subtitleRefs.position.addEventListener("input", function () {
+      setSubtitlePositionY(subtitleRefs.position.value);
+    });
+  }
+
+  if (subtitleRefs.previewBlock) {
+    subtitleRefs.previewBlock.addEventListener("pointerdown", function (event) {
+      subtitleDragging = true;
+      try {
+        subtitleRefs.previewBlock.setPointerCapture(event.pointerId);
+      } catch (_error) {
+        // ignore
+      }
+      event.preventDefault();
+      updateSubtitlePositionFromClientY(event.clientY);
+    });
+    subtitleRefs.previewBlock.addEventListener("pointermove", function (event) {
+      if (!subtitleDragging) return;
+      updateSubtitlePositionFromClientY(event.clientY);
+    });
+    var endSubtitleDrag = function (event) {
+      subtitleDragging = false;
+      try {
+        subtitleRefs.previewBlock.releasePointerCapture(event.pointerId);
+      } catch (_error) {
+        // ignore
+      }
+    };
+    subtitleRefs.previewBlock.addEventListener("pointerup", endSubtitleDrag);
+    subtitleRefs.previewBlock.addEventListener("pointercancel", endSubtitleDrag);
+  }
+
   confirmBtn.addEventListener("click", async function () {
     if (isSubmitting || !canEditVoices(lastTask || {}) || !selection.A || !selection.B) {
       return;
@@ -955,12 +1151,12 @@
         {
           method: "POST",
           headers: requestHeaders(),
-          body: JSON.stringify({
+          body: JSON.stringify(Object.assign({
             selected_voice_by_speaker: {
               A: selection.A,
               B: selection.B
             }
-          })
+          }, getSubtitlePayload()))
         }
       );
       var payload = {};
@@ -983,6 +1179,10 @@
     }
   });
 
+  setSubtitleFont("Impact");
+  setSubtitleSize(14);
+  setSubtitlePositionY(0.68);
+  loadSubtitlePreviewPayload();
   refresh();
   pollTimer = window.setInterval(refresh, 4000);
   window.addEventListener("beforeunload", function () {

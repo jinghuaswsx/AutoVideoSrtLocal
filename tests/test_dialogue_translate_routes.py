@@ -77,6 +77,9 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert 'id="step-speaker_detect"' in body
     assert 'id="step-voice_match_ab"' in body
     assert 'id="dialogueSegmentTimeline"' in body
+    assert 'id="dialogueSubtitleFont"' in body
+    assert 'id="dialogueSubtitlePositionY"' in body
+    assert 'id="dialogueSubtitlePreviewFrame"' in body
     assert "/api/dialogue-translate" in body
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body
@@ -654,6 +657,8 @@ def test_dialogue_translate_detail_js_does_not_interpolate_task_state_with_inner
     assert "card.innerHTML" not in script
     assert "confirmBtn.hidden = isVoiceMatchDone" in script
     assert "!canEditVoices(lastTask || {})" in script
+    assert "loadSubtitlePreviewPayload" in script
+    assert "subtitle_position_y" in script
 
 
 def test_dialogue_translate_layout_and_workbench_labels_are_registered():
@@ -1334,6 +1339,73 @@ def test_dialogue_translate_confirm_voices_accepts_library_voice(
     assert updated["selected_voice_by_speaker"]["A"]["voice_id"] == "voice-library-a"
     assert updated["selected_voice_by_speaker"]["A"]["name"] == "Library A"
     assert updated["speaker_profiles"]["A"]["candidates"][0]["voice_id"] == "voice-library-a"
+
+
+def test_dialogue_translate_confirm_voices_persists_subtitle_settings(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-confirm-subtitle-settings"
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-confirm-subtitle-settings", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        target_lang="de",
+        speaker_profiles={
+            "A": {
+                "candidates": [
+                    {"voice_id": "voice-a", "name": "Voice A"},
+                    {"voice_id": "voice-a-2", "name": "Voice A2"},
+                ],
+            },
+            "B": {"candidates": [{"voice_id": "voice-b", "name": "Voice B"}]},
+        },
+        selected_voice_by_speaker={},
+        current_review_step="voice_match_ab",
+        steps={
+            "speaker_detect": "done",
+            "voice_match_ab": "waiting",
+            "alignment": "pending",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "state_json": json.dumps(store.get(task_id), ensure_ascii=False),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.save_project_state",
+        lambda saved_task_id, state, **kwargs: store.update(saved_task_id, **state),
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda *args, **kwargs: None,
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/confirm-voices",
+        json={
+            "selected_voice_by_speaker": {
+                "A": "voice-a-2",
+                "B": "voice-b",
+            },
+            "subtitle_font": "Oswald Bold",
+            "subtitle_size": 22,
+            "subtitle_position_y": 0.42,
+            "subtitle_position": "bottom",
+        },
+    )
+
+    assert resp.status_code == 200
+    updated = store.get(task_id)
+    assert updated["subtitle_font"] == "Oswald Bold"
+    assert updated["subtitle_size"] == 22
+    assert updated["subtitle_position_y"] == 0.42
+    assert updated["subtitle_position"] == "bottom"
+    assert updated["selected_voice_by_speaker"]["A"]["voice_id"] == "voice-a-2"
+    assert updated["selected_voice_by_speaker"]["B"]["voice_id"] == "voice-b"
 
 
 def test_dialogue_translate_confirm_voices_persists_selection_and_resumes_alignment(
