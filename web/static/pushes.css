@@ -2440,3 +2440,92 @@
   border-color: var(--oc-accent);
 }
 
+/* ================================================================
+ * Push Management Actions Column Button Capsule Styles
+ * ================================================================ */
+.push-action-btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-sp-2, 8px);
+  align-items: center;
+  justify-content: center;
+}
+
+/* Base style for capsule buttons in action column */
+.push-action-btn-group .btn-action-capsule {
+  width: 96px;
+  height: 28px;
+  line-height: 26px; /* Account for border if any */
+  padding: 0 var(--oc-sp-2, 8px);
+  border-radius: var(--oc-r-full, 9999px);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+  text-align: center;
+  transition: all var(--oc-dur-fast) var(--oc-ease);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 1. Push Button (Blue Capsule) */
+.push-action-btn-group .btn-action-capsule.btn-push-blue {
+  background: var(--oc-accent);
+  color: #fff;
+  border: none;
+}
+.push-action-btn-group .btn-action-capsule.btn-push-blue:hover:not(:disabled) {
+  background: var(--oc-accent-hover);
+}
+.push-action-btn-group .btn-action-capsule.btn-push-blue:disabled {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg-subtle);
+  cursor: not-allowed;
+}
+
+/* 2. Rework Button (Red Capsule) */
+.push-action-btn-group .btn-action-capsule.btn-rework-red {
+  background: var(--oc-danger);
+  color: #fff;
+  border: none;
+}
+.push-action-btn-group .btn-action-capsule.btn-rework-red:hover:not(:disabled) {
+  background: var(--oc-danger-hover);
+}
+.push-action-btn-group .btn-action-capsule.btn-rework-red:disabled {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg-subtle);
+  cursor: not-allowed;
+}
+
+/* 3. Skip Button / Unskip Button (White Capsule with borders) */
+.push-action-btn-group .btn-action-capsule.btn-skip-white {
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  border: 1px solid var(--oc-border-strong);
+}
+.push-action-btn-group .btn-action-capsule.btn-skip-white:hover:not(:disabled) {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg);
+  border-color: var(--oc-border-strong);
+}
+.push-action-btn-group .btn-action-capsule.btn-skip-white.btn-unskip {
+  color: var(--oc-accent);
+  border-color: var(--oc-accent-subtle);
+}
+.push-action-btn-group .btn-action-capsule.btn-skip-white.btn-unskip:hover:not(:disabled) {
+  background: var(--oc-accent-subtle);
+  color: var(--oc-accent);
+  border-color: var(--oc-accent);
+}
+.push-action-btn-group .btn-action-capsule.btn-skip-white:disabled {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg-subtle);
+  border-color: var(--oc-border);
+  cursor: not-allowed;
+}
+
+
