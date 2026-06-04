@@ -38,6 +38,7 @@ from web.services.task_translate import start_task_translate
 from web.services.task_translation_selection import select_task_translation
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
+    normalize_confirm_voice_payload,
     resolve_round_file_entry,
 )
 from web.services.translate_route_responses import (
@@ -1525,9 +1526,8 @@ def confirm_voices(task_id: str):
         return _json_response({"error": "voice_match_ab is not waiting"}, 409)
 
     try:
-        selected_voice_ids = _normalize_voice_selection_payload(
-            request.get_json(silent=True) or {}
-        )
+        body = request.get_json(silent=True) or {}
+        selected_voice_ids = _normalize_voice_selection_payload(body)
     except ValueError as exc:
         return _json_response({"error": str(exc)}, 400)
 
@@ -1553,10 +1553,18 @@ def confirm_voices(task_id: str):
         speaker_profiles[speaker] = profile
         selected_voice_by_speaker[speaker] = selected_voice
 
+    subtitle_settings = normalize_confirm_voice_payload(
+        body={**body, "voice_id": "__dialogue_subtitle_settings__"},
+        lang=target_lang or "dialogue",
+    )
     steps = dict(state.get("steps") or {})
     steps["voice_match_ab"] = "done"
     state["speaker_profiles"] = speaker_profiles
     state["selected_voice_by_speaker"] = selected_voice_by_speaker
+    state["subtitle_font"] = subtitle_settings["subtitle_font"]
+    state["subtitle_size"] = subtitle_settings["subtitle_size"]
+    state["subtitle_position_y"] = subtitle_settings["subtitle_position_y"]
+    state["subtitle_position"] = subtitle_settings["subtitle_position"]
     state["steps"] = steps
     state["status"] = "running"
     state["error"] = ""
@@ -1567,6 +1575,10 @@ def confirm_voices(task_id: str):
         task_id,
         speaker_profiles=speaker_profiles,
         selected_voice_by_speaker=selected_voice_by_speaker,
+        subtitle_font=subtitle_settings["subtitle_font"],
+        subtitle_size=subtitle_settings["subtitle_size"],
+        subtitle_position_y=subtitle_settings["subtitle_position_y"],
+        subtitle_position=subtitle_settings["subtitle_position"],
         status="running",
         error="",
     )
