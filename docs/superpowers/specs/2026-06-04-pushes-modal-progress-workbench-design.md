@@ -1,0 +1,37 @@
+# Pushes Modal Progress Workbench Design
+
+- **Date**: 2026-06-04
+- **Anchors**:
+  - `AGENTS.md`
+  - `docs/superpowers/specs/2026-06-03-pushes-material-text-link-chain-design.md`
+
+## Goal
+
+When an operator clicks the material push button in the `/pushes` modal, the modal should switch from the review layout to a full-size progress workbench for the chained push pipeline:
+
+1. 素材推送
+2. 文案推送
+3. 链接推送
+
+The workbench lets the operator see the request JSON, the returned data, and the final state for every push step without opening the separate JSON tabs.
+
+## Behavior
+
+- The progress workbench uses the same modal envelope size as the existing push page modal.
+- The workbench is split vertically into three equal step sections.
+- Every step has a title bar. The right side of the title bar shows a large status label:
+  - `排队中` with a queue icon.
+  - `推送中` with a loading animation.
+  - `已完成 ✅`.
+  - `推送错误 ❌`.
+- Inside each step, the upper panel uses 70% of the step content area for the corresponding push request JSON.
+- The lower panel uses 30% of the step content area for the result summary and response JSON.
+- Before the network call starts, 素材推送 is `推送中`, 文案推送 and 链接推送 are `排队中`.
+- When the chained backend response returns, the material step is marked completed, while the copywriting and link steps are marked completed or error according to `localized_texts_push.ok` and `product_links_push.ok`.
+- If the material request throws, the material step becomes `推送错误 ❌` and the queued steps remain visible for operator context.
+
+## Scope
+
+- Frontend-only presentation change in `web/static/pushes.js` and `web/static/pushes.css`.
+- Keep the existing manual `推送文案` and `推送链接` tabs unchanged for review and retry.
+- Keep the backend chained push contract from `2026-06-03-pushes-material-text-link-chain-design.md`.

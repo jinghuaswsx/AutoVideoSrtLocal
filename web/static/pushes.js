@@ -31,6 +31,12 @@
     PRODUCT_LINKS_JSON: 'product-links-json',
     PRODUCT_LINKS: 'product-links',
   };
+  const PUSH_PIPELINE_STATUS_META = {
+    queued: { label: '排队中', icon: '⏳', cls: 'is-queued' },
+    running: { label: '推送中', icon: '', cls: 'is-running' },
+    done: { label: '已完成 ✅', icon: '', cls: 'is-done' },
+    error: { label: '推送错误 ❌', icon: '', cls: 'is-error' },
+  };
   const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
   const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
   const AI_EVAL_STATUS_ENDPOINT = (pid, runId) => `/medias/api/products/${pid}/evaluate/status?run_id=${encodeURIComponent(runId || '')}`;
@@ -2343,6 +2349,10 @@
     footer.appendChild(btnPush);
     mainPanel.appendChild(footer);
 
+    const pipelineSteps = {};
+    const pushProgressWorkbench = buildPushProgressWorkbench();
+    modal.appendChild(pushProgressWorkbench);
+
     let activeMode = PUSH_MODAL_MODES.CONFIRM;
     let payloadData = null;
     let mkId = null;
@@ -2358,6 +2368,133 @@
     let anyPushSucceeded = false;
     let payloadLoadFailed = false;
     let manualLinkConfirmed = false;
+
+    // Progress workbench spec anchor:
+    // docs/superpowers/specs/2026-06-04-pushes-modal-progress-workbench-design.md
+    function buildPushProgressWorkbench() {
+      const root = el('section', { class: 'pm-pipeline-workbench', hidden: true });
+      [
+        { key: 'material', title: '1. 素材推送' },
+        { key: 'texts', title: '2. 文案推送' },
+        { key: 'links', title: '3. 链接推送' },
+      ].forEach(step => {
+        const status = el('div', { class: 'pm-pipeline-status is-queued' });
+        const jsonPre = el('pre', { class: 'pm-pipeline-json' }, '{}');
+        const resultPre = el('pre', { class: 'pm-pipeline-result' }, '等待推送开始。');
+        const section = el('section', { class: 'pm-pipeline-step', dataset: { step: step.key } }, [
+          el('div', { class: 'pm-pipeline-step-header' }, [
+            el('h4', {}, step.title),
+            status,
+          ]),
+          jsonPre,
+          resultPre,
+        ]);
+        root.appendChild(section);
+        pipelineSteps[step.key] = { section, status, jsonPre, resultPre };
+        setPipelineStepStatus(step.key, 'queued');
+      });
+      return root;
+    }
+
+    function stringifyPipelineData(value) {
+      if (typeof value === 'string') return value;
+      if (value === null || value === undefined) return '';
+      return JSON.stringify(value, null, 2);
+    }
+
+    function setPipelineStepJson(key, data) {
+      const step = pipelineSteps[key];
+      if (!step) return;
+      step.jsonPre.textContent = stringifyPipelineData(data) || '{}';
+    }
+
+    function setPipelineStepResult(key, summary, data, isError = false) {
+      const step = pipelineSteps[key];
+      if (!step) return;
+      const body = stringifyPipelineData(data);
+      step.resultPre.textContent = [summary || '等待返回数据。', body].filter(Boolean).join('\n\n');
+      step.resultPre.classList.toggle('is-error', !!isError);
+    }
+
+    function setPipelineStepStatus(key, status) {
+      const step = pipelineSteps[key];
+      const meta = PUSH_PIPELINE_STATUS_META[status] || PUSH_PIPELINE_STATUS_META.queued;
+      if (!step) return;
+      step.section.dataset.status = status;
+      step.status.className = `pm-pipeline-status ${meta.cls}`;
+      clear(step.status);
+      if (status === 'running') {
+        step.status.appendChild(el('span', { class: 'pm-pipeline-spinner', 'aria-hidden': 'true' }));
+      } else {
+        step.status.appendChild(el('span', { class: 'pm-pipeline-status-icon', 'aria-hidden': 'true' }, meta.icon));
+      }
+      step.status.appendChild(el('span', { class: 'pm-pipeline-status-label' }, meta.label));
+    }
+
+    function buildLocalizedTextsPipelineJson() {
+      return {
+        mk_id: mkId,
+        target_url: localizedTargetUrl,
+        texts: localizedTexts,
+      };
+    }
+
+    function buildProductLinksPipelineJson() {
+      if (!productLinksPreview) return {};
+      return {
+        target_url: productLinksPreview.target_url || '',
+        payload: productLinksPreview.payload || productLinksPreview,
+      };
+    }
+
+    function renderPushProgressPayloads() {
+      setPipelineStepJson('material', payloadData || {});
+      setPipelineStepJson('texts', buildLocalizedTextsPipelineJson());
+      setPipelineStepJson('links', buildProductLinksPipelineJson());
+    }
+
+    function showPushProgressWorkbench() {
+      overlay.classList.add('pm-overlay--pipeline');
+      shell.hidden = true;
+      pushProgressWorkbench.hidden = false;
+      renderPushProgressPayloads();
+      setPipelineStepStatus('material', 'running');
+      setPipelineStepStatus('texts', 'queued');
+      setPipelineStepStatus('links', 'queued');
+      setPipelineStepResult('material', '正在推送素材，等待下游返回。');
+      setPipelineStepResult('texts', '素材推送完成后继续推送文案。');
+      setPipelineStepResult('links', '文案推送完成后继续推送链接。');
+    }
+
+    function applyMaterialPipelineResponse(body) {
+      setPipelineStepStatus('material', 'done');
+      setPipelineStepResult('material', '素材推送已完成。', body);
+
+      setPipelineStepStatus('texts', body.localized_texts_push && body.localized_texts_push.ok ? 'done' : 'error');
+      setPipelineStepResult(
+        'texts',
+        localizedTextPushResultMessage(body.localized_texts_push) || '文案推送未返回结果。',
+        body.localized_texts_push || {},
+        !(body.localized_texts_push && body.localized_texts_push.ok),
+      );
+
+      setPipelineStepStatus('links', body.product_links_push && body.product_links_push.ok ? 'done' : 'error');
+      setPipelineStepResult(
+        'links',
+        productLinksPushResultMessage(body.product_links_push) || '链接推送未返回结果。',
+        body.product_links_push || {},
+        !(body.product_links_push && body.product_links_push.ok),
+      );
+    }
+
+    function applyMaterialPipelineError(err) {
+      const parsed = parseErrorBody(err);
+      const result = Object.keys(parsed).length ? parsed : (err.body || err.message || describeError(err));
+      setPipelineStepStatus('material', 'error');
+      setPipelineStepResult('material', describeError(err), result, true);
+      setPipelineStepResult('texts', '素材推送失败，文案推送未执行。');
+      setPipelineStepResult('links', '素材推送失败，链接推送未执行。');
+    }
 
     function isLocalizedMode(m = activeMode) {
       return m === PUSH_MODAL_MODES.LOCALIZED_TEXT || m === PUSH_MODAL_MODES.LOCALIZED_JSON;
@@ -2961,12 +3098,14 @@
 
     btnPush.addEventListener('click', async () => {
       if (!payloadData) return;
+      const pushingProductLinks = isProductLinksMode();
+      const pushingLocalizedTexts = isLocalizedMode();
       const reworkDisabledBeforePush = btnRework.disabled;
       btnPush.disabled = true;
       btnRework.disabled = true;
       btnPush.textContent = '推送中…';
       try {
-        if (isProductLinksMode()) {
+        if (pushingProductLinks) {
           const body = await fetchJSON(`/pushes/api/items/${itemId}/product-links-push`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2975,14 +3114,16 @@
           showProductLinksPushResult(body);
           productLinksPushed = !!body.ok;
           anyPushSucceeded = anyPushSucceeded || !!body.ok;
-        } else if (isLocalizedMode()) {
+        } else if (pushingLocalizedTexts) {
           await pushLocalizedTexts();
         } else {
+          showPushProgressWorkbench();
           const body = await fetchJSON(`/pushes/api/items/${itemId}/push`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ manual_link_confirmed: manualLinkConfirmed }),
           });
+          applyMaterialPipelineResponse(body);
           showResponse(body, false, '素材推送响应');
           showMkIdMatch(body.mk_id_match);
           showLocalizedTextPushResult(body.localized_texts_push);
@@ -3009,10 +3150,13 @@
           }
         }
       } catch (err) {
+        if (!pushingProductLinks && !pushingLocalizedTexts && !pushProgressWorkbench.hidden) {
+          applyMaterialPipelineError(err);
+        }
         showResponse(describeError(err), true,
-          isProductLinksMode()
+          pushingProductLinks
             ? '推送链接失败'
-            : isLocalizedMode() ? '文案推送失败' : '素材推送失败');
+            : pushingLocalizedTexts ? '文案推送失败' : '素材推送失败');
       } finally {
         btnRework.disabled = reworkDisabledBeforePush;
         syncPushButton();
