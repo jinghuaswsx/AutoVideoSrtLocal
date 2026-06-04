@@ -3516,7 +3516,7 @@ class PipelineRunner:
                     }
                     self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
 
-            if gap_analysis.get("enabled"):
+            if gap_analysis.get("enabled") and loop_result.get("tts_segments"):
                 scheduled_segments = apply_asr_window_audio_schedule(
                     loop_result["tts_segments"],
                     max_gap=0.25,
@@ -3966,13 +3966,16 @@ class PipelineRunner:
         variant = self._resolve_compose_variant_name(task)
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
+        srt_path = self._resolve_compose_srt_path(task, variant_state, task_dir, variant)
+        if srt_path:
+            variant_state["srt_path"] = srt_path
         audio_for_compose = self._maybe_mix_background_for_compose(
             task_id, variant_state["tts_audio_path"], task_dir, variant,
         )
         result = compose_video(
             video_path=video_path,
             tts_audio_path=audio_for_compose,
-            srt_path=variant_state["srt_path"],
+            srt_path=srt_path,
             output_dir=task_dir,
             subtitle_position=task.get("subtitle_position", "bottom"),
             timeline_manifest=variant_state.get("timeline_manifest"),
@@ -4004,6 +4007,35 @@ class PipelineRunner:
             task_state.set_preview_file(task_id, "hard_video", result["hard_video"])
         task_state.set_artifact(task_id, "compose", build_compose_artifact())
         self._set_step(task_id, "compose", "done", "视频合成完成")
+
+    def _resolve_compose_srt_path(
+        self,
+        task: dict,
+        variant_state: dict,
+        task_dir: str,
+        variant: str,
+    ) -> str:
+        candidates: list[str] = []
+
+        def add_candidate(value) -> None:
+            if not value:
+                return
+            path = str(value)
+            if path and path not in candidates:
+                candidates.append(path)
+
+        add_candidate(variant_state.get("srt_path"))
+        add_candidate(task.get("srt_path"))
+        add_candidate((variant_state.get("preview_files") or {}).get("srt"))
+        add_candidate((task.get("preview_files") or {}).get("srt"))
+        add_candidate(os.path.join(task_dir, f"subtitle.{variant}.srt"))
+        if variant != "normal":
+            add_candidate(os.path.join(task_dir, "subtitle.normal.srt"))
+
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return candidates[0] if candidates else ""
 
     def _step_analysis(self, task_id: str) -> None:
         """用 Gemini 对硬字幕视频做评分 + CSK 深度分析，结果并列展示。"""
@@ -4097,6 +4129,9 @@ class PipelineRunner:
         variant = self._resolve_compose_variant_name(task)
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
+        srt_path = self._resolve_compose_srt_path(task, variant_state, task_dir, variant)
+        if srt_path:
+            variant_state["srt_path"] = srt_path
         timeline_manifest = (
             variant_state.get("timeline_manifest")
             or task.get("timeline_manifest")
@@ -4121,7 +4156,7 @@ class PipelineRunner:
         export_result = export_capcut_project(
             video_path=video_path,
             tts_audio_path=variant_state["tts_audio_path"],
-            srt_path=variant_state["srt_path"],
+            srt_path=srt_path,
             output_dir=task_dir,
             timeline_manifest=timeline_manifest,
             variant=variant,
