@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 from appcore.events import EventBus
@@ -135,6 +136,92 @@ def test_loudness_match_auto_profile_measures_accompaniment_when_missing(
     assert sep["tts_loudness"]["background_boost"]["accompaniment_lufs"] == -24.0
 
 
+def test_loudness_match_sentence_calibration_applies_voice_priority_background(
+    monkeypatch, tmp_path,
+):
+    task_state = _disable_task_state_db(monkeypatch)
+    runner = PipelineRunner(bus=EventBus(), user_id=1)
+    task_id = "voice-priority-background"
+    task_dir = tmp_path / task_id
+    task_dir.mkdir()
+    audio_path = _write(task_dir / "tts.mp3", "original")
+    accomp_path = _write(task_dir / "accompaniment.wav", "background")
+    tts_segments = [
+        {"index": 47, "audio_start_time": 3.0, "audio_end_time": 4.2},
+    ]
+
+    task_state.create(task_id, "video.mp4", str(task_dir), user_id=1)
+    task_state.update(
+        task_id,
+        separation={
+            "status": "done",
+            "vocals_lufs": -16.0,
+            "video_lufs": None,
+            "accompaniment_path": accomp_path,
+        },
+        variants={
+            "normal": {
+                "tts_audio_path": audio_path,
+                "segments": tts_segments,
+            },
+        },
+        plugin_config={"sentence_tts_loudness_calibration": True},
+        loudness_profile="standard",
+    )
+    monkeypatch.setattr(
+        "pipeline.audio_separation.load_settings",
+        lambda: SimpleNamespace(background_volume=1.0),
+    )
+
+    def fake_voice_priority(**kwargs):
+        assert kwargs["tts_audio_path"] == audio_path
+        assert kwargs["background_path"] == accomp_path
+        assert kwargs["segments"] == tts_segments
+        assert kwargs["background_volume"] == 1.0
+        return {
+            "enabled": True,
+            "mode": "voice_priority_sentence_windows",
+            "target_gap_lu": 12.0,
+            "standard_volume": 1.0,
+            "effective_volume": 0.16,
+            "window_count": 1,
+            "valid_window_count": 1,
+            "risky_window_count": 1,
+            "max_background_minus_voice_lu": 3.9,
+            "required_attenuation_lu": -15.9,
+            "dominant_windows": [{"index": 47}],
+        }
+
+    def fake_normalize(input_path, output_path, *, target_lufs):
+        with open(output_path, "w", encoding="utf-8") as fh:
+            fh.write("normalized")
+        return SimpleNamespace(
+            input_lufs=-20.0,
+            target_lufs=target_lufs,
+            output_lufs=target_lufs,
+            deviation_lu=0.0,
+            deviation_pct=0.0,
+            converged=True,
+        )
+
+    monkeypatch.setattr(
+        "appcore.audio_loudness.calibrate_voice_priority_background_volume",
+        fake_voice_priority,
+        raising=False,
+    )
+    monkeypatch.setattr("appcore.audio_loudness.normalize_to_lufs", fake_normalize)
+
+    runner._step_loudness_match(task_id, str(task_dir))
+
+    sep = task_state.get(task_id)["separation"]
+    assert sep["effective_background_volume"] == 0.16
+    assert sep["tts_loudness"]["effective_background_volume"] == 0.16
+    assert sep["tts_loudness"]["background_suppression"]["enabled"] is True
+    assert sep["tts_loudness"]["background_suppression"]["mode"] == "voice_priority_sentence_windows"
+    assert sep["tts_loudness"]["voice_priority_background"]["variants"][0]["variant"] == "normal"
+    assert sep["tts_loudness"]["voice_priority_background"]["variants"][0]["effective_volume"] == 0.16
+
+
 def test_loudness_match_clean_background_records_cleaned_accompaniment(
     monkeypatch, tmp_path,
 ):
@@ -188,8 +275,9 @@ def test_loudness_match_clean_background_records_cleaned_accompaniment(
 
     sep = task_state.get(task_id)["separation"]
     assert sep["effective_background_volume"] == 0.8
-    assert sep["cleaned_accompaniment_path"].endswith(
-        "loudness_match/accompaniment.clean.wav"
+    assert Path(sep["cleaned_accompaniment_path"]).parts[-2:] == (
+        "loudness_match",
+        "accompaniment.clean.wav",
     )
     assert open(sep["cleaned_accompaniment_path"], encoding="utf-8").read() == "clean-background"
     assert sep["tts_loudness"]["profile"] == "clean_background"
