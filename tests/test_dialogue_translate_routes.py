@@ -255,6 +255,18 @@ def test_dialogue_translate_detail_js_renders_sentence_audio_timeline():
     assert "audio.controls = true" in js
 
 
+def test_dialogue_translate_detail_js_renders_speaker_sentence_review_in_voice_cards():
+    js = Path("web/static/js/dialogue_translate_detail.js").read_text(encoding="utf-8")
+
+    assert "renderSpeakerSentenceReview" in js
+    assert "filterSpeakerSegments" in js
+    assert "dialogue-speaker-sentence-review" in js
+    assert "该说话人逐句原声" in js
+    assert "全部原声试听" in js
+    assert "音色匹配采样范围" in js
+    assert "sortSampleWindows" in js
+
+
 def test_dialogue_translate_detail_js_renders_omni_style_voice_candidates():
     js = Path("web/static/js/dialogue_translate_detail.js").read_text(encoding="utf-8")
 

@@ -121,6 +121,57 @@
     font-size: 12px;
     color: #64748b;
   }
+  .dialogue-speaker-sentence-review {
+    display: grid;
+    gap: 8px;
+    border-top: 1px solid var(--border-main);
+    padding-top: 10px;
+  }
+  .dialogue-speaker-sentence-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .dialogue-speaker-sentence-head h5 {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .dialogue-speaker-sentence-head span {
+    font-size: 12px;
+    color: #64748b;
+  }
+  .dialogue-speaker-sentence-list {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 300px;
+    overflow: auto;
+  }
+  .dialogue-speaker-sentence-item {
+    display: grid;
+    gap: 7px;
+    border-top: 1px solid var(--border-main);
+    padding: 10px 0;
+  }
+  .dialogue-speaker-sentence-item:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+  .dialogue-speaker-sentence-item header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .dialogue-speaker-sentence-item audio {
+    width: 100%;
+    min-height: 34px;
+  }
   .dialogue-voice-toolbar {
     display: grid;
     grid-template-columns: minmax(180px, 1fr) minmax(260px, 1.2fr) auto auto;
