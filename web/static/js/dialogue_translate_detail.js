@@ -345,22 +345,28 @@
     return reasons.length ? reasons.join(" / ") : "";
   }
 
-  function repositionPanel() {
-    var anchor =
-      document.getElementById("step-voice_match_ab") ||
-      document.getElementById("step-speaker_confirm") ||
-      document.getElementById("step-speaker_detect") ||
-      document.getElementById("step-asr_clean") ||
-      document.getElementById("step-asr_normalize") ||
-      document.getElementById("step-asr");
-    if (!anchor || !anchor.parentNode) return;
-    if (speakerConfirmPanel && anchor.nextSibling !== speakerConfirmPanel) {
-      anchor.parentNode.insertBefore(speakerConfirmPanel, anchor.nextSibling);
+  function repositionPanel(task) {
+    var steps = task && task.steps ? task.steps : {};
+    var confirmStatus = String(steps.speaker_confirm || "pending");
+    var currentReviewStep = String((task && task.current_review_step) || "");
+    var voiceStatus = voiceMatchStatus(task);
+
+    if (confirmStatus === "waiting" || currentReviewStep === "speaker_confirm") {
+      var anchor = document.getElementById("step-speaker_confirm");
+      if (anchor && anchor.parentNode && speakerConfirmPanel) {
+        if (anchor.nextSibling !== speakerConfirmPanel) {
+          anchor.parentNode.insertBefore(speakerConfirmPanel, anchor.nextSibling);
+        }
+      }
     }
-    if (panel && speakerConfirmPanel && speakerConfirmPanel.nextSibling !== panel) {
-      anchor.parentNode.insertBefore(panel, speakerConfirmPanel.nextSibling);
-    } else if (panel && !speakerConfirmPanel && anchor.nextSibling !== panel) {
-      anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+
+    if (currentReviewStep === "voice_match_ab" || voiceStatus === "waiting" || voiceStatus === "done") {
+      var anchor = document.getElementById("step-voice_match_ab");
+      if (anchor && anchor.parentNode && panel) {
+        if (anchor.nextSibling !== panel) {
+          anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+        }
+      }
     }
   }
 
@@ -1159,7 +1165,7 @@
 
   function render(task) {
     lastTask = task || {};
-    repositionPanel();
+    repositionPanel(task || {});
     updateStatus(task || {});
 
     var steps = task && task.steps ? task.steps : {};
