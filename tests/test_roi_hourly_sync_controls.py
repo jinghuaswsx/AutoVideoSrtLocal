@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import datetime
 
 
@@ -63,7 +64,103 @@ def test_run_sync_skips_dxm_import_on_lock_timeout_but_keeps_meta_realtime(monke
     assert result["dxm_report"]["timeout_seconds"] == 60
     assert meta_calls
     assert result["meta_realtime_report"]["status"] == "success"
+    assert result["snapshot_id"] == 12
+    assert finished[0]["status"] == "success"
     assert finished[0]["summary"]["meta_realtime_report"]["status"] == "success"
+
+
+def test_run_sync_skip_dxm_fetch_does_not_touch_order_import_lock_and_keeps_meta(monkeypatch):
+    from appcore import scheduled_tasks
+    from tools import roi_hourly_sync
+
+    meta_calls = []
+
+    monkeypatch.setattr(scheduled_tasks, "is_task_enabled", lambda task_code: True)
+    monkeypatch.setattr(roi_hourly_sync, "_start_run", lambda *args, **kwargs: 9)
+    monkeypatch.setattr(roi_hourly_sync, "_finish_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(roi_hourly_sync, "_insert_daily_snapshot", lambda *args, **kwargs: 13)
+    monkeypatch.setattr(
+        roi_hourly_sync.dxm_order_import_lock,
+        "dxm_order_import_lock",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("DXM lock should be skipped")),
+    )
+    monkeypatch.setattr(
+        roi_hourly_sync,
+        "_run_dxm_recent_import",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("DXM import should be skipped")),
+    )
+    monkeypatch.setattr(
+        roi_hourly_sync,
+        "_sync_meta_realtime_daily",
+        lambda *args, **kwargs: meta_calls.append({"args": args, "kwargs": kwargs})
+        or {"status": "success", "rows_imported": 4},
+    )
+
+    result = roi_hourly_sync.run_sync(
+        now=datetime(2026, 4, 29, 20, 15),
+        skip_dxm_fetch=True,
+    )
+
+    assert "dxm_report" not in result
+    assert meta_calls
+    assert result["meta_realtime_report"]["status"] == "success"
+    assert result["snapshot_id"] == 13
+
+
+def test_run_sync_skip_meta_fetch_keeps_dxm_import_under_lock(monkeypatch):
+    from appcore import scheduled_tasks
+    from tools import roi_hourly_sync
+
+    lock_calls = []
+    dxm_calls = []
+    lock_path = "/tmp/dxm-order-import.lock"
+
+    @contextmanager
+    def fake_lock(**kwargs):
+        lock_calls.append(kwargs)
+        yield lock_path
+
+    monkeypatch.setattr(scheduled_tasks, "is_task_enabled", lambda task_code: True)
+    monkeypatch.setattr(roi_hourly_sync, "_start_run", lambda *args, **kwargs: 10)
+    monkeypatch.setattr(roi_hourly_sync, "_finish_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(roi_hourly_sync, "_insert_daily_snapshot", lambda *args, **kwargs: 14)
+    monkeypatch.setattr(roi_hourly_sync.dxm_order_import_lock, "dxm_order_import_lock", fake_lock)
+    monkeypatch.setattr(
+        roi_hourly_sync.dxm_order_import_lock,
+        "default_dxm_order_import_lock_path",
+        lambda: lock_path,
+    )
+    monkeypatch.setattr(
+        roi_hourly_sync,
+        "_run_dxm_recent_import",
+        lambda *args, **kwargs: dxm_calls.append({"args": args, "kwargs": kwargs})
+        or {"status": "success", "batch_id": 15},
+    )
+    monkeypatch.setattr(
+        roi_hourly_sync,
+        "_sync_meta_realtime_daily",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Meta import should be skipped")),
+    )
+
+    result = roi_hourly_sync.run_sync(
+        now=datetime(2026, 4, 29, 20, 15),
+        skip_meta_fetch=True,
+    )
+
+    assert lock_calls == [
+        {
+            "task_code": "dianxiaomi_order_import",
+            "timeout_seconds": 60,
+            "command": "python tools/roi_hourly_sync.py",
+            "lock_path": lock_path,
+        }
+    ]
+    assert dxm_calls
+    assert result["dxm_import_batch_id"] == 15
+    assert result["meta_realtime_report"]["status"] == "skipped"
+    assert result["meta_realtime_report"]["source"] == "disabled"
+    assert result["meta_realtime_report"]["channel"] == "none"
+    assert result["snapshot_id"] == 14
 
 
 def test_run_sync_skips_disabled_child_imports(monkeypatch):
