@@ -867,13 +867,16 @@ def list_task_center_items(
         "       source_mi.filename AS source_media_filename, "
         "       (SELECT GROUP_CONCAT(c.country_code ORDER BY c.country_code SEPARATOR ',') "
         "        FROM tasks c WHERE c.parent_task_id = t.id) AS child_country_codes, "
+        "       (CASE WHEN t.parent_task_id IS NOT NULL AND t.status IN ('assigned', 'review') AND EXISTS ("
+        "           SELECT 1 FROM task_events te WHERE te.task_id = t.id AND te.event_type = 'push_rework_rejected'"
+        "       ) THEN 1 ELSE 0 END) AS is_rework, "
         f"       u.username AS assignee_username, {assignee_name_expr} AS assignee_display_name "
         "FROM tasks t "
         "JOIN media_products p ON p.id=t.media_product_id "
         "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
         f"WHERE {where_sql} "
-        "ORDER BY t.is_urgent DESC, t.created_at DESC, t.id DESC "
+        "ORDER BY is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC "
         "LIMIT %s OFFSET %s"
     )
     rows = query_all(sql, (*count_args, page_size, offset))
@@ -896,6 +899,7 @@ def list_task_center_items(
                 ),
                 "status": row["status"],
                 "is_urgent": bool(row.get("is_urgent")),
+                "is_rework": bool(row.get("is_rework")),
                 "high_level": high_level_status(row["status"]),
                 "created_at": (
                     row["created_at"].isoformat() if row.get("created_at") else None
