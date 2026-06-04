@@ -685,6 +685,88 @@ def test_step_export_populates_normal_capcut_download_url(tmp_path, monkeypatch)
     assert saved["variants"]["hook_cta"]["exports"] == {}
 
 
+def test_step_compose_falls_back_to_preview_srt_when_variant_srt_blank(tmp_path, monkeypatch):
+    task_id = "task-compose-preview-srt-fallback"
+    task = store.create(task_id, "video.mp4", str(tmp_path))
+    task["video_path"] = "video.mp4"
+    task["subtitle_position"] = "bottom"
+
+    audio_path = tmp_path / "tts_full.normal.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.normal.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    task["preview_files"]["srt"] = str(srt_path)
+    task["variants"]["normal"].update(
+        {
+            "tts_audio_path": str(audio_path),
+            "srt_path": "",
+            "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+        }
+    )
+
+    captured = {}
+
+    def fake_compose_video(**kwargs):
+        captured.update(kwargs)
+        return {
+            "soft_video": "",
+            "hard_video": str(tmp_path / "hard.normal.mp4"),
+        }
+
+    monkeypatch.setattr("pipeline.compose.compose_video", fake_compose_video)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_compose(task_id, "video.mp4", str(tmp_path))
+
+    saved = store.get(task_id)
+    assert captured["srt_path"] == str(srt_path)
+    assert saved["variants"]["normal"]["srt_path"] == str(srt_path)
+
+
+def test_step_export_falls_back_to_preview_srt_when_variant_srt_blank(tmp_path, monkeypatch):
+    task_id = "task-export-preview-srt-fallback"
+    task = store.create(task_id, "video.mp4", str(tmp_path))
+    task["video_path"] = "video.mp4"
+    task["subtitle_position"] = "bottom"
+
+    audio_path = tmp_path / "tts_full.normal.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.normal.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    task["preview_files"]["srt"] = str(srt_path)
+    task["variants"]["normal"].update(
+        {
+            "tts_audio_path": str(audio_path),
+            "srt_path": "",
+            "timeline_manifest": {"segments": [], "total_tts_duration": 1.0},
+        }
+    )
+
+    captured = {}
+
+    def fake_export_capcut_project(**kwargs):
+        captured.update(kwargs)
+        manifest_path = tmp_path / "manifest.normal.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        return {
+            "project_dir": str(tmp_path / "capcut_normal"),
+            "archive_path": str(tmp_path / "capcut_normal.zip"),
+            "manifest_path": str(manifest_path),
+            "jianying_project_dir": "",
+        }
+
+    monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
+    monkeypatch.setattr("appcore.runtime._pipeline_runner.resolve_jianying_project_root", lambda user_id: "")
+    monkeypatch.setattr("appcore.task_state.set_expires_at", lambda *args, **kwargs: None)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_export(task_id, "video.mp4", str(tmp_path))
+
+    saved = store.get(task_id)
+    assert captured["srt_path"] == str(srt_path)
+    assert saved["variants"]["normal"]["srt_path"] == str(srt_path)
+
+
 def test_step_compose_uses_av_variant_for_av_pipeline(tmp_path, monkeypatch):
     task_id = "task-av-compose-variant"
     task = store.create(task_id, "video.mp4", str(tmp_path))
