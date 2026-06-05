@@ -4876,7 +4876,7 @@
   document.addEventListener('click', closeAllMenus);
 
   function renderPager(total, page, pageSize) {
-    const pagers = [$('topPager')].filter(Boolean);
+    const pagers = [$('topPager'), $('bottomPager')].filter(Boolean);
     if (!pagers.length) return;
     const pages = Math.max(1, Math.ceil(total / pageSize));
     const currentPage = Math.min(pages, Math.max(1, Number(page || 1)));

@@ -282,7 +282,7 @@
   }
 
   function renderVideoPager(data) {
-    const pagers = [$('vmTopPager')].filter(Boolean);
+    const pagers = [$('vmTopPager'), $('vmBottomPager')].filter(Boolean);
     if (!pagers.length) return;
     const total = Number(data.total || 0);
     const pageSize = Number(data.page_size || state.pageSize);
