@@ -3618,6 +3618,46 @@ def _refresh_push_status_cache_for_child_task(task_id: int, row: dict) -> None:
         )
 
 
+def _mark_child_done_after_final_confirmation(
+    cur,
+    *,
+    task_id: int,
+    parent_id: int | None,
+    actor_user_id: int,
+) -> None:
+    cur.execute(
+        "UPDATE tasks SET status=%s, last_reason=NULL, "
+        "completed_at=NOW(), updated_at=NOW() "
+        "WHERE id=%s AND parent_task_id IS NOT NULL "
+        "AND status IN (%s,%s)",
+        (CHILD_DONE, int(task_id), CHILD_ASSIGNED, CHILD_REVIEW),
+    )
+    if cur.rowcount == 0:
+        raise StateError("child not confirmable")
+    _write_event(
+        cur,
+        int(task_id),
+        "completed",
+        int(actor_user_id),
+        {"reason": FINAL_PUSH_CONFIRMATION_STEP_KEY},
+    )
+
+    if parent_id is None:
+        return
+    cur.execute("SELECT status FROM tasks WHERE parent_task_id=%s", (int(parent_id),))
+    statuses = [r["status"] for r in cur.fetchall()]
+    terminal = all(s in (CHILD_DONE, CHILD_CANCELLED) for s in statuses)
+    any_done = any(s == CHILD_DONE for s in statuses)
+    if terminal and any_done:
+        cur.execute(
+            "UPDATE tasks SET status=%s, completed_at=NOW(), updated_at=NOW() "
+            "WHERE id=%s AND status=%s",
+            (PARENT_ALL_DONE, int(parent_id), PARENT_RAW_DONE),
+        )
+        if cur.rowcount:
+            _write_event(cur, int(parent_id), "completed", None, None)
+
+
 def confirm_child_step(
     *,
     task_id: int,
@@ -3628,7 +3668,8 @@ def confirm_child_step(
     """Record a manual fallback confirmation for one child acceptance step."""
     normalized_key = _normalize_child_acceptance_step_key(step_key)
     row = query_one(
-        "SELECT id, assignee_id, status, media_product_id, media_item_id, country_code "
+        "SELECT id, parent_task_id, assignee_id, status, "
+        "media_product_id, media_item_id, country_code "
         "FROM tasks "
         "WHERE id=%s AND parent_task_id IS NOT NULL",
         (int(task_id),),
@@ -3655,6 +3696,16 @@ def confirm_child_step(
                     int(actor_user_id),
                     {"key": normalized_key},
                 )
+                if (
+                    normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY
+                    and row["status"] != CHILD_DONE
+                ):
+                    _mark_child_done_after_final_confirmation(
+                        cur,
+                        task_id=int(task_id),
+                        parent_id=_positive_int(row.get("parent_task_id")),
+                        actor_user_id=int(actor_user_id),
+                    )
             conn.commit()
         except Exception:
             conn.rollback()
@@ -3662,6 +3713,12 @@ def confirm_child_step(
     finally:
         conn.close()
     _refresh_push_status_cache_for_child_task(int(task_id), row)
+    if normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY:
+        return {
+            "step_key": normalized_key,
+            "completed": True,
+            "status": CHILD_DONE,
+        }
     return {"step_key": normalized_key}
 
 

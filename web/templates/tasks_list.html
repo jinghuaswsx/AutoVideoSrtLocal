@@ -127,6 +127,11 @@
 .tc-manual-confirm-pill { display:inline-flex; align-items:center; justify-content:center; min-height:20px; height:20px; padding:0 8px; border:1px solid var(--tc-border-strong); border-radius:999px; background:#fff; color:var(--tc-fg); font-size:11px; font-weight:700; line-height:1; white-space:nowrap; cursor:pointer; box-shadow:0 1px 2px oklch(22% 0.020 235 / .06); }
 .tc-manual-confirm-pill:hover { background:var(--tc-bg-muted); border-color:var(--tc-accent); color:var(--tc-accent); }
 .tc-manual-confirm-pill:disabled { cursor:not-allowed; background:#fff; border-color:var(--tc-success-fg); color:var(--tc-success-fg); opacity:.82; }
+.tc-final-push-confirm { display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin-top:10px; }
+.tc-final-push-confirm-tip { color:var(--tc-accent); font-size:15px; font-weight:800; line-height:1.25; }
+.tc-final-push-confirm-btn { display:inline-flex; align-items:center; justify-content:center; min-height:52px; padding:0 28px; border:none; border-radius:999px; background:var(--tc-accent); color:#fff; font-size:16px; font-weight:800; line-height:1; white-space:nowrap; cursor:pointer; box-shadow:0 8px 18px oklch(55% 0.17 235 / .24); }
+.tc-final-push-confirm-btn:hover { background:var(--tc-accent-hover); }
+.tc-final-push-confirm-btn:disabled { cursor:not-allowed; background:var(--tc-accent); color:#fff; opacity:.78; box-shadow:none; }
 .tc-manual-modal-field { margin-bottom:10px; }
 .tc-manual-modal-field label { display:block; font-size:12px; font-weight:700; color:var(--tc-fg-muted); margin-bottom:4px; }
 .tc-manual-modal-status { min-height:18px; margin-top:8px; font-size:12px; color:var(--tc-fg-muted); }
@@ -1730,6 +1735,9 @@ function tcIsProductLinkCombinedCheck(check) {
   const key = String((check && check.key) || '').trim();
   return key === 'shopify_images' || key === 'product_links';
 }
+function tcIsFinalPushConfirmationCheck(check) {
+  return String((check && check.key) || '').trim() === 'final_push_confirmation';
+}
 function tcReadinessCheckOk(check) {
   if (!check) return false;
   return !!(check && (check.ok || check.manual_confirmed)) || (!check.required && check.ok !== false);
@@ -1770,6 +1778,24 @@ function tcRenderManualConfirmButton(taskId, check) {
     + tcEsc(label)
     + '</button>';
 }
+function tcRenderFinalPushConfirmationAction(taskId, check) {
+  if (!tcIsFinalPushConfirmationCheck(check)) return '';
+  const numericTaskId = Number(taskId || 0);
+  const stepKey = String((check && check.key) || '').trim();
+  if (!numericTaskId || !stepKey) return '';
+  const confirmed = !!(check && check.manual_confirmed);
+  const label = confirmed ? '已最终确认' : '最终推送确认';
+  const disabled = confirmed ? ' disabled' : '';
+  const title = confirmed ? '该任务已最终确认，可进入推送条件判断' : '确认视频、封面、文案、商品图和链接均可推送';
+  return '<div class="tc-final-push-confirm">'
+    + '<div class="tc-final-push-confirm-tip">确认后才可推送</div>'
+    + '<button type="button" class="tc-final-push-confirm-btn" title="' + tcAttr(title) + '"'
+    + disabled
+    + ' onclick="tcConfirmChildStep(' + numericTaskId + ', \'' + tcInlineArg(stepKey) + '\', this)">'
+    + tcEsc(label)
+    + '</button>'
+    + '</div>';
+}
 function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
   const opts = options || {};
   const ok = tcReadinessCheckOk(check);
@@ -1793,6 +1819,8 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
     ? tcRenderAdSupportedLangControls(data, task)
     : '';
   const manualConfirmButton = tcRenderManualConfirmButton(id, check);
+  const headerManualConfirmButton = tcIsFinalPushConfirmationCheck(check) ? '' : manualConfirmButton;
+  const finalPushConfirmAction = tcRenderFinalPushConfirmationAction(id, check);
   if (opts.mode === 'product-link-combo') {
     const stateClass = tcReadinessCheckOk(check) ? ' is-ok' : ' is-bad';
     return '<div class="' + 'tc-product-link-combo-check' + stateClass + '">'
@@ -1800,7 +1828,7 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
       + '<div class="tc-product-link-combo-body">'
       + '<div class="tc-product-link-combo-check-head">'
       + '<span class="tc-product-link-combo-check-title" style="color:' + color + ';">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
-      + manualConfirmButton
+      + headerManualConfirmButton
       + '</div>'
       + reason + links + evidence
       + '</div>'
@@ -1813,9 +1841,9 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
     + '<div class="tc-readiness-check-body">'
     + '<div class="tc-readiness-check-head">'
     + '<span class="tc-readiness-check-title">' + tcEsc(check.label || check.key) + tcEsc(counts) + '</span>'
-    + manualConfirmButton
+    + headerManualConfirmButton
     + '</div>'
-    + hint + reason + links + evidence + langControls
+    + hint + reason + links + evidence + langControls + finalPushConfirmAction
     + ((manualActions || actions) ? '<div class="tc-readiness-check-actions">' + manualActions + actions + '</div>' : '')
     + '</div>'
     + '</div>';

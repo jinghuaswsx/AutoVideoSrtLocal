@@ -860,7 +860,7 @@ def api_child_step_confirm(tid: int, step_key: str):
         "task_child_step_confirmed",
         {"step_key": result["step_key"]},
     )
-    return _json_response({"ok": True, "step_key": result["step_key"]})
+    return _json_response({"ok": True, **result})
 
 
 @bp.route("/api/child/<int:tid>/steps/<step_key>/manual-output", methods=["POST"])

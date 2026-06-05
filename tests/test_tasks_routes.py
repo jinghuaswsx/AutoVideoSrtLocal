@@ -2087,7 +2087,7 @@ def test_child_step_confirm_route_delegates_to_tasks_service(authed_client_no_db
 
     def fake_confirm_child_step(**kwargs):
         captured.update(kwargs)
-        return {"step_key": "detail_images"}
+        return {"step_key": "detail_images", "completed": True, "status": "done"}
 
     monkeypatch.setattr(
         "web.routes.tasks.tasks_svc.confirm_child_step",
@@ -2102,7 +2102,12 @@ def test_child_step_confirm_route_delegates_to_tasks_service(authed_client_no_db
     rsp = authed_client_no_db.post("/tasks/api/child/44/steps/detail_images/confirm")
 
     assert rsp.status_code == 200
-    assert rsp.get_json() == {"ok": True, "step_key": "detail_images"}
+    assert rsp.get_json() == {
+        "ok": True,
+        "step_key": "detail_images",
+        "completed": True,
+        "status": "done",
+    }
     assert captured == {
         "task_id": 44,
         "step_key": "detail_images",

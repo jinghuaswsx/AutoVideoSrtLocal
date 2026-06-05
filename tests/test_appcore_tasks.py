@@ -1207,7 +1207,7 @@ def test_submit_child_fails_when_detail_images_not_ready(monkeypatch):
     assert "detail_images" in exc.value.missing
 
 
-def test_submit_child_ignores_manual_confirmations_when_step_result_missing(monkeypatch):
+def test_submit_child_requires_final_push_confirmation_before_transaction(monkeypatch):
     from appcore import tasks
 
     monkeypatch.setattr(
@@ -1270,7 +1270,7 @@ def test_submit_child_ignores_manual_confirmations_when_step_result_missing(monk
     with pytest.raises(tasks.NotReadyError) as exc:
         tasks.submit_child(task_id=44, actor_user_id=2)
 
-    assert "detail_images" in exc.value.missing
+    assert exc.value.missing == ["final_push_confirmation"]
 
 
 def test_child_acceptance_payload_marks_only_result_steps_as_manual_submittable(monkeypatch):
@@ -1462,7 +1462,11 @@ def test_final_push_confirmation_can_be_confirmed_after_child_done(monkeypatch):
         is_admin=True,
     )
 
-    assert result == {"step_key": "final_push_confirmation"}
+    assert result == {
+        "step_key": "final_push_confirmation",
+        "completed": True,
+        "status": tasks.CHILD_DONE,
+    }
     assert commits == [True]
     assert closed == [True]
     assert writes == [
@@ -1473,6 +1477,112 @@ def test_final_push_confirmation_can_be_confirmed_after_child_done(monkeypatch):
             {"key": "final_push_confirmation"},
         )
     ]
+
+
+def test_final_push_confirmation_marks_assigned_child_done(monkeypatch):
+    from appcore import tasks
+
+    writes = []
+    executes = []
+    commits = []
+
+    class FakeCursor:
+        rowcount = 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            executes.append((" ".join(str(sql).split()), args))
+            self._last_sql = " ".join(str(sql).split())
+
+        def fetchall(self):
+            if "SELECT status FROM tasks WHERE parent_task_id=%s" in self._last_sql:
+                return [{"status": tasks.CHILD_DONE}]
+            return []
+
+    class FakeConn:
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            commits.append(True)
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args: {
+            "id": 45,
+            "parent_task_id": 12,
+            "assignee_id": 9,
+            "status": tasks.CHILD_ASSIGNED,
+            "media_product_id": 7,
+            "media_item_id": 1,
+            "country_code": "DE",
+        },
+    )
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+    monkeypatch.setattr(
+        tasks,
+        "_write_event",
+        lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
+            (task_id, event_type, actor_user_id, payload)
+        ),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_refresh_push_status_cache_for_child_task",
+        lambda task_id, row: None,
+    )
+
+    result = tasks.confirm_child_step(
+        task_id=45,
+        step_key="final_push_confirmation",
+        actor_user_id=1,
+        is_admin=True,
+    )
+
+    assert result == {
+        "step_key": "final_push_confirmation",
+        "completed": True,
+        "status": tasks.CHILD_DONE,
+    }
+    assert commits == [True]
+    assert writes == [
+        (
+            45,
+            tasks.CHILD_MANUAL_STEP_CONFIRMED_EVENT,
+            1,
+            {"key": "final_push_confirmation"},
+        ),
+        (45, "completed", 1, {"reason": "final_push_confirmation"}),
+        (12, "completed", None, None),
+    ]
+    assert any(
+        "UPDATE tasks SET status=%s, last_reason=NULL, completed_at=NOW(), updated_at=NOW() "
+        "WHERE id=%s AND parent_task_id IS NOT NULL AND status IN"
+        in sql
+        and args[:2] == (tasks.CHILD_DONE, 45)
+        for sql, args in executes
+    )
+    assert any(
+        "UPDATE tasks SET status=%s, completed_at=NOW(), updated_at=NOW() WHERE id=%s AND status=%s"
+        in sql
+        and args == (tasks.PARENT_ALL_DONE, 12, tasks.PARENT_RAW_DONE)
+        for sql, args in executes
+    )
 
 
 def test_detail_images_status_keeps_all_target_image_evidence(monkeypatch):
@@ -1893,7 +2003,11 @@ def test_submit_child_moves_ready_task_to_review(monkeypatch):
         },
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
-    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
+    monkeypatch.setattr(
+        tasks,
+        "_manual_confirmed_child_step_keys",
+        lambda task_id: {"final_push_confirmation"},
+    )
     monkeypatch.setattr(
         "appcore.pushes.compute_readiness",
         lambda i, p: {
