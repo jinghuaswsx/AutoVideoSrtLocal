@@ -79,15 +79,16 @@ def test_pushes_script_renders_readiness_admin_override_modal():
     assert "人工确认" in script
 
 
-def test_pushes_script_readiness_override_modal_excludes_final_confirmation():
+def test_pushes_script_readiness_override_modal_includes_final_confirmation_single_row():
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
     override_defs = script[
         script.index("const READINESS_OVERRIDE_ISSUES"):
         script.index("const REWORK_ISSUES")
     ]
 
-    assert "final_push_confirmed" not in override_defs
-    assert "final_push_confirmation" not in override_defs
+    assert "{ key: 'final_push_confirmed', taskKey: 'final_push_confirmation', label: '人工最终推送确认' }" in override_defs
+    assert "READINESS_OVERRIDE_ISSUES.forEach(issue =>" in script
+    assert "body: JSON.stringify({ key })" in script
 
 
 def test_pushes_script_sanitizes_product_page_url_href_protocols():
