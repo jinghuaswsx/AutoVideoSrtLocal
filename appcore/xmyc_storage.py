@@ -597,14 +597,42 @@ def update_sku(sku_id: int, fields: dict[str, Any]) -> dict[str, Any]:
 
 
 def refresh_purchase_prices_for_matched() -> dict[str, int]:
+    product_ids: list[int] = []
+    seen: set[int] = set()
+
     rows = query(
         "SELECT DISTINCT product_id FROM xmyc_storage_skus WHERE product_id IS NOT NULL"
     )
+    for row in rows or []:
+        pid = int(row["product_id"])
+        if pid in seen:
+            continue
+        seen.add(pid)
+        product_ids.append(pid)
+
+    try:
+        rows = query(
+            "SELECT DISTINCT d.product_id "
+            "FROM dianxiaomi_order_lines d "
+            "JOIN dianxiaomi_yuncang_skus y ON y.sku = d.product_display_sku "
+            "WHERE d.product_id IS NOT NULL "
+            "AND d.product_display_sku IS NOT NULL "
+            "AND d.product_display_sku <> ''"
+        )
+        for row in rows or []:
+            pid = int(row["product_id"])
+            if pid in seen:
+                continue
+            seen.add(pid)
+            product_ids.append(pid)
+    except Exception:
+        log.warning("query dianxiaomi_yuncang_skus matched products failed", exc_info=True)
+
     refreshed = 0
-    for r in rows:
+    for product_id in product_ids:
         try:
-            _refresh_product_purchase_price(r["product_id"])
+            _refresh_product_purchase_price(product_id)
             refreshed += 1
         except Exception:
-            log.warning("refresh purchase_price failed for product_id=%s", r.get("product_id"), exc_info=True)
+            log.warning("refresh purchase_price failed for product_id=%s", product_id, exc_info=True)
     return {"refreshed": refreshed}

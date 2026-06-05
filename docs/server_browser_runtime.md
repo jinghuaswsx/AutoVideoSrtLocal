@@ -159,13 +159,43 @@ bash deploy/server_browser/install_shopifyid_sync_timer.sh
 
 它会复用 `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` 里的店小秘登录态，并依赖 DXM03-RJC 独立 CDP 环境，避免与 Meta / 明空选品浏览器互相切页。
 
+## 店小秘 SKU 配对定时任务
+
+服务器上使用 systemd timer 运行店小秘 SKU 配对同步：
+
+可单独执行 `bash deploy/server_browser/install_dianxiaomi_sku_sync_timer.sh`，也可和采购价同步一起通过组合入口安装：
+
+```bash
+cd /opt/autovideosrt
+bash deploy/server_browser/install_sku_purchase_sync_timers.sh
+```
+
+安装后会创建：
+
+- `autovideosrt-dianxiaomi-sku-sync.service`
+- `autovideosrt-dianxiaomi-sku-sync.timer`
+
+定时任务每 2 小时执行一次（`00:21` 起，避开 ROI `:00/:20/:40`、小秘云仓 `:33` 和店小秘云仓 `01:03`），实际命令为：
+
+```bash
+/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/dianxiaomi_sku_sync.py \
+  --skip-login-prompt \
+  --browser-mode server-cdp \
+  --browser-cdp-url http://127.0.0.1:9225 \
+  --db-mode local
+```
+
+它会复用 `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` 里的店小秘登录态，从店小秘 Shopify 在线商品库与 ERP 商品管理库抓取 variants 与 SKU，按 `shopifyid` 回填 `media_products.shopify_title` 和 `media_product_skus`。
+
 ## 小秘云仓采购价定时任务
 
 服务器上使用 systemd timer 运行小秘云仓 SKU 抓取 + 自动匹配：
 
+可单独执行 `bash deploy/server_browser/install_xmyc_storage_sync_timer.sh`，也可和店小秘 SKU / 店小秘云仓同步一起通过组合入口安装：
+
 ```bash
 cd /opt/autovideosrt
-bash deploy/server_browser/install_xmyc_storage_sync_timer.sh
+bash deploy/server_browser/install_sku_purchase_sync_timers.sh
 ```
 
 安装后会创建：
@@ -173,7 +203,7 @@ bash deploy/server_browser/install_xmyc_storage_sync_timer.sh
 - `autovideosrt-xmyc-storage-sync.service`
 - `autovideosrt-xmyc-storage-sync.timer`
 
-定时任务每天 `12:33` 执行一次（避开 ROI 实时同步 `:02/:22/:42` 与 Shopify ID 同步 `12:11`），实际命令为：
+定时任务每 2 小时执行一次（`00:33` 起，避开店小秘 SKU 配对 `:21`），实际命令为：
 
 ```bash
 /opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/xmyc_storage_sync.py \
@@ -181,3 +211,28 @@ bash deploy/server_browser/install_xmyc_storage_sync_timer.sh
 ```
 
 它会复用 `/data/autovideosrt/browser/profiles/xmyc-storage` 里的小秘云仓登录态，把全量 SKU + 单价缓存到 `xmyc_storage_skus`，再按 `dianxiaomi_order_lines.product_display_sku` 自动匹配到 `media_products`，最后用主力 SKU 的单价回填 `media_products.purchase_price`。
+
+## 店小秘云仓采购价定时任务
+
+服务器上使用 systemd timer 运行店小秘云仓货品同步：
+
+可单独执行 `bash deploy/server_browser/install_dianxiaomi_yuncang_sync_timer.sh`，也可和店小秘 SKU / 小秘云仓同步一起通过组合入口安装：
+
+```bash
+cd /opt/autovideosrt
+bash deploy/server_browser/install_sku_purchase_sync_timers.sh
+```
+
+安装后会创建：
+
+- `autovideosrt-dianxiaomi-yuncang-sync.service`
+- `autovideosrt-dianxiaomi-yuncang-sync.timer`
+
+定时任务每 2 小时执行一次（`01:03` 起，错开 SKU 配对和 xmyc-storage 同步），实际命令为：
+
+```bash
+/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/dianxiaomi_yuncang_sync.py \
+  --cdp-url http://127.0.0.1:9225
+```
+
+它会复用 `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` 里的店小秘登录态，把 `yuncangWarehouseSku/index.htm` 中的 SKU、商品编码、采购价和库存缓存到 `dianxiaomi_yuncang_skus`。采购价刷新会同时覆盖已匹配小秘云仓 SKU 的产品，以及订单行 SKU 能命中店小秘云仓 SKU 的产品。

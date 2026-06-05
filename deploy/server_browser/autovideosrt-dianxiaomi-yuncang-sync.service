@@ -1,0 +1,11 @@
+[Unit]
+Description=AutoVideoSrt Dianxiaomi yuncang warehouse SKU sync
+Wants=autovideosrt-dxm03-rjc-vnc.service
+After=network-online.target autovideosrt-dxm03-rjc-vnc.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/dianxiaomi_yuncang_sync.py --cdp-url http://127.0.0.1:9225
+TimeoutStartSec=3600

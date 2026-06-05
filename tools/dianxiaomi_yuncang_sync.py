@@ -15,7 +15,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from appcore import xmyc_storage
+from appcore import scheduled_tasks, xmyc_storage
+
+
+TASK_CODE = "dianxiaomi_yuncang_sync"
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -30,7 +33,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    summary = xmyc_storage.sync_dianxiaomi_yuncang_skus(cdp_url=args.cdp_url)
+    run_id = scheduled_tasks.start_run(TASK_CODE)
+    try:
+        summary = xmyc_storage.sync_dianxiaomi_yuncang_skus(cdp_url=args.cdp_url)
+    except Exception as exc:
+        scheduled_tasks.finish_run(run_id, status="failed", error_message=str(exc))
+        raise
+    scheduled_tasks.finish_run(run_id, status="success", summary=summary)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
