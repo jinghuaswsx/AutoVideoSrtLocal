@@ -863,6 +863,31 @@ def api_child_step_confirm(tid: int, step_key: str):
     return _json_response({"ok": True, **result})
 
 
+@bp.route("/api/child/<int:tid>/steps/<step_key>/unconfirm", methods=["POST"])
+@login_required
+def api_child_step_unconfirm(tid: int, step_key: str):
+    """撤销人工兜底确认。"""
+    try:
+        result = tasks_svc.unconfirm_child_step(
+            task_id=tid,
+            step_key=step_key,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    except PermissionError as exc:
+        return _json_response({"error": str(exc)}, 403)
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": str(exc)}, 404)
+    _audit_task_action(
+        tid,
+        "task_child_step_unconfirmed",
+        {"step_key": result["step_key"]},
+    )
+    return _json_response({"ok": True, **result})
+
+
 @bp.route("/api/child/<int:tid>/steps/<step_key>/manual-output", methods=["POST"])
 @login_required
 def api_child_step_manual_output(tid: int, step_key: str):
