@@ -154,8 +154,7 @@
       state.items = data.items || [];
       renderVideoTable(data);
       renderVideoPager(data);
-      const container = $('vmListContainer') || host;
-      container.scrollTop = 0;
+      host.scrollTop = 0;
       host.scrollLeft = 0;
       updateStickyOffsetsSoon();
     } catch (err) {
@@ -298,13 +297,17 @@
     }
     const firstDisabled = page <= 1 ? ' disabled aria-disabled="true"' : '';
     const lastDisabled = page >= pages ? ' disabled aria-disabled="true"' : '';
+    const prevPage = Math.max(1, page - 1);
+    const nextPage = Math.min(pages, page + 1);
     const buttons = [
       `<span class="oc-vm-page-summary" data-vm-page-summary>第 ${page} / ${pages} 页 · 共 ${pages} 页</span>`,
       `<button type="button" data-vm-page="1"${firstDisabled}>首页</button>`,
+      `<button type="button" data-vm-page="${prevPage}"${firstDisabled}>上一页</button>`,
     ];
     for (let p = Math.max(1, page - 2); p <= Math.min(pages, page + 2); p++) {
       buttons.push(`<button type="button" class="${p === page ? 'active' : ''}" data-vm-page="${p}">${p}</button>`);
     }
+    buttons.push(`<button type="button" data-vm-page="${nextPage}"${lastDisabled}>下一页</button>`);
     buttons.push(`<button type="button" data-vm-page="${pages}"${lastDisabled}>末页</button>`);
     buttons.push(`
       <label class="oc-vm-page-jump">

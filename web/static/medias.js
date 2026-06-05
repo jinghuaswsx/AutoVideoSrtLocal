@@ -3192,10 +3192,7 @@
         <tbody>
           ${items.map(rowHTML).join('')}
         </tbody>
-      </table>
-      <div class="oc-domain-check-all-bar">
-        <button type="button" id="checkAllDomainsBtn" class="oc-btn ghost">检测全部产品链接</button>
-      </div>`;
+      </table>`;
     grid.querySelectorAll('[data-check-domain]').forEach(b =>
       b.addEventListener('click', function(e) {
         e.stopPropagation();
@@ -3204,8 +3201,7 @@
         const domain = this.dataset.checkDomain;
         if (pid && domain) checkDomainLink(pid, domain, rowEl);
       }));
-    const checkAllBtn = grid.querySelector('#checkAllDomainsBtn');
-    if (checkAllBtn) checkAllBtn.addEventListener('click', function(e) { e.stopPropagation(); checkAllDomainLinks(); });
+
     grid.querySelectorAll('[data-edit]').forEach(b =>
       b.addEventListener('click', (e) => { e.stopPropagation(); openEdit(+b.dataset.edit); }));
     grid.querySelectorAll('[data-del]').forEach(b =>
@@ -4898,13 +4894,17 @@
 
     const firstDisabled = currentPage <= 1 ? ' disabled aria-disabled="true"' : '';
     const lastDisabled = currentPage >= pages ? ' disabled aria-disabled="true"' : '';
+    const prevPage = Math.max(1, currentPage - 1);
+    const nextPage = Math.min(pages, currentPage + 1);
     const buttons = [
       `<span class="oc-vm-page-summary" data-page-summary>第 ${currentPage} / ${pages} 页 · 共 ${pages} 页</span>`,
       `<button type="button" data-page="1"${firstDisabled}>首页</button>`,
+      `<button type="button" data-page="${prevPage}"${firstDisabled}>上一页</button>`,
     ];
     for (let p = Math.max(1, currentPage - 2); p <= Math.min(pages, currentPage + 2); p++) {
       buttons.push(`<button type="button" class="${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`);
     }
+    buttons.push(`<button type="button" data-page="${nextPage}"${lastDisabled}>下一页</button>`);
     buttons.push(`<button type="button" data-page="${pages}"${lastDisabled}>末页</button>`);
     buttons.push(`
       <label class="oc-vm-page-jump">
@@ -9610,6 +9610,8 @@
     };
 
     $('createBtn') && $('createBtn').addEventListener('click', openCreate);
+    const checkAllBtn = $('checkAllDomainsBtn');
+    if (checkAllBtn) checkAllBtn.addEventListener('click', function(e) { e.stopPropagation(); checkAllDomainLinks(); });
     $('modalClose').addEventListener('click', hideModal);
     $('cancelBtn').addEventListener('click', hideModal);
     $('saveBtn').addEventListener('click', save);
