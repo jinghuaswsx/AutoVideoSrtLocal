@@ -381,10 +381,6 @@ PUSH_READINESS_ADMIN_OVERRIDE_DEFS = {
         "task_check_key": "shopify_images",
         "label": "图片/链接确认",
     },
-    "final_push_confirmed": {
-        "task_check_key": tasks_svc.FINAL_PUSH_CONFIRMATION_STEP_KEY,
-        "label": "推送人工确认",
-    },
 }
 PUSH_READINESS_ADMIN_OVERRIDE_KEYS = tuple(PUSH_READINESS_ADMIN_OVERRIDE_DEFS)
 

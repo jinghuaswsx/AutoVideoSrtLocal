@@ -399,6 +399,26 @@ def test_admin_override_readiness_key_confirms_child_step_and_refreshes_cache(mo
     }
 
 
+def test_admin_override_readiness_key_rejects_final_push_confirmation(monkeypatch):
+    monkeypatch.setattr(
+        pushes,
+        "_get_push_row_for_status_cache",
+        lambda item_id: {"id": item_id, "task_id": 44},
+    )
+    monkeypatch.setattr(
+        pushes.tasks_svc,
+        "confirm_child_step",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("final gate must not be overridden")),
+    )
+
+    with pytest.raises(ValueError, match="unknown readiness key"):
+        pushes.admin_override_readiness_key(
+            item_id=1001,
+            readiness_key="final_push_confirmed",
+            actor_user_id=7,
+        )
+
+
 def test_compute_status_pushed(product_with_item):
     pid, item_id = product_with_item
     db_execute("UPDATE media_items SET pushed_at=NOW() WHERE id=%s", (item_id,))

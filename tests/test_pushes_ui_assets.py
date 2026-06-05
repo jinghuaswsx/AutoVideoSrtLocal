@@ -79,6 +79,17 @@ def test_pushes_script_renders_readiness_admin_override_modal():
     assert "人工确认" in script
 
 
+def test_pushes_script_readiness_override_modal_excludes_final_confirmation():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    override_defs = script[
+        script.index("const READINESS_OVERRIDE_ISSUES"):
+        script.index("const REWORK_ISSUES")
+    ]
+
+    assert "final_push_confirmed" not in override_defs
+    assert "final_push_confirmation" not in override_defs
+
+
 def test_pushes_script_sanitizes_product_page_url_href_protocols():
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
     render_start = script.index("function renderRow(it)")

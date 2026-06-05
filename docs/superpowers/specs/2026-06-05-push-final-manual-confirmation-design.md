@@ -24,7 +24,7 @@
 - 不新增数据库表或迁移；复用 `task_events` 的人工确认事件。
 - 不改变已推送素材的 `pushed` 状态。
 - 不把 `/pushes` 弹窗里的 `manual_link_confirmed` 改成持久状态；它仍只用于本次跳过链接探活。
-- 不把历史回填当作审核通过动作；历史回填只给已有目标素材的历史子任务补“最终推送人工确认”事件，用来兼容新门禁。
+- 不把历史回填、自动流程、推送管理兜底入口当作最终审核通过动作；最终推送人工确认只能由运营人员在任务中心最终确认按钮上手动点击。
 
 ## 设计
 
@@ -58,15 +58,11 @@
 
 点击该步骤的确认按钮后，服务端必须在同一个确认事务里把对应子任务置为 `done`，写入完成事件，并继续触发父任务完成汇总。这样最终确认是“任务完成”的最后动作，不能出现前端显示确认但任务仍停留在待处理/待审核的状态。
 
-### 历史数据回填
+### 禁止自动回填
 
-上线后执行一次历史回填脚本。回填范围：
+不得提供或执行把 `final_push_confirmation` 批量写入 `manual_step_confirmed` 的历史回填脚本。无论素材来自翻译流程、任务中心补产物、管理员兜底确认，`final_push_confirmed` 默认都必须保持 `False`，直到运营人员在任务中心点击“最终推送确认”。
 
-- 子任务存在目标素材 `media_items.task_id = tasks.id`；
-- 子任务状态为 `assigned`、`review` 或 `done`；
-- 尚未写入 `manual_step_confirmed` 且 payload 包含 `final_push_confirmation`。
-
-脚本仅插入 `manual_step_confirmed` 事件并刷新对应推送状态缓存；不改已推送素材状态，也不把未完成的历史子任务批量改为 `done`。后续新任务仍必须由运营人员点击最终确认按钮，点击后才进入子任务完成状态。
+曾由历史回填写入且 payload 带 `source=historical_backfill_2026_06_05` 的错误确认事件，允许用专门撤销工具删除并刷新对应推送状态缓存。撤销工具只处理带该 source 的事件，不删除运营真实手动点击产生的确认事件。
 
 ### 推送管理
 
@@ -87,4 +83,4 @@
 2. `pytest tests/test_appcore_tasks.py::test_child_acceptance_payload_includes_final_push_confirmation_gate tests/test_appcore_tasks.py::test_final_push_confirmation_can_be_confirmed_after_child_done -q`
 3. `pytest tests/test_task_center_manual_confirm_ui.py tests/test_pushes_ui_assets.py::test_pushes_script_shows_final_push_confirmation_readiness -q`
 4. `pytest tests/test_final_push_confirmation_backfill.py -q`
-5. `python -m compileall appcore/pushes.py appcore/tasks.py web/routes/tasks.py tools/backfill_final_push_confirmation.py`
+5. `python3 -m compileall appcore/pushes.py appcore/tasks.py web/routes/tasks.py tools/revoke_final_push_confirmation_backfill.py`

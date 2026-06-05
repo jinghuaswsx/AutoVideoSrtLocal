@@ -13,9 +13,10 @@
 ## 目标
 
 1. 在 `/pushes` 列表的“推送必要条件状态”列最后一行增加白色小按钮“人工确认”。
-2. 点击后打开 modal，按行展示该素材的所有推送必要条件状态。
+2. 点击后打开 modal，按行展示该素材可兜底的推送必要条件状态；不展示 `final_push_confirmed`。
 3. 每行开头都有“人工确认”按钮；点击后把该必要条件写入人工确认事件，作为最高优先级覆盖，后续 `compute_readiness()` 将该项视为 `True`。
 4. 确认成功后刷新该素材推送状态缓存，并刷新推送管理列表，使管理员可以把一条未就绪记录兜底调整为可推送。
+5. `final_push_confirmed` 不属于推送管理兜底范围；最终推送人工确认必须由运营人员在任务中心“最终推送确认”按钮手动完成。
 
 ## 设计
 
@@ -30,7 +31,8 @@
 | `lang_supported` | 链接 | `language_supported` |
 | `has_push_texts` | 英文文案格式 | `push_texts` |
 | `shopify_image_confirmed` | 图片/链接确认 | `shopify_images` |
-| `final_push_confirmed` | 推送人工确认 | `final_push_confirmation` |
+
+`final_push_confirmed -> final_push_confirmation` 明确排除在该接口之外。即使管理员通过 `/pushes` 页面兜底确认了其它条件，该素材仍必须等待运营点击任务中心最终确认按钮后，才允许进入 `pending`。
 
 后端新增管理员接口：
 
