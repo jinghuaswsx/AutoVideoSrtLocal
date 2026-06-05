@@ -9117,7 +9117,12 @@
       return `
       <div class="oc-vitem" data-item="${it.id}" data-lang="${escapeHtml(it.lang || edState.activeLang || 'en')}" data-filename="${escapeHtml(rawName)}">
         <div class="vname oc-vitem-name-editor">
-          <div class="vname-text" title="${name}">${name}</div>
+          <div class="vname-text-container">
+            <div class="vname-text" title="${name}">${name}</div>
+            <button class="oc-btn text sm vname-copy-btn" type="button" data-act="name-copy" title="复制文件名">
+              ${icon('copy', 12)}
+            </button>
+          </div>
           <textarea class="oc-input sm vname-input" title="${name}" data-original="${name}"
                     maxlength="255" rows="2" aria-label="视频素材文件名" hidden>${name}</textarea>
           <div class="vname-edit-actions">
@@ -9185,6 +9190,17 @@
       card.querySelector('[data-act="name-edit"]').addEventListener('click', () => edStartItemNameEdit(card));
       card.querySelector('[data-act="name-save"]').addEventListener('click', () => edSaveItemNameEdit(id, card));
       card.querySelector('[data-act="name-cancel"]').addEventListener('click', () => edCancelItemNameEdit(card));
+      const nameCopyBtn = card.querySelector('[data-act="name-copy"]');
+      if (nameCopyBtn) {
+        nameCopyBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const btn = e.currentTarget;
+          const filename = card.dataset.filename || '';
+          copyText(filename)
+            .then(() => flashCopiedButton(btn))
+            .catch((err) => console.error('复制文件名失败:', err));
+        });
+      }
       card.querySelector('.vname-input').addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -9207,7 +9223,7 @@
 
   function edSetItemNameEditMode(card, editing) {
     const input = card.querySelector('.vname-input');
-    const display = card.querySelector('.vname-text');
+    const display = card.querySelector('.vname-text-container');
     const editBtn = card.querySelector('[data-act="name-edit"]');
     const saveBtn = card.querySelector('[data-act="name-save"]');
     const cancelBtn = card.querySelector('[data-act="name-cancel"]');
@@ -9283,6 +9299,7 @@
         display.textContent = savedName;
         display.title = savedName;
       }
+      card.dataset.filename = savedName;
       edPatchItemNameInState(itemId, updated, savedName);
       edSetItemNameEditMode(card, false);
     } catch (e) {

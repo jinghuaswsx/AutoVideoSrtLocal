@@ -495,11 +495,31 @@
   display:grid;
   gap:var(--oc-sp-2);
 }
+.oc-vitem .vname-text-container {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:var(--oc-sp-1);
+}
 .oc-vitem .vname-text {
+  flex:1;
   min-height:calc(1.45em * 2);
   white-space:normal;
   overflow-wrap:anywhere;
   word-break:break-word;
+}
+.oc-vitem .vname-copy-btn {
+  padding:0 4px;
+  height:20px;
+  flex-shrink:0;
+  min-width:auto;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--oc-fg-muted);
+}
+.oc-vitem .vname-copy-btn:hover {
+  color:var(--oc-accent);
 }
 .oc-vitem .vname-input {
   height:auto;
