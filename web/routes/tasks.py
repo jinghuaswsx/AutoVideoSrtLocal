@@ -210,7 +210,7 @@ def _validate_translation_targets(
 def _render_task_center(
     initial_task_id: int | None = None,
     section: str = "overview",
-    bucket: str = "all",
+    bucket: str = "todo",
 ):
     return render_template(
         "tasks_list.html",
@@ -229,7 +229,7 @@ def _render_task_center(
 @login_required
 @permission_required("task_center")
 def index():
-    return _render_task_center(section="overview", bucket="all")
+    return _render_task_center(section="overview", bucket="todo")
 
 
 @bp.route("/stats")
