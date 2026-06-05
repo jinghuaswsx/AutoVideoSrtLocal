@@ -89,6 +89,8 @@ def test_pushes_script_readiness_override_modal_includes_final_confirmation_sing
     assert "{ key: 'final_push_confirmed', taskKey: 'final_push_confirmation', label: '人工最终推送确认' }" in override_defs
     assert "READINESS_OVERRIDE_ISSUES.forEach(issue =>" in script
     assert "body: JSON.stringify({ key })" in script
+    assert "disabled: ok || !item.task_id" not in script
+    assert "disabled: ok," in script
 
 
 def test_pushes_script_sanitizes_product_page_url_href_protocols():

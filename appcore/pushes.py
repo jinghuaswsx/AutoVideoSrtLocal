@@ -402,6 +402,7 @@ def _empty_push_list_context() -> dict[str, Any]:
         "failed_latest_push_ids": set(),
         "rework_readiness_by_task_id": {},
         "manual_confirmed_readiness_by_task_id": {},
+        "manual_confirmed_readiness_by_item_id": {},
     }
 
 
@@ -558,14 +559,81 @@ def _prefetch_manual_confirmed_readiness_by_task_id(task_ids: set[int]) -> dict[
         return {}
 
 
+def _prefetch_manual_confirmed_readiness_by_item_id(item_ids: set[int]) -> dict[int, set[str]]:
+    if not item_ids:
+        return {}
+    ids = sorted(item_ids)
+    try:
+        rows = query(
+            "SELECT media_item_id, readiness_key FROM media_push_readiness_overrides "
+            f"WHERE media_item_id IN ({_placeholders(ids)})",
+            tuple(ids),
+        )
+    except Exception:
+        log.debug("prefetch item-level push readiness overrides failed", exc_info=True)
+        return {}
+    valid_keys = set(PUSH_READINESS_ADMIN_OVERRIDE_KEYS)
+    result: dict[int, set[str]] = {}
+    for row in rows:
+        try:
+            item_id = int(row.get("media_item_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        key = str(row.get("readiness_key") or "").strip()
+        if item_id and key in valid_keys:
+            result.setdefault(item_id, set()).add(key)
+    return result
+
+
+def _manual_confirmed_item_readiness_keys(item_id: int) -> set[str]:
+    item_id_int = _safe_int(item_id)
+    if not item_id_int:
+        return set()
+    return set(
+        _prefetch_manual_confirmed_readiness_by_item_id({item_id_int}).get(item_id_int) or set()
+    )
+
+
+def _confirm_item_readiness_override(
+    *,
+    item_id: int,
+    readiness_key: str,
+    step_key: str,
+    actor_user_id: int,
+) -> None:
+    item_id_int = _safe_int(item_id)
+    if not item_id_int:
+        raise ValueError("invalid item_id")
+    key = str(readiness_key or "").strip()
+    if key not in PUSH_READINESS_ADMIN_OVERRIDE_DEFS:
+        raise ValueError("unknown readiness key")
+    execute(
+        "INSERT INTO media_push_readiness_overrides "
+        "(media_item_id, readiness_key, step_key, actor_user_id) "
+        "VALUES (%s, %s, %s, %s) "
+        "ON DUPLICATE KEY UPDATE "
+        "step_key=VALUES(step_key), "
+        "actor_user_id=VALUES(actor_user_id), "
+        "updated_at=CURRENT_TIMESTAMP",
+        (item_id_int, key, str(step_key or "").strip(), int(actor_user_id)),
+    )
+
+
 def build_push_list_context(rows: list[dict] | tuple[dict, ...]) -> dict[str, Any]:
     context = _empty_push_list_context()
     product_ids: set[int] = set()
     product_lang_pairs: set[tuple[int, str]] = set()
     latest_push_ids: set[int] = set()
     task_ids: set[int] = set()
+    item_ids: set[int] = set()
 
     for row in rows or []:
+        try:
+            item_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            item_id = 0
+        if item_id:
+            item_ids.add(item_id)
         try:
             product_id = int(row.get("product_id") or 0)
         except (TypeError, ValueError):
@@ -593,6 +661,9 @@ def build_push_list_context(rows: list[dict] | tuple[dict, ...]) -> dict[str, An
     context["rework_readiness_by_task_id"] = _prefetch_rework_readiness_by_task_id(task_ids)
     context["manual_confirmed_readiness_by_task_id"] = (
         _prefetch_manual_confirmed_readiness_by_task_id(task_ids)
+    )
+    context["manual_confirmed_readiness_by_item_id"] = (
+        _prefetch_manual_confirmed_readiness_by_item_id(item_ids)
     )
     return context
 
@@ -629,28 +700,35 @@ def _manual_confirmed_readiness_overrides(
     *,
     context: dict[str, Any] | None = None,
 ) -> set[str]:
+    keys: set[str] = set()
     task_id = (item or {}).get("task_id")
-    if not task_id:
-        return set()
     try:
-        task_id_int = int(task_id)
+        task_id_int = int(task_id) if task_id else 0
     except (TypeError, ValueError):
-        return set()
+        task_id_int = 0
     prefetched = _context_lookup(context, "manual_confirmed_readiness_by_task_id")
-    if prefetched is not _CONTEXT_MISSING:
-        return set((prefetched or {}).get(task_id_int) or set())
-    if context is not None:
-        return set()
-    try:
-        from appcore import tasks as tasks_svc
-        return set(tasks_svc.manual_confirmed_child_readiness_keys(task_id_int))
-    except Exception:
-        log.debug(
-            "load manual confirmed readiness overrides failed task_id=%s",
-            task_id,
-            exc_info=True,
-        )
-        return set()
+    if task_id_int:
+        if prefetched is not _CONTEXT_MISSING:
+            keys.update((prefetched or {}).get(task_id_int) or set())
+        elif context is None:
+            try:
+                from appcore import tasks as tasks_svc
+                keys.update(tasks_svc.manual_confirmed_child_readiness_keys(task_id_int))
+            except Exception:
+                log.debug(
+                    "load manual confirmed readiness overrides failed task_id=%s",
+                    task_id,
+                    exc_info=True,
+                )
+
+    item_id_int = _safe_int((item or {}).get("id"))
+    item_prefetched = _context_lookup(context, "manual_confirmed_readiness_by_item_id")
+    if item_id_int:
+        if item_prefetched is not _CONTEXT_MISSING:
+            keys.update((item_prefetched or {}).get(item_id_int) or set())
+        elif context is None:
+            keys.update(_manual_confirmed_item_readiness_keys(item_id_int))
+    return keys
 
 
 def compute_readiness(
@@ -1090,21 +1168,27 @@ def admin_override_readiness_key(
     if not row:
         raise LookupError("item_not_found")
     task_id = _safe_int(row.get("task_id"))
-    if not task_id:
-        raise ValueError("task_not_linked")
     step_key = str(override_def["task_check_key"])
 
-    tasks_svc.confirm_child_step(
-        task_id=task_id,
-        step_key=step_key,
-        actor_user_id=int(actor_user_id),
-        is_admin=True,
-    )
+    if task_id:
+        tasks_svc.confirm_child_step(
+            task_id=task_id,
+            step_key=step_key,
+            actor_user_id=int(actor_user_id),
+            is_admin=True,
+        )
+    else:
+        _confirm_item_readiness_override(
+            item_id=item_id_int,
+            readiness_key=key,
+            step_key=step_key,
+            actor_user_id=int(actor_user_id),
+        )
     refreshed = refresh_push_status_cache_for_item(item_id_int)
     entry = refreshed.get(item_id_int) or {}
     return {
         "item_id": item_id_int,
-        "task_id": task_id,
+        "task_id": task_id or None,
         "key": key,
         "step_key": step_key,
         "status": entry.get("status"),

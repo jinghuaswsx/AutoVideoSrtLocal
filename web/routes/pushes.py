@@ -618,9 +618,7 @@ def api_readiness_override(item_id: int):
 
     linked_task_id = _positive_int(item.get("task_id"))
     task_id = _resolve_rework_task_id(item)
-    if not task_id:
-        return _json_response({"error": "task_not_linked"}, 400)
-    if linked_task_id is None:
+    if linked_task_id is None and task_id is not None:
         medias.update_item_task_id(item_id, int(task_id))
 
     body = request.get_json(silent=True) or {}
@@ -645,7 +643,7 @@ def api_readiness_override(item_id: int):
         item_id,
         "push_readiness_admin_override",
         detail={
-            "task_id": int(task_id),
+            "task_id": _positive_int(result.get("task_id")),
             "readiness_key": result.get("key"),
             "step_key": result.get("step_key"),
         },
