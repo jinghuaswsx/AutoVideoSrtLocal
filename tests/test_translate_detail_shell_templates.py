@@ -126,16 +126,47 @@ def test_omni_detail_shell_contains_preset_summary_slot():
     assert ".omni-preset-summary" in styles
 
 
-def test_omni_detail_shell_places_sentence_tts_loudness_toggle_before_visible_to_all():
+def test_omni_detail_shell_places_auto_voice_selection_before_sentence_loudness_and_visible_to_all():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
 
+    assert "autoVoiceSelectionCb" in shared
+    assert "大模型自动音色选择" in shared
+    assert "auto-voice-selection" in shared
+    assert "auto_voice_selection" in shared
     assert "sentenceTtsLoudnessCalibrationCb" in shared
     assert "句级TTS响度校准" in shared
     assert "sentence-tts-loudness-calibration" in shared
     assert "sentence_tts_loudness_calibration" in shared
+    assert shared.index("autoVoiceSelectionCb") < shared.index("sentenceTtsLoudnessCalibrationCb")
     assert shared.index("sentenceTtsLoudnessCalibrationCb") < shared.index("visibleToAllCb")
+    assert "current_user.is_admin and _force_restart_api" not in shared
+    assert "{% if is_superadmin() and _force_restart_api %}" in shared
     assert "X-CSRFToken" in shared
+
+
+def test_omni_force_restart_payload_includes_top_switch_values():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+
+    handler = shared[
+        shared.index("confirmBtn.addEventListener('click'"):
+        shared.index("var visibleToAllCb = document.getElementById('visibleToAllCb')")
+    ]
+    assert "payload.auto_voice_selection" in handler
+    assert "autoVoiceSelectionCb.checked" in handler
+    assert "payload.sentence_tts_loudness_calibration" in handler
+    assert "sentenceTtsLoudnessCalibrationCb.checked" in handler
+
+
+def test_detail_shell_auto_voice_selection_supports_dialogue_api():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+
+    assert "'/api/dialogue-translate'" in shared
+    assert "{% if _force_restart_api in ('/api/omni-translate', '/api/dialogue-translate') %}" in shared
+    assert "current_user.is_admin and _force_restart_api in ('/api/omni-translate', '/api/dialogue-translate')" not in shared
+    assert "{% if is_superadmin() and _force_restart_api %}" in shared
 
 
 def test_voice_selector_script_mounts_for_ja_multi_and_av_sync_modes():
@@ -492,6 +523,11 @@ def test_omni_speech_shot_alignment_card_is_rendered_between_tts_and_subtitle():
         < template.index('id="step-subtitle"')
     )
     assert "renderSpeechShotAlignmentCard" in script
+    assert "speechShotAlignmentPendingSummary" in script
+    assert "未启用镜头分镜" in script
+    assert "未使用句级 TTS 收敛" in script
+    assert "speech_shot_alignment_synthetic" in script
+    assert "!summary.speech_shot_alignment_synthetic" in script
     assert "speech_shot_alignment_decisions" in script
     assert "没有使用大模型" in script
     assert "为什么没做" in script

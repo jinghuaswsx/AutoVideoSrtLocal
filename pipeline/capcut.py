@@ -447,7 +447,7 @@ def _import_srt_safe(
 
 
 def _fix_srt_overlaps(srt_path: str) -> None:
-    """Parse SRT, sort by start time, remove overlapping entries, rewrite file."""
+    """Parse SRT and preserve every entry while making timings monotonic."""
     import re
 
     try:
@@ -482,15 +482,17 @@ def _fix_srt_overlaps(srt_path: str) -> None:
         text = match.group(4).strip()
         entries.append((start_ms, end_ms, text))
 
-    entries.sort(key=lambda e: e[0])
-
     cleaned = []
+    previous_end = -1
     for start, end, text in entries:
-        if cleaned and start < cleaned[-1][1]:
-            continue
+        if previous_end >= 0 and start < previous_end:
+            start = previous_end
+        if end <= start:
+            end = start + 1
         cleaned.append((start, end, text))
+        previous_end = end
 
-    if len(cleaned) == len(entries):
+    if cleaned == entries:
         return
 
     lines = []

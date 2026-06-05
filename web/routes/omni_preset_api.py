@@ -31,8 +31,6 @@ from appcore.omni_plugin_config import (
     DEFAULT_PLUGIN_CONFIG,
     validate_plugin_config,
 )
-from web.auth import admin_required
-
 log = logging.getLogger(__name__)
 
 bp = Blueprint("omni_preset_api", __name__, url_prefix="/api/omni-presets")
@@ -129,8 +127,9 @@ def get_default():
 
 @bp.route("/ffmpeg-tempo-fallback", methods=["POST"])
 @login_required
-@admin_required
 def update_ffmpeg_tempo_fallback():
+    if not _is_admin():
+        return _bad("仅管理员可操作", 403)
     payload = request.get_json(silent=True) or {}
     enabled = payload.get("enabled")
     if not isinstance(enabled, bool):
@@ -229,8 +228,9 @@ def delete_preset(preset_id: int):
 
 @bp.route("/<int:preset_id>/set-as-default", methods=["POST"])
 @login_required
-@admin_required
 def set_as_default(preset_id: int):
+    if not _is_admin():
+        return _bad("仅管理员可操作", 403)
     ok = omni_preset_dao.set_default(preset_id)
     if not ok:
         return _bad("preset 不存在或不是系统级（用户级 preset 不能作为全站默认）", 400)

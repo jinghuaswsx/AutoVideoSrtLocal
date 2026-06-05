@@ -8,6 +8,21 @@ from unittest.mock import patch
 from web import store
 
 
+CFG_DIALOGUE_AUTO_VOICE = {
+    "asr_post": "asr_clean",
+    "shot_decompose": False,
+    "translate_algo": "av_sentence",
+    "source_anchored": False,
+    "tts_strategy": "sentence_reconcile",
+    "subtitle": "sentence_units",
+    "voice_separation": True,
+    "loudness_match": True,
+    "auto_voice_selection": True,
+    "sentence_tts_loudness_calibration": False,
+    "av_sync_audit": "off",
+}
+
+
 def test_dialogue_translate_index_requires_login(authed_client_no_db):
     client = authed_client_no_db.application.test_client()
 
@@ -77,9 +92,17 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert 'id="step-speaker_detect"' in body
     assert 'id="step-voice_match_ab"' in body
     assert 'id="dialogueSegmentTimeline"' in body
+    assert 'id="dialogueSubtitleFont"' in body
+    assert 'id="dialogueSubtitlePositionY"' in body
+    assert 'id="dialogueSubtitlePreviewFrame"' in body
     assert "/api/dialogue-translate" in body
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body
+    assert 'id="autoVoiceSelectionCb"' in body
+    assert 'id="sentenceTtsLoudnessCalibrationCb"' in body
+    assert "大模型自动音色选择" in body
+    assert "句级TTS响度校准" in body
+    assert "auto-voice-selection" in body
     assert 'id="voice-selector-multi"' not in body
     assert "dialogue_translate.localize" not in body
 
@@ -144,12 +167,97 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
         ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/attempt/<int:attempt>", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/round-file/<int:round_index>/<kind>", ("GET", "HEAD", "OPTIONS")),
         ("/api/dialogue-translate/<task_id>/restart", ("OPTIONS", "POST")),
+        ("/api/dialogue-translate/<task_id>/auto-voice-selection", ("OPTIONS", "PUT")),
+        ("/api/dialogue-translate/<task_id>/sentence-tts-loudness-calibration", ("OPTIONS", "PUT")),
         ("/api/dialogue-translate/<task_id>/visible-to-all", ("OPTIONS", "PUT")),
         ("/api/dialogue-translate/<task_id>/analysis/run", ("OPTIONS", "POST")),
         ("/api/dialogue-translate/<task_id>/loudness-profile", ("OPTIONS", "POST")),
     }
 
     assert expected <= rules
+
+
+def test_dialogue_toggle_auto_voice_selection_updates_plugin_config(authed_client_no_db):
+    fake_task = {"_user_id": 1, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_client_no_db.put(
+            "/api/dialogue-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["auto_voice_selection"] is False
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    assert updated_cfg["asr_post"] == CFG_DIALOGUE_AUTO_VOICE["asr_post"]
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
+def test_dialogue_toggle_auto_voice_selection_allows_task_operator(authed_user_client_no_db):
+    fake_task = {"_user_id": 2, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-operator/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    mock_store.update.assert_called_once_with("t-operator", plugin_config=updated_cfg)
+
+
+def test_dialogue_toggle_sentence_tts_loudness_calibration_allows_viewable_normal_user(authed_user_client_no_db):
+    fake_task = {"_user_id": 1, "visible_to_all": True, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-1/sentence-tts-loudness-calibration",
+            json={"sentence_tts_loudness_calibration": True},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["sentence_tts_loudness_calibration"] is True
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["sentence_tts_loudness_calibration"] is True
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
+def test_dialogue_toggle_auto_voice_selection_allows_viewable_normal_user(authed_user_client_no_db):
+    fake_task = {"_user_id": 1, "visible_to_all": True, "plugin_config": CFG_DIALOGUE_AUTO_VOICE}
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=fake_task), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state, \
+         patch("web.routes.dialogue_translate.store") as mock_store:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["auto_voice_selection"] is False
+    updated_cfg = mock_update_project_state.call_args.args[1]["plugin_config"]
+    assert updated_cfg["auto_voice_selection"] is False
+    mock_store.update.assert_called_once_with("t-1", plugin_config=updated_cfg)
+
+
+def test_dialogue_toggle_auto_voice_selection_rejects_unviewable_task(authed_user_client_no_db):
+    with patch("web.routes.dialogue_translate._get_viewable_task", return_value=None), \
+         patch("web.routes.dialogue_translate.update_project_state") as mock_update_project_state:
+        resp = authed_user_client_no_db.put(
+            "/api/dialogue-translate/t-1/auto-voice-selection",
+            json={"auto_voice_selection": False},
+        )
+
+    assert resp.status_code == 404
+    mock_update_project_state.assert_not_called()
 
 
 def test_dialogue_translate_audio_extract_artifact_falls_back_to_task_audio_file(
@@ -654,6 +762,8 @@ def test_dialogue_translate_detail_js_does_not_interpolate_task_state_with_inner
     assert "card.innerHTML" not in script
     assert "confirmBtn.hidden = isVoiceMatchDone" in script
     assert "!canEditVoices(lastTask || {})" in script
+    assert "loadSubtitlePreviewPayload" in script
+    assert "subtitle_position_y" in script
 
 
 def test_dialogue_translate_layout_and_workbench_labels_are_registered():
@@ -930,6 +1040,7 @@ def test_dialogue_translate_start_creates_task_and_starts_runner(
         "separate",
         "asr_clean",
         "speaker_detect",
+        "speaker_confirm",
         "voice_match_ab",
         "alignment",
         "translate",
@@ -962,6 +1073,7 @@ def test_dialogue_translate_start_accepts_plugin_config_snapshot(
         "subtitle": "sentence_units",
         "voice_separation": False,
         "loudness_match": False,
+        "auto_voice_selection": True,
         "sentence_tts_loudness_calibration": False,
         "av_sync_audit": "off",
     }
@@ -1012,6 +1124,7 @@ def test_dialogue_translate_start_accepts_plugin_config_snapshot(
         "asr",
         "asr_normalize",
         "speaker_detect",
+        "speaker_confirm",
         "voice_match_ab",
         "alignment",
         "translate",
@@ -1335,6 +1448,73 @@ def test_dialogue_translate_confirm_voices_accepts_library_voice(
     assert updated["speaker_profiles"]["A"]["candidates"][0]["voice_id"] == "voice-library-a"
 
 
+def test_dialogue_translate_confirm_voices_persists_subtitle_settings(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-confirm-subtitle-settings"
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-confirm-subtitle-settings", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        target_lang="de",
+        speaker_profiles={
+            "A": {
+                "candidates": [
+                    {"voice_id": "voice-a", "name": "Voice A"},
+                    {"voice_id": "voice-a-2", "name": "Voice A2"},
+                ],
+            },
+            "B": {"candidates": [{"voice_id": "voice-b", "name": "Voice B"}]},
+        },
+        selected_voice_by_speaker={},
+        current_review_step="voice_match_ab",
+        steps={
+            "speaker_detect": "done",
+            "voice_match_ab": "waiting",
+            "alignment": "pending",
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "state_json": json.dumps(store.get(task_id), ensure_ascii=False),
+            "user_id": 1,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.save_project_state",
+        lambda saved_task_id, state, **kwargs: store.update(saved_task_id, **state),
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda *args, **kwargs: None,
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/confirm-voices",
+        json={
+            "selected_voice_by_speaker": {
+                "A": "voice-a-2",
+                "B": "voice-b",
+            },
+            "subtitle_font": "Oswald Bold",
+            "subtitle_size": 22,
+            "subtitle_position_y": 0.42,
+            "subtitle_position": "bottom",
+        },
+    )
+
+    assert resp.status_code == 200
+    updated = store.get(task_id)
+    assert updated["subtitle_font"] == "Oswald Bold"
+    assert updated["subtitle_size"] == 22
+    assert updated["subtitle_position_y"] == 0.42
+    assert updated["subtitle_position"] == "bottom"
+    assert updated["selected_voice_by_speaker"]["A"]["voice_id"] == "voice-a-2"
+    assert updated["selected_voice_by_speaker"]["B"]["voice_id"] == "voice-b"
+
+
 def test_dialogue_translate_confirm_voices_persists_selection_and_resumes_alignment(
     authed_client_no_db,
     monkeypatch,
@@ -1421,3 +1601,104 @@ def test_dialogue_translate_confirm_voices_persists_selection_and_resumes_alignm
     assert updated["steps"]["voice_match_ab"] == "done"
     assert updated["current_review_step"] == ""
     assert resumed == {"task_id": task_id, "start_step": "alignment", "user_id": 1}
+
+
+def test_dialogue_translate_confirm_speakers_persists_assignment_and_resumes_voice_match(
+    authed_client_no_db,
+    monkeypatch,
+):
+    task_id = "dialogue-confirm-speakers-ok"
+    store.create(task_id, "/tmp/demo.mp4", "/tmp/dialogue-confirm-speakers-ok", user_id=1)
+    store.update(
+        task_id,
+        type="dialogue_translate",
+        target_lang="de",
+        video_path="/tmp/demo.mp4",
+        task_dir="/tmp/dialogue-confirm-speakers-ok",
+        dialogue_segments=[
+            {"index": 0, "speaker_id": "A", "start_time": 0.0, "end_time": 1.0},
+            {"index": 1, "speaker_id": "B", "start_time": 1.0, "end_time": 2.0},
+        ],
+        steps={
+            "speaker_detect": "done",
+            "speaker_confirm": "waiting",
+            "voice_match_ab": "pending",
+        },
+        current_review_step="speaker_confirm",
+    )
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.db_query_one",
+        lambda *args, **kwargs: {
+            "state_json": json.dumps(store.get(task_id), ensure_ascii=False),
+            "user_id": 1,
+        },
+    )
+    
+    fake_build_result = {
+        "dialogue_segments": [
+            {"index": 0, "speaker_id": "B", "start_time": 0.0, "end_time": 1.0, "source_audio_relpath": "seg0.wav"},
+            {"index": 1, "speaker_id": "A", "start_time": 1.0, "end_time": 2.0, "source_audio_relpath": "seg1.wav"},
+        ],
+        "dialogue_segment_audio_manifest": {"manifest": "fake"},
+        "speaker_audio_tracks": {
+            "A": {"relative_path": "trackA.wav"},
+            "B": {"relative_path": "trackB.wav"},
+        },
+    }
+    monkeypatch.setattr(
+        "appcore.dialogue_translate.segment_audio.build_dialogue_segment_audio_assets",
+        lambda *args, **kwargs: fake_build_result,
+    )
+    
+    saved: dict[str, object] = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.save_project_state",
+        lambda saved_task_id, state, **kwargs: saved.update(
+            {"task_id": saved_task_id, "state": json.loads(json.dumps(state))}
+        ),
+    )
+    
+    resumed: dict[str, object] = {}
+    monkeypatch.setattr(
+        "web.routes.dialogue_translate.dialogue_pipeline_runner.resume",
+        lambda resumed_task_id, start_step, user_id=None: resumed.update(
+            {
+                "task_id": resumed_task_id,
+                "start_step": start_step,
+                "user_id": user_id,
+            }
+        ),
+    )
+
+    resp = authed_client_no_db.post(
+        f"/api/dialogue-translate/{task_id}/confirm-speakers",
+        json={
+            "dialogue_segments": [
+                {"index": 0, "speaker_id": "B"},
+                {"index": 1, "speaker_id": "A"},
+            ],
+            "speaker_aliases": {
+                "A": "男声",
+                "B": "女声",
+            }
+        },
+    )
+
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["speaker_aliases"] == {"A": "男声", "B": "女声"}
+    assert len(payload["dialogue_segments"]) == 2
+    
+    assert saved["task_id"] == task_id
+    assert saved["state"]["steps"]["speaker_confirm"] == "done"
+    assert saved["state"]["speaker_aliases"] == {"A": "男声", "B": "女声"}
+    assert saved["state"]["current_review_step"] == ""
+    assert saved["state"]["status"] == "running"
+    
+    updated = store.get(task_id)
+    assert updated["steps"]["speaker_confirm"] == "done"
+    assert updated["speaker_aliases"] == {"A": "男声", "B": "女声"}
+    assert updated["current_review_step"] == ""
+    assert resumed == {"task_id": task_id, "start_step": "voice_match_ab", "user_id": 1}
+

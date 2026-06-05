@@ -652,6 +652,7 @@ def build_detail_source_index_map(
     reference_images: list[dict],
     *,
     carousel_image_count: int,
+    detail_slot_images: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
     reference_by_token: dict[str, list[int]] = {}
     reference_by_name: dict[str, list[int]] = {}
@@ -664,6 +665,27 @@ def build_detail_source_index_map(
         name_key = taa_cdp.source_name_key(filename)
         if name_key and source_index is not None:
             reference_by_name.setdefault(name_key, []).append(source_index)
+
+    visual_index_by_src: dict[str, int] = {}
+    reference_rows = _local_image_rows(reference_images)
+    if detail_slot_images and reference_rows:
+        for slot in detail_slot_images:
+            src = _normalize_src(slot.get("src") or slot.get("url") or "")
+            local_path = str(slot.get("local_path") or "")
+            if not src or not local_path:
+                continue
+            match = _best_reference_for_image(
+                local_path,
+                reference_rows,
+                min_score=VISUAL_MATCH_MIN_SCORE,
+            )
+            if not match or not match.get("accepted"):
+                continue
+            source_index = taa_cdp.source_index_from_filename(
+                str(match["reference"].get("filename") or "")
+            )
+            if source_index is not None:
+                visual_index_by_src[src] = source_index
 
     mapping: dict[str, int] = {}
     used_indices: set[int] = set()
@@ -679,17 +701,40 @@ def build_detail_source_index_map(
         candidates = sorted(set((reference_by_token.get(token or "") if token else None) or reference_by_name.get(name_key or "") or []))
         if not candidates:
             continue
-        detail_side = [idx for idx in candidates if idx >= carousel_image_count and idx not in used_indices]
-        if detail_side:
-            source_index = detail_side[0]
+        visual_index = visual_index_by_src.get(src)
+        if visual_index is not None and visual_index in candidates and visual_index not in used_indices:
+            source_index = visual_index
         else:
-            unused = [idx for idx in candidates if idx not in used_indices]
-            if len(unused) != 1:
-                continue
-            source_index = unused[0]
+            detail_side = [idx for idx in candidates if idx >= carousel_image_count and idx not in used_indices]
+            if detail_side:
+                source_index = detail_side[0]
+            else:
+                unused = [idx for idx in candidates if idx not in used_indices]
+                if len(unused) != 1:
+                    continue
+                source_index = unused[0]
         mapping[key] = source_index
         used_indices.add(source_index)
     return mapping
+
+
+def _merge_visual_detail_source_index_map(
+    *,
+    detail_html: str,
+    reference_images: list[dict[str, Any]],
+    detail_slot_images: list[dict[str, Any]],
+    carousel_image_count: int,
+    source_index_map: dict[str, int],
+) -> dict[str, int]:
+    visual_map = build_detail_source_index_map(
+        detail_html,
+        reference_images,
+        carousel_image_count=carousel_image_count,
+        detail_slot_images=detail_slot_images,
+    )
+    if not visual_map:
+        return source_index_map
+    return {**source_index_map, **visual_map}
 
 
 def fetch_bootstrap_ready(
@@ -1377,19 +1422,45 @@ def run(
                     candidate_srcs=missing_detail_srcs,
                     cancel_token=cancel_token,
                 )
-                print("详情图：视觉识别中——正在用图像比对算法生成替换方案（耗时较长，请耐心等待）")
-                detail_visual_plan = build_visual_detail_replacement_plan(
-                    slot_images=detail_visual_sources.get("slot_images") or [],
+                remapped_source_index_map = _merge_visual_detail_source_index_map(
+                    detail_html=detail_html,
                     reference_images=detail_visual_sources.get("reference_images") or [],
-                    localized_images=downloaded,
+                    detail_slot_images=detail_visual_sources.get("slot_images") or [],
+                    carousel_image_count=len(product_images),
+                    source_index_map=source_index_map,
                 )
-                detail_confirmations = list(detail_visual_plan.get("confirmation_pairs") or [])
-                if detail_confirmations:
-                    print(f"详情图：视觉识别完成，得到 {len(detail_confirmations)} 对候选；等待用户确认配对")
-                    confirm_visual_carousel_pairs(detail_confirmations, confirm_cb=visual_pair_confirm_cb)
-                    print(f"详情图：视觉兜底已确认 {len(detail_confirmations)} 对")
-                else:
-                    print(f"详情图：视觉兜底未能生成可用配对：{detail_visual_plan.get('review')}")
+                if remapped_source_index_map != source_index_map:
+                    source_index_map = remapped_source_index_map
+                    print(f"详情图：视觉比对已补充源图序号映射 {source_index_map}")
+                    preliminary_detail_plan = taa_cdp.plan_body_html_replacements(
+                        detail_html,
+                        downloaded,
+                        source_index_by_token=source_index_map,
+                        replace_shopify_cdn=args.replace_shopify_cdn,
+                    )
+                    missing_detail_srcs = [
+                        str(row.get("src") or "")
+                        for row in preliminary_detail_plan.get("skipped_missing") or []
+                        if row.get("src")
+                        and should_attempt_detail_visual_fallback(
+                            str(row.get("src") or ""),
+                            replace_shopify_cdn=args.replace_shopify_cdn,
+                        )
+                    ]
+                if missing_detail_srcs:
+                    print("详情图：视觉识别中——正在用图像比对算法生成替换方案（耗时较长，请耐心等待）")
+                    detail_visual_plan = build_visual_detail_replacement_plan(
+                        slot_images=detail_visual_sources.get("slot_images") or [],
+                        reference_images=detail_visual_sources.get("reference_images") or [],
+                        localized_images=downloaded,
+                    )
+                    detail_confirmations = list(detail_visual_plan.get("confirmation_pairs") or [])
+                    if detail_confirmations:
+                        print(f"详情图：视觉识别完成，得到 {len(detail_confirmations)} 对候选；等待用户确认配对")
+                        confirm_visual_carousel_pairs(detail_confirmations, confirm_cb=visual_pair_confirm_cb)
+                        print(f"详情图：视觉兜底已确认 {len(detail_confirmations)} 对")
+                    else:
+                        print(f"详情图：视觉兜底未能生成可用配对：{detail_visual_plan.get('review')}")
         except cancellation.OperationCancelled:
             raise
         except Exception as exc:

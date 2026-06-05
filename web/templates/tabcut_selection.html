@@ -15,7 +15,7 @@
 .tabcut-btn.secondary { border-color:#cbd5e1; background:#fff; color:#334155; }
 .tabcut-view-tabs { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
 .tabcut-view-tabs-left { display:flex; gap:8px; }
-.tabcut-view-tab { height:34px; padding:0 14px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#475569; font-weight:700; cursor:pointer; }
+.tabcut-view-tab { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; box-sizing: border-box; height:34px; padding:0 14px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#475569; font-weight:700; cursor:pointer; }
 .tabcut-view-tab.active { border-color:#0f766e; background:#ecfdf5; color:#0f766e; }
 .tabcut-goods-rank-tabs { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin:-2px 0 12px; padding:10px 12px; border:1px solid #d8dee8; border-radius:8px; background:#fff; }
 .tabcut-goods-rank-tabs[hidden] { display:none !important; }
@@ -94,6 +94,14 @@
 .tabcut-table th { position:sticky; top:0; padding:10px; border-bottom:1px solid #d8dee8; background:#f8fafc; color:#64748b; text-align:left; white-space:nowrap; }
 .tabcut-table td { padding:10px; border-bottom:1px solid #edf2f7; vertical-align:top; }
 .tabcut-table tr:hover td { background:#f8fafc; }
+.recommended-table-layout th,
+.recommended-table-layout td {
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+.recommended-table-layout .tabcut-name {
+  text-align: center !important;
+}
 .tabcut-name { max-width:360px; line-height:1.35; word-break:break-word; }
 .tabcut-num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .tabcut-muted { color:#64748b; }
@@ -184,6 +192,65 @@
   gap: 8px;
   align-items: center;
   margin-top: 4px;
+}
+{% if share_mode %}
+.sidebar, .topbar, .sidebar-backdrop { display: none !important; }
+.main-content { margin-left: 0 !important; width: 100% !important; padding: 14px !important; }
+.tabcut-toolbar { margin-top: 14px !important; }
+.tabcut-mark-options { display: none !important; }
+.tabcut-fine-ai-btn { display: none !important; }
+.tabcut-toolbar .tabcut-btn { display: none !important; }
+{% endif %}
+
+.inline-video-container {
+  width: 180px;
+  height: 320px;
+  position: relative;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+  margin: 0 auto;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.inline-video-container:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+}
+.inline-video-cover {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.inline-video-play-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+.inline-video-container:hover .inline-video-play-btn {
+  transform: scale(1.15);
+  background: rgba(0, 0, 0, 0.85);
+}
+.inline-video-play-btn::after {
+  content: "";
+  display: block;
+  margin-left: 4px;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-left: 16px solid #fff;
 }
 {% endblock %}
 
@@ -290,8 +357,15 @@
 
   <div class="tabcut-view-tabs">
     <div class="tabcut-view-tabs-left">
-      <button class="tabcut-view-tab active" type="button" data-view="videos" onclick="setTabcutView('videos')">视频榜</button>
-      <button class="tabcut-view-tab" type="button" data-view="goods" onclick="setTabcutView('goods')">商品榜</button>
+      {% if share_mode %}
+        <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_videos_page') }}">视频榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_goods_page') }}">商品榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_recommended_page') }}">推荐产品20个</a>
+      {% else %}
+        <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_videos_page') }}">视频榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_goods_page') }}">商品榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_recommended_page') }}">推荐产品20个</a>
+      {% endif %}
     </div>
     <button class="tabcut-view-tab" id="zoomToggleBtn" type="button" onclick="toggleCardZoom()" style="border-color:#cbd5e1; color:#475569;">2x 放大</button>
   </div>
@@ -312,7 +386,10 @@
 
   <div class="tabcut-status">
     <span id="tabcutStatus">Ready</span>
-    <button class="tabcut-btn secondary" type="button" onclick="refreshTabcut()">Refresh</button>
+    {% if not share_mode %}
+      <button class="tabcut-btn secondary" type="button" onclick="copyShareUrl()" style="margin-right: 8px;">分享</button>
+      <button class="tabcut-btn secondary" type="button" onclick="refreshTabcut()">刷新</button>
+    {% endif %}
   </div>
 
   <div class="tabcut-results">
@@ -344,10 +421,376 @@
 </div>
 
 <script>
-let tabcutView = "videos";
+let tabcutView = "{{ initial_view or 'videos' }}";
 let tabcutPage = 1;
 
+const recommendedProducts = [
+  {
+    rank: 1,
+    avgScore: 80.00,
+    price: "$20.90",
+    name: "[medicube] PDRN Pink Caffeine Collagen Eye Patch",
+    translation: "medicube PDRN粉色咖啡因胶原蛋白眼膜（夜间去黑眼圈眼袋）",
+    totalSales: 69800,
+    monthlySales: 67900,
+    topVideoSales: 2669,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1732269507528855787/17322695075288557870.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1732269507528855787",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1732269507528855787",
+    videoLink: "https://www.tiktok.com/@susanluckhardt/video/7615820879531953421"
+  },
+  {
+    rank: 2,
+    avgScore: 79.50,
+    price: "$36.99",
+    name: "B2prity Women Cutout One Piece Skirt Swimsuit V Neck",
+    translation: "B2prity 女士镂空连体裙式泳衣（遮肚显瘦高腰）",
+    totalSales: 32188,
+    monthlySales: 30008,
+    topVideoSales: 2794,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1730860887821488306/17308608878214883060.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1730860887821488306",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1730860887821488306",
+    videoLink: "https://www.tiktok.com/@natgutierrezzzz/video/7611206531194916127"
+  },
+  {
+    rank: 3,
+    avgScore: 78.50,
+    price: "$23.74",
+    name: "2 in 1 Wireless CarPlay Adapter for Apple and Android",
+    translation: "二合一无线 CarPlay 适配器（支持苹果/安卓车载互联）",
+    totalSales: 17458,
+    monthlySales: 17458,
+    topVideoSales: 2986,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1732118631822495877/17321186318224958770.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1732118631822495877",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1732118631822495877",
+    videoLink: "https://www.tiktok.com/@amedinaaa5/video/7608365753753947406"
+  },
+  {
+    rank: 4,
+    avgScore: 77.50,
+    price: "$12.99",
+    name: "Clip in Hair Tinsel Extensions Strands Kit (6 Pcs 24\")",
+    translation: "夹扣式闪光发丝接发片套装（6片装24英寸派对配饰）",
+    totalSales: 9266,
+    monthlySales: 9266,
+    topVideoSales: 745,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1730998090961293855/17309980909612938550.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1730998090961293855",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1730998090961293855",
+    videoLink: "https://www.tiktok.com/@nayasahairusa/video/7610230443119611167"
+  },
+  {
+    rank: 5,
+    avgScore: 77.25,
+    price: "$17.89",
+    name: "Snowy Sticky Push Up Inserts Bra Cup",
+    translation: "Snowy 粘性双面隐形胸垫（增大胸杯隐形胸托）",
+    totalSales: 26040,
+    monthlySales: 26040,
+    topVideoSales: 2485,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1730910297225532018/17309102972255320180.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1730910297225532018",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1730910297225532018",
+    videoLink: "https://www.tiktok.com/@peachyfindsgems/video/7611254152760511774"
+  },
+  {
+    rank: 6,
+    avgScore: 76.75,
+    price: "$17.42",
+    name: "Mothca Matte Privacy Screen Protector for iPhone",
+    translation: "Mothca 磨砂防窥 iPhone 钢化防爆膜（带贴膜神器）",
+    totalSales: 34359,
+    monthlySales: 34359,
+    topVideoSales: 931,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1729471709213593835/17294717092135938350.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1729471709213593835",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1729471709213593835",
+    videoLink: "https://www.tiktok.com/@chrissysgems/video/7608686851196587295"
+  },
+  {
+    rank: 7,
+    avgScore: 76.50,
+    price: "$11.05",
+    name: "4Pcs Peel off Lip Liner Stain, Lip Gloss Lip Tint Set",
+    translation: "4件套撕拉唇线笔口红唇釉套装（防水长效不脱色）",
+    totalSales: 37449,
+    monthlySales: 37449,
+    topVideoSales: 2443,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1731473450540438138/17314734505404381380.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1731473450540438138",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1731473450540438138",
+    videoLink: "https://www.tiktok.com/@2fynee.m_/video/7611967157026458911"
+  },
+  {
+    rank: 8,
+    avgScore: 76.50,
+    price: "$10.77",
+    name: "Guccqueen Universal Magnetic Car Phone Holder Mount",
+    translation: "Guccqueen 万能磁吸车载手机支架（强力真空吸盘）",
+    totalSales: 37160,
+    monthlySales: 37160,
+    topVideoSales: 2529,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1729486647624045679/17294866476240456790.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1729486647624045679",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1729486647624045679",
+    videoLink: "https://www.tiktok.com/@fresh_life99/video/7614393553933831454"
+  },
+  {
+    rank: 9,
+    avgScore: 76.25,
+    price: "$9.90",
+    name: "SEESE Strong Magnetic Screw Ring drill bit holder",
+    translation: "SEESE 强磁加磁圈螺丝环（1/4英寸通用电批起子头定位器）",
+    totalSales: 163523,
+    monthlySales: 163523,
+    topVideoSales: 2458,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1731614349572673866/17316143495726738660.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1731614349572673866",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1731614349572673866",
+    videoLink: "https://www.tiktok.com/@sagoltui8/video/7614109847595879694"
+  },
+  {
+    rank: 10,
+    avgScore: 76.00,
+    price: "$14.99",
+    name: "Women's Solid Color Cami Lounge Dress",
+    translation: "女士纯色吊带修身长裙（夏季居家外穿两用）",
+    totalSales: 153479,
+    monthlySales: 153479,
+    topVideoSales: 2295,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1732189362609557800/17321893626095578000.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1732189362609557800",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1732189362609557800",
+    videoLink: "https://www.tiktok.com/@tavifitboss/video/7614231772011842847"
+  },
+  {
+    rank: 11,
+    avgScore: 75.75,
+    price: "$23.08",
+    name: "iYoShop Dual Dog Leash shock absorbing Bungee",
+    translation: "iYoShop 避震弹力双头狗拉绳（360度旋转防缠绕）",
+    totalSales: 26978,
+    monthlySales: 26978,
+    topVideoSales: 1631,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1729433512456131161/17294335124561311610.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1729433512456131161",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1729433512456131161",
+    videoLink: "https://www.tiktok.com/@leroybrownesq/video/7607994764889230622"
+  },
+  {
+    rank: 12,
+    avgScore: 75.50,
+    price: "$28.00",
+    name: "tarte x @itsmaureenkelly lash cocktail mascara",
+    translation: "tarte 联名款睫毛膏与滋养底膏二合一",
+    totalSales: 412900,
+    monthlySales: 407115,
+    topVideoSales: 4168,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1730968659830019004/17309686598300190040.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1730968659830019004",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1730968659830019004",
+    videoLink: "https://www.tiktok.com/@brittanii.realtor/video/7611130145612647711"
+  },
+  {
+    rank: 13,
+    avgScore: 75.00,
+    price: "$10.66",
+    name: "Smart LED flat Reading Book Light Flat timer",
+    translation: "平板型智能无线 LED 读书护眼灯（可做涂鸦床头灯）",
+    totalSales: 10686,
+    monthlySales: 10686,
+    topVideoSales: 3125,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1732216736489116600/17322167364891166000.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1732216736489116600",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1732216736489116600",
+    videoLink: "https://www.tiktok.com/@ssdddhome/video/7611371956985728286"
+  },
+  {
+    rank: 14,
+    avgScore: 74.75,
+    price: "$14.99",
+    name: "Women's Solid Color Cami Lounge Dress (Alternate)",
+    translation: "女士纯色吊带修身长裙（沙滩居家外穿）",
+    totalSales: 152041,
+    monthlySales: 148780,
+    topVideoSales: 3605,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1732189362609557800/17321893626095578000.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1732189362609557800",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1732189362609557800",
+    videoLink: "https://www.tiktok.com/@tavifitboss/video/7613535041704021279"
+  },
+  {
+    rank: 15,
+    avgScore: 74.25,
+    price: "$17.49",
+    name: "Akunbem Electric Shaver Bikini Trimmer for Women",
+    translation: "Akunbem 女士多功能充电式比基尼脱毛修剪剃毛器",
+    totalSales: 1061423,
+    monthlySales: 1048354,
+    topVideoSales: 3617,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1729496049825452336/17294960498254523360.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1729496049825452336",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1729496049825452336",
+    videoLink: "https://www.tiktok.com/@flor.reyy_/video/7609861255863520543"
+  },
+  {
+    rank: 16,
+    avgScore: 74.25,
+    price: "$12.00",
+    name: "Men's Zipper Pocket Spandex Shorts",
+    translation: "男士带拉链口袋速干运动短裤（透气尼龙氨纶）",
+    totalSales: 7367,
+    monthlySales: 7367,
+    topVideoSales: 1421,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1731381651608146165/17313816516081461650.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1731381651608146165",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1731381651608146165",
+    videoLink: "https://www.tiktok.com/@chasesdealz/video/7614517263974059295"
+  },
+  {
+    rank: 17,
+    avgScore: 74.25,
+    price: "$5.60",
+    name: "One Fish Privacy Tempered Glass Screen Protector",
+    translation: "One Fish 钢化防窥手机保护膜（适用于三星/iPhone）",
+    totalSales: 75400,
+    monthlySales: 72700,
+    topVideoSales: 2513,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1729620396376297861/17296203963762978610.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1729620396376297861",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1729620396376297861",
+    videoLink: "https://www.tiktok.com/@onefish.official_us3/video/7615190904881630477"
+  },
+  {
+    rank: 18,
+    avgScore: 74.00,
+    price: "$8.24",
+    name: "African Net Sponge exfoliating net Sponge",
+    translation: "非洲净肤去角质沐浴拉皮海绵网",
+    totalSales: 17944,
+    monthlySales: 17944,
+    topVideoSales: 3265,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1732031588351381920/17320315883513819200.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1732031588351381920",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1732031588351381920",
+    videoLink: "https://www.tiktok.com/@itstiffslife/video/7605800785041050910"
+  },
+  {
+    rank: 19,
+    avgScore: 74.00,
+    price: "$19.99",
+    name: "Chemical Guys Heavy-Duty Water Spot Remover",
+    translation: "Chemical Guys 汽车强力去水渍玻璃漆面清洁剂（16盎司）",
+    totalSales: 45393,
+    monthlySales: 45393,
+    topVideoSales: 4341,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1729498809014588028/17294988090145880280.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1729498809014588028",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1729498809014588028",
+    videoLink: "https://www.tiktok.com/@bestdealzonhere/video/7615615642980437278"
+  },
+  {
+    rank: 20,
+    avgScore: 73.50,
+    price: "$17.00",
+    name: "[SKIN1004 Official Shop] Poremizing Deep Cleansing Foam",
+    translation: "SKIN1004 积雪草粉盐深层毛孔清洁洁面乳",
+    totalSales: 24200,
+    monthlySales: 24200,
+    topVideoSales: 1411,
+    mainImage: "https://cdn.tabcut.com/dataservice/media/item/1729398483601822146/17293984836018221460.webp",
+    tiktokShopLink: "https://www.tiktok.com/shop/pdp/1729398483601822146",
+    tabcutLink: "https://www.tabcut.com/selection/goods/detail/1729398483601822146",
+    videoLink: "https://www.tiktok.com/@onefish.official_us3/video/7606455053095816461"
+  }
+];
+
+function parseVideoId(url) {
+  if (!url) return "";
+  const match = url.match(/\/video\/(\d+)/);
+  return match ? match[1] : "";
+}
+
+function playInlineVideo(coverEl, videoUrl) {
+  const container = coverEl.parentElement;
+  if (!container) return;
+  container.innerHTML = `<video src="${esc(videoUrl)}" controls autoplay playsinline style="width:100%; height:100%; object-fit:contain; background:#000; outline:none; border:none;"></video>`;
+}
+
+function renderRecommendedProducts() {
+  qs("tabcutVideoGrid").hidden = true;
+  qs("tabcutTableWrap").hidden = false;
+  qs("tabcutTableWrap").classList.add("recommended-table-layout");
+  qs("tabcutStatus").textContent = "20 rows";
+  
+  qs("tabcutHead").innerHTML = `
+    <tr>
+      <th>排名</th>
+      <th>图片</th>
+      <th>视频封面</th>
+      <th>商品名称 / 翻译对照</th>
+      <th>德法意西平均分</th>
+      <th>售价</th>
+      <th class="tabcut-num">商品总销量</th>
+      <th class="tabcut-num">月销量</th>
+      <th class="tabcut-num">最爆视频带货销量</th>
+      <th>链接与详情</th>
+    </tr>`;
+    
+  const rowsHtml = recommendedProducts.map(row => {
+    const videoId = parseVideoId(row.videoLink);
+    const coverUrl = videoId ? `/xuanpin/api/tabcut/videos/${encodeURIComponent(videoId)}/local-cover` : "";
+    const videoUrl = videoId ? `/xuanpin/api/tabcut/videos/${encodeURIComponent(videoId)}/local-video` : "";
+    const coverBgStyle = coverUrl 
+      ? `background-image: url('${esc(coverUrl)}'), url('${esc(row.mainImage)}');`
+      : `background-image: url('${esc(row.mainImage)}');`;
+
+    return `
+    <tr>
+      <td><strong>${row.rank}</strong></td>
+      <td>${row.mainImage ? `<a href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer"><img class="tabcut-product-cover" src="${esc(row.mainImage)}" style="width:108px; height:108px; object-fit:cover;" loading="lazy" alt=""></a>` : ""}</td>
+      <td>
+        ${videoId ? `
+        <div class="inline-video-container">
+          <div class="inline-video-cover" style="${coverBgStyle}" onclick="playInlineVideo(this, '${esc(videoUrl)}')">
+            <button class="inline-video-play-btn" type="button" aria-label="播放视频"></button>
+          </div>
+        </div>
+        ` : `<div style="color:#94a3b8; font-size:12px;">无视频</div>`}
+      </td>
+      <td class="tabcut-name">
+        <a class="tabcut-product-link" href="${esc(row.tiktokShopLink)}" target="_blank" rel="noopener noreferrer">
+          <strong>${esc(row.name)}</strong>
+        </a>
+        <div style="color:#0f766e; font-weight:700; margin-top:4px;">${esc(row.translation)}</div>
+      </td>
+      <td><strong>${row.avgScore.toFixed(2)}</strong></td>
+      <td>${esc(row.price)}</td>
+      <td class="tabcut-num">${fmtInt(row.totalSales)}</td>
+      <td class="tabcut-num">${fmtInt(row.monthlySales)}</td>
+      <td class="tabcut-num">${fmtInt(row.topVideoSales)}</td>
+      <td>
+        <div style="display:flex; flex-direction:column; gap:4px; max-width:100px;">
+          <a href="${esc(row.videoLink)}" target="_blank" rel="noopener noreferrer" class="tabcut-btn secondary" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; height:24px; font-size:11px; padding:0 8px; line-height:24px;">原片视频</a>
+          <a href="${esc(row.tabcutLink)}" target="_blank" rel="noopener noreferrer" class="tabcut-btn secondary" style="display:inline-flex; align-items:center; justify-content:center; text-decoration:none; height:24px; font-size:11px; padding:0 8px; line-height:24px;">Tabcut详情</a>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+  
+  qs("tabcutBody").innerHTML = rowsHtml;
+  
+  // Update Pager to empty/1 page
+  qs("tabcutPager").innerHTML = `
+    <button class="tabcut-btn secondary" disabled>Prev</button>
+    <span class="tabcut-muted">1 / 1</span>
+    <button class="tabcut-btn secondary" disabled>Next</button>`;
+}
+
 function qs(id) { return document.getElementById(id); }
+function val(id) { const el = qs(id); return el ? (el.value || "") : ""; }
 function fmtInt(v) { const n = Number(v || 0); return n ? n.toLocaleString() : ""; }
 function fmtMoney(v) { const n = Number(v || 0); return n ? "$" + n.toLocaleString(undefined, {maximumFractionDigits: 0}) : ""; }
 function fmtDecimalMoney(v) { const n = Number(v || 0); return n ? "$" + n.toLocaleString(undefined, {maximumFractionDigits: 2}) : ""; }
@@ -584,55 +1027,64 @@ function setGoodsRankPeriod(period) {
 function updateDateFilterState() {
   const disabled = tabcutView !== "videos";
   ["publishDateFrom", "publishDateTo", "sourceRank"].forEach(id => {
-    qs(id).disabled = disabled;
+    const el = qs(id);
+    if (el) el.disabled = disabled;
   });
   const goodsDisabled = tabcutView !== "goods";
   ["goodsBizDate", "sourceCategory"].forEach(id => {
-    qs(id).disabled = goodsDisabled;
+    const el = qs(id);
+    if (el) el.disabled = goodsDisabled;
   });
-  qs("goodsRankTabs").hidden = goodsDisabled;
+  const tabs = qs("goodsRankTabs");
+  if (tabs) tabs.hidden = goodsDisabled;
 }
 
 function paramsFor(page) {
-  let sortValue = qs("sortBy").value;
+  let sortValue = val("sortBy");
   if (tabcutView === "goods" && ["play_count", "score", "item_sold_count", "goods_sold_count_7d", "goods_gmv_7d"].includes(sortValue)) {
     sortValue = "sold_count_period";
   }
-  const params = new URLSearchParams({ page, page_size: qs("pageSize").value, sort: sortValue });
-  if (qs("categoryL1").value.trim()) params.set("category_l1", qs("categoryL1").value.trim());
-  if (tabcutView === "videos" && qs("sourceRank").value) params.set("source_rank", qs("sourceRank").value);
+  const params = new URLSearchParams({ page, page_size: val("pageSize"), sort: sortValue });
+  if (val("categoryL1").trim()) params.set("category_l1", val("categoryL1").trim());
+  if (tabcutView === "videos" && val("sourceRank")) params.set("source_rank", val("sourceRank"));
   if (tabcutView === "goods") {
-    params.set("goods_rank_kind", qs("goodsRankKind").value || "hot");
-    params.set("goods_rank_period", qs("goodsRankPeriod").value || "30d");
-    if (qs("sourceCategory").value) params.set("source_category", qs("sourceCategory").value);
-    if (qs("goodsBizDate").value) params.set("biz_date", qs("goodsBizDate").value);
+    params.set("goods_rank_kind", val("goodsRankKind") || "hot");
+    params.set("goods_rank_period", val("goodsRankPeriod") || "30d");
+    if (val("sourceCategory")) params.set("source_category", val("sourceCategory"));
+    if (val("goodsBizDate")) params.set("biz_date", val("goodsBizDate"));
   }
-  if (tabcutView === "videos" && qs("publishDateFrom").value) params.set("publish_date_from", qs("publishDateFrom").value);
-  if (tabcutView === "videos" && qs("publishDateTo").value) params.set("publish_date_to", qs("publishDateTo").value);
-  if (qs("minVideoSales").value) params.set("min_video_sales", qs("minVideoSales").value);
-  if (qs("minGoodsSales").value) {
-    params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", qs("minGoodsSales").value);
-    if (tabcutView === "goods" && qs("goodsRankPeriod").value !== "7d") {
-      params.set(`min_sales_${qs("goodsRankPeriod").value}`, qs("minGoodsSales").value);
+  if (tabcutView === "videos" && val("publishDateFrom")) params.set("publish_date_from", val("publishDateFrom"));
+  if (tabcutView === "videos" && val("publishDateTo")) params.set("publish_date_to", val("publishDateTo"));
+  if (val("minVideoSales")) params.set("min_video_sales", val("minVideoSales"));
+  if (val("minGoodsSales")) {
+    params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", val("minGoodsSales"));
+    if (tabcutView === "goods" && val("goodsRankPeriod") !== "7d") {
+      params.set(`min_sales_${val("goodsRankPeriod")}`, val("minGoodsSales"));
     }
   }
-  if (qs("maxGoodsSales").value) params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", qs("maxGoodsSales").value);
-  if (qs("minGmv").value) {
-    params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", qs("minGmv").value);
-    if (tabcutView === "goods" && qs("goodsRankPeriod").value !== "7d") {
-      params.set(`min_gmv_${qs("goodsRankPeriod").value}`, qs("minGmv").value);
+  if (val("maxGoodsSales")) params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", val("maxGoodsSales"));
+  if (val("minGmv")) {
+    params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", val("minGmv"));
+    if (tabcutView === "goods" && val("goodsRankPeriod") !== "7d") {
+      params.set(`min_gmv_${val("goodsRankPeriod")}`, val("minGmv"));
     }
   }
-  if (qs("minPrice").value) params.set(tabcutView === "videos" ? "min_item_price" : "min_price", qs("minPrice").value);
-  if (qs("maxPrice").value) params.set(tabcutView === "videos" ? "max_item_price" : "max_price", qs("maxPrice").value);
-  if (qs("markStatus").value) params.set("mark_status", qs("markStatus").value);
+  if (val("minPrice")) params.set(tabcutView === "videos" ? "min_item_price" : "min_price", val("minPrice"));
+  if (val("maxPrice")) params.set(tabcutView === "videos" ? "max_item_price" : "max_price", val("maxPrice"));
+  if (val("markStatus")) params.set("mark_status", val("markStatus"));
   return params;
 }
 
 async function loadTabcut(page) {
+  if (tabcutView === "recommended") {
+    renderRecommendedProducts();
+    return;
+  }
   tabcutPage = page;
   qs("tabcutStatus").textContent = "Loading...";
-  const endpoint = tabcutView === "videos" ? "/xuanpin/api/tabcut/videos" : "/xuanpin/api/tabcut/goods";
+  const endpoint = tabcutView === "videos" 
+    ? "{% if share_mode %}/xuanpin/api/tabcut/share/videos{% else %}/xuanpin/api/tabcut/videos{% endif %}"
+    : "{% if share_mode %}/xuanpin/api/tabcut/share/goods{% else %}/xuanpin/api/tabcut/goods{% endif %}";
   const resp = await fetch(`${endpoint}?${paramsFor(page).toString()}`);
   const data = await resp.json();
   if (!resp.ok) {
@@ -655,6 +1107,7 @@ function renderTabcut(data) {
   } else {
     qs("tabcutVideoGrid").hidden = true;
     qs("tabcutTableWrap").hidden = false;
+    qs("tabcutTableWrap").classList.remove("recommended-table-layout");
     qs("tabcutHead").innerHTML = "<tr><th></th><th>排名</th><th>商品</th><th>价格</th><th>佣金比例</th><th class='tabcut-num'>总销量</th><th class='tabcut-num'>周期内销量</th><th class='tabcut-num'>周期内销售额</th><th class='tabcut-num'>周期内销量增长率</th><th class='tabcut-num'>总关联视频(90天)</th><th>操作</th></tr>";
     qs("tabcutBody").innerHTML = rows.length ? rows.map((row, idx) => `
       <tr>
@@ -766,6 +1219,28 @@ function resetTabcut() {
   loadTabcut(1);
 }
 
+async function copyShareUrl() {
+  const shareBase = window.location.origin + "/xuanpin/tabcut/share/";
+  const shareUrl = shareBase + tabcutView;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(shareUrl);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = shareUrl;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    mkiToast("success", "分享链接已复制到剪贴板！");
+  } catch (err) {
+    mkiToast("error", "复制失败，请手动复制：" + shareUrl);
+  }
+}
+
 async function loadCategoryOptions() {
   const select = qs("categoryL1");
   if (!select) return;
@@ -864,9 +1339,6 @@ function applyCardZoom() {
   }
 }
 
-applyCardZoom();
-updateDateFilterState();
-loadCategoryOptions().finally(() => loadTabcut(1));
 
 // =================== AI FINE EVALUATION JS INTEGRATION ===================
 const MKI_FINE_AI_RESULT_CACHE = new Map();
@@ -1335,7 +1807,7 @@ async function mkiFineAiEvaluateFromCard(btn) {
 // =========================================================================
 
 applyCardZoom();
-updateDateFilterState();
-loadCategoryOptions().finally(() => loadTabcut(1));
+setTabcutView(tabcutView);
+loadCategoryOptions();
 </script>
 {% endblock %}

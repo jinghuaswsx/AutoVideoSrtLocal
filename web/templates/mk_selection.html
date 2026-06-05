@@ -768,12 +768,41 @@
 .mk-preselection-note-input { min-height:88px; width:100%; resize:vertical; border:1px solid var(--oc-border-strong); border-radius:8px; padding:10px 12px; font:inherit; }
 .mk-preselection-actions { display:flex; justify-content:flex-end; gap:8px; padding:12px 18px 16px; border-top:1px solid var(--oc-border); }
 @media (max-width: 768px) {
-  .mk-library-tabs { overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; -ms-overflow-style:none; }
+  /* Docs-anchor: docs/superpowers/specs/2026-06-04-mk-selection-mobile-filter-responsive-design.md */
+  .oc-header--actions { width:100%; }
+  .oc-search {
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    width:100%;
+    gap:8px;
+    align-items:stretch;
+    flex-wrap:wrap;
+  }
+  .oc-search > .oc-input,
+  .oc-search > .oc-select,
+  .oc-search > .oc-btn {
+    width:100%;
+    min-width:0;
+  }
+  .oc-search #searchInput { grid-column:1 / -1; width:100% !important; }
+  .oc-search > .oc-btn { width:100%; justify-content:center; }
+  .mk-video-library-head { flex-wrap:wrap; align-items:flex-start; }
+  .mk-video-library-head > * { min-width:0; }
+  .mk-library-tabs { width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; -ms-overflow-style:none; }
   .mk-library-tabs::-webkit-scrollbar { display:none; }
   .mk-library-tab { flex-shrink:0; min-width:80px; white-space:nowrap; }
   .mk-preselection-product { grid-template-columns:72px minmax(0,1fr); }
   .mk-preselection-product img { width:72px; height:72px; }
   .mk-preselection-product-line { grid-template-columns:1fr; gap:2px; }
+}
+@media (max-width: 420px) {
+  .oc-header { margin-bottom:10px; }
+  .oc-search { gap:6px; }
+  .oc-search > .oc-input,
+  .oc-search > .oc-btn {
+    padding-left:8px;
+    padding-right:8px;
+  }
 }
 {% endblock %}
 
@@ -813,6 +842,7 @@
         <option value="exclude" selected>不包含RJC</option>
         <option value="all">全部</option>
       </select>
+      <input id="mkUploaderFilter" class="oc-input" type="text" placeholder="上传者" aria-label="上传者" onchange="onMkUploaderFilterChange()" style="width:120px">
       <select id="mkPreselectionProcessedFilter" class="oc-input oc-select oc-select--inventory" aria-label="处理状态" onchange="onMkPreselectionFilterChange()">
         <option value="">全部处理状态</option>
         <option value="processed">已处理</option>
@@ -1376,6 +1406,12 @@ function initMkSearchQueryFromUrl() {
     if (adDeliveryFilter) adDeliveryFilter.value = 'all';
   }
 
+  const uploader = String(params.get('uploader') || '').trim();
+  if (uploader) {
+    const uploaderFilter = document.getElementById('mkUploaderFilter');
+    if (uploaderFilter) uploaderFilter.value = uploader;
+  }
+
   const sort = String(params.get('sort') || params.get('sort_by') || 'spend_90').trim();
   const sortSelect = document.getElementById('mkSortSelect');
   if (sortSelect) sortSelect.value = sort;
@@ -1390,6 +1426,7 @@ function syncMkSearchQueryToUrl() {
   const range = String(selectedMkRange || '').trim();
   const snapshot = String(selectedMkSnapshot || '').trim();
   const libraryStatus = currentMkLibraryStatus();
+  const uploader = currentMkUploaderFilter();
   const sortSelect = document.getElementById('mkSortSelect');
   const sort = sortSelect ? String(sortSelect.value || 'spend_90').trim() : 'spend_90';
 
@@ -1422,6 +1459,12 @@ function syncMkSearchQueryToUrl() {
     params.set('library_status', libraryStatus);
   } else {
     params.delete('library_status');
+  }
+
+  if (uploader) {
+    params.set('uploader', uploader);
+  } else {
+    params.delete('uploader');
   }
 
   const adDelivery = currentMkAdDeliveryFilter();
@@ -1474,6 +1517,8 @@ function resetMkSearch() {
   if (inventoryFilter) inventoryFilter.value = '';
   const adDeliveryFilter = document.getElementById('mkAdDeliveryFilter');
   if (adDeliveryFilter) adDeliveryFilter.value = 'exclude';
+  const uploaderFilter = document.getElementById('mkUploaderFilter');
+  if (uploaderFilter) uploaderFilter.value = '';
   const processedFilter = document.getElementById('mkPreselectionProcessedFilter');
   if (processedFilter) processedFilter.value = '';
   const rangeSelect = document.getElementById('snapshotRangeSelect');
@@ -1523,6 +1568,21 @@ function mkAdDeliveryQueryParam() {
   return value === 'all' ? '&ad_delivery=all' : '';
 }
 
+function currentMkUploaderFilter() {
+  const input = document.getElementById('mkUploaderFilter');
+  return input ? String(input.value || '').trim() : '';
+}
+
+function mkUploaderQueryParam() {
+  const value = currentMkUploaderFilter();
+  return value ? `&uploader=${encodeURIComponent(value)}` : '';
+}
+
+function currentMkUploaderFilterLabel() {
+  const value = currentMkUploaderFilter();
+  return value ? `上传者 ${value}` : '';
+}
+
 function mkPreselectionLibraryStatusQueryParam() {
   const value = currentMkLibraryStatus();
   if (value === 'video_imported') return '&library_status=imported';
@@ -1555,6 +1615,12 @@ function onMkInventoryFilterChange() {
 }
 
 function onMkAdDeliveryFilterChange() {
+  mkVideoMaterialsLoaded = false;
+  mkYesterdayTop100Loaded = false;
+  runMkSearch({preserveProductCode: true});
+}
+
+function onMkUploaderFilterChange() {
   mkVideoMaterialsLoaded = false;
   mkYesterdayTop100Loaded = false;
   runMkSearch({preserveProductCode: true});
@@ -1815,7 +1881,7 @@ async function loadMkLocalMaterialLibrary(page) {
   status.textContent = activeMkProductCode ? `正在按产品 code ${activeMkProductCode} 搜索${loadingScope}...` : `正在读取${loadingScope}...`;
   try {
     const keywordParam = activeMkProductCode ? `&keyword=${encodeURIComponent(activeMkProductCode)}` : `&keyword=${encodeURIComponent(kw)}`;
-    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkSortQueryParam()}`;
+    const url = `/xuanpin/api/mk-material-library?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkUploaderQueryParam()}${mkSortQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1828,7 +1894,8 @@ async function loadMkLocalMaterialLibrary(page) {
       ? `${allScope ? '全部素材池' : '本地素材快照'} · 产品 code ${activeMkProductCode}`
       : (allScope ? '全部素材池' : `本地素材快照 ${snapshotLabel}`);
     const statusLabel = currentMkLibraryStatusLabel();
-    status.textContent = `${scopeText}${statusLabel ? ` · ${statusLabel}` : ''} · 视频 ${total} 条`;
+    const uploaderLabel = currentMkUploaderFilterLabel();
+    status.textContent = `${scopeText}${statusLabel ? ` · ${statusLabel}` : ''}${uploaderLabel ? ` · ${uploaderLabel}` : ''} · 视频 ${total} 条`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无本地视频素材</div>';
     } else {
@@ -1854,7 +1921,7 @@ async function loadMkYesterdayTop100(page) {
   clearMkArchivePager(pagerIds);
   status.textContent = '正在读取昨天消耗前300归档...';
   try {
-    const url = `/xuanpin/api/mk-yesterday-top300?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkSortQueryParam()}`;
+    const url = `/xuanpin/api/mk-yesterday-top300?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkUploaderQueryParam()}${mkSortQueryParam()}`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (!resp.ok || data.error) throw new Error(data.message || data.error || '加载失败');
@@ -1874,7 +1941,8 @@ async function loadMkYesterdayTop100(page) {
     const previousLabel = data.previous_snapshot_at || data.previous_snapshot || '';
     const previousText = previousLabel ? ` · 对比 ${previousLabel}` : '';
     const statusLabel = currentMkLibraryStatusLabel();
-    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前300${kw ? ` · 搜索 ${kw}` : ''}${statusLabel ? ` · ${statusLabel}` : ''}`;
+    const uploaderLabel = currentMkUploaderFilterLabel();
+    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前300${kw ? ` · 搜索 ${kw}` : ''}${statusLabel ? ` · ${statusLabel}` : ''}${uploaderLabel ? ` · ${uploaderLabel}` : ''}`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前300归档</div>';
     } else {
@@ -2759,6 +2827,9 @@ document.addEventListener('click', e => {
 // Enter 搜索
 document.getElementById('searchInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') runMkSearch();
+});
+document.getElementById('mkUploaderFilter').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runMkSearch({preserveProductCode: true});
 });
 
 // 初始加载
@@ -4968,7 +5039,11 @@ const mkiXiaoProductOwnerIdCache = new Map();
 
 function mkiUserLabel(user) {
   const fallback = user && user.id ? `用户 #${user.id}` : '';
-  return String((user && (user.display_name || user.username)) || fallback).trim();
+  const baseName = String((user && (user.display_name || user.username)) || fallback).trim();
+  if (user && user.todo_count !== undefined && user.urgent_count !== undefined && user.completed_today_count !== undefined) {
+    return `${baseName}  待处理 ${user.todo_count}  紧急 ${user.urgent_count}  今天已完成 ${user.completed_today_count}`;
+  }
+  return baseName;
 }
 
 function mkiUserOption(user) {

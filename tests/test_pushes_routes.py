@@ -2578,9 +2578,15 @@ def test_pushes_modal_material_button_opens_three_step_progress_workbench():
     assert "docs/superpowers/specs/2026-06-04-pushes-modal-progress-workbench-design.md" in script
     assert "const pushProgressWorkbench = buildPushProgressWorkbench();" in script
     assert "showPushProgressWorkbench();" in script
+    assert "renderInitialPushProgressPayloads();" in script
+    assert "renderPushProgressPayloads();" not in script
     assert "setPipelineStepStatus('material', 'running');" in script
     assert "setPipelineStepStatus('texts', 'queued');" in script
     assert "setPipelineStepStatus('links', 'queued');" in script
+    assert "等待素材推送完成后加载文案报文。" in script
+    assert "等待文案推送完成后加载链接报文。" in script
+    assert "setPipelineStepJson('texts', buildRuntimeLocalizedTextsPipelineJson(body.localized_texts_push, body.mk_id_match));" in script
+    assert "setPipelineStepJson('links', buildRuntimeProductLinksPipelineJson(body.product_links_push));" in script
     assert "setPipelineStepStatus('texts', body.localized_texts_push && body.localized_texts_push.ok ? 'done' : 'error');" in script
     assert "setPipelineStepStatus('links', body.product_links_push && body.product_links_push.ok ? 'done' : 'error');" in script
 

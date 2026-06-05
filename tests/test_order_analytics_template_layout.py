@@ -41,10 +41,22 @@ def test_realtime_query_button_is_in_date_toolbar_target_area():
     toolbar_end = panel.index('id="realtimeRangeNote"', toolbar_start)
     toolbar_row = panel[toolbar_start:toolbar_end]
 
-    assert toolbar_row.index('id="realtimeEndDate"') < toolbar_row.index('id="realtimeRefresh"')
+    picker_call = "analytics_date_range('实时大盘', 'realtimeStartDate', 'realtimeEndDate'"
+    assert toolbar_row.index(picker_call) < toolbar_row.index('id="realtimeRefresh"')
+    assert picker_call in toolbar_row
+    assert '<input type="date" id="realtimeStartDate"' not in toolbar_row
+    assert '<input type="date" id="realtimeEndDate"' not in toolbar_row
     assert 'id="realtimeProductSearchInput"' not in toolbar_row
     assert panel.index('id="realtimeRefresh"') < panel.index('id="realtimeRangeNote"')
     assert panel.index('id="realtimeRangeNote"') < panel.index('id="realtimeProductSearchInput"')
+
+
+def test_order_analytics_uses_shared_date_range_picker_asset():
+    template = _template_source()
+
+    assert "analytics_date_range_picker.js" in template
+    assert "window.AnalyticsDateRangePicker.initAll()" in template
+    assert "window.AnalyticsDateRangePicker.syncAll()" in template
 
 
 def test_new_product_launch_analysis_tab_is_next_to_realtime():

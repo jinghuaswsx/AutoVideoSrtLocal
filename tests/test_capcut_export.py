@@ -4,7 +4,12 @@ import sys
 import json
 
 from appcore.api_keys import DEFAULT_JIANYING_PROJECT_ROOT
-from pipeline.capcut import _probe_media_duration, deploy_capcut_project, export_capcut_project
+from pipeline.capcut import (
+    _fix_srt_overlaps,
+    _probe_media_duration,
+    deploy_capcut_project,
+    export_capcut_project,
+)
 
 
 def test_capcut_export_creates_project_directory_and_archive(tmp_path):
@@ -172,6 +177,38 @@ def test_capcut_export_treats_missing_timeline_manifest_as_empty(tmp_path, monke
     assert ("create_draft", "sample_capcut") in calls
     assert manifest["backend"] == "pyJianYingDraft"
     assert manifest["timeline_manifest"] == {}
+
+
+def test_fix_srt_overlaps_preserves_all_entries_with_monotonic_timing(tmp_path):
+    srt = tmp_path / "overlap.srt"
+    srt.write_text(
+        "\n".join(
+            [
+                "1",
+                "00:00:31,519 --> 00:00:34,859",
+                "Families stay prepared",
+                "",
+                "2",
+                "00:00:31,539 --> 00:00:35,481",
+                "Every day, seven elderly people",
+                "",
+                "3",
+                "00:00:35,481 --> 00:00:37,578",
+                "Over a hundred thousand people",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    _fix_srt_overlaps(str(srt))
+
+    content = srt.read_text(encoding="utf-8")
+    assert "Families stay prepared" in content
+    assert "Every day, seven elderly people" in content
+    assert "Over a hundred thousand people" in content
+    assert content.count("-->") == 3
+    assert "00:00:34,859 --> 00:00:35,481" in content
 
 
 def test_capcut_export_mutes_embedded_video_track_audio(tmp_path, monkeypatch):

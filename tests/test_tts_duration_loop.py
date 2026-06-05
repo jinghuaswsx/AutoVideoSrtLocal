@@ -1,7 +1,42 @@
 """Tests for TTS duration convergence helpers."""
+import ast
+from pathlib import Path
+
 import pytest
 
 from appcore.runtime import _compute_next_target
+
+
+def test_run_tts_duration_loop_does_not_shadow_task_state_import():
+    source = Path("appcore/runtime/_pipeline_runner.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    fn = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "_run_tts_duration_loop"
+    )
+
+    shadowing_imports = []
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Import):
+            shadowing_imports.extend(
+                node.lineno
+                for alias in node.names
+                if alias.name == "appcore.task_state"
+                and alias.asname == "task_state"
+            )
+        elif isinstance(node, ast.ImportFrom) and node.module in {
+            "appcore",
+            "appcore.task_state",
+        }:
+            shadowing_imports.extend(
+                node.lineno
+                for alias in node.names
+                if alias.name == "task_state" or alias.asname == "task_state"
+            )
+
+    assert shadowing_imports == []
 
 
 class TestComputeNextTarget:
@@ -1681,6 +1716,168 @@ class TestStepTtsIntegration:
         assert (tmp_path / "tts_full.normal.mp3").read_bytes() == b"in-range audio"
         assert sum(seg["tts_duration"] for seg in variant_state["segments"]) == pytest.approx(31.5)
         assert variant_state["timeline_manifest"]["total_tts_duration"] == pytest.approx(31.5)
+
+    def test_default_tts_loop_applies_sentence_loudness_before_rebuild(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+
+        from appcore import task_state
+        from appcore.events import EventBus
+        from appcore.runtime import PipelineRunner
+
+        task_id = "five-round-sentence-loudness"
+        task_state.create(
+            task_id,
+            str(tmp_path / "v.mp4"),
+            str(tmp_path),
+            original_filename="v.mp4",
+            user_id=1,
+        )
+        task_state.update(
+            task_id,
+            plugin_config={
+                "asr_post": "asr_clean",
+                "translate_algo": "standard",
+                "tts_strategy": "five_round_rewrite",
+                "subtitle": "asr_realign",
+                "av_sync_audit": "off",
+                "shot_decompose": False,
+                "source_anchored": True,
+                "voice_separation": True,
+                "loudness_match": True,
+                "sentence_tts_loudness_calibration": True,
+            },
+            separation={"vocals_lufs": -15.8},
+            script_segments=[
+                {"index": 0, "text": "a", "start_time": 0.0, "end_time": 2.0},
+                {"index": 1, "text": "b", "start_time": 4.0, "end_time": 6.0},
+            ],
+            source_full_text_zh="source",
+            source_language="en",
+            localized_translation={
+                "full_text": "A B",
+                "sentences": [
+                    {"index": 0, "text": "A", "source_segment_indices": [0]},
+                    {"index": 1, "text": "B", "source_segment_indices": [1]},
+                ],
+            },
+            variants={"normal": {"localized_translation": {
+                "full_text": "A B",
+                "sentences": [
+                    {"index": 0, "text": "A", "source_segment_indices": [0]},
+                    {"index": 1, "text": "B", "source_segment_indices": [1]},
+                ],
+            }}},
+            voice_id=99,
+        )
+
+        segment_paths = []
+        for index in range(2):
+            path = tmp_path / f"seg_{index}.mp3"
+            path.write_bytes(f"raw-{index}".encode("ascii"))
+            segment_paths.append(path)
+        round_audio = tmp_path / "tts_full.round_1.mp3"
+        round_audio.write_bytes(b"raw full")
+
+        monkeypatch.setattr("appcore.api_keys.resolve_key", lambda *args, **kwargs: "fake-key")
+        monkeypatch.setattr("appcore.api_keys.get_key", lambda *args, **kwargs: None)
+        monkeypatch.setattr("appcore.api_keys.resolve_extra", lambda *args, **kwargs: {})
+        monkeypatch.setattr("pipeline.extract.get_video_duration", lambda path: 8.0)
+        monkeypatch.setattr("pipeline.tts._get_audio_duration", lambda path: 5.0)
+        monkeypatch.setattr("pipeline.translate.get_model_display_name", lambda *args, **kwargs: "fake-model")
+        monkeypatch.setattr("pipeline.audio_stitch.analyze_asr_window_gaps", lambda *args, **kwargs: {
+            "enabled": True,
+            "active_speech_budget": 6.0,
+            "timeline_mode": "asr_window_primary",
+        })
+        monkeypatch.setattr("pipeline.audio_stitch.apply_asr_window_audio_schedule", lambda segments, **kwargs: [
+            dict(segment, scheduled=True) for segment in segments
+        ])
+
+        normalized_outputs = []
+
+        def fake_normalize(input_path, output_path, *, target_lufs):
+            normalized_outputs.append((input_path, output_path, target_lufs))
+            with open(output_path, "wb") as f:
+                f.write(b"normalized")
+            return SimpleNamespace(
+                output_path=output_path,
+                input_lufs=-25.0,
+                output_lufs=target_lufs,
+                deviation_lu=0.0,
+                deviation_pct=0.0,
+                converged=True,
+            )
+
+        monkeypatch.setattr("appcore.audio_loudness.normalize_to_lufs", fake_normalize)
+
+        rebuild_calls = []
+
+        def fake_rebuild(task_dir, segments, variant="av", *, total_duration=None):
+            rebuild_calls.append({
+                "segments": [dict(segment) for segment in segments],
+                "variant": variant,
+                "total_duration": total_duration,
+            })
+            out = tmp_path / f"tts_full.{variant}.mp3"
+            out.write_bytes(b"rebuilt")
+            return str(out)
+
+        monkeypatch.setattr("appcore.runtime._pipeline_runner._rebuild_tts_full_audio_from_segments", fake_rebuild)
+        monkeypatch.setattr(
+            "appcore.runtime.ai_billing.log_request",
+            lambda **kwargs: None,
+        )
+
+        runner = PipelineRunner(bus=EventBus(), user_id=1)
+        monkeypatch.setattr(
+            runner,
+            "_resolve_voice",
+            lambda task, loc_mod: {"id": 99, "elevenlabs_voice_id": "voice-99", "name": "Voice"},
+        )
+        monkeypatch.setattr(
+            runner,
+            "_run_tts_duration_loop",
+            lambda **kwargs: {
+                "localized_translation": kwargs["initial_localized_translation"],
+                "tts_script": {"full_text": "A B", "blocks": [], "subtitle_chunks": []},
+                "tts_audio_path": str(round_audio),
+                "tts_segments": [
+                    {
+                        "index": 0,
+                        "text": "A",
+                        "translated": "A",
+                        "tts_path": str(segment_paths[0]),
+                        "start_time": 0.0,
+                        "end_time": 2.0,
+                        "tts_duration": 2.0,
+                    },
+                    {
+                        "index": 1,
+                        "text": "B",
+                        "translated": "B",
+                        "tts_path": str(segment_paths[1]),
+                        "start_time": 4.0,
+                        "end_time": 6.0,
+                        "tts_duration": 2.0,
+                    },
+                ],
+                "rounds": [{"round": 1, "audio_duration": 5.0}],
+                "final_round": 1,
+            },
+        )
+
+        runner._run_default_tts_loop(task_id, str(tmp_path))
+
+        assert len(normalized_outputs) == 2
+        assert all(call[2] == pytest.approx(-15.8) for call in normalized_outputs)
+        assert rebuild_calls
+        rebuilt_segments = rebuild_calls[-1]["segments"]
+        assert all("tts_loudness_segments" in segment["tts_path"] for segment in rebuilt_segments)
+        task = task_state.get(task_id)
+        summary = task["variants"]["normal"]["final_compose_summary"]["sentence_tts_loudness_calibration"]
+        assert summary["status"] == "done"
+        assert summary["normalized_segment_count"] == 2
+        assert task["final_compose_summary"]["sentence_tts_loudness_calibration"] == summary
 
 
 class TestLanguageSpecificRunners:

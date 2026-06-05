@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from appcore.video_translate_defaults import resolve_default_voice
 from appcore.voice_library_browse import fetch_voice_by_id
-from appcore.voice_ai_selection_settings import is_voice_ai_auto_select_enabled
 from appcore.voice_ai_rank_cache import normalize_interrupted_voice_ai_rank_state
 
 _VALID_ROUND_INDEXES = {1, 2, 3, 4, 5}
@@ -40,7 +39,7 @@ def build_voice_library_payload(
         "voice_ai_rank_debug": state.get("voice_ai_rank_debug") or None,
         "voice_ai_rank_usage_log_id": state.get("voice_ai_rank_usage_log_id"),
         "voice_ai_rank_recovery": state.get("voice_ai_rank_recovery") or None,
-        "voice_ai_auto_select_enabled": is_voice_ai_auto_select_enabled(),
+        "voice_ai_auto_select_enabled": resolve_voice_ai_auto_select_enabled(state),
         "pipeline": pipeline,
         "voice_match_ready": pipeline["voice_match"] in ("waiting", "done"),
         "page": page,
@@ -68,6 +67,20 @@ def _ensure_candidates_in_items(items: list, candidates: list, language: str | N
 
     extra = fetch_voices_by_ids(language=language, voice_ids=missing_ids)
     return list(items) + extra
+
+
+def resolve_voice_ai_auto_select_enabled(state: dict | None) -> bool:
+    state = state or {}
+    project_type = str(state.get("type") or state.get("project_type") or "").strip()
+    if project_type not in {"omni_translate", "omni_translate_v2"}:
+        return False
+    try:
+        from appcore.omni_plugin_config import validate_plugin_config
+
+        cfg = validate_plugin_config(state.get("plugin_config") or {})
+    except Exception:
+        return False
+    return bool(cfg.get("auto_voice_selection"))
 
 
 def normalize_confirm_voice_payload(

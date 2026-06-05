@@ -498,8 +498,8 @@ def test_push_product_links_posts_strict_payload_with_utf8_basic_auth(monkeypatc
         "Authorization": f"Basic {token}",
     }
     assert "auth" not in captured
-    assert "payload" not in result
-    assert "target_url" not in result
+    assert result["target_url"] == "https://os.wedev.vip/dify/shopify/medias/links"
+    assert result["payload"] == captured["json"]
 
 
 def test_medias_product_links_push_endpoint_posts_to_downstream(
@@ -1058,6 +1058,7 @@ def test_build_item_payload_filters_small_langs_without_pending_materials(monkey
     )
     # mock resolve_push_texts
     monkeypatch.setattr(pushes, "resolve_push_texts", lambda product_id: [])
+    monkeypatch.setattr(pushes, "resolve_localized_text_payload", lambda item: None)
     # mock build_media_public_url
     monkeypatch.setattr(pushes, "build_media_public_url", lambda key: f"https://media.test/{key}")
     # mock build_product_link

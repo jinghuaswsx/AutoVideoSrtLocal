@@ -485,20 +485,271 @@
     color: #6b7280;
     padding: 10px 0;
   }
+  .dialogue-subtitle-config {
+    display: grid;
+    gap: 14px;
+    border: 1px solid var(--border-main);
+    border-radius: 12px;
+    padding: 14px;
+    background: var(--bg-card);
+  }
+  .dialogue-subtitle-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .dialogue-subtitle-head h4 {
+    margin: 0;
+    font-size: 15px;
+  }
+  .dialogue-subtitle-head small {
+    color: #6b7280;
+    font-size: 12px;
+  }
+  .dialogue-subtitle-grid {
+    display: grid;
+    grid-template-columns: minmax(240px, 1fr) minmax(220px, 300px);
+    gap: 16px;
+    align-items: start;
+  }
+  .dialogue-subtitle-preview {
+    position: relative;
+    width: min(270px, 100%);
+    aspect-ratio: 9 / 16;
+    min-height: 360px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: oklch(22% 0.02 235);
+    border: 1px solid var(--border-main);
+  }
+  .dialogue-subtitle-preview video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: oklch(22% 0.02 235);
+  }
+  .dialogue-subtitle-preview-topbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    color: rgba(255,255,255,.86);
+    font-size: 11px;
+    font-weight: 700;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(0,0,0,.46), transparent);
+  }
+  .dialogue-subtitle-preview-block {
+    position: absolute;
+    left: 50%;
+    top: 68%;
+    z-index: 3;
+    transform: translateX(-50%) translateY(-100%);
+    min-width: min(88%, 520px);
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: rgba(0,0,0,.42);
+    border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 6px 18px rgba(0,0,0,.16);
+    text-align: center;
+    cursor: ns-resize;
+    user-select: none;
+    touch-action: none;
+  }
+  .dialogue-subtitle-preview-line {
+    color: #fff;
+    line-height: 1.18;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgba(0,0,0,.45);
+  }
+  .dialogue-subtitle-preview-line + .dialogue-subtitle-preview-line {
+    margin-top: 2px;
+  }
+  .dialogue-subtitle-preview-note {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 2;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(15,23,42,.72);
+    color: rgba(255,255,255,.88);
+    font-size: 12px;
+    line-height: 1.45;
+    pointer-events: none;
+  }
+  .dialogue-subtitle-controls {
+    display: grid;
+    gap: 12px;
+  }
+  .dialogue-subtitle-row {
+    display: grid;
+    gap: 7px;
+  }
+  .dialogue-subtitle-row label,
+  .dialogue-subtitle-row-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+  .dialogue-subtitle-row select {
+    min-height: 34px;
+    border: 1.5px solid var(--border-main);
+    border-radius: 8px;
+    background: var(--bg-body);
+    color: var(--text-main);
+    padding: 0 10px;
+    font: inherit;
+    font-size: 13px;
+  }
+  .dialogue-subtitle-size-group {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .dialogue-subtitle-size-group button {
+    min-width: 36px;
+    min-height: 30px;
+    border: 1px solid var(--border-main);
+    border-radius: 6px;
+    background: var(--bg-body);
+    color: var(--text-main);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .dialogue-subtitle-size-group button.is-active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+    font-weight: 700;
+  }
+  .dialogue-subtitle-position-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dialogue-subtitle-position-row input {
+    flex: 1;
+    accent-color: oklch(56% 0.16 230);
+  }
+  .dialogue-subtitle-position-row span {
+    min-width: 50px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 700;
+  }
   @media (max-width: 960px) {
     .dialogue-voice-toolbar,
-    .dialogue-voice-candidates .vs-row {
+    .dialogue-voice-candidates .vs-row,
+    .dialogue-subtitle-grid {
       grid-template-columns: 1fr;
     }
     .dialogue-recommended-only {
       justify-content: flex-start;
     }
   }
+  .dialogue-speaker-confirm-panel {
+    display: grid;
+    gap: 16px;
+  }
+  .dialogue-alias-row {
+    display: flex;
+    gap: 16px;
+    background: var(--bg-body);
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border-main);
+  }
+  .dialogue-alias-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+  .dialogue-alias-field label {
+    font-weight: 700;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .dialogue-alias-field input {
+    flex: 1;
+    min-height: 34px;
+    border: 1.5px solid var(--border-main);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    padding: 0 10px;
+    font: inherit;
+    font-size: 13px;
+  }
+  .dialogue-speaker-selector {
+    min-height: 30px;
+    border: 1.5px solid var(--border-main);
+    border-radius: 6px;
+    background: var(--bg-card);
+    color: var(--text-main);
+    padding: 0 6px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
 </style>
 {% endblock %}
 
 {% block detail_before_workbench %}
 {% if not project.deleted_at %}
+<section
+  id="dialogueSpeakerConfirmPanel"
+  class="card dialogue-speaker-confirm-panel"
+  style="display: none;"
+>
+  <div class="dialogue-voice-panel-head">
+    <div>
+      <h3>第一步：确认说话人与设置别名</h3>
+      <p>手动调整系统识别的 A/B 说话人分段并设置别名</p>
+    </div>
+  </div>
+  <div class="dialogue-alias-row">
+    <div class="dialogue-alias-field">
+      <label for="speakerAliasA">Speaker A 别名</label>
+      <input type="text" id="speakerAliasA" placeholder="例如：男声 / 主播 / 顾客A">
+    </div>
+    <div class="dialogue-alias-field">
+      <label for="speakerAliasB">Speaker B 别名</label>
+      <input type="text" id="speakerAliasB" placeholder="例如：女声 / 主播B / 顾客B">
+    </div>
+  </div>
+  <div class="dialogue-segment-timeline">
+    <div class="dialogue-segment-timeline-head">
+      <div>
+        <h4>对话文本时间线</h4>
+        <small>在每句右侧可重新指定 Speaker A 或 Speaker B</small>
+      </div>
+    </div>
+    <ol class="dialogue-segment-list" id="dialogueSpeakerConfirmList">
+      <!-- Generated via JS -->
+    </ol>
+  </div>
+  <div class="dialogue-voice-actions">
+    <button id="dialogueSpeakerConfirmBtn" type="button">确认说话人与别名并继续</button>
+    <span id="dialogueSpeakerFeedback" class="dialogue-voice-feedback" aria-live="polite"></span>
+  </div>
+</section>
+
 <section
   id="dialogueVoicePanel"
   class="card dialogue-voice-panel"
@@ -514,6 +765,63 @@
   <div id="dialogueVoiceStatus" class="dialogue-voice-status">正在加载 A/B 音色状态...</div>
   <div id="dialogueVoiceGrid" class="dialogue-voice-grid"></div>
   <div id="dialogueSegmentTimeline" class="dialogue-segment-timeline"></div>
+  <section class="dialogue-subtitle-config" aria-labelledby="dialogueSubtitleTitle">
+    <div class="dialogue-subtitle-head">
+      <div>
+        <h4 id="dialogueSubtitleTitle">字幕样式</h4>
+        <small>与全能视频翻译一致，调节结果会进入后续硬字幕生成。</small>
+      </div>
+    </div>
+    <div class="dialogue-subtitle-grid">
+      <div class="dialogue-subtitle-preview" id="dialogueSubtitlePreviewFrame">
+        <video id="dialogueSubtitlePreviewVideo" muted playsinline loop controls preload="metadata"></video>
+        <div class="dialogue-subtitle-preview-topbar">
+          <span>9:16</span>
+          <span>Preview</span>
+        </div>
+        <div class="dialogue-subtitle-preview-block" id="dialogueSubtitlePreviewBlock">
+          <div class="dialogue-subtitle-preview-line" id="dialogueSubtitleLineA">Tiktok and facebook shot videos!</div>
+          <div class="dialogue-subtitle-preview-line" id="dialogueSubtitleLineB">Tiktok and facebook shot videos!</div>
+        </div>
+        <div class="dialogue-subtitle-preview-note" id="dialogueSubtitlePreviewNote">正在加载当前任务源视频预览...</div>
+      </div>
+      <div class="dialogue-subtitle-controls">
+        <div class="dialogue-subtitle-row">
+          <label for="dialogueSubtitleFont">字幕字体</label>
+          <select id="dialogueSubtitleFont">
+            <option value="Impact" data-family="Impact, Haettenschweiler, Arial Narrow Bold, sans-serif">Impact</option>
+            <option value="Oswald Bold" data-family="Oswald, Impact, Arial Narrow Bold, sans-serif">Oswald Bold</option>
+            <option value="Bebas Neue" data-family="Bebas Neue, Impact, Arial Narrow Bold, sans-serif">Bebas Neue</option>
+            <option value="Montserrat ExtraBold" data-family="Montserrat, Arial Black, sans-serif">Montserrat ExtraBold</option>
+            <option value="Poppins Bold" data-family="Poppins, Arial Black, sans-serif">Poppins Bold</option>
+            <option value="Anton" data-family="Anton, Impact, sans-serif">Anton</option>
+          </select>
+        </div>
+        <div class="dialogue-subtitle-row">
+          <div class="dialogue-subtitle-row-title">字幕字号</div>
+          <div class="dialogue-subtitle-size-group" id="dialogueSubtitleSizeGroup">
+            <button type="button" data-size="8">8</button>
+            <button type="button" data-size="10">10</button>
+            <button type="button" data-size="12">12</button>
+            <button type="button" data-size="14" class="is-active">14</button>
+            <button type="button" data-size="16">16</button>
+            <button type="button" data-size="18">18</button>
+            <button type="button" data-size="20">20</button>
+            <button type="button" data-size="22">22</button>
+            <button type="button" data-size="24">24</button>
+            <button type="button" data-size="28">28</button>
+          </div>
+        </div>
+        <div class="dialogue-subtitle-row">
+          <label for="dialogueSubtitlePositionY">字幕位置</label>
+          <div class="dialogue-subtitle-position-row">
+            <input id="dialogueSubtitlePositionY" type="range" min="0.12" max="0.92" step="0.01" value="0.68">
+            <span id="dialogueSubtitlePositionHint">68%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
   <div class="dialogue-voice-actions">
     <button id="dialogueVoiceConfirmBtn" type="button" disabled>确认 A/B 音色并继续</button>
     <span id="dialogueVoiceFeedback" class="dialogue-voice-feedback" aria-live="polite"></span>

@@ -59,6 +59,10 @@ from appcore.preview_artifacts import (
     build_translate_artifact,
     build_tts_artifact,
 )
+from appcore.tts_loudness_calibration import (
+    apply_sentence_tts_loudness_calibration,
+    sentence_tts_loudness_enabled,
+)
 from appcore.tts_language_guard import (
     TtsLanguageValidationError,
     extract_tts_script_text,
@@ -1392,7 +1396,6 @@ class PipelineRunner:
                 )
 
             # persist rounds incrementally so UI survives page refresh
-            import appcore.task_state as task_state
             rounds.append(round_record)
             round_products.append({
                 "localized_translation": localized_translation,
@@ -1603,7 +1606,6 @@ class PipelineRunner:
 
         # All allowed rounds completed without landing in a final stage-1 result.
         # Pick the round whose audio_duration is closest to the final target range.
-        import appcore.task_state as task_state
         eligible_indices = [
             i for i, rec in enumerate(rounds)
             if rec.get("audio_duration") is not None
@@ -2716,6 +2718,7 @@ class PipelineRunner:
 
         import shutil
         from appcore.audio_loudness import (
+            calibrate_voice_priority_background_volume,
             clean_electronic_background,
             measure_integrated_lufs,
             mix_with_background,
@@ -2786,6 +2789,9 @@ class PipelineRunner:
 
         variants = dict(task.get("variants") or {})
         summaries: list[dict] = []
+        voice_priority_enabled = sentence_tts_loudness_enabled(task)
+        voice_priority_variants: list[dict] = []
+        variant_background_volumes: list[float] = []
         for variant_name, variant_state in list(variants.items()):
             if not isinstance(variant_state, dict):
                 continue
@@ -2796,6 +2802,50 @@ class PipelineRunner:
             # B 算法会 in-place 修改 audio_path（TTS 文件）。如果 B 跑完发现
             # 偏差过大需要切 A 兜底，A 必须用原始 TTS 而不是 B 改过的版本，
             # 否则 A 跑出的响度也偏。先备份 TTS 原始 mp3。
+            variant_bg_volume = effective_bg_volume
+            if voice_priority_enabled and variant_bg_volume > 0:
+                try:
+                    voice_priority_summary = calibrate_voice_priority_background_volume(
+                        tts_audio_path=audio_path,
+                        background_path=accompaniment_for_mix,
+                        segments=list(variant_state.get("segments") or []),
+                        background_volume=variant_bg_volume,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "[loudness_match] task=%s variant=%s voice-priority background calibration failed: %s",
+                        task_id, variant_name, exc,
+                    )
+                    voice_priority_summary = {
+                        "enabled": False,
+                        "mode": "voice_priority_sentence_windows",
+                        "fallback_reason": "measure_failed",
+                        "error": str(exc)[:200],
+                        "standard_volume": variant_bg_volume,
+                        "effective_volume": variant_bg_volume,
+                    }
+                voice_priority_summary = dict(voice_priority_summary)
+                voice_priority_summary["variant"] = variant_name
+                next_bg_volume = voice_priority_summary.get("effective_volume")
+                try:
+                    next_bg_volume = round(float(next_bg_volume), 10)
+                except (TypeError, ValueError):
+                    next_bg_volume = variant_bg_volume
+                if next_bg_volume < variant_bg_volume:
+                    variant_bg_volume = next_bg_volume
+                voice_priority_summary["effective_volume"] = variant_bg_volume
+                voice_priority_variants.append(voice_priority_summary)
+            variant_background_volumes.append(variant_bg_volume)
+
+            bg_volume_arg = variant_bg_volume
+            if voice_priority_enabled and variant_bg_volume < profile_summary["background_volume"]:
+                from appcore.audio_loudness import build_ducking_volume_expression
+                bg_volume_arg = build_ducking_volume_expression(
+                    segments=list(variant_state.get("segments") or []),
+                    background_volume=variant_bg_volume,
+                    standard_volume=profile_summary["background_volume"],
+                )
+
             source_backup_origin = self._prepare_loudness_source_audio(
                 audio_path=audio_path,
                 loudness_dir=loudness_dir,
@@ -2816,7 +2866,7 @@ class PipelineRunner:
                         audio_path=audio_path,
                         accompaniment_path=accompaniment_for_mix,
                         video_lufs=float(video_lufs),
-                        bg_volume=effective_bg_volume,
+                        bg_volume=bg_volume_arg,
                         loudness_dir=loudness_dir,
                         variant_name=variant_name,
                     )
@@ -2884,8 +2934,41 @@ class PipelineRunner:
             if not summary:
                 continue
             summary["variant"] = variant_name
+            summary["effective_background_volume"] = variant_bg_volume
             summary["source_backup_origin"] = source_backup_origin
             summaries.append(summary)
+
+        if variant_background_volumes:
+            effective_bg_volume = round(min(variant_background_volumes), 10)
+            profile_summary["effective_background_volume"] = effective_bg_volume
+            if isinstance(profile_summary.get("manual_boost"), dict):
+                if "effective_volume" in profile_summary["manual_boost"]:
+                    profile_summary["manual_boost"]["effective_volume"] = effective_bg_volume
+            if isinstance(profile_summary.get("background_boost"), dict):
+                if "effective_volume" in profile_summary["background_boost"]:
+                    profile_summary["background_boost"]["effective_volume"] = effective_bg_volume
+            if isinstance(profile_summary.get("background_suppression"), dict):
+                if "effective_volume" in profile_summary["background_suppression"]:
+                    profile_summary["background_suppression"]["effective_volume"] = effective_bg_volume
+
+        voice_priority_background = {
+            "enabled": any(bool(v.get("enabled")) for v in voice_priority_variants),
+            "mode": "voice_priority_sentence_windows",
+            "source": "sentence_tts_loudness_calibration",
+            "variants": voice_priority_variants,
+        }
+        background_suppression = profile_summary["background_suppression"]
+        if voice_priority_background["enabled"]:
+            first_voice_priority = voice_priority_variants[0] if voice_priority_variants else {}
+            background_suppression = {
+                "enabled": True,
+                "mode": "voice_priority_sentence_windows",
+                "source": "sentence_tts_loudness_calibration",
+                "target_gap_lu": first_voice_priority.get("target_gap_lu"),
+                "standard_volume": first_voice_priority.get("standard_volume"),
+                "effective_volume": effective_bg_volume,
+                "variant_count": len(voice_priority_variants),
+            }
 
         separation = dict(separation)
         separation["tts_loudness"] = {
@@ -2898,8 +2981,9 @@ class PipelineRunner:
             "effective_background_volume": effective_bg_volume,
             "background_boost": profile_summary["background_boost"],
             "manual_boost": profile_summary["manual_boost"],
-            "background_suppression": profile_summary["background_suppression"],
+            "background_suppression": background_suppression,
             "background_cleanup": profile_summary["background_cleanup"],
+            "voice_priority_background": voice_priority_background,
             "variants": summaries,
         }
         # 暴露 background_volume 给 UI（前端 separation_card 直接读）
@@ -3517,11 +3601,18 @@ class PipelineRunner:
                     }
                     self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
 
-            if gap_analysis.get("enabled"):
+            if gap_analysis.get("enabled") and loop_result.get("tts_segments"):
                 scheduled_segments = apply_asr_window_audio_schedule(
                     loop_result["tts_segments"],
                     max_gap=0.25,
                     preserve_gap_threshold=1.0,
+                )
+                task_for_loudness = task_state.get(task_id) or task
+                scheduled_segments, sentence_loudness_summary = apply_sentence_tts_loudness_calibration(
+                    task=task_for_loudness,
+                    task_dir=task_dir,
+                    final_tts_segments=scheduled_segments,
+                    variant=variant,
                 )
                 final_audio_path = _rebuild_tts_full_audio_from_segments(
                     task_dir,
@@ -3533,11 +3624,28 @@ class PipelineRunner:
                 loop_result["tts_segments"] = scheduled_segments
                 timeline_manifest = None
             else:
-                if os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
+                task_for_loudness = task_state.get(task_id) or task
+                calibrated_segments, sentence_loudness_summary = apply_sentence_tts_loudness_calibration(
+                    task=task_for_loudness,
+                    task_dir=task_dir,
+                    final_tts_segments=loop_result["tts_segments"],
+                    variant=variant,
+                )
+                if sentence_loudness_summary.get("normalized_segment_count", 0) > 0:
+                    final_audio_path = _rebuild_tts_full_audio_from_segments_legacy_concat(
+                        task_dir,
+                        calibrated_segments,
+                        variant=variant,
+                    )
+                    loop_result["tts_audio_path"] = final_audio_path
+                    loop_result["tts_segments"] = calibrated_segments
+                elif os.path.abspath(loop_result["tts_audio_path"]) != os.path.abspath(final_audio_path):
                     shutil.copy2(loop_result["tts_audio_path"], final_audio_path)
                 timeline_manifest = build_timeline_manifest(
                     loop_result["tts_segments"], video_duration=video_duration,
                 )
+            final_compose_summary = dict(variant_state.get("final_compose_summary") or {})
+            final_compose_summary["sentence_tts_loudness_calibration"] = sentence_loudness_summary
             variant_state.update({
                 "segments": loop_result["tts_segments"],
                 "tts_script": loop_result["tts_script"],
@@ -3547,6 +3655,7 @@ class PipelineRunner:
                 "localized_translation": loop_result["localized_translation"],
                 "audio_timeline_mode": gap_analysis["timeline_mode"],
                 "asr_window_gap_analysis": gap_analysis,
+                "final_compose_summary": final_compose_summary,
             })
             variant_state.setdefault("preview_files", {})["tts_full_audio"] = final_audio_path
             variant_state.setdefault("artifacts", {})["tts"] = build_tts_artifact(
@@ -3567,6 +3676,7 @@ class PipelineRunner:
                 "final_audio_path": final_audio_path,
                 "audio_timeline_mode": gap_analysis["timeline_mode"],
                 "asr_window_gap_analysis": gap_analysis,
+                "final_compose_summary": final_compose_summary,
             }
 
         if not variant_results:
@@ -3579,6 +3689,7 @@ class PipelineRunner:
         primary_audio_path = primary_result["final_audio_path"]
         primary_audio_timeline_mode = primary_result.get("audio_timeline_mode")
         primary_gap_analysis = primary_result.get("asr_window_gap_analysis")
+        primary_final_compose_summary = primary_result.get("final_compose_summary") or {}
 
         task_state.set_preview_file(task_id, "tts_full_audio", primary_audio_path)
         _save_json(task_dir, "tts_duration_rounds.json", primary_loop_result["rounds"])
@@ -3595,6 +3706,7 @@ class PipelineRunner:
             tts_duration_rounds=primary_loop_result["rounds"],
             audio_timeline_mode=primary_audio_timeline_mode,
             asr_window_gap_analysis=primary_gap_analysis,
+            final_compose_summary=primary_final_compose_summary,
         )
 
         task_state.set_artifact(
@@ -3833,6 +3945,21 @@ class PipelineRunner:
             profile == LOUDNESS_PROFILE_CLEAN_BACKGROUND
             or bool(cleanup.get("enabled"))
         )
+
+        standard_volume = float(separation.get("background_volume") or settings.background_volume)
+        voice_priority_enabled = sentence_tts_loudness_enabled(task)
+        bg_volume_arg = background_volume
+        if voice_priority_enabled and background_volume < standard_volume:
+            from appcore.audio_loudness import build_ducking_volume_expression
+            variants = dict(task.get("variants") or {})
+            variant_state = variants.get(variant) or {}
+            segments = list(variant_state.get("segments") or [])
+            bg_volume_arg = build_ducking_volume_expression(
+                segments=segments,
+                background_volume=background_volume,
+                standard_volume=standard_volume,
+            )
+
         if cleanup_enabled:
             cleaned_path = separation.get("cleaned_accompaniment_path")
             if not cleaned_path or not os.path.isfile(cleaned_path):
@@ -3863,7 +3990,7 @@ class PipelineRunner:
                 main_path=tts_audio_path,
                 background_path=background_path,
                 output_path=mixed_path,
-                background_volume=background_volume,
+                background_volume=bg_volume_arg,
                 duration="longest",
             )
         except Exception as exc:  # noqa: BLE001
@@ -3939,13 +4066,16 @@ class PipelineRunner:
         variant = self._resolve_compose_variant_name(task)
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
+        srt_path = self._resolve_compose_srt_path(task, variant_state, task_dir, variant)
+        if srt_path:
+            variant_state["srt_path"] = srt_path
         audio_for_compose = self._maybe_mix_background_for_compose(
             task_id, variant_state["tts_audio_path"], task_dir, variant,
         )
         result = compose_video(
             video_path=video_path,
             tts_audio_path=audio_for_compose,
-            srt_path=variant_state["srt_path"],
+            srt_path=srt_path,
             output_dir=task_dir,
             subtitle_position=task.get("subtitle_position", "bottom"),
             timeline_manifest=variant_state.get("timeline_manifest"),
@@ -3977,6 +4107,35 @@ class PipelineRunner:
             task_state.set_preview_file(task_id, "hard_video", result["hard_video"])
         task_state.set_artifact(task_id, "compose", build_compose_artifact())
         self._set_step(task_id, "compose", "done", "视频合成完成")
+
+    def _resolve_compose_srt_path(
+        self,
+        task: dict,
+        variant_state: dict,
+        task_dir: str,
+        variant: str,
+    ) -> str:
+        candidates: list[str] = []
+
+        def add_candidate(value) -> None:
+            if not value:
+                return
+            path = str(value)
+            if path and path not in candidates:
+                candidates.append(path)
+
+        add_candidate(variant_state.get("srt_path"))
+        add_candidate(task.get("srt_path"))
+        add_candidate((variant_state.get("preview_files") or {}).get("srt"))
+        add_candidate((task.get("preview_files") or {}).get("srt"))
+        add_candidate(os.path.join(task_dir, f"subtitle.{variant}.srt"))
+        if variant != "normal":
+            add_candidate(os.path.join(task_dir, "subtitle.normal.srt"))
+
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+        return candidates[0] if candidates else ""
 
     def _step_analysis(self, task_id: str) -> None:
         """用 Gemini 对硬字幕视频做评分 + CSK 深度分析，结果并列展示。"""
@@ -4070,6 +4229,9 @@ class PipelineRunner:
         variant = self._resolve_compose_variant_name(task)
         variants = dict(task.get("variants", {}))
         variant_state = dict(variants.get(variant, {}))
+        srt_path = self._resolve_compose_srt_path(task, variant_state, task_dir, variant)
+        if srt_path:
+            variant_state["srt_path"] = srt_path
         timeline_manifest = (
             variant_state.get("timeline_manifest")
             or task.get("timeline_manifest")
@@ -4094,7 +4256,7 @@ class PipelineRunner:
         export_result = export_capcut_project(
             video_path=video_path,
             tts_audio_path=variant_state["tts_audio_path"],
-            srt_path=variant_state["srt_path"],
+            srt_path=srt_path,
             output_dir=task_dir,
             timeline_manifest=timeline_manifest,
             variant=variant,
@@ -4152,6 +4314,7 @@ from ._av_helpers import (
     _normalize_av_sentences,
     _build_av_localized_translation,
     _build_av_tts_segments,
+    _rebuild_tts_full_audio_from_segments_legacy_concat,
     _rebuild_tts_full_audio_from_segments,
     _build_av_debug_state,
     _fail_localize,

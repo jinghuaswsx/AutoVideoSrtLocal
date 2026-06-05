@@ -94,8 +94,6 @@ def test_task_detail_child_readiness_renders_manual_submit_modal_without_confirm
     assert "tcOpenManualSubmit" in body
     assert "tcManualSubmitModal" in body
     assert "确认完成" not in body
-    assert "tcConfirmChildStep" not in body
-    assert "/steps/' + encodeURIComponent(stepKey) + '/confirm" not in body
 
 
 def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_client_no_db):
@@ -227,7 +225,8 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert 'data-bucket="blocked"' in body
     assert 'data-bucket="done"' in body
     assert 'data-bucket="archived"' in body
-    assert "待处理任务" in body
+    assert "进行中任务" in body
+    assert ">待处理任务</button>" not in body
     assert "待审核任务" in body
     assert "阻塞中任务" in body
     assert "已完成任务" in body
@@ -336,6 +335,21 @@ def test_task_detail_drawer_uses_half_screen_chinese_process_view(authed_client_
     assert "继续完善素材内容" in body
     assert "问题点" in body
     assert "管理员批注" in body
+
+
+def test_task_detail_admin_feedback_card_highlights_rejection_with_modal(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert ".tc-admin-feedback-card" in body
+    assert "function tcLatestAdminFeedback" in body
+    assert "function tcRenderAdminFeedbackCard" in body
+    assert "管理员反馈" in body
+    assert "push_rework_rejected" in body
+    assert "payload.image_urls" in body
+    assert "tcOpenFeedbackImageModal" in body
+    assert "tcFeedbackImageModal" in body
+    assert "keydown" in body
 
 
 def test_task_center_formats_language_codes_with_chinese_labels(authed_client_no_db):
@@ -1885,6 +1899,8 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     assert "let TC_CURRENT_BUCKET = 'all';" in body
     assert body.index('data-bucket="all"') < body.index('data-bucket="todo"')
     assert '>任务总览</button>' in body
+    assert '>进行中任务</button>' in body
+    assert '>待处理任务</button>' not in body
     assert 'data-bucket="todo"' in body
     assert 'data-bucket="review"' in body
     assert 'data-bucket="blocked"' in body

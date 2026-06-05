@@ -890,6 +890,42 @@ def test_build_detail_source_index_map_prefers_detail_side_indices():
     assert mapping == {token: 12}
 
 
+def test_detail_source_index_map_uses_visual_reference_when_detail_reuses_carousel_index(tmp_path):
+    token = "69fbbfcf4c49761afb04c9f36b253810"
+    slot_path = tmp_path / f"detail_00_{token}.jpg"
+    reference_00 = tmp_path / f"reference_00_20260603_cc85db3f_from_url_en_00_{token}.jpg"
+    reference_07 = tmp_path / f"reference_07_20260603_56491448_from_url_en_07_{token}.jpg"
+    _write_shape_image(slot_path, shape="circle")
+    _write_shape_image(reference_00, shape="bar")
+    _write_shape_image(reference_07, shape="circle")
+    html = f'<section><img src="https://wxalbum.example.com/{token}.jpg"></section>'
+    reference_images = [
+        {"filename": reference_00.name, "local_path": str(reference_00)},
+        {"filename": reference_07.name, "local_path": str(reference_07)},
+    ]
+    localized_images = [
+        _localized(f"20260603_af546610_20260603_cc85db3f_from_url_en_00_{token}.png"),
+        _localized(f"20260603_bdea0dc4_20260603_56491448_from_url_en_07_{token}.png"),
+    ]
+
+    mapping = run_product_cdp.build_detail_source_index_map(
+        html,
+        reference_images,
+        carousel_image_count=8,
+        detail_slot_images=[{"src": f"https://wxalbum.example.com/{token}.jpg", "local_path": str(slot_path)}],
+    )
+    plan = taa_cdp.plan_body_html_replacements(
+        html,
+        localized_images,
+        source_index_by_token=mapping,
+    )
+
+    assert mapping == {token: 7}
+    assert len(plan["replacements"]) == 1
+    assert plan["replacements"][0]["candidate"]["source_index"] == 7
+    assert "from_url_en_07" in plan["replacements"][0]["candidate"]["filename"]
+
+
 def test_detail_replacements_fall_back_to_reference_filename_when_src_has_no_hash_token():
     html = '<section><img src="https://cdn.shopify.com/files/pic1_480x480.jpg?v=1658166836"></section>'
     reference_images = [

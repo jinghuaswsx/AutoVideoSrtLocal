@@ -70,8 +70,22 @@ def test_list_translation_work_users_requires_translate_and_work_scope(monkeypat
     monkeypatch.setattr(users, "query", fake_query)
 
     assert users.list_translation_work_users() == [
-        {"id": 4, "username": "admin", "display_name": "蔡靖华"},
-        {"id": 1, "username": "zhou", "display_name": "周干琴"},
+        {
+            "id": 4,
+            "username": "admin",
+            "display_name": "蔡靖华",
+            "todo_count": 0,
+            "urgent_count": 0,
+            "completed_today_count": 0,
+        },
+        {
+            "id": 1,
+            "username": "zhou",
+            "display_name": "周干琴",
+            "todo_count": 0,
+            "urgent_count": 0,
+            "completed_today_count": 0,
+        },
     ]
 
 

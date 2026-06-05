@@ -44,6 +44,11 @@ LOUDNESS_PROFILES = {
 BOOST_TARGET_GAP_LU = 7.0
 BOOST_MAX_BACKGROUND_VOLUME = 2.4
 DEFAULT_MANUAL_BOOST_PCT = 100
+VOICE_PRIORITY_TARGET_GAP_LU = 12.0
+VOICE_PRIORITY_MAX_WINDOWS = 80
+VOICE_PRIORITY_MIN_WINDOW_SECONDS = 0.15
+VOICE_PRIORITY_DOMINANT_WINDOW_LIMIT = 5
+VOICE_PRIORITY_MAX_ATTENUATION_LU = 6.0
 BACKGROUND_CLEANUP_MODE_DE_ELECTRIC = "de_electric"
 DE_ELECTRIC_BACKGROUND_FILTER = (
     "highpass=f=80,"
@@ -122,6 +127,352 @@ def _empty_boost_summary() -> dict:
 
 def _is_available_lufs(value: float | None) -> bool:
     return value is not None and math.isfinite(float(value))
+
+
+def _finite_float(value) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def _round_audio_metric(value: float | None, digits: int = 2) -> float | None:
+    if value is None or not math.isfinite(float(value)):
+        return None
+    return round(float(value), digits)
+
+
+def _background_volume_gain_db(background_volume: float) -> float | None:
+    volume = _finite_float(background_volume)
+    if volume is None or volume <= 0:
+        return None
+    return 20.0 * math.log10(volume)
+
+
+def resolve_voice_priority_background_volume(
+    *,
+    background_volume: float,
+    window_loudness: list[dict],
+    target_gap_lu: float = VOICE_PRIORITY_TARGET_GAP_LU,
+) -> dict:
+    """Cap background volume so it stays below TTS in speech windows.
+
+    ``window_loudness`` contains LUFS measured on matching TTS/background
+    windows. If any background window would be louder than
+    ``voice_lufs - target_gap_lu`` after the current volume is applied, the
+    function returns a lower effective background volume.
+    """
+    standard_volume = max(0.0, float(background_volume))
+    summary = {
+        "enabled": False,
+        "mode": "voice_priority_sentence_windows",
+        "target_gap_lu": float(target_gap_lu),
+        "standard_volume": standard_volume,
+        "effective_volume": standard_volume,
+        "fallback_reason": None,
+        "window_count": len(window_loudness or []),
+        "valid_window_count": 0,
+        "risky_window_count": 0,
+        "max_background_minus_voice_lu": None,
+        "required_attenuation_lu": 0.0,
+        "scale": 1.0,
+        "dominant_windows": [],
+    }
+    gain_db = _background_volume_gain_db(standard_volume)
+    if gain_db is None:
+        summary["fallback_reason"] = "background_muted"
+        return summary
+
+    valid_windows: list[dict] = []
+    for fallback_index, row in enumerate(window_loudness or []):
+        if not isinstance(row, dict):
+            continue
+        voice_lufs = _finite_float(row.get("voice_lufs"))
+        background_lufs = _finite_float(row.get("background_lufs"))
+        if voice_lufs is None or background_lufs is None:
+            continue
+        if voice_lufs <= SILENCE_LUFS_THRESHOLD:
+            continue
+        adjusted_bg_lufs = background_lufs + gain_db
+        delta = adjusted_bg_lufs - voice_lufs
+        if not math.isfinite(delta):
+            continue
+        valid_windows.append({
+            "index": row.get("index", fallback_index),
+            "start": _round_audio_metric(row.get("start")),
+            "end": _round_audio_metric(row.get("end")),
+            "voice_lufs": _round_audio_metric(voice_lufs, 1),
+            "background_lufs": _round_audio_metric(background_lufs, 1),
+            "background_lufs_at_volume": _round_audio_metric(adjusted_bg_lufs, 1),
+            "background_minus_voice_lu": _round_audio_metric(delta, 2),
+        })
+
+    summary["valid_window_count"] = len(valid_windows)
+    if not valid_windows:
+        summary["fallback_reason"] = "no_valid_windows"
+        return summary
+
+    target_delta = -float(target_gap_lu)
+    dominant_windows = sorted(
+        valid_windows,
+        key=lambda item: float(item["background_minus_voice_lu"]),
+        reverse=True,
+    )
+    risky_windows = [
+        row for row in valid_windows
+        if float(row["background_minus_voice_lu"]) > target_delta
+    ]
+    max_delta = float(dominant_windows[0]["background_minus_voice_lu"])
+    summary["max_background_minus_voice_lu"] = _round_audio_metric(max_delta, 2)
+    summary["risky_window_count"] = len(risky_windows)
+    summary["dominant_windows"] = dominant_windows[:VOICE_PRIORITY_DOMINANT_WINDOW_LIMIT]
+
+    if not risky_windows:
+        summary["fallback_reason"] = "already_below_target_gap"
+        return summary
+
+    raw_required_attenuation = _round_audio_metric(target_delta - max_delta, 2)
+    required_attenuation = max(-VOICE_PRIORITY_MAX_ATTENUATION_LU, raw_required_attenuation)
+    attenuation_capped = required_attenuation > raw_required_attenuation
+    scale = 10 ** (float(required_attenuation) / 20.0)
+    effective_volume = standard_volume * scale
+    summary.update({
+        "enabled": True,
+        "fallback_reason": None,
+        "effective_volume": effective_volume,
+        "raw_required_attenuation_lu": raw_required_attenuation,
+        "required_attenuation_lu": required_attenuation,
+        "attenuation_capped": attenuation_capped,
+        "scale": scale,
+    })
+    return summary
+
+
+def build_ducking_volume_expression(
+    *,
+    segments: list[dict],
+    background_volume: float,
+    standard_volume: float,
+    attack: float = 0.2,
+    release: float = 0.4,
+) -> str:
+    """Build a dynamic ffmpeg volume expression to duck background music during speech.
+
+    Ducks background to `background_volume` during speech segments plus `attack` lead-in
+    and `release` tail-out times, and keeps it at `standard_volume` when no voice is playing.
+    Transitions are linear. Overlapping intervals are merged to prevent multiple fades.
+    """
+    background_volume = float(background_volume)
+    standard_volume = float(standard_volume)
+
+    if background_volume >= standard_volume:
+        return f"{standard_volume:.4f}"
+
+    raw_windows = []
+    for fallback_index, segment in enumerate(segments or []):
+        res = _segment_audio_window(segment, fallback_index)
+        if res is not None:
+            _, start, end = res
+            raw_windows.append((start, end))
+
+    if not raw_windows:
+        return f"{standard_volume:.4f}"
+
+    # Merge overlapping extended windows [start - attack, end + release]
+    extended = [[max(0.0, s - attack), e + release] for s, e in raw_windows]
+    extended.sort(key=lambda x: x[0])
+
+    merged = []
+    for item in extended:
+        if not merged:
+            merged.append(item)
+        else:
+            prev = merged[-1]
+            if item[0] <= prev[1]:
+                prev[1] = max(prev[1], item[1])
+            else:
+                merged.append(item)
+
+    # Build piecewise expression F_i(t) for each merged interval
+    terms = []
+    for S, E in merged:
+        duration = E - S
+        if duration <= 0:
+            continue
+        if duration <= attack + release:
+            L = S + duration * (attack / (attack + release))
+            R = L
+        else:
+            L = S + attack
+            R = E - release
+
+        L_diff = max(0.001, L - S)
+        R_diff = max(0.001, E - R)
+
+        term = (
+            f"if(between(t,{S:.3f},{E:.3f}),"
+            f"if(lt(t,{L:.3f}),(t-{S:.3f})/{L_diff:.3f},"
+            f"if(gt(t,{R:.3f}),({E:.3f}-t)/{R_diff:.3f},1)),0)"
+        )
+        terms.append(term)
+
+    if not terms:
+        return f"{standard_volume:.4f}"
+
+    diff = standard_volume - background_volume
+    sum_terms = "+".join(terms)
+    return f"{standard_volume:.4f}-{diff:.4f}*({sum_terms})"
+
+
+def _segment_audio_window(segment: dict, fallback_index: int) -> tuple[int, float, float] | None:
+    start = None
+    for key in ("audio_start_time", "start_time", "source_start_time", "start"):
+        start = _finite_float(segment.get(key))
+        if start is not None:
+            break
+    if start is None:
+        return None
+
+    end = None
+    for key in ("audio_end_time", "end_time", "source_end_time", "end"):
+        end = _finite_float(segment.get(key))
+        if end is not None:
+            break
+    if end is None:
+        for key in ("tts_duration", "audio_duration", "duration"):
+            duration = _finite_float(segment.get(key))
+            if duration is not None:
+                end = start + duration
+                break
+    if end is None:
+        return None
+    if end - start < VOICE_PRIORITY_MIN_WINDOW_SECONDS:
+        return None
+    index = segment.get("asr_index", segment.get("index", fallback_index))
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        index = fallback_index
+    return index, max(0.0, start), max(0.0, end)
+
+
+def _select_voice_priority_windows(
+    segments: list[dict],
+    *,
+    max_windows: int = VOICE_PRIORITY_MAX_WINDOWS,
+) -> list[tuple[int, float, float, dict]]:
+    windows = [
+        (window[0], window[1], window[2], segment)
+        for fallback_index, segment in enumerate(segments or [])
+        if isinstance(segment, dict)
+        for window in [_segment_audio_window(segment, fallback_index)]
+        if window is not None
+    ]
+    if len(windows) <= max_windows:
+        return windows
+    selected: list[tuple[int, float, float, dict]] = []
+    used_positions: set[int] = set()
+    for sample_index in range(max_windows):
+        pos = int(sample_index * len(windows) / max_windows)
+        if pos in used_positions:
+            continue
+        used_positions.add(pos)
+        selected.append(windows[pos])
+    return selected
+
+
+def measure_window_lufs(audio_path: str, start_time: float, end_time: float) -> float:
+    """Measure integrated LUFS for a short audio window."""
+    p = Path(audio_path)
+    if not p.is_file():
+        raise FileNotFoundError(f"audio not found: {audio_path}")
+    duration = max(0.0, float(end_time) - float(start_time))
+    if duration < VOICE_PRIORITY_MIN_WINDOW_SECONDS:
+        raise ValueError("audio window is too short for loudness measurement")
+    cmd = [
+        "ffmpeg", "-hide_banner", "-nostats",
+        "-ss", f"{max(0.0, float(start_time)):.3f}",
+        "-t", f"{duration:.3f}",
+        "-i", str(p),
+        "-af", "ebur128=peak=true",
+        "-f", "null", "-",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg ebur128 window measure failed (rc={proc.returncode}): {proc.stderr[-500:]}"
+        )
+    match = _INTEGRATED_LOUDNESS_RE.search(proc.stderr or "")
+    if not match:
+        raise RuntimeError(f"unable to parse ebur128 window output: {proc.stderr[-500:]}")
+    value = match.group(1)
+    return EBUR128_FLOOR if value == "-inf" else float(value)
+
+
+def measure_voice_priority_background_windows(
+    *,
+    tts_audio_path: str,
+    background_path: str,
+    segments: list[dict],
+    max_windows: int = VOICE_PRIORITY_MAX_WINDOWS,
+) -> list[dict]:
+    """Measure matching TTS/background LUFS windows from TTS segment timings."""
+    records: list[dict] = []
+    for index, start, end, segment in _select_voice_priority_windows(segments, max_windows=max_windows):
+        try:
+            segment_tts_path = str(segment.get("tts_path") or "").strip()
+            if segment_tts_path and Path(segment_tts_path).is_file():
+                voice_duration = _finite_float(segment.get("tts_duration"))
+                if voice_duration is None:
+                    voice_duration = _finite_float(segment.get("duration"))
+                if voice_duration is None:
+                    voice_duration = max(0.0, end - start)
+                voice_lufs = measure_window_lufs(
+                    segment_tts_path,
+                    0.0,
+                    max(VOICE_PRIORITY_MIN_WINDOW_SECONDS, voice_duration),
+                )
+            else:
+                voice_lufs = measure_window_lufs(tts_audio_path, start, end)
+            background_lufs = measure_window_lufs(background_path, start, end)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "[voice_priority_background] failed to measure window index=%s %.3f-%.3f: %s",
+                index, start, end, exc,
+            )
+            continue
+        records.append({
+            "index": index,
+            "start": start,
+            "end": end,
+            "voice_lufs": voice_lufs,
+            "background_lufs": background_lufs,
+        })
+    return records
+
+
+def calibrate_voice_priority_background_volume(
+    *,
+    tts_audio_path: str,
+    background_path: str,
+    segments: list[dict],
+    background_volume: float,
+    target_gap_lu: float = VOICE_PRIORITY_TARGET_GAP_LU,
+    max_windows: int = VOICE_PRIORITY_MAX_WINDOWS,
+) -> dict:
+    """Measure sentence windows and return a voice-first background volume cap."""
+    window_loudness = measure_voice_priority_background_windows(
+        tts_audio_path=tts_audio_path,
+        background_path=background_path,
+        segments=segments,
+        max_windows=max_windows,
+    )
+    return resolve_voice_priority_background_volume(
+        background_volume=background_volume,
+        window_loudness=window_loudness,
+        target_gap_lu=target_gap_lu,
+    )
 
 
 def resolve_background_volume_profile(
@@ -380,9 +731,10 @@ def mix_with_background(
     # 让 mp4 整体 ≈ 原视频整体"）破坏巨大：测得的 pre_amix_lufs 偏低 6 dB →
     # delta 偏大 → 反推 TTS target 偏高 → 触发 ffmpeg loudnorm 上限报错。
     # 加 normalize=0 让 amix 直接相加（保留真实响度），与人感知 mix 一致。
+    bg_vol_str = f"'{background_volume}'" if isinstance(background_volume, str) else str(background_volume)
     filter_graph = (
         f"[0:a]volume={main_volume}[m];"
-        f"[1:a]volume={background_volume}[b];"
+        f"[1:a]volume={bg_vol_str}[b];"
         f"[m][b]amix=inputs=2:duration={duration}:dropout_transition=0:normalize=0[out]"
     )
     cmd = [

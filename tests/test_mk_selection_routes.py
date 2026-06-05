@@ -124,6 +124,18 @@ def test_mk_selection_video_cards_use_single_preview_with_metrics():
     assert "昨日消耗" in template
 
 
+def test_mk_selection_filter_toolbar_has_mobile_grid_layout():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/2026-06-04-mk-selection-mobile-filter-responsive-design.md" in template
+    assert "@media (max-width: 768px)" in template
+    assert ".oc-header--actions { width:100%; }" in template
+    assert "grid-template-columns:repeat(2, minmax(0, 1fr));" in template
+    assert ".oc-search #searchInput { grid-column:1 / -1; width:100% !important; }" in template
+    assert ".oc-search > .oc-btn { width:100%; justify-content:center; }" in template
+    assert ".mk-video-library-head { flex-wrap:wrap; align-items:flex-start; }" in template
+
+
 def test_mk_selection_video_heat_matches_mk_backend_ads_count_rules():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
@@ -299,6 +311,8 @@ def test_mk_selection_material_archive_filters_use_explicit_scope_and_single_day
     assert template.index('id="snapshotRangeSelect"') < template.index('id="snapshotSelect"')
     assert template.index('id="mkAdDeliveryFilter"') > template.index('id="mkInventoryFilter"')
     assert "function mkAdDeliveryQueryParam()" in template
+    assert 'id="mkUploaderFilter"' in template
+    assert "function mkUploaderQueryParam()" in template
     assert '<option value="all">全部</option>' in template
     assert "function syncMkSnapshotModeControls()" in template
     assert "function loadMkMaterialSnapshots()" in template
@@ -312,11 +326,11 @@ def test_mk_selection_material_archive_filters_use_explicit_scope_and_single_day
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-material-library?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkSortQueryParam()}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}${keywordParam}${mkRangeQueryParam()}${mkSnapshotQueryParam()}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkUploaderQueryParam()}${mkSortQueryParam()}`;"
     ) in template
     assert (
         "const url = `/xuanpin/api/mk-yesterday-top300?page=${page}"
-        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkSortQueryParam()}`;"
+        "&page_size=${MK_VIDEO_PAGE_SIZE}&keyword=${encodeURIComponent(kw)}${mkLibraryStatusQueryParam()}${mkAdDeliveryQueryParam()}${mkUploaderQueryParam()}${mkSortQueryParam()}`;"
     ) in template
     assert "/xuanpin/api/mk-yesterday-top100?page=${page}&page_size=${MK_VIDEO_PAGE_SIZE}${mkSnapshotQueryParam()}" not in template
 

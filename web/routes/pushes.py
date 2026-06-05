@@ -94,6 +94,8 @@ def index():
     )
 
 
+
+
 from appcore import medias, push_quality_checks, pushes, system_audit
 from appcore import tasks as tasks_svc
 from appcore.db import query_one
@@ -142,11 +144,24 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
 
     headers = pushes.build_localized_texts_headers()
     if "Authorization" not in headers and "Cookie" not in headers:
-        return {"ok": False, "error": "push_localized_texts_credentials_missing", "status_code": 500}, 500
+        return {
+            "ok": False,
+            "error": "push_localized_texts_credentials_missing",
+            "mk_id": mk_id,
+            "target_url": target_url,
+            "status_code": 500,
+        }, 500
 
     body = pushes.build_localized_texts_request(item)
     if not body.get("texts"):
-        return {"ok": False, "error": "localized_texts_empty", "status_code": 400}, 400
+        return {
+            "ok": False,
+            "error": "localized_texts_empty",
+            "mk_id": mk_id,
+            "target_url": target_url,
+            "payload": body,
+            "status_code": 400,
+        }, 400
 
     post_result = pushes.post_json_payload(
         target_url,
@@ -166,6 +181,7 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
             "ok": False,
             "error": "downstream_unreachable",
             "detail": detail,
+            "mk_id": mk_id,
             "target_url": target_url,
             "payload": body,
             "status_code": 502,
@@ -181,6 +197,7 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
             "ok": True,
             "upstream_status": post_result.get("upstream_status"),
             "response_body": post_result.get("response_body") or "",
+            "mk_id": mk_id,
             "target_url": target_url,
             "payload": body,
             "status_code": 200,
@@ -197,6 +214,7 @@ def _push_localized_texts_result(item_id: int, item: dict, product: dict) -> tup
         "error": "downstream_error",
         "upstream_status": post_result.get("upstream_status"),
         "response_body": post_result.get("response_body") or "",
+        "mk_id": mk_id,
         "target_url": target_url,
         "payload": body,
         "status_code": 502,
@@ -1805,4 +1823,3 @@ def material_ads_detail(item_id: int):
         daily_rows=daily_rows_formatted,
         country=country,
     )
-

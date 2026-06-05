@@ -28,7 +28,7 @@ from pipeline.languages.registry import (
     normalize_enabled_target_langs,
 )
 from web import store
-from web.auth import admin_required, permission_required
+from web.auth import permission_required
 from web.services import dialogue_pipeline_runner
 from web.services.artifact_download import serve_artifact_download
 from web.services.llm_debug import build_llm_debug_payload
@@ -38,6 +38,7 @@ from web.services.task_translate import start_task_translate
 from web.services.task_translation_selection import select_task_translation
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
+    normalize_confirm_voice_payload,
     resolve_round_file_entry,
 )
 from web.services.translate_route_responses import (
@@ -401,6 +402,15 @@ def _dialogue_resume_cleanup_updates(
         updates.update(
             dialogue_segments=[],
             dialogue_segment_audio_manifest={},
+            speaker_audio_tracks={},
+            speaker_summary={},
+            speaker_sample_specs=[],
+            speaker_profiles={},
+            selected_voice_by_speaker={},
+            speaker_aliases={},
+        )
+    elif "speaker_confirm" in reset_set:
+        updates.update(
             speaker_audio_tracks={},
             speaker_summary={},
             speaker_sample_specs=[],
@@ -1302,6 +1312,64 @@ def toggle_visible_to_all(task_id: str):
     return _json_response({"visible_to_all": value})
 
 
+@bp.route("/api/dialogue-translate/<task_id>/auto-voice-selection", methods=["PUT"])
+@login_required
+def toggle_auto_voice_selection(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    if "auto_voice_selection" in body:
+        raw_value = body.get("auto_voice_selection")
+    else:
+        raw_value = body.get("enabled", True)
+    cfg = dict(task.get("plugin_config") or {})
+    cfg["auto_voice_selection"] = raw_value
+    from appcore.omni_plugin_config import validate_plugin_config
+    try:
+        normalized_cfg = validate_plugin_config(cfg)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    value = bool(normalized_cfg["auto_voice_selection"])
+    update_project_state(
+        task_id,
+        {"plugin_config": normalized_cfg},
+        query_one_func=db_query_one,
+        execute_func=db_execute,
+    )
+    store.update(task_id, plugin_config=normalized_cfg)
+    return _json_response({"auto_voice_selection": value})
+
+
+@bp.route("/api/dialogue-translate/<task_id>/sentence-tts-loudness-calibration", methods=["PUT"])
+@login_required
+def toggle_sentence_tts_loudness_calibration(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    if "sentence_tts_loudness_calibration" in body:
+        raw_value = body.get("sentence_tts_loudness_calibration")
+    else:
+        raw_value = body.get("enabled", False)
+    cfg = dict(task.get("plugin_config") or {})
+    cfg["sentence_tts_loudness_calibration"] = raw_value
+    from appcore.omni_plugin_config import validate_plugin_config
+    try:
+        normalized_cfg = validate_plugin_config(cfg)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    value = bool(normalized_cfg["sentence_tts_loudness_calibration"])
+    update_project_state(
+        task_id,
+        {"plugin_config": normalized_cfg},
+        query_one_func=db_query_one,
+        execute_func=db_execute,
+    )
+    store.update(task_id, plugin_config=normalized_cfg)
+    return _json_response({"sentence_tts_loudness_calibration": value})
+
+
 @bp.route("/api/dialogue-translate/<task_id>/artifact/<name>")
 @login_required
 def get_artifact(task_id: str, name: str):
@@ -1525,9 +1593,8 @@ def confirm_voices(task_id: str):
         return _json_response({"error": "voice_match_ab is not waiting"}, 409)
 
     try:
-        selected_voice_ids = _normalize_voice_selection_payload(
-            request.get_json(silent=True) or {}
-        )
+        body = request.get_json(silent=True) or {}
+        selected_voice_ids = _normalize_voice_selection_payload(body)
     except ValueError as exc:
         return _json_response({"error": str(exc)}, 400)
 
@@ -1553,10 +1620,18 @@ def confirm_voices(task_id: str):
         speaker_profiles[speaker] = profile
         selected_voice_by_speaker[speaker] = selected_voice
 
+    subtitle_settings = normalize_confirm_voice_payload(
+        body={**body, "voice_id": "__dialogue_subtitle_settings__"},
+        lang=target_lang or "dialogue",
+    )
     steps = dict(state.get("steps") or {})
     steps["voice_match_ab"] = "done"
     state["speaker_profiles"] = speaker_profiles
     state["selected_voice_by_speaker"] = selected_voice_by_speaker
+    state["subtitle_font"] = subtitle_settings["subtitle_font"]
+    state["subtitle_size"] = subtitle_settings["subtitle_size"]
+    state["subtitle_position_y"] = subtitle_settings["subtitle_position_y"]
+    state["subtitle_position"] = subtitle_settings["subtitle_position"]
     state["steps"] = steps
     state["status"] = "running"
     state["error"] = ""
@@ -1567,6 +1642,10 @@ def confirm_voices(task_id: str):
         task_id,
         speaker_profiles=speaker_profiles,
         selected_voice_by_speaker=selected_voice_by_speaker,
+        subtitle_font=subtitle_settings["subtitle_font"],
+        subtitle_size=subtitle_settings["subtitle_size"],
+        subtitle_position_y=subtitle_settings["subtitle_position_y"],
+        subtitle_position=subtitle_settings["subtitle_position"],
         status="running",
         error="",
     )
@@ -1589,5 +1668,100 @@ def confirm_voices(task_id: str):
         {
             "ok": True,
             "selected_voice_by_speaker": selected_voice_ids,
+        }
+    )
+
+
+@bp.route("/api/dialogue-translate/<task_id>/confirm-speakers", methods=["POST"])
+@login_required
+def confirm_speakers(task_id: str):
+    row = _query_viewable_project(task_id, "state_json, user_id")
+    if not row:
+        abort(404)
+    owner_user_id = row.get("user_id") or current_user.id
+    try:
+        state = json.loads(row.get("state_json") or "{}")
+    except Exception:
+        state = {}
+    if (state.get("steps") or {}).get("speaker_confirm") != "waiting":
+        return _json_response({"error": "speaker_confirm is not waiting"}, 409)
+
+    body = request.get_json(silent=True) or {}
+    updated_segments = body.get("dialogue_segments")
+    speaker_aliases = body.get("speaker_aliases") or {}
+
+    if not isinstance(updated_segments, list):
+        return _json_response({"error": "dialogue_segments must be a list"}, 400)
+    if not isinstance(speaker_aliases, dict):
+        return _json_response({"error": "speaker_aliases must be a dictionary"}, 400)
+
+    # 1. Update the speaker assignments locally on the segments
+    segments_by_index = {
+        seg.get("index"): seg
+        for seg in updated_segments
+        if isinstance(seg, dict) and seg.get("index") is not None
+    }
+
+    current_segments = state.get("dialogue_segments") or []
+    for seg in current_segments:
+        idx = seg.get("index")
+        if idx in segments_by_index:
+            new_spk = str(segments_by_index[idx].get("speaker_id") or "A").strip().upper()
+            if new_spk in {"A", "B"}:
+                seg["speaker_id"] = new_spk
+
+    # 2. Re-extract segment audio clip assets and speaker tracks
+    from appcore.dialogue_translate.segment_audio import build_dialogue_segment_audio_assets
+    from appcore.dialogue_translate.speaker_detection import _summary
+
+    audio_path = state.get("video_path") or state.get("audio_path") or ""
+    try:
+        result = build_dialogue_segment_audio_assets(
+            video_path=audio_path,
+            task_dir=str(state.get("task_dir") or ""),
+            dialogue_segments=current_segments,
+        )
+    except Exception as exc:
+        log.exception("[dialogue_translate] rebuild audio assets failed task=%s", task_id)
+        return _json_response({"error": f"重新生成说话人音频失败: {exc}"}, 500)
+
+    # 3. Recalculate speaker summary
+    speaker_summary = _summary(result["dialogue_segments"])
+
+    # 4. Save back to database
+    steps = dict(state.get("steps") or {})
+    steps["speaker_confirm"] = "done"
+    state["dialogue_segments"] = result["dialogue_segments"]
+    state["dialogue_segment_audio_manifest"] = result["dialogue_segment_audio_manifest"]
+    state["speaker_audio_tracks"] = result["speaker_audio_tracks"]
+    state["speaker_summary"] = speaker_summary
+    state["speaker_aliases"] = speaker_aliases
+    state["steps"] = steps
+    state["status"] = "running"
+    state["error"] = ""
+    state["current_review_step"] = ""
+    save_project_state(task_id, state, execute_func=db_execute)
+
+    # 5. Update task state in memory/cache
+    task_state.update(
+        task_id,
+        dialogue_segments=result["dialogue_segments"],
+        dialogue_segment_audio_manifest=result["dialogue_segment_audio_manifest"],
+        speaker_audio_tracks=result["speaker_audio_tracks"],
+        speaker_summary=speaker_summary,
+        speaker_aliases=speaker_aliases,
+        status="running",
+        error="",
+    )
+    task_state.set_step(task_id, "speaker_confirm", "done")
+    task_state.set_current_review_step(task_id, "")
+
+    # 6. Resume to the next step: voice_match_ab
+    dialogue_pipeline_runner.resume(task_id, "voice_match_ab", user_id=owner_user_id)
+    return _json_response(
+        {
+            "ok": True,
+            "dialogue_segments": result["dialogue_segments"],
+            "speaker_aliases": speaker_aliases,
         }
     )

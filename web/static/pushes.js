@@ -2444,33 +2444,39 @@
       step.status.appendChild(el('span', { class: 'pm-pipeline-status-label' }, meta.label));
     }
 
-    function buildLocalizedTextsPipelineJson() {
-      return {
-        mk_id: mkId,
-        target_url: localizedTargetUrl,
-        texts: localizedTexts,
-      };
-    }
-
-    function buildProductLinksPipelineJson() {
-      if (!productLinksPreview) return {};
-      return {
-        target_url: productLinksPreview.target_url || '',
-        payload: productLinksPreview.payload || productLinksPreview,
-      };
-    }
-
-    function renderPushProgressPayloads() {
+    function renderInitialPushProgressPayloads() {
       setPipelineStepJson('material', payloadData || {});
-      setPipelineStepJson('texts', buildLocalizedTextsPipelineJson());
-      setPipelineStepJson('links', buildProductLinksPipelineJson());
+      setPipelineStepJson('texts', '等待素材推送完成后加载文案报文。');
+      setPipelineStepJson('links', '等待文案推送完成后加载链接报文。');
+    }
+
+    function buildRuntimeLocalizedTextsPipelineJson(result, mkIdMatch) {
+      if (!result || !result.payload) {
+        return '未生成文案报文。';
+      }
+      const runtimeMkId = result.mk_id || (mkIdMatch && mkIdMatch.mk_id) || mkId || null;
+      return {
+        mk_id: runtimeMkId,
+        target_url: result.target_url || '',
+        payload: result.payload,
+      };
+    }
+
+    function buildRuntimeProductLinksPipelineJson(result) {
+      if (!result || !result.payload) {
+        return '未生成链接报文。';
+      }
+      return {
+        target_url: result.target_url || '',
+        payload: result.payload,
+      };
     }
 
     function showPushProgressWorkbench() {
       overlay.classList.add('pm-overlay--pipeline');
       shell.hidden = true;
       pushProgressWorkbench.hidden = false;
-      renderPushProgressPayloads();
+      renderInitialPushProgressPayloads();
       setPipelineStepStatus('material', 'running');
       setPipelineStepStatus('texts', 'queued');
       setPipelineStepStatus('links', 'queued');
@@ -2483,6 +2489,7 @@
       setPipelineStepStatus('material', 'done');
       setPipelineStepResult('material', '素材推送已完成。', body);
 
+      setPipelineStepJson('texts', buildRuntimeLocalizedTextsPipelineJson(body.localized_texts_push, body.mk_id_match));
       setPipelineStepStatus('texts', body.localized_texts_push && body.localized_texts_push.ok ? 'done' : 'error');
       setPipelineStepResult(
         'texts',
@@ -2491,6 +2498,7 @@
         !(body.localized_texts_push && body.localized_texts_push.ok),
       );
 
+      setPipelineStepJson('links', buildRuntimeProductLinksPipelineJson(body.product_links_push));
       setPipelineStepStatus('links', body.product_links_push && body.product_links_push.ok ? 'done' : 'error');
       setPipelineStepResult(
         'links',
@@ -3012,6 +3020,59 @@
       manualLinkConfirm.hidden = false;
     }
 
+    function renderLocalizedPanels() {
+      clear(paneLocalized);
+      paneLocalized.appendChild(renderLocalizedPane(localizedTexts, localizedTargetUrl, mkId));
+      paneLocalizedJson.textContent = JSON.stringify({
+        mk_id: mkId,
+        target_url: localizedTargetUrl,
+        texts: localizedTexts,
+      }, null, 2);
+    }
+
+    function renderProductLinksPanels() {
+      paneProductLinksJson.textContent = JSON.stringify(
+        productLinksPreview && productLinksPreview.payload
+          ? productLinksPreview.payload
+          : (productLinksPreview || {}),
+        null,
+        2,
+      );
+      clear(paneProductLinks);
+      paneProductLinks.appendChild(renderProductLinksPane(productLinksPreview));
+    }
+
+    function applyPipelineRuntimePayloads(body) {
+      const localizedResult = body.localized_texts_push || null;
+      const linksResult = body.product_links_push || null;
+      if (body.mk_id_match && body.mk_id_match.mk_id) {
+        mkId = body.mk_id_match.mk_id;
+      } else if (localizedResult && localizedResult.mk_id) {
+        mkId = localizedResult.mk_id;
+      }
+      if (localizedResult && localizedResult.target_url) {
+        localizedTargetUrl = localizedResult.target_url;
+      } else if (body.mk_id_match && body.mk_id_match.localized_push_target_url) {
+        localizedTargetUrl = body.mk_id_match.localized_push_target_url;
+      }
+      if (localizedResult && localizedResult.payload && Array.isArray(localizedResult.payload.texts)) {
+        localizedTexts = localizedResult.payload.texts;
+      }
+      mkIdValue.textContent = mkId ? String(mkId) : '-';
+      renderLocalizedPanels();
+
+      if (linksResult && (linksResult.payload || linksResult.target_url || linksResult.error)) {
+        productLinksPreview = {
+          ...(productLinksPreview || {}),
+          target_url: linksResult.target_url || (productLinksPreview && productLinksPreview.target_url) || '',
+          payload: linksResult.payload || (productLinksPreview && productLinksPreview.payload) || null,
+          error: linksResult.error || '',
+          message: linksResult.message || linksResult.detail || '',
+        };
+        renderProductLinksPanels();
+      }
+    }
+
     function applyPayloadData(data) {
       payloadData = data.payload;
       mkId = data.mk_id || null;
@@ -3041,23 +3102,8 @@
       paneConfirm.appendChild(renderPayloadView(payloadData, data.preview_cover_url || null));
       paneJson.textContent = JSON.stringify(payloadData, null, 2);
 
-      clear(paneLocalized);
-      paneLocalized.appendChild(renderLocalizedPane(localizedTexts, localizedTargetUrl, mkId));
-      paneLocalizedJson.textContent = JSON.stringify({
-        mk_id: mkId,
-        target_url: localizedTargetUrl,
-        texts: localizedTexts,
-      }, null, 2);
-
-      paneProductLinksJson.textContent = JSON.stringify(
-        productLinksPreview && productLinksPreview.payload
-          ? productLinksPreview.payload
-          : (productLinksPreview || {}),
-        null,
-        2,
-      );
-      clear(paneProductLinks);
-      paneProductLinks.appendChild(renderProductLinksPane(productLinksPreview));
+      renderLocalizedPanels();
+      renderProductLinksPanels();
 
       loadingTip.hidden = true;
       manualLinkConfirm.hidden = true;
@@ -3145,22 +3191,8 @@
           localizedPushed = !!(body.localized_texts_push && body.localized_texts_push.ok);
           productLinksPushed = !!(body.product_links_push && body.product_links_push.ok);
           anyPushSucceeded = true;
-          // mk_id 匹配成功 → 同步刷新顶部信息 + 文案 pane + JSON 预览 + 推送按钮状态
-          if (body.mk_id_match && body.mk_id_match.mk_id) {
-            mkId = body.mk_id_match.mk_id;
-            mkIdValue.textContent = String(mkId);
-            localizedTargetUrl = body.mk_id_match.localized_push_target_url || '';
-            clear(paneLocalized);
-            paneLocalized.appendChild(
-              renderLocalizedPane(localizedTexts, localizedTargetUrl, mkId),
-            );
-            paneLocalizedJson.textContent = JSON.stringify({
-              mk_id: mkId,
-              target_url: localizedTargetUrl,
-              texts: localizedTexts,
-            }, null, 2);
-            syncPushButton();
-          }
+          applyPipelineRuntimePayloads(body);
+          syncPushButton();
         }
       } catch (err) {
         if (!pushingProductLinks && !pushingLocalizedTexts && !pushProgressWorkbench.hidden) {

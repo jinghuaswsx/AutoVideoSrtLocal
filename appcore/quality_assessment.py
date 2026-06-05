@@ -80,7 +80,7 @@ def _tts_recognition_from_result(result: Any) -> str:
     full_text = (result.get("full_text") or "").strip()
     if full_text:
         return full_text
-    for key in ("utterances", "segments", "sentences"):
+    for key in ("utterances", "segments", "sentences", "chunks", "subtitle_units"):
         text = _join_text_items(result.get(key) or [], "tts_text", "text", "transcript")
         if text:
             return text
@@ -104,6 +104,21 @@ def _tts_recognition_from_variants(task: dict) -> str:
     return _tts_recognition_from_result(task.get("tts_result"))
 
 
+def _load_json_file(task_dir: str, filename: str) -> Any | None:
+    if not task_dir:
+        return None
+    import os
+    path = os.path.join(task_dir, filename)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        log.warning("Failed to load JSON file %s", path, exc_info=True)
+        return None
+
+
 def _build_inputs(task: dict) -> dict:
     """Extract the three texts the assessor needs."""
     utterances = task.get("utterances") or task.get("utterances_raw") or []
@@ -115,10 +130,51 @@ def _build_inputs(task: dict) -> dict:
         if translation:
             break
 
+    task_dir = task.get("task_dir") or ""
+    if not translation and task_dir:
+        translation_filenames = [
+            "localized_translation.normal.json",
+            "localized_translation.av.json",
+            "localized_translation.json",
+        ]
+        for fname in translation_filenames:
+            data = _load_json_file(task_dir, fname)
+            if data:
+                translation = _translation_from_localized(data)
+                if translation:
+                    break
+
     asr2 = task.get("english_asr_result") or {}
     tts_recognition = _tts_recognition_from_result(asr2)
     if not tts_recognition:
         tts_recognition = _tts_recognition_from_variants(task)
+
+    if not tts_recognition and task_dir:
+        target_lang = task.get("target_lang") or ""
+        asr_filenames = []
+        if target_lang:
+            asr_filenames.extend([
+                f"{target_lang}_asr_result.normal.json",
+                f"{target_lang}_asr_result.av.json",
+                f"{target_lang}_asr_result.json",
+            ])
+        asr_filenames.extend([
+            "english_asr_result.normal.json",
+            "english_asr_result.av.json",
+            "english_asr_result.json",
+            "asr_result.normal.json",
+            "asr_result.av.json",
+            "asr_result.json",
+            "corrected_subtitle.normal.json",
+            "corrected_subtitle.av.json",
+            "corrected_subtitle.json",
+        ])
+        for fname in asr_filenames:
+            data = _load_json_file(task_dir, fname)
+            if data:
+                tts_recognition = _tts_recognition_from_result(data)
+                if tts_recognition:
+                    break
 
     # multi-translate 在 asr_normalize 步骤会把 source_language 改写成 'en'（统一英文路径），
     # 但 task.utterances（这里拼成 original_asr）保留的是源语言原文（如 es）。

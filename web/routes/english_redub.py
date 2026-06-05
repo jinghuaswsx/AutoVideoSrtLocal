@@ -37,7 +37,6 @@ from appcore.voice_ai_rank_cache import (
     normalize_rank_condition,
     set_active_unranked_candidates,
 )
-from appcore.voice_ai_selection_settings import is_voice_ai_auto_select_enabled
 from pipeline.alignment import build_script_segments
 from pipeline.languages.registry import (
     SOURCE_LANGS as ALLOWED_SOURCE_LANGUAGES,
@@ -53,6 +52,7 @@ from web.services.translate_step_reset import build_step_resume_reset_updates
 from web.services.translate_detail_protocol import (
     build_voice_library_payload,
     normalize_confirm_voice_payload,
+    resolve_voice_ai_auto_select_enabled,
     resolve_round_file_entry,
 )
 from web.services.translate_route_responses import (
@@ -1277,7 +1277,7 @@ def _voice_ai_rank_response_fields(state: dict, *, cached: bool) -> dict:
         "voice_ai_rank_provider": state.get("voice_ai_rank_provider") or "",
         "voice_ai_rank_debug": state.get("voice_ai_rank_debug"),
         "voice_ai_rank_usage_log_id": state.get("voice_ai_rank_usage_log_id"),
-        "voice_ai_auto_select_enabled": is_voice_ai_auto_select_enabled(),
+        "voice_ai_auto_select_enabled": resolve_voice_ai_auto_select_enabled(state),
         "voice_ai_rank_cache_key": state.get("voice_ai_rank_active_key") or "all",
         "voice_ai_rank_cached": cached,
         "candidate_limit": state.get("voice_ai_rank_candidate_limit"),

@@ -175,7 +175,7 @@ def test_list_returns_visible_presets_plus_default_id_and_capability_groups(
     assert names == {"sys1", "alice-1"}
     # capability_groups 元数据带回（前端表单用）
     assert isinstance(data["capability_groups"], list)
-    assert len(data["capability_groups"]) == 9
+    assert len(data["capability_groups"]) == 11
     assert data["ffmpeg_tempo_fallback_enabled"] is True
 
 

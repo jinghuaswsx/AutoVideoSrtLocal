@@ -256,11 +256,74 @@ def fine_ai_evaluation_detail_page(evaluation_run_id: str):
 
 
 @bp.route("/tabcut", methods=["GET"])
+@bp.route("/tabcut/videos", methods=["GET"])
 @login_required
-def tabcut_selection_page():
+def tabcut_videos_page():
     if not _is_admin():
         abort(403)
-    return render_template("tabcut_selection.html", tabcut_goods_categories=goods_category_options())
+    return render_template(
+        "tabcut_selection.html",
+        tabcut_goods_categories=goods_category_options(),
+        initial_view="videos",
+        share_mode=False
+    )
+
+
+@bp.route("/tabcut/goods", methods=["GET"])
+@login_required
+def tabcut_goods_page():
+    if not _is_admin():
+        abort(403)
+    return render_template(
+        "tabcut_selection.html",
+        tabcut_goods_categories=goods_category_options(),
+        initial_view="goods",
+        share_mode=False
+    )
+
+
+@bp.route("/tabcut/recommended", methods=["GET"])
+@login_required
+def tabcut_recommended_page():
+    if not _is_admin():
+        abort(403)
+    return render_template(
+        "tabcut_selection.html",
+        tabcut_goods_categories=goods_category_options(),
+        initial_view="recommended",
+        share_mode=False
+    )
+
+
+@bp.route("/tabcut/share", methods=["GET"])
+@bp.route("/tabcut/share/videos", methods=["GET"])
+def tabcut_share_videos_page():
+    return render_template(
+        "tabcut_selection.html",
+        tabcut_goods_categories=goods_category_options(),
+        initial_view="videos",
+        share_mode=True
+    )
+
+
+@bp.route("/tabcut/share/goods", methods=["GET"])
+def tabcut_share_goods_page():
+    return render_template(
+        "tabcut_selection.html",
+        tabcut_goods_categories=goods_category_options(),
+        initial_view="goods",
+        share_mode=True
+    )
+
+
+@bp.route("/tabcut/share/recommended", methods=["GET"])
+def tabcut_share_recommended_page():
+    return render_template(
+        "tabcut_selection.html",
+        tabcut_goods_categories=goods_category_options(),
+        initial_view="recommended",
+        share_mode=True
+    )
 
 
 @bp.route("/meta-hot-posts", methods=["GET"])
@@ -340,6 +403,7 @@ def api_mk_material_library():
         ad_delivery_filter=(
             request.args.get("ad_delivery") or request.args.get("ad_delivery_filter") or ""
         ).strip(),
+        uploader=(request.args.get("uploader") or "").strip(),
     )
     return jsonify(result)
 
@@ -378,6 +442,7 @@ def api_mk_yesterday_top300():
         ad_delivery_filter=(
             request.args.get("ad_delivery") or request.args.get("ad_delivery_filter") or ""
         ).strip(),
+        uploader=(request.args.get("uploader") or "").strip(),
     )
     result["sort_order"] = sort_order
     return jsonify(result)
@@ -592,6 +657,16 @@ def api_tabcut_videos():
 @bp.route("/api/tabcut/goods", methods=["GET"])
 @login_required
 def api_tabcut_goods():
+    return _tabcut_routes().api_tabcut_selection_goods()
+
+
+@bp.route("/api/tabcut/share/videos", methods=["GET"])
+def api_tabcut_share_videos():
+    return _tabcut_routes().api_tabcut_selection_videos()
+
+
+@bp.route("/api/tabcut/share/goods", methods=["GET"])
+def api_tabcut_share_goods():
     return _tabcut_routes().api_tabcut_selection_goods()
 
 
@@ -1078,4 +1153,3 @@ def api_tabcut_video_cover(video_id: str):
         return redirect(original_cover_url)
 
     abort(404, description="No cover available")
-

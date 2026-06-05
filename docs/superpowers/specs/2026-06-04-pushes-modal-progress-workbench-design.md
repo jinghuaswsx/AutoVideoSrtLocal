@@ -31,6 +31,10 @@ The workbench lets the operator see the request JSON, the returned data, and the
 - Inside each step, the upper panel uses 70% of the step content area for the corresponding push request JSON.
 - The lower panel uses 30% of the step content area for the result summary and response JSON.
 - Before the network call starts, 素材推送 is `推送中`, 文案推送 and 链接推送 are `排队中`.
+- The workbench must not pre-render copywriting or link request JSON from the modal's initial payload load. These later steps depend on the material push result, especially the latest `mk_id`, `handle`, and product code state.
+- Copywriting request JSON is filled only after the material step has finished and the backend has generated the copywriting request from the latest product state.
+- Link request JSON is filled only after the copywriting step has finished and the backend has generated the link request from the latest product state.
+- Backend chained-push responses must include the actual runtime `target_url` and `payload` used by copywriting and link push, including failure cases where the payload was built before the downstream call failed.
 - When the chained backend response returns, the material step is marked completed, while the copywriting and link steps are marked completed or error according to `localized_texts_push.ok` and `product_links_push.ok`.
 - If the material request throws, the material step becomes `推送错误 ❌` and the queued steps remain visible for operator context.
 

@@ -165,6 +165,7 @@ def test_step_voice_match_ab_persists_profiles_and_waits_for_manual_choice(monke
             {"index": 0, "speaker_id": "A", "start_time": 0.0, "end_time": 4.0},
             {"index": 1, "speaker_id": "B", "start_time": 5.0, "end_time": 9.0},
         ],
+        plugin_config={"auto_voice_selection": False},
         selected_voice_by_speaker={"A": {"voice_id": "existing-a"}},
     )
 
@@ -336,6 +337,7 @@ def test_step_voice_match_ab_ai_ranks_per_speaker_voices_and_waits_for_manual_ch
             {"index": 0, "speaker_id": "A", "start_time": 0.0, "end_time": 4.0, "text": "hello"},
             {"index": 1, "speaker_id": "B", "start_time": 5.0, "end_time": 9.0, "text": "yes"},
         ],
+        plugin_config={"auto_voice_selection": False},
         selected_voice_by_speaker={},
     )
     sample_specs = {
@@ -431,6 +433,96 @@ def test_step_voice_match_ab_ai_ranks_per_speaker_voices_and_waits_for_manual_ch
     assert state["status"] == "waiting"
     assert state["current_review_step"] == "voice_match_ab"
     assert state["steps"]["voice_match_ab"] == "waiting"
+
+
+def test_step_voice_match_ab_auto_selects_ai_rank_one_when_enabled(
+    monkeypatch,
+    tmp_path,
+):
+    from appcore import task_state
+    from appcore.events import EventBus
+    from appcore.runtime_dialogue import DialogueTranslateRunner
+
+    task_id = "dialogue-runtime-ai-auto-select"
+    task_state.create(task_id, str(tmp_path / "video.mp4"), str(tmp_path), "video.mp4")
+    task_state.update(
+        task_id,
+        target_lang="de",
+        dialogue_segments=[
+            {"index": 0, "speaker_id": "A", "start_time": 0.0, "end_time": 4.0, "text": "hello"},
+            {"index": 1, "speaker_id": "B", "start_time": 5.0, "end_time": 9.0, "text": "yes"},
+        ],
+        plugin_config={"auto_voice_selection": True},
+        selected_voice_by_speaker={},
+    )
+    sample_specs = {
+        "A": {"sample_windows": [[0.0, 4.0]], "sample_duration": 4.0, "match_warnings": []},
+        "B": {"sample_windows": [[5.0, 9.0]], "sample_duration": 4.0, "match_warnings": []},
+    }
+    profiles = {
+        "A": {
+            "sample_path": str(tmp_path / "speaker_A_voice_sample.wav"),
+            "sample_windows": [[0.0, 4.0]],
+            "candidates": [
+                {"voice_id": "a-vector", "name": "A Vector", "similarity": 0.91},
+                {"voice_id": "a-ai", "name": "A AI", "similarity": 0.89},
+            ],
+            "selected_voice": None,
+            "match_warnings": [],
+        },
+        "B": {
+            "sample_path": str(tmp_path / "speaker_B_voice_sample.wav"),
+            "sample_windows": [[5.0, 9.0]],
+            "candidates": [
+                {"voice_id": "b-vector", "name": "B Vector", "similarity": 0.92},
+                {"voice_id": "b-ai", "name": "B AI", "similarity": 0.88},
+            ],
+            "selected_voice": None,
+            "match_warnings": [],
+        },
+    }
+
+    monkeypatch.setattr(
+        "appcore.dialogue_translate.voice_match.build_speaker_sample_windows",
+        lambda dialogue_segments: sample_specs,
+    )
+    monkeypatch.setattr(
+        "appcore.dialogue_translate.voice_match.match_voices_for_speakers",
+        lambda **kwargs: profiles,
+    )
+
+    def fake_rank_voice_candidates(**kwargs):
+        speaker = kwargs["task"]["dialogue_speaker_id"]
+        selected_id = f"{speaker.lower()}-ai"
+        vector_id = f"{speaker.lower()}-vector"
+        return {
+            "status": "done",
+            "rankings": [
+                {"voice_id": selected_id, "llm_rank": 1, "reason_summary": "best"},
+                {"voice_id": vector_id, "llm_rank": 2, "reason_summary": "backup"},
+            ],
+            "candidates": [
+                {"voice_id": vector_id, "name": f"{speaker} Vector", "llm_rank": 2},
+                {"voice_id": selected_id, "name": f"{speaker} AI", "llm_rank": 1},
+            ],
+        }
+
+    monkeypatch.setattr(
+        "appcore.voice_ai_ranking.rank_voice_candidates",
+        fake_rank_voice_candidates,
+    )
+
+    runner = DialogueTranslateRunner(bus=EventBus(), user_id=7)
+    runner._step_voice_match_ab(task_id)
+
+    state = task_state.get(task_id)
+    assert state["selected_voice_by_speaker"]["A"]["voice_id"] == "a-ai"
+    assert state["selected_voice_by_speaker"]["B"]["voice_id"] == "b-ai"
+    assert state["speaker_profiles"]["A"]["selected_voice"]["voice_id"] == "a-ai"
+    assert state["speaker_profiles"]["B"]["selected_voice"]["voice_id"] == "b-ai"
+    assert state["current_review_step"] == ""
+    assert state["steps"]["voice_match_ab"] == "done"
+    assert state["status"] != "waiting"
 
 
 def test_dialogue_pipeline_runner_import_registers_dispatch_start_and_resume(monkeypatch):

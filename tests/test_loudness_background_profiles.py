@@ -1,7 +1,9 @@
 import math
+from pathlib import Path
 
 import pytest
 
+from appcore import audio_loudness
 from appcore.audio_loudness import (
     BOOST_MAX_BACKGROUND_VOLUME,
     LOUDNESS_PROFILE_AUTO_BOOST,
@@ -9,6 +11,9 @@ from appcore.audio_loudness import (
     LOUDNESS_PROFILE_MANUAL_BOOST,
     LOUDNESS_PROFILE_STANDARD,
     LOUDNESS_PROFILE_VOICE_ONLY,
+    VOICE_PRIORITY_TARGET_GAP_LU,
+    measure_voice_priority_background_windows,
+    resolve_voice_priority_background_volume,
     resolve_background_volume_profile,
     validate_loudness_profile,
 )
@@ -28,6 +33,83 @@ def test_standard_profile_uses_current_background_volume():
     assert result["effective_background_volume"] == 0.8
     assert result["background_boost"]["enabled"] is False
     assert result["manual_boost"]["enabled"] is False
+
+
+def test_voice_priority_suppresses_background_when_sentence_window_masks_voice():
+    result = resolve_voice_priority_background_volume(
+        background_volume=1.0,
+        window_loudness=[
+            {"index": 46, "voice_lufs": -16.4, "background_lufs": -16.4},
+            {"index": 47, "voice_lufs": -17.0, "background_lufs": -13.1},
+        ],
+    )
+
+    assert result["enabled"] is True
+    assert result["target_gap_lu"] == VOICE_PRIORITY_TARGET_GAP_LU
+    assert result["risky_window_count"] == 2
+    assert result["max_background_minus_voice_lu"] == 3.9
+    assert result["raw_required_attenuation_lu"] == -15.9
+    assert result["required_attenuation_lu"] == -6.0
+    assert result["attenuation_capped"] is True
+    assert math.isclose(result["effective_volume"], 10 ** (-6.0 / 20), rel_tol=1e-6)
+    assert result["effective_volume"] == pytest.approx(0.501187, abs=1e-4)
+    assert result["dominant_windows"][0]["index"] == 47
+
+
+def test_voice_priority_keeps_background_when_already_below_target_gap():
+    result = resolve_voice_priority_background_volume(
+        background_volume=0.6,
+        window_loudness=[
+            {"index": 1, "voice_lufs": -16.0, "background_lufs": -33.0},
+            {"index": 2, "voice_lufs": -15.0, "background_lufs": -31.5},
+        ],
+    )
+
+    assert result["enabled"] is False
+    assert result["fallback_reason"] == "already_below_target_gap"
+    assert result["effective_volume"] == 0.6
+    assert result["risky_window_count"] == 0
+
+
+def test_voice_priority_window_measurement_prefers_segment_tts_path(
+    monkeypatch, tmp_path,
+):
+    full_tts = tmp_path / "tts_full.mp3"
+    segment_tts = tmp_path / "segment_26.mp3"
+    background = tmp_path / "background.wav"
+    for path in (full_tts, segment_tts, background):
+        path.write_text("audio", encoding="utf-8")
+    calls = []
+
+    def fake_measure(path, start_time, end_time):
+        calls.append((Path(path).name, start_time, end_time))
+        return -16.0 if Path(path) == segment_tts else -24.0
+
+    monkeypatch.setattr(audio_loudness, "measure_window_lufs", fake_measure)
+
+    records = measure_voice_priority_background_windows(
+        tts_audio_path=str(full_tts),
+        background_path=str(background),
+        segments=[{
+            "index": 26,
+            "audio_start_time": 155.72,
+            "audio_end_time": 158.72,
+            "tts_path": str(segment_tts),
+            "tts_duration": 2.4,
+        }],
+    )
+
+    assert records == [{
+        "index": 26,
+        "start": 155.72,
+        "end": 158.72,
+        "voice_lufs": -16.0,
+        "background_lufs": -24.0,
+    }]
+    assert calls == [
+        ("segment_26.mp3", 0.0, 2.4),
+        ("background.wav", 155.72, 158.72),
+    ]
 
 
 def test_voice_only_profile_suppresses_background_volume():

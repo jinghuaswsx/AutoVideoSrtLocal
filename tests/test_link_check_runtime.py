@@ -1147,3 +1147,62 @@ def test_link_check_resumption(monkeypatch):
     assert saved["progress"]["compared"] == 1  # 1 from pre-populated matched reference
     assert saved["progress"]["binary_checked"] == 1
     assert saved["progress"]["same_image_llm_done"] == 1
+
+
+def test_runtime_bypasses_gif_images(monkeypatch):
+    from appcore.link_check_runtime import LinkCheckRuntime
+
+    task_dir = _workspace_tmp()
+    site_path = task_dir / "test_gif.gif"
+    site_path.write_bytes(b"GIF89aXXXXXX")
+
+    task_state.create_link_check(
+        "lc-gif-bypass",
+        task_dir=str(task_dir),
+        user_id=1,
+        link_url="https://shop.example.com/de/products/demo",
+        target_language="de",
+        target_language_name="德语",
+        reference_images=[],
+    )
+
+    class DummyFetcher:
+        def fetch_page(self, url, target_language):
+            return type(
+                "Page",
+                (),
+                {
+                    "resolved_url": url,
+                    "page_language": "de",
+                    "locale_evidence": {
+                        "target_language": "de",
+                        "requested_url": url,
+                        "lock_source": "html_lang",
+                        "locked": True,
+                        "failure_reason": "",
+                        "attempts": [],
+                    },
+                    "images": [
+                        {
+                            "id": "site-1",
+                            "kind": "carousel",
+                            "source_url": "https://img/test_gif.gif",
+                            "local_path": str(site_path),
+                        }
+                    ],
+                },
+            )()
+
+        def download_images(self, images, task_dir):
+            return images
+
+    runtime = LinkCheckRuntime(fetcher=DummyFetcher())
+    runtime.start("lc-gif-bypass")
+
+    saved = task_state.get("lc-gif-bypass")
+    item = saved["items"][0]
+    assert item["is_replaced"] is None
+    assert item["analysis"]["decision"] == "pass"
+    assert item["analysis"]["decision_source"] == "gif_bypass"
+    assert "GIF" in item["analysis"]["text_summary"]
+

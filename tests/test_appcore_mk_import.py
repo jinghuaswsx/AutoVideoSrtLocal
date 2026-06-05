@@ -228,6 +228,60 @@ def test_import_mk_video_keeps_original_filename_as_display_name(monkeypatch):
     assert captured["created_item"]["display_name"] == original_filename
 
 
+def test_import_mk_video_removes_spaces_from_filename(monkeypatch):
+    original_filename = "2026.02.21-狗喷雾梳 (2).mp4"
+    expected_filename = "2026.02.21-狗喷雾梳(2).mp4"
+    captured = {}
+
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(
+        mk_import,
+        "_find_existing_product",
+        lambda normalized_code: {
+            "id": 587,
+            "user_id": 1,
+            "product_code": "dog-spray-brush-rjc",
+            "product_link": "https://newjoyloo.com/products/dog-spray-brush-rjc",
+        },
+    )
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    def fake_create_item(**kwargs):
+        captured["created_item"] = kwargs
+        return 456
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(
+        mk_import.object_keys,
+        "build_media_object_key",
+        lambda user_id, product_id, filename: f"{user_id}/medias/{product_id}/{filename}",
+    )
+    monkeypatch.setattr(mk_import, "_write_file_to_media_store", lambda path, object_key: 5, raising=False)
+    monkeypatch.setattr(mk_import, "_medias_create_item", fake_create_item)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/original.mp4",
+            "filename": original_filename,
+            "product_name": "狗喷雾梳 (2)",
+            "product_code": "dog-spray-brush",
+            "product_link": "https://newjoyloo.com/products/dog-spray-brush-rjc",
+        },
+        translator_id=1,
+        actor_user_id=1,
+    )
+
+    assert result["is_new_product"] is False
+    assert captured["created_item"]["filename"] == expected_filename
+    assert captured["created_item"]["display_name"] == expected_filename
+
+
 def test_import_mk_video_binds_mk_material_with_product_link_metadata(monkeypatch):
     captured = {}
 

@@ -257,6 +257,7 @@ def test_build_stitched_audio_builds_ffmpeg_command(tmp_path):
     assert "adelay=0|0" in cmd[filter_idx]
     assert "adelay=2000|2000" in cmd[filter_idx]
     assert "amix=inputs=2" in cmd[filter_idx]
+    assert "amix=inputs=2:duration=longest:normalize=0" in cmd[filter_idx]
     # 输出时长被裁到 total_duration
     t_idx = cmd.index("-t") + 1
     assert cmd[t_idx].startswith("5")

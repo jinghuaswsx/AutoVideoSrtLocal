@@ -142,6 +142,22 @@ def _reset_steps_from(task_id: str, step_names: list[str], start_step: str) -> N
             store.set_step_message(task_id, step, "等待中...")
 
 
+def _restart_plugin_config_reset_fields(task: dict, body: dict) -> dict | None:
+    restart_switches = (
+        "auto_voice_selection",
+        "sentence_tts_loudness_calibration",
+    )
+    if not any(key in body for key in restart_switches):
+        return None
+    cfg = dict(task.get("plugin_config") or {})
+    for key in restart_switches:
+        if key in body:
+            cfg[key] = body.get(key)
+    from appcore.omni_plugin_config import validate_plugin_config
+
+    return {"plugin_config": validate_plugin_config(cfg)}
+
+
 def _resume_cleanup_updates(task: dict, step_names: list[str], start_step: str) -> dict:
     updates = build_step_resume_reset_updates(task, step_names, start_step)
     if start_step in {"asr_clean", "asr_normalize"}:
@@ -760,6 +776,10 @@ def restart(task_id):
             return _json_response({
                 "error": f"source_language must be one of {list(ALLOWED_SOURCE_LANGUAGES)}"
             }, 400)
+    try:
+        restart_extra_reset_fields = _restart_plugin_config_reset_fields(task, body)
+    except ValueError as exc:
+        return _json_response({"error": f"plugin_config 不合法：{exc}"}, 400)
     from web.services.task_restart import restart_task
     updated = restart_task(
         task_id,
@@ -773,6 +793,7 @@ def restart(task_id):
         source_language=raw_source_language,
         user_id=owner_id,
         runner=omni_pipeline_runner,
+        extra_reset_fields=restart_extra_reset_fields,
     )
     return _json_response({"status": "restarted", "task": updated})
 
@@ -1124,7 +1145,6 @@ def toggle_visible_to_all(task_id: str):
 
 @bp.route("/api/omni-translate/<task_id>/sentence-tts-loudness-calibration", methods=["PUT"])
 @login_required
-@admin_required
 def toggle_sentence_tts_loudness_calibration(task_id: str):
     task = _get_viewable_task(task_id)
     if not task:
@@ -1149,6 +1169,34 @@ def toggle_sentence_tts_loudness_calibration(task_id: str):
     )
     store.update(task_id, plugin_config=normalized_cfg)
     return _json_response({"sentence_tts_loudness_calibration": value})
+
+
+@bp.route("/api/omni-translate/<task_id>/auto-voice-selection", methods=["PUT"])
+@login_required
+def toggle_auto_voice_selection(task_id: str):
+    task = _get_viewable_task(task_id)
+    if not task:
+        return _json_response({"error": "Task not found"}, 404)
+    body = request.get_json(silent=True) or {}
+    if "auto_voice_selection" in body:
+        raw_value = body.get("auto_voice_selection")
+    else:
+        raw_value = body.get("enabled", True)
+    cfg = dict(task.get("plugin_config") or {})
+    cfg["auto_voice_selection"] = raw_value
+    from appcore.omni_plugin_config import validate_plugin_config
+    try:
+        normalized_cfg = validate_plugin_config(cfg)
+    except ValueError as exc:
+        return _json_response({"error": str(exc)}, 400)
+    value = bool(normalized_cfg["auto_voice_selection"])
+    update_project_state(
+        task_id,
+        {"plugin_config": normalized_cfg},
+        query_one_func=db_query_one,
+    )
+    store.update(task_id, plugin_config=normalized_cfg)
+    return _json_response({"auto_voice_selection": value})
 
 
 @bp.route("/api/omni-translate/<task_id>/artifact/<name>")
