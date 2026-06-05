@@ -34,6 +34,9 @@ def test_product_ad_summary_cache_returns_map(monkeypatch):
                 "active_7d_ad_spend_usd": "10.00",
                 "overall_roas": "2.0000",
                 "delivery_status": "active",
+                "delivery_start_time": datetime(2026, 5, 20, 14, 30, 0),
+                "delivery_end_time": datetime(2026, 5, 27, 18, 45, 0),
+                "active_days": 5,
                 "computed_at": datetime(2026, 5, 28, 10, 0, 0),
             },
         ]
@@ -47,6 +50,9 @@ def test_product_ad_summary_cache_returns_map(monkeypatch):
     assert result[1]["total_revenue_usd"] == 120.0
     assert result[1]["overall_roas"] == 2.0
     assert result[1]["delivery_status"] == "active"
+    assert result[1]["delivery_start_time"] == "2026-05-20T14:30:00"
+    assert result[1]["delivery_end_time"] == "2026-05-27T18:45:00"
+    assert result[1]["active_days"] == 5
     assert result[1]["computed_at"] == "2026-05-28T10:00:00"
 
 
@@ -270,3 +276,17 @@ def test_migration_declares_cache_tables_and_indexes():
     assert "delivery_status ENUM('active','stopped','never')" in body
     assert "PRIMARY KEY (product_id, lang)" in body
     assert "idx_media_product_ad_summary_status" in body
+
+
+def test_new_migration_defines_required_columns():
+    body = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "2026_06_05_media_product_ad_status_cache_dates.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ALTER TABLE media_product_ad_summary_cache" in body
+    assert "delivery_start_time" in body
+    assert "delivery_end_time" in body
+    assert "active_days" in body

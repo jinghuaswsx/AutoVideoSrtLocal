@@ -70,7 +70,8 @@ def get_product_ad_summary_cache(product_ids: list[int] | tuple[int, ...] | set[
         return {}
     rows = query(
         "SELECT product_id, order_revenue_usd, shipping_revenue_usd, total_revenue_usd, "
-        "ad_spend_usd, active_7d_ad_spend_usd, overall_roas, delivery_status, computed_at "
+        "ad_spend_usd, active_7d_ad_spend_usd, overall_roas, delivery_status, "
+        "delivery_start_time, delivery_end_time, active_days, computed_at "
         f"FROM media_product_ad_summary_cache WHERE product_id IN ({_placeholders(ids)})",
         tuple(ids),
     )
@@ -88,6 +89,9 @@ def get_product_ad_summary_cache(product_ids: list[int] | tuple[int, ...] | set[
             "active_7d_ad_spend_usd": _safe_float(row.get("active_7d_ad_spend_usd")),
             "overall_roas": _nullable_float(row.get("overall_roas")),
             "delivery_status": normalize_delivery_status_filter(row.get("delivery_status")) or STATUS_NEVER,
+            "delivery_start_time": _iso(row.get("delivery_start_time")),
+            "delivery_end_time": _iso(row.get("delivery_end_time")),
+            "active_days": int(row.get("active_days") or 0),
             "computed_at": _iso(row.get("computed_at")),
         }
     return out
@@ -127,7 +131,8 @@ def get_product_lang_ad_summary_cache(product_ids: list[int] | tuple[int, ...] |
 _PRODUCT_REFRESH_SQL = """
 INSERT INTO media_product_ad_summary_cache (
   product_id, order_revenue_usd, shipping_revenue_usd, total_revenue_usd,
-  ad_spend_usd, active_7d_ad_spend_usd, overall_roas, delivery_status, computed_at
+  ad_spend_usd, active_7d_ad_spend_usd, overall_roas, delivery_status,
+  delivery_start_time, delivery_end_time, active_days, computed_at
 )
 SELECT
   p.id AS product_id,
@@ -146,6 +151,9 @@ SELECT
     WHEN COALESCE(a.active_7d_ad_spend_usd, 0) > 0 THEN 'active'
     ELSE 'stopped'
   END AS delivery_status,
+  a.delivery_start_time,
+  a.delivery_end_time,
+  COALESCE(a.active_days, 0) AS active_days,
   NOW() AS computed_at
 FROM media_products p
 LEFT JOIN (
@@ -162,12 +170,17 @@ LEFT JOIN (
   SELECT
     product_id,
     SUM(COALESCE(spend_usd, 0)) AS ad_spend_usd,
-    SUM(COALESCE(active_spend_usd, 0)) AS active_7d_ad_spend_usd
+    SUM(COALESCE(active_spend_usd, 0)) AS active_7d_ad_spend_usd,
+    MIN(sync_at) AS delivery_start_time,
+    MAX(sync_at) AS delivery_end_time,
+    COUNT(DISTINCT activity_date) AS active_days
   FROM (
     SELECT
       product_id,
       COALESCE(spend_usd, 0) AS spend_usd,
-      0 AS active_spend_usd
+      0 AS active_spend_usd,
+      DATE(COALESCE(d.meta_business_date, d.report_date)) AS activity_date,
+      d.imported_at AS sync_at
     FROM meta_ad_daily_campaign_metrics d
     LEFT JOIN (
       SELECT ad_account_id, MAX(business_date) AS business_date
@@ -189,7 +202,9 @@ LEFT JOIN (
         WHEN m.snapshot_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)
         THEN COALESCE(m.spend_usd, 0)
         ELSE 0
-      END AS active_spend_usd
+      END AS active_spend_usd,
+      m.business_date AS activity_date,
+      m.snapshot_at AS sync_at
     FROM meta_ad_realtime_daily_campaign_metrics m
     INNER JOIN (
       SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at
@@ -230,6 +245,9 @@ ON DUPLICATE KEY UPDATE
   active_7d_ad_spend_usd=VALUES(active_7d_ad_spend_usd),
   overall_roas=VALUES(overall_roas),
   delivery_status=VALUES(delivery_status),
+  delivery_start_time=VALUES(delivery_start_time),
+  delivery_end_time=VALUES(delivery_end_time),
+  active_days=VALUES(active_days),
   computed_at=VALUES(computed_at)
 """
 
@@ -237,7 +255,8 @@ ON DUPLICATE KEY UPDATE
 _PRODUCT_REFRESH_SQL_DAILY_ONLY = """
 INSERT INTO media_product_ad_summary_cache (
   product_id, order_revenue_usd, shipping_revenue_usd, total_revenue_usd,
-  ad_spend_usd, active_7d_ad_spend_usd, overall_roas, delivery_status, computed_at
+  ad_spend_usd, active_7d_ad_spend_usd, overall_roas, delivery_status,
+  delivery_start_time, delivery_end_time, active_days, computed_at
 )
 SELECT
   p.id AS product_id,
@@ -256,6 +275,9 @@ SELECT
     WHEN COALESCE(a.active_7d_ad_spend_usd, 0) > 0 THEN 'active'
     ELSE 'stopped'
   END AS delivery_status,
+  a.delivery_start_time,
+  a.delivery_end_time,
+  COALESCE(a.active_days, 0) AS active_days,
   NOW() AS computed_at
 FROM media_products p
 LEFT JOIN (
@@ -278,7 +300,10 @@ LEFT JOIN (
         THEN COALESCE(spend_usd, 0)
         ELSE 0
       END
-    ) AS active_7d_ad_spend_usd
+    ) AS active_7d_ad_spend_usd,
+    MIN(imported_at) AS delivery_start_time,
+    MAX(imported_at) AS delivery_end_time,
+    COUNT(DISTINCT DATE(COALESCE(meta_business_date, report_date))) AS active_days
   FROM meta_ad_daily_campaign_metrics
   WHERE product_id IS NOT NULL AND COALESCE(spend_usd, 0) > 0
   GROUP BY product_id
@@ -292,6 +317,9 @@ ON DUPLICATE KEY UPDATE
   active_7d_ad_spend_usd=VALUES(active_7d_ad_spend_usd),
   overall_roas=VALUES(overall_roas),
   delivery_status=VALUES(delivery_status),
+  delivery_start_time=VALUES(delivery_start_time),
+  delivery_end_time=VALUES(delivery_end_time),
+  active_days=VALUES(active_days),
   computed_at=VALUES(computed_at)
 """
 
