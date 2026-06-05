@@ -299,6 +299,9 @@ def test_medias_product_table_uses_compact_sku_and_time_columns():
     assert "<th>修改时间</th>" not in script
     assert '<td class="sku-action-cell">' in script
     assert 'data-sku-detail="${p.id}"' in script
+    assert "const hasSkuData = Array.isArray(p.skus) && p.skus.length > 0;" in script
+    assert "const skuBtnClass = hasSkuData ? 'primary' : 'ghost';" in script
+    assert 'class="oc-btn sm ${skuBtnClass} sku-detail-btn"' in script
     assert "grid.querySelectorAll('[data-sku-detail]')" in script
     assert "openSkuDetail(product);" in script
     assert 'class="muted mono product-time-cell"' in script

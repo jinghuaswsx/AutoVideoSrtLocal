@@ -24,6 +24,7 @@
 3. SKU 列只显示一个“SKU”按钮；点击按钮打开现有 SKU 配对详情弹窗。
 4. 从产品管理表格中移除“修改时间”独立列。
 5. “创建时间”列保留创建时间，并在同一单元格下方用约一半字号展示修改时间。
+6. SKU 按钮按是否已有 SKU 数据区分状态：有 SKU 数据显示蓝色主按钮，无 SKU 数据显示白色次按钮。
 
 ## 前端设计
 
@@ -41,6 +42,9 @@
 </td>
 ```
 
+- 按钮 class 根据 `Array.isArray(p.skus) && p.skus.length > 0` 决定：
+  - 有数据：`oc-btn sm primary sku-detail-btn`
+  - 无数据：`oc-btn sm ghost sku-detail-btn`
 - 点击 `[data-sku-detail]` 后按 `pid` 找到当前列表产品，并调用现有 `openSkuDetail(product)`。
 - 创建时间单元格输出 `.product-time-cell`，第一行使用 `fmtDateTimeLines(p.created_at)`，第二行 `.product-time-cell__updated` 使用 `fmtDateTimeLines(p.updated_at)`。
 
@@ -60,8 +64,9 @@
 
 1. 静态测试确认表头已隐藏“明空 ID / ERP SKU / 修改时间”，保留“SKU / 创建时间”。
 2. 静态测试确认列表行渲染使用 `data-sku-detail` 按钮，并仍调用 `openSkuDetail(product)`。
-3. 静态测试确认创建时间单元格包含修改时间副行。
-4. 执行：
+3. 静态测试确认 SKU 按钮会按 `p.skus.length` 输出 `primary` 或 `ghost`。
+4. 静态测试确认创建时间单元格包含修改时间副行。
+5. 执行：
 
 ```bash
 pytest tests/test_medias_translation_assets.py -q
