@@ -3038,7 +3038,10 @@ async function tcLoadReadiness(id, task) {
           linkCombinedChecks.push(check);
           return '';
         }
-        if (String(check.key || '') === 'language_supported') {
+        if (
+          String(check.key || '') === 'language_supported'
+          || String(check.key || '') === 'final_push_confirmation'
+        ) {
           trailingChecks.push(check);
           return '';
         }
@@ -3055,6 +3058,7 @@ async function tcLoadReadiness(id, task) {
       has_object: '视频', has_video: '视频', has_cover: '封面',
       has_copywriting: '文案', has_push_texts: '推送文案',
       is_listed: '商品在架', lang_supported: '广告语言', shopify_image_confirmed: '链接商品图替换',
+      final_push_confirmed: '最终推送人工确认',
     };
     const entries = Object.entries(data.readiness || {});
     if (!entries.length) {

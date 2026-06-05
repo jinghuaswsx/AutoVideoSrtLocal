@@ -1324,8 +1324,155 @@ def test_child_acceptance_payload_marks_only_result_steps_as_manual_submittable(
     assert by_key["push_texts"]["manual_output"]["kind"] == "text"
     assert by_key["detail_images"]["manual_output"]["kind"] == "images"
 
-    for status_key in ("product_listed", "language_supported", "shopify_images", "product_links"):
+    for status_key in (
+        "product_listed",
+        "language_supported",
+        "shopify_images",
+        "product_links",
+    ):
         assert "manual_output" not in by_key[status_key]
+
+
+def test_child_acceptance_payload_includes_final_push_confirmation_gate(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "_detail_images_status",
+        lambda product_id, lang: {"ok": True, "required": False, "reason": ""},
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_product_link_availability_status",
+        lambda product_id, lang, product: {"ok": True, "required": True, "reason": "", "links": []},
+    )
+
+    base_kwargs = {
+        "task_id": 44,
+        "row": {
+            "id": 44,
+            "media_product_id": 9,
+            "country_code": "DE",
+            "product_code": "demo-rjc",
+        },
+        "item": {
+            "id": 1,
+            "product_id": 9,
+            "lang": "de",
+            "object_key": "video.mp4",
+            "cover_object_key": "cover.jpg",
+        },
+        "product": {"id": 9, "product_code": "demo-rjc"},
+        "readiness": {
+            "has_object": True,
+            "has_cover": True,
+            "has_copywriting": True,
+            "has_push_texts": True,
+            "is_listed": True,
+            "lang_supported": True,
+            "shopify_image_confirmed": True,
+            "final_push_confirmed": False,
+        },
+        "include_evidence": False,
+    }
+
+    payload = tasks._child_acceptance_payload(
+        **base_kwargs,
+        manual_confirmed_keys=set(),
+    )
+
+    by_key = {check["key"]: check for check in payload["checks"]}
+    assert by_key["final_push_confirmation"]["label"] == "最终推送人工确认"
+    assert by_key["final_push_confirmation"]["ok"] is False
+    assert "manual_output" not in by_key["final_push_confirmation"]
+    assert "final_push_confirmation" in payload["missing"]
+    assert payload["readiness"]["final_push_confirmed"] is False
+
+    confirmed_payload = tasks._child_acceptance_payload(
+        **base_kwargs,
+        manual_confirmed_keys={"final_push_confirmation"},
+    )
+    confirmed_by_key = {check["key"]: check for check in confirmed_payload["checks"]}
+    assert confirmed_by_key["final_push_confirmation"]["ok"] is True
+    assert confirmed_by_key["final_push_confirmation"]["manual_confirmed"] is True
+    assert "final_push_confirmation" not in confirmed_payload["missing"]
+    assert confirmed_payload["readiness"]["final_push_confirmed"] is True
+
+
+def test_final_push_confirmation_can_be_confirmed_after_child_done(monkeypatch):
+    from appcore import tasks
+
+    writes = []
+    commits = []
+    closed = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConn:
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            commits.append(True)
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args: {
+            "id": 44,
+            "assignee_id": 9,
+            "status": tasks.CHILD_DONE,
+            "media_product_id": 7,
+            "media_item_id": 1,
+            "country_code": "DE",
+        },
+    )
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+    monkeypatch.setattr(
+        tasks,
+        "_write_event",
+        lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
+            (task_id, event_type, actor_user_id, payload)
+        ),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_refresh_push_status_cache_for_child_task",
+        lambda task_id, row: None,
+    )
+
+    result = tasks.confirm_child_step(
+        task_id=44,
+        step_key="final_push_confirmation",
+        actor_user_id=1,
+        is_admin=True,
+    )
+
+    assert result == {"step_key": "final_push_confirmation"}
+    assert commits == [True]
+    assert closed == [True]
+    assert writes == [
+        (
+            44,
+            tasks.CHILD_MANUAL_STEP_CONFIRMED_EVENT,
+            1,
+            {"key": "final_push_confirmation"},
+        )
+    ]
 
 
 def test_detail_images_status_keeps_all_target_image_evidence(monkeypatch):

@@ -126,8 +126,13 @@ def product_with_item(user_id):
 def test_compute_readiness_all_satisfied(product_with_item):
     pid, item_id = product_with_item
     item = medias.get_item(item_id)
+    item["task_id"] = 44
     product = medias.get_product(pid)
-    r = pushes.compute_readiness(item, product)
+    r = pushes.compute_readiness(
+        item,
+        product,
+        context={"manual_confirmed_readiness_by_task_id": {44: {"final_push_confirmed"}}},
+    )
     assert r == {
         "is_listed": True,
         "has_object": True,
@@ -137,7 +142,68 @@ def test_compute_readiness_all_satisfied(product_with_item):
         "has_push_texts": True,
         "shopify_image_confirmed": True,
         "shopify_image_reason": "",
+        "final_push_confirmed": True,
     }
+
+
+def test_compute_status_requires_final_push_manual_confirmation(monkeypatch):
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes.medias, "parse_ad_supported_langs", lambda value: {"de"})
+    monkeypatch.setattr(
+        pushes.shopify_image_tasks,
+        "is_confirmed_for_push",
+        lambda product, lang: (True, ""),
+    )
+    monkeypatch.setattr(pushes.shopify_image_tasks, "domain_statuses_for_push", lambda product, lang: [])
+    item = {
+        "id": 10,
+        "task_id": 44,
+        "product_id": 7,
+        "lang": "de",
+        "object_key": "video.mp4",
+        "cover_object_key": "cover.jpg",
+    }
+    product = {"id": 7, "ad_supported_langs": "de", "listing_status": "上架"}
+    context = {
+        "copywriting_langs": {(7, "de")},
+        "valid_push_text_product_ids": {7},
+        "manual_confirmed_readiness_by_task_id": {44: set()},
+    }
+
+    readiness = pushes.compute_readiness(item, product, context=context)
+
+    assert readiness["final_push_confirmed"] is False
+    assert pushes.compute_status(item, product, readiness=readiness, context=context) == "not_ready"
+
+
+def test_compute_status_pending_after_final_push_manual_confirmation(monkeypatch):
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes.medias, "parse_ad_supported_langs", lambda value: {"de"})
+    monkeypatch.setattr(
+        pushes.shopify_image_tasks,
+        "is_confirmed_for_push",
+        lambda product, lang: (True, ""),
+    )
+    monkeypatch.setattr(pushes.shopify_image_tasks, "domain_statuses_for_push", lambda product, lang: [])
+    item = {
+        "id": 10,
+        "task_id": 44,
+        "product_id": 7,
+        "lang": "de",
+        "object_key": "video.mp4",
+        "cover_object_key": "cover.jpg",
+    }
+    product = {"id": 7, "ad_supported_langs": "de", "listing_status": "上架"}
+    context = {
+        "copywriting_langs": {(7, "de")},
+        "valid_push_text_product_ids": {7},
+        "manual_confirmed_readiness_by_task_id": {44: {"final_push_confirmed"}},
+    }
+
+    readiness = pushes.compute_readiness(item, product, context=context)
+
+    assert readiness["final_push_confirmed"] is True
+    assert pushes.compute_status(item, product, readiness=readiness, context=context) == "pending"
 
 
 def test_compute_readiness_missing_cover(product_with_item):
@@ -255,6 +321,7 @@ def test_compute_readiness_applies_manual_child_confirmations_after_rework(monke
             "is_listed",
             "lang_supported",
             "shopify_image_confirmed",
+            "final_push_confirmed",
         } if task_id == 44 else set(),
         raising=False,
     )
@@ -278,6 +345,7 @@ def test_compute_readiness_applies_manual_child_confirmations_after_rework(monke
     assert readiness["is_listed"] is True
     assert readiness["lang_supported"] is True
     assert readiness["shopify_image_confirmed"] is True
+    assert readiness["final_push_confirmed"] is True
     assert "shopify_image_domain_details" not in readiness
     assert pushes.is_ready(readiness) is True
 
@@ -306,8 +374,10 @@ def test_compute_status_failed(product_with_item):
 def test_compute_status_pending(product_with_item):
     pid, item_id = product_with_item
     item = medias.get_item(item_id)
+    item["task_id"] = 44
     product = medias.get_product(pid)
-    assert pushes.compute_status(item, product) == "pending"
+    context = {"manual_confirmed_readiness_by_task_id": {44: {"final_push_confirmed"}}}
+    assert pushes.compute_status(item, product, context=context) == "pending"
 
 
 def test_compute_status_not_ready(product_with_item):
@@ -470,6 +540,7 @@ def test_status_cache_for_rows_uses_fresh_cache_without_recompute(monkeypatch):
             "item_id": 77,
             "status": "pending",
             "readiness": {"has_object": True},
+            "cache_version": pushes.PUSH_STATUS_CACHE_VERSION,
             "computed_at": now,
         }
     }
@@ -527,6 +598,39 @@ def test_status_cache_for_rows_refreshes_missing_and_stale_rows(monkeypatch):
         "refresh_push_status_cache_rows",
         lambda stale_rows: {int(row["id"]): refreshed[int(row["id"])] for row in stale_rows},
     )
+
+    result = pushes.status_cache_for_rows(rows, max_age_seconds=300)
+
+    assert result == refreshed
+
+
+def test_status_cache_for_rows_refreshes_old_cache_version(monkeypatch):
+    now = datetime.now()
+    rows = [{"id": 77, "product_id": 7}]
+    refreshed = {
+        77: {
+            "item_id": 77,
+            "status": "not_ready",
+            "readiness": {"final_push_confirmed": False},
+            "computed_at": now,
+            "cache_version": pushes.PUSH_STATUS_CACHE_VERSION,
+        }
+    }
+
+    monkeypatch.setattr(
+        pushes,
+        "get_push_status_cache_map",
+        lambda item_ids: {
+            77: {
+                "item_id": 77,
+                "status": "pending",
+                "readiness": {"has_object": True},
+                "computed_at": now,
+                "cache_version": pushes.PUSH_STATUS_CACHE_VERSION - 1,
+            }
+        },
+    )
+    monkeypatch.setattr(pushes, "refresh_push_status_cache_rows", lambda stale_rows: refreshed)
 
     result = pushes.status_cache_for_rows(rows, max_age_seconds=300)
 

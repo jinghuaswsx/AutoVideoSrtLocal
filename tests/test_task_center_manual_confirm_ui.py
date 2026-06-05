@@ -26,3 +26,11 @@ def test_task_center_manual_confirm_button_sits_next_to_step_title():
     assert "justify-content:space-between" not in readiness_head.group(1)
     assert "justify-content:flex-start" in product_link_head.group(1)
     assert "justify-content:space-between" not in product_link_head.group(1)
+
+
+def test_task_center_shows_final_push_confirmation_manual_step():
+    template = Path("web/templates/tasks_list.html").read_text(encoding="utf-8")
+
+    assert "final_push_confirmation" in template
+    assert "最终推送人工确认" in template
+    assert "String(check.key || '') === 'final_push_confirmation'" in template

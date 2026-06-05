@@ -46,10 +46,11 @@ CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
 TASK_ARCHIVED_EVENT = "archived"
 TASK_AUTO_ARCHIVED_EVENT = "auto_archived"
 TASK_AUTO_ARCHIVE_SOURCE = "task_center_auto_archive"
-FINAL_MATERIAL_CONFIRM_LABEL = "最终素材和链接确认"
-FINAL_MATERIAL_CONFIRM_HINT = (
-    "所有元素确认没问题后勾选，勾选后即表示你确认这个素材可推送了"
-)
+LANGUAGE_SUPPORTED_LABEL = "商品投放语种适配"
+LANGUAGE_SUPPORTED_HINT = "目标语种需要先在广告语种中启用，才能进入推送。"
+FINAL_PUSH_CONFIRMATION_STEP_KEY = "final_push_confirmation"
+FINAL_PUSH_CONFIRMATION_LABEL = "最终推送人工确认"
+FINAL_PUSH_CONFIRMATION_HINT = "运营最终确认视频、封面、文案、商品图和链接均可推送后再点击人工确认。"
 CHILD_ACCEPTANCE_STEP_LABELS = {
     "localized_media_item": "目标语种素材",
     "translated_video": "视频翻译结果",
@@ -60,7 +61,8 @@ CHILD_ACCEPTANCE_STEP_LABELS = {
     "detail_images": "产品详情图翻译",
     "shopify_images": "链接商品图替换",
     "product_links": "商品链接探活",
-    "language_supported": FINAL_MATERIAL_CONFIRM_LABEL,
+    "language_supported": LANGUAGE_SUPPORTED_LABEL,
+    FINAL_PUSH_CONFIRMATION_STEP_KEY: FINAL_PUSH_CONFIRMATION_LABEL,
 }
 CHILD_ACCEPTANCE_STEP_KEYS = tuple(CHILD_ACCEPTANCE_STEP_LABELS)
 PUSH_REWORK_ISSUE_DEFS = {
@@ -88,6 +90,10 @@ PUSH_REWORK_ISSUE_DEFS = {
         "task_check_key": "shopify_images",
         "label": "图片/链接确认",
     },
+    "final_push_confirmed": {
+        "task_check_key": FINAL_PUSH_CONFIRMATION_STEP_KEY,
+        "label": "推送人工确认",
+    },
 }
 PUSH_REWORK_ISSUE_KEYS = tuple(PUSH_REWORK_ISSUE_DEFS)
 CHILD_ACCEPTANCE_READINESS_KEYS = {
@@ -98,6 +104,7 @@ CHILD_ACCEPTANCE_READINESS_KEYS = {
     "product_listed": "is_listed",
     "shopify_images": "shopify_image_confirmed",
     "language_supported": "lang_supported",
+    FINAL_PUSH_CONFIRMATION_STEP_KEY: "final_push_confirmed",
 }
 CHILD_MANUAL_CONFIRM_REASON = "人工确认完成"
 CHILD_ACCEPTANCE_MISSING_ALIASES = {
@@ -3375,17 +3382,34 @@ def _child_acceptance_payload(
         ),
         _acceptance_check(
             "language_supported",
-            FINAL_MATERIAL_CONFIRM_LABEL,
+            LANGUAGE_SUPPORTED_LABEL,
             _readiness_bool(readiness, "lang_supported"),
-            hint=FINAL_MATERIAL_CONFIRM_HINT,
+            hint=LANGUAGE_SUPPORTED_HINT,
             **_evidence_if(
                 [
                     _evidence_status(
-                        label=FINAL_MATERIAL_CONFIRM_LABEL,
-                        meta=f"{str(row['country_code']).upper()} 已完成确认"
+                        label=LANGUAGE_SUPPORTED_LABEL,
+                        meta=f"{str(row['country_code']).upper()} 已启用"
                         if _readiness_bool(readiness, "lang_supported")
-                        else f"{str(row['country_code']).upper()} 未确认",
+                        else f"{str(row['country_code']).upper()} 未启用",
                         ok=_readiness_bool(readiness, "lang_supported"),
+                    )
+                ]
+            ),
+        ),
+        _acceptance_check(
+            FINAL_PUSH_CONFIRMATION_STEP_KEY,
+            FINAL_PUSH_CONFIRMATION_LABEL,
+            _readiness_bool(readiness, "final_push_confirmed"),
+            hint=FINAL_PUSH_CONFIRMATION_HINT,
+            **_evidence_if(
+                [
+                    _evidence_status(
+                        label=FINAL_PUSH_CONFIRMATION_LABEL,
+                        meta="已人工确认可推送"
+                        if _readiness_bool(readiness, "final_push_confirmed")
+                        else "等待运营最终确认",
+                        ok=_readiness_bool(readiness, "final_push_confirmed"),
                     )
                 ]
             ),
@@ -3613,7 +3637,10 @@ def confirm_child_step(
         raise StateError("child task not found")
     if row["assignee_id"] != int(actor_user_id) and not is_admin:
         raise PermissionError("forbidden")
-    if row["status"] not in (CHILD_ASSIGNED, CHILD_REVIEW):
+    confirmable_statuses = (CHILD_ASSIGNED, CHILD_REVIEW)
+    if normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY:
+        confirmable_statuses = (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE)
+    if row["status"] not in confirmable_statuses:
         raise StateError("child not confirmable")
 
     conn = get_conn()

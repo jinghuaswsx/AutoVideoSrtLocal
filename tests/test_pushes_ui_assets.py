@@ -56,6 +56,13 @@ def test_pushes_script_renders_product_link_and_copy_button():
     assert "f-owner" in script
 
 
+def test_pushes_script_shows_final_push_confirmation_readiness():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+
+    assert "final_push_confirmed: '推送人工确认'" in script
+    assert "const line2Keys = ['shopify_image_confirmed', 'final_push_confirmed'];" in script
+
+
 def test_pushes_script_sanitizes_product_page_url_href_protocols():
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
     render_start = script.index("function renderRow(it)")

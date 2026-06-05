@@ -1305,6 +1305,7 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
         "shopify_images",
         "product_links",
         "language_supported",
+        "final_push_confirmation",
     ]
     assert payload["country_code"] == "DE"
     assert payload["product_code"] == "robot-kit-rjc"
@@ -1326,6 +1327,7 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
         "shopify_images",
         "product_links",
         "language_supported",
+        "final_push_confirmation",
     ]
     assert payload["checks"][0]["reason"] == "未找到该语种 media_item"
     checks = {check["key"]: check for check in payload["checks"]}
@@ -1335,6 +1337,7 @@ def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
     assert checks["translated_copywriting"]["manual_output"]["kind"] == "text"
     assert checks["push_texts"]["manual_output"]["kind"] == "text"
     assert checks["detail_images"]["manual_output"]["kind"] == "images"
+    assert "manual_output" not in checks["final_push_confirmation"]
     assert "manual_output" not in checks["product_listed"]
     assert "manual_upload_url" not in checks["localized_media_item"]
     assert "FROM tasks t" in captured["sql"]
@@ -1501,6 +1504,7 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "is_listed": True,
             "lang_supported": True,
             "shopify_image_confirmed": True,
+            "final_push_confirmed": False,
             "shopify_image_domain_details": [
                 {"domain": "newjoyloo.com", "confirmed": True, "reason": ""}
             ],
@@ -1567,7 +1571,7 @@ def test_get_child_readiness_computes_payload(monkeypatch):
 
     payload = tasks.get_child_readiness(44)
     assert payload["ready"] is False
-    assert payload["missing"] == ["detail_images", "product_links"]
+    assert payload["missing"] == ["detail_images", "product_links", "final_push_confirmation"]
     assert payload["country_code"] == "DE"
     assert payload["product_code"] == "robot-kit-rjc"
     assert payload["media_product_id"] == 9
@@ -1584,10 +1588,12 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         "is_listed": True,
         "lang_supported": True,
         "shopify_image_confirmed": True,
+        "final_push_confirmed": False,
     }
     assert payload["checks"][6]["key"] == "detail_images"
     assert payload["checks"][8]["key"] == "product_links"
     assert payload["checks"][9]["key"] == "language_supported"
+    assert payload["checks"][10]["key"] == "final_push_confirmation"
     checks = {check["key"]: check for check in payload["checks"]}
     assert checks["localized_media_item"]["actions"][0]["url"].endswith("action=video&item=5")
     assert checks["localized_media_item"]["evidence"] == [
@@ -1685,16 +1691,28 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         "url": "https://newjoyloo.com/de/products/robot-kit-rjc",
         "kind": "external",
     }
-    assert checks["language_supported"]["label"] == "最终素材和链接确认"
+    assert checks["language_supported"]["label"] == "商品投放语种适配"
     assert checks["language_supported"]["hint"] == (
-        "所有元素确认没问题后勾选，勾选后即表示你确认这个素材可推送了"
+        "目标语种需要先在广告语种中启用，才能进入推送。"
     )
     assert checks["language_supported"]["evidence"] == [
         {
             "type": "status",
-            "label": "最终素材和链接确认",
-            "meta": "DE 已完成确认",
+            "label": "商品投放语种适配",
+            "meta": "DE 已启用",
             "ok": True,
+        }
+    ]
+    assert checks["final_push_confirmation"]["label"] == "最终推送人工确认"
+    assert checks["final_push_confirmation"]["hint"] == (
+        "运营最终确认视频、封面、文案、商品图和链接均可推送后再点击人工确认。"
+    )
+    assert checks["final_push_confirmation"]["evidence"] == [
+        {
+            "type": "status",
+            "label": "最终推送人工确认",
+            "meta": "等待运营最终确认",
+            "ok": False,
         }
     ]
     assert list(checks) == [
@@ -1708,6 +1726,7 @@ def test_get_child_readiness_computes_payload(monkeypatch):
         "shopify_images",
         "product_links",
         "language_supported",
+        "final_push_confirmation",
     ]
 
 
@@ -1842,7 +1861,11 @@ def test_get_child_readiness_manual_confirmation_marks_step_ready(monkeypatch):
         },
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
-    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: {"translated_cover"})
+    monkeypatch.setattr(
+        tasks,
+        "_manual_confirmed_child_step_keys",
+        lambda task_id: {"translated_cover", "final_push_confirmation"},
+    )
     monkeypatch.setattr(
         pushes,
         "compute_readiness",
@@ -1854,6 +1877,7 @@ def test_get_child_readiness_manual_confirmation_marks_step_ready(monkeypatch):
             "is_listed": True,
             "lang_supported": True,
             "shopify_image_confirmed": True,
+            "final_push_confirmed": False,
         },
     )
     monkeypatch.setattr(
@@ -1878,13 +1902,13 @@ def test_get_child_readiness_manual_confirmation_marks_step_ready(monkeypatch):
 
     assert payload["ready"] is True
     assert payload["missing"] == []
-    assert payload["manual_confirmed_steps"] == ["translated_cover"]
+    assert payload["manual_confirmed_steps"] == ["final_push_confirmation", "translated_cover"]
     assert checks["translated_cover"]["ok"] is True
     assert checks["translated_cover"]["manual_confirmed"] is True
     assert "人工确认完成" in checks["translated_cover"]["reason"]
 
 
-def test_get_child_readiness_labels_unconfirmed_final_material_step(monkeypatch):
+def test_get_child_readiness_labels_unconfirmed_ad_language_step(monkeypatch):
     from appcore import pushes, tasks
 
     monkeypatch.setattr(
@@ -1950,12 +1974,12 @@ def test_get_child_readiness_labels_unconfirmed_final_material_step(monkeypatch)
 
     assert payload["ready"] is False
     assert "language_supported" in payload["missing"]
-    assert check["label"] == "最终素材和链接确认"
+    assert check["label"] == "商品投放语种适配"
     assert check["evidence"] == [
         {
             "type": "status",
-            "label": "最终素材和链接确认",
-            "meta": "DE 未确认",
+            "label": "商品投放语种适配",
+            "meta": "DE 未启用",
             "ok": False,
         }
     ]
@@ -1989,7 +2013,7 @@ def test_get_child_readiness_marks_push_rework_rejected_checks_red(monkeypatch):
         },
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
-    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: {"final_push_confirmation"})
     monkeypatch.setattr(
         pushes,
         "compute_readiness",
@@ -2001,6 +2025,7 @@ def test_get_child_readiness_marks_push_rework_rejected_checks_red(monkeypatch):
             "is_listed": True,
             "lang_supported": True,
             "shopify_image_confirmed": True,
+            "final_push_confirmed": False,
         },
     )
     monkeypatch.setattr(

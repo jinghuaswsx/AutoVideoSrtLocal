@@ -671,6 +671,7 @@ def compute_readiness(
         "has_push_texts": has_push_texts,
         "shopify_image_confirmed": shopify_image_confirmed,
         "shopify_image_reason": shopify_image_reason,
+        "final_push_confirmed": False,
     }
     if include_rework_overrides:
         for key in _push_rework_readiness_overrides(item, context=context):
@@ -749,7 +750,7 @@ def compute_status(
     return compute_status_from_readiness(item, product, readiness, context=context)
 
 
-PUSH_STATUS_CACHE_VERSION = 1
+PUSH_STATUS_CACHE_VERSION = 2
 PUSH_STATUS_CACHE_MAX_AGE_SECONDS = 300
 
 
@@ -865,7 +866,8 @@ def get_push_status_cache_map(item_ids: list[int] | set[int] | tuple[int, ...]) 
     if not ids:
         return {}
     rows = query(
-        "SELECT item_id, latest_push_id, pushed_at, skip_push, status, readiness_json, computed_at "
+        "SELECT item_id, latest_push_id, pushed_at, skip_push, status, readiness_json, "
+        "cache_version, computed_at "
         f"FROM media_push_status_cache WHERE item_id IN ({_placeholders(ids)})",
         tuple(ids),
     )
@@ -885,6 +887,7 @@ def get_push_status_cache_map(item_ids: list[int] | set[int] | tuple[int, ...]) 
             "skip_push": 1 if row.get("skip_push") else 0,
             "status": status,
             "readiness": readiness,
+            "cache_version": _safe_int(row.get("cache_version")),
             "computed_at": row.get("computed_at"),
         }
     return result
@@ -942,6 +945,8 @@ def _cache_entry_is_stale(
     if not entry:
         return True
     if not entry.get("status") or not entry.get("readiness"):
+        return True
+    if _safe_int(entry.get("cache_version")) != PUSH_STATUS_CACHE_VERSION:
         return True
     if _cache_entry_source_state_changed(entry, row):
         return True

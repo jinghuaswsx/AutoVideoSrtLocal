@@ -13,6 +13,7 @@
     lang_supported: '链接',
     has_push_texts: '英文文案格式',
     shopify_image_confirmed: '图片/链接确认',
+    final_push_confirmed: '推送人工确认',
   };
   const REWORK_ISSUES = [
     { key: 'has_object', taskKey: 'translated_video', label: '视频' },
@@ -21,6 +22,7 @@
     { key: 'lang_supported', taskKey: 'language_supported', label: '链接' },
     { key: 'has_push_texts', taskKey: 'push_texts', label: '英文文案格式' },
     { key: 'shopify_image_confirmed', taskKey: 'shopify_images', label: '图片/链接确认' },
+    { key: 'final_push_confirmed', taskKey: 'final_push_confirmation', label: '推送人工确认' },
   ];
 
   const PUSH_MODAL_MODES = {
@@ -374,7 +376,7 @@
 
   function renderReadinessText(readiness) {
     const line1Keys = ['has_object', 'has_cover', 'has_copywriting', 'lang_supported', 'has_push_texts'];
-    const line2Keys = ['shopify_image_confirmed'];
+    const line2Keys = ['shopify_image_confirmed', 'final_push_confirmed'];
 
     const line1Parts = line1Keys.map(key => {
       const label = READINESS_LABELS[key];
