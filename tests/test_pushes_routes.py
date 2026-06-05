@@ -2461,8 +2461,13 @@ def test_pushes_assets_include_quality_check_panel():
     assert ".pm-quality-summary-row" in style
     assert "grid-template-columns: 44px minmax(0, 1fr)" in style
     assert "text-overflow: ellipsis" in style
-    assert "width: 80vw" in style
-    assert "height: 80vh" in style
+    assert "width: calc(100vw - 48px)" in style
+    assert "height: calc(100vh - 48px)" in style
+    assert "查看推送结果" in script
+    assert "收起推送结果" in script
+    assert "pm-pipeline-wrapper" in script
+    assert ".pm-pipeline-wrapper" in style
+    assert ".btn-collapse-workbench" in style
 
 
 def test_pushes_assets_include_rework_modal_controls():
