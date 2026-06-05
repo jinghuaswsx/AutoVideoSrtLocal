@@ -882,11 +882,11 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-order-stats-summary,
 .oc-order-stats-line {
   display:grid;
-  grid-template-columns:minmax(52px, 64px) minmax(172px, 1fr);
+  grid-template-columns:minmax(52px, 64px) 1fr;
   gap:6px;
   align-items:center;
   width:100%;
-  max-width:250px;
+  max-width:100%;
   font-size:12px;
   font-variant-numeric:tabular-nums;
 }
@@ -904,8 +904,8 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-order-stats-values {
   display:grid;
-  grid-template-columns:repeat(4, minmax(36px, 1fr));
-  gap:4px;
+  grid-template-columns:repeat(4, max-content);
+  gap:12px;
   min-width:0;
 }
 .oc-order-stat {
