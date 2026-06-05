@@ -3024,7 +3024,13 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   background:var(--bg-body,#f2f4f8);
 }
 .oc-vm-total { justify-self:end; }
-.oc-vm-table { min-width:1660px; table-layout:fixed; }
+.oc-vm-table { min-width:1660px; table-layout:fixed; overflow:visible; }
+.oc-vm-table thead th {
+  position:sticky;
+  top:0;
+  z-index:6;
+  background:var(--oc-bg-subtle);
+}
 .oc-vm-table th:nth-child(1), .oc-vm-table td:nth-child(1) { width:72px; }
 .oc-vm-table th:nth-child(2), .oc-vm-table td:nth-child(2) { width:92px; }
 .oc-vm-table th:nth-child(5), .oc-vm-table td:nth-child(5) { width:120px; }

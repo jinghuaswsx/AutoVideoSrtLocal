@@ -92,6 +92,22 @@ def test_video_materials_table_renders_ad_performance_columns(authed_client_no_d
     assert "adCountryHtml(item)" in script
 
 
+def test_video_materials_list_resets_scroll_container_and_keeps_header_sticky(authed_client_no_db):
+    script_response = authed_client_no_db.get("/static/media_video_materials.js")
+    page_response = authed_client_no_db.get("/medias/video")
+
+    assert script_response.status_code == 200
+    assert page_response.status_code == 200
+    script = script_response.get_data(as_text=True)
+    html = page_response.get_data(as_text=True)
+    assert "$('vmListContainer')" in script
+    assert "scrollHost.scrollTop = 0" in script
+    assert "scrollHost.scrollLeft = 0" in script
+    assert ".oc-vm-table thead th" in html
+    assert "position:sticky" in html
+    assert "top:0" in html
+
+
 def test_video_materials_api_defaults_to_page_size_100(authed_client_no_db, monkeypatch):
     captured = {}
 
