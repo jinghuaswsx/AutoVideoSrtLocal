@@ -2357,10 +2357,22 @@
       class: 'btn-push btn-modal-material-push',
       disabled: true,
     }, '推送');
+    const btnShowWorkbench = el('button', {
+      type: 'button',
+      class: 'btn-push btn-show-workbench btn-modal-material-push',
+      style: 'display: none;',
+    }, '查看推送结果');
     footer.appendChild(btnRework);
     footer.appendChild(btnRefresh);
     footer.appendChild(btnPush);
+    footer.appendChild(btnShowWorkbench);
     mainPanel.appendChild(footer);
+
+    btnShowWorkbench.addEventListener('click', () => {
+      shell.hidden = true;
+      pushProgressWorkbench.hidden = false;
+      overlay.classList.add('pm-overlay--pipeline');
+    });
 
     const pipelineSteps = {};
     const pushProgressWorkbench = buildPushProgressWorkbench();
@@ -2385,7 +2397,8 @@
     // Progress workbench spec anchor:
     // docs/superpowers/specs/2026-06-04-pushes-modal-progress-workbench-design.md
     function buildPushProgressWorkbench() {
-      const root = el('section', { class: 'pm-pipeline-workbench', hidden: true });
+      const wrapper = el('div', { class: 'pm-pipeline-wrapper', hidden: true });
+      const root = el('section', { class: 'pm-pipeline-workbench' });
       [
         { key: 'material', title: '1. 素材推送' },
         { key: 'texts', title: '2. 文案推送' },
@@ -2406,7 +2419,23 @@
         pipelineSteps[step.key] = { section, status, jsonPre, resultPre };
         setPipelineStepStatus(step.key, 'queued');
       });
-      return root;
+      wrapper.appendChild(root);
+
+      const workbenchFooter = el('div', { class: 'pm-pipeline-footer' });
+      const btnCollapseWorkbench = el('button', {
+        type: 'button',
+        class: 'btn-push btn-collapse-workbench',
+      }, '收起推送结果');
+      workbenchFooter.appendChild(btnCollapseWorkbench);
+      wrapper.appendChild(workbenchFooter);
+
+      btnCollapseWorkbench.addEventListener('click', () => {
+        wrapper.hidden = true;
+        shell.hidden = false;
+        overlay.classList.remove('pm-overlay--pipeline');
+      });
+
+      return wrapper;
     }
 
     function stringifyPipelineData(value) {
@@ -2476,6 +2505,7 @@
       overlay.classList.add('pm-overlay--pipeline');
       shell.hidden = true;
       pushProgressWorkbench.hidden = false;
+      btnShowWorkbench.style.display = '';
       renderInitialPushProgressPayloads();
       setPipelineStepStatus('material', 'running');
       setPipelineStepStatus('texts', 'queued');
