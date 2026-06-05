@@ -426,7 +426,7 @@ def api_mk_yesterday_top300():
     if not _can_access_mk_material_preselection():
         return jsonify({"error": "forbidden"}), 403
     url_sort = (request.args.get("sort") or request.args.get("sort_by") or "").strip()
-    if url_sort:
+    if url_sort and url_sort != "spend_yesterday":
         sort_order = url_sort
     else:
         from appcore import api_keys
@@ -493,7 +493,7 @@ def api_mk_material_preselection_mark_processed(material_key: str):
 @bp.route("/api/mk-yesterday-top300/sort", methods=["POST"])
 @login_required
 def api_mk_yesterday_top300_save_sort():
-    if not _is_admin():
+    if not _can_access_mk_material_preselection():
         return jsonify({"error": "forbidden"}), 403
     payload = request.get_json(silent=True) or {}
     sort_order = payload.get("sort_order")

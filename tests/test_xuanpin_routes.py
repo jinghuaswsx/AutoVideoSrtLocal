@@ -996,7 +996,7 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
 
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
-    _assert_unified_xuanpin_tabs(body, "/xuanpin/tabcut", "TABCUT")
+    _assert_unified_xuanpin_tabs(body, "/xuanpin/tabcut", "TABCUT选品")
     assert "tabcut-tabs" not in body
     assert "tabcut-tab-link" not in body
     assert "/xuanpin/api/tabcut/videos" in body
@@ -1281,10 +1281,10 @@ def test_xuanpin_mk_yesterday_top300_api_reads_archive(
     assert post_resp.get_json()["success"] is True
     assert saved_prefs["yesterday_top300_sort"] == "normal"
 
-    # 2. Test GET fetches and passes the preference
+    # 2. Test GET fetches and passes the preference (with default sort parameter)
     resp = authed_client_no_db.get(
         "/xuanpin/api/mk-yesterday-top300?page=1&page_size=100&snapshot=2026-05-18&keyword=baseball"
-        "&library_status=product_imported&ad_delivery=all&uploader=Alice"
+        "&library_status=product_imported&ad_delivery=all&uploader=Alice&sort=spend_yesterday"
     )
 
     assert resp.status_code == 200
