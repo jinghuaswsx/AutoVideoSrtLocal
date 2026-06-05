@@ -3689,6 +3689,8 @@
     const ownerCellTitle = window.IS_ADMIN ? (ownerName || '点击指派负责人') : ownerName;
     const listed = isListed(p);
     const listingTitle = listingActionTitleForStatus(listingStatus(p));
+    const hasSkuData = Array.isArray(p.skus) && p.skus.length > 0;
+    const skuBtnClass = hasSkuData ? 'primary' : 'ghost';
     const timeCell = `
       <div class="product-time-cell__created">${fmtDateTimeLines(p.created_at)}</div>
       <div class="product-time-cell__updated">${fmtDateTimeLines(p.updated_at)}</div>`;
@@ -3710,7 +3712,7 @@
         <td class="wrap product-info-td">${productInfoCell}</td>
         <td class="source-cell" data-pid="${p.id}" data-source="${escapeHtml(p.source || '明空')}" title="点击编辑产品来源">${productSourcePill(p.source || '明空')}</td>
         <td class="sku-action-cell">
-          <button type="button" class="oc-btn sm ghost sku-detail-btn" data-sku-detail="${p.id}" title="查看 SKU 详细信息">SKU</button>
+          <button type="button" class="oc-btn sm ${skuBtnClass} sku-detail-btn" data-sku-detail="${p.id}" title="查看 SKU 详细信息">SKU</button>
         </td>
         <td class="wrap" style="text-align: center; vertical-align: middle;">${aiEvalCell}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
