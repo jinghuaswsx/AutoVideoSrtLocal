@@ -692,8 +692,19 @@ def run_sync(
     shopify_products: list[dict[str, Any]] = []
     for raw in shopify_items:
         shopify_products.extend(extract_shopify_products({"data": {"page": {"list": [raw]}}}))
+
+    local_products = fetch_local_products()
+    local_shopify_ids = {
+        str(row.get("shopifyid") or "").strip()
+        for row in local_products
+        if str(row.get("shopifyid") or "").strip()
+    }
     shopify_products = enrich_shopify_products_with_public_variants(
-        shopify_products,
+        [
+            product
+            for product in shopify_products
+            if str(product.get("shopify_product_id") or "").strip() in local_shopify_ids
+        ],
         fetch_public_shopify_product=fetch_public_shopify_product,
     )
 
@@ -712,7 +723,6 @@ def run_sync(
                 continue
             dxm_index[sku] = info
 
-    local_products = fetch_local_products()
     plan = plan_sync(
         shopify_products=shopify_products,
         dxm_index=dxm_index,
