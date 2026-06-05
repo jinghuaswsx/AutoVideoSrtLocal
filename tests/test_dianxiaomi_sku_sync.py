@@ -130,6 +130,50 @@ def test_run_sync_uses_public_shopify_variants_when_dianxiaomi_list_is_truncated
     ][0]["variants"] == 9
 
 
+def test_run_sync_fetches_public_variants_only_for_local_shopify_products(tmp_path):
+    from tools import dianxiaomi_sku_sync as mod
+
+    payload = _dxm_shopify_product_payload(["1"])
+    second = dict(payload["data"]["page"]["list"][0])
+    second.update({
+        "shopifyProductId": "9999999999999",
+        "handle": "not-in-local-products",
+        "title": "Not in local products",
+        "variants": [{**second["variants"][0], "shopifyVariantId": "99"}],
+    })
+    payload["data"]["page"]["list"].append(second)
+    captured: dict[str, object] = {}
+    fetched_ids: list[str] = []
+
+    def fake_public(product):
+        fetched_ids.append(str(product["shopify_product_id"]))
+        return mod.extract_public_shopify_product(
+            _public_shopify_product_payload(["1", "2", "3"])
+        )
+
+    def fake_apply_changes(plan):
+        captured["plan"] = plan
+
+    mod.run_sync(
+        fetch_shopify_page=lambda page_no: payload,
+        fetch_dxm_page=lambda page_no: {
+            "code": 0,
+            "data": {"page": {"totalPage": 1, "list": []}},
+        },
+        fetch_local_products=lambda: [
+            {"id": 320, "shopifyid": "8552296775853", "shopify_title": ""}
+        ],
+        apply_changes=fake_apply_changes,
+        fetch_public_shopify_product=fake_public,
+        output_dir=tmp_path,
+        now_text="20260507-181000",
+    )
+
+    assert fetched_ids == ["8552296775853"]
+    pairs = captured["plan"]["sku_replacements"][0][1]
+    assert [row["shopify_variant_id"] for row in pairs] == ["1", "2", "3"]
+
+
 def test_public_shopify_variants_do_not_replace_when_product_id_mismatches():
     from tools import dianxiaomi_sku_sync as mod
 
