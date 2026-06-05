@@ -561,7 +561,7 @@
       const statusPill = `<span class="oc-lang-status-pill ${statusMeta.cls}">${statusLabel}</span>`;
       
       const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / ROAS ${summary.ad_roas ?? '—'} / 消耗 ${summary.ad_spend_usd ?? '—'} / 状态 ${statusLabel}`;
-      return `<div class="oc-lang-line" title="${escapeHtml(title)}">`
+      return `<div class="oc-lang-line oc-country-metrics-line" title="${escapeHtml(title)}">`
         + `<span class="oc-lang-name">${escapeHtml(langDisplayName(code))}${statusPill}</span>`
         + `<span class="oc-lang-push">推送 <strong class="${pushedClass}">${pushed}</strong></span>`
         + `<span class="oc-lang-roas">`
@@ -572,9 +572,9 @@
     }).filter(Boolean);
     const body = lines.length
       ? lines.join('')
-      : '<div class="oc-lang-empty muted">—</div>';
-    return `<div class="oc-lang-bar">`
-      + `<div class="oc-lang-summary" style="display: grid; grid-template-columns: minmax(80px, 1fr) minmax(48px, auto) 140px; width: 100%; gap: 6px;">`
+      : '<div class="oc-lang-empty oc-country-metrics-line muted">—</div>';
+    return `<div class="oc-lang-bar oc-country-metrics-bar">`
+      + `<div class="oc-lang-summary oc-country-metrics-summary">`
       + `<div></div>`
       + `<div></div>`
       + `<div class="oc-lang-roas">`
@@ -606,22 +606,22 @@
       + renderOrderStat('7天', counts.last_7d)
       + renderOrderStat('30天', counts.last_30d)
     );
-    const totalHtml = `<div class="oc-order-stats-summary">`
+    const totalHtml = `<div class="oc-order-stats-summary oc-country-metrics-summary">`
       + `<span class="oc-order-stats-name">总计</span>`
       + `<span class="oc-order-stats-values">${metricRow(total)}</span>`
       + `</div>`;
     const lines = mediaProductLangOrder(coverage || {}, langAdSummary || {}).map((code) => {
       const counts = byLang[code] || {};
       const title = `${langDisplayName(code)}: 今天 ${counts.today || 0} / 昨天 ${counts.yesterday || 0} / 7天 ${counts.last_7d || 0} / 30天 ${counts.last_30d || 0}`;
-      return `<div class="oc-order-stats-line" title="${escapeHtml(title)}">`
+      return `<div class="oc-order-stats-line oc-country-metrics-line" title="${escapeHtml(title)}">`
         + `<span class="oc-order-stats-name">${escapeHtml(langDisplayName(code))}</span>`
         + `<span class="oc-order-stats-values">${metricRow(counts)}</span>`
         + `</div>`;
     }).filter(Boolean);
     const body = lines.length
       ? lines.join('')
-      : '<div class="oc-lang-empty muted">—</div>';
-    return `<div class="oc-order-stats-bar">`
+      : '<div class="oc-lang-empty oc-country-metrics-line muted">—</div>';
+    return `<div class="oc-order-stats-bar oc-country-metrics-bar">`
       + totalHtml
       + body
       + `</div>`;

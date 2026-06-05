@@ -324,6 +324,42 @@ def test_medias_order_stats_bar_uses_lang_order_and_four_windows():
     assert html.index("德 (DE)") < html.index("法 (FR)")
 
 
+def test_medias_ad_and_order_columns_share_country_row_alignment_classes():
+    scenario = {
+        "coverage": {
+            "en": {"items": 1},
+            "de": {"items": 1},
+            "fr": {"items": 1},
+        },
+        "langAdSummary": {
+            "en": {"pushed_video_count": 0},
+            "de": {"pushed_video_count": 1},
+            "fr": {"pushed_video_count": 2},
+        },
+        "adSummary": {"overall_roas": 1.23, "ad_spend_usd": 45},
+        "orderStats": {
+            "total": {"today": 3, "yesterday": 0, "last_7d": 6, "last_30d": 9},
+            "by_lang": {
+                "de": {"today": 1, "yesterday": 0, "last_7d": 2, "last_30d": 3},
+                "fr": {"today": 2, "yesterday": 0, "last_7d": 4, "last_30d": 6},
+            },
+        },
+    }
+
+    ad_html = _run_medias_lang_ad_bar_harness(scenario)
+    order_html = _run_medias_order_stats_bar_harness(scenario)
+    template = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "oc-lang-bar oc-country-metrics-bar" in ad_html
+    assert "oc-order-stats-bar oc-country-metrics-bar" in order_html
+    assert ad_html.count("oc-country-metrics-line") == 2
+    assert order_html.count("oc-country-metrics-line") == 2
+    assert ".oc-country-metrics-summary" in template
+    assert "height:26px;" in template
+    assert ".oc-country-metrics-line" in template
+    assert "height:24px;" in template
+
+
 def test_medias_product_lang_ad_bar_hides_english_without_pushed_materials():
     html = _run_medias_lang_ad_bar_harness(
         {

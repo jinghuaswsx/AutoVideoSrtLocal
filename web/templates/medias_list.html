@@ -790,15 +790,15 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-lang-bar {
   display:flex;
   flex-direction:column;
-  gap:6px;
+  gap:3px;
   align-items:flex-start;
   min-width:0;
 }
 .oc-lang-summary {
-  display:flex;
+  display:grid;
+  grid-template-columns:minmax(80px, 1fr) minmax(48px, auto) 140px;
   align-items:center;
-  justify-content:space-between;
-  gap:8px;
+  gap:6px;
   width:100%;
   max-width:280px;
   padding-bottom:2px;
@@ -837,6 +837,25 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   font-size:12px;
   font-variant-numeric:tabular-nums;
 }
+.oc-country-metrics-bar {
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  align-items:flex-start;
+  min-width:0;
+}
+.oc-country-metrics-summary {
+  height:26px;
+  min-height:26px;
+  box-sizing:border-box;
+  overflow:hidden;
+}
+.oc-country-metrics-line {
+  height:24px;
+  min-height:24px;
+  box-sizing:border-box;
+  overflow:hidden;
+}
 .oc-lang-name {
   display:inline-flex;
   align-items:center;
@@ -865,7 +884,6 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   align-items:center;
   width:100%;
   max-width:250px;
-  min-height:24px;
   font-size:12px;
   font-variant-numeric:tabular-nums;
 }

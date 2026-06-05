@@ -67,6 +67,7 @@
 
 - `fmtOrderCount(value)`：非负整数格式化，空值按 0。
 - `renderProductOrderStatsBar(orderStats, coverage, langAdSummary)`：沿用当前 `LANGUAGES` 顺序和已展示投放/素材语言集合，顶部展示“总计”，每个语种展示“今 / 昨 / 7天 / 30天”。
+- “语种和投放情况”和“单量情况”必须复用同一个 `mediaProductLangOrder(coverage, langAdSummary)` 国家行序列；两列顶部摘要行和国家明细行使用统一高度，保证德/法/西/意/日等国家按行对齐。
 
 表格结构：
 
