@@ -16,6 +16,7 @@ from ._helpers import (
     _beijing_now,
     current_meta_business_date,
     _business_hour,
+    _compute_pct_change,
     _money,
     _parse_iso_date_param,
     _revenue_with_shipping,
@@ -893,6 +894,7 @@ def _get_realtime_order_profit_details(
     page: int | None = None,
     page_size: int | None = None,
     site_codes: tuple[str, ...] | None = None,
+    ad_adjustment_snapshot_until: datetime | None = None,
 ) -> list[dict[str, Any]]:
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
     product_sql, product_args = _product_filter_sql(
@@ -950,13 +952,165 @@ def _get_realtime_order_profit_details(
     )
     details = _format_realtime_order_profit_rows(rows, day_start)
     if product_ids is None and not unmatched_ads:
-        _apply_realtime_ad_cost_adjustments(
-            details,
-            date_from=target,
-            date_to=target,
-            product_id=product_id,
-        )
+        if ad_adjustment_snapshot_until is not None:
+            _apply_realtime_ad_cost_adjustments_until(
+                details,
+                target=target,
+                snapshot_until=ad_adjustment_snapshot_until,
+                product_id=product_id,
+                site_codes=sites,
+            )
+        else:
+            _apply_realtime_ad_cost_adjustments(
+                details,
+                date_from=target,
+                date_to=target,
+                product_id=product_id,
+            )
     return details
+
+
+def _build_order_profit_summary_until(
+    target: date,
+    day_start: datetime,
+    data_until: datetime,
+    *,
+    site_codes: tuple[str, ...] | None = None,
+) -> dict[str, Any] | None:
+    ad_summary = _get_realtime_ad_summary_for_business_date(
+        target,
+        data_until,
+        site_codes=site_codes,
+    )
+    if not ad_summary or ad_summary.get("snapshot_at") is None:
+        return None
+    details = _get_realtime_order_profit_details(
+        target,
+        day_start,
+        data_until,
+        site_codes=site_codes,
+        ad_adjustment_snapshot_until=data_until,
+    )
+    return _build_order_profit_summary(
+        details,
+        total_ad_spend_usd=ad_summary.get("ad_spend"),
+    )
+
+
+def _build_yesterday_same_time_comparison(
+    current_result: dict[str, Any],
+    *,
+    target: date,
+    now: datetime,
+    product_id: int | None,
+    product_ids: tuple[int, ...] | None,
+    unmatched_ads: bool,
+    product_launch_scope: str | None,
+    site_codes: tuple[str, ...],
+) -> dict[str, Any]:
+    if target != current_meta_business_date(now):
+        return _empty_yesterday_same_time_comparison()
+    if product_id is not None or product_ids is not None or unmatched_ads or product_launch_scope:
+        return _empty_yesterday_same_time_comparison()
+    if not _site_codes_use_default(site_codes):
+        return _empty_yesterday_same_time_comparison()
+
+    period = current_result.get("period") or {}
+    current_until = period.get("data_until_at")
+    current_day_start = period.get("day_start_at")
+    current_day_end = period.get("day_end_at")
+    if not isinstance(current_until, datetime) or not isinstance(current_day_start, datetime):
+        return _empty_yesterday_same_time_comparison()
+    if not isinstance(current_day_end, datetime):
+        current_day_end = current_day_start + timedelta(hours=24)
+
+    current_until = _clamp_datetime(current_until, current_day_start, current_day_end)
+    elapsed = current_until - current_day_start
+    if elapsed.total_seconds() < 0:
+        elapsed = timedelta(0)
+    if elapsed > timedelta(hours=24):
+        elapsed = timedelta(hours=24)
+
+    previous_date = target - timedelta(days=1)
+    previous_day_start, previous_day_end = compute_meta_business_window_bj(previous_date)
+    previous_until = _clamp_datetime(previous_day_start + elapsed, previous_day_start, previous_day_end)
+
+    previous_order_summary = _get_realtime_order_summary(
+        previous_date,
+        previous_until,
+        site_codes=site_codes,
+    )
+    previous_profit_summary = _build_order_profit_summary_until(
+        previous_date,
+        previous_day_start,
+        previous_until,
+        site_codes=site_codes,
+    )
+
+    current_summary = current_result.get("summary") or {}
+    current_profit_summary = current_result.get("order_profit_summary") or {}
+    previous_profit_value = None
+    if previous_profit_summary is not None:
+        previous_profit_value = previous_profit_summary.get("profit_with_estimate_usd")
+
+    return {
+        "enabled": True,
+        "label": "较昨天同刻",
+        "basis": {
+            "current_business_date": target.isoformat(),
+            "previous_business_date": previous_date.isoformat(),
+            "current_until_at": current_until,
+            "previous_until_at": previous_until,
+        },
+        "summary": {
+            "revenue_with_shipping": _metric_comparison(
+                current_summary.get("revenue_with_shipping"),
+                previous_order_summary.get("revenue_with_shipping"),
+            ),
+            "order_count": _metric_comparison(
+                current_summary.get("order_count"),
+                previous_order_summary.get("order_count"),
+                integer=True,
+            ),
+            "profit_with_estimate_usd": _metric_comparison(
+                current_profit_summary.get("profit_with_estimate_usd"),
+                previous_profit_value,
+            ),
+        },
+    }
+
+
+def _attach_yesterday_same_time_comparison(
+    result: dict[str, Any],
+    *,
+    target: date,
+    now: datetime,
+    product_id: int | None,
+    product_ids: tuple[int, ...] | None,
+    unmatched_ads: bool,
+    product_launch_scope: str | None,
+    site_codes: tuple[str, ...],
+) -> dict[str, Any]:
+    try:
+        comparison = _build_yesterday_same_time_comparison(
+            result,
+            target=target,
+            now=now,
+            product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
+            product_launch_scope=product_launch_scope,
+            site_codes=site_codes,
+        )
+    except Exception:
+        comparison = _empty_yesterday_same_time_comparison()
+    result["comparison"] = {"yesterday_same_time": comparison}
+    return result
+
+
+def _attach_disabled_yesterday_same_time_comparison(result: dict[str, Any]) -> dict[str, Any]:
+    result["comparison"] = {"yesterday_same_time": _empty_yesterday_same_time_comparison()}
+    return result
 
 
 def _get_realtime_order_profit_details_for_range(
@@ -1151,6 +1305,244 @@ def _apply_realtime_ad_cost_adjustments(
             row["order_profit_with_estimate_usd"] = round(
                 float(row.get("order_profit_with_estimate_usd") or 0.0) - delta, 2
             )
+
+
+def _load_realtime_ad_cost_adjustments_until(
+    target: date,
+    snapshot_until: datetime,
+    *,
+    product_id: int | None = None,
+    site_codes: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    sites = _normalize_site_codes(site_codes)
+    allowed_account_ids = _resolve_ad_account_ids_for_sites(sites)
+    if allowed_account_ids is not None and not allowed_account_ids:
+        return {
+            "package_deltas": {},
+            "status_deltas": {},
+            "total_delta": 0.0,
+            "unallocated_spend": 0.0,
+            "has_realtime_ad_watermark": False,
+        }
+
+    account_sql = ""
+    account_args: list[Any] = []
+    if allowed_account_ids is not None:
+        placeholders = ", ".join(["%s"] * len(allowed_account_ids))
+        account_sql = f"AND ad_account_id IN ({placeholders}) "
+        account_args = list(allowed_account_ids)
+
+    snapshot_rows = query(
+        "SELECT business_date, ad_account_id, MAX(snapshot_at) AS snapshot_at "
+        "FROM meta_ad_realtime_daily_campaign_metrics "
+        "WHERE business_date=%s AND snapshot_at<=%s "
+        "AND data_completeness='realtime_partial' "
+        + account_sql +
+        "GROUP BY business_date, ad_account_id",
+        tuple([target, snapshot_until] + account_args),
+    )
+    snapshots: list[tuple[date, str | None, Any]] = []
+    for row in snapshot_rows or []:
+        business_date = row.get("business_date")
+        snapshot_at = row.get("snapshot_at")
+        if business_date and snapshot_at:
+            snapshots.append((business_date, row.get("ad_account_id"), snapshot_at))
+
+    if not snapshots:
+        return {
+            "package_deltas": {},
+            "status_deltas": {},
+            "total_delta": 0.0,
+            "unallocated_spend": 0.0,
+            "has_realtime_ad_watermark": False,
+        }
+
+    target_product_id = int(product_id) if product_id else None
+    spend_by_product: dict[tuple[date, int], float] = {}
+    unallocated_spend = 0.0
+    match_cache: dict[str, int | None] = {}
+
+    for business_date, ad_account_id, snapshot_at in snapshots:
+        if ad_account_id is None:
+            campaign_rows = query(
+                "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id IS NULL AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial'",
+                (business_date, snapshot_at),
+            )
+        else:
+            campaign_rows = query(
+                "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+                "FROM meta_ad_realtime_daily_campaign_metrics "
+                "WHERE business_date=%s AND ad_account_id=%s AND snapshot_at=%s "
+                "AND data_completeness='realtime_partial'",
+                (business_date, ad_account_id, snapshot_at),
+            )
+        for row in campaign_rows or []:
+            spend = float(row.get("spend_usd") or 0)
+            if spend <= 0:
+                continue
+            code = str(row.get("normalized_campaign_code") or row.get("campaign_name") or "").strip().lower()
+            product_match_id: int | None = None
+            if code:
+                if code not in match_cache:
+                    match = resolve_ad_product_match(code)
+                    match_cache[code] = int(match["id"]) if match and match.get("id") is not None else None
+                product_match_id = match_cache[code]
+            if product_match_id is None:
+                if target_product_id is None:
+                    unallocated_spend += spend
+                continue
+            if target_product_id and product_match_id != target_product_id:
+                continue
+            key = (business_date, product_match_id)
+            spend_by_product[key] = round(float(spend_by_product.get(key) or 0.0) + spend, 4)
+
+    if not spend_by_product:
+        return {
+            "package_deltas": {},
+            "status_deltas": {},
+            "total_delta": 0.0,
+            "unallocated_spend": unallocated_spend,
+            "has_realtime_ad_watermark": True,
+        }
+
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_filter = ""
+    product_args: list[Any] = []
+    if target_product_id:
+        product_filter = " AND p.product_id = %s"
+        product_args.append(target_product_id)
+
+    unit_rows = query(
+        "SELECT d.meta_business_date AS business_date, p.product_id, "
+        "COALESCE(SUM(d.quantity), 0) AS units "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date=%s "
+        "AND " + order_time_expr + " <= %s "
+        "AND p.product_id IS NOT NULL "
+        f"{product_filter} "
+        "GROUP BY d.meta_business_date, p.product_id",
+        tuple([target, snapshot_until] + product_args),
+    )
+    units_by_product: dict[tuple[date, int], int] = {}
+    for row in unit_rows or []:
+        business_date = row.get("business_date")
+        product = row.get("product_id")
+        if business_date and product is not None:
+            units_by_product[(business_date, int(product))] = int(row.get("units") or 0)
+
+    no_unit_spend = sum(
+        float(spend or 0)
+        for key, spend in spend_by_product.items()
+        if int(units_by_product.get(key) or 0) <= 0
+    )
+    allocated_spend_by_product = {
+        key: spend
+        for key, spend in spend_by_product.items()
+        if int(units_by_product.get(key) or 0) > 0
+    }
+    if not allocated_spend_by_product:
+        return {
+            "package_deltas": {},
+            "status_deltas": {},
+            "total_delta": 0.0,
+            "unallocated_spend": unallocated_spend + no_unit_spend,
+            "has_realtime_ad_watermark": True,
+        }
+
+    line_rows = query(
+        "SELECT d.dxm_package_id, d.meta_business_date AS business_date, "
+        "p.status, p.product_id, d.quantity, p.ad_cost_usd "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND d.meta_business_date=%s "
+        "AND " + order_time_expr + " <= %s "
+        "AND p.product_id IS NOT NULL "
+        f"{product_filter}",
+        tuple([target, snapshot_until] + product_args),
+    )
+
+    package_deltas: dict[str, float] = {}
+    status_deltas: dict[str, float] = {}
+    total_delta = 0.0
+    for row in line_rows or []:
+        business_date = row.get("business_date")
+        product = row.get("product_id")
+        if not business_date or product is None:
+            continue
+        key = (business_date, int(product))
+        spend = float(allocated_spend_by_product.get(key) or 0)
+        units = int(units_by_product.get(key) or 0)
+        quantity = int(row.get("quantity") or 0)
+        if spend <= 0 or units <= 0 or quantity <= 0:
+            continue
+        realtime_cost = round(spend * quantity / units, 4)
+        stored_cost = float(row.get("ad_cost_usd") or 0)
+        delta = realtime_cost - stored_cost
+        if abs(delta) < 0.0001:
+            continue
+        package_id = str(row.get("dxm_package_id") or "")
+        if package_id:
+            package_deltas[package_id] = round(float(package_deltas.get(package_id) or 0.0) + delta, 4)
+        status = str(row.get("status") or "")
+        if status:
+            status_deltas[status] = round(float(status_deltas.get(status) or 0.0) + delta, 4)
+        total_delta += delta
+
+    return {
+        "package_deltas": package_deltas,
+        "status_deltas": status_deltas,
+        "total_delta": total_delta,
+        "unallocated_spend": unallocated_spend + no_unit_spend,
+        "has_realtime_ad_watermark": True,
+    }
+
+
+def _apply_realtime_ad_cost_adjustments_until(
+    details: list[dict[str, Any]],
+    *,
+    target: date,
+    snapshot_until: datetime,
+    product_id: int | None,
+    site_codes: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    try:
+        adjustments = _load_realtime_ad_cost_adjustments_until(
+            target,
+            snapshot_until,
+            product_id=product_id,
+            site_codes=site_codes,
+        )
+    except Exception:
+        return {
+            "package_deltas": {},
+            "status_deltas": {},
+            "total_delta": 0.0,
+            "unallocated_spend": 0.0,
+            "has_realtime_ad_watermark": False,
+        }
+    package_deltas = adjustments.get("package_deltas") or {}
+    for row in details:
+        package_id = str(row.get("dxm_package_id") or "")
+        if not package_id:
+            continue
+        delta = float(package_deltas.get(package_id) or 0.0)
+        if not delta:
+            continue
+        row["ad_cost_usd"] = round(float(row.get("ad_cost_usd") or 0.0) + delta, 4)
+        if row.get("order_profit_usd") is not None:
+            row["order_profit_usd"] = round(float(row.get("order_profit_usd") or 0.0) - delta, 2)
+        if row.get("order_profit_with_estimate_usd") is not None:
+            row["order_profit_with_estimate_usd"] = round(
+                float(row.get("order_profit_with_estimate_usd") or 0.0) - delta,
+                2,
+            )
+    return adjustments
 
 
 def _allocate_shopify_fee_components(
@@ -2117,6 +2509,37 @@ def _get_realtime_order_summary(
         "last_order_at": row.get("last_order_at"),
         "last_order_updated_at": row.get("last_order_updated_at"),
     }
+
+
+def _empty_yesterday_same_time_comparison() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "label": "较昨天同刻",
+        "basis": None,
+        "summary": {},
+    }
+
+
+def _metric_comparison(current: Any, previous: Any, *, integer: bool = False) -> dict[str, Any]:
+    if integer:
+        current_value = int(current or 0)
+        previous_value = int(previous or 0)
+    else:
+        current_value = _money(current)
+        previous_value = _money(previous)
+    return {
+        "current": current_value,
+        "previous": previous_value,
+        "pct": _compute_pct_change(current_value, previous_value),
+    }
+
+
+def _clamp_datetime(value: datetime, start: datetime, end: datetime) -> datetime:
+    if value < start:
+        return start
+    if value > end:
+        return end
+    return value
 
 
 def _should_try_realtime_snapshot(
