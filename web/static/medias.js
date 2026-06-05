@@ -3156,23 +3156,23 @@
       return;
     }
     grid.innerHTML = `
-      <table class="oc-table" style="table-layout:fixed;">
+      <table class="oc-table oc-table-medias" style="table-layout:fixed;">
         <colgroup>
-        <col style="width:48px">
-        <col style="width:128px">
-        <col style="width:210px">
-        <col style="width:110px">
-        <col style="width:74px">
-        <col style="width:130px">
+        <col style="width:40px">
         <col style="width:80px">
-        <col style="width:88px">
-        <col style="width:56px">
-        <col style="width:300px">
+        <col style="width:180px">
+        <col style="width:80px">
+        <col style="width:110px">
+        <col style="width:80px">
+        <col style="width:60px">
+        <col style="width:70px">
+        <col style="width:60px">
         <col style="width:260px">
-        <col style="width:92px">
-        <col style="width:112px">
-        <col style="width:104px">
-        <col style="width:240px">
+        <col style="width:590px">
+        <col style="width:80px">
+        <col style="width:80px">
+        <col style="width:85px">
+        <col style="width:200px">
       </colgroup>
       <thead>
         <tr>
@@ -3181,7 +3181,7 @@
           <th>产品信息</th>
           <th>产品来源</th>
           <th>SKU</th>
-          <th style="text-align: center;">AI评估</th>
+          <th>AI评估</th>
           <th>上架</th>
           <th>负责人</th>
           <th>素材数</th>
