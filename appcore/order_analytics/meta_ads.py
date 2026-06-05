@@ -1268,6 +1268,7 @@ def get_ads_level_list(
     ad_account_id: str | None = None,
     parent_level: str | None = None,
     parent_code: str | None = None,
+    country: str | None = None,
 ) -> dict:
     """List Campaign / Ad Set / Ad rows aggregated by code within a date range."""
     cfg = _resolve_ads_level(level)
@@ -1387,19 +1388,7 @@ def get_ads_level_list(
 
     query_args = subquery_args + where_args + search_args
 
-    # 按 (code, ad_account_id) 分组
-    total_row = query_one(
-        f"SELECT COUNT(*) AS total FROM ("
-        f"SELECT 1 FROM {table} "
-        f"{where_clause} "
-        f"{search_clause}"
-        f"GROUP BY {code_col}, ad_account_id"
-        f") AS count_t",
-        query_args,
-    )
-    total = int((total_row or {}).get("total") or 0)
-
-    offset = (page - 1) * page_size
+    # 按 (code, ad_account_id) 分组，不在此处进行 limit 分页，拉取全部以便内存进行国家解析与过滤
     rows = query(
         f"SELECT {code_col} AS code, MAX({name_col}) AS name, "
         "ad_account_id, MAX(ad_account_name) AS ad_account_name, "
@@ -1412,13 +1401,43 @@ def get_ads_level_list(
         f"{where_clause} "
         f"{search_clause}"
         f"GROUP BY {code_col}, ad_account_id "
-        f"ORDER BY {sort_expr} {sort_dir_norm} "
-        "LIMIT %s OFFSET %s",
-        query_args + (page_size, offset),
+        f"ORDER BY {sort_expr} {sort_dir_norm}",
+        query_args,
     )
 
-    out: list[dict] = []
+    from appcore.order_analytics.ad_market_country import extract_market_country
+
+    _CODE_TO_NAME = {
+        "AU": "澳大利亚", "NZ": "新西兰", "ES": "西班牙", "IT": "意大利", "PT": "葡萄牙",
+        "CA": "加拿大", "GB": "英国", "US": "美国", "FR": "法国", "DE": "德国",
+        "JP": "日本", "NL": "荷兰", "MULTI": "多国"
+    }
+
+    available_countries_set = set()
+    filtered_rows = []
+    target_country = (country or "").strip().upper()
+
     for row in rows or []:
+        name = row.get("name")
+        country_code = extract_market_country(name)
+        if country_code:
+            country_name = _CODE_TO_NAME.get(country_code, country_code)
+            available_countries_set.add((country_code, country_name))
+        else:
+            country_code = None
+
+        if target_country:
+            if country_code == target_country:
+                filtered_rows.append(row)
+        else:
+            filtered_rows.append(row)
+
+    total = len(filtered_rows)
+    offset = (page - 1) * page_size
+    sliced_rows = filtered_rows[offset : offset + page_size]
+
+    out: list[dict] = []
+    for row in sliced_rows:
         spend = float(row.get("spend_usd") or 0)
         purchase = float(row.get("purchase_value_usd") or 0)
         out.append({
@@ -1450,10 +1469,16 @@ def get_ads_level_list(
 
     dq_result = _ads_purchase_data_quality(fallback_stats)
 
+    available_countries = [
+        {"code": code, "label": label}
+        for code, label in sorted(list(available_countries_set), key=lambda x: x[0])
+    ]
+
     result = {
         "level": level,
         "period": {"start_date": start.isoformat(), "end_date": end.isoformat()},
         "rows": out,
+        "countries": available_countries,
         "page": page,
         "page_size": page_size,
         "total": total,
