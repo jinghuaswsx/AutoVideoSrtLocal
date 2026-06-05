@@ -3292,21 +3292,23 @@ def get_realtime_roas_overview(
         if end < start:
             raise ValueError("end_date must be >= start_date")
         if start != end:
-            return _build_realtime_overview_for_range(
-                start,
-                end,
-                now,
-                include_details=include_details,
-                include_profit_summary=include_profit_summary,
-                product_id=normalized_product_id,
-                product_launch_scope=normalized_launch_scope,
-                product_ids=launch_product_ids,
-                unmatched_ads=launch_scope_unmatched,
-                order_page=normalized_order_page,
-                order_page_size=normalized_order_page_size,
-                page=normalized_page,
-                page_size=normalized_page_size,
-                site_codes=normalized_site_codes,
+            return _attach_disabled_yesterday_same_time_comparison(
+                _build_realtime_overview_for_range(
+                    start,
+                    end,
+                    now,
+                    include_details=include_details,
+                    include_profit_summary=include_profit_summary,
+                    product_id=normalized_product_id,
+                    product_launch_scope=normalized_launch_scope,
+                    product_ids=launch_product_ids,
+                    unmatched_ads=launch_scope_unmatched,
+                    order_page=normalized_order_page,
+                    order_page_size=normalized_order_page_size,
+                    page=normalized_page,
+                    page_size=normalized_page_size,
+                    site_codes=normalized_site_codes,
+                )
             )
         # start == end → 走单日分支，把 start_date 作为目标日
         date_text = start_date
@@ -3457,7 +3459,7 @@ def get_realtime_roas_overview(
                 site_codes=normalized_site_codes,
             )
             revenue_with_shipping = order_summary["revenue_with_shipping"]
-            return {
+            res = {
                 "period": {
                     "date": target,
                     "timezone": META_ATTRIBUTION_TIMEZONE,
@@ -3526,6 +3528,16 @@ def get_realtime_roas_overview(
                 "unallocated_campaign_summary": campaign_allocation["unallocated_campaign_summary"],
                 "product_sales_stats": product_sales_stats,
             }
+            return _attach_yesterday_same_time_comparison(
+                res,
+                target=target,
+                now=now,
+                product_id=normalized_product_id,
+                product_ids=launch_product_ids,
+                unmatched_ads=launch_scope_unmatched,
+                product_launch_scope=normalized_launch_scope,
+                site_codes=normalized_site_codes,
+            )
         order_revenue = _money(snap.get("order_revenue_usd"))
         shipping_revenue = _money(snap.get("shipping_revenue_usd"))
         revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
@@ -3615,7 +3627,7 @@ def get_realtime_roas_overview(
             snapshot_at,
             site_codes=normalized_site_codes,
         )
-        return {
+        res = {
             "period": {
                 "date": target,
                 "timezone": META_ATTRIBUTION_TIMEZONE,
@@ -3684,6 +3696,16 @@ def get_realtime_roas_overview(
             "unallocated_campaign_summary": campaign_allocation["unallocated_campaign_summary"],
             "product_sales_stats": product_sales_stats,
         }
+        return _attach_yesterday_same_time_comparison(
+            res,
+            target=target,
+            now=now,
+            product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
+            product_launch_scope=normalized_launch_scope,
+            site_codes=normalized_site_codes,
+        )
 
     order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
     product_sql, product_args = _product_filter_sql(
@@ -4003,7 +4025,16 @@ def get_realtime_roas_overview(
             product_ids=launch_product_ids,
             unmatched_ads=launch_scope_unmatched,
         )
-    return res
+    return _attach_yesterday_same_time_comparison(
+        res,
+        target=target,
+        now=now,
+        product_id=normalized_product_id,
+        product_ids=launch_product_ids,
+        unmatched_ads=launch_scope_unmatched,
+        product_launch_scope=normalized_launch_scope,
+        site_codes=normalized_site_codes,
+    )
 
 
 def get_true_roas_summary(start_date: str, end_date: str) -> dict:

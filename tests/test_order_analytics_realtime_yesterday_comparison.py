@@ -340,3 +340,313 @@ def test_apply_realtime_ad_cost_adjustments_until_soft_fails_loader_errors(monke
             "order_profit_with_estimate_usd": 8.0,
         }
     ]
+
+
+def test_get_realtime_roas_overview_attaches_disabled_comparison_for_range(monkeypatch):
+    monkeypatch.setattr(oa, "query", lambda sql, args=(): [])
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-06-03",
+        end_date="2026-06-05",
+        now=datetime(2026, 6, 6, 10, 25),
+    )
+
+    assert result["comparison"]["yesterday_same_time"] == {
+        "enabled": False,
+        "label": "较昨天同刻",
+        "basis": None,
+        "summary": {},
+    }
+
+
+def test_get_realtime_roas_overview_attaches_current_day_global_comparison(monkeypatch):
+    target = date(2026, 6, 5)
+    snapshot_at = datetime(2026, 6, 6, 10, 20)
+
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [
+                {
+                    "id": 900,
+                    "snapshot_at": snapshot_at,
+                    "source_run_id": 901,
+                    "order_count": 60,
+                    "line_count": 66,
+                    "units": 80,
+                    "order_revenue_usd": 1100.0,
+                    "shipping_revenue_usd": 100.0,
+                    "ad_spend_usd": 300.0,
+                    "last_order_at": datetime(2026, 6, 6, 10, 5),
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                }
+            ]
+        if "FROM roi_hourly_sync_runs" in sql:
+            return [{"last_order_updated_at": datetime(2026, 6, 6, 10, 21)}]
+        if "MAX(r.finished_at)" in sql:
+            return [{"last_ad_updated_at": datetime(2026, 6, 6, 10, 18)}]
+        if "SELECT MAX(snapshot_at) AS latest_at" in sql:
+            return [{"latest_at": snapshot_at}]
+        if "SELECT ad_account_id, MAX(snapshot_at) AS latest_at" in sql:
+            return [{"ad_account_id": "act_1", "latest_at": snapshot_at}]
+        if "SELECT business_date, ad_account_id, MAX(snapshot_at) AS snapshot_at" in sql:
+            return [
+                {
+                    "business_date": date(2026, 6, 4),
+                    "ad_account_id": "act_1",
+                    "snapshot_at": datetime(2026, 6, 5, 10, 0),
+                }
+            ]
+        if "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd" in sql:
+            return [
+                {
+                    "business_date": date(2026, 6, 4),
+                    "campaign_name": "demo-product-rjc",
+                    "normalized_campaign_code": "demo-product-rjc",
+                    "spend_usd": 100.0,
+                }
+            ]
+        if "SELECT ad_account_id, ad_account_name, campaign_id" in sql:
+            return [
+                {
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Account",
+                    "campaign_id": "cmp_1",
+                    "campaign_name": "demo-product-rjc",
+                    "normalized_campaign_code": "demo-product-rjc",
+                    "result_count": 5,
+                    "spend_usd": 300.0,
+                    "purchase_value_usd": 400.0,
+                    "impressions": 1000,
+                    "clicks": 50,
+                }
+            ]
+        if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql:
+            if args and args[0] == date(2026, 6, 4):
+                return [
+                    {
+                        "order_count": 50,
+                        "line_count": 55,
+                        "units": 70,
+                        "order_revenue": 900.0,
+                        "line_revenue": 900.0,
+                        "shipping_revenue": 100.0,
+                        "first_order_at": datetime(2026, 6, 4, 16, 30),
+                        "last_order_at": datetime(2026, 6, 5, 9, 50),
+                        "last_order_updated_at": datetime(2026, 6, 5, 10, 5),
+                    }
+                ]
+            return []
+        if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return []
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        realtime_oa,
+        "resolve_ad_product_match",
+        lambda code: {"id": 42, "product_code": code},
+        raising=False,
+    )
+
+    result = oa.get_realtime_roas_overview(
+        start_date=target.isoformat(),
+        end_date=target.isoformat(),
+        now=datetime(2026, 6, 6, 10, 25),
+        include_profit_summary=True,
+    )
+
+    comparison = result["comparison"]["yesterday_same_time"]
+    assert comparison["enabled"] is True
+    assert comparison["summary"]["revenue_with_shipping"]["pct"] == 20.0
+    assert comparison["summary"]["order_count"]["pct"] == 20.0
+    assert "profit_with_estimate_usd" in comparison["summary"]
+
+
+def test_get_realtime_roas_overview_product_snapshot_comparison_is_disabled(monkeypatch):
+    target = date(2026, 6, 5)
+    snapshot_at = datetime(2026, 6, 6, 10, 20)
+
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [
+                {
+                    "id": 900,
+                    "snapshot_at": snapshot_at,
+                    "source_run_id": 901,
+                    "order_count": 60,
+                    "line_count": 66,
+                    "units": 80,
+                    "order_revenue_usd": 1100.0,
+                    "shipping_revenue_usd": 100.0,
+                    "ad_spend_usd": 300.0,
+                    "last_order_at": datetime(2026, 6, 6, 10, 5),
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                }
+            ]
+        if "SELECT ad_account_id, MAX(snapshot_at) AS latest_at" in sql:
+            return [{"ad_account_id": "act_1", "latest_at": snapshot_at}]
+        if "SELECT ad_account_id, ad_account_name, campaign_id" in sql:
+            return [
+                {
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Account",
+                    "campaign_id": "cmp_1",
+                    "campaign_name": "demo-product-rjc",
+                    "normalized_campaign_code": "demo-product-rjc",
+                    "result_count": 5,
+                    "spend_usd": 300.0,
+                    "purchase_value_usd": 400.0,
+                    "impressions": 1000,
+                    "clicks": 50,
+                }
+            ]
+        if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql:
+            return [
+                {
+                    "order_count": 60,
+                    "line_count": 66,
+                    "units": 80,
+                    "order_revenue": 1100.0,
+                    "line_revenue": 1100.0,
+                    "shipping_revenue": 100.0,
+                    "first_order_at": datetime(2026, 6, 5, 16, 30),
+                    "last_order_at": datetime(2026, 6, 6, 10, 5),
+                    "last_order_updated_at": datetime(2026, 6, 6, 10, 21),
+                }
+            ]
+        if "FROM roi_hourly_sync_runs" in sql:
+            return [{"last_order_updated_at": datetime(2026, 6, 6, 10, 21)}]
+        if "MAX(r.finished_at)" in sql:
+            return [{"last_ad_updated_at": datetime(2026, 6, 6, 10, 18)}]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date=target.isoformat(),
+        end_date=target.isoformat(),
+        now=datetime(2026, 6, 6, 10, 25),
+        product_id=42,
+    )
+
+    assert result["scope"]["product_id"] == 42
+    assert result["comparison"]["yesterday_same_time"] == {
+        "enabled": False,
+        "label": "较昨天同刻",
+        "basis": None,
+        "summary": {},
+    }
+
+
+def test_get_realtime_roas_overview_fallback_attaches_current_day_global_comparison(monkeypatch):
+    target = date(2026, 6, 5)
+
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return []
+        if "GROUP BY HOUR" in sql:
+            return [
+                {
+                    "hour": 18,
+                    "order_count": 60,
+                    "line_count": 66,
+                    "units": 80,
+                    "order_revenue": 1100.0,
+                    "line_revenue": 1100.0,
+                    "shipping_revenue": 100.0,
+                    "first_order_at": datetime(2026, 6, 6, 10, 0),
+                    "last_order_at": datetime(2026, 6, 6, 10, 5),
+                    "last_order_updated_at": datetime(2026, 6, 6, 10, 21),
+                }
+            ]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{"ad_spend": 300.0, "meta_purchase_value": 400.0, "meta_purchases": 5}]
+        if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql:
+            if args and args[0] == date(2026, 6, 4):
+                return [
+                    {
+                        "order_count": 50,
+                        "line_count": 55,
+                        "units": 70,
+                        "order_revenue": 900.0,
+                        "line_revenue": 900.0,
+                        "shipping_revenue": 100.0,
+                        "first_order_at": datetime(2026, 6, 4, 16, 30),
+                        "last_order_at": datetime(2026, 6, 5, 9, 50),
+                        "last_order_updated_at": datetime(2026, 6, 5, 10, 5),
+                    }
+                ]
+            return []
+        if "SELECT ad_account_id, MAX(snapshot_at) AS latest_at" in sql:
+            return [{"ad_account_id": "act_1", "latest_at": datetime(2026, 6, 5, 10, 0)}]
+        if "SELECT MAX(snapshot_at) AS latest_at" in sql:
+            return [{"latest_at": datetime(2026, 6, 5, 10, 0)}]
+        if "SELECT business_date, ad_account_id, MAX(snapshot_at) AS snapshot_at" in sql:
+            return [
+                {
+                    "business_date": date(2026, 6, 4),
+                    "ad_account_id": "act_1",
+                    "snapshot_at": datetime(2026, 6, 5, 10, 0),
+                }
+            ]
+        if "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd" in sql:
+            return [
+                {
+                    "business_date": date(2026, 6, 4),
+                    "campaign_name": "demo-product-rjc",
+                    "normalized_campaign_code": "demo-product-rjc",
+                    "spend_usd": 100.0,
+                }
+            ]
+        if "SELECT ad_account_id, ad_account_name, campaign_id" in sql:
+            return [
+                {
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Account",
+                    "campaign_id": "cmp_1",
+                    "campaign_name": "demo-product-rjc",
+                    "normalized_campaign_code": "demo-product-rjc",
+                    "result_count": 5,
+                    "spend_usd": 100.0,
+                    "purchase_value_usd": 120.0,
+                    "impressions": 1000,
+                    "clicks": 50,
+                }
+            ]
+        if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql:
+            return []
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        realtime_oa,
+        "resolve_ad_product_match",
+        lambda code: {"id": 42, "product_code": code},
+        raising=False,
+    )
+
+    result = oa.get_realtime_roas_overview(
+        start_date=target.isoformat(),
+        end_date=target.isoformat(),
+        now=datetime(2026, 6, 6, 10, 25),
+        include_profit_summary=True,
+    )
+
+    comparison = result["comparison"]["yesterday_same_time"]
+    assert comparison["enabled"] is True
+    assert comparison["summary"]["revenue_with_shipping"]["pct"] == 20.0
+    assert comparison["summary"]["order_count"]["pct"] == 20.0
