@@ -121,8 +121,13 @@ def _load_json_file(task_dir: str, filename: str) -> Any | None:
 
 def _build_inputs(task: dict) -> dict:
     """Extract the three texts the assessor needs."""
-    utterances = task.get("utterances") or task.get("utterances_raw") or []
-    original_asr = _join_text_items(utterances, "text")
+    utterances = (
+        task.get("utterances")
+        or task.get("utterances_raw")
+        or task.get("dialogue_segments")
+        or []
+    )
+    original_asr = _join_text_items(utterances, "text", "source_text")
 
     translation = ""
     for loc in _localized_translation_candidates(task):

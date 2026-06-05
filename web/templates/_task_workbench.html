@@ -518,7 +518,8 @@
 <div class="card hidden" id="pipelineCard">
   {% set pipeline_steps = pipeline_main_steps|default([]) %}
   {% set is_omni_pipeline = api_base == '/api/omni-translate' %}
-  {% set extended_pipeline = pipeline_kind == 'multi_translate' or is_omni_pipeline %}
+  {% set is_dialogue_pipeline = pipeline_kind == 'dialogue_translate' %}
+  {% set extended_pipeline = pipeline_kind == 'multi_translate' or is_omni_pipeline or is_dialogue_pipeline %}
   {% set show_separate_step = (extended_pipeline and not pipeline_steps) or ('separate' in pipeline_steps) %}
   {% set show_shot_decompose_step = 'shot_decompose' in pipeline_steps %}
   {% set show_asr_normalize_step = pipeline_kind == 'multi_translate' or ('asr_normalize' in pipeline_steps) %}
@@ -883,11 +884,19 @@
     </div>
     {# 翻译质量评估：异步评估，不阻塞主流水线，呈现在「字幕生成」之后、「视频合成」之前 #}
     {% set _has_project_context = project is defined and project %}
-    {% if _has_project_context and not project.deleted_at and project.id and (request.path.startswith('/omni-translate') or request.path.startswith('/multi-translate')) %}
+    {% set _quality_project_type = '' %}
+    {% if request.path.startswith('/omni-translate') %}
+      {% set _quality_project_type = 'omni_translate' %}
+    {% elif request.path.startswith('/multi-translate') %}
+      {% set _quality_project_type = 'multi_translate' %}
+    {% elif request.path.startswith('/dialogue-translate') %}
+      {% set _quality_project_type = 'dialogue_translate' %}
+    {% endif %}
+    {% if _has_project_context and not project.deleted_at and project.id and _quality_project_type %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/quality_assessment_card.css') }}">
     <div id="quality-assessment-card" class="step qa-step"
          data-task-id="{{ project.id }}"
-         data-project-type="{{ 'omni_translate' if request.path.startswith('/omni-translate') else 'multi_translate' }}"
+         data-project-type="{{ _quality_project_type }}"
          data-is-admin="{{ '1' if current_user.is_admin else '0' }}">
       <div class="step-main">
         <div class="step-icon qa-icon" aria-hidden="true">
@@ -950,7 +959,7 @@
     <div class="step" id="step-analysis"
          data-task-id="{{ project.id if project is defined and project else '' }}"
          data-is-admin="{{ '1' if current_user.is_admin else '0' }}"
-         data-project-type="{% if request.path.startswith('/omni-translate') %}omni_translate{% elif request.path.startswith('/multi-translate') %}multi_translate{% else %}av_sync{% endif %}">
+         data-project-type="{% if request.path.startswith('/omni-translate') %}omni_translate{% elif request.path.startswith('/multi-translate') %}multi_translate{% elif request.path.startswith('/dialogue-translate') %}dialogue_translate{% else %}av_sync{% endif %}">
       <div class="step-main">
         <div class="step-icon" id="icon-analysis">9</div>
         <div style="flex:1">

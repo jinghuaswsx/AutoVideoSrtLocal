@@ -40,9 +40,15 @@ window.QualityAssessmentCard = (function () {
     if (btn) btn.addEventListener("click", () => triggerRun(root));
   }
 
+  function apiBaseForProjectType(projectType) {
+    if (projectType === "omni_translate") return "/api/omni-translate";
+    if (projectType === "dialogue_translate") return "/api/dialogue-translate";
+    return "/api/multi-translate";
+  }
+
   async function refresh(root) {
     const { taskId, projectType } = root.dataset;
-    const apiBase = projectType === "omni_translate" ? "/api/omni-translate" : "/api/multi-translate";
+    const apiBase = apiBaseForProjectType(projectType);
     try {
       const resp = await fetch(`${apiBase}/${taskId}/quality-assessments`);
       if (!resp.ok) return;
@@ -69,7 +75,7 @@ window.QualityAssessmentCard = (function () {
 
   async function triggerRun(root) {
     const { taskId, projectType } = root.dataset;
-    const apiBase = projectType === "omni_translate" ? "/api/omni-translate" : "/api/multi-translate";
+    const apiBase = apiBaseForProjectType(projectType);
     // 立刻显示"评估中"占位，避免请求往返 + 8s 轮询间隙仍显示旧分数误导用户
     const body = root.querySelector(".qa-body");
     if (body) {

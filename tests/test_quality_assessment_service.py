@@ -51,6 +51,25 @@ def test_build_inputs_extracts_three_texts():
     assert inputs["target_language"] == "en"
 
 
+def test_build_inputs_uses_dialogue_segments_when_utterances_are_missing():
+    task = {
+        "dialogue_segments": [
+            {"source_text": "hello there"},
+            {"text": "how are you"},
+        ],
+        "localized_translation": {"full_text": "hallo, wie geht es dir"},
+        "english_asr_result": {"full_text": "hallo wie geht es dir"},
+        "source_language": "en",
+        "target_lang": "de",
+    }
+
+    inputs = svc._build_inputs(task)
+
+    assert inputs["original_asr"] == "hello there how are you"
+    assert inputs["translation"] == "hallo, wie geht es dir"
+    assert inputs["tts_recognition"] == "hallo wie geht es dir"
+
+
 def test_build_inputs_handles_missing_full_text():
     task = {
         "utterances": [{"text": "hola"}],

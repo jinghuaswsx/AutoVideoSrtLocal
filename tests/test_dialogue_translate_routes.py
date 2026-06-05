@@ -52,6 +52,7 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
             "extract": "done",
             "asr": "done",
             "speaker_detect": "done",
+            "speaker_confirm": "done",
             "voice_match_ab": "waiting",
             "alignment": "pending",
             "translate": "pending",
@@ -90,11 +91,16 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert "Dialogue Detail" in body
     assert "A/B 音色匹配" in body
     assert 'id="step-speaker_detect"' in body
+    assert 'id="step-speaker_confirm"' in body
     assert 'id="step-voice_match_ab"' in body
     assert 'id="dialogueSegmentTimeline"' in body
     assert 'id="dialogueSubtitleFont"' in body
     assert 'id="dialogueSubtitlePositionY"' in body
     assert 'id="dialogueSubtitlePreviewFrame"' in body
+    assert 'id="quality-assessment-card"' in body
+    assert 'data-project-type="dialogue_translate"' in body
+    assert "quality_assessment_card.js" in body
+    assert "pipelineStepOrder" in body
     assert "/api/dialogue-translate" in body
     assert 'id="forceRestartBtn"' in body
     assert 'data-api-base="/api/dialogue-translate"' in body
@@ -172,6 +178,8 @@ def test_dialogue_translate_workbench_endpoint_surface_exists(authed_client_no_d
         ("/api/dialogue-translate/<task_id>/visible-to-all", ("OPTIONS", "PUT")),
         ("/api/dialogue-translate/<task_id>/analysis/run", ("OPTIONS", "POST")),
         ("/api/dialogue-translate/<task_id>/loudness-profile", ("OPTIONS", "POST")),
+        ("/api/dialogue-translate/<task_id>/quality-assessments", ("GET", "HEAD", "OPTIONS")),
+        ("/api/dialogue-translate/<task_id>/quality-assessments/run", ("OPTIONS", "POST")),
     }
 
     assert expected <= rules
@@ -399,6 +407,9 @@ def test_dialogue_translate_detail_js_renders_sentence_audio_timeline():
     assert "source_audio_relpath" in js
     assert "artifact-path?path=" in js
     assert "audio.controls = true" in js
+    assert "pipelineStepOrder" in js
+    assert 'nextStepAfter("voice_match_ab")' in js
+    assert "确认后将从 alignment 继续" not in js
 
 
 def test_dialogue_translate_detail_js_poll_refresh_preserves_audio_playback():

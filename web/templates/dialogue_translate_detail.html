@@ -839,7 +839,8 @@
 <script>
 window.DIALOGUE_TRANSLATE_DETAIL_CONFIG = {
   taskId: {{ (task_id if not project.deleted_at else '')|tojson }},
-  apiBase: {{ api_base|tojson }}
+  apiBase: {{ api_base|tojson }},
+  pipelineStepOrder: {{ pipeline_step_order|default([])|tojson }}
 };
 </script>
 <script src="{{ url_for('static', filename='js/dialogue_translate_detail.js') }}"></script>

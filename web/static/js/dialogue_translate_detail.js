@@ -2,6 +2,7 @@
   var config = window.DIALOGUE_TRANSLATE_DETAIL_CONFIG || {};
   var taskId = config.taskId;
   var apiBase = config.apiBase || "/api/dialogue-translate";
+  var pipelineStepOrder = Array.isArray(config.pipelineStepOrder) ? config.pipelineStepOrder : [];
   var panel = document.getElementById("dialogueVoicePanel");
   var statusEl = document.getElementById("dialogueVoiceStatus");
   var gridEl = document.getElementById("dialogueVoiceGrid");
@@ -109,6 +110,32 @@
 
   function isVoiceMatchDone(task) {
     return voiceMatchStatus(task) === "done";
+  }
+
+  function dialogueStepLabel(step) {
+    return {
+      extract: "音频提取",
+      asr: "语音识别",
+      asr_clean: "原文纯净化",
+      asr_normalize: "原文标准化和ASR结果纯净化",
+      separate: "人声分离",
+      speaker_detect: "说话人识别",
+      speaker_confirm: "说话人与别名确认",
+      voice_match_ab: "A/B 音色匹配",
+      alignment: "分段确认",
+      translate: "翻译本土化",
+      tts: "语音生成",
+      loudness_match: "响度匹配",
+      subtitle: "字幕生成",
+      compose: "视频合成",
+      export: "CapCut 导出",
+    }[step] || step || "下一步";
+  }
+
+  function nextStepAfter(step) {
+    var idx = pipelineStepOrder.indexOf(step);
+    if (idx < 0 || idx + 1 >= pipelineStepOrder.length) return "";
+    return pipelineStepOrder[idx + 1];
   }
 
   function optionLabel(candidate) {
@@ -381,7 +408,8 @@
       return;
     }
     if (voiceStatus === "waiting") {
-      statusEl.textContent = "第二步：A/B 候选音色已就绪，确认后将从 alignment 继续。";
+      var nextStep = nextStepAfter("voice_match_ab") || "alignment";
+      statusEl.textContent = "第二步：A/B 候选音色已就绪，确认后将从「" + dialogueStepLabel(nextStep) + "」继续。";
       return;
     }
     if (currentReviewStep === "voice_match_ab") {

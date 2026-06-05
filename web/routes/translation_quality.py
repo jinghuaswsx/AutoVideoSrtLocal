@@ -1,7 +1,7 @@
 """Quality-assessment API: list + manual rerun.
 
-Mounted twice under different URL prefixes (omni / multi) so each project type's
-detail page hits its own URL family.
+Mounted under each translation URL prefix so every project type's detail page
+hits its own URL family.
 """
 from __future__ import annotations
 
@@ -89,8 +89,14 @@ def _run_route(project_type: str):
     return view
 
 
-for project_type in ("omni_translate", "multi_translate"):
-    url_prefix = "/api/omni-translate" if project_type == "omni_translate" else "/api/multi-translate"
+_PROJECT_TYPE_API_PREFIX = {
+    "omni_translate": "/api/omni-translate",
+    "multi_translate": "/api/multi-translate",
+    "dialogue_translate": "/api/dialogue-translate",
+}
+
+
+for project_type, url_prefix in _PROJECT_TYPE_API_PREFIX.items():
     bp.add_url_rule(
         f"{url_prefix}/<task_id>/quality-assessments",
         view_func=login_required(_list_route(project_type)),

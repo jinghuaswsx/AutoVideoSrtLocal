@@ -216,6 +216,33 @@ def test_asr_normalize_card_moves_after_asr_without_reordering_other_cards():
     assert "{% set pipeline_kind = 'multi_translate' %}" in av_sync
 
 
+def test_dialogue_pipeline_cards_are_excluded_from_multi_visual_reorder():
+    root = Path(__file__).resolve().parents[1]
+    shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
+
+    assert "{% if pipeline_kind|default('') != 'dialogue_translate' %}" in shared
+    start = shared.index("{% if pipeline_kind|default('') != 'dialogue_translate' %}")
+    reorder_block = shared[
+        start:
+        shared.index("{% elif detail_mode == 'ja' %}", start)
+    ]
+    assert "#pipelineCard .steps > #step-asr { order: -2; }" in reorder_block
+    assert "#pipelineCard .steps > #step-extract { order: -1; }" in reorder_block
+
+
+def test_quality_assessment_shared_modules_include_dialogue_translate():
+    root = Path(__file__).resolve().parents[1]
+    workbench = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
+    scripts = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    js = (root / "web" / "static" / "js" / "quality_assessment_card.js").read_text(encoding="utf-8")
+
+    assert "dialogue_translate" in workbench
+    assert "/dialogue-translate" in workbench
+    assert "quality_assessment_card.js" in scripts
+    assert "request.path.startswith('/dialogue-translate')" in scripts
+    assert 'projectType === "dialogue_translate"' in js
+
+
 def test_voice_separation_card_stays_after_audio_extract_before_tts_selector():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")
