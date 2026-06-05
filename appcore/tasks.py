@@ -49,8 +49,8 @@ TASK_AUTO_ARCHIVE_SOURCE = "task_center_auto_archive"
 LANGUAGE_SUPPORTED_LABEL = "商品投放语种适配"
 LANGUAGE_SUPPORTED_HINT = "目标语种需要先在广告语种中启用，才能进入推送。"
 FINAL_PUSH_CONFIRMATION_STEP_KEY = "final_push_confirmation"
-FINAL_PUSH_CONFIRMATION_LABEL = "最终推送人工确认"
-FINAL_PUSH_CONFIRMATION_HINT = "运营最终确认视频、封面、文案、商品图和链接均可推送后再点击人工确认。"
+FINAL_PUSH_CONFIRMATION_LABEL = "人工最终推送确认"
+FINAL_PUSH_CONFIRMATION_HINT = "运营最终确认视频、封面、文案、商品图和链接均可推送后再点击人工最终推送确认。"
 CHILD_ACCEPTANCE_STEP_LABELS = {
     "localized_media_item": "目标语种素材",
     "translated_video": "视频翻译结果",
@@ -92,7 +92,7 @@ PUSH_REWORK_ISSUE_DEFS = {
     },
     "final_push_confirmed": {
         "task_check_key": FINAL_PUSH_CONFIRMATION_STEP_KEY,
-        "label": "推送人工确认",
+        "label": "人工最终推送确认",
     },
 }
 PUSH_REWORK_ISSUE_KEYS = tuple(PUSH_REWORK_ISSUE_DEFS)

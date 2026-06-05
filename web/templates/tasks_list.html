@@ -1784,7 +1784,7 @@ function tcRenderFinalPushConfirmationAction(taskId, check) {
   const stepKey = String((check && check.key) || '').trim();
   if (!numericTaskId || !stepKey) return '';
   const confirmed = !!(check && check.manual_confirmed);
-  const label = confirmed ? '已最终确认' : '最终推送确认';
+  const label = confirmed ? '已人工最终推送确认' : '人工最终推送确认';
   const disabled = confirmed ? ' disabled' : '';
   const title = confirmed ? '该任务已最终确认，可进入推送条件判断' : '确认视频、封面、文案、商品图和链接均可推送';
   return '<div class="tc-final-push-confirm">'
@@ -3086,7 +3086,7 @@ async function tcLoadReadiness(id, task) {
       has_object: '视频', has_video: '视频', has_cover: '封面',
       has_copywriting: '文案', has_push_texts: '推送文案',
       is_listed: '商品在架', lang_supported: '广告语言', shopify_image_confirmed: '链接商品图替换',
-      final_push_confirmed: '最终推送人工确认',
+      final_push_confirmed: '人工最终推送确认',
     };
     const entries = Object.entries(data.readiness || {});
     if (!entries.length) {
