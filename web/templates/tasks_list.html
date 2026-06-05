@@ -198,9 +198,16 @@
 .tc-detail-reason { background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-top:10px; font-size:13px; }
 .tc-admin-feedback-card { margin-top:14px; padding:14px; border:2px solid var(--tc-danger); border-radius:var(--tc-r-md); background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
 .tc-admin-feedback-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+.tc-admin-feedback-title-group { display:flex; flex-direction:column; gap:2px; min-width:0; flex:1; }
 .tc-admin-feedback-title { font-size:15px; font-weight:800; line-height:1.3; }
 .tc-admin-feedback-source { font-size:12px; font-weight:700; color:var(--tc-danger-fg); opacity:.86; }
+.tc-admin-feedback-toggle { display:inline-flex; align-items:center; justify-content:center; height:24px; padding:0 10px; border:1px solid var(--tc-danger-fg); border-radius:999px; background:transparent; color:var(--tc-danger-fg); font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap; flex-shrink:0; transition:all 0.2s ease; }
+.tc-admin-feedback-toggle:hover { background:var(--tc-danger-fg); color:#fff; }
 .tc-admin-feedback-body { font-size: 26px; font-weight: bold; color: #0055ff; line-height: 1.55; overflow-wrap: anywhere; }
+.tc-admin-feedback-card.is-collapsed .tc-admin-feedback-head { margin-bottom: 0; }
+.tc-admin-feedback-card.is-collapsed .tc-admin-feedback-body,
+.tc-admin-feedback-card.is-collapsed .tc-admin-feedback-issues,
+.tc-admin-feedback-card.is-collapsed .tc-admin-feedback-images { display: none !important; }
 .tc-admin-feedback-issues { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
 .tc-admin-feedback-issue { display:inline-flex; align-items:center; min-height:22px; padding:2px 8px; border:1px solid var(--tc-danger); border-radius:999px; background:var(--tc-bg); color:var(--tc-danger-fg); font-size:12px; font-weight:700; }
 .tc-admin-feedback-images { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:10px; margin-top:12px; }
@@ -1281,8 +1288,11 @@ function tcRenderAdminFeedbackCard(task, events) {
     : '';
   return '<section class="tc-admin-feedback-card" aria-label="管理员反馈">'
     + '<div class="tc-admin-feedback-head">'
+    + '<div class="tc-admin-feedback-title-group">'
     + '<div class="tc-admin-feedback-title">管理员反馈</div>'
     + '<div class="tc-admin-feedback-source">' + tcEsc(meta) + '</div>'
+    + '</div>'
+    + '<button type="button" class="tc-admin-feedback-toggle" onclick="tcToggleAdminFeedback(this)">收起</button>'
     + '</div>'
     + '<div class="tc-admin-feedback-body">' + tcEsc(feedback.message) + '</div>'
     + reason
@@ -3222,6 +3232,36 @@ document.addEventListener('keydown', function(event) {
   if (modal && modal.classList.contains('is-open')) {
     tcCloseFeedbackImageModal();
   }
+});
+
+function tcToggleAdminFeedback(btn) {
+  const card = btn.closest('.tc-admin-feedback-card');
+  if (!card) return;
+  const isCollapsed = card.classList.contains('is-collapsed');
+  if (isCollapsed) {
+    card.classList.remove('is-collapsed');
+    btn.textContent = '收起';
+  } else {
+    card.classList.add('is-collapsed');
+    btn.textContent = '展开';
+  }
+}
+
+let tcDetailLastScrollTop = 0;
+document.getElementById('tcDetailDrawer').addEventListener('scroll', function() {
+  const card = this.querySelector('.tc-admin-feedback-card');
+  if (!card) return;
+  const toggleBtn = card.querySelector('.tc-admin-feedback-toggle');
+  
+  const currentScrollTop = this.scrollTop;
+  if (currentScrollTop > 30 && tcDetailLastScrollTop <= 30) {
+    card.classList.add('is-collapsed');
+    if (toggleBtn) toggleBtn.textContent = '展开';
+  } else if (currentScrollTop === 0 && tcDetailLastScrollTop > 0) {
+    card.classList.remove('is-collapsed');
+    if (toggleBtn) toggleBtn.textContent = '收起';
+  }
+  tcDetailLastScrollTop = currentScrollTop;
 });
 
 function tcRenderDetailIdentityRows(task, isParent) {
