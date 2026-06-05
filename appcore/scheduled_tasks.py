@@ -360,8 +360,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "push_quality_check_tick": {
         "code": "push_quality_check_tick",
         "name": "推送内容质量检查",
-        "description": "扫描推送管理里待推送和已推送的非英语素材，只检查尚未产生 auto 结果的任务；每个素材最多自动检查一次，失败或异常结果后续由人工干预。",
-        "schedule": "每 10 分钟",
+        "description": "通过 5 并发线程池持续扫描并消耗待评估的推送小语种素材；每 10 分钟运行一次守护哨兵检查守护线程健康度。",
+        "schedule": "持续后台任务池（5并发）",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "push_quality_check_tick",
