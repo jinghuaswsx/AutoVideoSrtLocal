@@ -94,9 +94,15 @@ def test_dialogue_translate_detail_renders_ab_panel(authed_client_no_db, monkeyp
     assert 'id="step-speaker_confirm"' in body
     assert 'id="step-voice_match_ab"' in body
     assert 'id="dialogueSegmentTimeline"' in body
-    assert 'id="dialogueSubtitleFont"' in body
-    assert 'id="dialogueSubtitlePositionY"' in body
-    assert 'id="dialogueSubtitlePreviewFrame"' in body
+    assert 'class="vs-subtitle-config"' in body
+    assert 'id="vs-sub-font"' in body
+    assert 'id="vs-sub-position-y"' in body
+    assert 'id="vsPreviewFrame"' in body
+    assert 'class="vs-preview-card"' in body
+    assert "视频对比" in body
+    assert "生成结果" in body
+    assert "dialogue-subtitle-config" not in body
+    assert "dialogueSubtitlePreviewFrame" not in body
     assert 'id="quality-assessment-card"' in body
     assert 'data-project-type="dialogue_translate"' in body
     assert "quality_assessment_card.js" in body
@@ -407,6 +413,10 @@ def test_dialogue_translate_detail_js_renders_sentence_audio_timeline():
     assert "source_audio_relpath" in js
     assert "artifact-path?path=" in js
     assert "audio.controls = true" in js
+    assert 'document.getElementById("vs-sub-font")' in js
+    assert 'document.getElementById("vsPreviewFrame")' in js
+    assert 'document.getElementById("vsResultVideo")' in js
+    assert "function checkResultVideo" in js
     assert "pipelineStepOrder" in js
     assert 'nextStepAfter("voice_match_ab")' in js
     assert "确认后将从 alignment 继续" not in js

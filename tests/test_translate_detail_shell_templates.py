@@ -243,6 +243,20 @@ def test_quality_assessment_shared_modules_include_dialogue_translate():
     assert 'projectType === "dialogue_translate"' in js
 
 
+def test_dialogue_subtitle_visual_module_uses_omni_voice_selector_shape():
+    root = Path(__file__).resolve().parents[1]
+    dialogue = (root / "web" / "templates" / "dialogue_translate_detail.html").read_text(encoding="utf-8")
+
+    assert 'class="vs-subtitle-config"' in dialogue
+    assert 'class="vs-preview-card"' in dialogue
+    assert 'id="vs-sub-font"' in dialogue
+    assert 'id="vsPreviewFrame"' in dialogue
+    assert 'id="vsResultVideo"' in dialogue
+    assert "dialogue-subtitle-config" not in dialogue
+    assert "dialogue-subtitle-preview" not in dialogue
+    assert "dialogueSubtitlePreviewFrame" not in dialogue
+
+
 def test_voice_separation_card_stays_after_audio_extract_before_tts_selector():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")

@@ -3,6 +3,7 @@
   var taskId = config.taskId;
   var apiBase = config.apiBase || "/api/dialogue-translate";
   var pipelineStepOrder = Array.isArray(config.pipelineStepOrder) ? config.pipelineStepOrder : [];
+  var hardVideoArtifactUrl = apiBase + "/" + encodeURIComponent(taskId || "") + "/artifact/hard_video";
   var panel = document.getElementById("dialogueVoicePanel");
   var statusEl = document.getElementById("dialogueVoiceStatus");
   var gridEl = document.getElementById("dialogueVoiceGrid");
@@ -34,17 +35,21 @@
   var subtitleDragging = false;
   var subtitleSize = 14;
   var subtitleRefs = {
-    font: document.getElementById("dialogueSubtitleFont"),
-    sizeGroup: document.getElementById("dialogueSubtitleSizeGroup"),
-    position: document.getElementById("dialogueSubtitlePositionY"),
-    positionHint: document.getElementById("dialogueSubtitlePositionHint"),
-    previewFrame: document.getElementById("dialogueSubtitlePreviewFrame"),
-    previewVideo: document.getElementById("dialogueSubtitlePreviewVideo"),
-    previewBlock: document.getElementById("dialogueSubtitlePreviewBlock"),
-    previewNote: document.getElementById("dialogueSubtitlePreviewNote"),
-    lineA: document.getElementById("dialogueSubtitleLineA"),
-    lineB: document.getElementById("dialogueSubtitleLineB")
+    font: document.getElementById("vs-sub-font"),
+    fontPreview: document.getElementById("vs-sub-font-preview"),
+    sizeGroup: document.getElementById("vs-size-group"),
+    position: document.getElementById("vs-sub-position-y"),
+    positionHint: document.getElementById("vs-sub-pos-hint"),
+    previewFrame: document.getElementById("vsPreviewFrame"),
+    previewVideo: document.getElementById("vsPreviewVideo"),
+    previewBlock: document.getElementById("vsPreviewSubtitle"),
+    previewNote: document.getElementById("vsPreviewNote"),
+    fileInput: document.getElementById("vsFileInput"),
+    frameHint: document.getElementById("vsFrameHint"),
+    resultVideo: document.getElementById("vsResultVideo"),
+    resultPlaceholder: document.getElementById("vsResultPlaceholder")
   };
+  var resultVideoLoaded = false;
   var subtitleFontFamilies = {
     "Impact": 'Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif',
     "Oswald Bold": '"Oswald", Impact, "Arial Narrow Bold", sans-serif',
@@ -166,9 +171,10 @@
       .replace(/'/g, "&#39;");
   }
 
-  function safeMediaSrc(url) {
+  function safeMediaSrc(url, opts) {
     var raw = String(url == null ? "" : url).trim();
     if (!raw) return "";
+    if (opts && opts.allowBlob && raw.indexOf("blob:") === 0) return raw;
     try {
       var parsed = new URL(raw, window.location.origin);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
@@ -203,18 +209,23 @@
     while (values.length < 2) {
       values.push("Tiktok and facebook shot videos!");
     }
-    if (subtitleRefs.lineA) subtitleRefs.lineA.textContent = values[0];
-    if (subtitleRefs.lineB) subtitleRefs.lineB.textContent = values[1];
+    if (!subtitleRefs.previewBlock) return;
+    var lineEls = subtitleRefs.previewBlock.querySelectorAll(".vs-preview-subtitle__line");
+    if (lineEls[0]) lineEls[0].textContent = values[0];
+    if (lineEls[1]) lineEls[1].textContent = values[1];
   }
 
   function attachSubtitlePreviewVideo(src) {
     if (!subtitleRefs.previewVideo) return false;
-    var videoSrc = safeMediaSrc(src);
+    var videoSrc = safeMediaSrc(src, { allowBlob: true });
     if (!videoSrc) return false;
     if (subtitleRefs.previewVideo.getAttribute("src") === videoSrc) return true;
     subtitleRefs.previewVideo.preload = "metadata";
     subtitleRefs.previewVideo.src = videoSrc;
     subtitleRefs.previewVideo.load();
+    if (subtitleRefs.previewFrame) {
+      subtitleRefs.previewFrame.classList.add("video-loaded");
+    }
     return true;
   }
 
@@ -225,6 +236,7 @@
       return opt.value === next;
     });
     subtitleRefs.font.value = option ? option.value : "Impact";
+    updateSubtitleFontPreview();
     syncSubtitlePreview();
   }
 
@@ -232,7 +244,7 @@
     subtitleSize = coerceSubtitleSize(value);
     if (subtitleRefs.sizeGroup) {
       subtitleRefs.sizeGroup.querySelectorAll("button[data-size]").forEach(function (button) {
-        button.classList.toggle("is-active", coerceSubtitleSize(button.dataset.size) === subtitleSize);
+        button.classList.toggle("active", coerceSubtitleSize(button.dataset.size) === subtitleSize);
       });
     }
     syncSubtitlePreview();
@@ -251,6 +263,15 @@
 
   function currentSubtitlePositionY() {
     return coerceSubtitlePositionY(subtitleRefs.position ? subtitleRefs.position.value : 0.68);
+  }
+
+  function updateSubtitleFontPreview() {
+    if (!subtitleRefs.font || !subtitleRefs.fontPreview) return;
+    var font = subtitleRefs.font.value || "Impact";
+    var selected = subtitleRefs.font.selectedOptions && subtitleRefs.font.selectedOptions[0];
+    var weight = selected && selected.dataset ? selected.dataset.weight || "700" : "700";
+    subtitleRefs.fontPreview.style.fontFamily = subtitleFontFamilies[font] || subtitleFontFamilies.Impact;
+    subtitleRefs.fontPreview.style.fontWeight = weight;
   }
 
   function syncSubtitlePreview() {
@@ -304,6 +325,33 @@
         "error"
       );
     }
+  }
+
+  function loadResultVideo(src) {
+    var videoSrc = safeMediaSrc(src);
+    if (!subtitleRefs.resultVideo || !videoSrc || resultVideoLoaded) return;
+    resultVideoLoaded = true;
+    subtitleRefs.resultVideo.src = videoSrc;
+    subtitleRefs.resultVideo.style.display = "block";
+    subtitleRefs.resultVideo.pause();
+    subtitleRefs.resultVideo.currentTime = 0;
+    subtitleRefs.resultVideo.load();
+    if (subtitleRefs.resultPlaceholder) {
+      subtitleRefs.resultPlaceholder.style.display = "none";
+    }
+  }
+
+  function checkResultVideo() {
+    if (resultVideoLoaded) return;
+    fetch(hardVideoArtifactUrl, { method: "HEAD", credentials: "same-origin" })
+      .then(function (response) {
+        if (response.ok) {
+          loadResultVideo(hardVideoArtifactUrl);
+        }
+      })
+      .catch(function () {
+        // Result video may not exist until compose completes.
+      });
   }
 
   function formatPercent(value, digits) {
@@ -1218,6 +1266,10 @@
       speakerConfirmPanel.style.display = "none";
       panel.style.display = "none";
     }
+
+    if (steps.compose === "done" || (task && task.status === "done")) {
+      checkResultVideo();
+    }
   }
 
   function renderFromRefresh(task) {
@@ -1259,6 +1311,7 @@
 
   if (subtitleRefs.font) {
     subtitleRefs.font.addEventListener("change", function () {
+      updateSubtitleFontPreview();
       syncSubtitlePreview();
     });
   }
@@ -1302,6 +1355,48 @@
     };
     subtitleRefs.previewBlock.addEventListener("pointerup", endSubtitleDrag);
     subtitleRefs.previewBlock.addEventListener("pointercancel", endSubtitleDrag);
+  }
+
+  if (subtitleRefs.previewFrame && subtitleRefs.previewVideo) {
+    subtitleRefs.previewFrame.addEventListener("click", function (event) {
+      if (event.target.closest(".vs-preview-subtitle")) return;
+      if (event.target.closest("video") && event.target.controls) return;
+      if (subtitleRefs.fileInput) subtitleRefs.fileInput.click();
+    });
+    subtitleRefs.previewFrame.addEventListener("dragover", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      subtitleRefs.previewFrame.classList.add("drag-over");
+    });
+    subtitleRefs.previewFrame.addEventListener("dragleave", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      subtitleRefs.previewFrame.classList.remove("drag-over");
+    });
+    subtitleRefs.previewFrame.addEventListener("drop", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      subtitleRefs.previewFrame.classList.remove("drag-over");
+      var files = event.dataTransfer && event.dataTransfer.files;
+      if (!files || !files.length) return;
+      var file = files[0];
+      if (!file.type || file.type.indexOf("video/") !== 0) {
+        setSubtitlePreviewNote("请拖入视频文件（mp4/mov/webm 等）。", "error");
+        return;
+      }
+      attachSubtitlePreviewVideo(URL.createObjectURL(file));
+      setSubtitlePreviewNote("已加载拖入的视频文件：" + file.name, "success");
+    });
+  }
+
+  if (subtitleRefs.fileInput) {
+    subtitleRefs.fileInput.addEventListener("change", function () {
+      var file = subtitleRefs.fileInput.files && subtitleRefs.fileInput.files[0];
+      if (!file) return;
+      attachSubtitlePreviewVideo(URL.createObjectURL(file));
+      setSubtitlePreviewNote("已加载本地视频文件：" + file.name, "success");
+      subtitleRefs.fileInput.value = "";
+    });
   }
 
   confirmBtn.addEventListener("click", async function () {
@@ -1434,6 +1529,17 @@
   setSubtitleSize(14);
   setSubtitlePositionY(0.68);
   loadSubtitlePreviewPayload();
+  window.setTimeout(checkResultVideo, 1500);
+  if (typeof socket !== "undefined" && socket) {
+    socket.on("step_update", function (data) {
+      if (data && data.step === "compose" && data.status === "done") {
+        window.setTimeout(checkResultVideo, 800);
+      }
+    });
+    socket.on("pipeline_done", function () {
+      window.setTimeout(checkResultVideo, 500);
+    });
+  }
   refresh();
   pollTimer = window.setInterval(refresh, 4000);
   window.addEventListener("beforeunload", function () {
