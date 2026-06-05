@@ -125,6 +125,39 @@ def _omni_pipeline_steps_for_task(
         )
 
 
+def _restart_step_order_for_task(
+    task_id: str,
+    task: dict | None,
+    reset_fields: dict | None,
+) -> tuple[str, ...]:
+    reset_task = dict(task or {})
+    if reset_fields:
+        reset_task.update(reset_fields)
+    return tuple(_omni_pipeline_steps_for_task(task_id, reset_task))
+
+
+def _heal_completed_omni_task_status(task_id: str, task: dict | None) -> dict | None:
+    if not task or task.get("status") == "done":
+        return task
+    if task.get("status") == "cancelled":
+        return task
+    steps = task.get("steps") or {}
+    try:
+        step_names = _omni_pipeline_steps_for_task(task_id, task)
+    except Exception:
+        log.warning("[omni] failed to resolve completion healing steps task=%s", task_id, exc_info=True)
+        return task
+    if not step_names or "export" not in step_names:
+        return task
+    if any(steps.get(step_name) != "done" for step_name in step_names):
+        return task
+
+    healed = dict(task)
+    healed.update(status="done", error="", current_step=None)
+    store.update(task_id, status="done", error="", current_step=None)
+    return healed
+
+
 def _post_asr_step(step_names: list[str]) -> str:
     for step in step_names:
         if step in {"asr_clean", "asr_normalize"}:
@@ -266,7 +299,7 @@ def _fresh_viewable_project_task(task_id: str) -> dict | None:
     task = _task_from_project_row(row)
     if not task or not _can_view_task(task):
         return None
-    return task
+    return _heal_completed_omni_task_status(task_id, task)
 
 
 def _hydrate_task_state_cache(task_id: str, task: dict) -> None:
@@ -449,6 +482,7 @@ def detail(task_id: str):
             state = json.loads(row["state_json"])
         except Exception:
             pass
+    state = _heal_completed_omni_task_status(task_id, state) or state
     target_lang = state.get("target_lang", "")
     from appcore.api_keys import get_key
     translate_pref = get_key(current_user.id, "translate_pref") or "openrouter"
@@ -780,6 +814,7 @@ def restart(task_id):
         restart_extra_reset_fields = _restart_plugin_config_reset_fields(task, body)
     except ValueError as exc:
         return _json_response({"error": f"plugin_config 不合法：{exc}"}, 400)
+    step_order = _restart_step_order_for_task(task_id, task, restart_extra_reset_fields)
     from web.services.task_restart import restart_task
     updated = restart_task(
         task_id,
@@ -793,6 +828,7 @@ def restart(task_id):
         source_language=raw_source_language,
         user_id=owner_id,
         runner=omni_pipeline_runner,
+        step_order=step_order,
         extra_reset_fields=restart_extra_reset_fields,
     )
     return _json_response({"status": "restarted", "task": updated})

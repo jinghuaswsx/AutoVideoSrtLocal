@@ -180,6 +180,41 @@ def test_restart_resets_state_and_persists_new_config(done_task):
     assert task["delivery_mode"] == "local_primary"
 
 
+def test_restart_uses_explicit_dynamic_step_order(done_task):
+    dynamic_steps = (
+        "extract",
+        "asr",
+        "separate",
+        "asr_clean",
+        "voice_match",
+        "alignment",
+        "translate",
+        "tts",
+        "loudness_match",
+        "subtitle",
+        "compose",
+        "export",
+    )
+
+    task_restart.restart_task(
+        done_task["task_id"],
+        voice_id=None,
+        voice_gender="male",
+        subtitle_font="Impact",
+        subtitle_size=14,
+        subtitle_position_y=0.68,
+        subtitle_position="bottom",
+        interactive_review=False,
+        user_id=1,
+        runner=_Runner(),
+        step_order=dynamic_steps,
+    )
+
+    task = store.get(done_task["task_id"])
+    assert tuple(task["steps"]) == dynamic_steps
+    assert "asr_normalize" not in task["steps"]
+
+
 def test_restart_clears_display_intermediate_state(done_task):
     store.update(
         done_task["task_id"],
