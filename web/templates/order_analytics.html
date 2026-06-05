@@ -521,6 +521,11 @@
 .oa-stat-sub {
   margin-top: 4px; color: var(--fg-muted); font-size: var(--text-xs); line-height: 1.4;
 }
+.oar-same-time-compare {
+  min-height: 14px;
+  font-size: 11px;
+  line-height: 1.25;
+}
 
 /* ── 订单分析 tab 的口径提示条（实时大盘已废弃使用） ── */
 .oar-toolbar {
@@ -1696,7 +1701,7 @@
         <div class="oar-scope-metrics">
           <div class="oar-scope-metric"><div class="oa-stat-label">商品销售额</div><div class="oa-stat-value" id="realtimeRevenue">$0.00</div><div class="oa-stat-sub" id="realtimeRevenueSub">订单 0 单</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">运费</div><div class="oa-stat-value" id="realtimeShipping">$0.00</div><div class="oa-stat-sub">订单收取的运费</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">总销售额</div><div class="oa-stat-value" id="realtimeRevenueWithShipping">$0.00</div><div class="oa-stat-sub">商品销售额 + 运费</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">总销售额</div><div class="oa-stat-value" id="realtimeRevenueWithShipping">$0.00</div><div class="oa-stat-sub">商品销售额 + 运费</div><div class="oa-stat-sub oar-same-time-compare" id="realtimeRevenueWithShippingCompare"></div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">广告消耗费用</div><div class="oa-stat-value" id="realtimeSpend">$0.00</div><div class="oa-stat-sub" id="realtimeSpendRatio">占总销售额 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimePurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimePurchaseCostRatio">占总销售额 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeLogisticsCostRatio">占总销售额 -</div></div>
@@ -1704,9 +1709,9 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeRoas">-</div><div class="oa-stat-sub" id="realtimeWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeMetaRoas">-</div><div class="oa-stat-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">盈亏平衡点</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeOrderCount">0</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeOrderCount">0</div><div class="oa-stat-sub oar-same-time-compare" id="realtimeOrderCountCompare"></div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeProfit">$0.00</div><div class="oa-stat-sub" id="realtimeProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="realtimeProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeProfit">$0.00</div><div class="oa-stat-sub" id="realtimeProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="realtimeProfitMargin">利润率 -</div><div class="oa-stat-sub oar-same-time-compare" id="realtimeProfitCompare"></div></div>
         </div>
       </section>
       <section class="oar-scope-card oar-scope-card--new" data-realtime-scope-card="new" aria-labelledby="realtimeNewScopeTitle">
@@ -5072,6 +5077,7 @@
       setRealtimeProfitText(prefix + 'ProfitMargin', '利润率 -');
       setRealtimeProfitText(prefix + 'Window', '总销售额 / 广告费');
     });
+    clearRealtimeSameTimeCompare();
   }
 
   function setRealtimeScopeCardsError(message) {
@@ -5093,6 +5099,7 @@
       setRealtimeProfitText(prefix + 'Window', '总销售额 / 广告费');
       setRealtimeProfitText(realtimeScopeSourceId(scope), '加载失败：' + (message || '查询失败'));
     });
+    clearRealtimeSameTimeCompare();
   }
 
   function formatRealtimeCostRatio(value, amount, denominator) {
@@ -5110,6 +5117,38 @@
   function renderRealtimeCostMetric(prefix, suffix, amount, ratioPct, denominator) {
     setRealtimeProfitText(prefix + suffix, fmtMoney(amount));
     setRealtimeProfitText(prefix + suffix + 'Ratio', formatRealtimeCostRatio(ratioPct, amount, denominator));
+  }
+
+  function realtimeSameTimePct(metric) {
+    if (!metric || metric.pct === null || metric.pct === undefined) return NaN;
+    return Number(metric.pct);
+  }
+
+  function formatRealtimeSameTimeCompare(metric) {
+    var pct = realtimeSameTimePct(metric);
+    if (!Number.isFinite(pct)) return '较昨天同刻 --';
+    var rounded = pct.toFixed(0);
+    var sign = pct > 0 ? '+' : '';
+    return '较昨天同刻 ' + sign + rounded + '%';
+  }
+
+  function setRealtimeSameTimeCompare(id, metric) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var pct = realtimeSameTimePct(metric);
+    el.textContent = formatRealtimeSameTimeCompare(metric);
+    el.classList.toggle('oar-profit-ok', Number.isFinite(pct) && pct > 0);
+    el.classList.toggle('oar-profit-loss', Number.isFinite(pct) && pct < 0);
+    el.classList.toggle('oad-pct-flat', !Number.isFinite(pct) || pct === 0);
+  }
+
+  function clearRealtimeSameTimeCompare() {
+    ['realtimeRevenueWithShippingCompare', 'realtimeOrderCountCompare', 'realtimeProfitCompare'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = '';
+      el.classList.remove('oar-profit-ok', 'oar-profit-loss', 'oad-pct-flat');
+    });
   }
 
   function renderRealtimeScopeSummary(scope, data) {
@@ -5199,6 +5238,18 @@
       topMarginIsNumber ? '利润率 ' + Number(topMarginPct).toFixed(2) + '%' : '利润率 -'
     );
     setRealtimeScopeTone(prefix + 'ProfitMargin', topMarginPct, topMarginIsNumber);
+    if (scope !== 'global') {
+      return;
+    }
+    var sameTime = data.comparison && data.comparison.yesterday_same_time;
+    if (!sameTime || !sameTime.enabled) {
+      clearRealtimeSameTimeCompare();
+      return;
+    }
+    var sameTimeSummary = sameTime.summary || {};
+    setRealtimeSameTimeCompare('realtimeRevenueWithShippingCompare', sameTimeSummary.revenue_with_shipping);
+    setRealtimeSameTimeCompare('realtimeOrderCountCompare', sameTimeSummary.order_count);
+    setRealtimeSameTimeCompare('realtimeProfitCompare', sameTimeSummary.profit_with_estimate_usd);
   }
 
   function renderRealtimeFreshness(data) {
