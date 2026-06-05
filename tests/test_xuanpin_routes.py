@@ -573,6 +573,24 @@ def test_xuanpin_mk_small_language_modal_has_urgent_checkbox(authed_client_no_db
     assert 'id="mkiXiaoUrgent" class="mki-xiao-urgent-check" type="checkbox" checked' not in body
 
 
+def test_xuanpin_mk_small_language_modal_shows_product_header_info(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="mkiXiaoProductInfo"' in body
+    assert 'id="mkiXiaoProductImage"' in body
+    assert "width: 200px; height: 200px" in body
+    assert 'id="mkiXiaoProductCnName"' in body
+    assert 'id="mkiXiaoProductLink"' in body
+    assert 'id="mkiXiaoProductLinkStatus"' in body
+    assert 'id="mkiXiaoProductCode"' in body
+    assert 'id="mkiXiaoProductSpends"' in body
+    assert "function mkiXiaoProductContextFromOptions(options)" in body
+    assert "mkiXiaoRenderProductInfo(mkiXiaoProductContextFromOptions(options));" in body
+    assert "data-mki-spends=\"${spendText}\"" in body
+
+
 def test_xuanpin_mk_import_completion_lives_in_store_card(authed_client_no_db):
     resp = authed_client_no_db.get("/xuanpin/mk")
 

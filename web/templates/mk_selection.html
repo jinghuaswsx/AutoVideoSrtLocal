@@ -627,6 +627,10 @@
   box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
 }
 .mki-xiao-title { margin: 0 0 18px; font-size: 20px; line-height: 1.35; font-weight: 800; }
+.mki-xiao-product-info { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; align-items: start; margin-bottom: 18px; }
+.mki-xiao-product-image { width: 200px; height: 200px; border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); background: var(--oc-bg-muted); color: var(--oc-fg-subtle); display: flex; align-items: center; justify-content: center; overflow: hidden; font-size: 13px; }
+.mki-xiao-product-image img { width: 100%; height: 100%; object-fit: contain; background: #fff; display: block; }
+.mki-xiao-product-details { margin-bottom: 0; min-height: 200px; align-content: start; }
 .mki-xiao-fine-ai { margin-bottom: 18px; }
 .mki-xiao-field { margin-bottom: 18px; }
 .mki-xiao-label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--oc-fg); }
@@ -714,6 +718,8 @@
   .mki-progress-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mki-progress-step-status { grid-column: 2; justify-self: start; margin-top: 6px; }
   .mki-xiao-dialog { padding: 22px; }
+  .mki-xiao-product-info { grid-template-columns: 1fr; }
+  .mki-xiao-product-image { width: min(200px, 100%); }
   .mki-xiao-lang-pill-box { min-width: 64px; min-height: 46px; padding: 6px 12px; }
   .mki-xiao-lang-card { padding: 4px; }
 }
@@ -2358,6 +2364,7 @@ function renderMkVideoMaterialCard(r) {
         data-mki-local-item-id="${escapeHtml(localItemId || '')}"
         data-mki-fine-ai-has-result="${hasFineAiEvaluationResult ? '1' : ''}"
         data-mki-fine-ai-run-id="${escapeHtml(fineAiRunId)}"
+        data-mki-spends="${spendText}"
         ${preselectionDataAttrs}
         onclick="mkiXiaoCreateFromImportedMaterial(this)">
       创建小语种翻译任务
@@ -2678,6 +2685,7 @@ async function openDetail(mkId, mkName) {
             data-mki-local-item-id=""
             data-mki-fine-ai-has-result="${detailHasFineAiEvaluationResult ? '1' : ''}"
             data-mki-fine-ai-run-id="${escapeHtml(detailFineAiRunId)}"
+            data-mki-spends="${spendText}"
             onclick="mkiXiaoCreateFromImportedMaterial(this)">
           创建小语种翻译任务
         </button>
@@ -5294,8 +5302,8 @@ function mkiCopyProgressInfoLink(btn) {
   } catch (_err) {}
 }
 
-function mkiImportProgressProbeLink(url) {
-  const statusEl = document.getElementById('mkiImportProgressLinkStatus');
+function mkiProbeProductLinkStatus(url, statusElementId) {
+  const statusEl = document.getElementById(statusElementId);
   if (!statusEl) return;
   statusEl.className = 'mki-progress-info-status mki-progress-info-status--checking';
   statusEl.textContent = '检测中';
@@ -5319,6 +5327,79 @@ function mkiImportProgressProbeLink(url) {
       statusEl.className = 'mki-progress-info-status mki-progress-info-status--fail';
       statusEl.textContent = '检测失败';
     });
+}
+
+function mkiImportProgressProbeLink(url) {
+  mkiProbeProductLinkStatus(url, 'mkiImportProgressLinkStatus');
+}
+
+function mkiSafeMediaSrcRaw(value) {
+  const url = String(value ?? '').trim();
+  if (!url) return '';
+  if (/^\/(medias\/object|xuanpin\/api\/mk-media|xuanpin\/api\/mk-video)\?/i.test(url)) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  return '';
+}
+
+function mkiXiaoProductContextFromOptions(options) {
+  const btn = options && options.sourceButton;
+  function pick(optionKey, datasetKey) {
+    const optionValue = options && options[optionKey] !== undefined ? String(options[optionKey] || '').trim() : '';
+    if (optionValue) return optionValue;
+    return String((btn && btn.dataset && btn.dataset[datasetKey]) || '').trim();
+  }
+  const productLink = pick('productLink', 'mkiProductLink');
+  const mainImage = pick('mainImage', 'mkiMainImage');
+  const coverUrl = pick('coverUrl', 'mkiCoverUrl');
+  return {
+    productName: pick('productName', 'mkiProductName'),
+    productLink,
+    productCode: pick('productCode', 'mkiProductCode') || productCodeFromUrl(productLink),
+    spends: pick('spends', 'mkiSpends'),
+    imageUrl: mkiSafeMediaSrcRaw(mainImage || coverUrl),
+  };
+}
+
+function mkiXiaoRenderProductInfo(context) {
+  const data = context || {};
+  const imageEl = document.getElementById('mkiXiaoProductImage');
+  const emptyEl = document.getElementById('mkiXiaoProductImageEmpty');
+  const productNameEl = document.getElementById('mkiXiaoProductCnName');
+  const linkEl = document.getElementById('mkiXiaoProductLink');
+  const codeEl = document.getElementById('mkiXiaoProductCode');
+  const spendsEl = document.getElementById('mkiXiaoProductSpends');
+  const statusEl = document.getElementById('mkiXiaoProductLinkStatus');
+
+  if (imageEl && emptyEl) {
+    if (data.imageUrl) {
+      imageEl.src = data.imageUrl;
+      imageEl.alt = data.productName || '商品主图';
+      imageEl.hidden = false;
+      emptyEl.hidden = true;
+    } else {
+      imageEl.removeAttribute('src');
+      imageEl.alt = '';
+      imageEl.hidden = true;
+      emptyEl.hidden = false;
+    }
+  }
+  if (productNameEl) productNameEl.textContent = data.productName || '--';
+  if (linkEl) {
+    if (data.productLink && /^https?:\/\//i.test(data.productLink)) {
+      linkEl.href = data.productLink;
+      linkEl.textContent = data.productLink;
+      mkiProbeProductLinkStatus(data.productLink, 'mkiXiaoProductLinkStatus');
+    } else {
+      linkEl.removeAttribute('href');
+      linkEl.textContent = data.productLink || '--';
+      if (statusEl) {
+        statusEl.className = 'mki-progress-info-status mki-progress-info-status--fail';
+        statusEl.textContent = '无链接';
+      }
+    }
+  }
+  if (codeEl) codeEl.textContent = data.productCode || '--';
+  if (spendsEl) spendsEl.textContent = data.spends || '--';
 }
 
 function mkiImportProgressOpen(meta) {
@@ -6431,6 +6512,7 @@ async function mkiXiaoOpenModal(options = {}) {
   if (rawDefault) rawSel.value = String(rawDefault);
   const titleEl = document.getElementById('mkiXiaoTitle');
   if (titleEl) titleEl.textContent = options.title || '创建小语种翻译任务';
+  mkiXiaoRenderProductInfo(mkiXiaoProductContextFromOptions(options));
   const preselectionNoteEl = document.getElementById('mkiXiaoPreselectionNote');
   const preselectionNote = String(options.preselectionNote || '').trim();
   if (preselectionNoteEl) {
@@ -6629,6 +6711,37 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
 <div id="mkiXiaoModal" class="mki-xiao-backdrop">
   <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
     <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
+    <section id="mkiXiaoProductInfo" class="mki-xiao-product-info" aria-label="产品信息">
+      <div class="mki-xiao-product-image">
+        <img id="mkiXiaoProductImage" alt="" loading="lazy" decoding="async" hidden>
+        <span id="mkiXiaoProductImageEmpty">无主图</span>
+      </div>
+      <div class="mki-progress-info mki-xiao-product-details">
+        <div class="mki-progress-info-row">
+          <span class="mki-progress-info-label">产品中文名</span>
+          <span id="mkiXiaoProductCnName" class="mki-progress-info-value">--</span>
+        </div>
+        <div class="mki-progress-info-row">
+          <span class="mki-progress-info-label">产品链接</span>
+          <span class="mki-progress-info-value">
+            <a id="mkiXiaoProductLink" class="mki-progress-info-link" href="#" target="_blank" rel="noopener noreferrer">--</a>
+            <span id="mkiXiaoProductLinkStatus" class="mki-progress-info-status mki-progress-info-status--checking">检测中</span>
+            <button type="button" class="mki-progress-info-copy" data-copy-target="mkiXiaoProductLink" onclick="mkiCopyProgressInfoLink(this)" title="复制链接" aria-label="复制链接"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+          </span>
+        </div>
+        <div class="mki-progress-info-row">
+          <span class="mki-progress-info-label">产品ID</span>
+          <span class="mki-progress-info-value">
+            <span id="mkiXiaoProductCode" class="mki-progress-info-value" style="font-family:'JetBrains Mono',monospace; font-size:12px;">--</span>
+            <button type="button" class="mki-progress-info-copy" data-copy-target="mkiXiaoProductCode" onclick="mkiCopyProgressInfoText(this)" title="复制产品ID" aria-label="复制产品ID"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+          </span>
+        </div>
+        <div class="mki-progress-info-row">
+          <span class="mki-progress-info-label">90天消耗</span>
+          <span id="mkiXiaoProductSpends" class="mki-progress-info-value">--</span>
+        </div>
+      </div>
+    </section>
     <section id="mkiXiaoPreselectionNote" class="mk-preselection-note" hidden></section>
     <section id="mkiXiaoFineAi" class="mki-progress-fine-ai mki-xiao-fine-ai" aria-label="AI 精细评估建议"></section>
     <div class="mki-xiao-field">
