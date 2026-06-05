@@ -1830,7 +1830,15 @@ function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
     : '';
   const detailMargin = '0';
   const hint = check.hint ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.hint) + '</div>' : '';
-  const reason = opts.mode !== 'product-link-combo' && check.reason ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.reason) + '</div>' : '';
+  let reason = '';
+  if (opts.mode !== 'product-link-combo' && check.reason) {
+    const isRejection = String(check.reason).indexOf('管理员打回') >= 0 || String(check.reason).indexOf('打回') >= 0;
+    if (isRejection) {
+      reason = '<div class="tc-readiness-check-rejection-msg" style="font-size:26px; font-weight:bold; color:#0055ff; line-height:1.55; margin-left:' + detailMargin + '; margin-top:6px; overflow-wrap:anywhere; border:2px solid #0055ff; padding:10px; background-color:#e6f0ff; border-radius:6px;">' + tcEsc(check.reason) + '</div>';
+    } else {
+      reason = '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + tcEsc(check.reason) + '</div>';
+    }
+  }
   const evidence = tcRenderReadinessEvidence(check.evidence || [], {domainList: opts.mode === 'product-link-combo'});
   const links = !evidence && Array.isArray(check.links) && check.links.length
     ? '<div style="color:var(--tc-fg-muted); margin-left:' + detailMargin + '; margin-top:2px;">' + check.links.map(function(link) {
