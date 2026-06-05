@@ -630,6 +630,96 @@ def _extract_cn_product_name_from_filename(filename: str | None) -> str | None:
     return None
 
 
+def _is_chinese(text: str | None) -> bool:
+    if not text:
+        return False
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _find_fallback_chinese_name(product_code: str | None) -> str | None:
+    normalized = _normalize_product_code(product_code)
+    if not normalized:
+        return None
+
+    # 1. Try product_name_dictionary
+    try:
+        from appcore.product_name_dictionary import get_names
+        dict_names = get_names([normalized])
+        if dict_names and normalized in dict_names:
+            dict_cn = dict_names[normalized].get("cn_name", "")
+            if _is_chinese(dict_cn):
+                return dict_cn
+    except Exception as e:
+        log.warning("fallback name: get_names failed for %s: %s", normalized, e)
+
+    # 2. Try mingkong_material_daily_snapshots
+    try:
+        rows = query_all(
+            """
+            SELECT DISTINCT mk_product_name, product_name, video_name
+            FROM mingkong_material_daily_snapshots
+            WHERE LOWER(product_code) IN (%s, %s)
+            """,
+            (normalized, f"{normalized}-rjc"),
+        )
+        for r in rows:
+            for field in ("mk_product_name", "product_name"):
+                val = str(r.get(field) or "").strip()
+                if _is_chinese(val):
+                    return val
+            video_name = str(r.get("video_name") or "").strip()
+            extracted = _extract_cn_product_name_from_filename(video_name)
+            if extracted and _is_chinese(extracted):
+                return extracted
+    except Exception as e:
+        log.warning("fallback name: daily snapshots query failed for %s: %s", normalized, e)
+
+    # 3. Try mingkong_material_daily_top100
+    try:
+        rows = query_all(
+            """
+            SELECT DISTINCT mk_product_name, product_name, video_name
+            FROM mingkong_material_daily_top100
+            WHERE LOWER(product_code) IN (%s, %s)
+            """,
+            (normalized, f"{normalized}-rjc"),
+        )
+        for r in rows:
+            for field in ("mk_product_name", "product_name"):
+                val = str(r.get(field) or "").strip()
+                if _is_chinese(val):
+                    return val
+            video_name = str(r.get("video_name") or "").strip()
+            extracted = _extract_cn_product_name_from_filename(video_name)
+            if extracted and _is_chinese(extracted):
+                return extracted
+    except Exception as e:
+        log.warning("fallback name: top100 query failed for %s: %s", normalized, e)
+
+    # 4. Try mingkong_material_preselections
+    try:
+        rows = query_all(
+            """
+            SELECT DISTINCT product_name, video_name
+            FROM mingkong_material_preselections
+            WHERE LOWER(product_code) IN (%s, %s)
+            """,
+            (normalized, f"{normalized}-rjc"),
+        )
+        for r in rows:
+            val = str(r.get("product_name") or "").strip()
+            if _is_chinese(val):
+                return val
+            video_name = str(r.get("video_name") or "").strip()
+            extracted = _extract_cn_product_name_from_filename(video_name)
+            if extracted and _is_chinese(extracted):
+                return extracted
+    except Exception as e:
+        log.warning("fallback name: preselections query failed for %s: %s", normalized, e)
+
+    return None
+
+
 def _build_create_product_payload(
     meta: dict,
     translator_id: int | None,
@@ -646,6 +736,10 @@ def _build_create_product_payload(
         product_asset.get("product_cn_name"),
         product_asset.get("product_name"),
     ) or ""
+    if not _is_chinese(name):
+        fallback_cn = _find_fallback_chinese_name(product_code)
+        if fallback_cn:
+            name = fallback_cn
     product_link = _first_non_empty(meta.get("product_link"), product_asset.get("product_url"))
     main_image = _first_non_empty(
         meta.get("main_image"),
@@ -773,6 +867,21 @@ def import_mk_video(
                 raise DBError(f"create product failed: {e}") from e
     else:
         product_id = existing["id"]
+
+    if not is_new:
+        existing_name = existing.get("name") or ""
+        if not _is_chinese(existing_name):
+            fallback_cn = _find_fallback_chinese_name(normalized)
+            if fallback_cn:
+                try:
+                    execute(
+                        "UPDATE media_products SET name = %s, updated_at = NOW() WHERE id = %s",
+                        (fallback_cn, product_id)
+                    )
+                    log.info("Updated existing product id=%s name to Chinese: %s", product_id, fallback_cn)
+                    existing["name"] = fallback_cn
+                except Exception as e:
+                    log.warning("Failed to update existing product id=%s name to Chinese: %s", product_id, e)
 
     owner_uid = int(translator_id) if is_new else int(existing["user_id"])
     _append_step_result(
