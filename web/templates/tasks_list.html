@@ -132,6 +132,9 @@
 .tc-final-push-confirm-btn { display:inline-flex; align-items:center; justify-content:center; min-height:52px; padding:0 28px; border:none; border-radius:999px; background:var(--tc-accent); color:#fff; font-size:16px; font-weight:800; line-height:1; white-space:nowrap; cursor:pointer; box-shadow:0 8px 18px oklch(55% 0.17 235 / .24); }
 .tc-final-push-confirm-btn:hover { background:var(--tc-accent-hover); }
 .tc-final-push-confirm-btn:disabled { cursor:not-allowed; background:var(--tc-accent); color:#fff; opacity:.78; box-shadow:none; }
+.tc-final-push-reset-btn { display:inline-flex; align-items:center; justify-content:center; min-height:52px; padding:0 28px; border:1px solid var(--tc-border-strong); border-radius:999px; background:var(--tc-bg); color:var(--tc-fg-muted); font-size:16px; font-weight:800; line-height:1; white-space:nowrap; cursor:pointer; box-shadow:0 1px 2px oklch(22% 0.020 235 / .06); transition: all 0.2s ease; }
+.tc-final-push-reset-btn:hover { background:var(--tc-bg-muted); border-color:var(--tc-danger-fg); color:var(--tc-danger-fg); }
+.tc-final-push-reset-btn:disabled { cursor:not-allowed; opacity:.5; }
 .tc-manual-modal-field { margin-bottom:10px; }
 .tc-manual-modal-field label { display:block; font-size:12px; font-weight:700; color:var(--tc-fg-muted); margin-bottom:4px; }
 .tc-manual-modal-status { min-height:18px; margin-top:8px; font-size:12px; color:var(--tc-fg-muted); }
@@ -1787,13 +1790,23 @@ function tcRenderFinalPushConfirmationAction(taskId, check) {
   const label = confirmed ? '已人工最终推送确认' : '人工最终推送确认';
   const disabled = confirmed ? ' disabled' : '';
   const title = confirmed ? '该任务已最终确认，可进入推送条件判断' : '确认视频、封面、文案、商品图和链接均可推送';
+  let resetBtnHtml = '';
+  if (confirmed) {
+    resetBtnHtml = '<button type="button" class="tc-final-push-reset-btn" title="撤销最终推送确认并回退任务状态"'
+      + ' onclick="tcUnconfirmChildStep(' + numericTaskId + ', \'' + tcInlineArg(stepKey) + '\', this)">'
+      + '重置为未确认'
+      + '</button>';
+  }
   return '<div class="tc-final-push-confirm">'
     + '<div class="tc-final-push-confirm-tip">确认后才可推送</div>'
+    + '<div style="display:flex; gap:10px; align-items:center;">'
     + '<button type="button" class="tc-final-push-confirm-btn" title="' + tcAttr(title) + '"'
     + disabled
     + ' onclick="tcConfirmChildStep(' + numericTaskId + ', \'' + tcInlineArg(stepKey) + '\', this)">'
     + tcEsc(label)
     + '</button>'
+    + resetBtnHtml
+    + '</div>'
     + '</div>';
 }
 function tcRenderReadinessCheckRow(id, check, data, task, mediaUrl, options) {
@@ -2338,6 +2351,35 @@ async function tcConfirmChildStep(taskId, stepKey, btn) {
       btn.textContent = oldText || '人工确认';
     }
     alert('人工确认失败：' + (e.message || 'unknown'));
+  }
+}
+async function tcUnconfirmChildStep(taskId, stepKey, btn) {
+  taskId = Number(taskId || 0);
+  stepKey = String(stepKey || '').trim();
+  if (!taskId || !stepKey) return;
+  if (!confirm('确定要重置最终推送人工确认吗？这将会将任务及父任务退回到未完结状态。')) {
+    return;
+  }
+  const oldText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '重置中';
+  }
+  try {
+    await tcFetchJson('/tasks/api/child/' + taskId + '/steps/' + encodeURIComponent(stepKey) + '/unconfirm', {
+      method: 'POST',
+      body: '{}',
+    });
+    await tcRefreshTaskRow(taskId);
+    if (TC_DETAIL_TASK_ID === taskId) {
+      await tcLoadDetail(taskId, {forceRefresh: true, keepContent: true});
+    }
+  } catch (e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText || '重置为未确认';
+    }
+    alert('重置确认失败：' + (e.message || 'unknown'));
   }
 }
 async function tcFetchJson(url, opts) {
