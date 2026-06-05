@@ -237,8 +237,7 @@ LEFT JOIN (
       m.snapshot_at AS sync_at
     FROM (
       SELECT m.*
-      FROM meta_ad_realtime_daily_campaign_metrics m
-      INNER JOIN (
+      FROM (
         SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at
         FROM meta_ad_realtime_daily_campaign_metrics rt
         INNER JOIN (
@@ -252,8 +251,9 @@ LEFT JOIN (
         WHERE rt.data_completeness = 'realtime_partial'
         GROUP BY latest_day.business_date, latest_day.ad_account_id
       ) latest
+      STRAIGHT_JOIN meta_ad_realtime_daily_campaign_metrics m
         ON m.business_date = latest.business_date
-       AND (m.ad_account_id <=> latest.ad_account_id)
+       AND m.ad_account_id = latest.ad_account_id
        AND m.snapshot_at = latest.max_snapshot_at
       WHERE m.data_completeness = 'realtime_partial'
         AND COALESCE(m.spend_usd, 0) > 0
@@ -278,8 +278,7 @@ LEFT JOIN (
       m.snapshot_at AS sync_at
     FROM (
       SELECT m.*
-      FROM meta_ad_realtime_daily_adset_metrics m
-      INNER JOIN (
+      FROM (
         SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at
         FROM meta_ad_realtime_daily_adset_metrics rt
         INNER JOIN (
@@ -293,8 +292,9 @@ LEFT JOIN (
         WHERE rt.data_completeness = 'realtime_partial'
         GROUP BY latest_day.business_date, latest_day.ad_account_id
       ) latest
+      STRAIGHT_JOIN meta_ad_realtime_daily_adset_metrics m
         ON m.business_date = latest.business_date
-       AND (m.ad_account_id <=> latest.ad_account_id)
+       AND m.ad_account_id = latest.ad_account_id
        AND m.snapshot_at = latest.max_snapshot_at
       WHERE m.data_completeness = 'realtime_partial'
         AND COALESCE(m.spend_usd, 0) > 0
@@ -321,8 +321,7 @@ LEFT JOIN (
       m.snapshot_at AS sync_at
     FROM (
       SELECT m.*
-      FROM meta_ad_realtime_daily_ad_metrics m
-      INNER JOIN (
+      FROM (
         SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at
         FROM meta_ad_realtime_daily_ad_metrics rt
         INNER JOIN (
@@ -336,8 +335,9 @@ LEFT JOIN (
         WHERE rt.data_completeness = 'realtime_partial'
         GROUP BY latest_day.business_date, latest_day.ad_account_id
       ) latest
+      STRAIGHT_JOIN meta_ad_realtime_daily_ad_metrics m
         ON m.business_date = latest.business_date
-       AND (m.ad_account_id <=> latest.ad_account_id)
+       AND m.ad_account_id = latest.ad_account_id
        AND m.snapshot_at = latest.max_snapshot_at
       WHERE m.data_completeness = 'realtime_partial'
         AND COALESCE(m.spend_usd, 0) > 0
@@ -589,8 +589,7 @@ LEFT JOIN (
     JOIN media_languages ml ON ml.code = i.lang AND ml.enabled = 1
     JOIN (
       SELECT m.*
-      FROM meta_ad_realtime_daily_ad_metrics m
-      INNER JOIN (
+      FROM (
         SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at
         FROM meta_ad_realtime_daily_ad_metrics rt
         INNER JOIN (
@@ -604,8 +603,9 @@ LEFT JOIN (
         WHERE rt.data_completeness = 'realtime_partial'
         GROUP BY latest_day.business_date, latest_day.ad_account_id
       ) latest
+      STRAIGHT_JOIN meta_ad_realtime_daily_ad_metrics m
         ON m.business_date = latest.business_date
-       AND (m.ad_account_id <=> latest.ad_account_id)
+       AND m.ad_account_id = latest.ad_account_id
        AND m.snapshot_at = latest.max_snapshot_at
       WHERE m.data_completeness = 'realtime_partial'
         AND COALESCE(m.spend_usd, 0) > 0
