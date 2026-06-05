@@ -310,7 +310,7 @@
 .push-col-time { width: var(--push-col-time); }
 .push-col-action { width: var(--push-col-action); }
 .push-table th {
-  text-align: left;
+  text-align: center;
   padding: 10px var(--oc-sp-3);
   background: var(--oc-bg-subtle);
   border-bottom: 1px solid var(--oc-border);
