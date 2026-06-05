@@ -289,6 +289,25 @@ def test_medias_product_table_renders_order_stats_column():
     assert "renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)" in script
 
 
+def test_medias_product_table_uses_compact_sku_and_time_columns():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    template = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "<th>SKU</th>" in script
+    assert "<th>ERP SKU</th>" not in script
+    assert "<th>明空 ID</th>" not in script
+    assert "<th>修改时间</th>" not in script
+    assert '<td class="sku-action-cell">' in script
+    assert 'data-sku-detail="${p.id}"' in script
+    assert "grid.querySelectorAll('[data-sku-detail]')" in script
+    assert "openSkuDetail(product);" in script
+    assert 'class="muted mono product-time-cell"' in script
+    assert 'class="product-time-cell__updated"' in script
+    assert "fmtDateTimeLines(p.updated_at)" in script
+    assert ".sku-action-cell" in template
+    assert ".product-time-cell__updated" in template
+
+
 def test_medias_order_stats_bar_uses_lang_order_and_four_windows():
     html = _run_medias_order_stats_bar_harness(
         {
