@@ -3337,9 +3337,32 @@ def test_pushes_admin_readiness_override_requires_admin(authed_user_client_no_db
     assert resp.status_code == 403
 
 
-def test_pushes_admin_readiness_override_rejects_final_confirmation(
+def test_pushes_admin_readiness_override_confirms_final_confirmation_single_key(
     authed_client_no_db, monkeypatch,
 ):
+    captured = {}
+
+    def fake_admin_override_readiness_key(*, item_id, readiness_key, actor_user_id):
+        captured.update(
+            {
+                "item_id": item_id,
+                "readiness_key": readiness_key,
+                "actor_user_id": actor_user_id,
+            }
+        )
+        return {
+            "item_id": item_id,
+            "task_id": 44,
+            "key": readiness_key,
+            "step_key": "final_push_confirmation",
+            "status": "pending",
+            "readiness": {"final_push_confirmed": True},
+        }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.admin_override_readiness_key",
+        fake_admin_override_readiness_key,
+    )
     monkeypatch.setattr(
         "web.routes.pushes.medias.get_item",
         lambda item_id: {
@@ -3355,5 +3378,10 @@ def test_pushes_admin_readiness_override_rejects_final_confirmation(
         json={"key": "final_push_confirmed"},
     )
 
-    assert resp.status_code == 400
-    assert resp.get_json()["error"] == "invalid_request"
+    assert resp.status_code == 200
+    assert captured == {
+        "item_id": 1001,
+        "readiness_key": "final_push_confirmed",
+        "actor_user_id": 1,
+    }
+    assert resp.get_json()["step_key"] == "final_push_confirmation"
