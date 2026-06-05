@@ -6,10 +6,7 @@
 {% block extra_style %}
 {% include "medias/_roas_styles.html" %}
 
-.main-wrap {
-  height: 100vh !important;
-  overflow-y: hidden !important;
-}
+/* Removed main-wrap layout lock for page scrolling */
 
 /* ────────── Page header ────────── */
 .oc-header { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:0; padding-bottom:var(--oc-sp-5); flex-wrap:wrap; position:sticky; top:56px; z-index:22; background:var(--bg-body,#f2f4f8); }
@@ -672,12 +669,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-modal-foot { display:flex; justify-content:flex-end; gap:var(--oc-sp-2); padding:var(--oc-sp-3) var(--oc-sp-5); border-top:1px solid var(--oc-border); background:var(--oc-bg); }
 
 /* ────────── List wrapper ────────── */
-.oc-list { display:block; width:100%; overflow-x:auto; overflow-y:auto; max-height:calc(100vh - 300px); margin-top:var(--oc-sp-4); }
+.oc-list { display:block; width:100%; overflow-x:auto; margin-top:var(--oc-sp-4); }
 
 /* ────────── Table（列表） ────────── */
 .oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:clip; font-size:13px; table-layout:auto; }
 .oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
-.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; position:sticky; top:0; z-index:2; }
+.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; position:sticky; top:var(--sticky-table-thead-top, 0px); z-index:2; }
 .oc-table-medias { min-width: 2138px; }
 .oc-table-medias th, .oc-table-medias td { padding:8px 5px !important; }
 .oc-table-medias thead th { text-align:center !important; white-space:nowrap !important; }
@@ -3763,7 +3760,8 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     document.documentElement.style.setProperty('--sticky-toolbar-top', toolbarTop + 'px');
     document.documentElement.style.setProperty('--sticky-pager-top', pagerTop + 'px');
     var tableTop = pagerTop + ph + 16; /* 16px list margin-top */
-    list.style.maxHeight = Math.max(window.innerHeight - tableTop - 130, 320) + 'px';
+    // Removed maxHeight lock on list to allow full page scrolling
+    document.documentElement.style.setProperty('--sticky-table-thead-top', tableTop + 'px');
   }
   window.updateMediaStickyOffsets = updateStickyOffsets;
   updateStickyOffsets();
