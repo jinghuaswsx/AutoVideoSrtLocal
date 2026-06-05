@@ -52,6 +52,19 @@ def test_order_profit_uses_shared_analytics_date_range_picker():
     assert "window.AnalyticsDateRangePicker.initAll()" in TEMPLATE
     assert "window.AnalyticsDateRangePicker.syncAll()" in TEMPLATE
 
+
+def test_order_profit_date_range_apply_refreshes_dashboard():
+    """Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md"""
+    assert "Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md" in TEMPLATE
+    assert "document.addEventListener('analytics-date-range:apply'" in TEMPLATE
+    handler = TEMPLATE[
+        TEMPLATE.index("document.addEventListener('analytics-date-range:apply'"):
+        TEMPLATE.index("});", TEMPLATE.index("document.addEventListener('analytics-date-range:apply'")) + 3
+    ]
+    assert "opDateFrom" in handler
+    assert "refreshAll();" in handler
+
+
 def test_order_profit_campaign_product_picker_is_searchable_and_tall():
     assert ".op-product-picker-trigger" in TEMPLATE
     assert "min-height: 60px" in TEMPLATE

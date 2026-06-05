@@ -4142,6 +4142,58 @@
     if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
   }
 
+  function handleAnalyticsDateRangeApply(event) {
+    // Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md
+    var root = event.target && event.target.closest
+      ? event.target.closest('[data-analytics-date-range]')
+      : null;
+    if (!root) return;
+    var startInput = root.querySelector('[data-range-start]');
+    var startId = root.dataset.rangeStartId || (startInput && startInput.id) || '';
+    var adsListLevel = startInput ? startInput.getAttribute('data-ads-list-start') : '';
+    if (adsListLevel) {
+      adsSyncLevelRangeSelection(adsListLevel);
+      if (adsLevelState[adsListLevel]) adsLevelState[adsListLevel].listPage = 1;
+      adsLoadList(adsListLevel);
+      return;
+    }
+    var adsDetailLevel = startInput ? startInput.getAttribute('data-ads-detail-start') : '';
+    if (adsDetailLevel) {
+      adsLoadDetail(adsDetailLevel);
+      return;
+    }
+    switch (startId) {
+      case 'countryStartDate':
+        syncCountryRangeSelection();
+        loadCountryDashboard();
+        return;
+      case 'trueRoasStart':
+        syncTrueRoasRangeSelection();
+        loadTrueRoas();
+        return;
+      case 'dxmStartDate':
+        syncDxmRangeSelection();
+        loadDxmOrders(1);
+        return;
+      case 'adStartDate':
+        syncAdRangeSelection();
+        if (typeof window.loadAdSummary === 'function') window.loadAdSummary();
+        return;
+      case 'adUnmatchedStartDate':
+        syncAdUnmatchedRangeSelection();
+        loadAdUnmatchedCampaigns();
+        return;
+      case 'amsListFrom':
+        if (typeof window.__amsLoadList === 'function') window.__amsLoadList();
+        return;
+      case 'metaAdSyncStartDate':
+        return;
+      default:
+        return;
+    }
+  }
+  document.addEventListener('analytics-date-range:apply', handleAnalyticsDateRangeApply);
+
   function addDays(date, days) {
     var next = new Date(date);
     next.setDate(next.getDate() + days);

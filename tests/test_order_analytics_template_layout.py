@@ -59,6 +59,41 @@ def test_order_analytics_uses_shared_date_range_picker_asset():
     assert "window.AnalyticsDateRangePicker.syncAll()" in template
 
 
+def test_order_analytics_auto_applies_date_range_for_non_change_backed_panels():
+    """Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md"""
+    template = _template_source()
+    handler = template[
+        template.index("function handleAnalyticsDateRangeApply(event)"):
+        template.index("document.addEventListener('analytics-date-range:apply', handleAnalyticsDateRangeApply);")
+    ]
+
+    expected_snippets = [
+        "Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md",
+        "case 'countryStartDate':",
+        "loadCountryDashboard();",
+        "case 'trueRoasStart':",
+        "loadTrueRoas();",
+        "case 'dxmStartDate':",
+        "loadDxmOrders(1);",
+        "case 'adStartDate':",
+        "window.loadAdSummary();",
+        "case 'adUnmatchedStartDate':",
+        "loadAdUnmatchedCampaigns();",
+        "case 'amsListFrom':",
+        "window.__amsLoadList();",
+        "case 'metaAdSyncStartDate':",
+        "return;",
+        "adsLoadList(adsListLevel);",
+        "adsLoadDetail(adsDetailLevel);",
+    ]
+    for snippet in expected_snippets:
+        assert snippet in handler, f"missing date range apply handler snippet: {snippet}"
+
+    assert "case 'realtimeStartDate':" not in handler
+    assert "case 'nplStartDate':" not in handler
+    assert "case 'oadStartDate':" not in handler
+
+
 def test_new_product_launch_analysis_tab_is_next_to_realtime():
     template = _template_source()
     topbar_start = template.index('<span class="oa-tabs oa-tabs-topbar"')
