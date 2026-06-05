@@ -2428,7 +2428,12 @@
         type: 'button',
         class: 'btn-push btn-collapse-workbench',
       }, '收起推送结果');
+      const btnCloseWindow = el('button', {
+        type: 'button',
+        class: 'btn-push btn-close-window',
+      }, '关闭窗口');
       workbenchFooter.appendChild(btnCollapseWorkbench);
+      workbenchFooter.appendChild(btnCloseWindow);
       wrapper.appendChild(workbenchFooter);
 
       btnCollapseWorkbench.addEventListener('click', () => {
@@ -2436,6 +2441,7 @@
         shell.hidden = false;
         overlay.classList.remove('pm-overlay--pipeline');
       });
+      btnCloseWindow.addEventListener('click', close);
 
       return wrapper;
     }

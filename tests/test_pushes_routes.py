@@ -2461,8 +2461,9 @@ def test_pushes_assets_include_quality_check_panel():
     assert ".pm-quality-summary-row" in style
     assert "grid-template-columns: 44px minmax(0, 1fr)" in style
     assert "text-overflow: ellipsis" in style
-    assert "width: 80vw" in style
-    assert "height: 80vh" in style
+    assert "width: calc(100vw - 48px)" in style
+    assert "height: calc(100vh - 48px)" in style
+
 
 
 def test_pushes_assets_include_rework_modal_controls():
@@ -2608,6 +2609,12 @@ def test_pushes_modal_material_button_opens_three_step_progress_workbench():
     assert "font-size: 2em" in style
     assert "@keyframes pm-pipeline-spin" in style
     assert "animation: pm-pipeline-spin" in style
+    
+    # Verify close window button elements and styles
+    assert "btnCloseWindow = el('button'" in script
+    assert "btnCloseWindow.addEventListener('click', close)" in script
+    assert ".btn-close-window {" in style
+    assert "gap: var(--oc-sp-4);" in style
 
 
 # ================================================================

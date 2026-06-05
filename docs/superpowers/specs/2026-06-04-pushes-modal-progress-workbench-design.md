@@ -43,3 +43,8 @@ The workbench lets the operator see the request JSON, the returned data, and the
 - Frontend-only presentation change in `web/static/pushes.js` and `web/static/pushes.css`.
 - Keep the existing manual `推送文案` and `推送链接` tabs unchanged for review and retry.
 - Keep the backend chained push contract from `2026-06-03-pushes-material-text-link-chain-design.md`.
+
+## Test Coverage
+
+- `tests/test_pushes_routes.py` asserts the full-size modal envelope and the progress result collapse / reopen controls.
+- `tests/test_pushes_ui_assets.py` keeps static frontend asset coverage for the push modal.
