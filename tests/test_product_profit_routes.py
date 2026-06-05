@@ -265,10 +265,53 @@ def test_countries_json_returns_us_gb_plus_enabled_language_countries(
     assert resp.status_code == 200
     countries = resp.get_json()["countries"]
     assert len(countries) == 9
-    assert countries[0] == {"country": "US", "lang": "en", "label": "美国"}
-    assert countries[1] == {"country": "GB", "lang": "en", "label": "英国"}
-    assert {"country": "DE", "lang": "de", "label": "德国"} in countries
-    assert {"country": "FR", "lang": "fr", "label": "法国"} in countries
+    assert countries[0] == {"country": "US", "lang": "en", "label": "美国", "orders": 0, "units": 0}
+    assert countries[1] == {"country": "GB", "lang": "en", "label": "英国", "orders": 0, "units": 0}
+    assert {"country": "DE", "lang": "de", "label": "德国", "orders": 0, "units": 0} in countries
+    assert {"country": "FR", "lang": "fr", "label": "法国", "orders": 0, "units": 0} in countries
+
+
+def test_countries_json_accepts_parameters_and_queries(
+    authed_client_no_db, monkeypatch,
+):
+    """验证 /countries.json 接口接收筛选参数并正确拼装查询。"""
+    captured: list = []
+
+    def fake_query(sql, args=()):
+        captured.append((sql, args))
+        return [
+            {"buyer_country": "US", "order_count": 10, "unit_count": 15},
+            {"buyer_country": "GB", "order_count": 5, "unit_count": 8},
+        ]
+
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.query",
+        fake_query,
+    )
+    monkeypatch.setattr(
+        "web.routes.product_profit_report.medias.list_enabled_languages_kv",
+        lambda: [("en", "英语"), ("de", "德语")],
+    )
+
+    resp = authed_client_no_db.get(
+        "/order-analytics/product-profit/countries.json"
+        "?product_id=42&date_from=2026-05-01&date_to=2026-05-07&site_code=newjoy"
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    countries = data["countries"]
+
+    # 验证返回包含了销量数据
+    us_pill = next(c for c in countries if c["country"] == "US")
+    assert us_pill["orders"] == 10
+    assert us_pill["units"] == 15
+
+    # 验证 SQL 参数被正确拼装
+    assert len(captured) == 1
+    sql, args = captured[0]
+    assert "opl.product_id = %s" in sql
+    assert "dol.site_code = %s" in sql
+    assert args == (date(2026, 5, 1), date(2026, 5, 7), 42, "newjoy")
 
 
 # ---------------------------------------------------------------------------
