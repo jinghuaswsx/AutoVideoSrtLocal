@@ -670,17 +670,23 @@ def _insert_meta_realtime_ad_metric(
     clicks: int,
     raw: dict[str, Any],
 ) -> None:
+    from appcore.order_analytics.ad_market_country import extract_market_country_from_names
+    country_code = extract_market_country_from_names(
+        ad_name=ad_name,
+        adset_name=adset_name,
+        campaign_name=campaign_name,
+    )
     execute(
         "INSERT INTO meta_ad_realtime_daily_ad_metrics "
         "(import_run_id, business_date, snapshot_at, data_completeness, ad_account_id, ad_account_name, "
         "campaign_id, campaign_name, normalized_campaign_code, adset_id, adset_name, normalized_adset_code, "
-        "ad_id, ad_name, normalized_ad_code, result_count, spend_usd, purchase_value_usd, impressions, clicks, raw_json) "
-        "VALUES (%s,%s,%s,'realtime_partial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+        "ad_id, ad_name, normalized_ad_code, country_code, result_count, spend_usd, purchase_value_usd, impressions, clicks, raw_json) "
+        "VALUES (%s,%s,%s,'realtime_partial',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
         "ON DUPLICATE KEY UPDATE import_run_id=VALUES(import_run_id), data_completeness=VALUES(data_completeness), "
         "ad_account_name=VALUES(ad_account_name), campaign_id=VALUES(campaign_id), campaign_name=VALUES(campaign_name), "
         "normalized_campaign_code=VALUES(normalized_campaign_code), adset_id=VALUES(adset_id), "
         "adset_name=VALUES(adset_name), normalized_adset_code=VALUES(normalized_adset_code), "
-        "ad_name=VALUES(ad_name), normalized_ad_code=VALUES(normalized_ad_code), "
+        "ad_name=VALUES(ad_name), normalized_ad_code=VALUES(normalized_ad_code), country_code=VALUES(country_code), "
         "result_count=VALUES(result_count), spend_usd=VALUES(spend_usd), "
         "purchase_value_usd=VALUES(purchase_value_usd), impressions=VALUES(impressions), "
         "clicks=VALUES(clicks), raw_json=VALUES(raw_json), updated_at=NOW()",
@@ -699,6 +705,7 @@ def _insert_meta_realtime_ad_metric(
             ad_id,
             ad_name,
             normalized_ad_code,
+            country_code,
             result_count,
             spend,
             purchase_value,

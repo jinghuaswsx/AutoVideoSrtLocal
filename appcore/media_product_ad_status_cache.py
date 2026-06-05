@@ -623,6 +623,42 @@ LEFT JOIN (
        OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
        OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
        OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
+       OR (
+         LOWER(i.lang) = CASE
+           WHEN m.country_code IS NOT NULL AND m.country_code <> '' THEN
+             CASE UPPER(m.country_code)
+               WHEN 'US' THEN 'en'
+               WHEN 'GB' THEN 'en'
+               WHEN 'UK' THEN 'en'
+               WHEN 'AU' THEN 'en'
+               WHEN 'CA' THEN 'en'
+               WHEN 'IE' THEN 'en'
+               WHEN 'NZ' THEN 'en'
+               WHEN 'DE' THEN 'de'
+               WHEN 'AT' THEN 'de'
+               WHEN 'FR' THEN 'fr'
+               WHEN 'ES' THEN 'es'
+               WHEN 'IT' THEN 'it'
+               WHEN 'NL' THEN 'nl'
+               WHEN 'SE' THEN 'sv'
+               WHEN 'FI' THEN 'fi'
+               WHEN 'JP' THEN 'ja'
+               WHEN 'KR' THEN 'ko'
+               WHEN 'BR' THEN 'pt-br'
+               WHEN 'PT' THEN 'pt'
+               ELSE NULL
+             END
+           WHEN m.ad_name LIKE '%%美国%%' OR m.ad_name LIKE '%%英国%%' OR m.ad_name LIKE '%%加拿大%%' OR m.ad_name LIKE '%%澳大利亚%%' OR m.ad_name LIKE '%%澳洲%%' OR m.ad_name LIKE '%%新西兰%%' OR m.ad_name LIKE '%%(US)%%' OR m.ad_name LIKE '%%(UK)%%' OR m.ad_name LIKE '%%(GB)%%' OR m.ad_name LIKE '%%(CA)%%' OR m.ad_name LIKE '%%(AU)%%' OR m.ad_name LIKE '%%(NZ)%%' THEN 'en'
+           WHEN m.ad_name LIKE '%%德国%%' OR m.ad_name LIKE '%%(DE)%%' THEN 'de'
+           WHEN m.ad_name LIKE '%%法国%%' OR m.ad_name LIKE '%%(FR)%%' THEN 'fr'
+           WHEN m.ad_name LIKE '%%西班牙%%' OR m.ad_name LIKE '%%(ES)%%' THEN 'es'
+           WHEN m.ad_name LIKE '%%意大利%%' OR m.ad_name LIKE '%%(IT)%%' THEN 'it'
+           WHEN m.ad_name LIKE '%%荷兰%%' OR m.ad_name LIKE '%%(NL)%%' THEN 'nl'
+           WHEN m.ad_name LIKE '%%日本%%' OR m.ad_name LIKE '%%(JP)%%' THEN 'ja'
+           WHEN m.ad_name LIKE '%%葡萄牙%%' OR m.ad_name LIKE '%%(PT)%%' THEN 'pt'
+           ELSE NULL
+         END
+       )
      )
     WHERE i.deleted_at IS NULL
   ) matched
