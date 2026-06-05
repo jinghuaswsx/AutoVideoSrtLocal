@@ -1161,7 +1161,7 @@ def _cover_provider_config_code(provider: str) -> str:
     if normalized == "gemini_aistudio":
         return "gemini_aistudio_image"
     if normalized == "gemini_vertex_adc":
-        return "gemini_vertex_adc_image"
+        return "gemini_cloud_image"
     raise VideoCoverGenerationError(f"未知封面供应商：{provider}")
 
 
@@ -1383,7 +1383,7 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
         replay["reason"] = "该供应商暂不支持调试生成"
         return full_request, replay
 
-    if provider in {"gemini_aistudio", "gemini_vertex_adc"}:
+    if provider in {"gemini_aistudio", "gemini_vertex"}:
         full_request = {
             "method": "SDK",
             "url": provider,

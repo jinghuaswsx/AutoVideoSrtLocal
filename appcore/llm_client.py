@@ -16,7 +16,6 @@ _PROXY_REQUIRED_PROVIDERS = {
     "anthropic",
     "gemini_aistudio",
     "gemini_vertex",
-    "gemini_vertex_adc",
     "openai",
     "openrouter",
 }
@@ -82,7 +81,7 @@ def _search_tools_payload(provider: str, enabled: bool | None) -> list[dict] | N
 def _url_context_tools_payload(provider: str, enabled: bool | None) -> list[dict] | None:
     if not enabled:
         return None
-    if (provider or "").strip().lower() in {"gemini_aistudio", "gemini_vertex", "gemini_vertex_adc"}:
+    if (provider or "").strip().lower() in {"gemini_aistudio", "gemini_vertex"}:
         return [{"url_context": {}}]
     return None
 

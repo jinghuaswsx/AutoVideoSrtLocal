@@ -103,18 +103,9 @@ def _call_vertex_json(
     extra = provider_cfg.extra_config or {}
     project = (extra.get("project") or "").strip()
     location = (extra.get("location") or "global").strip() or "global"
-
-    if provider_config_code == "gemini_vertex_adc_text":
-        api_key = ""
-        if not project:
-            raise RuntimeError(
-                "Missing provider config gemini_vertex_adc_text.extra_config.project; "
-                "set it in /settings provider access."
-            )
-
-    if provider_config_code != "gemini_vertex_adc_text" and not (api_key or project):
+    if not (api_key or project):
         raise RuntimeError(
-            "缺少供应商配置 gemini_cloud_text.api_key 或 extra_config.project，"
+            f"缺少供应商配置 {provider_config_code}.api_key 或 extra_config.project，"
             "请在 /settings 的「服务商接入」页填写。"
         )
 

@@ -13,7 +13,6 @@ provider_code 枚举：
 from appcore.llm_providers.base import LLMAdapter
 from appcore.llm_providers.gemini_aistudio_adapter import GeminiAIStudioAdapter
 from appcore.llm_providers.gemini_vertex_adapter import (
-    GeminiVertexADCAdapter,
     GeminiVertexAdapter,
 )
 from appcore.llm_providers.openrouter_adapter import DoubaoAdapter, OpenRouterAdapter
@@ -23,7 +22,6 @@ PROVIDER_ADAPTERS: dict[str, LLMAdapter] = {
     "doubao": DoubaoAdapter(),
     "gemini_aistudio": GeminiAIStudioAdapter(),
     "gemini_vertex": GeminiVertexAdapter(),
-    "gemini_vertex_adc": GeminiVertexADCAdapter(),
 }
 
 

@@ -666,18 +666,18 @@
     const channel = String(metadata.channel || '').toLowerCase();
     if (channel === 'antigravity') return 'antigravity';
     if (channel === 'skill') return 'skill';
-    if (channel === 'adc' || channel) return channel || 'adc';
+    if (channel === 'adc' || channel === 'cloud' || channel) return channel || 'cloud';
     const provider = String(metadata.provider || '').toLowerCase();
     const model = String(metadata.model || '').toLowerCase();
-    if (provider || model) return 'adc';
+    if (provider || model) return 'cloud';
     return '';
   }
 
   function channelBadge(result) {
     const ch = detectChannel(result);
     if (!ch) return '';
-    const labels = { adc: 'ADC', antigravity: 'Antigravity', skill: 'SKILL', scheduled: 'Auto' };
-    const clsMap = { antigravity: 'is-antigravity', adc: 'is-adc', skill: 'is-skill', scheduled: 'is-scheduled' };
+    const labels = { adc: 'ADC', cloud: 'Vertex API', antigravity: 'Antigravity', skill: 'SKILL', scheduled: 'Auto' };
+    const clsMap = { antigravity: 'is-antigravity', adc: 'is-adc', cloud: 'is-adc', skill: 'is-skill', scheduled: 'is-scheduled' };
     const cls = clsMap[ch] || 'is-unknown';
     const label = labels[ch] || ch.toUpperCase();
     return `<span class="fine-ai-channel-badge ${cls}" title="评估渠道：${escapeHtml(label)}">${escapeHtml(label)}</span>`;

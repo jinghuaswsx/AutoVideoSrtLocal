@@ -15,14 +15,6 @@ from typing import Any
 from appcore.db import execute, query, query_one
 from appcore.llm_use_cases import USE_CASES, get_use_case
 
-VERTEX_ADC_ALLOWED_USE_CASES = frozenset({
-    "video_score.run",
-    "video_csk.analyze",
-    "voice_selection.assess",
-    "fine_ai_evaluation.product_facts",
-    "fine_ai_evaluation.country",
-})
-
 META_HOT_POSTS_OPENROUTER_USE_CASES = frozenset({
     "meta_hot_posts.categorize",
     "meta_hot_posts.translate_message",
@@ -55,10 +47,7 @@ def _normalize_binding_provider(use_case_code: str, provider: str, model: str) -
         if provider in {"gemini_vertex_adc", "gemini_vertex", "gemini_aistudio", "openrouter"}:
             return "openrouter", _to_openrouter_google_model(model)
     if provider == "gemini_vertex_adc":
-        if use_case_code in VERTEX_ADC_ALLOWED_USE_CASES:
-            provider = "gemini_vertex_adc"
-        else:
-            provider = "gemini_aistudio"
+        provider = "gemini_vertex"
         model = _strip_google_prefix(model)
     return provider, model
 

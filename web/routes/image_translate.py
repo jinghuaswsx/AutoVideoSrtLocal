@@ -24,7 +24,6 @@ from appcore import image_translate_settings as its
 _BACKEND_LABELS = {
     "aistudio":   "Google AI Studio",
     "cloud":      "Google Cloud (Vertex AI)",
-    "cloud_adc":  "Google Vertex AI (ADC)",
     "openrouter": "OpenRouter",
     "doubao":     "豆包 ARK（Seedream）",
 }

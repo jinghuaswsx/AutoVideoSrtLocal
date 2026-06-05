@@ -79,7 +79,7 @@
 
     function enforceListImageSize(channel) {
       if (!imageSizeRow || !imageSizeEl || !imageSizePills) return;
-      var supportsImageSize = channel === "openrouter" || channel === "cloud" || channel === "cloud_adc";
+      var supportsImageSize = channel === "openrouter" || channel === "cloud";
       if (supportsImageSize) {
         imageSizeRow.style.display = "block";
       } else {
@@ -646,7 +646,7 @@
 
     function enforceRerunImageSize(channel) {
       if (!rerunImageSizeRow || !rerunImageSizeValue || !rerunImageSizePills) return;
-      var supportsImageSize = channel === "openrouter" || channel === "cloud" || channel === "cloud_adc";
+      var supportsImageSize = channel === "openrouter" || channel === "cloud";
       if (supportsImageSize) {
         rerunImageSizeRow.style.display = "block";
       } else {

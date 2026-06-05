@@ -95,7 +95,7 @@ class FineAiEvaluationService:
         product_url_override: str | None = None,
         model_profile: str = fine_ai_model_config.MANUAL_PROFILE,
         user_id: int | None = None,
-        channel: str = "adc",
+        channel: str = "cloud",
     ) -> dict[str, Any]:
         country_codes = normalize_country_codes(countries)
         model_config = fine_ai_model_config.get_profile_config(model_profile)
@@ -124,7 +124,7 @@ class FineAiEvaluationService:
             "frontend": {},
             "metadata": {
                 "schema_version": "1.0",
-                "channel": str(channel or "adc"),
+                "channel": str(channel or "cloud"),
                 "model_profile": model_config["profile"],
                 "model": model_config["model"],
                 "provider": model_config["provider"],
@@ -171,7 +171,7 @@ class FineAiEvaluationService:
         card_video_duration_seconds: Any = None,
         model_profile: str = fine_ai_model_config.MANUAL_PROFILE,
         user_id: int | None = None,
-        channel: str = "adc",
+        channel: str = "cloud",
     ) -> dict[str, Any]:
         product_url = str(product_link or "").strip()
         if not product_url:
@@ -224,7 +224,7 @@ class FineAiEvaluationService:
             "frontend": {},
             "metadata": {
                 "schema_version": "1.0",
-                "channel": str(channel or "adc"),
+                "channel": str(channel or "cloud"),
                 "model_profile": model_config["profile"],
                 "model": model_config["model"],
                 "provider": model_config["provider"],
@@ -2146,7 +2146,7 @@ def _build_result_payload(run: dict[str, Any], countries: dict[str, dict[str, An
         "evaluation_run_id": run["evaluation_run_id"],
         "product_id": str(run.get("product_id") or ""),
         "status": run.get("status") or "queued",
-        "channel": str(metadata.get("channel") or "adc"),
+        "channel": str(metadata.get("channel") or "cloud"),
         "created_at": run.get("created_at"),
         "updated_at": run.get("updated_at"),
         "completed_at": run.get("completed_at"),
