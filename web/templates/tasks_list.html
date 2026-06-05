@@ -679,6 +679,17 @@
       </div>
     </div>
   </div>
+
+  <div id="tcConfirmModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:2000;">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; border-radius:12px; padding:24px; width:440px; max-width:90vw; box-shadow:0 10px 25px rgba(0,0,0,0.15);">
+      <h3 style="margin:0 0 16px; font-size:16px; font-weight:700;">确认操作</h3>
+      <div id="tcConfirmModalBody" style="margin-bottom:24px; font-size:14px; color:var(--tc-fg); line-height:1.5;"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end;">
+        <button class="tc-btn" id="tcConfirmModalCancelBtn">取消</button>
+        <button class="tc-btn tc-btn--primary" id="tcConfirmModalConfirmBtn">确定</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -837,6 +848,36 @@ function tcStatsOnDateChange() {
   });
   
   tcRefreshStatsTable();
+}
+
+function tcConfirm(message) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('tcConfirmModal');
+    const body = document.getElementById('tcConfirmModalBody');
+    const confirmBtn = document.getElementById('tcConfirmModalConfirmBtn');
+    const cancelBtn = document.getElementById('tcConfirmModalCancelBtn');
+    if (!modal || !body || !confirmBtn || !cancelBtn) {
+      resolve(confirm(message));
+      return;
+    }
+    body.textContent = message;
+    modal.style.display = 'block';
+    function cleanup() {
+      modal.style.display = 'none';
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+    }
+    function onConfirm() {
+      cleanup();
+      resolve(true);
+    }
+    function onCancel() {
+      cleanup();
+      resolve(false);
+    }
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+  });
 }
 
 function tcEsc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
@@ -2699,7 +2740,8 @@ async function tcChangeAssignee(taskId, selectEl, oldAssigneeId) {
   const newAssigneeId = parseInt(selectEl.value);
   if (!newAssigneeId) return;
   const newAssigneeName = selectEl.options[selectEl.selectedIndex].text;
-  if (!confirm(`确定要将该任务的负责人修改为【${newAssigneeName}】吗？`)) {
+  const confirmed = await tcConfirm(`确定要将该任务的负责人修改为【${newAssigneeName}】吗？`);
+  if (!confirmed) {
     selectEl.value = oldAssigneeId;
     return;
   }
