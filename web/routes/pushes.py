@@ -602,6 +602,12 @@ def api_reject_to_task(item_id: int):
         },
     )
     try:
+        from appcore import push_quality_checks
+        push_quality_checks.delete_for_item(item_id)
+    except Exception:
+        log.exception("delete push quality checks failed item_id=%s", item_id)
+
+    try:
         pushes.refresh_push_status_cache_for_item(item_id)
     except Exception:
         log.debug("refresh push status cache failed item_id=%s", item_id, exc_info=True)

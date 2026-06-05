@@ -204,6 +204,15 @@ def latest_for_item(item_id: int) -> dict[str, Any] | None:
     return _normalize_row(row)
 
 
+def delete_for_item(item_id: int) -> None:
+    ensure_table()
+    execute(
+        "DELETE FROM media_push_quality_checks WHERE item_id=%s",
+        (int(item_id),),
+    )
+
+
+
 def rerun_existing_checked_items(
     *,
     limit: int | None = None,

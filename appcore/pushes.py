@@ -935,6 +935,24 @@ def get_push_status_cache_map(item_ids: list[int] | set[int] | tuple[int, ...]) 
     return result
 
 
+import threading
+
+_EVALUATING_ITEM_IDS: set[int] = set()
+_EVALUATING_LOCK = threading.Lock()
+
+
+def _run_evaluate_item_safely(item_id: int) -> None:
+    try:
+        from appcore import push_quality_checks
+        push_quality_checks.evaluate_item(item_id, source="auto")
+        refresh_push_status_cache_for_item(item_id)
+    except Exception:
+        log.exception("async push quality check failed for item_id=%s", item_id)
+    finally:
+        with _EVALUATING_LOCK:
+            _EVALUATING_ITEM_IDS.discard(item_id)
+
+
 def refresh_push_status_cache_rows(rows: list[dict] | tuple[dict, ...]) -> dict[int, dict[str, Any]]:
     rows = list(rows or [])
     if not rows:
@@ -947,6 +965,32 @@ def refresh_push_status_cache_rows(rows: list[dict] | tuple[dict, ...]) -> dict[
         if _safe_int(row.get("id"))
     ]
     _upsert_push_status_cache_entries(entries)
+
+    # 异步触发自动质量评估
+    try:
+        from appcore import push_quality_checks
+        row_map = { _safe_int(r.get("id")): r for r in rows if _safe_int(r.get("id")) }
+        for entry in entries:
+            item_id = entry["item_id"]
+            status = entry["status"]
+            if status == STATUS_PENDING:
+                row = row_map.get(item_id)
+                if not row:
+                    continue
+                product = _push_product_shape_from_row(row)
+                if not push_quality_checks.has_reusable_auto_result_for_item(row, product):
+                    with _EVALUATING_LOCK:
+                        if item_id in _EVALUATING_ITEM_IDS:
+                            continue
+                        _EVALUATING_ITEM_IDS.add(item_id)
+                    log.info("trigger async push quality check for item_id=%s because it is pending and has no reusable result", item_id)
+                    threading.Thread(
+                        target=lambda i=item_id: _run_evaluate_item_safely(i),
+                        daemon=True
+                    ).start()
+    except Exception:
+        log.warning("failed to trigger async push quality check", exc_info=True)
+
     return {
         int(entry["item_id"]): {
             "item_id": int(entry["item_id"]),

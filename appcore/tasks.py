@@ -3590,6 +3590,12 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
             raise
     finally:
         conn.close()
+    import threading
+    threading.Thread(
+        target=lambda: _refresh_push_status_cache_for_child_task(int(task_id), row),
+        daemon=True
+    ).start()
+
     return {
         "completed": False,
         "submitted": True,
@@ -4246,6 +4252,22 @@ def approve_child(*, task_id: int, actor_user_id: int, is_admin: bool = False) -
             raise
     finally:
         conn.close()
+
+    try:
+        row = query_one(
+            "SELECT id, parent_task_id, status, assignee_id, "
+            "media_product_id, media_item_id, country_code "
+            "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
+            (int(task_id),),
+        )
+        if row:
+            import threading
+            threading.Thread(
+                target=lambda: _refresh_push_status_cache_for_child_task(int(task_id), row),
+                daemon=True
+            ).start()
+    except Exception:
+        log.exception("refresh push cache after approve_child failed task_id=%s", task_id)
 
 
 def cancel_parent(*, task_id: int, actor_user_id: int, reason: str) -> None:
