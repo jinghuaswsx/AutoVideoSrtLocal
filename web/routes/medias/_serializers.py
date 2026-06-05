@@ -28,27 +28,27 @@ def _serialize_product_skus(
     *,
     cost_inputs: dict | None = None,
     rmb_per_usd=None,
-    xmyc_index: dict[str, dict] | None = None,
+    yuncang_index: dict[str, dict] | None = None,
     sku_actual_roas_index: dict[str, dict] | None = None,
 ) -> list[dict]:
-    """xmyc_index 是 sku → {unit_price, goods_name, stock_available, ...} 字典。
-    若给了 xmyc_index，每行的 dianxiaomi_sku 会去查一次 xmyc 采购价（RMB），
+    """yuncang_index 是 sku → {unit_price, goods_name, stock_available, ...} 字典。
+    若给了 yuncang_index，每行的 dianxiaomi_sku 会去查一次店小秘云仓采购价（RMB），
     并优先用 variant 级 unit_price 替换 product 级 purchase_price 算保本 ROAS。"""
     out: list[dict] = []
     for row in rows or []:
         dxm_sku = (row.get("dianxiaomi_sku") or "").strip()
-        xmyc_info = (xmyc_index or {}).get(dxm_sku) if dxm_sku else None
+        yuncang_info = (yuncang_index or {}).get(dxm_sku) if dxm_sku else None
         actual_roas = (sku_actual_roas_index or {}).get(dxm_sku) if dxm_sku else None
         manual_unit_price = row.get("manual_unit_price_rmb")
-        xmyc_unit_price = (
+        yuncang_unit_price = (
             manual_unit_price
             if manual_unit_price is not None
-            else (xmyc_info or {}).get("unit_price")
+            else (yuncang_info or {}).get("unit_price")
         )
         manual_goods_name = (row.get("manual_goods_name") or "").strip()
-        xmyc_goods_name = (
+        yuncang_goods_name = (
             manual_goods_name
-            or (xmyc_info or {}).get("goods_name")
+            or (yuncang_info or {}).get("goods_name")
             or ""
         )
         manual_override = bool(row.get("manual_override") or 0)
@@ -75,21 +75,20 @@ def _serialize_product_skus(
             "manual_edited_by": row.get("manual_edited_by"),
             "manual_edited_at": row["manual_edited_at"].isoformat() if row.get("manual_edited_at") else None,
             "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
-            "xmyc_unit_price_rmb": _json_number_or_none(xmyc_unit_price),
-            "xmyc_goods_name": xmyc_goods_name,
-            "xmyc_stock_available": (xmyc_info or {}).get("stock_available"),
-            "xmyc_match_type": (xmyc_info or {}).get("match_type") or "",
-            "xmyc_sku_code": (xmyc_info or {}).get("sku_code") or "",
+            "yuncang_unit_price_rmb": _json_number_or_none(yuncang_unit_price),
+            "yuncang_goods_name": yuncang_goods_name,
+            "yuncang_stock_available": (yuncang_info or {}).get("stock_available"),
+            "yuncang_sku_code": (yuncang_info or {}).get("sku_code") or "",
             "actual_breakeven_roas": actual_roas,
         }
 
         if cost_inputs is not None and row.get("shopify_price") is not None:
             try:
                 rate = product_roas.normalize_rmb_per_usd(rmb_per_usd) if rmb_per_usd is not None else product_roas.DEFAULT_RMB_PER_USD
-                # variant 级采购价：优先 xmyc.unit_price，否则用产品级
+                # variant 级采购价：优先店小秘云仓 unit_price，否则用产品级
                 effective_purchase = (
-                    xmyc_unit_price
-                    if xmyc_unit_price is not None
+                    yuncang_unit_price
+                    if yuncang_unit_price is not None
                     else cost_inputs.get("purchase_price")
                 )
                 calc = product_roas.calculate_break_even_roas(
@@ -103,7 +102,7 @@ def _serialize_product_skus(
                 calc["purchase_basis"] = (
                     "manual_variant"
                     if manual_unit_price is not None
-                    else ("xmyc_variant" if xmyc_unit_price is not None else "product_level")
+                    else ("yuncang_variant" if yuncang_unit_price is not None else "product_level")
                 )
                 item["roas_calculation"] = calc
             except Exception:
@@ -158,7 +157,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
                        raw_sources_count: int | None = None,
                        roas_rmb_per_usd=None,
                        skus: list[dict] | None = None,
-                       xmyc_index: dict[str, dict] | None = None,
+                       yuncang_index: dict[str, dict] | None = None,
                        sku_actual_roas_index: dict[str, dict] | None = None,
                        include_product_link_domains: bool = False) -> dict:
     if covers is None:
@@ -238,7 +237,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
                 "standalone_shipping_fee": p.get("standalone_shipping_fee"),
             },
             rmb_per_usd=roas_rmb_per_usd,
-            xmyc_index=xmyc_index,
+            yuncang_index=yuncang_index,
             sku_actual_roas_index=sku_actual_roas_index,
         ),
         "user_id": int(p["user_id"]) if p.get("user_id") is not None else None,

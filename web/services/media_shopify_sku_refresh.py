@@ -27,7 +27,7 @@ def build_refresh_product_shopify_sku_response(
     update_product_fn: Callable[..., None],
     replace_product_skus_fn: Callable[..., None],
     list_product_skus_fn: Callable[[int], list[dict]],
-    list_xmyc_unit_prices_fn: Callable[[list[str]], dict],
+    list_yuncang_unit_prices_fn: Callable[[list[str]], dict],
     get_configured_rmb_per_usd_fn: Callable[[], float],
     serialize_product_skus_fn: Callable[..., list[dict]],
     record_fetch_failure_fn: Callable[..., int] | None = None,
@@ -87,7 +87,7 @@ def build_refresh_product_shopify_sku_response(
     replace_product_skus_fn(product_id, pairs, source="manual")
 
     fresh_skus = list_product_skus_fn(product_id)
-    xmyc_index = list_xmyc_unit_prices_fn([
+    yuncang_index = list_yuncang_unit_prices_fn([
         sku.get("dianxiaomi_sku") or "" for sku in fresh_skus
     ])
     cost_inputs = {
@@ -100,7 +100,7 @@ def build_refresh_product_shopify_sku_response(
         fresh_skus,
         cost_inputs=cost_inputs,
         rmb_per_usd=get_configured_rmb_per_usd_fn(),
-        xmyc_index=xmyc_index,
+        yuncang_index=yuncang_index,
     )
     return RefreshShopifySkuResponse(
         {

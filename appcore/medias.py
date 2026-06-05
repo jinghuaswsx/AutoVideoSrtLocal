@@ -475,14 +475,12 @@ def _media_product_owner_name_expr() -> str:
     if row:
         return "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)"
     return "u.username"
-XMYC_MATCH_FILTERS = ("all", "matched", "unmatched")
 ROAS_STATUS_FILTERS = ("all", "complete", "missing_estimated", "missing_actual")
 DELIVERY_STATUS_FILTERS = media_product_ad_status_cache.DELIVERY_STATUS_FILTERS
 
 
 def list_products(user_id: int | None, keyword: str = "", archived: bool = False,
                   offset: int = 0, limit: int = 20,
-                  xmyc_match: str = "all",
                   roas_status: str = "all",
                   delivery_status: str = "all",
                   product_source: str = "all",
@@ -513,10 +511,6 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
             keyword_args.append(int(keyword))
         where.append(f"({' OR '.join(keyword_clauses)})")
         args.extend(keyword_args)
-    if xmyc_match == "matched":
-        where.append("EXISTS (SELECT 1 FROM xmyc_storage_skus xs WHERE xs.product_id = p.id)")
-    elif xmyc_match == "unmatched":
-        where.append("NOT EXISTS (SELECT 1 FROM xmyc_storage_skus xs WHERE xs.product_id = p.id)")
     if roas_status == "complete":
         where.append(
             "(p.standalone_price IS NOT NULL AND p.purchase_price IS NOT NULL "
@@ -2152,13 +2146,11 @@ def replace_product_skus(
     return {"inserted": inserted, "updated": updated, "deleted": deleted, "preserved": preserved}
 
 
-def list_xmyc_unit_prices(skus: list[str]) -> dict[str, dict]:
-    """根据店小秘/平台 SKU 字符串列表，查 xmyc_storage_skus 拿采购价（RMB）。
+def list_yuncang_unit_prices(skus: list[str]) -> dict[str, dict]:
+    """根据店小秘/平台 SKU 字符串列表，查店小秘云仓采购价（RMB）。
 
-    返回 {sku: {unit_price, goods_name, stock_available, sku_code, match_type}}。
+    返回 {sku: {unit_price, goods_name, stock_available, sku_code}}。
     没命中的 SKU 不在结果里。
-
-    xmyc 是小秘云仓数据源（每天 12:33 systemd 同步），unit_price 是 RMB 单价。
     """
     cleaned = sorted({str(value).strip() for value in (skus or []) if str(value).strip()})
     if not cleaned:
@@ -2166,8 +2158,8 @@ def list_xmyc_unit_prices(skus: list[str]) -> dict[str, dict]:
     placeholders = ",".join(["%s"] * len(cleaned))
     rows = query(
         "SELECT sku, sku_code, goods_name, unit_price, stock_available, "
-        "match_type, product_id "
-        f"FROM xmyc_storage_skus WHERE sku IN ({placeholders})",
+        "NULL AS match_type, NULL AS product_id "
+        f"FROM dianxiaomi_yuncang_skus WHERE sku IN ({placeholders})",
         tuple(cleaned),
     )
     out: dict[str, dict] = {}

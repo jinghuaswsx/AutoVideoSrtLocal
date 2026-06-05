@@ -101,7 +101,7 @@ def aggregate_sku_rows(
         revenue = line_amount + shipping_alloc
         purchase_cny = _positive_decimal(
             row.get("purchase_price_cny"),
-            row.get("xmyc_unit_price"),
+            row.get("yuncang_unit_price"),
             row.get("product_purchase_price"),
         )
         purchase_usd = (purchase_cny * Decimal(quantity)) / rate if rate > 0 else Decimal("0")
@@ -165,10 +165,10 @@ def _load_order_rows(window_start: date, window_end: date) -> list[dict[str, Any
         SELECT d.dxm_package_id, d.extended_order_id, d.product_display_sku,
                d.quantity, d.line_amount, d.ship_amount, d.logistic_fee,
                d.purchase_price_cny,
-               xs.unit_price AS xmyc_unit_price,
+               y.unit_price AS yuncang_unit_price,
                m.purchase_price AS product_purchase_price
         FROM dianxiaomi_order_lines d
-        LEFT JOIN xmyc_storage_skus xs ON xs.sku = d.product_display_sku
+        LEFT JOIN dianxiaomi_yuncang_skus y ON y.sku = d.product_display_sku
         LEFT JOIN media_products m ON m.id = d.product_id
         WHERE d.meta_business_date BETWEEN %s AND %s
           AND d.product_display_sku IS NOT NULL

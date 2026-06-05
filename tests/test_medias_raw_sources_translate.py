@@ -181,7 +181,7 @@ def test_product_detail_items_include_raw_source_provenance(authed_client_no_db,
     monkeypatch.setattr(r.medias, "get_product_covers", lambda product_id: {})
     monkeypatch.setattr(r.medias, "list_copywritings", lambda product_id: [])
     monkeypatch.setattr(r.medias, "list_product_skus", lambda product_id: [])
-    monkeypatch.setattr(r.medias, "list_xmyc_unit_prices", lambda skus: {})
+    monkeypatch.setattr(r.medias, "list_yuncang_unit_prices", lambda skus: {})
     monkeypatch.setattr(
         r.medias,
         "list_items",
@@ -240,7 +240,7 @@ def test_product_detail_item_cover_url_does_not_fallback_to_video_thumbnail(auth
     monkeypatch.setattr(r.medias, "get_product_covers", lambda product_id: {})
     monkeypatch.setattr(r.medias, "list_copywritings", lambda product_id: [])
     monkeypatch.setattr(r.medias, "list_product_skus", lambda product_id: [])
-    monkeypatch.setattr(r.medias, "list_xmyc_unit_prices", lambda skus: {})
+    monkeypatch.setattr(r.medias, "list_yuncang_unit_prices", lambda skus: {})
     monkeypatch.setattr(
         r.medias,
         "list_items",

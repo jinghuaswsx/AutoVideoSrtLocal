@@ -3036,10 +3036,6 @@
     const kw = kwInput.value.trim();
     const params = new URLSearchParams({ page: state.page });
     if (kw) params.set('keyword', kw);
-    const xmycMatchEl = $('filterXmycMatch');
-    if (xmycMatchEl && xmycMatchEl.value && xmycMatchEl.value !== 'all') {
-      params.set('xmyc_match', xmycMatchEl.value);
-    }
     const roasStatusEl = $('filterRoasStatus');
     if (roasStatusEl && roasStatusEl.value && roasStatusEl.value !== 'all') {
       params.set('roas_status', roasStatusEl.value);
@@ -3364,12 +3360,12 @@
     const dxmSku = s.dianxiaomi_sku || '';
     const dxmProductSku = s.dianxiaomi_product_sku || '';
     const skuCode = s.dianxiaomi_sku_code || '';
-    const xmycName = (s.xmyc_goods_name || '').trim();
+    const yuncangName = (s.yuncang_goods_name || '').trim();
     const dxmName = (s.dianxiaomi_name || '').trim();
-    const goodsName = s.manual_goods_name || xmycName || dxmName;
+    const goodsName = s.manual_goods_name || yuncangName || dxmName;
     const purchaseValue = (s.manual_unit_price_rmb !== null && s.manual_unit_price_rmb !== undefined)
       ? s.manual_unit_price_rmb
-      : s.xmyc_unit_price_rmb;
+      : s.yuncang_unit_price_rmb;
     const manualBadge = s.manual_override ? '<span class="oc-sku-manual-badge">人工</span>' : '';
     const canEditVariant = s.manual_override && String(s.shopify_variant_id || '').startsWith('manual-');
     const variantCell = canEditVariant
@@ -3420,7 +3416,7 @@
     document.getElementById('skuDetailShopifyTitle').textContent = product.shopify_title || '—';
     document.getElementById('skuDetailShopifyId').textContent = product.shopifyid || '—';
     const note = document.getElementById('skuDetailCostNote');
-    note.textContent = '估算保本 ROAS：variant 级 Shopify 售价 + 人工采购价 / xmyc 采购价（如有）/ 否则产品级采购价 + 产品级小包成本 + 用户支付运费；后缀「小包实费/小包预估」只表示小包成本来源。订单保本 ROAS：最近稳定订单快照，后缀表示 Shopify Payments 手续费来源。';
+    note.textContent = '估算保本 ROAS：variant 级 Shopify 售价 + 人工采购价 / 店小秘云仓采购价（如有）/ 否则产品级采购价 + 产品级小包成本 + 用户支付运费；后缀「小包实费/小包预估」只表示小包成本来源。订单保本 ROAS：最近稳定订单快照，后缀表示 Shopify Payments 手续费来源。';
 
     const skus = Array.isArray(product.skus) ? product.skus : [];
     const tbody = document.getElementById('skuDetailRows');
@@ -3433,9 +3429,9 @@
     } else {
       empty.hidden = true;
       const matched = skus.filter(s => (s.dianxiaomi_sku_code || '').trim()).length;
-      const xmycHits = skus.filter(s => s.xmyc_unit_price_rmb !== null && s.xmyc_unit_price_rmb !== undefined).length;
+      const yuncangHits = skus.filter(s => s.yuncang_unit_price_rmb !== null && s.yuncang_unit_price_rmb !== undefined).length;
       const manualCount = skus.filter(s => !!s.manual_override).length;
-      summary.textContent = `共 ${skus.length} 个 variant；店小秘 ERP 配对 ${matched}，采购价 ${xmycHits}，人工编辑 ${manualCount}`;
+      summary.textContent = `共 ${skus.length} 个 variant；店小秘 ERP 配对 ${matched}，采购价 ${yuncangHits}，人工编辑 ${manualCount}`;
       tbody.innerHTML = skus.map(renderSkuDetailRow).join('');
     }
     mask.hidden = false;
@@ -9581,8 +9577,6 @@
       kwInput.addEventListener('input', scheduleLiveSearch);
       kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runSearchNow({ syncUrl: true }); } });
     }
-    const filterXmyc = $('filterXmycMatch');
-    if (filterXmyc) filterXmyc.addEventListener('change', () => runSearchNow());
     const filterRoas = $('filterRoasStatus');
     if (filterRoas) filterRoas.addEventListener('change', () => runSearchNow());
     const filterDelivery = $('filterDeliveryStatus');

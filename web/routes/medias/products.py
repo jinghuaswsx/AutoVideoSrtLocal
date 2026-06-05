@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import abort, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, parcel_cost_suggest, product_link_domains, product_roas, pushes, scheduled_tasks, sku_aggregates, supply_pairing, xmyc_storage
+from appcore import medias, parcel_cost_suggest, product_link_domains, product_roas, pushes, scheduled_tasks, supply_pairing
 from . import bp
 from ._serializers import _serialize_item, _serialize_product, _serialize_product_skus
 from web.services.media_products_listing import (
@@ -48,13 +48,6 @@ from web.services.media_parcel_cost import (
 from web.services.media_supply_pairing import (
     build_supply_pairing_search_response as _build_supply_pairing_search_response_impl,
     supply_pairing_search_flask_response as _supply_pairing_search_flask_response_impl,
-)
-from web.services.media_xmyc_skus import (
-    build_product_xmyc_skus_response as _build_product_xmyc_skus_response_impl,
-    build_product_xmyc_skus_set_response as _build_product_xmyc_skus_set_response_impl,
-    build_xmyc_sku_update_response as _build_xmyc_sku_update_response_impl,
-    build_xmyc_skus_list_response as _build_xmyc_skus_list_response_impl,
-    xmyc_sku_flask_response as _xmyc_sku_flask_response_impl,
 )
 from web.services.media_roas_page import (
     build_roas_page_context as _build_roas_page_context_impl,
@@ -163,47 +156,6 @@ def _supply_pairing_search_flask_response(result):
     return _supply_pairing_search_flask_response_impl(result)
 
 
-def _build_xmyc_skus_list_response(args):
-    return _build_xmyc_skus_list_response_impl(
-        args,
-        list_skus_fn=xmyc_storage.list_skus,
-        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
-        enrich_skus_with_roas_fn=sku_aggregates.enrich_skus_with_roas,
-    )
-
-
-def _build_product_xmyc_skus_response(pid: int):
-    return _build_product_xmyc_skus_response_impl(
-        pid,
-        get_skus_for_product_fn=xmyc_storage.get_skus_for_product,
-        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
-        enrich_skus_with_roas_fn=sku_aggregates.enrich_skus_with_roas,
-    )
-
-
-def _build_product_xmyc_skus_set_response(pid: int, body: dict, *, matched_by: int | None):
-    return _build_product_xmyc_skus_set_response_impl(
-        pid,
-        body,
-        matched_by=matched_by,
-        set_product_skus_fn=xmyc_storage.set_product_skus,
-    )
-
-
-def _build_xmyc_sku_update_response(sku_id: int, body: dict):
-    return _build_xmyc_sku_update_response_impl(
-        sku_id,
-        body,
-        update_sku_fn=xmyc_storage.update_sku,
-        get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
-        enrich_skus_with_roas_fn=sku_aggregates.enrich_skus_with_roas,
-    )
-
-
-def _xmyc_sku_flask_response(result):
-    return _xmyc_sku_flask_response_impl(result)
-
-
 def _build_product_sku_update_response(pid: int, sku_id: int, product: dict, body: dict, *, edited_by: int | None):
     return _build_product_sku_update_response_impl(
         pid,
@@ -214,7 +166,7 @@ def _build_product_sku_update_response(pid: int, sku_id: int, product: dict, bod
         update_product_sku_fn=medias.update_product_sku_manual,
         normalize_fields_fn=medias.normalize_product_sku_manual_update,
         can_edit_variant_title_fn=medias.can_edit_product_sku_variant_title,
-        list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
+        list_yuncang_unit_prices_fn=medias.list_yuncang_unit_prices,
         get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
         serialize_product_skus_fn=_serialize_product_skus,
     )
@@ -228,7 +180,7 @@ def _build_product_sku_create_response(pid: int, product: dict, body: dict, *, e
         edited_by=edited_by,
         create_product_sku_fn=medias.create_product_sku_manual,
         normalize_fields_fn=medias.normalize_product_sku_manual_update,
-        list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
+        list_yuncang_unit_prices_fn=medias.list_yuncang_unit_prices,
         get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
         serialize_product_skus_fn=_serialize_product_skus,
     )
@@ -263,7 +215,7 @@ def _build_refresh_product_shopify_sku_response(pid: int, product: dict):
         update_product_fn=medias.update_product,
         replace_product_skus_fn=medias.replace_product_skus,
         list_product_skus_fn=medias.list_product_skus,
-        list_xmyc_unit_prices_fn=medias.list_xmyc_unit_prices,
+        list_yuncang_unit_prices_fn=medias.list_yuncang_unit_prices,
         get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
         serialize_product_skus_fn=_serialize_product_skus,
         record_fetch_failure_fn=scheduled_tasks.record_failure,
@@ -403,55 +355,6 @@ def api_parcel_cost_suggest(pid: int):
         abort(404)
     result = routes._build_parcel_cost_suggest_response(pid, request.args)
     return routes._parcel_cost_suggest_flask_response(result)
-
-
-@bp.route("/api/xmyc-skus", methods=["GET"])
-@login_required
-def api_list_xmyc_skus():
-    routes = _routes_module()
-    result = routes._build_xmyc_skus_list_response(request.args)
-    return routes._xmyc_sku_flask_response(result)
-
-
-@bp.route("/api/products/<int:pid>/xmyc-skus", methods=["GET"])
-@login_required
-def api_get_product_xmyc_skus(pid: int):
-    routes = _routes_module()
-    p = medias.get_product(pid)
-    if not routes._can_access_product(p):
-        abort(404)
-    result = routes._build_product_xmyc_skus_response(pid)
-    return routes._xmyc_sku_flask_response(result)
-
-
-@bp.route("/api/products/<int:pid>/xmyc-skus", methods=["POST"])
-@login_required
-def api_set_product_xmyc_skus(pid: int):
-    routes = _routes_module()
-    p = medias.get_product(pid)
-    if not routes._can_access_product(p):
-        abort(404)
-    body = request.get_json(silent=True) or {}
-    matched_by = int(current_user.id) if getattr(current_user, "id", None) else None
-    result = routes._build_product_xmyc_skus_set_response(
-        pid,
-        body,
-        matched_by=matched_by,
-    )
-    return routes._xmyc_sku_flask_response(result)
-
-
-@bp.route("/api/xmyc-skus/<int:sku_id>", methods=["PATCH"])
-@login_required
-def api_update_xmyc_sku(sku_id: int):
-    routes = _routes_module()
-    if not routes._is_admin():
-        abort(403)
-    body = request.get_json(silent=True) or {}
-    result = routes._build_xmyc_sku_update_response(sku_id, body)
-    if result.not_found:
-        abort(404)
-    return routes._xmyc_sku_flask_response(result)
 
 
 @bp.route("/api/products/<int:pid>/skus/<int:sku_id>", methods=["PATCH"])

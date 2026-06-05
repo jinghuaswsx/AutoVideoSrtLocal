@@ -1,6 +1,6 @@
-"""Aggregate per-SKU pricing/shipping/parcel-fee onto xmyc_storage_skus.
+"""Aggregate per-SKU pricing/shipping/parcel-fee onto dianxiaomi_yuncang_skus.
 
-Three sources, all keyed on xmyc_storage_skus.sku:
+Three sources, all keyed on dianxiaomi_yuncang_skus.sku:
 - shopify_orders.lineitem_sku  -> standalone_price_sku + standalone_shipping_fee_sku
 - dianxiaomi_order_lines       -> sku_orders_count
 - DXM-01 dianxiaomi orders     -> packet_cost_actual_sku (median logisticFee)
@@ -38,21 +38,21 @@ def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     summary: dict = {}
     if args.kind in ("all", "shopify"):
-        summary["shopify"] = sku_aggregates.update_xmyc_sku_shopify_aggregates(
+        summary["shopify"] = sku_aggregates.update_yuncang_sku_shopify_aggregates(
             force=args.force, dry_run=args.dry_run,
         )
     if args.kind in ("all", "counts"):
         if args.dry_run:
             summary["order_counts"] = {"skipped": "dry-run"}
         else:
-            summary["order_counts"] = {"updated": sku_aggregates.update_xmyc_sku_order_counts()}
+            summary["order_counts"] = {"updated": sku_aggregates.update_yuncang_sku_order_counts()}
     if args.kind in ("all", "dianxiaomi"):
         with browser_automation_lock(
             task_code="sku_aggregates_backfill",
             timeout_seconds=600,
-            command="update_xmyc_sku_parcel_costs",
+            command="update_yuncang_sku_parcel_costs",
         ):
-            summary["dianxiaomi"] = sku_aggregates.update_xmyc_sku_parcel_costs(
+            summary["dianxiaomi"] = sku_aggregates.update_yuncang_sku_parcel_costs(
                 force=args.force,
                 dry_run=args.dry_run,
                 days=args.days,

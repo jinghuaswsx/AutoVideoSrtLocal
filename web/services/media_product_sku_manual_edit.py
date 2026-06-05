@@ -27,7 +27,7 @@ def build_product_sku_update_response(
     update_product_sku_fn: Callable[..., dict] = medias.update_product_sku_manual,
     normalize_fields_fn: Callable[[dict], dict] = medias.normalize_product_sku_manual_update,
     can_edit_variant_title_fn: Callable[[int, int], bool] = medias.can_edit_product_sku_variant_title,
-    list_xmyc_unit_prices_fn: Callable[[list[str]], dict] = medias.list_xmyc_unit_prices,
+    list_yuncang_unit_prices_fn: Callable[[list[str]], dict] = medias.list_yuncang_unit_prices,
     get_configured_rmb_per_usd_fn: Callable[[], float] = product_roas.get_configured_rmb_per_usd,
     serialize_product_skus_fn: Callable[..., list[dict]] | None = None,
 ) -> ProductSkuUpdateResponse:
@@ -67,7 +67,7 @@ def build_product_sku_update_response(
         serialize_product_skus_fn = _serialize_product_skus
 
     dxm_sku = (row.get("dianxiaomi_sku") or "").strip()
-    xmyc_index = list_xmyc_unit_prices_fn([dxm_sku] if dxm_sku else [])
+    yuncang_index = list_yuncang_unit_prices_fn([dxm_sku] if dxm_sku else [])
     cost_inputs = {
         "purchase_price": product.get("purchase_price"),
         "packet_cost_estimated": product.get("packet_cost_estimated"),
@@ -78,7 +78,7 @@ def build_product_sku_update_response(
         [row],
         cost_inputs=cost_inputs,
         rmb_per_usd=get_configured_rmb_per_usd_fn(),
-        xmyc_index=xmyc_index,
+        yuncang_index=yuncang_index,
     )
     return ProductSkuUpdateResponse({"ok": True, "item": serialized[0]}, 200)
 
@@ -91,7 +91,7 @@ def build_product_sku_create_response(
     edited_by: int | None,
     create_product_sku_fn: Callable[..., dict] = medias.create_product_sku_manual,
     normalize_fields_fn: Callable[[dict], dict] = medias.normalize_product_sku_manual_update,
-    list_xmyc_unit_prices_fn: Callable[[list[str]], dict] = medias.list_xmyc_unit_prices,
+    list_yuncang_unit_prices_fn: Callable[[list[str]], dict] = medias.list_yuncang_unit_prices,
     get_configured_rmb_per_usd_fn: Callable[[], float] = product_roas.get_configured_rmb_per_usd,
     serialize_product_skus_fn: Callable[..., list[dict]] | None = None,
 ) -> ProductSkuUpdateResponse:
@@ -127,7 +127,7 @@ def build_product_sku_create_response(
         serialize_product_skus_fn = _serialize_product_skus
 
     dxm_sku = (row.get("dianxiaomi_sku") or "").strip()
-    xmyc_index = list_xmyc_unit_prices_fn([dxm_sku] if dxm_sku else [])
+    yuncang_index = list_yuncang_unit_prices_fn([dxm_sku] if dxm_sku else [])
     cost_inputs = {
         "purchase_price": product.get("purchase_price"),
         "packet_cost_estimated": product.get("packet_cost_estimated"),
@@ -138,7 +138,7 @@ def build_product_sku_create_response(
         [row],
         cost_inputs=cost_inputs,
         rmb_per_usd=get_configured_rmb_per_usd_fn(),
-        xmyc_index=xmyc_index,
+        yuncang_index=yuncang_index,
     )
     return ProductSkuUpdateResponse({"ok": True, "item": serialized[0]}, 201)
 

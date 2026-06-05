@@ -31,11 +31,10 @@
 |---|---|---:|---|---|---|
 | `DXM01-Meta` | `autovideosrt-dxm01-meta-vnc.service` | `9222` | `/data/autovideosrt/browser/profiles/meta-ads` | `/data/autovideosrt/browser/runtime-meta-ads` | Meta Ads Manager 导出 |
 | `DXM02-MK` | `autovideosrt-dxm02-mk-vnc.service` | `9223` | `/data/autovideosrt/browser/profiles/mk-selection` | `/data/autovideosrt/browser/runtime-mk-selection` | 明空选品店小秘 |
-| `DXM03-RJC` | `autovideosrt-dxm03-rjc-vnc.service` | `9225` | `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` | `/data/autovideosrt/browser/runtime-rjc-dianxiaomi` | 荣锦成店小秘订单与 Shopify ID |
-| 小秘云仓 | `autovideosrt-xmyc-browser.service` | `9224` | `/data/autovideosrt/browser/profiles/xmyc-storage` | `/data/autovideosrt/browser/runtime-xmyc-storage` | 小秘云仓库存/采购价 |
+| `DXM03-RJC` | `autovideosrt-dxm03-rjc-vnc.service` | `9225` | `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` | `/data/autovideosrt/browser/runtime-rjc-dianxiaomi` | 荣锦成店小秘订单、SKU、Shopify ID 与店小秘云仓 |
 | `TABCUT` | `autovideosrt-tabcut-vnc.service` | `9227` | `/data/autovideosrt/browser/profiles/tabcut` | `/data/autovideosrt/browser/runtime-tabcut` | Tabcut 选品采集 |
 
-`9224` 已被小秘云仓占用，`DXM03-RJC` 使用 `9225`，避免与现有服务冲突。
+`9224` 的旧 xmyc 独立站浏览器已按 `docs/superpowers/specs/2026-06-05-xmyc-retirement-dianxiaomi-yuncang-design.md` 下线；店小秘云仓采购价同步复用 `DXM03-RJC` 的 `9225`。
 
 ## 任务依赖
 

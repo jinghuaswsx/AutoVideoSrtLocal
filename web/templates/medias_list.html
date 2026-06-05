@@ -3601,11 +3601,6 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
         <span class="leading"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
         <input id="kw" placeholder="搜索产品名称、产品 ID 或 mk_id">
       </div>
-      <select id="filterXmycMatch" class="oc-select" title="按是否已配对小秘云仓 SKU 筛选">
-        <option value="all">小秘云仓：全部</option>
-        <option value="matched">已配对</option>
-        <option value="unmatched">未配对</option>
-      </select>
       <select id="filterRoasStatus" class="oc-select" title="按 ROAS 数据完整度筛选">
         <option value="all">ROAS 数据：全部</option>
         <option value="complete">数据已完成</option>
@@ -3948,60 +3943,6 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     </div>
   </div>
 </div>
-<div id="xmycMatchModalMask" class="oc-modal-mask oc" hidden>
-  <div class="oc-modal oc-xmyc-match-modal" role="dialog" aria-modal="true" aria-labelledby="xmycMatchTitle">
-    <div class="oc-roas-modal-head">
-      <h3 id="xmycMatchTitle">小秘云仓 SKU 匹配</h3>
-      <button type="button" id="xmycMatchCloseBtn" class="oc-icon-btn" aria-label="关闭">
-        <svg width="18" height="18"><use href="#ic-close"/></svg>
-      </button>
-    </div>
-    <div class="oc-xmyc-match-body">
-      <div class="oc-xmyc-match-product">
-        <span class="muted">当前产品：</span>
-        <strong id="xmycMatchProductName">—</strong>
-        <span class="muted" id="xmycMatchProductCode"></span>
-      </div>
-      <div class="oc-xmyc-match-toolbar">
-        <input id="xmycMatchSearch" type="search" placeholder="按 SKU / 商品名搜索">
-        <select id="xmycMatchFilter">
-          <option value="all">全部</option>
-          <option value="unmatched">仅未匹配</option>
-          <option value="matched">仅已匹配</option>
-        </select>
-        <button type="button" id="xmycMatchRefreshBtn" class="oc-btn ghost sm">刷新</button>
-      </div>
-      <div class="oc-xmyc-match-list">
-        <table class="oc-xmyc-match-table">
-          <thead>
-            <tr>
-              <th class="w-checkbox"></th>
-              <th>图片</th>
-              <th>SKU</th>
-              <th>商品名</th>
-              <th class="ta-r">采购价 (RMB)</th>
-              <th class="ta-r">售价 (USD)</th>
-              <th class="ta-r">运费 (USD)</th>
-              <th class="ta-r">物流费 (RMB)</th>
-              <th class="ta-r">保本 ROAS</th>
-              <th>归属</th>
-            </tr>
-          </thead>
-          <tbody id="xmycMatchTbody">
-            <tr><td colspan="10" class="oc-xmyc-match-empty">点击"刷新"加载小秘云仓 SKU</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="oc-xmyc-match-foot">
-      <span id="xmycMatchSummary" class="oc-xmyc-match-summary muted">尚未选择</span>
-      <div class="oc-xmyc-match-foot-actions">
-        <button type="button" id="xmycMatchCancelBtn" class="oc-btn ghost">取消</button>
-        <button type="button" id="xmycMatchSaveBtn" class="oc-btn primary">保存匹配</button>
-      </div>
-    </div>
-  </div>
-</div>
 <div id="rsModalMask" class="oc-modal-mask oc" hidden>
   <div id="rsModal" class="oc-modal oc-rs-modal" role="dialog" aria-modal="true" aria-labelledby="rsModalTitle">
     <div class="oc-rs-modal-head">
@@ -4054,7 +3995,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
               <th style="width:210px;">店小秘商品 SKU</th>
               <th style="width:140px;">ERP 编码</th>
               <th style="width:120px;">采购价 (RMB)</th>
-              <th style="width:260px;">ERP / xmyc 商品名</th>
+              <th style="width:260px;">ERP / 云仓商品名</th>
               <th style="width:120px;">估算保本 ROAS</th>
               <th style="width:160px;">订单保本 ROAS</th>
               <th style="width:130px;">操作</th>
@@ -4310,7 +4251,6 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 </script>
 <script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <script src="{{ url_for('static', filename='roas_form.js') }}"></script>
-<script src="{{ url_for('static', filename='xmyc_match_modal.js') }}"></script>
 <!-- AI 视频分析（每个视频卡片底部两按钮调用，依赖 window.VideoAiReview） -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/video_ai_review.css') }}">
 <script src="{{ url_for('static', filename='js/video_ai_review.js') }}"></script>

@@ -39,13 +39,13 @@ def test_serialize_product_skus_prefers_manual_purchase_price_and_goods_name():
             "standalone_shipping_fee": "4",
         },
         rmb_per_usd=7.0,
-        xmyc_index={
+        yuncang_index={
             "DXM-SKU": {
                 "unit_price": "18.88",
-                "goods_name": "xmyc 自动商品名",
+                "goods_name": "云仓自动商品名",
                 "stock_available": 11,
                 "match_type": "auto",
-                "sku_code": "ERP-XMYC",
+                "sku_code": "ERP-YC",
             }
         },
     )
@@ -55,8 +55,8 @@ def test_serialize_product_skus_prefers_manual_purchase_price_and_goods_name():
     assert item["manual_unit_price_rmb"] == 8.66
     assert item["manual_goods_name"] == "人工商品名"
     assert item["dianxiaomi_product_sku"] == "DXM-PRODUCT-SKU"
-    assert item["xmyc_unit_price_rmb"] == 8.66
-    assert item["xmyc_goods_name"] == "人工商品名"
+    assert item["yuncang_unit_price_rmb"] == 8.66
+    assert item["yuncang_goods_name"] == "人工商品名"
     assert item["roas_calculation"]["purchase_basis"] == "manual_variant"
 
 
@@ -105,7 +105,7 @@ def test_manual_product_sku_update_filters_variant_and_serializes_updated_row():
         edited_by=9,
         update_product_sku_fn=fake_update,
         can_edit_variant_title_fn=lambda product_id, sku_id: False,
-        list_xmyc_unit_prices_fn=lambda skus: captured.update(xmyc_skus=skus) or {},
+        list_yuncang_unit_prices_fn=lambda skus: captured.update(yuncang_skus=skus) or {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda rows, **kwargs: captured.update(
             serialize=(rows, kwargs)
@@ -130,7 +130,7 @@ def test_manual_product_sku_update_filters_variant_and_serializes_updated_row():
         },
         9,
     )
-    assert captured["xmyc_skus"] == ["DXM-EDIT"]
+    assert captured["yuncang_skus"] == ["DXM-EDIT"]
     assert captured["serialize"][1]["cost_inputs"] == {
         "purchase_price": "20",
         "packet_cost_estimated": "2",
@@ -211,7 +211,7 @@ def test_manual_product_sku_create_filters_and_serializes_new_row():
         },
         edited_by=9,
         create_product_sku_fn=fake_create,
-        list_xmyc_unit_prices_fn=lambda skus: captured.update(xmyc_skus=skus) or {},
+        list_yuncang_unit_prices_fn=lambda skus: captured.update(yuncang_skus=skus) or {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda rows, **kwargs: captured.update(
             serialize=(rows, kwargs)
@@ -237,7 +237,7 @@ def test_manual_product_sku_create_filters_and_serializes_new_row():
         9,
         "SP1",
     )
-    assert captured["xmyc_skus"] == ["DXM-MANUAL"]
+    assert captured["yuncang_skus"] == ["DXM-MANUAL"]
 
 
 def test_manual_product_sku_create_requires_variant_title():
@@ -290,7 +290,7 @@ def test_manual_product_sku_update_keeps_variant_readonly_for_auto_rows():
         edited_by=9,
         update_product_sku_fn=fake_update,
         can_edit_variant_title_fn=lambda product_id, sku_id: False,
-        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda rows, **kwargs: [{"id": rows[0]["id"]}],
     )
@@ -328,7 +328,7 @@ def test_manual_product_sku_update_allows_variant_title_for_manual_rows():
         edited_by=9,
         update_product_sku_fn=fake_update,
         can_edit_variant_title_fn=lambda product_id, sku_id: True,
-        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda rows, **kwargs: [{"id": rows[0]["id"]}],
     )

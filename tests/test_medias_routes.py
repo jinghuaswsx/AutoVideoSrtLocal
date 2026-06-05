@@ -2312,7 +2312,7 @@ def test_get_product_api_includes_shopifyid(
     monkeypatch.setattr(r.medias, "list_items", lambda pid: [])
     monkeypatch.setattr(r.medias, "list_copywritings", lambda pid: [])
     monkeypatch.setattr(r.medias, "list_product_skus", lambda pid: [])
-    monkeypatch.setattr(r.medias, "list_xmyc_unit_prices", lambda skus: {})
+    monkeypatch.setattr(r.medias, "list_yuncang_unit_prices", lambda skus: {})
     monkeypatch.setattr(r.medias, "normalize_listing_status", lambda status: status or "上架")
 
     resp = authed_client_no_db.get("/medias/api/products/123")

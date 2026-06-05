@@ -34,11 +34,11 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
             "items_count": items_count,
             "cover_item_id": cover_item_id,
             "skus": kwargs["skus"],
-            "xmyc_keys": sorted(kwargs["xmyc_index"]),
+            "yuncang_keys": sorted(kwargs["yuncang_index"]),
         }
 
-    def list_xmyc_unit_prices(skus):
-        calls["xmyc_skus"] = list(skus)
+    def list_yuncang_unit_prices(skus):
+        calls["yuncang_skus"] = list(skus)
         return {
             "sku-a": {"unit_price": 1},
             "sku-b": {"unit_price": 2},
@@ -53,7 +53,6 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
             "keyword": "  box cutter  ",
             "archived": "yes",
             "page": "3",
-            "xmyc_match": "matched",
             "roas_status": "complete",
             "delivery_status": "active",
         },
@@ -68,7 +67,7 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
             1: [{"dianxiaomi_sku": "sku-b"}],
             2: [{"dianxiaomi_sku": "sku-a"}, {"dianxiaomi_sku": "sku-b"}],
         },
-        list_xmyc_unit_prices_fn=list_xmyc_unit_prices,
+        list_yuncang_unit_prices_fn=list_yuncang_unit_prices,
         get_latest_sku_actual_roas_fn=get_latest_sku_actual_roas,
         get_configured_rmb_per_usd_fn=lambda: 7.1,
         get_product_ad_summary_cache_fn=lambda pids: {
@@ -91,14 +90,13 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
         "archived": True,
         "offset": 40,
         "limit": 20,
-        "xmyc_match": "matched",
         "roas_status": "complete",
         "delivery_status": "active",
         "product_source": "all",
         "created_from": None,
         "created_to": None,
     }
-    assert calls["xmyc_skus"] == ["sku-a", "sku-b"]
+    assert calls["yuncang_skus"] == ["sku-a", "sku-b"]
     assert calls["actual_roas_skus"] == ["sku-a", "sku-b"]
     assert payload == {
         "items": [
@@ -107,14 +105,14 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
                 "items_count": 7,
                 "cover_item_id": 202,
                 "skus": [{"dianxiaomi_sku": "sku-a"}, {"dianxiaomi_sku": "sku-b"}],
-                "xmyc_keys": ["sku-a", "sku-b"],
+                "yuncang_keys": ["sku-a", "sku-b"],
             },
             {
                 "id": 1,
                 "items_count": 5,
                 "cover_item_id": 101,
                 "skus": [{"dianxiaomi_sku": "sku-b"}],
-                "xmyc_keys": ["sku-a", "sku-b"],
+                "yuncang_keys": ["sku-a", "sku-b"],
             },
         ],
         "total": 42,
@@ -143,7 +141,7 @@ def test_build_products_list_response_defaults_invalid_filters():
         return ([], 0)
 
     payload = build_products_list_response(
-        {"xmyc_match": "bad", "roas_status": "bad"},
+        {"roas_status": "bad"},
         list_products_fn=list_products,
         count_items_by_product_fn=lambda pids: {},
         count_raw_sources_by_product_fn=lambda pids: {},
@@ -152,7 +150,7 @@ def test_build_products_list_response_defaults_invalid_filters():
         lang_coverage_by_product_fn=lambda pids: {},
         get_product_covers_batch_fn=lambda pids: {},
         list_product_skus_batch_fn=lambda pids: {},
-        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
         get_configured_rmb_per_usd_fn=lambda: 6.83,
         get_product_ad_summary_cache_fn=lambda pids: {},
         get_product_lang_ad_summary_cache_fn=lambda pids: {},
@@ -163,7 +161,6 @@ def test_build_products_list_response_defaults_invalid_filters():
     assert captured["keyword"] == ""
     assert captured["archived"] is False
     assert captured["offset"] == 0
-    assert captured["xmyc_match"] == "all"
     assert captured["roas_status"] == "all"
     assert captured["delivery_status"] == "all"
     assert payload == {"items": [], "total": 0, "page": 1, "page_size": 20}
@@ -188,7 +185,7 @@ def test_build_products_list_response_defaults_invalid_delivery_status():
         lang_coverage_by_product_fn=lambda pids: {},
         get_product_covers_batch_fn=lambda pids: {},
         list_product_skus_batch_fn=lambda pids: {},
-        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
         get_configured_rmb_per_usd_fn=lambda: 6.83,
         get_product_ad_summary_cache_fn=lambda pids: {},
         get_product_lang_ad_summary_cache_fn=lambda pids: {},

@@ -77,7 +77,7 @@ def test_sku_detail_modal_fills_main_area_with_room_for_codes():
     assert '<th style="width:210px;">店小秘 SKU</th>' in html
     assert '<th style="width:210px;">店小秘商品 SKU</th>' in html
     assert '<th style="width:140px;">ERP 编码</th>' in html
-    assert '<th style="width:260px;">ERP / xmyc 商品名</th>' in html
+    assert '<th style="width:260px;">ERP / 云仓商品名</th>' in html
 
 
 def test_sku_detail_mobile_table_keeps_shared_header_and_body_layout():
@@ -136,55 +136,22 @@ def test_medias_js_calls_parcel_cost_suggest_endpoint():
     assert "packet_cost_actual" in controller_js
 
 
-def test_xmyc_match_modal_assets_present():
+def test_xmyc_match_modal_assets_removed():
     list_html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     partial_html = PARTIAL.read_text(encoding="utf-8")
-    modal_js = (ROOT / "web" / "static" / "xmyc_match_modal.js").read_text(encoding="utf-8")
     roas_js = (ROOT / "web" / "static" / "roas_form.js").read_text(encoding="utf-8")
 
-    assert 'id="xmycMatchModalMask"' in list_html
-    assert 'id="xmycMatchSearch"' in list_html
-    assert 'id="xmycMatchSaveBtn"' in list_html
-    assert 'id="xmycMatchTbody"' in list_html
-    assert "<th>图片</th>" in list_html
-    assert "xmyc_match_modal.js" in list_html
+    assert 'id="xmycMatchModalMask"' not in list_html
+    assert 'id="xmycMatchSearch"' not in list_html
+    assert 'id="xmycMatchSaveBtn"' not in list_html
+    assert 'id="xmycMatchTbody"' not in list_html
+    assert "xmyc_match_modal.js" not in list_html
 
-    assert 'id="xmycMatchOpenBtn"' in partial_html
-    assert "小秘云仓匹配" in partial_html
+    assert 'id="xmycMatchOpenBtn"' not in partial_html
+    assert "小秘云仓匹配" not in partial_html
 
-    assert "window.XmycMatchModal" in modal_js
-    assert "/medias/api/xmyc-skus" in modal_js
-    assert "/xmyc-skus" in modal_js
-    assert "image_url" in modal_js
-    assert "oc-xmyc-sku-image" in modal_js
-
-    assert "_openXmycMatch" in roas_js
-    assert "XmycMatchModal" in roas_js
-
-
-def test_xmyc_match_modal_has_roas_row_highlighting():
-    modal_js = (ROOT / "web" / "static" / "xmyc_match_modal.js").read_text(encoding="utf-8")
-    styles = (ROOT / "web" / "templates" / "medias" / "_roas_styles.html").read_text(encoding="utf-8")
-
-    assert "row-roas-missing" in modal_js
-    assert "row-roas-danger" in modal_js
-    assert "roas-negative" in modal_js
-    assert ".row-roas-missing" in styles
-    assert ".row-roas-danger" in styles
-    assert ".roas-negative" in styles
-
-
-def test_xmyc_match_modal_sanitizes_sku_image_src_protocols():
-    modal_js = (ROOT / "web" / "static" / "xmyc_match_modal.js").read_text(encoding="utf-8")
-    image_block = modal_js[
-        modal_js.index("function renderImageCell"):
-        modal_js.index("function startEdit")
-    ]
-
-    assert "function safeMediaSrc(url)" in modal_js
-    assert "const url = safeMediaSrc(item && item.image_url);" in image_block
-    assert "' + escapeHtml(url) + '" in image_block
-    assert "String(item.image_url).trim()" not in image_block
+    assert "_openXmycMatch" not in roas_js
+    assert "XmycMatchModal" not in roas_js
 
 
 def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():

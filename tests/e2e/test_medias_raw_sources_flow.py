@@ -181,7 +181,7 @@ def test_medias_raw_sources_flow(monkeypatch, tmp_path):
     monkeypatch.setattr(medias_dao, "lang_coverage_by_product", lambda pids: {int(pid): _lang_coverage(pid) for pid in pids})
     monkeypatch.setattr(medias_dao, "get_product_covers_batch", lambda pids: {int(pid): {} for pid in pids})
     monkeypatch.setattr(medias_dao, "list_product_skus_batch", lambda pids: {int(pid): [] for pid in pids})
-    monkeypatch.setattr(medias_dao, "list_xmyc_unit_prices", lambda skus: {})
+    monkeypatch.setattr(medias_dao, "list_yuncang_unit_prices", lambda skus: {})
     monkeypatch.setattr(medias_dao, "parse_link_check_tasks_json", lambda raw: {})
     monkeypatch.setattr(medias_dao, "list_languages", lambda: [
         {"code": "en", "name_zh": "英语"},

@@ -74,7 +74,7 @@ window_end   = D - 3 days
 
 ## 数据模型
 
-新增 SKU ROAS 快照表，避免把时间窗口指标塞进 `xmyc_storage_skus` 基础资料表。
+新增 SKU ROAS 快照表，避免把时间窗口指标塞进云仓 SKU 基础资料表。
 
 建议表名：`sku_actual_breakeven_roas_snapshots`。
 
@@ -83,7 +83,7 @@ window_end   = D - 3 days
 | 字段 | 说明 |
 | --- | --- |
 | `id` | 主键 |
-| `sku` | ERP SKU / `xmyc_storage_skus.sku` |
+| `sku` | ERP SKU / `dianxiaomi_yuncang_skus.sku` |
 | `window_start` | 统计窗口开始日期 |
 | `window_end` | 统计窗口结束日期 |
 | `orders_count` | 窗口内订单数 |
@@ -130,7 +130,7 @@ get_latest_sku_actual_roas(skus: list[str]) -> dict[str, dict]
 
 1. 从 `dianxiaomi_order_lines` 读取窗口内有 `product_display_sku` 的订单行。
 2. 按 `dxm_package_id` 聚合订单行总金额和买家支付运费，用现有 `allocate_shipping_to_line` 逻辑分摊收入侧运费。
-3. 采购成本优先使用 `purchase_price_cny` 快照，缺失时 fallback 到 `xmyc_storage_skus.unit_price` 或产品级采购价。
+3. 采购成本优先使用 `purchase_price_cny` 快照，缺失时 fallback 到 `dianxiaomi_yuncang_skus.unit_price` 或产品级采购价。
 4. 物流成本优先使用订单 `logistic_fee` 按订单行金额比例分摊。
 5. 手续费按“真实 Payment 优先，7% 兜底”分摊。
 6. 按 SKU 汇总，并写入快照表。

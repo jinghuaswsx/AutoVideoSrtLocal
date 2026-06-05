@@ -56,29 +56,13 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "description": (
             "每 2 小时从店小秘云仓货品列表页面拉取全部 SKU 货品数据，"
             "更新 dianxiaomi_yuncang_skus，并重新计算关联产品的采购成本价格。"
-            "Docs-anchor: docs/superpowers/specs/2026-06-05-dianxiaomi-sku-purchase-sync-design.md"
+            "Docs-anchor: docs/superpowers/specs/2026-06-05-xmyc-retirement-dianxiaomi-yuncang-design.md"
         ),
-        "schedule": "每 2 小时（01:03 起，错开 SKU / xmyc 同步）",
+        "schedule": "每 2 小时（01:03 起，错开 SKU 同步）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-dianxiaomi-yuncang-sync.timer",
         "runner": "tools/dianxiaomi_yuncang_sync.py",
-        "deployment": "线上已启用",
-        "log_table": "scheduled_task_runs",
-    },
-    "xmyc_storage_sync": {
-        "code": "xmyc_storage_sync",
-        "name": "小秘云仓 SKU 与采购价同步",
-        "description": (
-            "每 2 小时从小秘云仓抓取全量 SKU、库存和采购价，"
-            "按订单 SKU 自动匹配产品并刷新产品采购成本。"
-            "Docs-anchor: docs/superpowers/specs/2026-06-05-dianxiaomi-sku-purchase-sync-design.md"
-        ),
-        "schedule": "每 2 小时（00:33 起，错开 SKU 同步）",
-        "source_type": "systemd",
-        "source_label": "Linux systemd timer",
-        "source_ref": "autovideosrt-xmyc-storage-sync.timer",
-        "runner": "tools/xmyc_storage_sync.py",
         "deployment": "线上已启用",
         "log_table": "scheduled_task_runs",
     },

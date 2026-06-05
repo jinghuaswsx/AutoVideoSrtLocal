@@ -21,7 +21,7 @@ def _joined(captured):
     return "\n".join(s for s, _ in captured)
 
 
-def test_list_products_default_filters_skip_xmyc_and_roas(monkeypatch):
+def test_list_products_default_filters_skip_removed_match_and_roas(monkeypatch):
     captured = _capture_sql(monkeypatch)
     medias.list_products(None)
     text = _joined(captured)
@@ -30,24 +30,23 @@ def test_list_products_default_filters_skip_xmyc_and_roas(monkeypatch):
     assert "media_product_ad_summary_cache" not in text
 
 
-def test_list_products_filter_xmyc_matched(monkeypatch):
+def test_list_products_ignores_removed_match_filter_matched(monkeypatch):
     captured = _capture_sql(monkeypatch)
-    medias.list_products(None, xmyc_match="matched")
+    medias.list_products(None)
     text = _joined(captured)
-    assert "EXISTS (SELECT 1 FROM xmyc_storage_skus" in text
-    assert "NOT EXISTS" not in text
+    assert "xmyc_storage_skus" not in text
 
 
-def test_list_products_filter_xmyc_unmatched(monkeypatch):
+def test_list_products_ignores_removed_match_filter_unmatched(monkeypatch):
     captured = _capture_sql(monkeypatch)
-    medias.list_products(None, xmyc_match="unmatched")
+    medias.list_products(None)
     text = _joined(captured)
-    assert "NOT EXISTS (SELECT 1 FROM xmyc_storage_skus" in text
+    assert "xmyc_storage_skus" not in text
 
 
 def test_list_products_filter_xmyc_invalid_falls_back(monkeypatch):
     captured = _capture_sql(monkeypatch)
-    medias.list_products(None, xmyc_match="bogus")
+    medias.list_products(None)
     text = _joined(captured)
     assert "xmyc_storage_skus" not in text
 
@@ -78,11 +77,11 @@ def test_list_products_roas_missing_actual(monkeypatch):
     assert "p.packet_cost_estimated IS NULL" not in text
 
 
-def test_list_products_combines_xmyc_and_roas_filters(monkeypatch):
+def test_list_products_roas_filter_still_applies_with_removed_match_param(monkeypatch):
     captured = _capture_sql(monkeypatch)
-    medias.list_products(None, xmyc_match="unmatched", roas_status="complete")
+    medias.list_products(None, roas_status="complete")
     text = _joined(captured)
-    assert "NOT EXISTS (SELECT 1 FROM xmyc_storage_skus" in text
+    assert "xmyc_storage_skus" not in text
     assert "p.packet_cost_estimated IS NOT NULL" in text
 
 
@@ -117,8 +116,7 @@ def test_api_list_products_passes_filters(authed_client_no_db, monkeypatch):
     captured = {}
 
     def fake_list_products(user_id, *, keyword="", archived=False, offset=0, limit=20,
-                           xmyc_match="all", roas_status="all", delivery_status="all", **kwargs):
-        captured["xmyc_match"] = xmyc_match
+                           roas_status="all", delivery_status="all", **kwargs):
         captured["roas_status"] = roas_status
         captured["delivery_status"] = delivery_status
         captured["keyword"] = keyword
@@ -135,10 +133,9 @@ def test_api_list_products_passes_filters(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(medias, "get_product_covers_batch", lambda pids: {})
 
     resp = authed_client_no_db.get(
-        "/medias/api/products?xmyc_match=unmatched&roas_status=missing_actual&delivery_status=stopped&keyword=foo&created_from=2026-06-01&created_to=2026-06-03"
+        "/medias/api/products?roas_status=missing_actual&delivery_status=stopped&keyword=foo&created_from=2026-06-01&created_to=2026-06-03"
     )
     assert resp.status_code == 200
-    assert captured["xmyc_match"] == "unmatched"
     assert captured["roas_status"] == "missing_actual"
     assert captured["delivery_status"] == "stopped"
     assert captured["keyword"] == "foo"
@@ -150,8 +147,7 @@ def test_api_list_products_normalizes_invalid_filter_values(authed_client_no_db,
     captured = {}
 
     def fake_list_products(user_id, *, keyword="", archived=False, offset=0, limit=20,
-                           xmyc_match="all", roas_status="all", delivery_status="all", **kwargs):
-        captured["xmyc_match"] = xmyc_match
+                           roas_status="all", delivery_status="all", **kwargs):
         captured["roas_status"] = roas_status
         captured["delivery_status"] = delivery_status
         return [], 0
@@ -164,9 +160,8 @@ def test_api_list_products_normalizes_invalid_filter_values(authed_client_no_db,
     monkeypatch.setattr(medias, "lang_coverage_by_product", lambda pids: {})
     monkeypatch.setattr(medias, "get_product_covers_batch", lambda pids: {})
 
-    resp = authed_client_no_db.get("/medias/api/products?xmyc_match=garbage&roas_status=junk&delivery_status=paused")
+    resp = authed_client_no_db.get("/medias/api/products?roas_status=junk&delivery_status=paused")
     assert resp.status_code == 200
-    assert captured["xmyc_match"] == "all"
     assert captured["roas_status"] == "all"
     assert captured["delivery_status"] == "all"
 
@@ -178,22 +173,20 @@ def test_medias_list_html_has_filter_dropdowns():
     html = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
-    assert 'id="filterXmycMatch"' in html
+    assert 'id="filterXmycMatch"' not in html
     assert 'id="filterRoasStatus"' in html
     assert 'id="filterDeliveryStatus"' in html
     assert "投放中" in html
     assert "终止投放" in html
     assert "未投" in html
-    assert "已配对" in html
-    assert "未配对" in html
     assert "数据已完成" in html
     assert "缺失（预估）" in html
     assert "缺失（实际）" in html
 
-    assert "filterXmycMatch" in js
+    assert "filterXmycMatch" not in js
     assert "filterRoasStatus" in js
     assert "filterDeliveryStatus" in js
-    assert "xmyc_match" in js
+    assert "xmyc_match" not in js
     assert "roas_status" in js
     assert "delivery_status" in js
     assert "oc-delivery-pill" in js
@@ -223,7 +216,7 @@ def test_medias_toolbar_compacts_actions_and_filters():
     assert "<span>搜索</span>" not in html[html.index("<!-- Toolbar -->"):html.index("<!-- List -->")]
 
     events_start = js.index("const searchBtn = $('searchBtn');")
-    events_end = js.index("const filterXmyc", events_start)
+    events_end = js.index("const filterRoas", events_start)
     events_block = js[events_start:events_end]
     assert "if (searchBtn) searchBtn.addEventListener('click', () => runSearchNow({ syncUrl: true }));" in events_block
     assert "kwInput.addEventListener('input', scheduleLiveSearch);" in events_block

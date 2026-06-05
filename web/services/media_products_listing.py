@@ -50,7 +50,7 @@ def build_products_list_response(
     lang_coverage_by_product_fn=None,
     get_product_covers_batch_fn=None,
     list_product_skus_batch_fn=None,
-    list_xmyc_unit_prices_fn=None,
+    list_yuncang_unit_prices_fn=None,
     get_latest_sku_actual_roas_fn=None,
     get_configured_rmb_per_usd_fn=None,
     get_product_ad_summary_cache_fn=None,
@@ -74,7 +74,7 @@ def build_products_list_response(
         get_product_covers_batch_fn or medias.get_product_covers_batch
     )
     list_product_skus_batch_fn = list_product_skus_batch_fn or medias.list_product_skus_batch
-    list_xmyc_unit_prices_fn = list_xmyc_unit_prices_fn or medias.list_xmyc_unit_prices
+    list_yuncang_unit_prices_fn = list_yuncang_unit_prices_fn or medias.list_yuncang_unit_prices
     get_latest_sku_actual_roas_fn = (
         get_latest_sku_actual_roas_fn or sku_actual_roas.get_latest_sku_actual_roas
     )
@@ -100,9 +100,6 @@ def build_products_list_response(
     limit = DEFAULT_PAGE_SIZE
     offset = (page - 1) * limit
 
-    xmyc_match = str(_request_arg(args, "xmyc_match", "all") or "all").strip().lower()
-    if xmyc_match not in medias.XMYC_MATCH_FILTERS:
-        xmyc_match = "all"
     roas_status = str(_request_arg(args, "roas_status", "all") or "all").strip().lower()
     if roas_status not in medias.ROAS_STATUS_FILTERS:
         roas_status = "all"
@@ -119,7 +116,6 @@ def build_products_list_response(
         archived=archived,
         offset=offset,
         limit=limit,
-        xmyc_match=xmyc_match,
         roas_status=roas_status,
         delivery_status=delivery_status,
         product_source=product_source,
@@ -143,7 +139,7 @@ def build_products_list_response(
         for sku in sku_rows
         if (sku.get("dianxiaomi_sku") or "").strip()
     })
-    xmyc_index = list_xmyc_unit_prices_fn(all_dxm_skus)
+    yuncang_index = list_yuncang_unit_prices_fn(all_dxm_skus)
     sku_actual_roas_index = get_latest_sku_actual_roas_fn(all_dxm_skus)
     roas_rmb_per_usd = get_configured_rmb_per_usd_fn()
     serialize_product_fn = serialize_product_fn or _default_serialize_product
@@ -162,7 +158,7 @@ def build_products_list_response(
             raw_sources_count=raw_counts.get(row["id"], 0),
             roas_rmb_per_usd=roas_rmb_per_usd,
             skus=skus_map.get(row["id"], []),
-            xmyc_index=xmyc_index,
+            yuncang_index=yuncang_index,
             sku_actual_roas_index=sku_actual_roas_index,
         )
         for row in rows

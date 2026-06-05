@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from appcore import scheduled_tasks, xmyc_storage
+from appcore import dianxiaomi_yuncang, scheduled_tasks
 
 
 TASK_CODE = "dianxiaomi_yuncang_sync"
@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     run_id = scheduled_tasks.start_run(TASK_CODE)
     try:
-        summary = xmyc_storage.sync_dianxiaomi_yuncang_skus(cdp_url=args.cdp_url)
+        summary = dianxiaomi_yuncang.sync_skus(cdp_url=args.cdp_url)
     except Exception as exc:
         scheduled_tasks.finish_run(run_id, status="failed", error_message=str(exc))
         raise

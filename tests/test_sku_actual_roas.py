@@ -40,7 +40,7 @@ def test_aggregate_rows_prefers_real_payment_fee_and_marks_mixed():
             "ship_amount": 4,
             "logistic_fee": 6,
             "purchase_price_cny": 35,
-            "xmyc_unit_price": None,
+            "yuncang_unit_price": None,
             "product_purchase_price": None,
         },
         {
@@ -52,7 +52,7 @@ def test_aggregate_rows_prefers_real_payment_fee_and_marks_mixed():
             "ship_amount": 0,
             "logistic_fee": 8,
             "purchase_price_cny": 40,
-            "xmyc_unit_price": None,
+            "yuncang_unit_price": None,
             "product_purchase_price": None,
         },
     ]
@@ -81,7 +81,7 @@ def test_aggregate_rows_uses_7pct_when_payment_missing_and_nulls_unprofitable_ro
             "ship_amount": 0,
             "logistic_fee": 200,
             "purchase_price_cny": 100,
-            "xmyc_unit_price": None,
+            "yuncang_unit_price": None,
             "product_purchase_price": None,
         },
     ]
@@ -111,7 +111,7 @@ def test_compute_loads_orders_payments_and_upserts_snapshots(monkeypatch):
                     "ship_amount": 4,
                     "logistic_fee": 6,
                     "purchase_price_cny": 35,
-                    "xmyc_unit_price": None,
+                    "yuncang_unit_price": None,
                     "product_purchase_price": None,
                 }
             ]

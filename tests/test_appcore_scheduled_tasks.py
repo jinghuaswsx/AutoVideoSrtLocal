@@ -596,18 +596,13 @@ def test_task_definitions_include_two_hour_dianxiaomi_sku_and_purchase_sync():
     assert sku_task["deployment"] == "线上已启用"
 
     yuncang_task = definitions["dianxiaomi_yuncang_sync"]
-    assert yuncang_task["schedule"] == "每 2 小时（01:03 起，错开 SKU / xmyc 同步）"
+    assert yuncang_task["schedule"] == "每 2 小时（01:03 起，错开 SKU 同步）"
     assert yuncang_task["source_type"] == "systemd"
     assert yuncang_task["source_ref"] == "autovideosrt-dianxiaomi-yuncang-sync.timer"
     assert yuncang_task["runner"] == "tools/dianxiaomi_yuncang_sync.py"
     assert yuncang_task["deployment"] == "线上已启用"
 
-    xmyc_task = definitions["xmyc_storage_sync"]
-    assert xmyc_task["schedule"] == "每 2 小时（00:33 起，错开 SKU 同步）"
-    assert xmyc_task["source_type"] == "systemd"
-    assert xmyc_task["source_ref"] == "autovideosrt-xmyc-storage-sync.timer"
-    assert xmyc_task["runner"] == "tools/xmyc_storage_sync.py"
-    assert xmyc_task["deployment"] == "线上已启用"
+    assert "xmyc_storage_sync" not in definitions
 
 
 def test_task_definitions_include_push_quality_check():

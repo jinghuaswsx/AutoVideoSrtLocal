@@ -29,7 +29,7 @@ def test_build_refresh_product_shopify_sku_response_rejects_missing_shopifyid_be
         update_product_fn=lambda *args, **kwargs: called.append("update"),
         replace_product_skus_fn=lambda *args, **kwargs: called.append("replace"),
         list_product_skus_fn=lambda pid: [],
-        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda *args, **kwargs: [],
     )
@@ -50,7 +50,7 @@ def test_build_refresh_product_shopify_sku_response_maps_fetch_error():
         update_product_fn=lambda *args, **kwargs: None,
         replace_product_skus_fn=lambda *args, **kwargs: None,
         list_product_skus_fn=lambda pid: [],
-        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda *args, **kwargs: [],
     )
@@ -72,7 +72,7 @@ def test_build_refresh_product_shopify_sku_response_records_fetch_failure_for_ad
         update_product_fn=lambda *args, **kwargs: None,
         replace_product_skus_fn=lambda *args, **kwargs: None,
         list_product_skus_fn=lambda pid: [],
-        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda *args, **kwargs: [],
         record_fetch_failure_fn=lambda **kwargs: captured.update(kwargs) or 99,
@@ -101,7 +101,7 @@ def test_build_refresh_product_shopify_sku_response_maps_missing_shopify_product
         update_product_fn=lambda *args, **kwargs: None,
         replace_product_skus_fn=lambda *args, **kwargs: None,
         list_product_skus_fn=lambda pid: [],
-        list_xmyc_unit_prices_fn=lambda skus: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
         get_configured_rmb_per_usd_fn=lambda: 7.0,
         serialize_product_skus_fn=lambda *args, **kwargs: [],
     )
@@ -128,7 +128,7 @@ def test_build_refresh_product_shopify_sku_response_updates_product_and_serializ
         {"shopify_variant_id": "V2", "dianxiaomi_sku_code": ""},
     ]
     fresh_skus = [{"dianxiaomi_sku": "DX1", "shopify_price": "9.99"}]
-    xmyc_index = {"DX1": {"unit_price": "12.34"}}
+    yuncang_index = {"DX1": {"unit_price": "12.34"}}
 
     def fake_list_product_skus(pid):
         captured["list_pid"] = pid
@@ -147,7 +147,7 @@ def test_build_refresh_product_shopify_sku_response_updates_product_and_serializ
             replace=(pid, rows, kwargs)
         ),
         list_product_skus_fn=fake_list_product_skus,
-        list_xmyc_unit_prices_fn=lambda skus: captured.update(xmyc_skus=skus) or xmyc_index,
+        list_yuncang_unit_prices_fn=lambda skus: captured.update(yuncang_skus=skus) or yuncang_index,
         get_configured_rmb_per_usd_fn=lambda: 7.2,
         serialize_product_skus_fn=lambda rows, **kwargs: captured.update(
             serialize=(rows, kwargs)
@@ -165,7 +165,7 @@ def test_build_refresh_product_shopify_sku_response_updates_product_and_serializ
     assert captured["update"] == (42, {"shopify_title": "New Title"})
     assert captured["replace"] == (42, pairs, {"source": "manual"})
     assert captured["list_pid"] == 42
-    assert captured["xmyc_skus"] == ["DX1"]
+    assert captured["yuncang_skus"] == ["DX1"]
     assert captured["serialize"] == (
         fresh_skus,
         {
@@ -176,6 +176,6 @@ def test_build_refresh_product_shopify_sku_response_updates_product_and_serializ
                 "standalone_shipping_fee": "4",
             },
             "rmb_per_usd": 7.2,
-            "xmyc_index": xmyc_index,
+            "yuncang_index": yuncang_index,
         },
     )

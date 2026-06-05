@@ -3,7 +3,7 @@
 Strategy:
 1. Fetch ALL supply pairing records from dianxiaomi (waiting + paired)
 2. For each local product missing 1688 URL, match against the pulled records:
-   a. Exact match on dianxiaomi_sku / xmyc_storage_skus.sku
+   a. Exact match on dianxiaomi_sku / dianxiaomi_yuncang_skus.sku
    b. Substring match on SKU
    c. Chinese product name keyword match, exported for manual review
 3. Apply only exact-SKU high confidence matches automatically. Keyword matches
@@ -377,10 +377,10 @@ def load_products_missing_1688() -> list[dict[str, Any]]:
     rows = query("""
         SELECT DISTINCT mp.id AS product_id, mp.name,
                ps.dianxiaomi_sku,
-               (SELECT GROUP_CONCAT(DISTINCT xs.sku SEPARATOR '||')
-                FROM xmyc_storage_skus xs WHERE xs.product_id = mp.id) AS xmyc_skus
+               y.sku AS yuncang_sku
         FROM media_products mp
         LEFT JOIN media_product_skus ps ON ps.product_id = mp.id
+        LEFT JOIN dianxiaomi_yuncang_skus y ON y.sku = ps.dianxiaomi_sku
         WHERE (mp.purchase_1688_url IS NULL OR mp.purchase_1688_url = '')
         ORDER BY mp.id
     """)
@@ -400,11 +400,8 @@ def load_products_missing_1688() -> list[dict[str, Any]]:
             products.append(product)
         if row.get("dianxiaomi_sku"):
             product["skus"].add(str(row["dianxiaomi_sku"]).strip())
-        if row.get("xmyc_skus"):
-            for sku in str(row["xmyc_skus"]).split("||"):
-                sku = sku.strip()
-                if sku:
-                    product["skus"].add(sku)
+        if row.get("yuncang_sku"):
+            product["skus"].add(str(row["yuncang_sku"]).strip())
     return products
 
 

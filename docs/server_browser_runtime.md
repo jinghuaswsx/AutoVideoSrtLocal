@@ -7,7 +7,7 @@
 - 店小秘后台抓取
 - 明空网络登录态抓取
 - Shopify 后台自动化
-- 小秘云仓 (xmyc.com) 仓库 SKU 抓取（采购价 / 库存）
+- 店小秘小秘云仓 SKU 抓取（采购价 / 库存）
 - 其他依赖浏览器登录态的模块
 
 ## 组成
@@ -23,7 +23,6 @@
 
 - `127.0.0.1:9222`：DXM01-Meta，Meta Ads Manager 导出专用 Chromium CDP
 - `127.0.0.1:9223`：DXM02-MK，明空选品店小秘 Chromium CDP
-- `127.0.0.1:9224`：小秘云仓 (xmyc.com) Chromium CDP
 - `127.0.0.1:9225`：DXM03-RJC，荣锦成店小秘订单、SKU、Shopify ID 同步 Chromium CDP
 - `127.0.0.1:9227`：TABCUT，Tabcut 选品采集 Chromium CDP
 - `0.0.0.0:6092`：DXM01-Meta noVNC web 入口
@@ -40,7 +39,6 @@ CDP 端口仅监听本机；noVNC 监听 `0.0.0.0:6082` 以便内网浏览器直
 - `/data/autovideosrt/browser/profiles/meta-ads`（owner：cjh）—— DXM01-Meta，Meta 广告同步专用
 - `/data/autovideosrt/browser/profiles/mk-selection`（owner：cjh）—— 明空选品
 - `/data/autovideosrt/browser/profiles/rjc-dianxiaomi`（owner：cjh）—— DXM03-RJC，荣锦成店小秘订单 / SKU / Shopify ID
-- `/data/autovideosrt/browser/profiles/xmyc-storage`（owner：cjh）—— 小秘云仓
 - `/data/autovideosrt/browser/profiles/tabcut`（owner：cjh）—— TABCUT，Tabcut 选品采集
 
 ## 安装
@@ -51,7 +49,6 @@ CDP 端口仅监听本机；noVNC 监听 `0.0.0.0:6082` 以便内网浏览器直
 cd /opt/autovideosrt
 bash deploy/server_browser/install_server_browser.sh
 bash deploy/server_browser/install_mk_browser.sh
-bash deploy/server_browser/install_xmyc_browser.sh
 bash deploy/server_browser/install_novnc.sh
 ```
 
@@ -71,7 +68,7 @@ bash deploy/server_browser/install_novnc.sh
    ```
    http://172.16.254.106:6082/vnc.html?host=172.16.254.106&port=6082&autoconnect=true&resize=remote
    ```
-   会直接连进 cjh 桌面，看到三个 Chromium 窗口（店小秘列表 / 明空选品 / 小秘云仓）。
+   会直接连进 cjh 桌面，看到店小秘、明空选品、TABCUT 等 Chromium 窗口。
 2. **向日葵远程桌面**：直接进 cjh 桌面（如果 `runsunloginclient.service` 起着）。
 3. **浏览器监控四宫格**：登录 Web 后打开 `/browser-monitor`，或从左侧“实验室”→“浏览器监控”进入。页面会同时加载 DXM01-Meta、DXM02-MK、DXM03-RJC、TABCUT 四个 noVNC 窗口，并在顶部显示压缩后的 `cdp_environment_watchdog` 最近状态。
 
@@ -91,7 +88,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\open_mk_server_browser
 - `autovideosrt-dxm03-rjc-vnc.service`：DXM03-RJC 可视化浏览器（CDP 9225 / noVNC 6095）
 - `autovideosrt-tabcut-vnc.service`：TABCUT 可视化浏览器（CDP 9227 / noVNC 6097）
 - `autovideosrt-cdp-environment-watchdog.timer`：每分钟检查 DXM01/02/03、TABCUT 的 systemd、CDP、noVNC，并在异常时重启和写后台报警
-- `autovideosrt-xmyc-browser.service`：小秘云仓独立浏览器（CDP 9224）
 - `autovideosrt-novnc.service`：noVNC web 代理（websockify 0.0.0.0:6082 → [::1]:5900）
 
 前三个 `User=cjh`，`After=graphical.target`，优先依赖 cjh 真桌面登录后启动。noVNC 是 `User=root`，`After=graphical.target`（5900 上的 x11vnc 是 cjh 桌面里跑的，所以也要等桌面起来）。
@@ -103,7 +99,7 @@ CDP 拆分后，ROI 实时同步主 unit 必须直接执行 `tools/roi_hourly_sy
 `deploy/server_browser/run_server_browser.sh` 启动 Chromium 前必须检查 `DISPLAY` 对应的 `/tmp/.X11-unix/X*` socket 是否存在。
 
 - socket 存在：按真桌面模式启动，保留 `--start-maximized`，noVNC / 向日葵能看到浏览器窗口。
-- socket 缺失：默认用 `--headless=new` 启动 Chromium，只保证 CDP 端口可用，让订单同步、广告同步、Shopify ID 回填、小秘云仓抓取等浏览器自动化定时任务继续跑。
+- socket 缺失：默认用 `--headless=new` 启动 Chromium，只保证 CDP 端口可用，让订单同步、广告同步、Shopify ID 回填、店小秘云仓抓取等浏览器自动化定时任务继续跑。
 - headless 兜底不提供可视桌面窗口；需要人工补登录、关闭弹窗或通过 noVNC 检查页面时，仍必须修复 GDM / X11 真桌面。
 - 如需严格要求真桌面，可在对应 env file 里设置 `BROWSER_HEADLESS_FALLBACK=0`，此时 socket 缺失会直接失败并交给 systemd 记录错误。
 
@@ -114,7 +110,6 @@ CDP 拆分后，ROI 实时同步主 unit 必须直接执行 `tools/roi_hourly_sy
 ```text
 http://127.0.0.1:9222    # DXM01-Meta
 http://127.0.0.1:9223    # DXM02-MK
-http://127.0.0.1:9224    # 小秘云仓 profile
 http://127.0.0.1:9225    # DXM03-RJC
 http://127.0.0.1:9227    # TABCUT
 ```
@@ -187,36 +182,11 @@ bash deploy/server_browser/install_sku_purchase_sync_timers.sh
 
 它会复用 `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` 里的店小秘登录态，从店小秘 Shopify 在线商品库与 ERP 商品管理库抓取 variants 与 SKU，按 `shopifyid` 回填 `media_products.shopify_title` 和 `media_product_skus`。
 
-## 小秘云仓采购价定时任务
-
-服务器上使用 systemd timer 运行小秘云仓 SKU 抓取 + 自动匹配：
-
-可单独执行 `bash deploy/server_browser/install_xmyc_storage_sync_timer.sh`，也可和店小秘 SKU / 店小秘云仓同步一起通过组合入口安装：
-
-```bash
-cd /opt/autovideosrt
-bash deploy/server_browser/install_sku_purchase_sync_timers.sh
-```
-
-安装后会创建：
-
-- `autovideosrt-xmyc-storage-sync.service`
-- `autovideosrt-xmyc-storage-sync.timer`
-
-定时任务每 2 小时执行一次（`00:33` 起，避开店小秘 SKU 配对 `:21`），实际命令为：
-
-```bash
-/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/xmyc_storage_sync.py \
-  --cdp-url http://127.0.0.1:9224
-```
-
-它会复用 `/data/autovideosrt/browser/profiles/xmyc-storage` 里的小秘云仓登录态，把全量 SKU + 单价缓存到 `xmyc_storage_skus`，再按 `dianxiaomi_order_lines.product_display_sku` 自动匹配到 `media_products`，最后用主力 SKU 的单价回填 `media_products.purchase_price`。
-
 ## 店小秘云仓采购价定时任务
 
 服务器上使用 systemd timer 运行店小秘云仓货品同步：
 
-可单独执行 `bash deploy/server_browser/install_dianxiaomi_yuncang_sync_timer.sh`，也可和店小秘 SKU / 小秘云仓同步一起通过组合入口安装：
+可单独执行 `bash deploy/server_browser/install_dianxiaomi_yuncang_sync_timer.sh`，也可和店小秘 SKU 同步一起通过组合入口安装：
 
 ```bash
 cd /opt/autovideosrt
@@ -228,11 +198,11 @@ bash deploy/server_browser/install_sku_purchase_sync_timers.sh
 - `autovideosrt-dianxiaomi-yuncang-sync.service`
 - `autovideosrt-dianxiaomi-yuncang-sync.timer`
 
-定时任务每 2 小时执行一次（`01:03` 起，错开 SKU 配对和 xmyc-storage 同步），实际命令为：
+定时任务每 2 小时执行一次（`01:03` 起，错开 SKU 配对同步），实际命令为：
 
 ```bash
 /opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/dianxiaomi_yuncang_sync.py \
   --cdp-url http://127.0.0.1:9225
 ```
 
-它会复用 `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` 里的店小秘登录态，把 `yuncangWarehouseSku/index.htm` 中的 SKU、商品编码、采购价和库存缓存到 `dianxiaomi_yuncang_skus`。采购价刷新会同时覆盖已匹配小秘云仓 SKU 的产品，以及订单行 SKU 能命中店小秘云仓 SKU 的产品。
+它会复用 `/data/autovideosrt/browser/profiles/rjc-dianxiaomi` 里的店小秘登录态，把 `yuncangWarehouseSku/index.htm` 中的 SKU、商品编码、采购价和库存缓存到 `dianxiaomi_yuncang_skus`。采购价刷新会覆盖 `media_product_skus.dianxiaomi_sku` 或订单行 SKU 能命中店小秘云仓 SKU 的产品。

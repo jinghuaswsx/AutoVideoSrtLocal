@@ -12,6 +12,12 @@ from appcore.db import execute, query
 log = logging.getLogger(__name__)
 
 
+def _ensure_yuncang_table() -> None:
+    from appcore import dianxiaomi_yuncang
+
+    dianxiaomi_yuncang.ensure_table()
+
+
 def shopify_modes_by_sku() -> list[dict[str, Any]]:
     rows = query(
         """
@@ -61,56 +67,58 @@ def order_counts_by_sku() -> dict[str, int]:
     return {str(r["sku"]): int(r["n"] or 0) for r in rows}
 
 
-def update_xmyc_sku_shopify_aggregates(*, force: bool = False, dry_run: bool = False) -> dict[str, int]:
+def update_yuncang_sku_shopify_aggregates(*, force: bool = False, dry_run: bool = False) -> dict[str, int]:
+    _ensure_yuncang_table()
     modes = shopify_modes_by_sku()
-    sku_to_xmyc = {
+    sku_to_yuncang = {
         r["sku"]: r["sku"]
-        for r in query("SELECT sku FROM xmyc_storage_skus")
+        for r in query("SELECT sku FROM dianxiaomi_yuncang_skus")
     }
-    matched = [m for m in modes if m["sku"] in sku_to_xmyc]
+    matched = [m for m in modes if m["sku"] in sku_to_yuncang]
     updated = 0
     if dry_run:
         for m in matched:
             log.info("[dry-run] sku=%s price=%s shipping=%s sample=%s",
                      m["sku"], m["price"], m["shipping"], m["sample_size"])
-        return {"shopify_modes": len(modes), "xmyc_matched": len(matched), "updated": 0}
+        return {"shopify_modes": len(modes), "yuncang_matched": len(matched), "updated": 0}
     for m in matched:
         if force:
             execute(
-                "UPDATE xmyc_storage_skus "
+                "UPDATE dianxiaomi_yuncang_skus "
                 "SET standalone_price_sku=%s, standalone_shipping_fee_sku=%s "
                 "WHERE sku=%s",
                 (m["price"], m["shipping"], m["sku"]),
             )
         else:
             execute(
-                "UPDATE xmyc_storage_skus "
+                "UPDATE dianxiaomi_yuncang_skus "
                 "SET standalone_price_sku = COALESCE(standalone_price_sku, %s), "
                 "    standalone_shipping_fee_sku = COALESCE(standalone_shipping_fee_sku, %s) "
                 "WHERE sku=%s",
                 (m["price"], m["shipping"], m["sku"]),
             )
         updated += 1
-    return {"shopify_modes": len(modes), "xmyc_matched": len(matched), "updated": updated}
+    return {"shopify_modes": len(modes), "yuncang_matched": len(matched), "updated": updated}
 
 
-def update_xmyc_sku_order_counts() -> int:
+def update_yuncang_sku_order_counts() -> int:
+    _ensure_yuncang_table()
     counts = order_counts_by_sku()
     if not counts:
         return 0
-    rows = query("SELECT sku FROM xmyc_storage_skus")
+    rows = query("SELECT sku FROM dianxiaomi_yuncang_skus")
     updated = 0
     for r in rows:
         sku = r["sku"]
         if sku in counts:
             execute(
-                "UPDATE xmyc_storage_skus SET sku_orders_count=%s WHERE sku=%s",
+                "UPDATE dianxiaomi_yuncang_skus SET sku_orders_count=%s WHERE sku=%s",
                 (counts[sku], sku),
             )
             updated += 1
         else:
             execute(
-                "UPDATE xmyc_storage_skus SET sku_orders_count=0 WHERE sku=%s",
+                "UPDATE dianxiaomi_yuncang_skus SET sku_orders_count=0 WHERE sku=%s",
                 (sku,),
             )
     return updated
@@ -148,11 +156,12 @@ def enrich_skus_with_roas(rows: list[dict[str, Any]], rmb_per_usd: Any = None) -
     return [{**r, "roas": compute_sku_roas(r, rmb_per_usd)} for r in rows]
 
 
-def _xmyc_skus_with_shop() -> tuple[dict[str, str], dict[str, set[str]]]:
+def _yuncang_skus_with_shop() -> tuple[dict[str, str], dict[str, set[str]]]:
+    _ensure_yuncang_table()
     rows = query(
         """
         SELECT s.sku, d.dxm_shop_id, COUNT(*) AS n
-        FROM xmyc_storage_skus s
+        FROM dianxiaomi_yuncang_skus s
         JOIN dianxiaomi_order_lines d ON d.product_display_sku = s.sku
         WHERE d.dxm_shop_id IS NOT NULL
         GROUP BY s.sku, d.dxm_shop_id
@@ -193,7 +202,7 @@ def _query_logistic_fees_by_sku(
     return fees
 
 
-def update_xmyc_sku_parcel_costs(
+def update_yuncang_sku_parcel_costs(
     *,
     force: bool = False,
     dry_run: bool = False,
@@ -202,7 +211,7 @@ def update_xmyc_sku_parcel_costs(
     now_func: Callable[[], datetime] | None = None,
     **__kwargs,  # 兼容旧 cdp_url / page_provider 参数（已废弃）
 ) -> dict[str, Any]:
-    sku_to_shop, shop_to_skus = _xmyc_skus_with_shop()
+    sku_to_shop, shop_to_skus = _yuncang_skus_with_shop()
     if not sku_to_shop:
         return {"candidates": 0, "shops": 0, "with_fees": 0, "updated": 0}
     now = (now_func or datetime.now)()
@@ -224,12 +233,12 @@ def update_xmyc_sku_parcel_costs(
             continue
         if force:
             execute(
-                "UPDATE xmyc_storage_skus SET packet_cost_actual_sku=%s WHERE sku=%s",
+                "UPDATE dianxiaomi_yuncang_skus SET packet_cost_actual_sku=%s WHERE sku=%s",
                 (median, sku),
             )
         else:
             execute(
-                "UPDATE xmyc_storage_skus "
+                "UPDATE dianxiaomi_yuncang_skus "
                 "SET packet_cost_actual_sku = COALESCE(packet_cost_actual_sku, %s) "
                 "WHERE sku=%s",
                 (median, sku),

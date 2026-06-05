@@ -20,27 +20,30 @@ def test_shopify_modes_by_sku_picks_top_freq(monkeypatch):
     assert by_sku["115-2"]["price"] == Decimal("53.91")
 
 
-def test_update_xmyc_sku_shopify_default_uses_coalesce(monkeypatch):
+def test_update_yuncang_sku_shopify_default_uses_coalesce(monkeypatch):
+    monkeypatch.setattr(mod, "_ensure_yuncang_table", lambda: None)
     monkeypatch.setattr(mod, "query", lambda sql, params=None: [
         {"lineitem_sku": "sku-A", "lineitem_price": Decimal("10"), "shipping": Decimal("3"), "freq": 5},
-        {"lineitem_sku": "sku-NotInXmyc", "lineitem_price": Decimal("99"), "shipping": Decimal("1"), "freq": 5},
+        {"lineitem_sku": "sku-NotInYuncang", "lineitem_price": Decimal("99"), "shipping": Decimal("1"), "freq": 5},
     ] if "shopify_orders" in sql else [{"sku": "sku-A"}])
     captured = []
     monkeypatch.setattr(mod, "execute", lambda sql, params: captured.append((sql, params)))
-    out = mod.update_xmyc_sku_shopify_aggregates()
-    assert out == {"shopify_modes": 2, "xmyc_matched": 1, "updated": 1}
+    out = mod.update_yuncang_sku_shopify_aggregates()
+    assert out == {"shopify_modes": 2, "yuncang_matched": 1, "updated": 1}
     sql, params = captured[0]
+    assert "dianxiaomi_yuncang_skus" in sql
     assert "COALESCE" in sql
     assert params == (Decimal("10"), Decimal("3"), "sku-A")
 
 
-def test_update_xmyc_sku_shopify_force_overwrites(monkeypatch):
+def test_update_yuncang_sku_shopify_force_overwrites(monkeypatch):
+    monkeypatch.setattr(mod, "_ensure_yuncang_table", lambda: None)
     monkeypatch.setattr(mod, "query", lambda sql, params=None: [
         {"lineitem_sku": "sku-A", "lineitem_price": Decimal("10"), "shipping": Decimal("3"), "freq": 5},
     ] if "shopify_orders" in sql else [{"sku": "sku-A"}])
     captured = []
     monkeypatch.setattr(mod, "execute", lambda sql, params: captured.append((sql, params)))
-    mod.update_xmyc_sku_shopify_aggregates(force=True)
+    mod.update_yuncang_sku_shopify_aggregates(force=True)
     sql, _ = captured[0]
     assert "COALESCE" not in sql
     assert "standalone_price_sku=%s" in sql
@@ -90,8 +93,9 @@ def test_query_logistic_fees_by_sku(monkeypatch):
     assert "skip" not in out
 
 
-def test_update_xmyc_sku_parcel_costs_end_to_end(monkeypatch):
-    monkeypatch.setattr(mod, "_xmyc_skus_with_shop", lambda: (
+def test_update_yuncang_sku_parcel_costs_end_to_end(monkeypatch):
+    monkeypatch.setattr(mod, "_ensure_yuncang_table", lambda: None)
+    monkeypatch.setattr(mod, "_yuncang_skus_with_shop", lambda: (
         {"sku-A": "shopA", "sku-B": "shopA"},
         {"shopA": {"sku-A", "sku-B"}},
     ))
@@ -104,7 +108,7 @@ def test_update_xmyc_sku_parcel_costs_end_to_end(monkeypatch):
     captured_writes = []
     monkeypatch.setattr(mod, "execute", lambda sql, params: captured_writes.append((sql, params)))
 
-    result = mod.update_xmyc_sku_parcel_costs(
+    result = mod.update_yuncang_sku_parcel_costs(
         days=30, now_func=lambda: datetime(2026, 5, 4),
     )
     assert result["candidates"] == 2
@@ -115,13 +119,14 @@ def test_update_xmyc_sku_parcel_costs_end_to_end(monkeypatch):
     assert write_b[0] == pytest.approx(80.0)
 
 
-def test_update_xmyc_sku_order_counts(monkeypatch):
+def test_update_yuncang_sku_order_counts(monkeypatch):
+    monkeypatch.setattr(mod, "_ensure_yuncang_table", lambda: None)
     monkeypatch.setattr(mod, "order_counts_by_sku", lambda: {"sku-A": 100, "sku-B": 5})
     monkeypatch.setattr(mod, "query", lambda sql, params=None: [{"sku": "sku-A"}, {"sku": "sku-C"}])
     writes = []
     monkeypatch.setattr(mod, "execute", lambda sql, params: writes.append(params))
-    n = mod.update_xmyc_sku_order_counts()
+    n = mod.update_yuncang_sku_order_counts()
     assert n == 1
-    # sku-A gets 100, sku-C is in xmyc but no orders -> SQL hard-codes 0
+    # sku-A gets 100, sku-C is in cloud warehouse but no orders -> SQL hard-codes 0
     assert (100, "sku-A") in writes
     assert ("sku-C",) in writes
