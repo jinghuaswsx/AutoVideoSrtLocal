@@ -107,11 +107,6 @@ def test_rerun_voice_ai_ranking_uses_cache_before_llm(monkeypatch, tmp_path):
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("cached AI ranking should not rerun LLM")),
     )
 
-    monkeypatch.setattr(
-        "web.services.translate_voice_selector.is_voice_ai_auto_select_enabled",
-        lambda: False,
-    )
-
     result = rerun_voice_ai_ranking_for_state(
         task_id="task-ai",
         state=state,
