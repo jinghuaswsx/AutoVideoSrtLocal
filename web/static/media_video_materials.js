@@ -154,7 +154,8 @@
       state.items = data.items || [];
       renderVideoTable(data);
       renderVideoPager(data);
-      host.scrollTop = 0;
+      const container = $('vmListContainer') || host;
+      container.scrollTop = 0;
       host.scrollLeft = 0;
       updateStickyOffsetsSoon();
     } catch (err) {
