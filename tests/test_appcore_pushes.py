@@ -206,6 +206,36 @@ def test_compute_status_pending_after_final_push_manual_confirmation(monkeypatch
     assert pushes.compute_status(item, product, readiness=readiness, context=context) == "pending"
 
 
+def test_compute_status_pending_after_item_level_admin_final_confirmation(monkeypatch):
+    monkeypatch.setattr(pushes.medias, "is_product_listed", lambda product: True)
+    monkeypatch.setattr(pushes.medias, "parse_ad_supported_langs", lambda value: {"de"})
+    monkeypatch.setattr(
+        pushes.shopify_image_tasks,
+        "is_confirmed_for_push",
+        lambda product, lang: (True, ""),
+    )
+    monkeypatch.setattr(pushes.shopify_image_tasks, "domain_statuses_for_push", lambda product, lang: [])
+    item = {
+        "id": 10,
+        "task_id": None,
+        "product_id": 7,
+        "lang": "de",
+        "object_key": "video.mp4",
+        "cover_object_key": "cover.jpg",
+    }
+    product = {"id": 7, "ad_supported_langs": "de", "listing_status": "上架"}
+    context = {
+        "copywriting_langs": {(7, "de")},
+        "valid_push_text_product_ids": {7},
+        "manual_confirmed_readiness_by_item_id": {10: {"final_push_confirmed"}},
+    }
+
+    readiness = pushes.compute_readiness(item, product, context=context)
+
+    assert readiness["final_push_confirmed"] is True
+    assert pushes.compute_status(item, product, readiness=readiness, context=context) == "pending"
+
+
 def test_compute_readiness_missing_cover(product_with_item):
     pid, item_id = product_with_item
     db_execute("UPDATE media_items SET cover_object_key=NULL WHERE id=%s", (item_id,))
@@ -444,6 +474,57 @@ def test_admin_override_readiness_key_confirms_only_final_push_confirmation(monk
     }
 
 
+def test_admin_override_readiness_key_confirms_item_without_task(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(
+        pushes,
+        "_get_push_row_for_status_cache",
+        lambda item_id: {"id": item_id, "task_id": None},
+    )
+    monkeypatch.setattr(
+        pushes.tasks_svc,
+        "confirm_child_step",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("unbound item should not call task service")),
+    )
+    monkeypatch.setattr(
+        pushes,
+        "_confirm_item_readiness_override",
+        lambda **kwargs: calls.setdefault("confirm", kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        pushes,
+        "refresh_push_status_cache_for_item",
+        lambda item_id: {
+            item_id: {
+                "status": "pending",
+                "readiness": {"final_push_confirmed": True},
+            }
+        },
+    )
+
+    result = pushes.admin_override_readiness_key(
+        item_id=1001,
+        readiness_key="final_push_confirmed",
+        actor_user_id=7,
+    )
+
+    assert calls["confirm"] == {
+        "item_id": 1001,
+        "readiness_key": "final_push_confirmed",
+        "step_key": "final_push_confirmation",
+        "actor_user_id": 7,
+    }
+    assert result == {
+        "item_id": 1001,
+        "task_id": None,
+        "key": "final_push_confirmed",
+        "step_key": "final_push_confirmation",
+        "status": "pending",
+        "readiness": {"final_push_confirmed": True},
+    }
+
+
 def test_compute_status_pushed(product_with_item):
     pid, item_id = product_with_item
     db_execute("UPDATE media_items SET pushed_at=NOW() WHERE id=%s", (item_id,))
@@ -562,20 +643,23 @@ def test_build_push_list_context_prefetches_status_inputs(monkeypatch):
             return [{"id": 99, "status": "assigned"}, {"id": 100, "status": "done"}]
         if normalized.startswith("SELECT task_id, payload_json FROM task_events"):
             return [{"task_id": 99, "payload_json": '{"issue_keys":["has_cover"]}'}]
+        if normalized.startswith("SELECT media_item_id, readiness_key FROM media_push_readiness_overrides"):
+            return [{"media_item_id": 11, "readiness_key": "final_push_confirmed"}]
         raise AssertionError(f"unexpected query: {normalized}")
 
     monkeypatch.setattr("appcore.pushes.query", fake_query)
 
     context = pushes.build_push_list_context([
-        {"product_id": 7, "lang": "de", "latest_push_id": 5, "task_id": 99},
-        {"product_id": 8, "lang": "fr", "latest_push_id": 6, "task_id": 100},
+        {"id": 11, "product_id": 7, "lang": "de", "latest_push_id": 5, "task_id": 99},
+        {"id": 12, "product_id": 8, "lang": "fr", "latest_push_id": 6, "task_id": 100},
     ])
 
     assert context["copywriting_langs"] == {(7, "de")}
     assert context["valid_push_text_product_ids"] == {7}
     assert context["failed_latest_push_ids"] == {5}
     assert context["rework_readiness_by_task_id"] == {99: {"has_cover"}}
-    assert len(calls) == 5
+    assert context["manual_confirmed_readiness_by_item_id"] == {11: {"final_push_confirmed"}}
+    assert len(calls) == 6
 
 
 def test_refresh_push_status_cache_rows_upserts_computed_entries(monkeypatch):

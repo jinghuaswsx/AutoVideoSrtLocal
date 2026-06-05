@@ -21,7 +21,7 @@
 
 ## 非目标
 
-- 不新增数据库表或迁移；复用 `task_events` 的人工确认事件。
+- 任务中心路径不新增数据库表；推送管理针对无任务素材的管理员兜底确认可新增媒体项级确认表。
 - 不改变已推送素材的 `pushed` 状态。
 - 不把 `/pushes` 弹窗里的 `manual_link_confirmed` 改成持久状态；它仍只用于本次跳过链接探活。
 - 不把历史回填、自动流程当作最终审核通过动作；最终推送人工确认必须由运营或管理员明确手动点击单项确认按钮完成。
@@ -39,6 +39,8 @@
 ```
 
 默认值为 `False`。当 `media_items.task_id` 对应子任务存在 `manual_step_confirmed` 事件，且 payload key 为 `final_push_confirmation` 时，`appcore.tasks.manual_confirmed_child_readiness_keys()` 映射出 `final_push_confirmed`，`compute_readiness()` 将该项置为 `True`。
+
+当素材没有 `task_id`、无法通过任务中心完成最终确认时，管理员可以在推送管理的必要条件兜底 modal 中点击“人工最终推送确认”。该操作写入媒体项级确认记录，`compute_readiness()` 按 `media_item_id` 读取后同样把 `final_push_confirmed` 置为 `True`。该确认只作用于当前素材，不自动确认其它必要条件。
 
 `pushes.is_ready()` 继续对所有非 `_reason` 项做 `all()`，因此 `final_push_confirmed=False` 会让状态保持 `not_ready`。
 

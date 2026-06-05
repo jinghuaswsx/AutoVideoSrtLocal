@@ -20,7 +20,7 @@
 
 ## 设计
 
-复用任务中心已有 `task_events.event_type='manual_step_confirmed'`，不新增表。推送管理前端使用现有 `REWORK_ISSUES` 映射，把 readiness key 映射到任务验收 step key：
+推送管理前端使用独立的 `READINESS_OVERRIDE_ISSUES` 映射，把 readiness key 映射到任务验收 step key：
 
 | readiness key | modal label | task step key |
 | --- | --- | --- |
@@ -34,6 +34,13 @@
 | `final_push_confirmed` | 人工最终推送确认 | `final_push_confirmation` |
 
 `final_push_confirmed -> final_push_confirmation` 允许通过推送管理兜底确认，但只能在该行按钮被点击时写入该单项事件；打开 modal 或点击其它条件行不得顺带确认最终推送项。
+
+持久化规则：
+
+- 素材有关联 `media_items.task_id` 时，沿用任务中心已有 `task_events.event_type='manual_step_confirmed'`，保证任务中心和推送管理看到同一个人工确认结果。
+- 素材没有 `task_id` 时，写入 `media_push_readiness_overrides`，以 `media_item_id + readiness_key` 唯一记录管理员在推送管理里的兜底确认。该路径用于没有通过任务中心生成、无法回到任务中心点击最终确认的视频素材。
+- `compute_readiness()` 同时读取任务级人工确认和媒体项级管理员确认；两者任一存在即把对应 readiness key 视为 `True`。
+- 媒体项级确认只影响当前素材行，不反写任务中心，不创建任务，不批量确认其它 readiness key。
 
 后端新增管理员接口：
 
@@ -50,7 +57,7 @@
 - 必须登录且是管理员。
 - `item_id` 必须存在且可访问。
 - `key` 必须是上述允许的 readiness key。
-- 素材必须关联 `task_id`，否则无法写任务事件，返回错误。
+- 素材可以没有 `task_id`；无 `task_id` 时写媒体项级管理员确认记录。
 
 成功后调用任务服务写入人工确认事件，刷新该 item 的推送状态缓存，并返回最新 `status` 与 `readiness`。
 
@@ -64,11 +71,15 @@
 
 `[人工确认/已确认] 条件名 当前状态 说明`
 
-已就绪项仍可显示“已就绪”，按钮禁用；未就绪项可人工确认。没有 `task_id` 的素材按钮禁用并提示无法兜底。
+已就绪项仍可显示“已就绪”，按钮禁用；未就绪项可人工确认。没有 `task_id` 的素材仍允许确认，确认记录只绑定当前 `media_item_id`。
 
 ## 验证
 
 1. `pytest tests/test_appcore_pushes.py::test_admin_override_readiness_key_confirms_child_step_and_refreshes_cache -q`
-2. `pytest tests/test_pushes_ui_assets.py::test_pushes_script_renders_readiness_admin_override_modal -q`
-3. `pytest tests/test_pushes_routes.py::test_pushes_admin_readiness_override_endpoint_confirms_step -q`
-4. `python3 -m compileall appcore/pushes.py appcore/tasks.py web/routes/pushes.py`
+2. `pytest tests/test_appcore_pushes.py::test_admin_override_readiness_key_confirms_item_without_task -q`
+3. `pytest tests/test_appcore_pushes.py::test_compute_status_pending_after_item_level_admin_final_confirmation -q`
+4. `pytest tests/test_pushes_ui_assets.py::test_pushes_script_renders_readiness_admin_override_modal -q`
+5. `pytest tests/test_pushes_routes.py::test_pushes_admin_readiness_override_endpoint_confirms_step -q`
+6. `pytest tests/test_pushes_routes.py::test_pushes_admin_readiness_override_allows_unbound_item_level_confirmation -q`
+7. `pytest tests/test_push_status_cache_schema.py::test_push_readiness_overrides_migration_declares_item_level_table -q`
+8. `python3 -m compileall appcore/pushes.py appcore/tasks.py web/routes/pushes.py`
