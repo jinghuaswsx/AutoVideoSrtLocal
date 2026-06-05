@@ -851,6 +851,57 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-lang-push-count { color:var(--oc-fg); font-weight:700; }
 .oc-lang-push-zero { color:var(--oc-danger-fg); font-size:24px; font-weight:900; line-height:1; }
 .oc-lang-empty { font-size:12px; }
+.oc-order-stats-bar {
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  min-width:0;
+}
+.oc-order-stats-summary,
+.oc-order-stats-line {
+  display:grid;
+  grid-template-columns:minmax(52px, 64px) minmax(172px, 1fr);
+  gap:6px;
+  align-items:center;
+  width:100%;
+  max-width:250px;
+  min-height:24px;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+}
+.oc-order-stats-summary {
+  padding-bottom:2px;
+  border-bottom:1px solid var(--oc-border);
+  font-weight:700;
+}
+.oc-order-stats-name {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--oc-fg);
+  font-weight:600;
+}
+.oc-order-stats-values {
+  display:grid;
+  grid-template-columns:repeat(4, minmax(36px, 1fr));
+  gap:4px;
+  min-width:0;
+}
+.oc-order-stat {
+  display:inline-flex;
+  align-items:baseline;
+  gap:2px;
+  color:var(--oc-fg-muted);
+  white-space:nowrap;
+}
+.oc-order-stat strong {
+  color:var(--oc-fg);
+  font-size:13px;
+  font-weight:700;
+}
+.oc-order-stats-summary .oc-order-stat strong {
+  color:var(--oc-accent);
+}
 .delivery-status-cell { text-align:center; vertical-align:middle; }
 .oc-delivery-pill {
   display:inline-flex;

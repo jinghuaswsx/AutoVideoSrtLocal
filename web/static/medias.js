@@ -517,10 +517,9 @@
     return `$${Math.round(num).toLocaleString('en-US')}`;
   }
 
-  function renderProductLangAdBar(coverage, langAdSummary, adSummary) {
+  function mediaProductLangOrder(coverage, langAdSummary) {
     const coverageMap = coverage || {};
     const langSummary = langAdSummary || {};
-    const productSummary = adSummary || {};
     const seen = new Set();
     const ordered = [];
     (LANGUAGES || []).forEach((lang) => {
@@ -533,15 +532,25 @@
       const normalized = String(code || '').toLowerCase();
       if (normalized && !seen.has(normalized)) ordered.push(normalized);
     });
-    const lines = ordered.map((code) => {
+    return ordered.filter((code) => {
       const c = coverageMap[code] || { items: 0, copy: 0, cover: false };
       const summary = langSummary[code] || {};
       const pushed = Number(summary.pushed_video_count || 0) || 0;
       if (code === 'en') {
-        if (pushed <= 0) return '';
-      } else if (!Number(c.items || 0)) {
-        return '';
+        return pushed > 0;
       }
+      return Number(c.items || 0) > 0;
+    });
+  }
+
+  function renderProductLangAdBar(coverage, langAdSummary, adSummary) {
+    const coverageMap = coverage || {};
+    const langSummary = langAdSummary || {};
+    const productSummary = adSummary || {};
+    const lines = mediaProductLangOrder(coverageMap, langSummary).map((code) => {
+      const c = coverageMap[code] || { items: 0, copy: 0, cover: false };
+      const summary = langSummary[code] || {};
+      const pushed = Number(summary.pushed_video_count || 0) || 0;
       const pushedClass = pushed === 0 ? 'oc-lang-push-zero' : 'oc-lang-push-count';
       const roas = fmtAdRoas(summary.ad_roas);
       const spend = fmtAdSpend(summary.ad_spend_usd);
@@ -573,6 +582,47 @@
       + `<div class="oc-lang-spend-block"><span class="oc-lang-label">总消耗</span><strong style="color: #2563eb;">${fmtAdSpend(productSummary.ad_spend_usd)}</strong></div>`
       + `</div>`
       + `</div>`
+      + body
+      + `</div>`;
+  }
+
+  function fmtOrderCount(value) {
+    const num = Number(value || 0);
+    if (!isFinite(num) || num <= 0) return '0';
+    return Math.round(num).toLocaleString('en-US');
+  }
+
+  function renderOrderStat(label, value) {
+    return `<span class="oc-order-stat">${label}<strong>${fmtOrderCount(value)}</strong></span>`;
+  }
+
+  function renderProductOrderStatsBar(orderStats, coverage, langAdSummary) {
+    const stats = orderStats || {};
+    const total = stats.total || {};
+    const byLang = stats.by_lang || {};
+    const metricRow = (counts) => (
+      renderOrderStat('今', counts.today)
+      + renderOrderStat('昨', counts.yesterday)
+      + renderOrderStat('7天', counts.last_7d)
+      + renderOrderStat('30天', counts.last_30d)
+    );
+    const totalHtml = `<div class="oc-order-stats-summary">`
+      + `<span class="oc-order-stats-name">总计</span>`
+      + `<span class="oc-order-stats-values">${metricRow(total)}</span>`
+      + `</div>`;
+    const lines = mediaProductLangOrder(coverage || {}, langAdSummary || {}).map((code) => {
+      const counts = byLang[code] || {};
+      const title = `${langDisplayName(code)}: 今天 ${counts.today || 0} / 昨天 ${counts.yesterday || 0} / 7天 ${counts.last_7d || 0} / 30天 ${counts.last_30d || 0}`;
+      return `<div class="oc-order-stats-line" title="${escapeHtml(title)}">`
+        + `<span class="oc-order-stats-name">${escapeHtml(langDisplayName(code))}</span>`
+        + `<span class="oc-order-stats-values">${metricRow(counts)}</span>`
+        + `</div>`;
+    }).filter(Boolean);
+    const body = lines.length
+      ? lines.join('')
+      : '<div class="oc-lang-empty muted">—</div>';
+    return `<div class="oc-order-stats-bar">`
+      + totalHtml
       + body
       + `</div>`;
   }
@@ -3082,6 +3132,7 @@
         <col style="width:88px">
         <col style="width:56px">
         <col style="width:300px">
+        <col style="width:260px">
         <col style="width:92px">
         <col style="width:92px">
         <col style="width:92px">
@@ -3101,6 +3152,7 @@
           <th>负责人</th>
           <th>素材数</th>
           <th>语种和投放情况</th>
+          <th>单量情况</th>
           <th>投放情况</th>
           <th>创建时间</th>
           <th>修改时间</th>
@@ -3619,14 +3671,14 @@
         ${shopifyTitle ? `<button type="button" class="oc-btn text sm oc-product-english-copy" data-product-english-name="${escapeHtml(shopifyTitle)}" data-copy-label="复制" title="复制英文名" aria-label="复制英文名" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
       </div>`;
 
-    // --- Line 3: Product Code / ID ---
-    const productUrl = _defaultProductUrl('en', productCode);
-    const codeLine = `
-      <div class="prod-info-line" style="display: flex; align-items: center; gap: 4px;">
-        <span class="prod-info-val" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(productCode)}">
-          ${productCode
-            ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(productCode)}">${escapeHtml(productCode)}</a>`
-            : '<span class="muted">—</span>'
+	    // --- Line 3: Product Code / ID ---
+	    const productUrl = _defaultProductUrl('en', productCode);
+	    const codeLine = `
+	      <div class="mono wrap oc-product-id-cell" style="display: flex; align-items: center; gap: 4px;">
+	        <span class="oc-product-id-main" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100% - 24px);" title="${escapeHtml(productCode)}">
+	          ${productCode
+	            ? `<a href="${escapeHtml(productUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(productCode)}">${escapeHtml(productCode)}</a>`
+	            : '<span class="muted">—</span>'
           }
         </span>
         ${productCode ? `<button type="button" class="oc-btn text sm oc-product-id-copy" data-product-code="${escapeHtml(productCode)}" data-copy-label="复制" title="复制产品 ID" aria-label="复制产品 ID" style="padding: 2px; height: 20px; min-width: 20px; width: auto; justify-content: center; align-items: center; display: inline-flex; flex-shrink: 0;">${icon('copy', 12)}</button>` : ''}
@@ -3669,6 +3721,7 @@
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
         <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary)}</td>
+        <td>${renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
         <td class="muted mono">${fmtDateTimeLines(p.created_at)}</td>
         <td class="muted mono">${fmtDateTimeLines(p.updated_at)}</td>

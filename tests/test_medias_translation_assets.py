@@ -91,6 +91,88 @@ def _run_medias_lang_ad_bar_harness(scenario):
     return json.loads(completed.stdout)["html"]
 
 
+def _run_medias_order_stats_bar_harness(scenario):
+    script_path = ROOT / "web" / "static" / "medias.js"
+    harness = textwrap.dedent(
+        r"""
+        const fs = require("fs");
+        const vm = require("vm");
+
+        const script = fs.readFileSync(process.env.MEDIAS_JS, "utf8");
+
+        function extract(start, end) {
+          const startIdx = script.indexOf(start);
+          const endIdx = script.indexOf(end, startIdx);
+          if (startIdx < 0 || endIdx < 0) {
+            throw new Error(`Unable to extract block: ${start}`);
+          }
+          return script.slice(startIdx, endIdx);
+        }
+
+        const scenario = JSON.parse(process.env.MEDIAS_ORDER_STATS_SCENARIO || "{}");
+        const source = `
+          let LANGUAGES = [
+            { code: "en", name_zh: "英语" },
+            { code: "de", name_zh: "德语" },
+            { code: "fr", name_zh: "法语" }
+          ];
+
+          function escapeHtml(value) {
+            return String(value == null ? "" : value)
+              .replace(/&/g, "&amp;")
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;")
+              .replace(/"/g, "&quot;")
+              .replace(/'/g, "&#39;");
+          }
+
+          ${extract("function langDisplayName(code)", "function resolveMaterialFilenameLang")}
+          ${extract("function mediaProductLangOrder(coverage, langAdSummary)", "const DELIVERY_STATUS_META")}
+
+          const html = renderProductOrderStatsBar(
+            scenario.orderStats || {},
+            scenario.coverage || {},
+            scenario.langAdSummary || {}
+          );
+          html;
+        `;
+
+        const html = vm.runInNewContext(source, { scenario }, { timeout: 1000 });
+        process.stdout.write(JSON.stringify({ html }));
+        """
+    )
+
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".js", delete=False) as handle:
+        handle.write(harness)
+        harness_path = Path(handle.name)
+
+    try:
+        completed = subprocess.run(
+            ["node", str(harness_path)],
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "MEDIAS_JS": str(script_path),
+                "MEDIAS_ORDER_STATS_SCENARIO": json.dumps(scenario, ensure_ascii=False),
+            },
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+        )
+    finally:
+        harness_path.unlink(missing_ok=True)
+
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"Node harness failed with code {completed.returncode}\n"
+            f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+        )
+
+    return json.loads(completed.stdout)["html"]
+
+
 def test_medias_list_template_contains_new_translation_modal():
     root = Path(__file__).resolve().parents[1]
     template = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
@@ -197,6 +279,49 @@ def test_medias_product_table_names_language_ad_column():
 
     assert "<th>语种和投放情况</th>" in script
     assert "<th>语种覆盖</th>" not in script
+
+
+def test_medias_product_table_renders_order_stats_column():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+
+    assert "<th>单量情况</th>" in script
+    assert "function renderProductOrderStatsBar(orderStats, coverage, langAdSummary)" in script
+    assert "renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)" in script
+
+
+def test_medias_order_stats_bar_uses_lang_order_and_four_windows():
+    html = _run_medias_order_stats_bar_harness(
+        {
+            "coverage": {
+                "en": {"items": 1},
+                "de": {"items": 1},
+                "fr": {"items": 1},
+            },
+            "langAdSummary": {
+                "en": {"pushed_video_count": 0},
+                "de": {"pushed_video_count": 1},
+                "fr": {"pushed_video_count": 2},
+            },
+            "orderStats": {
+                "total": {"today": 9, "yesterday": 8, "last_7d": 27, "last_30d": 101},
+                "by_lang": {
+                    "de": {"today": 2, "yesterday": 1, "last_7d": 7, "last_30d": 22},
+                    "fr": {"today": 3, "yesterday": 4, "last_7d": 12, "last_30d": 31},
+                },
+            },
+        }
+    )
+
+    assert "总计" in html
+    assert "今<strong>9</strong>" in html
+    assert "昨<strong>8</strong>" in html
+    assert "7天<strong>27</strong>" in html
+    assert "30天<strong>101</strong>" in html
+    assert "德 (DE)" in html
+    assert "法 (FR)" in html
+    assert "英 (EN)" not in html
+    assert "今<strong>2</strong>" in html
+    assert html.index("德 (DE)") < html.index("法 (FR)")
 
 
 def test_medias_product_lang_ad_bar_hides_english_without_pushed_materials():
