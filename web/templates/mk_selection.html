@@ -5910,6 +5910,7 @@ async function mkiImportProgressCreateSmallLangTask() {
     const taskText = mkiImportProgressTaskId ? `小语种任务已创建，父任务 #${mkiImportProgressTaskId}` : '小语种任务已创建';
     mkiImportProgressSetStep('next', 'done', taskText);
     continueBtn.textContent = mkiImportProgressTaskId ? `已创建任务 #${mkiImportProgressTaskId}` : '已创建任务';
+    continueBtn.disabled = false;
     const tasksBtn = document.getElementById('mkiImportProgressTasks');
     if (tasksBtn && mkiImportProgressTaskId) {
       tasksBtn.dataset.href = `/tasks/?task_id=${encodeURIComponent(mkiImportProgressTaskId)}`;
@@ -5930,6 +5931,10 @@ async function mkiImportProgressCreateSmallLangTask() {
 }
 
 function mkiImportProgressContinueTask() {
+  if (mkiImportProgressTaskId) {
+    mkiImportProgressOpenTab(`/tasks/?task_id=${encodeURIComponent(mkiImportProgressTaskId)}`);
+    return;
+  }
   mkiImportProgressCreateSmallLangTask();
 }
 
