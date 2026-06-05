@@ -568,7 +568,7 @@
     </div>
 
     <div class="tc-tabs">
-      <button class="tc-tab {% if active_section == 'overview' %}active{% endif %}" data-section-tab="overview" id="tcTabOverview">任务总览</button>
+      <button class="tc-tab {% if active_section == 'overview' %}active{% endif %}" data-section-tab="overview" id="tcTabOverview">全部任务</button>
       {% if is_admin %}
       <button class="tc-tab {% if active_section == 'stats' %}active{% endif %}" data-section-tab="stats" id="tcTabStats">任务统计</button>
       {% endif %}
@@ -581,8 +581,8 @@
           <div class="tc-overview-note">默认按创建时间倒序展示。</div>
         </div>
       </div>
-      <div class="tc-subtabs" role="tablist" aria-label="任务总览状态">
-        <button class="tc-subtab {% if active_bucket == 'all' %}active{% endif %}" type="button" data-bucket="all">任务总览</button>
+      <div class="tc-subtabs" role="tablist" aria-label="全部任务状态">
+        <button class="tc-subtab {% if active_bucket == 'all' %}active{% endif %}" type="button" data-bucket="all">全部任务</button>
         <button class="tc-subtab {% if active_bucket == 'todo' %}active{% endif %}" type="button" data-bucket="todo">进行中任务</button>
         <button class="tc-subtab {% if active_bucket == 'review' %}active{% endif %}" type="button" data-bucket="review">待审核任务</button>
         <button class="tc-subtab {% if active_bucket == 'blocked' %}active{% endif %}" type="button" data-bucket="blocked">阻塞中任务</button>
@@ -2681,7 +2681,7 @@ async function tcRefreshTaskRow(id) {
     TC_TASK_CACHE.set(numericId, task);
     
     // If task is archived but the current view filters out archived tasks, remove it from list
-    if (task.archived_at && TC_CURRENT_BUCKET !== 'archived') {
+    if (task.archived_at && TC_CURRENT_BUCKET !== 'archived' && TC_CURRENT_BUCKET !== 'all') {
       rowEl.remove();
       return;
     }
@@ -2926,7 +2926,7 @@ function tcTaskRowAction(it) {
     if (!it.archived_at) {
       actions.push(tcArchiveTaskAction(id));
     } else {
-      actions.push(`<button class="tc-btn tc-btn--danger" disabled>归档</button>`);
+      actions.push(`<button class="tc-btn tc-btn--danger" disabled>已归档</button>`);
     }
   }
 
