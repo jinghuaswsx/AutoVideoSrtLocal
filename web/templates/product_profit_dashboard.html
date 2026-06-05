@@ -3440,6 +3440,17 @@
     detectAndHighlightActiveQuickDate();
     syncAnalyticsDateRangePicker();
   });
+  // Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md
+  document.addEventListener('analytics-date-range:apply', function(event) {
+    var root = event.target && event.target.closest
+      ? event.target.closest('[data-analytics-date-range]')
+      : null;
+    if (!root || root.dataset.rangeStartId !== 'ppd-from') return;
+    syncUrlState();
+    detectAndHighlightActiveQuickDate();
+    syncAnalyticsDateRangePicker();
+    reloadActiveTab();
+  });
 
   // 初始化产品选择器和国家胶囊，再走 switchTab 触发当前 Tab 的 load 函数
   Promise.all([loadProducts(), loadCountryPills()]).then(function() {

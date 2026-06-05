@@ -49,10 +49,15 @@ def test_product_profit_product_search_has_no_concrete_default():
 
 
 def test_product_profit_product_picker_redirects_after_selection():
+    picker_block = TEMPLATE[
+        TEMPLATE.index("function selectProductFromPicker(label)"):
+        TEMPLATE.index("// ── 数字格式化", TEMPLATE.index("function selectProductFromPicker(label)"))
+    ]
+
     assert "if (selectedProductId === '0') {" in TEMPLATE
     assert "window.switchTab('list');" in TEMPLATE
     assert "window.switchTab('orders');" in TEMPLATE
-    assert "reloadActiveTab();" not in TEMPLATE
+    assert "reloadActiveTab();" not in picker_block
 
 
 def test_product_profit_ads_campaigns_support_manual_unbind_only():
@@ -134,6 +139,21 @@ def test_product_profit_uses_shared_analytics_date_range_picker():
     assert '<input type="date" id="ppd-to"' not in TEMPLATE
     assert "window.AnalyticsDateRangePicker.initAll()" in TEMPLATE
     assert "window.AnalyticsDateRangePicker.syncAll()" in TEMPLATE
+
+
+def test_product_profit_date_range_apply_reload_active_tab():
+    """Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md"""
+    assert "Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md" in TEMPLATE
+    assert "document.addEventListener('analytics-date-range:apply'" in TEMPLATE
+    handler = TEMPLATE[
+        TEMPLATE.index("document.addEventListener('analytics-date-range:apply'"):
+        TEMPLATE.index("});", TEMPLATE.index("document.addEventListener('analytics-date-range:apply'")) + 3
+    ]
+    assert "ppd-from" in handler
+    assert "syncUrlState();" in handler
+    assert "detectAndHighlightActiveQuickDate();" in handler
+    assert "syncAnalyticsDateRangePicker();" in handler
+    assert "reloadActiveTab();" in handler
 
 
 def test_product_profit_has_product_country_analysis_tab_matrix():

@@ -38,9 +38,8 @@
       '.analytics-calendar-day.is-selected{background:var(--accent,var(--oc-accent,#2563eb))!important;color:var(--accent-fg,#fff)!important;}',
       '.analytics-calendar-day.is-in-range{background:var(--accent-subtle,var(--oc-accent-subtle,#dbeafe));color:var(--accent,var(--oc-accent,#2563eb));}',
       '.analytics-range-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:12px;border-top:1px solid var(--border,var(--oc-border,#e2e8f0));}',
-      '.analytics-range-apply{background:var(--accent,var(--oc-accent,#2563eb))!important;border-color:var(--accent,var(--oc-accent,#2563eb))!important;color:var(--accent-fg,#fff)!important;}',
-      '.analytics-range-apply:disabled{opacity:.45;cursor:not-allowed;}',
-      '@media(max-width:640px){.analytics-range-panel{right:50%;transform:translateX(50%);}.analytics-range-calendars{grid-template-columns:1fr;}}'
+      '/* Docs-anchor: docs/superpowers/specs/2026-06-05-analytics-date-range-picker-mobile-auto-apply-design.md */',
+      '@media(max-width:640px){.analytics-range-picker{display:block;width:100%;min-width:0;}.analytics-range-trigger{height:36px;}.analytics-range-panel{position:fixed;left:var(--space-3,12px);right:var(--space-3,12px);bottom:0;top:auto;width:auto;max-height:min(78vh,680px);overflow:auto;transform:none;padding:var(--space-4,16px);padding-bottom:calc(var(--space-4,16px) + env(safe-area-inset-bottom,0px));border-radius:var(--radius-lg,var(--oc-r-lg,12px)) var(--radius-lg,var(--oc-r-lg,12px)) 0 0;}.analytics-range-calendars{grid-template-columns:1fr;gap:var(--space-3,12px);}.analytics-calendar-day{min-height:40px;font-size:14px;}.analytics-range-panel-head{gap:var(--space-3,12px);}.analytics-range-nav{flex:0 0 auto;}}'
     ].join('');
     document.head.appendChild(style);
   }
@@ -130,7 +129,7 @@
       '<div class="analytics-range-panel-head">' +
         '<div>' +
           '<div class="analytics-range-panel-title">选择' + label + '</div>' +
-          '<div class="analytics-range-panel-note" data-range-summary>点击第一个日期作为开始，第二个日期作为结束。</div>' +
+          '<div class="analytics-range-panel-note" data-range-summary>点击第一个日期作为开始，第二个日期会自动生效。</div>' +
         '</div>' +
         '<div class="analytics-range-nav">' +
           '<button type="button" data-range-nav="prev">上个月</button>' +
@@ -140,7 +139,6 @@
       '<div class="analytics-range-calendars" data-range-calendars></div>' +
       '<div class="analytics-range-actions">' +
         '<button type="button" data-range-cancel>取消</button>' +
-        '<button type="button" class="analytics-range-apply" data-range-apply disabled>确认</button>' +
       '</div>';
     var calendars = panel.querySelector('[data-range-calendars]');
     calendars.appendChild(createCalendar(0));
@@ -164,7 +162,6 @@
     var panel = root.querySelector('[data-range-panel]') || createPanel(label);
     if (!panel.parentElement) root.appendChild(panel);
     var summary = panel.querySelector('[data-range-summary]');
-    var applyButton = panel.querySelector('[data-range-apply]');
     var monthAnchor = monthStart(parseIsoDate(startInput.value) || todayDate());
     var draftStart = null;
     var draftEnd = null;
@@ -188,13 +185,12 @@
 
     function updateSummary() {
       if (waitingForEnd && draftStart) {
-        summary.textContent = '已选开始：' + formatLabelDate(draftStart) + '，请再选一个日期作为结束。';
+        summary.textContent = '已选开始：' + formatLabelDate(draftStart) + '，请再选一个日期，第二个日期会自动生效。';
       } else if (draftStart && draftEnd) {
-        summary.textContent = '已选范围：' + formatLabelDate(draftStart) + ' 至 ' + formatLabelDate(draftEnd) + '，确认后生效。';
+        summary.textContent = '已选范围：' + formatLabelDate(draftStart) + ' 至 ' + formatLabelDate(draftEnd) + '，正在生效。';
       } else {
-        summary.textContent = '点击第一个日期作为开始，第二个日期作为结束。';
+        summary.textContent = '点击第一个日期作为开始，第二个日期会自动生效。';
       }
-      applyButton.disabled = !(draftStart && draftEnd);
     }
 
     function renderCalendars() {
@@ -277,6 +273,9 @@
         draftEnd = null;
         waitingForEnd = true;
         monthAnchor = monthStart(clicked);
+        updateSummary();
+        renderCalendars();
+        return;
       } else {
         draftEnd = clicked;
         if (timeValue(draftEnd) < timeValue(draftStart)) {
@@ -285,9 +284,9 @@
           draftEnd = swapped;
         }
         waitingForEnd = false;
+        applyRange();
+        return;
       }
-      updateSummary();
-      renderCalendars();
     }
 
     function applyRange() {
@@ -316,7 +315,6 @@
       renderCalendars();
     });
     panel.querySelector('[data-range-cancel]').addEventListener('click', closePanel);
-    applyButton.addEventListener('click', applyRange);
     panel.addEventListener('click', function(event) {
       var target = event.target;
       if (target && target.hasAttribute('data-range-day')) {
