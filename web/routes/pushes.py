@@ -608,6 +608,51 @@ def api_reject_to_task(item_id: int):
     return _json_response(result)
 
 
+@bp.route("/api/items/<int:item_id>/readiness-overrides", methods=["POST"])
+@login_required
+@admin_required
+def api_readiness_override(item_id: int):
+    item = medias.get_item(item_id)
+    if not item:
+        return _json_response({"error": "item_not_found"}, 404)
+
+    linked_task_id = _positive_int(item.get("task_id"))
+    task_id = _resolve_rework_task_id(item)
+    if not task_id:
+        return _json_response({"error": "task_not_linked"}, 400)
+    if linked_task_id is None:
+        medias.update_item_task_id(item_id, int(task_id))
+
+    body = request.get_json(silent=True) or {}
+    key = str(body.get("key") or "").strip()
+    try:
+        result = pushes.admin_override_readiness_key(
+            item_id=item_id,
+            readiness_key=key,
+            actor_user_id=int(current_user.id),
+        )
+    except LookupError:
+        return _json_response({"error": "item_not_found"}, 404)
+    except ValueError as exc:
+        error = "task_not_linked" if str(exc) == "task_not_linked" else "invalid_request"
+        return _json_response({"error": error, "message": str(exc)}, 400)
+    except PermissionError:
+        return _json_response({"error": "forbidden"}, 403)
+    except tasks_svc.StateError as exc:
+        return _json_response({"error": "task_state_error", "message": str(exc)}, 409)
+
+    _audit_push_action(
+        item_id,
+        "push_readiness_admin_override",
+        detail={
+            "task_id": int(task_id),
+            "readiness_key": result.get("key"),
+            "step_key": result.get("step_key"),
+        },
+    )
+    return _json_response(result)
+
+
 @bp.route("/api/items/<int:item_id>/upload-rework-screenshot", methods=["POST"])
 @login_required
 @admin_required

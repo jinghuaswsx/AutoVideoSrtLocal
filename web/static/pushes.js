@@ -7,6 +7,7 @@
     skipped:   { text: '不推送', cls: 'badge-skipped' },
   };
   const READINESS_LABELS = {
+    is_listed: '商品上架',
     has_object: '视频',
     has_cover: '封面',
     has_copywriting: '文案',
@@ -15,6 +16,16 @@
     shopify_image_confirmed: '图片/链接确认',
     final_push_confirmed: '推送人工确认',
   };
+  const READINESS_OVERRIDE_ISSUES = [
+    { key: 'is_listed', taskKey: 'product_listed', label: '商品上架' },
+    { key: 'has_object', taskKey: 'translated_video', label: '视频' },
+    { key: 'has_cover', taskKey: 'translated_cover', label: '封面' },
+    { key: 'has_copywriting', taskKey: 'translated_copywriting', label: '文案' },
+    { key: 'lang_supported', taskKey: 'language_supported', label: '链接' },
+    { key: 'has_push_texts', taskKey: 'push_texts', label: '英文文案格式' },
+    { key: 'shopify_image_confirmed', taskKey: 'shopify_images', label: '图片/链接确认' },
+    { key: 'final_push_confirmed', taskKey: 'final_push_confirmation', label: '推送人工确认' },
+  ];
   const REWORK_ISSUES = [
     { key: 'has_object', taskKey: 'translated_video', label: '视频' },
     { key: 'has_cover', taskKey: 'translated_cover', label: '封面' },
@@ -374,7 +385,7 @@
     return `${window.location.pathname}?${query}${window.location.hash || ''}`;
   }
 
-  function renderReadinessText(readiness) {
+  function renderReadinessText(readiness, item) {
     const line1Keys = ['has_object', 'has_cover', 'has_copywriting', 'lang_supported', 'has_push_texts'];
     const line2Keys = ['shopify_image_confirmed', 'final_push_confirmed'];
 
@@ -402,6 +413,13 @@
         return `<span class="ready-item ready-bad">${escapeHtml(d.domain)} ❌</span>`;
       });
       html += `<div class="ready-row ready-row-domain" style="display: flex; flex-direction: column; gap: 2px; align-items: flex-start;">${domainParts.map(p => `<div>${p}</div>`).join('')}</div>`;
+    }
+    if (window.PUSH_IS_ADMIN && item && item.id) {
+      const disabled = item.task_id ? '' : ' disabled';
+      const title = item.task_id
+        ? '管理员兜底确认推送必要条件'
+        : '这条素材没有关联任务，不能人工确认必要条件';
+      html += `<div class="ready-row ready-row-override"><button type="button" class="btn-mini readiness-override-btn" data-action="readiness-override" data-id="${escapeAttr(item.id)}" title="${escapeAttr(title)}"${disabled}>人工确认</button></div>`;
     }
     html += `</div>`;
     return html;
@@ -1292,7 +1310,7 @@
         <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
       </td>
       <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
-      <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness)}</td>
+      <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness, it)}</td>
       <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
       <td class="time push-time-cell">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
       ${window.PUSH_IS_ADMIN ? `<td class="push-action-cell">${renderActionCell(it)}</td>` : ''}
@@ -1383,7 +1401,7 @@
         </div>
       </td>
       <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
-      <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness)}</td>
+      <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness, it)}</td>
       <td class="audit-cell-wrap">${renderAuditCell(it)}</td>
       <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
       <td class="time push-time-cell">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
@@ -2201,6 +2219,94 @@
         status.classList.add('pm-rework-status--error');
       }
     });
+  }
+
+  function renderReadinessOverrideRows(item, list, statusNode) {
+    clear(list);
+    const readiness = item.readiness || {};
+    READINESS_OVERRIDE_ISSUES.forEach(issue => {
+      const ok = readiness[issue.key] === true;
+      const row = el('div', { class: 'readiness-override-row' });
+      const btn = el('button', {
+        type: 'button',
+        class: 'btn-mini readiness-override-row-btn',
+        disabled: ok || !item.task_id,
+        dataset: { key: issue.key },
+      }, ok ? '已就绪' : '人工确认');
+      const meta = el('div', { class: 'readiness-override-meta' }, [
+        el('div', { class: 'readiness-override-label' }, issue.label),
+        el('div', { class: 'readiness-override-key' }, issue.key),
+      ]);
+      const state = el('span', {
+        class: `readiness-override-state ${ok ? 'is-ready' : 'is-missing'}`,
+      }, ok ? '已就绪' : '未就绪');
+      btn.addEventListener('click', async () => {
+        const key = issue.key;
+        btn.disabled = true;
+        statusNode.hidden = false;
+        statusNode.className = 'pm-rework-status';
+        statusNode.textContent = `正在确认：${issue.label}`;
+        try {
+          const body = await fetchJSON(`/pushes/api/items/${item.id}/readiness-overrides`, {
+            method: 'POST',
+            headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ key }),
+          });
+          const nextReadiness = body.readiness && Object.keys(body.readiness).length
+            ? body.readiness
+            : { ...(item.readiness || {}), [key]: true };
+          item.readiness = nextReadiness;
+          item.status = body.status || item.status;
+          statusNode.textContent = `已确认：${issue.label}`;
+          statusNode.classList.add('pm-rework-status--ok');
+          renderReadinessOverrideRows(item, list, statusNode);
+          await load({ syncUrl: false });
+        } catch (err) {
+          btn.disabled = false;
+          statusNode.textContent = describeError(err);
+          statusNode.classList.add('pm-rework-status--error');
+        }
+      });
+      row.appendChild(btn);
+      row.appendChild(meta);
+      row.appendChild(state);
+      list.appendChild(row);
+    });
+  }
+
+  function openReadinessOverrideModal(itemId) {
+    const item = state.items.find(i => Number(i.id) === Number(itemId));
+    if (!item) return;
+
+    const overlay = el('div', { class: 'pm-rework-overlay readiness-override-overlay' });
+    const dialog = el('div', { class: 'pm-rework-dialog readiness-override-dialog' });
+    overlay.appendChild(dialog);
+    const header = el('div', { class: 'pm-rework-header' }, [
+      el('div', {}, [
+        el('h3', {}, '推送必要条件人工确认'),
+        el('p', {}, `${item.product_name || item.product_code || item.display_name || ''}`),
+      ]),
+      el('button', { type: 'button', class: 'pm-close', 'aria-label': '关闭' }, '×'),
+    ]);
+    const list = el('div', { class: 'readiness-override-list' });
+    const note = item.task_id
+      ? '每一行可单独人工确认；确认后该必要条件按最高优先级视为就绪。'
+      : '这条素材没有关联任务，无法写入人工确认事件。';
+    const status = el('div', { class: 'pm-rework-status', hidden: true });
+    dialog.appendChild(header);
+    dialog.appendChild(el('div', { class: 'pm-rework-note' }, note));
+    dialog.appendChild(list);
+    dialog.appendChild(status);
+
+    const close = () => {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    };
+    header.querySelector('.pm-close').addEventListener('click', close);
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) close();
+    });
+    renderReadinessOverrideRows(item, list, status);
+    document.body.appendChild(overlay);
   }
 
   function openPushModal(itemId) {
@@ -3375,6 +3481,7 @@
     if (!btn) return;
     if (action === 'open-modal') openPushModal(id);
     else if (action === 'standalone-rework') openStandaloneReworkModal(id);
+    else if (action === 'readiness-override') openReadinessOverrideModal(id);
     else if (action === 'ai-detail') showAuditDetail(id);
     else if (action === 'reset') resetPush(id);
     else if (action === 'view-logs') viewLogs(id);

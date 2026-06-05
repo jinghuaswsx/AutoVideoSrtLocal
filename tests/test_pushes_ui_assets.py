@@ -63,6 +63,22 @@ def test_pushes_script_shows_final_push_confirmation_readiness():
     assert "const line2Keys = ['shopify_image_confirmed', 'final_push_confirmed'];" in script
 
 
+def test_pushes_script_renders_readiness_admin_override_modal():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    readiness_renderer = script[
+        script.index("function renderReadinessText"):
+        script.index("function renderStatusBadge")
+    ]
+
+    assert "openReadinessOverrideModal" in script
+    assert "data-action=\"readiness-override\"" in readiness_renderer
+    assert "readiness-override-btn" in readiness_renderer
+    assert "推送必要条件人工确认" in script
+    assert "readiness-overrides" in script
+    assert "JSON.stringify({ key })" in script
+    assert "人工确认" in script
+
+
 def test_pushes_script_sanitizes_product_page_url_href_protocols():
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
     render_start = script.index("function renderRow(it)")

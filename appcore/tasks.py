@@ -3640,6 +3640,8 @@ def confirm_child_step(
     confirmable_statuses = (CHILD_ASSIGNED, CHILD_REVIEW)
     if normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY:
         confirmable_statuses = (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE)
+    if is_admin:
+        confirmable_statuses = (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE)
     if row["status"] not in confirmable_statuses:
         raise StateError("child not confirmable")
 
