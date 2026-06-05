@@ -1069,7 +1069,7 @@ def test_import_mk_video_old_product_ignores_translator(db_test_user, db_test_pr
 def test_import_mk_video_dedupes_by_filename(db_test_user, db_test_product, monkeypatch):
     from appcore import mk_import
 
-    execute(
+    item_id = execute(
         "INSERT INTO media_items (product_id, user_id, filename, object_key, lang) "
         "VALUES (%s, %s, %s, %s, %s)",
         (db_test_product["id"], db_test_user, "_t_mki_dup.mp4", "k/dup.mp4", "en"),
@@ -1081,10 +1081,14 @@ def test_import_mk_video_dedupes_by_filename(db_test_user, db_test_product, monk
         "product_name": "x", "product_link": None, "main_image": None,
         "product_code": "test-code", "mk_id": None,
     }
-    with pytest.raises(mk_import.DuplicateError):
-        mk_import.import_mk_video(
-            mk_video_metadata=meta, translator_id=db_test_user, actor_user_id=db_test_user,
-        )
+    monkeypatch.setattr(mk_import, "_bind_imported_mk_material", lambda **kwargs: {})
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata=meta, translator_id=db_test_user, actor_user_id=db_test_user,
+    )
+    assert result["media_item_id"] == item_id
+    assert result["media_product_id"] == db_test_product["id"]
+    assert result["is_new_product"] is False
 
     execute("DELETE FROM media_items WHERE product_id=%s AND filename='_t_mki_dup.mp4'", (db_test_product["id"],))
 
