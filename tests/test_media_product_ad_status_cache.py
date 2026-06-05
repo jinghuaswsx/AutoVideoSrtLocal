@@ -290,3 +290,30 @@ def test_new_migration_defines_required_columns():
     assert "delivery_start_time" in body
     assert "delivery_end_time" in body
     assert "active_days" in body
+
+
+def test_product_refresh_sqls_contain_expected_unions_and_date_casts():
+    from appcore import media_product_ad_status_cache as cache
+
+    product_sql = cache._PRODUCT_REFRESH_SQL
+    daily_only_sql = cache._PRODUCT_REFRESH_SQL_DAILY_ONLY
+
+    # 1. Verify realtime and daily contain campaign, adset, and ad levels
+    assert "meta_ad_daily_campaign_metrics" in product_sql
+    assert "meta_ad_daily_adset_metrics" in product_sql
+    assert "meta_ad_daily_ad_metrics" in product_sql
+    assert "meta_ad_realtime_daily_campaign_metrics" in product_sql
+    assert "meta_ad_realtime_daily_adset_metrics" in product_sql
+    assert "meta_ad_realtime_daily_ad_metrics" in product_sql
+
+    # 2. Verify daily metrics use meta_business_date cast instead of imported_at as sync_at
+    assert "CAST(COALESCE(d.meta_business_date, d.report_date) AS DATETIME) AS sync_at" in product_sql
+    assert "d.imported_at AS sync_at" not in product_sql
+
+    # 3. Verify daily-only also contains multi-level metrics and uses CAST for delivery times
+    assert "meta_ad_daily_campaign_metrics" in daily_only_sql
+    assert "meta_ad_daily_adset_metrics" in daily_only_sql
+    assert "meta_ad_daily_ad_metrics" in daily_only_sql
+    assert "CAST(COALESCE(meta_business_date, report_date) AS DATETIME) AS delivery_start_time" in daily_only_sql
+    assert "imported_at" not in daily_only_sql
+
