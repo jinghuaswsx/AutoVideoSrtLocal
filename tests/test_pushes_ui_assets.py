@@ -59,7 +59,7 @@ def test_pushes_script_renders_product_link_and_copy_button():
 def test_pushes_script_shows_final_push_confirmation_readiness():
     script = Path("web/static/pushes.js").read_text(encoding="utf-8")
 
-    assert "final_push_confirmed: '推送人工确认'" in script
+    assert "final_push_confirmed: '人工最终推送确认'" in script
     assert "const line2Keys = ['shopify_image_confirmed', 'final_push_confirmed'];" in script
 
 
@@ -77,6 +77,17 @@ def test_pushes_script_renders_readiness_admin_override_modal():
     assert "readiness-overrides" in script
     assert "JSON.stringify({ key })" in script
     assert "人工确认" in script
+
+
+def test_pushes_script_readiness_override_modal_excludes_final_confirmation():
+    script = Path("web/static/pushes.js").read_text(encoding="utf-8")
+    override_defs = script[
+        script.index("const READINESS_OVERRIDE_ISSUES"):
+        script.index("const REWORK_ISSUES")
+    ]
+
+    assert "final_push_confirmed" not in override_defs
+    assert "final_push_confirmation" not in override_defs
 
 
 def test_pushes_script_sanitizes_product_page_url_href_protocols():

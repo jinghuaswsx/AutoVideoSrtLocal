@@ -3335,3 +3335,25 @@ def test_pushes_admin_readiness_override_requires_admin(authed_user_client_no_db
         json={"key": "has_cover"},
     )
     assert resp.status_code == 403
+
+
+def test_pushes_admin_readiness_override_rejects_final_confirmation(
+    authed_client_no_db, monkeypatch,
+):
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "task_id": 44,
+            "product_id": 7,
+            "lang": "de",
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/1001/readiness-overrides",
+        json={"key": "final_push_confirmed"},
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "invalid_request"
