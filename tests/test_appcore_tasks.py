@@ -1208,6 +1208,8 @@ def test_submit_child_fails_when_detail_images_not_ready(monkeypatch):
 
 
 def test_submit_child_requires_final_push_confirmation_before_transaction(monkeypatch):
+    # This test ensures submit_child fails on missing required steps before transaction,
+    # specifically testing detail_images now since final_push_confirmation is not required during submit_child.
     from appcore import tasks
 
     monkeypatch.setattr(
@@ -1234,7 +1236,7 @@ def test_submit_child_requires_final_push_confirmation_before_transaction(monkey
         },
     )
     monkeypatch.setattr(tasks, "_find_product", lambda product_id: {"id": product_id})
-    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: {"detail_images"})
+    monkeypatch.setattr(tasks, "_manual_confirmed_child_step_keys", lambda task_id: set())
     monkeypatch.setattr(
         "appcore.pushes.compute_readiness",
         lambda i, p: {
@@ -1270,7 +1272,7 @@ def test_submit_child_requires_final_push_confirmation_before_transaction(monkey
     with pytest.raises(tasks.NotReadyError) as exc:
         tasks.submit_child(task_id=44, actor_user_id=2)
 
-    assert exc.value.missing == ["final_push_confirmation"]
+    assert exc.value.missing == ["detail_images"]
 
 
 def test_child_acceptance_payload_marks_only_result_steps_as_manual_submittable(monkeypatch):
@@ -2074,6 +2076,7 @@ def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(mon
                     "parent_task_id": 10,
                     "status": tasks.CHILD_DONE,
                     "media_product_id": 9,
+                    "media_item_id": 99,
                 }]
                 sequence.append(("select_child", args))
                 return
@@ -2098,10 +2101,28 @@ def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(mon
                 self.rows = [{"name": "硬币收纳盒"}]
                 sequence.append(("select_product_name", args))
                 return
+            if "SELECT id, payload_json FROM task_events WHERE task_id=%s" in sql:
+                self.rows = [{
+                    "id": 1001,
+                    "payload_json": json.dumps({"key": "final_push_confirmation", "reason": "final_push_confirmation"})
+                }]
+                sequence.append(("select_events", args))
+                return
+            if "DELETE FROM task_events" in sql:
+                self.rowcount = 1
+                sequence.append(("delete_events", args))
+                return
+            if "DELETE FROM media_push_readiness_overrides" in sql:
+                self.rowcount = 1
+                sequence.append(("delete_overrides", args))
+                return
             raise AssertionError(sql)
 
         def fetchone(self):
             return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return list(self.rows)
 
     class FakeConn:
         def __init__(self):
@@ -2147,6 +2168,8 @@ def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(mon
     assert event[3]["task_check_keys"] == ["translated_video", "push_texts"]
     assert event[3]["issue_labels"] == ["视频", "英文文案格式"]
     assert ("reopen_parent", (tasks.PARENT_RAW_DONE, 10, tasks.PARENT_ALL_DONE)) in sequence
+    assert ("delete_events", (1001,)) in sequence
+    assert ("delete_overrides", (99, "final_push_confirmed")) in sequence
     assert notifications == [{"task_id": 44, "product_name": "硬币收纳盒"}]
     assert result["status"] == tasks.CHILD_ASSIGNED
     assert result["issue_keys"] == ["has_object", "has_push_texts"]

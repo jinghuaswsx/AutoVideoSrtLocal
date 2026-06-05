@@ -3558,6 +3558,14 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
         include_rework_rejections=False,
     )
     if not payload["ready"]:
+        missing_keys = [k for k in (payload.get("missing") or []) if k != FINAL_PUSH_CONFIRMATION_STEP_KEY]
+        if not missing_keys:
+            payload["ready"] = True
+            payload["missing"] = []
+        else:
+            payload["missing"] = missing_keys
+
+    if not payload["ready"]:
         return {
             "completed": False,
             "status": row["status"],
@@ -4370,7 +4378,7 @@ def reject_child_from_push(
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, parent_task_id, status, media_product_id "
+                    "SELECT id, parent_task_id, status, media_product_id, media_item_id "
                     "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL FOR UPDATE",
                     (int(task_id),),
                 )
@@ -4395,6 +4403,61 @@ def reject_child_from_push(
                 )
                 if cur.rowcount == 0:
                     raise StateError("child not rejectable from push")
+
+                # 查找并删除 manual_step_confirmed 事件 (final_push_confirmation)
+                cur.execute(
+                    "SELECT id, payload_json FROM task_events "
+                    "WHERE task_id=%s AND event_type=%s",
+                    (int(task_id), CHILD_MANUAL_STEP_CONFIRMED_EVENT),
+                )
+                events = cur.fetchall()
+                event_ids_to_delete = []
+                for ev in events:
+                    try:
+                        payload_data = json.loads(ev["payload_json"] or "{}")
+                        if payload_data.get("key") == FINAL_PUSH_CONFIRMATION_STEP_KEY:
+                            event_ids_to_delete.append(ev["id"])
+                    except Exception:
+                        pass
+
+                if event_ids_to_delete:
+                    format_strings = ",".join(["%s"] * len(event_ids_to_delete))
+                    cur.execute(
+                        f"DELETE FROM task_events WHERE id IN ({format_strings})",
+                        tuple(event_ids_to_delete),
+                    )
+
+                # 查找并删除完成事件 (final_push_confirmation)
+                cur.execute(
+                    "SELECT id, payload_json FROM task_events WHERE task_id=%s AND event_type=%s",
+                    (int(task_id), "completed"),
+                )
+                completed_events = cur.fetchall()
+                completed_ids_to_delete = []
+                for ev in completed_events:
+                    try:
+                        payload_data = json.loads(ev["payload_json"] or "{}")
+                        if payload_data.get("reason") == FINAL_PUSH_CONFIRMATION_STEP_KEY:
+                            completed_ids_to_delete.append(ev["id"])
+                    except Exception:
+                        pass
+
+                if completed_ids_to_delete:
+                    format_strings = ",".join(["%s"] * len(completed_ids_to_delete))
+                    cur.execute(
+                        f"DELETE FROM task_events WHERE id IN ({format_strings})",
+                        tuple(completed_ids_to_delete),
+                    )
+
+                # 清除 media_push_readiness_overrides 级别的 final_push_confirmed 确认状态
+                media_item_id = _positive_int(row.get("media_item_id"))
+                if media_item_id is not None:
+                    cur.execute(
+                        "DELETE FROM media_push_readiness_overrides "
+                        "WHERE media_item_id=%s AND readiness_key=%s",
+                        (int(media_item_id), "final_push_confirmed"),
+                    )
+
                 _write_event(
                     cur,
                     task_id,
