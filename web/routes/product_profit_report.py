@@ -16,6 +16,7 @@ from web.auth import permission_required
 
 from appcore import meta_ad_accounts
 from appcore import medias
+from appcore.db import query
 from appcore.order_analytics import current_meta_business_date
 from appcore.order_analytics import data_quality as dq
 from appcore.order_analytics import product_profit_ads as ppa
@@ -174,7 +175,7 @@ def _primary_country_for_lang(lang: str) -> str | None:
     return None
 
 
-def _product_profit_country_pills() -> list[dict]:
+def _product_profit_country_pills(sales_map: dict | None = None) -> list[dict]:
     """国家看板胶囊：US 固定第一、GB 固定第二，其余按启用小语种主国家补足。"""
     pills: list[dict] = []
     seen: set[str] = set()
@@ -184,10 +185,13 @@ def _product_profit_country_pills() -> list[dict]:
         if not code or code in seen or len(pills) >= _PRODUCT_PROFIT_COUNTRY_PILL_LIMIT:
             return
         seen.add(code)
+        sales_info = (sales_map or {}).get(code) or {}
         pills.append({
             "country": code,
             "lang": (lang or "").strip().lower(),
             "label": _COUNTRY_LABELS.get(code, code),
+            "orders": int(sales_info.get("order_count") or 0),
+            "units": int(sales_info.get("unit_count") or 0),
         })
 
     add("US", "en")
@@ -217,9 +221,51 @@ def api_list_products():
 @permission_required("product_profit")
 def api_country_pills():
     """国家看板胶囊列表（英国 + 启用小语种主国家，最多 9 个）。"""
+    try:
+        product_id = int(request.args.get("product_id", "0"))
+    except ValueError:
+        product_id = 0
+
+    today = _default_business_today()
+    date_to = _parse_date(request.args.get("date_to"), today)
+    date_from = _parse_date(request.args.get("date_from"), today - timedelta(days=30))
+    site_code, _ = _parse_site_code(request.args.get("site_code"))
+
+    sales_map = {}
+    if date_from <= date_to:
+        sql = (
+            "SELECT opl.buyer_country, "
+            "       COUNT(DISTINCT dol.dxm_package_id) AS order_count, "
+            "       COALESCE(SUM(dol.quantity), 0) AS unit_count "
+            "FROM order_profit_lines opl "
+            "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
+            "WHERE dol.meta_business_date BETWEEN %s AND %s "
+        )
+        params = [date_from, date_to]
+        if product_id > 0:
+            sql += "  AND opl.product_id = %s "
+            params.append(product_id)
+        if site_code:
+            sql += "  AND dol.site_code = %s "
+            params.append(site_code)
+        sql += "GROUP BY opl.buyer_country"
+
+        try:
+            rows = query(sql, tuple(params))
+            for r in rows:
+                c = (r["buyer_country"] or "").strip().upper()
+                if c:
+                    sales_map[c] = {
+                        "order_count": int(r["order_count"] or 0),
+                        "unit_count": int(r["unit_count"] or 0),
+                    }
+        except Exception:
+            # Fallback if DB query fails (e.g. in tests without database connection)
+            pass
+
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(
-            {"countries": _product_profit_country_pills()}
+            {"countries": _product_profit_country_pills(sales_map)}
         )
     )
 

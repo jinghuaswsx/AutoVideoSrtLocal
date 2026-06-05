@@ -666,13 +666,15 @@
   gap: 8px;
 }
 .ppd-country-pill {
-  height: 32px;
+  min-height: 48px;
   display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
   align-items: center;
-  gap: 6px;
-  padding: 0 12px;
+  gap: 2px;
+  padding: 6px 16px;
   border: 1px solid var(--border-main);
-  border-radius: 999px;
+  border-radius: 10px;
   background: #fff;
   color: var(--text-main);
   font-size: 13px;
@@ -689,10 +691,28 @@
   border-color: var(--primary-color);
   color: #fff;
 }
+.ppd-country-pill-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ppd-country-pill-sales {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-user-badge);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+.ppd-country-pill.is-active .ppd-country-pill-sales {
+  color: rgba(255, 255, 255, 0.85);
+}
 .ppd-country-pill-code {
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: 12px;
   opacity: .82;
+}
+.ppd-table tbody tr.is-selected td {
+  background: rgba(59, 130, 246, .12) !important;
+  font-weight: 600;
 }
 .ppd-country-selected {
   background: #fff;
@@ -1067,6 +1087,31 @@
           <div class="ppd-country-toolbar-meta">美国 + 英国 + 启用小语种国家，点击后查看销售情况</div>
         </div>
         <div class="ppd-country-pills" id="ppd-country-pills" role="tablist" aria-label="国家销售筛选"></div>
+      </section>
+
+      <!-- 各国家销售整体看板 -->
+      <section class="ppd-orders" id="ppd-country-overall-sales" style="display:none">
+        <div class="ppd-orders-head">
+          <h3>各国家销售概况</h3>
+          <span style="font-size:12px;color:var(--text-user-badge);">按销售额排序，点击国家行可快速切换下方明细</span>
+        </div>
+        <div class="ppd-table-wrap">
+          <table class="ppd-table" id="ppd-country-overall-table">
+            <thead>
+              <tr>
+                <th>国家</th>
+                <th class="ppd-num">订单数</th>
+                <th class="ppd-num">件数</th>
+                <th class="ppd-num">销售额<span class="col-unit">USD</span></th>
+                <th class="ppd-num">广告费<span class="col-unit">USD</span></th>
+                <th class="ppd-num">ROAS</th>
+                <th class="ppd-num">利润<span class="col-unit">USD</span></th>
+                <th class="ppd-num">利润率</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="ppd-country-selected">
@@ -1677,15 +1722,28 @@
       btn.dataset.country = code;
       btn.setAttribute('role', 'tab');
       btn.setAttribute('aria-selected', code === activeCountry ? 'true' : 'false');
-      btn.innerHTML = '<span>' + escHtml(item.label || code) + '</span>'
-        + '<span class="ppd-country-pill-code">' + escHtml(code) + '</span>';
+      btn.innerHTML = '<div class="ppd-country-pill-main">'
+        + '<span>' + escHtml(item.label || code) + '</span>'
+        + '<span class="ppd-country-pill-code">' + escHtml(code) + '</span>'
+        + '</div>'
+        + '<div class="ppd-country-pill-sales">' + (item.orders || 0) + '单 / ' + (item.units || 0) + '件</div>';
       btn.addEventListener('click', function() { selectCountryPill(code); });
       countryPillsEl.appendChild(btn);
     });
   }
 
   function loadCountryPills() {
-    return fetch('/order-analytics/product-profit/countries.json', { credentials: 'same-origin' })
+    var pid = getSelectedProductId() || '0';
+    var df = dateFromInput.value;
+    var dt = dateToInput.value;
+    var site = (siteSelect.value || '').trim();
+
+    var qs = 'product_id=' + encodeURIComponent(pid)
+      + '&date_from=' + encodeURIComponent(df)
+      + '&date_to=' + encodeURIComponent(dt);
+    if (site) qs += '&site_code=' + encodeURIComponent(site);
+
+    return fetch('/order-analytics/product-profit/countries.json?' + qs, { credentials: 'same-origin' })
       .then(function(r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
@@ -2205,6 +2263,8 @@
     var df = dateFromInput.value;
     var dt = dateToInput.value;
 
+    loadCountryPills();
+
     var emptyEl = $('ppd-country-empty');
     var loadingEl = $('ppd-country-loading');
     var errorEl = $('ppd-country-error');
@@ -2226,6 +2286,8 @@
       contentEl.style.display = 'flex';
       $('ppd-country-product-ranking').style.display = 'none';
       $('ppd-country-product-drilldown').style.display = 'none';
+      var overallSalesEl = $('ppd-country-overall-sales');
+      if (overallSalesEl) overallSalesEl.style.display = 'none';
       loadingEl.style.display = 'none';
       errorEl.textContent = '日期范围不正确';
       errorEl.style.display = 'block';
@@ -2336,6 +2398,8 @@
 
     $('ppd-country-product-drilldown').style.display = 'none';
     $('ppd-country-product-ranking').style.display = 'block';
+    var overallSalesEl = $('ppd-country-overall-sales');
+    if (overallSalesEl) overallSalesEl.style.display = 'none';
     $('ppd-country-ranking-count').textContent = '(' + rows.length + ')';
 
     var tbody = document.querySelector('#ppd-country-product-table tbody');
@@ -2387,6 +2451,65 @@
     });
   }
 
+  function aggregateCountrySales(byCountry) {
+    var agg = {};
+    (byCountry || []).forEach(function(row) {
+      var c = (row.buyer_country || '?').trim().toUpperCase();
+      if (!agg[c]) {
+        agg[c] = { country: c, orders: 0, units: 0, revenue: 0, profit: 0, ad: 0 };
+      }
+      agg[c].orders += Number(row.orders) || 0;
+      agg[c].units += Number(row.units) || 0;
+      agg[c].revenue += Number(row.revenue_usd) || 0;
+      agg[c].profit += Number(row.profit_usd) || 0;
+      agg[c].ad += Number(row.ad_cost_usd) || 0;
+    });
+    return Object.keys(agg).map(function(c) {
+      var r = agg[c];
+      r.roas = r.ad > 0 ? r.revenue / r.ad : null;
+      return r;
+    }).sort(function(a, b) {
+      return b.revenue - a.revenue;
+    });
+  }
+
+  function renderCountryOverallTable(byCountry) {
+    var rows = aggregateCountrySales(byCountry);
+    var tbody = document.querySelector('#ppd-country-overall-table tbody');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-user-badge);padding:24px;">无销售数据</td></tr>';
+      return;
+    }
+    var html = rows.map(function(r) {
+      var profitCls = profitClass(r.profit);
+      var roasText = r.roas == null ? '—' : r.roas.toFixed(2);
+      var profitPct = r.revenue > 0 ? (r.profit / r.revenue * 100).toFixed(1) + '%' : '--';
+      var rowCls = 'ppd-row-clickable';
+      if (r.country === activeCountry) {
+        rowCls += ' is-selected';
+      }
+      return '<tr class="' + rowCls + '" data-country="' + escHtml(r.country) + '">'
+        + '<td>' + escHtml(countryPillLabel(r.country) + ' ' + r.country) + '</td>'
+        + '<td class="ppd-num">' + r.orders.toLocaleString() + '</td>'
+        + '<td class="ppd-num">' + r.units.toLocaleString() + '</td>'
+        + '<td class="ppd-num">' + money(r.revenue) + '</td>'
+        + '<td class="ppd-num">' + money(r.ad) + '</td>'
+        + '<td class="ppd-num">' + roasText + '</td>'
+        + '<td class="ppd-num ' + profitCls + '">' + money(r.profit) + '</td>'
+        + '<td class="ppd-num ' + profitCls + '">' + profitPct + '</td>'
+        + '</tr>';
+    }).join('');
+    tbody.innerHTML = html;
+    tbody.querySelectorAll('tr.ppd-row-clickable').forEach(function(tr) {
+      tr.addEventListener('click', function() {
+        var country = tr.getAttribute('data-country');
+        if (country) {
+          selectCountryPill(country);
+        }
+      });
+    });
+  }
+
   function renderCountrySelectedProduct(data, country) {
     var selectedUpper = (country || '').toUpperCase();
     var countryOrders = (data.orders || []).filter(function(o) {
@@ -2421,6 +2544,11 @@
 
     $('ppd-country-product-ranking').style.display = 'none';
     $('ppd-country-product-drilldown').style.display = 'flex';
+    var overallSalesEl = $('ppd-country-overall-sales');
+    if (overallSalesEl) {
+      overallSalesEl.style.display = 'block';
+      renderCountryOverallTable(data.by_country);
+    }
 
     renderCountryAggregate(country, countryOrders);
     renderCountryOrdersTable(countryOrders);
