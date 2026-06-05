@@ -3155,7 +3155,7 @@
       <table class="oc-table oc-table-medias" style="table-layout:fixed;">
         <colgroup>
         <col style="width:48px">
-        <col style="width:80px">
+        <col style="width:128px">
         <col style="width:210px">
         <col style="width:90px">
         <col style="width:110px">
