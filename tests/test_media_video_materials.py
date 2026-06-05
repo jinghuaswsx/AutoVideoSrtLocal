@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import appcore.media_video_materials as mvm
 import tools.generate_today_recommendations as gen
@@ -156,6 +156,274 @@ def test_list_video_materials_batches_ad_plan_details_for_current_page(monkeypat
     assert payload["items"][0]["ad_plan_detail"]["ad_account_id"] == "1253003326160754"
     assert payload["items"][1]["ad_plan_detail"]["ad_account_id"] == "999"
     assert len([call for call in calls if call[0] == "query" and "FROM meta_ad_daily_ad_metrics m WHERE" in call[1]]) == 1
+
+
+def test_list_video_materials_attaches_material_ad_performance_windows_and_countries(monkeypatch):
+    calls = []
+
+    def fake_query_one(sql, args=()):
+        calls.append(("query_one", sql, args))
+        if "information_schema.TABLES" in sql:
+            return None
+        return {"c": 1}
+
+    def fake_query(sql, args=()):
+        calls.append(("query", sql, args))
+        if "FROM meta_ad_daily_ad_metrics m" in sql:
+            return [
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "widget-code-2026.05.13-widget-demo",
+                    "ad_name": "DE ad 2026.05.13-widget-demo.mp4",
+                    "normalized_campaign_code": "widget-rjc-campaign",
+                    "campaign_name": "Widget Campaign DE",
+                    "ad_account_id": "act_1253003326160754",
+                    "ad_account_name": "Omurio",
+                    "activity_date": date(2026, 6, 5),
+                    "spend_usd": 10,
+                    "purchase_value_usd": 30,
+                    "market_country": "DE",
+                    "id": 100,
+                },
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "widget-code-2026.05.13-widget-demo-2",
+                    "ad_name": "FR ad 2026.05.13-widget-demo.mp4",
+                    "normalized_campaign_code": "widget-rjc-campaign",
+                    "campaign_name": "Widget Campaign FR",
+                    "ad_account_id": "act_1253003326160754",
+                    "ad_account_name": "Omurio",
+                    "activity_date": date(2026, 6, 4),
+                    "spend_usd": 20,
+                    "purchase_value_usd": 10,
+                    "market_country": "FR",
+                    "id": 101,
+                },
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "widget-code-2026.05.13-widget-demo-3",
+                    "ad_name": "No country 2026.05.13-widget-demo.mp4",
+                    "normalized_campaign_code": "widget-rjc-campaign",
+                    "campaign_name": "Widget Campaign",
+                    "ad_account_id": "act_1253003326160754",
+                    "ad_account_name": "Omurio",
+                    "activity_date": date(2026, 5, 10),
+                    "spend_usd": 5,
+                    "purchase_value_usd": 5,
+                    "market_country": None,
+                    "id": 102,
+                },
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "other-material",
+                    "ad_name": "other-material.mp4",
+                    "activity_date": date(2026, 6, 5),
+                    "spend_usd": 99,
+                    "purchase_value_usd": 99,
+                    "market_country": "DE",
+                    "id": 103,
+                },
+            ]
+        return [_video_row()]
+
+    monkeypatch.setattr(mvm, "query_one", fake_query_one)
+    monkeypatch.setattr(mvm, "query", fake_query)
+    monkeypatch.setattr(mvm, "current_meta_business_date", lambda: date(2026, 6, 5), raising=False)
+
+    payload = mvm.list_video_materials(page_size=100)
+
+    perf = payload["items"][0]["ad_performance"]
+    assert perf["total_spend_usd"] == 35.0
+    assert perf["today_spend_usd"] == 10.0
+    assert perf["yesterday_spend_usd"] == 20.0
+    assert perf["last_7d_spend_usd"] == 30.0
+    assert perf["last_30d_spend_usd"] == 35.0
+    assert perf["purchase_value_usd"] == 45.0
+    assert perf["roas"] == 1.2857
+    assert perf["matched_ad_count"] == 3
+    assert perf["countries"] == [
+        {
+            "country": "FR",
+            "spend_usd": 20.0,
+            "purchase_value_usd": 10.0,
+            "roas": 0.5,
+            "matched_ad_count": 1,
+        },
+        {
+            "country": "DE",
+            "spend_usd": 10.0,
+            "purchase_value_usd": 30.0,
+            "roas": 3.0,
+            "matched_ad_count": 1,
+        },
+    ]
+
+
+def test_material_ad_performance_counts_each_metric_once(monkeypatch):
+    def fake_query_one(sql, args=()):
+        if "information_schema.TABLES" in sql:
+            return None
+        return {"c": 1}
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_ad_metrics m" in sql:
+            return [
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "2026.05.13-widget-demo-widget-demo",
+                    "ad_name": "2026.05.13-widget-demo.mp4 Widget Demo",
+                    "activity_date": date(2026, 6, 5),
+                    "spend_usd": 12,
+                    "purchase_value_usd": 24,
+                    "market_country": "DE",
+                    "id": 100,
+                },
+            ]
+        return [_video_row()]
+
+    monkeypatch.setattr(mvm, "query_one", fake_query_one)
+    monkeypatch.setattr(mvm, "query", fake_query)
+    monkeypatch.setattr(mvm, "current_meta_business_date", lambda: date(2026, 6, 5), raising=False)
+
+    payload = mvm.list_video_materials()
+
+    perf = payload["items"][0]["ad_performance"]
+    assert perf["total_spend_usd"] == 12.0
+    assert perf["purchase_value_usd"] == 24.0
+    assert perf["matched_ad_count"] == 1
+    assert perf["countries"][0]["matched_ad_count"] == 1
+
+
+def test_list_video_materials_merges_latest_realtime_ad_metrics_when_table_exists(monkeypatch):
+    calls = []
+
+    def fake_query_one(sql, args=()):
+        calls.append(("query_one", sql, args))
+        if "information_schema.TABLES" in sql:
+            return {"ok": 1}
+        return {"c": 1}
+
+    def fake_query(sql, args=()):
+        calls.append(("query", sql, args))
+        if "FROM meta_ad_realtime_daily_ad_metrics" in sql:
+            return [
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "2026.05.13-widget-demo-rt",
+                    "ad_name": "RT 2026.05.13-widget-demo.mp4",
+                    "normalized_campaign_code": "widget-rjc-campaign",
+                    "campaign_name": "Widget Campaign RT",
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Realtime",
+                    "activity_date": date(2026, 6, 5),
+                    "spend_usd": 50,
+                    "purchase_value_usd": 100,
+                    "country_code": "DE",
+                    "id": 200,
+                },
+            ]
+        if "FROM meta_ad_daily_ad_metrics m" in sql:
+            return [
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "2026.05.13-widget-demo-old",
+                    "ad_name": "Daily 2026.05.13-widget-demo.mp4",
+                    "normalized_campaign_code": "widget-rjc-campaign",
+                    "campaign_name": "Widget Campaign Daily",
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Daily",
+                    "activity_date": date(2026, 6, 4),
+                    "spend_usd": 20,
+                    "purchase_value_usd": 20,
+                    "market_country": "FR",
+                    "id": 100,
+                },
+            ]
+        return [_video_row()]
+
+    monkeypatch.setattr(mvm, "query_one", fake_query_one)
+    monkeypatch.setattr(mvm, "query", fake_query)
+    monkeypatch.setattr(mvm, "current_meta_business_date", lambda: date(2026, 6, 5), raising=False)
+
+    payload = mvm.list_video_materials()
+
+    perf = payload["items"][0]["ad_performance"]
+    assert perf["total_spend_usd"] == 70.0
+    assert perf["today_spend_usd"] == 50.0
+    assert perf["yesterday_spend_usd"] == 20.0
+    assert {row["country"]: row["spend_usd"] for row in perf["countries"]} == {"DE": 50.0, "FR": 20.0}
+    assert any("meta_ad_realtime_daily_ad_metrics" in sql for kind, sql, _args in calls if kind == "query")
+
+
+def test_realtime_open_day_skips_same_account_daily_metric(monkeypatch):
+    def fake_query_one(sql, args=()):
+        if "information_schema.TABLES" in sql:
+            return {"ok": 1}
+        return {"c": 1}
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_realtime_daily_ad_metrics" in sql:
+            return [
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "2026.05.13-widget-demo-rt",
+                    "ad_name": "RT 2026.05.13-widget-demo.mp4",
+                    "normalized_campaign_code": "widget-rjc-campaign",
+                    "campaign_name": "Widget Campaign RT",
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Realtime",
+                    "activity_date": date(2026, 6, 5),
+                    "spend_usd": 50,
+                    "purchase_value_usd": 100,
+                    "country_code": "DE",
+                    "id": 200,
+                },
+            ]
+        if "FROM meta_ad_daily_ad_metrics m" in sql:
+            return [
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": "2026.05.13-widget-demo-daily",
+                    "ad_name": "Daily same day 2026.05.13-widget-demo.mp4",
+                    "normalized_campaign_code": "widget-rjc-campaign",
+                    "campaign_name": "Widget Campaign Daily",
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Daily",
+                    "activity_date": date(2026, 6, 5),
+                    "spend_usd": 20,
+                    "purchase_value_usd": 20,
+                    "market_country": "DE",
+                    "id": 100,
+                },
+            ]
+        return [_video_row()]
+
+    monkeypatch.setattr(mvm, "query_one", fake_query_one)
+    monkeypatch.setattr(mvm, "query", fake_query)
+    monkeypatch.setattr(mvm, "current_meta_business_date", lambda: date(2026, 6, 5), raising=False)
+
+    payload = mvm.list_video_materials()
+
+    perf = payload["items"][0]["ad_performance"]
+    assert perf["total_spend_usd"] == 50.0
+    assert perf["today_spend_usd"] == 50.0
+    assert perf["purchase_value_usd"] == 100.0
+    assert perf["matched_ad_count"] == 1
+
+
+def test_realtime_open_day_filter_keeps_other_product_daily_metric():
+    daily = [{
+        "product_id": 8,
+        "activity_date": date(2026, 6, 5),
+        "ad_account_id": "act_1",
+    }]
+    realtime = [{
+        "product_id": 7,
+        "activity_date": date(2026, 6, 5),
+        "ad_account_id": "1",
+    }]
+
+    assert mvm._filter_daily_candidates_for_realtime(daily, realtime) == daily
 
 
 def test_serialize_video_material_includes_campaign_detail_link():

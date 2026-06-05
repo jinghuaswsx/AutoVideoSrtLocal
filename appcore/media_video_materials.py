@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Any
@@ -13,6 +13,7 @@ import requests
 
 from appcore import pushes
 from appcore.db import execute, query, query_one
+from appcore.order_analytics import current_meta_business_date
 from web.services.media_mk_selection import normalize_mk_media_path
 
 
@@ -78,6 +79,49 @@ def _decimal_to_float(row: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, Decimal):
             out[key] = float(value)
     return out
+
+
+def _date_value(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _round_money(value: Any) -> float:
+    return round(_float_value(value), 4)
+
+
+def _roas(purchase_value: Any, spend: Any) -> float | None:
+    spend_value = _float_value(spend)
+    if spend_value <= 0:
+        return None
+    return round(_float_value(purchase_value) / spend_value, 4)
+
+
+def _empty_ad_performance() -> dict[str, Any]:
+    return {
+        "total_spend_usd": 0.0,
+        "today_spend_usd": 0.0,
+        "yesterday_spend_usd": 0.0,
+        "last_7d_spend_usd": 0.0,
+        "last_30d_spend_usd": 0.0,
+        "purchase_value_usd": 0.0,
+        "roas": None,
+        "matched_ad_count": 0,
+        "countries": [],
+    }
+
+
+def _normalize_ad_account_id(value: Any) -> str:
+    return str(value or "").strip().removeprefix("act_")
 
 
 def _page_bounds(page: int | str | None, page_size: int | str | None) -> tuple[int, int, int]:
@@ -194,9 +238,24 @@ def _attach_ad_plan_details(rows: list[dict[str, Any]]) -> None:
     if not product_ids:
         return
 
-    ad_candidates = _load_ad_candidates_for_materials(product_ids)
+    daily_candidates = _load_ad_candidates_for_materials(product_ids)
+    realtime_candidates: list[dict[str, Any]] = []
+    if _realtime_ad_table_exists():
+        realtime_candidates = _load_realtime_ad_candidates_for_materials(product_ids)
+    ad_candidates = (
+        _filter_daily_candidates_for_realtime(daily_candidates, realtime_candidates)
+        + realtime_candidates
+    )
     if not ad_candidates:
         return
+    ad_candidates.sort(
+        key=lambda candidate: (
+            _date_value(candidate.get("activity_date")) or date.min,
+            _float_value(candidate.get("spend_usd")),
+            _int_value(candidate.get("id")),
+        ),
+        reverse=True,
+    )
 
     ads_by_product: dict[int, list[dict[str, Any]]] = {}
     for candidate in ad_candidates:
@@ -219,52 +278,264 @@ def _attach_ad_plan_details(rows: list[dict[str, Any]]) -> None:
         display_name_no_ext = display_name_norm.rsplit(".", 1)[0] if "." in display_name_norm else display_name_norm
 
         candidates = ads_by_product[product_id]
-        matched_ad = None
+        matched_ads: list[dict[str, Any]] = []
+        matched_keys: set[str] = set()
         for candidate in candidates:
-            ad_name_lower = str(candidate.get("ad_name") or "").strip().lower()
-            ad_code_lower = str(candidate.get("normalized_ad_code") or "").strip().lower()
+            if not _candidate_matches_material(
+                candidate,
+                filename=filename,
+                display_name=display_name,
+                filename_norm=filename_norm,
+                display_name_norm=display_name_norm,
+                filename_no_ext=filename_no_ext,
+                display_name_no_ext=display_name_no_ext,
+            ):
+                continue
+            metric_key = _candidate_metric_key(candidate)
+            if metric_key in matched_keys:
+                continue
+            matched_keys.add(metric_key)
+            matched_ads.append(candidate)
 
-            matches = False
-            if filename and (filename in ad_name_lower or filename in ad_code_lower):
-                matches = True
-            elif display_name and (display_name in ad_name_lower or display_name in ad_code_lower):
-                matches = True
-            elif filename_norm and (filename_norm in ad_name_lower or filename_norm in ad_code_lower):
-                matches = True
-            elif display_name_norm and (display_name_norm in ad_name_lower or display_name_norm in ad_code_lower):
-                matches = True
-            elif filename_no_ext and len(filename_no_ext) > 5 and (filename_no_ext in ad_name_lower or filename_no_ext in ad_code_lower):
-                matches = True
-            elif display_name_no_ext and len(display_name_no_ext) > 5 and (display_name_no_ext in ad_name_lower or display_name_no_ext in ad_code_lower):
-                matches = True
-
-            if matches:
-                matched_ad = candidate
-                break
-
-        if matched_ad:
+        if matched_ads:
+            matched_ad = matched_ads[0]
             row["ad_campaign_code"] = matched_ad.get("normalized_campaign_code")
             row["ad_campaign_name"] = matched_ad.get("campaign_name")
             row["ad_account_id"] = matched_ad.get("ad_account_id")
             row["ad_account_name"] = matched_ad.get("ad_account_name")
             row["ad_plan_activity_date"] = matched_ad.get("activity_date")
+            row["ad_performance"] = _build_ad_performance(matched_ads)
+
+
+def _candidate_matches_material(
+    candidate: dict[str, Any],
+    *,
+    filename: str,
+    display_name: str,
+    filename_norm: str,
+    display_name_norm: str,
+    filename_no_ext: str,
+    display_name_no_ext: str,
+) -> bool:
+    ad_name_lower = str(candidate.get("ad_name") or "").strip().lower()
+    ad_code_lower = str(candidate.get("normalized_ad_code") or "").strip().lower()
+    if filename and (filename in ad_name_lower or filename in ad_code_lower):
+        return True
+    if display_name and (display_name in ad_name_lower or display_name in ad_code_lower):
+        return True
+    if filename_norm and (filename_norm in ad_name_lower or filename_norm in ad_code_lower):
+        return True
+    if display_name_norm and (display_name_norm in ad_name_lower or display_name_norm in ad_code_lower):
+        return True
+    if filename_no_ext and len(filename_no_ext) > 5 and (filename_no_ext in ad_name_lower or filename_no_ext in ad_code_lower):
+        return True
+    if display_name_no_ext and len(display_name_no_ext) > 5 and (display_name_no_ext in ad_name_lower or display_name_no_ext in ad_code_lower):
+        return True
+    return False
+
+
+def _candidate_metric_key(candidate: dict[str, Any]) -> str:
+    raw_key = str(candidate.get("metric_id") or "").strip()
+    if raw_key:
+        return raw_key
+    source = str(candidate.get("metric_source") or "daily").strip() or "daily"
+    row_id = candidate.get("id")
+    if row_id is not None:
+        return f"{source}:{row_id}"
+    return (
+        f"{source}:"
+        f"{candidate.get('product_id')}|{candidate.get('activity_date')}|"
+        f"{candidate.get('ad_account_id')}|{candidate.get('normalized_ad_code') or candidate.get('ad_name')}"
+    )
+
+
+def _candidate_day_account_key(candidate: dict[str, Any]) -> tuple[int, date, str] | None:
+    activity_date = _date_value(candidate.get("activity_date"))
+    if activity_date is None:
+        return None
+    return (
+        _int_value(candidate.get("product_id")),
+        activity_date,
+        _normalize_ad_account_id(candidate.get("ad_account_id")),
+    )
+
+
+def _filter_daily_candidates_for_realtime(
+    daily_candidates: list[dict[str, Any]],
+    realtime_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    realtime_open_keys = {
+        key
+        for key in (_candidate_day_account_key(candidate) for candidate in realtime_candidates)
+        if key is not None
+    }
+    if not realtime_open_keys:
+        return daily_candidates
+    return [
+        candidate
+        for candidate in daily_candidates
+        if _candidate_day_account_key(candidate) not in realtime_open_keys
+    ]
+
+
+def _country_value(candidate: dict[str, Any]) -> str:
+    country = str(
+        candidate.get("market_country")
+        or candidate.get("country_code")
+        or candidate.get("country")
+        or ""
+    ).strip().upper()
+    return country
+
+
+def _add_window_spend(performance: dict[str, Any], spend: float, business_date: date | None, today: date) -> None:
+    if spend <= 0 or business_date is None:
+        return
+    yesterday = today - timedelta(days=1)
+    last_7d_start = today - timedelta(days=6)
+    last_30d_start = today - timedelta(days=29)
+    if business_date == today:
+        performance["today_spend_usd"] += spend
+    if business_date == yesterday:
+        performance["yesterday_spend_usd"] += spend
+    if last_7d_start <= business_date <= today:
+        performance["last_7d_spend_usd"] += spend
+    if last_30d_start <= business_date <= today:
+        performance["last_30d_spend_usd"] += spend
+
+
+def _build_ad_performance(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    performance = _empty_ad_performance()
+    today = current_meta_business_date()
+    country_map: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        spend = _float_value(candidate.get("spend_usd"))
+        purchase_value = _float_value(candidate.get("purchase_value_usd"))
+        business_date = _date_value(candidate.get("activity_date"))
+        performance["total_spend_usd"] += spend
+        performance["purchase_value_usd"] += purchase_value
+        performance["matched_ad_count"] += 1
+        _add_window_spend(performance, spend, business_date, today)
+
+        country = _country_value(candidate)
+        if not country:
+            continue
+        country_row = country_map.setdefault(
+            country,
+            {
+                "country": country,
+                "spend_usd": 0.0,
+                "purchase_value_usd": 0.0,
+                "roas": None,
+                "matched_ad_count": 0,
+            },
+        )
+        country_row["spend_usd"] += spend
+        country_row["purchase_value_usd"] += purchase_value
+        country_row["matched_ad_count"] += 1
+
+    for key in (
+        "total_spend_usd",
+        "today_spend_usd",
+        "yesterday_spend_usd",
+        "last_7d_spend_usd",
+        "last_30d_spend_usd",
+        "purchase_value_usd",
+    ):
+        performance[key] = _round_money(performance[key])
+    performance["roas"] = _roas(performance["purchase_value_usd"], performance["total_spend_usd"])
+    countries = []
+    for country_row in country_map.values():
+        country_row["spend_usd"] = _round_money(country_row["spend_usd"])
+        country_row["purchase_value_usd"] = _round_money(country_row["purchase_value_usd"])
+        country_row["roas"] = _roas(country_row["purchase_value_usd"], country_row["spend_usd"])
+        countries.append(country_row)
+    countries.sort(key=lambda row: (-_float_value(row.get("spend_usd")), str(row.get("country") or "")))
+    performance["countries"] = countries
+    return performance
 
 
 def _load_ad_candidates_for_materials(product_ids: list[int]) -> list[dict[str, Any]]:
     if not product_ids:
         return []
     placeholders = ",".join(["%s"] * len(product_ids))
-    return query(
+    rows = query(
         "SELECT m.product_id, m.normalized_ad_code, m.ad_name, "
         "       m.product_code AS normalized_campaign_code, m.product_code AS campaign_name, "
         "       m.ad_account_id, m.ad_account_name, "
+        "       CONCAT('daily:', m.id) AS metric_id, "
         "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
-        "       m.spend_usd, m.id "
+        "       m.spend_usd, m.purchase_value_usd, m.market_country, m.id "
         "FROM meta_ad_daily_ad_metrics m "
         f"WHERE m.product_id IN ({placeholders}) AND COALESCE(m.spend_usd, 0) > 0 "
         "ORDER BY activity_date DESC, COALESCE(spend_usd, 0) DESC, id DESC",
         tuple(product_ids),
     )
+    for row in rows:
+        row["metric_source"] = "daily"
+    return rows
+
+
+def _realtime_ad_table_exists() -> bool:
+    try:
+        row = query_one(
+            "SELECT 1 AS ok FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s LIMIT 1",
+            ("meta_ad_realtime_daily_ad_metrics",),
+        )
+    except Exception:
+        return False
+    return bool(row and row.get("ok"))
+
+
+def _load_realtime_ad_candidates_for_materials(product_ids: list[int]) -> list[dict[str, Any]]:
+    if not product_ids:
+        return []
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = query(
+        "SELECT p_rt.id AS product_id, m.normalized_ad_code, m.ad_name, "
+        "       m.normalized_campaign_code, m.campaign_name, "
+        "       m.ad_account_id, m.ad_account_name, "
+        "       CONCAT('realtime:', m.id) AS metric_id, "
+        "       m.business_date AS activity_date, "
+        "       m.spend_usd, m.purchase_value_usd, m.country_code, m.id "
+        "FROM ("
+        "  SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at "
+        "  FROM meta_ad_realtime_daily_ad_metrics rt "
+        "  INNER JOIN ("
+        "    SELECT ad_account_id, MAX(business_date) AS business_date "
+        "    FROM meta_ad_realtime_daily_ad_metrics "
+        "    WHERE data_completeness = 'realtime_partial' "
+        "    GROUP BY ad_account_id"
+        "  ) latest_day "
+        "    ON rt.business_date = latest_day.business_date "
+        "   AND (rt.ad_account_id <=> latest_day.ad_account_id) "
+        "  WHERE rt.data_completeness = 'realtime_partial' "
+        "  GROUP BY latest_day.business_date, latest_day.ad_account_id"
+        ") latest "
+        "STRAIGHT_JOIN meta_ad_realtime_daily_ad_metrics m "
+        "  ON m.business_date = latest.business_date "
+        " AND (m.ad_account_id <=> latest.ad_account_id) "
+        " AND m.snapshot_at = latest.max_snapshot_at "
+        "JOIN media_products p_rt "
+        f"  ON p_rt.id IN ({placeholders}) "
+        " AND p_rt.deleted_at IS NULL "
+        " AND p_rt.product_code IS NOT NULL "
+        " AND p_rt.product_code <> '' "
+        " AND ("
+        "   LOWER(COALESCE(m.normalized_campaign_code, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+        "   OR LOWER(COALESCE(m.campaign_name, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+        "   OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+        "   OR LOWER(COALESCE(m.ad_name, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+        " ) "
+        "WHERE m.data_completeness = 'realtime_partial' "
+        "  AND COALESCE(m.spend_usd, 0) > 0 "
+        "ORDER BY m.business_date DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC",
+        tuple(product_ids),
+    )
+    for row in rows:
+        row["metric_source"] = "realtime"
+    return rows
 
 
 def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
@@ -309,6 +580,7 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
         "has_ad_plan": has_ad_plan,
         "ad_plan_status": "has" if has_ad_plan else "none",
         "ad_plan_detail": _ad_plan_detail(item, has_ad_plan),
+        "ad_performance": item.get("ad_performance") or _empty_ad_performance(),
         "mk_binding": binding,
     }
 
@@ -410,10 +682,6 @@ def bind_mk_material(
         (int(media_item_id),),
     )
     return serialize_video_material(row or {"id": media_item_id, "product_id": 0})
-
-
-def _normalize_ad_account_id(value: Any) -> str:
-    return str(value or "").strip().removeprefix("act_")
 
 
 def _ad_plan_detail(item: dict[str, Any], has_ad_plan: bool) -> dict[str, Any] | None:

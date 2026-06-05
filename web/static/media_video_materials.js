@@ -205,6 +205,58 @@
     return `<span class="oc-vm-plan-box">${content}</span>`;
   }
 
+  function fmtAdSpend(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return '$0.00';
+    return '$' + num.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
+  function fmtAdRoas(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '-';
+    return num.toFixed(2);
+  }
+
+  function adSpendMetric(label, value) {
+    return `<span class="oc-vm-ad-metric"><span>${esc(label)}</span><strong>${esc(fmtAdSpend(value))}</strong></span>`;
+  }
+
+  function adSpendHtml(item) {
+    const perf = (item && item.ad_performance) || {};
+    return `
+      <div class="oc-vm-ad-spend">
+        ${adSpendMetric('总', perf.total_spend_usd)}
+        ${adSpendMetric('今', perf.today_spend_usd)}
+        ${adSpendMetric('昨', perf.yesterday_spend_usd)}
+        ${adSpendMetric('7天', perf.last_7d_spend_usd)}
+        ${adSpendMetric('30天', perf.last_30d_spend_usd)}
+      </div>
+    `;
+  }
+
+  function adRoasHtml(item) {
+    const perf = (item && item.ad_performance) || {};
+    return `<span class="oc-vm-roas">${esc(fmtAdRoas(perf.roas))}</span>`;
+  }
+
+  function adCountryHtml(item) {
+    const perf = (item && item.ad_performance) || {};
+    const countries = Array.isArray(perf.countries) ? perf.countries : [];
+    if (!countries.length) {
+      return '<span class="oc-vm-muted">-</span>';
+    }
+    return `<div class="oc-vm-country-list">` + countries.map(country => `
+      <div class="oc-vm-country-row" title="${esc((country.country || '-') + ' 消耗 ' + fmtAdSpend(country.spend_usd) + ' ROAS ' + fmtAdRoas(country.roas))}">
+        <span class="oc-vm-country-code">${esc(country.country || '-')}</span>
+        <span class="oc-vm-country-spend">${esc(fmtAdSpend(country.spend_usd))}</span>
+        <span class="oc-vm-country-roas">ROAS ${esc(fmtAdRoas(country.roas))}</span>
+      </div>
+    `).join('') + `</div>`;
+  }
+
   function openAdPlanDetail(item) {
     const url = item && item.ad_plan_detail && item.ad_plan_detail.url;
     if (!url) return;
@@ -229,6 +281,9 @@
         </td>
         <td>${esc(langName(item.lang))}</td>
         <td class="oc-vm-plan-cell">${adPlanHtml(item)}</td>
+        <td class="oc-vm-ad-spend-cell">${adSpendHtml(item)}</td>
+        <td class="oc-vm-ad-roas-cell">${adRoasHtml(item)}</td>
+        <td class="oc-vm-country-cell">${adCountryHtml(item)}</td>
         <td>${bindingHtml(item)}</td>
         <td class="mono">${esc(fmtSize(item.file_size))}</td>
         <td>${esc(fmtDate(item.created_at))}</td>
@@ -258,6 +313,9 @@
             <th>素材名</th>
             <th>语种</th>
             <th>广告计划</th>
+            <th>总消耗</th>
+            <th>ROAS</th>
+            <th>国家情况</th>
             <th>明空绑定</th>
             <th>大小</th>
             <th>创建时间</th>

@@ -74,6 +74,24 @@ def test_video_materials_pager_assets_render_page_summary_and_enter_jump(authed_
     assert "Math.min(pages, Math.max(1, requested))" in script
 
 
+def test_video_materials_table_renders_ad_performance_columns(authed_client_no_db):
+    response = authed_client_no_db.get("/static/media_video_materials.js")
+
+    assert response.status_code == 200
+    script = response.get_data(as_text=True)
+    assert "<th>总消耗</th>" in script
+    assert "<th>ROAS</th>" in script
+    assert "<th>国家情况</th>" in script
+    assert "function adSpendHtml(item)" in script
+    assert "function adRoasHtml(item)" in script
+    assert "function adCountryHtml(item)" in script
+    assert "perf.today_spend_usd" in script
+    assert "perf.yesterday_spend_usd" in script
+    assert "perf.last_7d_spend_usd" in script
+    assert "perf.last_30d_spend_usd" in script
+    assert "adCountryHtml(item)" in script
+
+
 def test_video_materials_api_defaults_to_page_size_100(authed_client_no_db, monkeypatch):
     captured = {}
 
