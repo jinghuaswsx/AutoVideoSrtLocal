@@ -2230,7 +2230,7 @@
       const btn = el('button', {
         type: 'button',
         class: 'btn-mini readiness-override-row-btn',
-        disabled: ok || !item.task_id,
+        disabled: ok,
         dataset: { key: issue.key },
       }, ok ? '已就绪' : '人工确认');
       const meta = el('div', { class: 'readiness-override-meta' }, [

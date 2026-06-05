@@ -3385,3 +3385,64 @@ def test_pushes_admin_readiness_override_confirms_final_confirmation_single_key(
         "actor_user_id": 1,
     }
     assert resp.get_json()["step_key"] == "final_push_confirmation"
+
+
+def test_pushes_admin_readiness_override_allows_unbound_item_level_confirmation(
+    authed_client_no_db, monkeypatch,
+):
+    captured = {}
+
+    def fake_admin_override_readiness_key(*, item_id, readiness_key, actor_user_id):
+        captured.update(
+            {
+                "item_id": item_id,
+                "readiness_key": readiness_key,
+                "actor_user_id": actor_user_id,
+            }
+        )
+        return {
+            "item_id": item_id,
+            "task_id": None,
+            "key": readiness_key,
+            "step_key": "final_push_confirmation",
+            "status": "pending",
+            "readiness": {"final_push_confirmed": True},
+        }
+
+    audit = {}
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.admin_override_readiness_key",
+        fake_admin_override_readiness_key,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "task_id": None,
+            "product_id": 7,
+            "lang": "de",
+        },
+    )
+    monkeypatch.setattr("web.routes.pushes._resolve_rework_task_id", lambda item: None)
+    monkeypatch.setattr(
+        "web.routes.pushes.system_audit.record_from_request",
+        lambda **kwargs: audit.update(kwargs),
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/1001/readiness-overrides",
+        json={"key": "final_push_confirmed"},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "item_id": 1001,
+        "readiness_key": "final_push_confirmed",
+        "actor_user_id": 1,
+    }
+    assert resp.get_json()["task_id"] is None
+    assert audit["detail"] == {
+        "task_id": None,
+        "readiness_key": "final_push_confirmed",
+        "step_key": "final_push_confirmation",
+    }
