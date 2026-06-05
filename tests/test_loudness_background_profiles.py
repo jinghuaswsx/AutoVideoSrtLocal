@@ -49,10 +49,10 @@ def test_voice_priority_suppresses_background_when_sentence_window_masks_voice()
     assert result["risky_window_count"] == 2
     assert result["max_background_minus_voice_lu"] == 3.9
     assert result["raw_required_attenuation_lu"] == -15.9
-    assert result["required_attenuation_lu"] == -6.0
-    assert result["attenuation_capped"] is True
-    assert math.isclose(result["effective_volume"], 10 ** (-6.0 / 20), rel_tol=1e-6)
-    assert result["effective_volume"] == pytest.approx(0.501187, abs=1e-4)
+    assert result["required_attenuation_lu"] == -15.9
+    assert result["attenuation_capped"] is False
+    assert math.isclose(result["effective_volume"], 10 ** (-15.9 / 20), rel_tol=1e-6)
+    assert result["effective_volume"] == pytest.approx(0.160325, abs=1e-4)
     assert result["dominant_windows"][0]["index"] == 47
 
 

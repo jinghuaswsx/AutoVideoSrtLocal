@@ -15,9 +15,11 @@ import pytest
 from appcore.audio_loudness import (
     EBUR128_FLOOR,
     SILENCE_LUFS_THRESHOLD,
+    build_ducking_volume_expression,
     clean_electronic_background,
     is_likely_silence,
     measure_integrated_lufs,
+    measure_window_lufs,
     mix_with_background,
     normalize_to_lufs,
 )
@@ -148,6 +150,33 @@ def test_mix_with_background_first_duration_truncates_to_main(tmp_path):
     assert 2.8 <= duration <= 3.3
 
 
+def test_mix_with_background_dynamic_ducking_restores_background_between_speech(tmp_path):
+    main = _gen_silence(tmp_path / "main.wav", duration=10.0)
+    bg = _gen_sine(tmp_path / "bg.wav", gain_db=-6.0, duration=10.0, freq=220)
+    expression = build_ducking_volume_expression(
+        segments=[{"start": 5.0, "end": 6.0}],
+        background_volume=0.1,
+        standard_volume=1.0,
+        attack=0.0,
+        release=0.0,
+    )
+
+    out = mix_with_background(
+        str(main),
+        str(bg),
+        str(tmp_path / "ducked.wav"),
+        background_volume=expression,
+        duration="longest",
+    )
+
+    before_lufs = measure_window_lufs(out, 1.0, 2.0)
+    speech_lufs = measure_window_lufs(out, 5.0, 6.0)
+    after_lufs = measure_window_lufs(out, 8.0, 9.0)
+
+    assert speech_lufs <= before_lufs - 15.0
+    assert abs(after_lufs - before_lufs) <= 1.0
+
+
 def test_clean_electronic_background_outputs_file_with_expected_duration(tmp_path):
     src = _gen_sine(tmp_path / "electric.wav", gain_db=-18.0, duration=4.0, freq=3200)
 
@@ -181,8 +210,6 @@ def test_is_likely_silence_threshold():
 
 
 def test_build_ducking_volume_expression():
-    from appcore.audio_loudness import build_ducking_volume_expression
-
     # Case 1: No segments
     assert build_ducking_volume_expression(
         segments=[], background_volume=0.3, standard_volume=0.6,

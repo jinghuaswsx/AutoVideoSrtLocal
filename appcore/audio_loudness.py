@@ -48,7 +48,6 @@ VOICE_PRIORITY_TARGET_GAP_LU = 12.0
 VOICE_PRIORITY_MAX_WINDOWS = 80
 VOICE_PRIORITY_MIN_WINDOW_SECONDS = 0.15
 VOICE_PRIORITY_DOMINANT_WINDOW_LIMIT = 5
-VOICE_PRIORITY_MAX_ATTENUATION_LU = 6.0
 BACKGROUND_CLEANUP_MODE_DE_ELECTRIC = "de_electric"
 DE_ELECTRIC_BACKGROUND_FILTER = (
     "highpass=f=80,"
@@ -233,8 +232,7 @@ def resolve_voice_priority_background_volume(
         return summary
 
     raw_required_attenuation = _round_audio_metric(target_delta - max_delta, 2)
-    required_attenuation = max(-VOICE_PRIORITY_MAX_ATTENUATION_LU, raw_required_attenuation)
-    attenuation_capped = required_attenuation > raw_required_attenuation
+    required_attenuation = raw_required_attenuation
     scale = 10 ** (float(required_attenuation) / 20.0)
     effective_volume = standard_volume * scale
     summary.update({
@@ -243,7 +241,7 @@ def resolve_voice_priority_background_volume(
         "effective_volume": effective_volume,
         "raw_required_attenuation_lu": raw_required_attenuation,
         "required_attenuation_lu": required_attenuation,
-        "attenuation_capped": attenuation_capped,
+        "attenuation_capped": False,
         "scale": scale,
     })
     return summary
@@ -731,10 +729,13 @@ def mix_with_background(
     # 让 mp4 整体 ≈ 原视频整体"）破坏巨大：测得的 pre_amix_lufs 偏低 6 dB →
     # delta 偏大 → 反推 TTS target 偏高 → 触发 ffmpeg loudnorm 上限报错。
     # 加 normalize=0 让 amix 直接相加（保留真实响度），与人感知 mix 一致。
-    bg_vol_str = f"'{background_volume}'" if isinstance(background_volume, str) else str(background_volume)
+    if isinstance(background_volume, str):
+        bg_volume_filter = f"volume='{background_volume}':eval=frame"
+    else:
+        bg_volume_filter = f"volume={background_volume}"
     filter_graph = (
         f"[0:a]volume={main_volume}[m];"
-        f"[1:a]volume={bg_vol_str}[b];"
+        f"[1:a]{bg_volume_filter}[b];"
         f"[m][b]amix=inputs=2:duration={duration}:dropout_transition=0:normalize=0[out]"
     )
     cmd = [
