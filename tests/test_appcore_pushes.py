@@ -350,6 +350,55 @@ def test_compute_readiness_applies_manual_child_confirmations_after_rework(monke
     assert pushes.is_ready(readiness) is True
 
 
+def test_admin_override_readiness_key_confirms_child_step_and_refreshes_cache(monkeypatch):
+    calls = {}
+
+    monkeypatch.setattr(
+        pushes,
+        "_get_push_row_for_status_cache",
+        lambda item_id: {"id": item_id, "task_id": 44},
+    )
+    monkeypatch.setattr(
+        pushes.tasks_svc,
+        "confirm_child_step",
+        lambda **kwargs: calls.setdefault("confirm", kwargs) or {"step_key": kwargs["step_key"]},
+    )
+    monkeypatch.setattr(
+        pushes,
+        "refresh_push_status_cache_for_item",
+        lambda item_id: calls.setdefault(
+            "refresh",
+            {
+                item_id: {
+                    "status": "pending",
+                    "readiness": {"has_cover": True},
+                }
+            },
+        ),
+    )
+
+    result = pushes.admin_override_readiness_key(
+        item_id=1001,
+        readiness_key="has_cover",
+        actor_user_id=7,
+    )
+
+    assert calls["confirm"] == {
+        "task_id": 44,
+        "step_key": "translated_cover",
+        "actor_user_id": 7,
+        "is_admin": True,
+    }
+    assert result == {
+        "item_id": 1001,
+        "task_id": 44,
+        "key": "has_cover",
+        "step_key": "translated_cover",
+        "status": "pending",
+        "readiness": {"has_cover": True},
+    }
+
+
 def test_compute_status_pushed(product_with_item):
     pid, item_id = product_with_item
     db_execute("UPDATE media_items SET pushed_at=NOW() WHERE id=%s", (item_id,))

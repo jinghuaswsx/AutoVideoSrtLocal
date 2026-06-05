@@ -855,6 +855,25 @@
 .ready-bad { color: var(--oc-danger-fg); }
 .ready-sep { color: var(--oc-fg-subtle); margin: 0 2px; }
 .ready-row-domain { display: flex; flex-wrap: wrap; margin-top: 4px; }
+.ready-row-override {
+  margin-top: 2px;
+}
+.readiness-override-btn {
+  height: 24px;
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  border-color: var(--oc-border-strong);
+  box-shadow: var(--oc-shadow-sm);
+}
+.readiness-override-btn:hover:not(:disabled) {
+  background: var(--oc-bg-subtle);
+  color: var(--oc-fg);
+}
+.readiness-override-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 
 /* ---------- 状态徽章 ---------- */
 .badge {
@@ -2167,6 +2186,67 @@
   border-radius: var(--oc-r-lg);
   box-shadow: var(--oc-shadow-lg);
 }
+.readiness-override-dialog {
+  width: min(720px, calc(100vw - 48px));
+}
+.readiness-override-list {
+  padding: 0 var(--oc-sp-5) var(--oc-sp-4);
+  overflow: auto;
+}
+.readiness-override-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--oc-sp-3);
+  align-items: center;
+  padding: var(--oc-sp-3) 0;
+  border-top: 1px solid var(--oc-border);
+}
+.readiness-override-row:first-child {
+  border-top: none;
+}
+.readiness-override-row-btn {
+  width: 74px;
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  border-color: var(--oc-border-strong);
+}
+.readiness-override-row-btn:hover:not(:disabled) {
+  background: var(--oc-bg-subtle);
+  color: var(--oc-fg);
+}
+.readiness-override-row-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.readiness-override-meta {
+  min-width: 0;
+}
+.readiness-override-label {
+  color: var(--oc-fg);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.readiness-override-key {
+  color: var(--oc-fg-subtle);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.readiness-override-state {
+  border-radius: var(--oc-r-full);
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.readiness-override-state.is-ready {
+  color: var(--oc-success-fg);
+  background: var(--oc-success-bg);
+}
+.readiness-override-state.is-missing {
+  color: var(--oc-danger-fg);
+  background: var(--oc-danger-bg);
+}
 .pm-rework-header {
   display: flex;
   align-items: flex-start;
@@ -2728,5 +2808,3 @@
   border-color: var(--oc-border);
   cursor: not-allowed;
 }
-
-

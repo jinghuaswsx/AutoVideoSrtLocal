@@ -12,7 +12,13 @@ from typing import Any
 import requests
 
 import config
-from appcore import medias, product_link_domains, settings as system_settings, shopify_image_tasks
+from appcore import (
+    medias,
+    product_link_domains,
+    settings as system_settings,
+    shopify_image_tasks,
+    tasks as tasks_svc,
+)
 from appcore.db import query, query_one, execute, get_conn
 
 log = logging.getLogger(__name__)
@@ -345,6 +351,42 @@ def _has_valid_en_push_texts(product_id: int) -> bool:
 # ---------- 就绪判定 ----------
 
 _CONTEXT_MISSING = object()
+
+PUSH_READINESS_ADMIN_OVERRIDE_DEFS = {
+    "is_listed": {
+        "task_check_key": "product_listed",
+        "label": "商品上架",
+    },
+    "has_object": {
+        "task_check_key": "translated_video",
+        "label": "视频",
+    },
+    "has_cover": {
+        "task_check_key": "translated_cover",
+        "label": "封面",
+    },
+    "has_copywriting": {
+        "task_check_key": "translated_copywriting",
+        "label": "文案",
+    },
+    "lang_supported": {
+        "task_check_key": "language_supported",
+        "label": "链接",
+    },
+    "has_push_texts": {
+        "task_check_key": "push_texts",
+        "label": "英文文案格式",
+    },
+    "shopify_image_confirmed": {
+        "task_check_key": "shopify_images",
+        "label": "图片/链接确认",
+    },
+    "final_push_confirmed": {
+        "task_check_key": tasks_svc.FINAL_PUSH_CONFIRMATION_STEP_KEY,
+        "label": "推送人工确认",
+    },
+}
+PUSH_READINESS_ADMIN_OVERRIDE_KEYS = tuple(PUSH_READINESS_ADMIN_OVERRIDE_DEFS)
 
 
 def _context_lookup(context: dict[str, Any] | None, key: str) -> Any:
@@ -1027,6 +1069,47 @@ def refresh_push_status_cache_for_item(item_id: int) -> dict[int, dict[str, Any]
     if not row:
         return {}
     return refresh_push_status_cache_rows([row])
+
+
+def admin_override_readiness_key(
+    *,
+    item_id: int,
+    readiness_key: str,
+    actor_user_id: int,
+) -> dict[str, Any]:
+    """Admin fallback that marks one push readiness condition as manually confirmed."""
+    item_id_int = _safe_int(item_id)
+    if not item_id_int:
+        raise ValueError("invalid item_id")
+    key = str(readiness_key or "").strip()
+    override_def = PUSH_READINESS_ADMIN_OVERRIDE_DEFS.get(key)
+    if not override_def:
+        raise ValueError("unknown readiness key")
+
+    row = _get_push_row_for_status_cache(item_id_int)
+    if not row:
+        raise LookupError("item_not_found")
+    task_id = _safe_int(row.get("task_id"))
+    if not task_id:
+        raise ValueError("task_not_linked")
+    step_key = str(override_def["task_check_key"])
+
+    tasks_svc.confirm_child_step(
+        task_id=task_id,
+        step_key=step_key,
+        actor_user_id=int(actor_user_id),
+        is_admin=True,
+    )
+    refreshed = refresh_push_status_cache_for_item(item_id_int)
+    entry = refreshed.get(item_id_int) or {}
+    return {
+        "item_id": item_id_int,
+        "task_id": task_id,
+        "key": key,
+        "step_key": step_key,
+        "status": entry.get("status"),
+        "readiness": entry.get("readiness") or {},
+    }
 
 
 def _refresh_push_status_cache_for_item_safely(item_id: int) -> None:

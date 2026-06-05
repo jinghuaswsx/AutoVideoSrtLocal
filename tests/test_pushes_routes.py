@@ -3277,3 +3277,61 @@ def test_refresh_item_cache_success(authed_client_no_db, monkeypatch):
     assert resp.status_code == 200
     assert resp.get_json() == {"ok": True}
     assert 1001 in refreshed_item_ids
+
+
+def test_pushes_admin_readiness_override_endpoint_confirms_step(
+    authed_client_no_db, monkeypatch,
+):
+    captured = {}
+
+    def fake_admin_override_readiness_key(*, item_id, readiness_key, actor_user_id):
+        captured.update(
+            {
+                "item_id": item_id,
+                "readiness_key": readiness_key,
+                "actor_user_id": actor_user_id,
+            }
+        )
+        return {
+            "item_id": item_id,
+            "task_id": 44,
+            "key": readiness_key,
+            "step_key": "translated_cover",
+            "status": "pending",
+            "readiness": {"has_cover": True},
+        }
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.admin_override_readiness_key",
+        fake_admin_override_readiness_key,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "task_id": 44,
+            "product_id": 7,
+            "lang": "de",
+        },
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/1001/readiness-overrides",
+        json={"key": "has_cover"},
+    )
+
+    assert resp.status_code == 200
+    assert captured == {
+        "item_id": 1001,
+        "readiness_key": "has_cover",
+        "actor_user_id": 1,
+    }
+    assert resp.get_json()["status"] == "pending"
+
+
+def test_pushes_admin_readiness_override_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.post(
+        "/pushes/api/items/1001/readiness-overrides",
+        json={"key": "has_cover"},
+    )
+    assert resp.status_code == 403
