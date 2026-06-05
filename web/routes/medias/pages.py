@@ -127,4 +127,4 @@ def mk_selection_page():
 @bp.route("/tabcut-selection")
 @login_required
 def tabcut_selection_page():
-    return redirect(url_for("xuanpin.tabcut_selection_page"))
+    return redirect("/xuanpin/tabcut")

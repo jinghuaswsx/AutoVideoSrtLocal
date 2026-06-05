@@ -18,6 +18,7 @@
 - 明空 API 委托 `web.routes.medias` 已有构建函数；TABCUT API 委托 `appcore.tabcut_selection.service`；新品 API 委托 `web.routes.new_product_review` 已有处理函数。
 - 模板中的 tab 链接与 fetch 地址全部改为 `/xuanpin/*`。
 - 旧页面 `/medias/mk-selection`、`/medias/tabcut-selection`、`/new-product-review/` 返回 302；旧 API 不跳转。
+- `/medias/tabcut-selection` 必须显式跳到 `/xuanpin/tabcut`，不能引用不存在的历史函数名导致 500，也不能落到 `/xuanpin/tabcut/videos`。
 
 ## 验收
 
