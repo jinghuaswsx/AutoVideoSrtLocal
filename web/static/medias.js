@@ -3158,21 +3158,21 @@
     grid.innerHTML = `
       <table class="oc-table oc-table-medias" style="table-layout:fixed;">
         <colgroup>
-        <col style="width:40px">
+        <col style="width:48px">
         <col style="width:80px">
-        <col style="width:180px">
-        <col style="width:80px">
+        <col style="width:210px">
+        <col style="width:90px">
         <col style="width:110px">
-        <col style="width:80px">
-        <col style="width:60px">
+        <col style="width:100px">
         <col style="width:70px">
-        <col style="width:60px">
+        <col style="width:80px">
+        <col style="width:70px">
         <col style="width:260px">
-        <col style="width:590px">
-        <col style="width:80px">
-        <col style="width:80px">
-        <col style="width:85px">
-        <col style="width:200px">
+        <col style="width:320px">
+        <col style="width:92px">
+        <col style="width:112px">
+        <col style="width:104px">
+        <col style="width:240px">
       </colgroup>
       <thead>
         <tr>
