@@ -1548,7 +1548,13 @@ function resetMkSearch() {
   selectedMkRange = '';
   if (rangeSelect) rangeSelect.value = '';
   const sortSelect = document.getElementById('mkSortSelect');
-  if (sortSelect) sortSelect.value = 'spend_90';
+  if (sortSelect) {
+    if (currentMkLibraryTab === 'yesterday-top300') {
+      sortSelect.value = 'spend_yesterday';
+    } else {
+      sortSelect.value = 'spend_90';
+    }
+  }
   syncMkSnapshotModeControls();
   activeMkProductCode = '';
   runMkSearch();
@@ -1788,6 +1794,14 @@ async function switchMkLibraryTab(tab, options = {}) {
     location.hash = currentMkLibraryTab;
   }
   applyMkLibraryTabState();
+  const sortSelect = document.getElementById('mkSortSelect');
+  if (sortSelect) {
+    if (currentMkLibraryTab === 'yesterday-top300') {
+      sortSelect.value = 'spend_yesterday';
+    } else {
+      sortSelect.value = 'spend_90';
+    }
+  }
   await ensureMkSnapshotOptionsForTab(currentMkLibraryTab);
   if (currentMkLibraryTab === 'videos' && (!mkVideoMaterialsLoaded || options.forceLoad)) {
     loadMkLocalMaterialLibrary(1);
@@ -2861,6 +2875,14 @@ document.getElementById('mkUploaderFilter').addEventListener('keydown', e => {
 (async function initMkSelection() {
   restoreMkCardZoom();
   const initialTab = initMkLibraryTabFromHash();
+  const sortSelect = document.getElementById('mkSortSelect');
+  if (sortSelect) {
+    if (initialTab === 'yesterday-top300') {
+      sortSelect.value = 'spend_yesterday';
+    } else {
+      sortSelect.value = 'spend_90';
+    }
+  }
   await ensureMkSnapshotOptionsForTab(initialTab);
   if (initialTab === 'videos') {
     loadMkLocalMaterialLibrary(1);
