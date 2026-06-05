@@ -3167,7 +3167,7 @@
         <col style="width:70px">
         <col style="width:80px">
         <col style="width:70px">
-        <col style="width:260px">
+        <col style="width:290px">
         <col style="width:320px">
         <col style="width:92px">
         <col style="width:112px">
