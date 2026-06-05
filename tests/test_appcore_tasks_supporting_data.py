@@ -464,7 +464,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "t.archived_at IS NULL" in captured["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
-    assert "ORDER BY is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
+    assert "ORDER BY (CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END) ASC, is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (
         2,
         "%Product%",
@@ -505,7 +505,8 @@ def test_list_task_center_items_archived_bucket_can_filter_pre_archive_status(mo
     ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.archived_at IS NOT NULL" in captured["sql"]
-    assert "t.archived_at IS NULL" not in captured["sql"]
+    where_part = captured["sql"].split("WHERE")[1].split("ORDER BY")[0]
+    assert "t.archived_at IS NULL" not in where_part
     assert "t.status IN (%s, %s)" in captured["sql"]
     assert captured["args"] == (tasks.PARENT_RAW_REVIEW, tasks.CHILD_REVIEW, 20, 0)
 
@@ -537,8 +538,9 @@ def test_list_task_center_items_can_skip_archive_filter_for_exact_detail_fetch(m
         task_id=44,
     ) == {"items": [], "page": 1, "page_size": 1, "total": 0, "total_all": 0, "total_pages": 1}
 
-    assert "t.archived_at IS NULL" not in captured["sql"]
-    assert "t.archived_at IS NOT NULL" not in captured["sql"]
+    where_part = captured["sql"].split("WHERE")[1].split("ORDER BY")[0]
+    assert "t.archived_at IS NULL" not in where_part
+    assert "t.archived_at IS NOT NULL" not in where_part
     assert captured["args"] == (44, 1, 0)
 
 
@@ -1061,7 +1063,7 @@ def test_list_task_center_items_orders_urgent_before_created(monkeypatch):
         page_size=20,
     ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
-    assert "ORDER BY is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
+    assert "ORDER BY (CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END) ASC, is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (20, 0)
 
 
@@ -1703,14 +1705,14 @@ def test_get_child_readiness_computes_payload(monkeypatch):
             "ok": True,
         }
     ]
-    assert checks["final_push_confirmation"]["label"] == "最终推送人工确认"
+    assert checks["final_push_confirmation"]["label"] == "人工最终推送确认"
     assert checks["final_push_confirmation"]["hint"] == (
-        "运营最终确认视频、封面、文案、商品图和链接均可推送后再点击人工确认。"
+        "运营最终确认视频、封面、文案、商品图和链接均可推送后再点击人工最终推送确认。"
     )
     assert checks["final_push_confirmation"]["evidence"] == [
         {
             "type": "status",
-            "label": "最终推送人工确认",
+            "label": "人工最终推送确认",
             "meta": "等待运营最终确认",
             "ok": False,
         }

@@ -13,7 +13,7 @@ def test_task_center_readiness_cards_render_manual_confirm_buttons():
     assert "tc-final-push-confirm-btn" in template
     assert "tc-final-push-confirm-tip" in template
     assert "确认后才可推送" in template
-    assert "const label = confirmed ? '已最终确认' : '最终推送确认';" in template
+    assert "const label = confirmed ? '已人工最终推送确认' : '人工最终推送确认';" in template
     assert "tcConfirmChildStep" in template
     assert "/tasks/api/child/' + taskId + '/steps/' + encodeURIComponent(stepKey) + '/confirm" in template
     assert "tcRenderManualConfirmButton(taskId, check)" in template

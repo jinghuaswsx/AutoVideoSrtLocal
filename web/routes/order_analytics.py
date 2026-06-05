@@ -494,6 +494,7 @@ def ads_level_list():
             ad_account_id=(request.args.get("ad_account_id") or "").strip() or None,
             parent_level=(request.args.get("parent_level") or "").strip() or None,
             parent_code=(request.args.get("parent_code") or "").strip() or None,
+            country=(request.args.get("country") or "").strip() or None,
         )
     except ValueError as exc:
         return _json_response(error="invalid_param", detail=str(exc)), 400

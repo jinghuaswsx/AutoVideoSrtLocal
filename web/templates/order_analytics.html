@@ -3415,6 +3415,12 @@
             <option value="">全部广告户</option>
           </select>
         </label>
+        <label class="oad-country-filter">
+          <span>国家</span>
+          <select data-ads-country-filter="{{ level }}" aria-label="{{ label }} 国家筛选">
+            <option value="">全部国家</option>
+          </select>
+        </label>
         <div class="oad-range-presets" role="group" aria-label="{{ label }} 快捷日期">
           <button type="button" class="oad-seg is-active" data-ads-level-range="today" data-ads-level="{{ level }}" aria-pressed="true">今天</button>
           <button type="button" class="oad-seg" data-ads-level-range="yesterday" data-ads-level="{{ level }}" aria-pressed="false">昨天</button>
@@ -8357,6 +8363,8 @@
     var query = '';
     if (searchInput) query = searchInput.value.trim();
     var accountId = getSelectedAdsAccountId('[data-ads-account-filter="' + level + '"]');
+    var countryEl = document.querySelector('[data-ads-country-filter="' + level + '"]');
+    var country = countryEl ? countryEl.value : '';
     var page = adsLevelState[level].listPage || 1;
     var url = '/order-analytics/ads/list?level=' + encodeURIComponent(level) +
               '&start_date=' + encodeURIComponent(start) +
@@ -8368,6 +8376,9 @@
     }
     if (accountId) {
       url += '&ad_account_id=' + encodeURIComponent(accountId);
+    }
+    if (country) {
+      url += '&country=' + encodeURIComponent(country);
     }
     var body = document.querySelector('[data-ads-list-body="' + level + '"]');
     if (body) body.innerHTML = '<tr><td colspan="7" class="oad-loading">加载中...</td></tr>';
@@ -8501,6 +8512,8 @@
     var end = (document.querySelector('[data-ads-list-end="' + parentLevel + '"]') || {}).value || adsDefaultEndIso(parentLevel);
     var accountId = state.accountId ||
       getSelectedAdsAccountId('[data-ads-account-filter="' + parentLevel + '"]');
+    var countryEl = document.querySelector('[data-ads-country-filter="' + parentLevel + '"]');
+    var country = countryEl ? countryEl.value : '';
     var page = state.childPage || 1;
     var url = '/order-analytics/ads/list?level=' + encodeURIComponent(childLevel) +
               '&start_date=' + encodeURIComponent(start) +
@@ -8511,6 +8524,9 @@
               '&parent_code=' + encodeURIComponent(parentCode);
     if (accountId) {
       url += '&ad_account_id=' + encodeURIComponent(accountId);
+    }
+    if (country) {
+      url += '&country=' + encodeURIComponent(country);
     }
     var body = document.querySelector('[data-ads-child-body="' + parentLevel + '"]');
     if (body) body.innerHTML = '<tr><td colspan="7" class="oad-loading">加载中...</td></tr>';
@@ -8606,8 +8622,29 @@
     }
   }
 
+  function adsPopulateCountryFilter(level, availableCountries) {
+    var select = document.querySelector('[data-ads-country-filter="' + level + '"]');
+    if (!select) return;
+    var current = select.value;
+    var html = '<option value="">全部国家</option>';
+    var seenSelected = false;
+    (availableCountries || []).forEach(function(c) {
+      var isSelected = c.code === current;
+      if (isSelected) seenSelected = true;
+      html += '<option value="' + escapeHtml(c.code) + '"' + (isSelected ? ' selected' : '') + '>' +
+        escapeHtml(c.label || c.code) + '</option>';
+    });
+    select.innerHTML = html;
+    if (seenSelected) {
+      select.value = current;
+    } else {
+      select.value = '';
+    }
+  }
+
   function adsRenderList(level, payload) {
     var data = (payload && payload.data) || payload || {};
+    adsPopulateCountryFilter(level, data.countries);
     var rows = data.rows || [];
     var body = document.querySelector('[data-ads-list-body="' + level + '"]');
     if (!body) return;
@@ -8824,6 +8861,11 @@
       });
       var accountFilter = document.querySelector('[data-ads-account-filter="' + level + '"]');
       if (accountFilter) accountFilter.addEventListener('change', function() {
+        adsLevelState[level].listPage = 1;
+        adsLoadList(level);
+      });
+      var countryFilter = document.querySelector('[data-ads-country-filter="' + level + '"]');
+      if (countryFilter) countryFilter.addEventListener('change', function() {
         adsLevelState[level].listPage = 1;
         adsLoadList(level);
       });

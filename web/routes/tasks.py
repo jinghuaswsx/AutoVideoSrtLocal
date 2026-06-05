@@ -305,6 +305,7 @@ def api_list():
     archived = False
     if bucket == "all":
         bucket = ""
+        archived = None
     elif bucket == "archived":
         archived = True
         bucket = ""

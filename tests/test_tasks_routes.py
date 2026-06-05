@@ -218,7 +218,7 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
 
-    assert "任务总览" in body
+    assert "全部任务" in body
     assert 'data-section-tab="overview"' in body
     assert 'data-bucket="todo"' in body
     assert 'data-bucket="review"' in body
@@ -708,7 +708,7 @@ def test_api_list_accepts_all_bucket_as_unfiltered_overview(authed_user_client_n
 
     assert rsp.status_code == 200
     assert captured["bucket"] == ""
-    assert captured["archived"] is False
+    assert captured["archived"] is None
 
 
 def test_api_list_accepts_archived_bucket(authed_client_no_db, monkeypatch):
@@ -1898,7 +1898,7 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     assert 'data-section-tab="overview"' in body
     assert "let TC_CURRENT_BUCKET = 'all';" in body
     assert body.index('data-bucket="all"') < body.index('data-bucket="todo"')
-    assert '>任务总览</button>' in body
+    assert '>全部任务</button>' in body
     assert '>进行中任务</button>' in body
     assert '>待处理任务</button>' not in body
     assert 'data-bucket="todo"' in body
