@@ -690,7 +690,7 @@ const TC_CAPS = {
   can_translate: {{ 'true' if capabilities.can_translate else 'false' }},
 };
 let TC_CURRENT_SECTION = '{{ active_section|default("overview") }}';
-let TC_CURRENT_BUCKET = '{{ active_bucket|default("all") }}';
+let TC_CURRENT_BUCKET = '{{ active_bucket|default("todo") }}';
 let TC_TASK_PAGE = 1;
 const TC_TASK_PAGE_SIZE = 50;
 let TC_STATS_SHORTCUT = 'today';
@@ -2449,7 +2449,7 @@ document.querySelectorAll('[data-section-tab]').forEach(btn => {
     if (section === 'stats') {
       window.location.href = '/tasks/stats';
     } else {
-      window.location.href = '/tasks/overview/all';
+      window.location.href = '/tasks/overview/todo';
     }
   });
 });

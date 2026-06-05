@@ -1896,7 +1896,7 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
     assert 'data-section-tab="overview"' in body
-    assert "let TC_CURRENT_BUCKET = 'all';" in body
+    assert "let TC_CURRENT_BUCKET = 'todo';" in body
     assert body.index('data-bucket="all"') < body.index('data-bucket="todo"')
     assert '>全部任务</button>' in body
     assert '>进行中任务</button>' in body
