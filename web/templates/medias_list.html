@@ -6,6 +6,11 @@
 {% block extra_style %}
 {% include "medias/_roas_styles.html" %}
 
+.main-wrap {
+  height: 100vh !important;
+  overflow-y: hidden !important;
+}
+
 /* ────────── Page header ────────── */
 .oc-header { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:0; padding-bottom:var(--oc-sp-5); flex-wrap:wrap; position:sticky; top:56px; z-index:22; background:var(--bg-body,#f2f4f8); }
 .oc-header .title { font-size:22px; font-weight:600; line-height:1.3; letter-spacing:-0.2px; margin:0 0 var(--oc-sp-1); }
@@ -3753,7 +3758,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     document.documentElement.style.setProperty('--sticky-toolbar-top', toolbarTop + 'px');
     document.documentElement.style.setProperty('--sticky-pager-top', pagerTop + 'px');
     var tableTop = pagerTop + ph + 16; /* 16px list margin-top */
-    list.style.maxHeight = Math.max(window.innerHeight - tableTop - 80, 320) + 'px';
+    list.style.maxHeight = Math.max(window.innerHeight - tableTop - 130, 320) + 'px';
   }
   window.updateMediaStickyOffsets = updateStickyOffsets;
   updateStickyOffsets();
