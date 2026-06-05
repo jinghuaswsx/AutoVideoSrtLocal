@@ -3162,8 +3162,7 @@
         <col style="width:128px">
         <col style="width:210px">
         <col style="width:110px">
-        <col style="width:140px">
-        <col style="width:80px">
+        <col style="width:74px">
         <col style="width:130px">
         <col style="width:80px">
         <col style="width:88px">
@@ -3171,8 +3170,7 @@
         <col style="width:300px">
         <col style="width:260px">
         <col style="width:92px">
-        <col style="width:92px">
-        <col style="width:92px">
+        <col style="width:112px">
         <col style="width:104px">
         <col style="width:240px">
       </colgroup>
@@ -3182,8 +3180,7 @@
           <th>主图</th>
           <th>产品信息</th>
           <th>产品来源</th>
-          <th>ERP SKU</th>
-          <th>明空 ID</th>
+          <th>SKU</th>
           <th style="text-align: center;">AI评估</th>
           <th>上架</th>
           <th>负责人</th>
@@ -3192,7 +3189,6 @@
           <th>单量情况</th>
           <th>投放情况</th>
           <th>创建时间</th>
-          <th>修改时间</th>
           <th>投放推送</th>
           <th>操作</th>
         </tr>
@@ -3288,11 +3284,10 @@
       td.addEventListener('click', (e) => { e.stopPropagation(); startOwnerInlineEdit(td); }));
     grid.querySelectorAll('[data-refresh-sku]').forEach(b =>
       b.addEventListener('click', (e) => { e.stopPropagation(); refreshProductSkus(+b.dataset.refreshSku, b); }));
-    grid.querySelectorAll('td.sku-summary-cell').forEach(td =>
-      td.addEventListener('click', (e) => {
+    grid.querySelectorAll('[data-sku-detail]').forEach(btn =>
+      btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const tr = td.closest('tr');
-        const pid = tr ? Number(tr.dataset.pid) : null;
+        const pid = Number(btn.dataset.skuDetail);
         const product = pid ? items.find(it => Number(it.id) === pid) : null;
         if (product) openSkuDetail(product);
       }));
@@ -3611,41 +3606,6 @@
     }
   }
 
-  function renderSkuSummary(p) {
-    const skus = Array.isArray(p && p.skus) ? p.skus : [];
-    if (!skus.length) {
-      return '<span class="muted">—</span>';
-    }
-    const matched = skus.filter(s => (s.dianxiaomi_sku_code || '').trim()).length;
-    const codeBits = skus
-      .map(s => (s.dianxiaomi_sku_code || '').trim())
-      .filter(Boolean)
-      .slice(0, 3);
-    const codePreview = codeBits.length
-      ? codeBits.join('，') + (skus.length > codeBits.length ? '…' : '')
-      : '';
-    const head = `<div class="sku-summary-head">${skus.length} 变体（已配 ${matched}）</div>`;
-    const body = codePreview
-      ? `<div class="sku-summary-codes mono">${escapeHtml(codePreview)}</div>`
-      : '<div class="sku-summary-codes muted">未匹配 ERP 编码</div>';
-    return head + body;
-  }
-
-  function skuCellTooltip(p) {
-    const skus = Array.isArray(p && p.skus) ? p.skus : [];
-    if (!skus.length) return '尚未同步 SKU 配对';
-    return skus.map(s => {
-      const variant = (s.shopify_variant_title || '').trim()
-        || (s.shopify_variant_id || '').trim()
-        || '(unknown variant)';
-      const code = (s.dianxiaomi_sku_code || '').trim() || '-';
-      const dxmName = (s.dianxiaomi_name || '').trim();
-      return dxmName
-        ? `${variant} → ${code} ${dxmName}`
-        : `${variant} → ${code}`;
-    }).join('\n');
-  }
-
   function renderProductLinkCheckStatusTop(p) {
     const domains = Array.isArray(p.product_link_domains) ? p.product_link_domains : [];
     if (!domains.length) {
@@ -3723,17 +3683,15 @@
 
     const productInfoCell = `<div class="product-info-cell" style="display: flex; flex-direction: column;">${renderProductLinkCheckStatusTop(p)}${nameLine}${englishLine}${codeLine}</div>`;
 
-    const mkIdText = (p.mk_id === null || p.mk_id === undefined) ? '' : String(p.mk_id);
     const ownerName = (p.owner_name || '').trim();
     const ownerUid = (p.user_id === null || p.user_id === undefined) ? '' : String(p.user_id);
     const ownerCellCls = window.IS_ADMIN ? 'wrap owner-cell' : 'wrap';
     const ownerCellTitle = window.IS_ADMIN ? (ownerName || '点击指派负责人') : ownerName;
     const listed = isListed(p);
     const listingTitle = listingActionTitleForStatus(listingStatus(p));
-    const mkIdCell = mkIdText
-      ? `<span class="mk-id-text">${escapeHtml(mkIdText)}</span>`
-      : `<span class="mk-id-text"><span class="muted">—</span></span>`;
-    const skuCell = renderSkuSummary(p);
+    const timeCell = `
+      <div class="product-time-cell__created">${fmtDateTimeLines(p.created_at)}</div>
+      <div class="product-time-cell__updated">${fmtDateTimeLines(p.updated_at)}</div>`;
 
     // --- AI Evaluation cell ---
     const aiScoreText = p.ai_score !== null && p.ai_score !== undefined ? p.ai_score : '<span class="muted">—</span>';
@@ -3751,8 +3709,9 @@
         <td><div class="oc-thumb-sm">${coverCell}</div></td>
         <td class="wrap product-info-td">${productInfoCell}</td>
         <td class="source-cell" data-pid="${p.id}" data-source="${escapeHtml(p.source || '明空')}" title="点击编辑产品来源">${productSourcePill(p.source || '明空')}</td>
-        <td class="wrap sku-summary-cell" title="${escapeHtml(skuCellTooltip(p))}">${skuCell}</td>
-        <td class="mono mk-id-cell" data-pid="${p.id}" data-mkid="${escapeHtml(mkIdText)}" title="点击编辑明空 ID">${mkIdCell}</td>
+        <td class="sku-action-cell">
+          <button type="button" class="oc-btn sm ghost sku-detail-btn" data-sku-detail="${p.id}" title="查看 SKU 详细信息">SKU</button>
+        </td>
         <td class="wrap" style="text-align: center; vertical-align: middle;">${aiEvalCell}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
@@ -3760,8 +3719,7 @@
         <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary)}</td>
         <td>${renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
-        <td class="muted mono">${fmtDateTimeLines(p.created_at)}</td>
-        <td class="muted mono">${fmtDateTimeLines(p.updated_at)}</td>
+        <td class="muted mono product-time-cell">${timeCell}</td>
         <td class="product-push-cell">
           <div class="product-push-actions">
             <button class="oc-btn sm ghost" data-product-links-push="${p.id}" title="推送该产品的投放链接">
