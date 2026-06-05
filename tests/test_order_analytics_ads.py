@@ -2362,3 +2362,66 @@ def test_get_ads_level_list_adset_and_ad_include_realtime_today(monkeypatch):
         assert realtime_table in union_sql
         assert f"m.{code_col} AS code" in union_sql
         assert f"m.{name_col} AS name" in union_sql
+
+
+def test_get_ads_level_list_realtime_ad_search_includes_parent_codes(monkeypatch):
+    today = oa.current_meta_business_date()
+    captured_queries: list[dict] = []
+
+    def fake_query_one(sql, args=()):
+        captured_queries.append({"sql": sql, "args": args})
+        return {"total": 0}
+
+    def fake_query(sql, args=()):
+        captured_queries.append({"sql": sql, "args": args})
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    product_code = "21-fitness-resistance-bands-4-tube-pedal-ankle-pu"
+    result = oa.get_ads_level_list(
+        "ad",
+        start_date=today.isoformat(),
+        end_date=today.isoformat(),
+        q=product_code,
+    )
+
+    assert result["rows"] == []
+    union_sql = next(q["sql"] for q in captured_queries if "UNION ALL" in q["sql"])
+    assert "AS realtime_parent_search" in union_sql
+    assert "m.normalized_campaign_code" in union_sql
+    assert "m.normalized_adset_code" in union_sql
+    assert "LOWER(COALESCE(realtime_parent_search, '')) LIKE LOWER(%s)" in union_sql
+    assert captured_queries[0]["args"].count(f"%{product_code}%") == 4
+
+
+def test_get_ads_level_list_realtime_adset_search_includes_campaign_code(monkeypatch):
+    today = oa.current_meta_business_date()
+    captured_queries: list[dict] = []
+
+    def fake_query_one(sql, args=()):
+        captured_queries.append({"sql": sql, "args": args})
+        return {"total": 0}
+
+    def fake_query(sql, args=()):
+        captured_queries.append({"sql": sql, "args": args})
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    product_code = "21-fitness-resistance-bands-4-tube-pedal-ankle-pu"
+    result = oa.get_ads_level_list(
+        "adset",
+        start_date=today.isoformat(),
+        end_date=today.isoformat(),
+        q=product_code,
+    )
+
+    assert result["rows"] == []
+    union_sql = next(q["sql"] for q in captured_queries if "UNION ALL" in q["sql"])
+    assert "AS realtime_parent_search" in union_sql
+    assert "m.normalized_campaign_code" in union_sql
+    assert "LOWER(COALESCE(realtime_parent_search, '')) LIKE LOWER(%s)" in union_sql
+    assert captured_queries[0]["args"].count(f"%{product_code}%") == 4
