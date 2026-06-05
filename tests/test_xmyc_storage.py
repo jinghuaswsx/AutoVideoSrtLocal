@@ -264,6 +264,40 @@ def test_refresh_clears_when_no_skus(monkeypatch):
     assert "purchase_price = NULL" in captured["sql"]
 
 
+def test_refresh_purchase_prices_includes_order_skus_matched_by_dianxiaomi_yuncang(monkeypatch):
+    refreshed: list[int] = []
+
+    def fake_query(sql, params=None):
+        if "SELECT DISTINCT product_id FROM xmyc_storage_skus" in sql:
+            return [{"product_id": 10}]
+        if "JOIN dianxiaomi_yuncang_skus" in sql:
+            return [{"product_id": 20}, {"product_id": 10}]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr(mod, "query", fake_query)
+    monkeypatch.setattr(mod, "_refresh_product_purchase_price", lambda pid: refreshed.append(int(pid)))
+
+    assert mod.refresh_purchase_prices_for_matched() == {"refreshed": 2}
+    assert refreshed == [10, 20]
+
+
+def test_refresh_purchase_prices_tolerates_missing_dianxiaomi_yuncang_table(monkeypatch):
+    refreshed: list[int] = []
+
+    def fake_query(sql, params=None):
+        if "SELECT DISTINCT product_id FROM xmyc_storage_skus" in sql:
+            return [{"product_id": 10}]
+        if "JOIN dianxiaomi_yuncang_skus" in sql:
+            raise RuntimeError("table does not exist")
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr(mod, "query", fake_query)
+    monkeypatch.setattr(mod, "_refresh_product_purchase_price", lambda pid: refreshed.append(int(pid)))
+
+    assert mod.refresh_purchase_prices_for_matched() == {"refreshed": 1}
+    assert refreshed == [10]
+
+
 def test_list_skus_builds_filter_sql(monkeypatch):
     captured = {}
 

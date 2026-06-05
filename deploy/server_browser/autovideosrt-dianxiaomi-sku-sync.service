@@ -1,0 +1,14 @@
+[Unit]
+Description=AutoVideoSrt Dianxiaomi SKU pairing sync
+Wants=autovideosrt-dxm03-rjc-vnc.service
+After=network-online.target autovideosrt-dxm03-rjc-vnc.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+Environment=DXM_SKU_BROWSER_MODE=server-cdp
+Environment=DXM_SKU_BROWSER_CDP_URL=http://127.0.0.1:9225
+Environment=DXM_SKU_DB_MODE=local
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/dianxiaomi_sku_sync.py --skip-login-prompt --browser-mode server-cdp --browser-cdp-url http://127.0.0.1:9225 --db-mode local
+TimeoutStartSec=7200

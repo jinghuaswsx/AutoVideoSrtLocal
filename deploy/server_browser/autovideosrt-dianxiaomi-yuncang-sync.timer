@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt Dianxiaomi yuncang warehouse SKU sync every 2 hours
+
+[Timer]
+OnCalendar=*-*-* 01/2:03:00
+Persistent=true
+Unit=autovideosrt-dianxiaomi-yuncang-sync.service
+
+[Install]
+WantedBy=timers.target

@@ -56,6 +56,10 @@ chmod 755 "deploy/server_browser/run_server_browser.sh"
 chmod 755 "deploy/server_browser/install_server_browser.sh"
 chmod 755 "deploy/server_browser/with_browser_lock.sh"
 chmod 755 "deploy/server_browser/install_shopifyid_sync_timer.sh" 2>/dev/null || true
+chmod 755 "deploy/server_browser/install_dianxiaomi_sku_sync_timer.sh" 2>/dev/null || true
+chmod 755 "deploy/server_browser/install_dianxiaomi_yuncang_sync_timer.sh" 2>/dev/null || true
+chmod 755 "deploy/server_browser/install_xmyc_storage_sync_timer.sh" 2>/dev/null || true
+chmod 755 "deploy/server_browser/install_sku_purchase_sync_timers.sh" 2>/dev/null || true
 
 systemctl daemon-reload
 systemctl enable --now "$SERVICE_NAME"

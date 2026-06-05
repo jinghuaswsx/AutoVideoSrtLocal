@@ -218,6 +218,56 @@ def test_browser_automation_timers_are_staggered_to_reduce_lock_contention():
     assert "OnCalendar=*:02/20" not in roi
 
 
+def test_dianxiaomi_sku_and_purchase_sync_timers_run_every_two_hours():
+    sku_service = _read("deploy/server_browser/autovideosrt-dianxiaomi-sku-sync.service")
+    sku_timer = _read("deploy/server_browser/autovideosrt-dianxiaomi-sku-sync.timer")
+    yuncang_service = _read("deploy/server_browser/autovideosrt-dianxiaomi-yuncang-sync.service")
+    yuncang_timer = _read("deploy/server_browser/autovideosrt-dianxiaomi-yuncang-sync.timer")
+    xmyc_timer = _read("deploy/server_browser/autovideosrt-xmyc-storage-sync.timer")
+
+    assert "tools/dianxiaomi_sku_sync.py" in sku_service
+    assert "--browser-mode server-cdp" in sku_service
+    assert "--browser-cdp-url http://127.0.0.1:9225" in sku_service
+    assert "--db-mode local" in sku_service
+    assert "OnCalendar=*-*-* 00/2:21:00" in sku_timer
+    assert "Unit=autovideosrt-dianxiaomi-sku-sync.service" in sku_timer
+
+    assert "tools/dianxiaomi_yuncang_sync.py" in yuncang_service
+    assert "--cdp-url http://127.0.0.1:9225" in yuncang_service
+    assert "OnCalendar=*-*-* 01/2:03:00" in yuncang_timer
+    assert "Unit=autovideosrt-dianxiaomi-yuncang-sync.service" in yuncang_timer
+
+    assert "OnCalendar=*-*-* 00/2:33:00" in xmyc_timer
+    assert "OnCalendar=*-*-* 12:33:00" not in xmyc_timer
+
+
+def test_dianxiaomi_sku_and_yuncang_installers_copy_service_and_timer():
+    sku_installer = _read("deploy/server_browser/install_dianxiaomi_sku_sync_timer.sh")
+    yuncang_installer = _read("deploy/server_browser/install_dianxiaomi_yuncang_sync_timer.sh")
+
+    assert 'SERVICE_NAME="${SERVICE_NAME:-autovideosrt-dianxiaomi-sku-sync}"' in sku_installer
+    assert 'install -m 644 "$APP_DIR/deploy/server_browser/${SERVICE_NAME}.service" "$SERVICE_FILE"' in sku_installer
+    assert 'install -m 644 "$APP_DIR/deploy/server_browser/${SERVICE_NAME}.timer" "$TIMER_FILE"' in sku_installer
+    assert 'systemctl enable --now "${SERVICE_NAME}.timer"' in sku_installer
+
+    assert 'SERVICE_NAME="${SERVICE_NAME:-autovideosrt-dianxiaomi-yuncang-sync}"' in yuncang_installer
+    assert 'install -m 644 "$APP_DIR/deploy/server_browser/${SERVICE_NAME}.service" "$SERVICE_FILE"' in yuncang_installer
+    assert 'install -m 644 "$APP_DIR/deploy/server_browser/${SERVICE_NAME}.timer" "$TIMER_FILE"' in yuncang_installer
+    assert 'systemctl enable --now "${SERVICE_NAME}.timer"' in yuncang_installer
+
+
+def test_sku_purchase_sync_bundle_installer_runs_all_three_timers():
+    installer = _read("deploy/server_browser/install_sku_purchase_sync_timers.sh")
+
+    assert "install_dianxiaomi_sku_sync_timer.sh" in installer
+    assert "install_xmyc_storage_sync_timer.sh" in installer
+    assert "install_dianxiaomi_yuncang_sync_timer.sh" in installer
+    assert "systemctl list-timers" in installer
+    assert "autovideosrt-dianxiaomi-sku-sync.timer" in installer
+    assert "autovideosrt-xmyc-storage-sync.timer" in installer
+    assert "autovideosrt-dianxiaomi-yuncang-sync.timer" in installer
+
+
 def test_server_browser_installers_make_lock_script_executable():
     install_browser = _read("deploy/server_browser/install_server_browser.sh")
     install_timer = _read("deploy/server_browser/install_shopifyid_sync_timer.sh")

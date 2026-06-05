@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt Dianxiaomi SKU pairing sync every 2 hours
+
+[Timer]
+OnCalendar=*-*-* 00/2:21:00
+Persistent=true
+Unit=autovideosrt-dianxiaomi-sku-sync.service
+
+[Install]
+WantedBy=timers.target

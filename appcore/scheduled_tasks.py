@@ -38,27 +38,48 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "dianxiaomi_sku",
         "name": "店小秘 SKU 配对同步",
         "description": (
-            "每天从店小秘 Shopify 在线商品库与 ERP 商品管理库抓取 variants 与 SKU，"
+            "每 2 小时从店小秘 Shopify 在线商品库与 ERP 商品管理库抓取 variants 与 SKU，"
             "按 shopifyid 回填 media_products.shopify_title 和 media_product_skus 配对表。"
+            "Docs-anchor: docs/superpowers/specs/2026-06-05-dianxiaomi-sku-purchase-sync-design.md"
         ),
-        "schedule": "每天 12:21（与 shopifyid 12:11 错峰）",
+        "schedule": "每 2 小时（00:21 起，奇偶小时错峰）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-dianxiaomi-sku-sync.timer",
         "runner": "tools/dianxiaomi_sku_sync.py",
-        "deployment": "线上待部署",
+        "deployment": "线上已启用",
         "log_table": "scheduled_task_runs",
     },
     "dianxiaomi_yuncang_sync": {
         "code": "dianxiaomi_yuncang_sync",
         "name": "店小秘云仓货品同步",
-        "description": "从店小秘云仓货品列表页面拉取全部 SKU 货品数据，更新 dianxiaomi_yuncang_skus，并重新计算关联产品的采购成本价格。",
-        "schedule": "每天凌晨 12:31（错峰执行）",
+        "description": (
+            "每 2 小时从店小秘云仓货品列表页面拉取全部 SKU 货品数据，"
+            "更新 dianxiaomi_yuncang_skus，并重新计算关联产品的采购成本价格。"
+            "Docs-anchor: docs/superpowers/specs/2026-06-05-dianxiaomi-sku-purchase-sync-design.md"
+        ),
+        "schedule": "每 2 小时（01:03 起，错开 SKU / xmyc 同步）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-dianxiaomi-yuncang-sync.timer",
         "runner": "tools/dianxiaomi_yuncang_sync.py",
-        "deployment": "线上待部署",
+        "deployment": "线上已启用",
+        "log_table": "scheduled_task_runs",
+    },
+    "xmyc_storage_sync": {
+        "code": "xmyc_storage_sync",
+        "name": "小秘云仓 SKU 与采购价同步",
+        "description": (
+            "每 2 小时从小秘云仓抓取全量 SKU、库存和采购价，"
+            "按订单 SKU 自动匹配产品并刷新产品采购成本。"
+            "Docs-anchor: docs/superpowers/specs/2026-06-05-dianxiaomi-sku-purchase-sync-design.md"
+        ),
+        "schedule": "每 2 小时（00:33 起，错开 SKU 同步）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-xmyc-storage-sync.timer",
+        "runner": "tools/xmyc_storage_sync.py",
+        "deployment": "线上已启用",
         "log_table": "scheduled_task_runs",
     },
     "shopifyid_windows_daily": {
@@ -514,7 +535,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "tos_backup",
         "name": "TOS 文件与数据库备份",
         "description": "每天凌晨同步受保护文件到 autovideosrtlocal 桶，并保留 7 天 MySQL dump。",
-        "schedule": "每天 01:00",
+        "schedule": "每天 02:00",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "tos_backup",
