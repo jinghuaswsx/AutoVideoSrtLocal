@@ -128,8 +128,8 @@ def list_translation_work_users() -> list[dict]:
     try:
         counts_rows = query(
             "SELECT assignee_id, "
-            "  SUM(CASE WHEN status IN ('pending', 'raw_in_progress', 'assigned') AND archived_at IS NULL THEN 1 ELSE 0 END) AS todo_count, "
-            "  SUM(CASE WHEN status IN ('pending', 'raw_in_progress', 'assigned') AND archived_at IS NULL AND is_urgent = 1 THEN 1 ELSE 0 END) AS urgent_count, "
+            "  SUM(CASE WHEN status IN ('pending', 'raw_in_progress', 'assigned', 'blocked') AND archived_at IS NULL THEN 1 ELSE 0 END) AS todo_count, "
+            "  SUM(CASE WHEN status IN ('pending', 'raw_in_progress', 'assigned', 'blocked') AND archived_at IS NULL AND is_urgent = 1 THEN 1 ELSE 0 END) AS urgent_count, "
             "  SUM(CASE WHEN ( "
             "    (parent_task_id IS NULL AND status IN ('raw_done', 'all_done')) OR "
             "    (parent_task_id IS NOT NULL AND status = 'done') "
