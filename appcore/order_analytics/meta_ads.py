@@ -1035,6 +1035,7 @@ _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
         "realtime_table": "meta_ad_realtime_daily_campaign_metrics",
         "realtime_code_col": "normalized_campaign_code",
         "realtime_name_col": "campaign_name",
+        "realtime_parent_search_expr": "''",
         "supports_realtime": True,
     },
     "adset": {
@@ -1051,6 +1052,7 @@ _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
         "realtime_table": "meta_ad_realtime_daily_adset_metrics",
         "realtime_code_col": "normalized_adset_code",
         "realtime_name_col": "adset_name",
+        "realtime_parent_search_expr": "COALESCE(m.normalized_campaign_code, '')",
         "supports_realtime": True,
     },
     "ad": {
@@ -1072,6 +1074,10 @@ _LEVEL_CONFIG: dict[str, dict[str, Any]] = {
         "realtime_table": "meta_ad_realtime_daily_ad_metrics",
         "realtime_code_col": "normalized_ad_code",
         "realtime_name_col": "ad_name",
+        "realtime_parent_search_expr": (
+            "CONCAT_WS(' ', COALESCE(m.normalized_campaign_code, ''), "
+            "COALESCE(m.normalized_adset_code, ''))"
+        ),
         "supports_realtime": True,
     },
 }
@@ -1300,6 +1306,7 @@ def get_ads_level_list(
         hist_table_sql = (
             f"SELECT meta_business_date, {cfg['code_col']} AS code, {cfg['name_col']} AS name, "
             f"ad_account_id, ad_account_name, matched_product_code, "
+            f"'' AS realtime_parent_search, "
             f"spend_usd, purchase_value_usd, result_count "
             f"FROM {cfg['table']} "
             f"WHERE meta_business_date >= %s AND meta_business_date <= %s "
@@ -1314,12 +1321,14 @@ def get_ads_level_list(
         realtime_table = cfg["realtime_table"]
         realtime_code_col = cfg["realtime_code_col"]
         realtime_name_col = cfg["realtime_name_col"]
+        realtime_parent_search_expr = cfg["realtime_parent_search_expr"]
         realtime_sql = (
             f"SELECT m.business_date AS meta_business_date, "
             f"m.{realtime_code_col} AS code, "
             f"m.{realtime_name_col} AS name, "
             f"m.ad_account_id, m.ad_account_name, "
             f"NULL AS matched_product_code, "
+            f"{realtime_parent_search_expr} AS realtime_parent_search, "
             f"m.spend_usd, m.purchase_value_usd, m.result_count "
             f"FROM {realtime_table} m "
             f"INNER JOIN ("
@@ -1367,6 +1376,14 @@ def get_ads_level_list(
             "OR LOWER(COALESCE(matched_product_code, '')) LIKE LOWER(%s)) "
         )
         search_args = (pattern, pattern, pattern)
+        if use_union:
+            search_clause = (
+                f"AND (LOWER({filter_name_col}) LIKE LOWER(%s) "
+                f"OR LOWER({filter_code_col}) LIKE LOWER(%s) "
+                "OR LOWER(COALESCE(matched_product_code, '')) LIKE LOWER(%s) "
+                "OR LOWER(COALESCE(realtime_parent_search, '')) LIKE LOWER(%s)) "
+            )
+            search_args = (pattern, pattern, pattern, pattern)
 
     query_args = subquery_args + where_args + search_args
 

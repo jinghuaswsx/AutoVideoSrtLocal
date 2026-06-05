@@ -633,10 +633,47 @@
     never: { label: '未', cls: 'never' },
   };
 
+  function fmtDeliveryTime(s) {
+    if (!s) return '';
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+    if (!m) return s;
+    const mm = m[2];
+    const dd = m[3];
+    const hh = m[4];
+    const ii = m[5];
+    return `${mm}${dd}-${hh}${ii}`;
+  }
+
   function renderDeliveryStatus(p) {
-    const raw = String(((p || {}).ad_summary || {}).delivery_status || 'never').toLowerCase();
+    const summary = (p || {}).ad_summary || {};
+    const raw = String(summary.delivery_status || 'never').toLowerCase();
     const meta = DELIVERY_STATUS_META[raw] || DELIVERY_STATUS_META.never;
-    return `<span class="oc-delivery-pill ${meta.cls}">${meta.label}</span>`;
+    
+    let detailsHtml = '';
+    if (raw !== 'never') {
+      const startTime = summary.delivery_start_time || '';
+      const endTime = summary.delivery_end_time || '';
+      const activeDays = Number(summary.active_days || 0) || 0;
+      
+      const parts = [];
+      if (startTime) {
+        parts.push(`<div title="开始投放时间" style="white-space: nowrap;"><span style="color: var(--oc-fg-subtle, #64748b); font-size: 11px;">开投：</span><span style="font-family: monospace; font-size: 11px; font-weight: 500;">${escapeHtml(fmtDeliveryTime(startTime))}</span></div>`);
+      }
+      if (raw === 'stopped' && endTime) {
+        parts.push(`<div title="终止投放时间" style="white-space: nowrap;"><span style="color: var(--oc-fg-subtle, #64748b); font-size: 11px;">终投：</span><span style="font-family: monospace; font-size: 11px; font-weight: 500;">${escapeHtml(fmtDeliveryTime(endTime))}</span></div>`);
+      }
+      if (activeDays > 0) {
+        parts.push(`<div title="投放活跃天数" style="margin-top: 4px; display: inline-block; background: var(--oc-bg-subtle, #f1f5f9); border: 1px solid var(--oc-border, #e2e8f0); color: var(--oc-fg, #1e293b); padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; line-height: 1.2;">活跃: ${activeDays}天</div>`);
+      }
+      if (parts.length > 0) {
+        detailsHtml = `<div class="oc-delivery-details" style="font-size: 11px; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; align-items: center;">${parts.join('')}</div>`;
+      }
+    }
+    
+    return `<div style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%;">`
+      + `<span class="oc-delivery-pill ${meta.cls}">${meta.label}</span>`
+      + detailsHtml
+      + `</div>`;
   }
 
   function icon(name, size = 14) {

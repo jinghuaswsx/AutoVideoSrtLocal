@@ -630,6 +630,96 @@ def _extract_cn_product_name_from_filename(filename: str | None) -> str | None:
     return None
 
 
+def _is_chinese(text: str | None) -> bool:
+    if not text:
+        return False
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _find_fallback_chinese_name(product_code: str | None) -> str | None:
+    normalized = _normalize_product_code(product_code)
+    if not normalized:
+        return None
+
+    # 1. Try product_name_dictionary
+    try:
+        from appcore.product_name_dictionary import get_names
+        dict_names = get_names([normalized])
+        if dict_names and normalized in dict_names:
+            dict_cn = dict_names[normalized].get("cn_name", "")
+            if _is_chinese(dict_cn):
+                return dict_cn
+    except Exception as e:
+        log.warning("fallback name: get_names failed for %s: %s", normalized, e)
+
+    # 2. Try mingkong_material_daily_snapshots
+    try:
+        rows = query_all(
+            """
+            SELECT DISTINCT mk_product_name, product_name, video_name
+            FROM mingkong_material_daily_snapshots
+            WHERE LOWER(product_code) IN (%s, %s)
+            """,
+            (normalized, f"{normalized}-rjc"),
+        )
+        for r in rows:
+            for field in ("mk_product_name", "product_name"):
+                val = str(r.get(field) or "").strip()
+                if _is_chinese(val):
+                    return val
+            video_name = str(r.get("video_name") or "").strip()
+            extracted = _extract_cn_product_name_from_filename(video_name)
+            if extracted and _is_chinese(extracted):
+                return extracted
+    except Exception as e:
+        log.warning("fallback name: daily snapshots query failed for %s: %s", normalized, e)
+
+    # 3. Try mingkong_material_daily_top100
+    try:
+        rows = query_all(
+            """
+            SELECT DISTINCT mk_product_name, product_name, video_name
+            FROM mingkong_material_daily_top100
+            WHERE LOWER(product_code) IN (%s, %s)
+            """,
+            (normalized, f"{normalized}-rjc"),
+        )
+        for r in rows:
+            for field in ("mk_product_name", "product_name"):
+                val = str(r.get(field) or "").strip()
+                if _is_chinese(val):
+                    return val
+            video_name = str(r.get("video_name") or "").strip()
+            extracted = _extract_cn_product_name_from_filename(video_name)
+            if extracted and _is_chinese(extracted):
+                return extracted
+    except Exception as e:
+        log.warning("fallback name: top100 query failed for %s: %s", normalized, e)
+
+    # 4. Try mingkong_material_preselections
+    try:
+        rows = query_all(
+            """
+            SELECT DISTINCT product_name, video_name
+            FROM mingkong_material_preselections
+            WHERE LOWER(product_code) IN (%s, %s)
+            """,
+            (normalized, f"{normalized}-rjc"),
+        )
+        for r in rows:
+            val = str(r.get("product_name") or "").strip()
+            if _is_chinese(val):
+                return val
+            video_name = str(r.get("video_name") or "").strip()
+            extracted = _extract_cn_product_name_from_filename(video_name)
+            if extracted and _is_chinese(extracted):
+                return extracted
+    except Exception as e:
+        log.warning("fallback name: preselections query failed for %s: %s", normalized, e)
+
+    return None
+
+
 def _build_create_product_payload(
     meta: dict,
     translator_id: int | None,
@@ -646,6 +736,10 @@ def _build_create_product_payload(
         product_asset.get("product_cn_name"),
         product_asset.get("product_name"),
     ) or ""
+    if not _is_chinese(name):
+        fallback_cn = _find_fallback_chinese_name(product_code)
+        if fallback_cn:
+            name = fallback_cn
     product_link = _first_non_empty(meta.get("product_link"), product_asset.get("product_url"))
     main_image = _first_non_empty(
         meta.get("main_image"),
@@ -706,9 +800,152 @@ def import_mk_video(
     filename = filename.replace(" ", "")
     meta["filename"] = filename
 
-    # 1. Dedup by filename
+    # 1. Dedup by filename (auto-recovery and bypass if already imported)
     if _is_video_already_imported(filename):
-        raise DuplicateError(f"video filename already imported: {filename}")
+        log.info("video filename already imported: %s. Initiating recovery / auto-bypass flow.", filename)
+        existing_item = query_one(
+            "SELECT id, product_id, user_id, object_key, cover_object_key "
+            "FROM media_items "
+            "WHERE filename = %s AND deleted_at IS NULL LIMIT 1",
+            (filename,)
+        )
+        if not existing_item:
+            raise DuplicateError(f"video filename already imported check passed but record missing: {filename}")
+
+        item_id = existing_item["id"]
+        product_id = existing_item["product_id"]
+        owner_uid = existing_item["user_id"]
+        object_key = existing_item["object_key"]
+
+        # 1.1 Simulate product lookup results for frontend UI compatibility
+        _append_step_result(
+            step_results,
+            "product",
+            key="product_lookup",
+            title="产品记录",
+            status="done",
+            message=f"检测到产品记录已存在，素材管理已可见：产品 #{product_id}（已复用）",
+            logs=[f"product_code={meta.get('product_code')}"],
+        )
+        product_link = meta.get("product_link") or ""
+        _append_step_result(
+            step_results,
+            "product",
+            key="product_link_probe",
+            title="商品链接探测",
+            status="done",
+            message="商品链接探测通过（已复用）",
+            logs=[product_link] if product_link else None,
+        )
+
+        # 1.2 Simulate download result
+        _append_step_result(
+            step_results,
+            "download",
+            key="download_mp4",
+            title="原视频下载",
+            status="done",
+            message="已复用本地视频文件",
+            logs=[str(meta.get("mp4_url") or "")],
+        )
+
+        # 1.3 Simulate media store results
+        _append_step_result(
+            step_results,
+            "store",
+            key="store_media",
+            title="媒体文件写入",
+            status="done",
+            message="已复用媒体存储",
+            logs=[object_key],
+        )
+        cover_object_key = existing_item.get("cover_object_key")
+        if cover_object_key:
+            _append_step_result(
+                step_results,
+                "store",
+                key="item_cover",
+                title="视频封面",
+                status="done",
+                message="视频封面已写入素材库（已复用）",
+                logs=[cover_object_key],
+            )
+        _append_step_result(
+            step_results,
+            "store",
+            key="media_item",
+            title="素材记录",
+            status="done",
+            message=f"已复用素材 ID：{item_id}",
+            logs=[f"filename={filename}", "lang=en"],
+        )
+
+        # 1.4 Supplement/re-bind Mingkong material origin details
+        warnings = []
+        video_path = _mk_proxy_media_path(
+            meta.get("video_path") or meta.get("mk_video_path") or meta.get("mp4_url"),
+            _MK_VIDEO_PROXY_PATHS,
+        )
+        cover_path = _mk_proxy_media_path(
+            meta.get("cover_path") or meta.get("mk_video_image_path") or meta.get("cover_url"),
+            _MK_MEDIA_PROXY_PATHS,
+        )
+        if video_path:
+            try:
+                _bind_imported_mk_material(
+                    media_item_id=int(item_id),
+                    mk_product_id=meta.get("mk_product_id") or meta.get("mk_id"),
+                    mk_product_name=meta.get("mk_product_name") or meta.get("product_name"),
+                    mk_video_path=video_path,
+                    mk_video_name=filename,
+                    mk_video_image_path=cover_path or None,
+                    mk_video_metadata=_mk_binding_metadata(
+                        meta,
+                        product_link=product_link,
+                        video_path=video_path,
+                        cover_path=cover_path,
+                    ),
+                    bound_by=int(actor_user_id),
+                )
+            except Exception as exc:
+                log.warning("mk import rebinding failed item_id=%s: %s", item_id, exc)
+                _append_step_result(
+                    step_results,
+                    "store",
+                    key="mk_binding",
+                    title="明空素材绑定",
+                    status="warning",
+                    message="明空素材来源绑定补充失败",
+                    logs=[str(exc)],
+                )
+                warnings.append({
+                    "type": "mk_material_binding_failed",
+                    "message": "明空素材来源绑定补充失败",
+                    "detail": str(exc),
+                })
+            else:
+                _append_step_result(
+                    step_results,
+                    "store",
+                    key="mk_binding",
+                    title="明空素材绑定",
+                    status="done",
+                    message="已补齐明空素材来源绑定",
+                    logs=[video_path],
+                )
+
+        duration_ms = int((time.monotonic() - started) * 1000)
+        result = {
+            "media_item_id": int(item_id),
+            "media_product_id": int(product_id),
+            "is_new_product": False,
+            "duration_ms": duration_ms,
+            "step_results": step_results,
+            "product_owner_name": _medias_get_user_display_name(owner_uid),
+        }
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     # 2. Find or create product
     raw_code = meta.get("product_code") or ""
@@ -773,6 +1010,21 @@ def import_mk_video(
                 raise DBError(f"create product failed: {e}") from e
     else:
         product_id = existing["id"]
+
+    if not is_new:
+        existing_name = existing.get("name") or ""
+        if not _is_chinese(existing_name):
+            fallback_cn = _find_fallback_chinese_name(normalized)
+            if fallback_cn:
+                try:
+                    execute(
+                        "UPDATE media_products SET name = %s, updated_at = NOW() WHERE id = %s",
+                        (fallback_cn, product_id)
+                    )
+                    log.info("Updated existing product id=%s name to Chinese: %s", product_id, fallback_cn)
+                    existing["name"] = fallback_cn
+                except Exception as e:
+                    log.warning("Failed to update existing product id=%s name to Chinese: %s", product_id, e)
 
     owner_uid = int(translator_id) if is_new else int(existing["user_id"])
     _append_step_result(
