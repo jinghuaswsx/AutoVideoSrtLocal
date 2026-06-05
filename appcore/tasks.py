@@ -4248,6 +4248,7 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
       - employee_name (str)
       - today_completed (int)
       - today_pending (int)
+      - urgent_pending (int)
       - total_tasks (int)
       - raw_tasks (int)
       - translate_tasks (int)
@@ -4267,6 +4268,10 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
         "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
         "      (t.parent_task_id IS NOT NULL AND t.status IN ('blocked', 'assigned', 'review'))"
         "  ) THEN 1 ELSE 0 END) AS today_pending, "
+        "  SUM(CASE WHEN ("
+        "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
+        "      (t.parent_task_id IS NOT NULL AND t.status IN ('blocked', 'assigned', 'review'))"
+        "  ) AND t.is_urgent = 1 THEN 1 ELSE 0 END) AS urgent_pending, "
         "  COUNT(t.id) AS total_tasks, "
         "  SUM(CASE WHEN t.parent_task_id IS NULL THEN 1 ELSE 0 END) AS raw_tasks, "
         "  SUM(CASE WHEN t.parent_task_id IS NOT NULL THEN 1 ELSE 0 END) AS translate_tasks "
@@ -4283,6 +4288,7 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
             "employee_name": str(row["employee_name"]),
             "today_completed": int(row["today_completed"]),
             "today_pending": int(row["today_pending"]),
+            "urgent_pending": int(row["urgent_pending"]),
             "total_tasks": int(row["total_tasks"]),
             "raw_tasks": int(row["raw_tasks"]),
             "translate_tasks": int(row["translate_tasks"]),

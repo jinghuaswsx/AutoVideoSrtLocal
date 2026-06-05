@@ -2242,7 +2242,7 @@ def test_api_stats_endpoint_delegates_to_tasks_service(authed_client_no_db, monk
     
     def fake_get_employee_task_stats(start_date, end_date=None):
         captured.append((start_date, end_date))
-        return [{"assignee_id": 5, "employee_name": "Test User", "today_completed": 10}]
+        return [{"assignee_id": 5, "employee_name": "Test User", "today_completed": 10, "urgent_pending": 2}]
         
     monkeypatch.setattr(
         "web.routes.tasks.tasks_svc.get_employee_task_stats",
@@ -2254,7 +2254,7 @@ def test_api_stats_endpoint_delegates_to_tasks_service(authed_client_no_db, monk
     rsp = authed_client_no_db.get("/tasks/api/stats")
     assert rsp.status_code == 200
     res = rsp.get_json()
-    assert res == {"stats": [{"assignee_id": 5, "employee_name": "Test User", "today_completed": 10}]}
+    assert res == {"stats": [{"assignee_id": 5, "employee_name": "Test User", "today_completed": 10, "urgent_pending": 2}]}
     assert len(captured) == 1
     assert len(captured[0][0]) == 10  # date string YYYY-MM-DD
     
