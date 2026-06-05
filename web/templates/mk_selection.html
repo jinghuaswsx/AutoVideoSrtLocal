@@ -5632,9 +5632,7 @@ function mkiImportProgressButtonHasLocalProduct(btn) {
 }
 
 async function mkiImportProgressLoadProductOwners() {
-  if (!mkiProductOwnersCache) {
-    mkiProductOwnersCache = await mkiFetchActiveUsers();
-  }
+  mkiProductOwnersCache = await mkiFetchActiveUsers();
   return mkiProductOwnersCache;
 }
 
@@ -6506,11 +6504,9 @@ async function mkiXiaoOpenModal(options = {}) {
   options.fineAiResult = options.fineAiResult || mkiFineAiResultFromButton(mkiXiaoFineAiSourceButton);
   const productOwnerId = await mkiXiaoResolveProductOwnerId(options);
   // Load assignable employees
-  if (!mkiXiaoTranslatorsCache) {
-    try {
-      mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
-    } catch (e) { mkiXiaoTranslatorsCache = []; }
-  }
+  try {
+    mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
+  } catch (e) { mkiXiaoTranslatorsCache = []; }
   mkiXiaoRawProcessorsCache = mkiXiaoTranslatorsCache;
   if (!mkiXiaoTranslatorsCache.length) {
     alert('没有可用翻译工作用户');
