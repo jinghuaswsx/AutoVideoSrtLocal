@@ -1382,7 +1382,7 @@ def test_child_acceptance_payload_includes_final_push_confirmation_gate(monkeypa
     )
 
     by_key = {check["key"]: check for check in payload["checks"]}
-    assert by_key["final_push_confirmation"]["label"] == "最终推送人工确认"
+    assert by_key["final_push_confirmation"]["label"] == "人工最终推送确认"
     assert by_key["final_push_confirmation"]["ok"] is False
     assert "manual_output" not in by_key["final_push_confirmation"]
     assert "final_push_confirmation" in payload["missing"]
