@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _dxm_shopify_product_payload(variant_ids: list[str]) -> dict:
@@ -59,6 +65,19 @@ def _public_shopify_product_payload(variant_ids: list[str]) -> dict:
             for variant_id, color, size in zip(variant_ids, colors, sizes)
         ],
     }
+
+
+def test_script_path_help_bootstraps_repo_root_from_any_cwd():
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "tools/dianxiaomi_sku_sync.py"), "--help"],
+        cwd="/tmp",
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--browser-mode" in result.stdout
 
 
 def test_run_sync_uses_public_shopify_variants_when_dianxiaomi_list_is_truncated(tmp_path):
