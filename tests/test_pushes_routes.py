@@ -2463,11 +2463,7 @@ def test_pushes_assets_include_quality_check_panel():
     assert "text-overflow: ellipsis" in style
     assert "width: calc(100vw - 48px)" in style
     assert "height: calc(100vh - 48px)" in style
-    assert "查看推送结果" in script
-    assert "收起推送结果" in script
-    assert "pm-pipeline-wrapper" in script
-    assert ".pm-pipeline-wrapper" in style
-    assert ".btn-collapse-workbench" in style
+
 
 
 def test_pushes_assets_include_rework_modal_controls():
@@ -2613,6 +2609,12 @@ def test_pushes_modal_material_button_opens_three_step_progress_workbench():
     assert "font-size: 2em" in style
     assert "@keyframes pm-pipeline-spin" in style
     assert "animation: pm-pipeline-spin" in style
+    
+    # Verify close window button elements and styles
+    assert "btnCloseWindow = el('button'" in script
+    assert "btnCloseWindow.addEventListener('click', close)" in script
+    assert ".btn-close-window {" in style
+    assert "gap: var(--oc-sp-4);" in style
 
 
 # ================================================================

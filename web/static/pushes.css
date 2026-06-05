@@ -1871,15 +1871,27 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  gap: var(--oc-sp-4);
   padding: var(--oc-sp-3) var(--oc-sp-5);
   background: var(--oc-bg);
   border-top: 1px solid var(--oc-border);
 }
-.btn-collapse-workbench {
+.btn-collapse-workbench,
+.btn-close-window {
   height: 40px;
   min-width: 160px;
   font-size: 14px;
   font-weight: 600;
+}
+.btn-close-window {
+  background: var(--oc-bg);
+  color: var(--oc-fg-muted);
+  border: 1px solid var(--oc-border-strong);
+}
+.btn-close-window:hover:not(:disabled) {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg);
+  border-color: var(--oc-border-strong);
 }
 .pm-pipeline-step {
   min-height: 0;
