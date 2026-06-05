@@ -3724,6 +3724,146 @@ def confirm_child_step(
     return {"step_key": normalized_key}
 
 
+def unconfirm_child_step(
+    *,
+    task_id: int,
+    step_key: str,
+    actor_user_id: int,
+    is_admin: bool = False,
+) -> dict:
+    """Record a manual fallback unconfirmation (reset to unconfirmed) for one child acceptance step."""
+    normalized_key = _normalize_child_acceptance_step_key(step_key)
+    if normalized_key != FINAL_PUSH_CONFIRMATION_STEP_KEY:
+        raise ValueError("only final_push_confirmation step can be unconfirmed")
+
+    row = query_one(
+        "SELECT id, parent_task_id, assignee_id, status, "
+        "media_product_id, media_item_id, country_code "
+        "FROM tasks "
+        "WHERE id=%s AND parent_task_id IS NOT NULL",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("child task not found")
+    if row["assignee_id"] != int(actor_user_id) and not is_admin:
+        raise PermissionError("forbidden")
+
+    conn = get_conn()
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                # 1. 查找并删除 manual_step_confirmed 事件
+                cur.execute(
+                    "SELECT id, payload_json FROM task_events "
+                    "WHERE task_id=%s AND event_type=%s",
+                    (int(task_id), CHILD_MANUAL_STEP_CONFIRMED_EVENT),
+                )
+                events = cur.fetchall()
+                event_ids_to_delete = []
+                for ev in events:
+                    try:
+                        payload = json.loads(ev["payload_json"] or "{}")
+                        if payload.get("key") == normalized_key:
+                            event_ids_to_delete.append(ev["id"])
+                    except Exception:
+                        pass
+
+                if event_ids_to_delete:
+                    format_strings = ",".join(["%s"] * len(event_ids_to_delete))
+                    cur.execute(
+                        f"DELETE FROM task_events WHERE id IN ({format_strings})",
+                        tuple(event_ids_to_delete),
+                    )
+
+                # 2. 如果子任务当前状态是 done，我们退回到 review
+                if row["status"] == CHILD_DONE:
+                    cur.execute(
+                        "UPDATE tasks SET status=%s, completed_at=NULL, updated_at=NOW() "
+                        "WHERE id=%s AND status=%s",
+                        (CHILD_REVIEW, int(task_id), CHILD_DONE),
+                    )
+
+                    # 查找并删除子任务的 'completed' 事件，其 reason 为 final_push_confirmation
+                    cur.execute(
+                        "SELECT id, payload_json FROM task_events WHERE task_id=%s AND event_type=%s",
+                        (int(task_id), "completed"),
+                    )
+                    completed_events = cur.fetchall()
+                    completed_ids_to_delete = []
+                    for ev in completed_events:
+                        try:
+                            payload = json.loads(ev["payload_json"] or "{}")
+                            if payload.get("reason") == FINAL_PUSH_CONFIRMATION_STEP_KEY:
+                                completed_ids_to_delete.append(ev["id"])
+                        except Exception:
+                            pass
+
+                    if completed_ids_to_delete:
+                        format_strings = ",".join(["%s"] * len(completed_ids_to_delete))
+                        cur.execute(
+                            f"DELETE FROM task_events WHERE id IN ({format_strings})",
+                            tuple(completed_ids_to_delete),
+                        )
+
+                # 3. 处理父任务退回
+                parent_id = _positive_int(row.get("parent_task_id"))
+                if parent_id is not None:
+                    cur.execute(
+                        "SELECT status FROM tasks WHERE id=%s", (int(parent_id),)
+                    )
+                    p_row = cur.fetchone()
+                    if p_row and p_row["status"] == PARENT_ALL_DONE:
+                        cur.execute(
+                            "UPDATE tasks SET status=%s, completed_at=NULL, updated_at=NOW() "
+                            "WHERE id=%s AND status=%s",
+                            (PARENT_RAW_DONE, int(parent_id), PARENT_ALL_DONE),
+                        )
+                        if cur.rowcount:
+                            cur.execute(
+                                "SELECT id, payload_json FROM task_events WHERE task_id=%s AND event_type=%s",
+                                (int(parent_id), "completed"),
+                            )
+                            p_completed_events = cur.fetchall()
+                            p_completed_ids_to_delete = []
+                            for ev in p_completed_events:
+                                try:
+                                    payload = (
+                                        json.loads(ev["payload_json"] or "{}")
+                                        if ev["payload_json"]
+                                        else {}
+                                    )
+                                    if not payload:
+                                        p_completed_ids_to_delete.append(ev["id"])
+                                except Exception:
+                                    p_completed_ids_to_delete.append(ev["id"])
+
+                            if p_completed_ids_to_delete:
+                                format_strings = ",".join(
+                                    ["%s"] * len(p_completed_ids_to_delete)
+                                )
+                                cur.execute(
+                                    f"DELETE FROM task_events WHERE id IN ({format_strings})",
+                                    tuple(p_completed_ids_to_delete),
+                                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
+    _refresh_push_status_cache_for_child_task(int(task_id), row)
+    return {
+        "step_key": normalized_key,
+        "completed": False,
+        "status": CHILD_REVIEW,
+    }
+
+
+
+
+
 def _manual_text_payload(text: dict | None) -> dict:
     payload = text or {}
     title = str(payload.get("title") or "").strip()
