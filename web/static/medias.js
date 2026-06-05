@@ -3029,7 +3029,7 @@
   async function loadList() {
     const kwInput = $('kw');
     const grid = $('grid');
-    const pager = $('pager');
+    const pager = $('topPager');
     if (!kwInput || !grid || !pager) return;
     syncSearchQueryToAddressBar();
     const requestSeq = ++state.listRequestSeq;
