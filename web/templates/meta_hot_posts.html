@@ -2134,12 +2134,10 @@ async function mkiImportMetaHotPost(btn, postId) {
   confirmBtn.disabled = true;
   modal.hidden = false;
   
-  if (!mkiTranslatorsCache) {
-    try {
-      mkiTranslatorsCache = await mkiFetchActiveUsers();
-    } catch (e) {
-      mkiTranslatorsCache = [];
-    }
+  try {
+    mkiTranslatorsCache = await mkiFetchActiveUsers();
+  } catch (e) {
+    mkiTranslatorsCache = [];
   }
   
   if (!mkiTranslatorsCache.length) {
@@ -2364,11 +2362,9 @@ async function mkiXiaoOpenModal(options = {}) {
   mkiXiaoAiProductId = Number(options.productId || 0) || null;
   mkiXiaoFineAiSourceButton = options.sourceButton || null;
 
-  if (!mkiXiaoTranslatorsCache) {
-    try {
-      mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
-    } catch (e) { mkiXiaoTranslatorsCache = []; }
-  }
+  try {
+    mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
+  } catch (e) { mkiXiaoTranslatorsCache = []; }
   mkiXiaoRawProcessorsCache = mkiXiaoTranslatorsCache;
   if (!mkiXiaoTranslatorsCache.length) {
     alert('没有可用翻译工作用户');
