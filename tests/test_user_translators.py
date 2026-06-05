@@ -152,3 +152,52 @@ def test_ensure_translation_work_user_rejects_missing_scope(monkeypatch):
         assert "翻译工作范围" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_list_translation_work_users_counts_blocked_tasks(monkeypatch):
+    from appcore import users
+
+    queries = []
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        if "FROM tasks" in sql:
+            # First call: counts query
+            return [
+                {"assignee_id": 1, "todo_count": 5, "urgent_count": 2, "completed_today_count": 3},
+                {"assignee_id": 2, "todo_count": 0, "urgent_count": 0, "completed_today_count": 0},
+            ]
+        else:
+            # Second call: users query
+            return [
+                {
+                    "id": 1,
+                    "username": "zhou",
+                    "display_name": "周干琴",
+                    "role": "user",
+                    "permissions": '{"can_translate": true, "work_scope_translation": true}',
+                },
+                {
+                    "id": 2,
+                    "username": "wang",
+                    "display_name": "王健",
+                    "role": "user",
+                    "permissions": '{"can_translate": true, "work_scope_translation": true}',
+                },
+            ]
+
+    monkeypatch.setattr(users, "_user_display_name_expr", lambda: "username", raising=False)
+    monkeypatch.setattr(users, "query", fake_query)
+
+    res = users.list_translation_work_users()
+    assert len(res) == 2
+    assert res[0]["todo_count"] == 5
+    assert res[0]["urgent_count"] == 2
+    assert res[0]["completed_today_count"] == 3
+    assert res[1]["todo_count"] == 0
+
+    # Verify that the query SQL statement contains 'blocked'
+    counts_sql = queries[0][0]
+    assert "'blocked'" in counts_sql
+    assert "status IN ('pending', 'raw_in_progress', 'assigned', 'blocked')" in counts_sql
+

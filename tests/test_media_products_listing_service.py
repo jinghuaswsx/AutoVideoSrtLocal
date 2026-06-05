@@ -79,6 +79,10 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
             1: {"de": {"pushed_video_count": 0}},
             2: {"fr": {"pushed_video_count": 2}},
         },
+        get_product_order_stats_fn=lambda pids: {
+            1: {"total": {"today": 1}},
+            2: {"total": {"today": 3}},
+        },
         serialize_product_fn=serialize_product,
     )
 
@@ -122,9 +126,11 @@ def test_build_products_list_response_enriches_rows_and_preserves_filters():
     assert serialized[0][3]["sku_actual_roas_index"] == {"sku-a": {"value": 2.1}}
     assert serialized[0][3]["ad_summary"] == {"delivery_status": "active", "overall_roas": 2.4}
     assert serialized[0][3]["lang_ad_summary"] == {"fr": {"pushed_video_count": 2}}
+    assert serialized[0][3]["order_stats"] == {"total": {"today": 3}}
     assert serialized[1][3]["lang_coverage"] == {"de": 1}
     assert serialized[1][3]["ad_summary"] == {"delivery_status": "stopped", "overall_roas": 1.2}
     assert serialized[1][3]["lang_ad_summary"] == {"de": {"pushed_video_count": 0}}
+    assert serialized[1][3]["order_stats"] == {"total": {"today": 1}}
 
 
 def test_build_products_list_response_defaults_invalid_filters():
@@ -150,6 +156,7 @@ def test_build_products_list_response_defaults_invalid_filters():
         get_configured_rmb_per_usd_fn=lambda: 6.83,
         get_product_ad_summary_cache_fn=lambda pids: {},
         get_product_lang_ad_summary_cache_fn=lambda pids: {},
+        get_product_order_stats_fn=lambda pids: {},
         serialize_product_fn=lambda *args, **kwargs: {},
     )
 
@@ -185,6 +192,7 @@ def test_build_products_list_response_defaults_invalid_delivery_status():
         get_configured_rmb_per_usd_fn=lambda: 6.83,
         get_product_ad_summary_cache_fn=lambda pids: {},
         get_product_lang_ad_summary_cache_fn=lambda pids: {},
+        get_product_order_stats_fn=lambda pids: {},
         serialize_product_fn=lambda *args, **kwargs: {},
     )
 

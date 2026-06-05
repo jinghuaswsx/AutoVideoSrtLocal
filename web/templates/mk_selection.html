@@ -404,7 +404,7 @@
 }
 .mki-progress-backdrop[hidden] { display: none; }
 .mki-progress-modal {
-  width: 100%; max-height: 100%; overflow: auto; background: #fff; color: var(--oc-fg);
+  width: 100%; max-height: 100%; overflow: hidden; display: flex; flex-direction: column; background: #fff; color: var(--oc-fg);
   border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
 }
 .mki-progress-head {
@@ -419,7 +419,24 @@
   background: #fff; color: var(--oc-fg-muted); cursor: pointer; font-size: 18px; line-height: 1;
 }
 .mki-progress-close:hover { color: var(--oc-fg); background: var(--oc-bg-muted); }
-.mki-progress-body { padding: 16px 20px 18px; }
+.mki-progress-body {
+  padding: 16px 20px 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.mki-progress-scrollable {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-left: -20px;
+  margin-right: -20px;
+  padding-left: 20px;
+  padding-right: 20px;
+  padding-bottom: 18px;
+}
 .mki-progress-info {
   display: grid; gap: 8px; margin-bottom: 14px; padding: 12px 14px;
   border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); background: #fff;
@@ -5991,6 +6008,7 @@ async function mkiImportProgressCreateSmallLangTask() {
     const taskText = mkiImportProgressTaskId ? `小语种任务已创建，父任务 #${mkiImportProgressTaskId}` : '小语种任务已创建';
     mkiImportProgressSetStep('next', 'done', taskText);
     continueBtn.textContent = mkiImportProgressTaskId ? `已创建任务 #${mkiImportProgressTaskId}` : '已创建任务';
+    continueBtn.disabled = false;
     const tasksBtn = document.getElementById('mkiImportProgressTasks');
     if (tasksBtn && mkiImportProgressTaskId) {
       tasksBtn.dataset.href = `/tasks/?task_id=${encodeURIComponent(mkiImportProgressTaskId)}`;
@@ -6011,6 +6029,10 @@ async function mkiImportProgressCreateSmallLangTask() {
 }
 
 function mkiImportProgressContinueTask() {
+  if (mkiImportProgressTaskId) {
+    mkiImportProgressOpenTab(`/tasks/?task_id=${encodeURIComponent(mkiImportProgressTaskId)}`);
+    return;
+  }
   mkiImportProgressCreateSmallLangTask();
 }
 
@@ -6700,9 +6722,11 @@ async function mkiXiaoCreateFromImportedMaterial(btn) {
           <strong id="mkiImportProgressProduct" class="mki-progress-meta-value">--</strong>
         </div>
       </div>
-      <section id="mkiImportProgressFineAi" class="mki-progress-fine-ai" aria-label="AI 精细评估建议"></section>
-      <ol id="mkiImportProgressSteps" class="mki-progress-steps"></ol>
-      <div id="mkiImportProgressError" class="mki-progress-error" hidden></div>
+      <div class="mki-progress-scrollable">
+        <section id="mkiImportProgressFineAi" class="mki-progress-fine-ai" aria-label="AI 精细评估建议"></section>
+        <ol id="mkiImportProgressSteps" class="mki-progress-steps"></ol>
+        <div id="mkiImportProgressError" class="mki-progress-error" hidden></div>
+      </div>
     </div>
   </div>
 </div>

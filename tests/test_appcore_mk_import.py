@@ -88,6 +88,7 @@ def test_import_mk_video_warns_when_product_link_probe_fails(monkeypatch, tmp_pa
     monkeypatch.setattr(mk_import, "_download_cover", lambda *args, **kwargs: None)
     monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: 456)
     monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (False, "HTTP 404"), raising=False)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
 
     def fake_download_mp4(url, path, **kwargs):
         with open(path, "wb") as f:
@@ -133,6 +134,7 @@ def test_import_mk_video_returns_grouped_step_results(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (False, "HTTP 404"), raising=False)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
 
     def fake_download_mp4(url, path, **kwargs):
         with open(path, "wb") as f:
@@ -192,6 +194,7 @@ def test_import_mk_video_keeps_original_filename_as_display_name(monkeypatch):
         },
     )
     monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
 
     def fake_download_mp4(url, path, **kwargs):
         with open(path, "wb") as f:
@@ -297,6 +300,7 @@ def test_import_mk_video_binds_mk_material_with_product_link_metadata(monkeypatc
         },
     )
     monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
 
     def fake_download_mp4(url, path, **kwargs):
         with open(path, "wb") as f:
@@ -362,6 +366,7 @@ def test_import_mk_video_old_product_allows_missing_product_owner(monkeypatch):
         },
     )
     monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
 
     def fake_download_mp4(url, path, **kwargs):
         with open(path, "wb") as f:
@@ -403,6 +408,7 @@ def test_import_mk_video_reuses_existing_product_after_product_code_duplicate_ra
     monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
     monkeypatch.setattr(mk_import, "_find_product_asset", lambda normalized_code: None, raising=False)
     monkeypatch.setattr(mk_import, "_fetch_mk_product_detail", lambda mk_id: {}, raising=False)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
 
     def fake_execute(sql, args=None):
         if "INSERT INTO media_products" in sql:
@@ -483,6 +489,7 @@ def test_import_mk_video_new_product_enriches_assets_copy_and_media_store(monkey
     monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
     monkeypatch.setattr(mk_import, "_find_existing_product", lambda normalized_code: None)
     monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None), raising=False)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
     monkeypatch.setattr(
         mk_import,
         "_find_product_asset",
@@ -724,6 +731,7 @@ def test_import_mk_video_reuses_metadata_media_product_id_without_code_scan(monk
     )
     monkeypatch.setattr(mk_import, "_write_file_to_media_store", lambda path, object_key: 5, raising=False)
     monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: captured.update(kwargs) or 456)
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
 
     result = mk_import.import_mk_video(
         mk_video_metadata={
@@ -1061,7 +1069,7 @@ def test_import_mk_video_old_product_ignores_translator(db_test_user, db_test_pr
 def test_import_mk_video_dedupes_by_filename(db_test_user, db_test_product, monkeypatch):
     from appcore import mk_import
 
-    execute(
+    item_id = execute(
         "INSERT INTO media_items (product_id, user_id, filename, object_key, lang) "
         "VALUES (%s, %s, %s, %s, %s)",
         (db_test_product["id"], db_test_user, "_t_mki_dup.mp4", "k/dup.mp4", "en"),
@@ -1073,9 +1081,160 @@ def test_import_mk_video_dedupes_by_filename(db_test_user, db_test_product, monk
         "product_name": "x", "product_link": None, "main_image": None,
         "product_code": "test-code", "mk_id": None,
     }
-    with pytest.raises(mk_import.DuplicateError):
-        mk_import.import_mk_video(
-            mk_video_metadata=meta, translator_id=db_test_user, actor_user_id=db_test_user,
-        )
+    monkeypatch.setattr(mk_import, "_bind_imported_mk_material", lambda **kwargs: {})
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata=meta, translator_id=db_test_user, actor_user_id=db_test_user,
+    )
+    assert result["media_item_id"] == item_id
+    assert result["media_product_id"] == db_test_product["id"]
+    assert result["is_new_product"] is False
 
     execute("DELETE FROM media_items WHERE product_id=%s AND filename='_t_mki_dup.mp4'", (db_test_product["id"],))
+
+
+def test_is_chinese():
+    from appcore import mk_import
+    assert mk_import._is_chinese("墙面画灯") is True
+    assert mk_import._is_chinese("picture-lights") is False
+    assert mk_import._is_chinese("picture-lights 墙面画灯") is True
+    assert mk_import._is_chinese("") is False
+    assert mk_import._is_chinese(None) is False
+
+
+def test_find_fallback_chinese_name_from_dictionary(monkeypatch):
+    from appcore import mk_import
+    # Mock get_names from product_name_dictionary
+    class FakeDict:
+        @staticmethod
+        def get_names(codes, **kwargs):
+            if "test-code" in codes:
+                return {"test-code": {"cn_name": "字典中的中文名", "en_name": "Test English"}}
+            return {}
+    
+    monkeypatch.setattr("appcore.product_name_dictionary.get_names", FakeDict.get_names)
+    assert mk_import._find_fallback_chinese_name("test-code") == "字典中的中文名"
+
+
+def test_find_fallback_chinese_name_from_snapshots(monkeypatch):
+    from appcore import mk_import
+    monkeypatch.setattr("appcore.product_name_dictionary.get_names", lambda *a, **kw: {})
+    
+    # Mock query_all to return snapshot row
+    def fake_query_all(sql, args=None):
+        if "mingkong_material_daily_snapshots" in sql:
+            return [{"mk_product_name": "快照中文名", "product_name": "English", "video_name": "demo.mp4"}]
+        return []
+
+    monkeypatch.setattr(mk_import, "query_all", fake_query_all)
+    assert mk_import._find_fallback_chinese_name("test-code") == "快照中文名"
+
+
+def test_find_fallback_chinese_name_from_snapshots_via_filename(monkeypatch):
+    from appcore import mk_import
+    monkeypatch.setattr("appcore.product_name_dictionary.get_names", lambda *a, **kw: {})
+
+    # Mock query_all to return snapshot row with Chinese name in filename
+    def fake_query_all(sql, args=None):
+        if "mingkong_material_daily_snapshots" in sql:
+            return [{"mk_product_name": "English", "product_name": "English", "video_name": "2026.05.20-墙面画灯-混剪.mp4"}]
+        return []
+
+    monkeypatch.setattr(mk_import, "query_all", fake_query_all)
+    assert mk_import._find_fallback_chinese_name("test-code") == "墙面画灯"
+
+
+def test_import_mk_video_uses_fallback_chinese_name_for_new_product(monkeypatch, tmp_path):
+    from appcore import mk_import
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    monkeypatch.setattr(mk_import, "_find_existing_product", lambda normalized_code: None)
+    
+    inserts = []
+    def fake_execute(sql, args=None):
+        if "INSERT INTO media_products" in sql:
+            inserts.append(args)
+            return 123
+        return 0
+
+    monkeypatch.setattr(mk_import, "execute", fake_execute)
+    monkeypatch.setattr(mk_import, "_download_cover", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: 456)
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None))
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(mk_import, "_find_fallback_chinese_name", lambda code: "快照中文名")
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/demo.mp4",
+            "filename": "demo.mp4",
+            "product_name": "English name only",
+            "product_code": "test-code",
+            "product_link": "https://newjoyloo.com/products/test-code-rjc",
+        },
+        translator_id=1,
+        actor_user_id=1,
+    )
+
+    assert result["is_new_product"] is True
+    assert inserts[0][1] == "快照中文名"
+
+
+def test_import_mk_video_updates_existing_product_with_english_name(monkeypatch, tmp_path):
+    from appcore import mk_import
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
+    monkeypatch.setattr(mk_import, "_is_video_already_imported", lambda filename: False)
+    
+    existing_product = {
+        "id": 587,
+        "user_id": 42,
+        "product_code": "test-code-rjc",
+        "name": "Only English Product Name",
+        "product_link": "https://newjoyloo.com/products/test-code-rjc",
+    }
+    monkeypatch.setattr(mk_import, "_find_existing_product", lambda normalized_code: existing_product)
+    
+    updates = []
+    def fake_execute(sql, args=None):
+        if "UPDATE media_products SET name" in sql:
+            updates.append(args)
+            return 1
+        return 0
+
+    monkeypatch.setattr(mk_import, "execute", fake_execute)
+    monkeypatch.setattr(mk_import, "_probe_product_link", lambda url: (True, None))
+    monkeypatch.setattr(mk_import, "_medias_create_item", lambda **kwargs: 456)
+
+    def fake_download_mp4(url, path, **kwargs):
+        with open(path, "wb") as f:
+            f.write(b"video")
+        return 5
+
+    monkeypatch.setattr(mk_import, "_download_mp4", fake_download_mp4)
+    monkeypatch.setattr(mk_import, "_find_fallback_chinese_name", lambda code: "回落中文名")
+    monkeypatch.setattr(mk_import, "_medias_get_user_display_name", lambda uid: "mock_owner", raising=False)
+
+    result = mk_import.import_mk_video(
+        mk_video_metadata={
+            "mp4_url": "https://cdn.example/demo.mp4",
+            "filename": "demo.mp4",
+            "product_name": "Only English Product Name",
+            "product_code": "test-code",
+            "product_link": "https://newjoyloo.com/products/test-code-rjc",
+        },
+        translator_id=None,
+        actor_user_id=1,
+    )
+
+    assert result["is_new_product"] is False
+    assert len(updates) == 1
+    assert updates[0] == ("回落中文名", 587)
+    assert existing_product["name"] == "回落中文名"
+

@@ -71,7 +71,7 @@ def test_product_profit_country_tab_uses_country_pills_not_bar_chart():
 
 
 def test_product_profit_country_tab_ranks_products_when_no_product_selected():
-    assert "fetch('/order-analytics/product-profit/countries.json'" in TEMPLATE
+    assert "fetch('/order-analytics/product-profit/countries.json" in TEMPLATE
     assert "function loadCountryProductRanking(country)" in TEMPLATE
     assert "rows.sort(function(a, b)" in TEMPLATE
     assert "return (Number(b.order_count) || 0) - (Number(a.order_count) || 0);" in TEMPLATE
