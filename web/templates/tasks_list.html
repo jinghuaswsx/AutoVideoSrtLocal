@@ -597,6 +597,7 @@
       <div class="tc-subtabs" role="tablist" aria-label="全部任务状态">
         <button class="tc-subtab {% if active_bucket == 'all' %}active{% endif %}" type="button" data-bucket="all">全部任务</button>
         <button class="tc-subtab {% if active_bucket == 'todo' %}active{% endif %}" type="button" data-bucket="todo">进行中</button>
+        <button class="tc-subtab {% if active_bucket == 'waiting' %}active{% endif %}" type="button" data-bucket="waiting">待处理</button>
         <button class="tc-subtab {% if active_bucket == 'blocked' %}active{% endif %}" type="button" data-bucket="blocked">阻塞中</button>
         <button class="tc-subtab {% if active_bucket == 'pending_push' %}active{% endif %}" type="button" data-bucket="pending_push">待推送</button>
         <button class="tc-subtab {% if active_bucket == 'done' %}active{% endif %}" type="button" data-bucket="done">已完成</button>

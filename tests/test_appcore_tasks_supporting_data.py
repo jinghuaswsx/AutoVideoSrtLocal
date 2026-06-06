@@ -626,14 +626,13 @@ def test_list_task_center_items_archived_bucket_can_filter_pre_archive_status(mo
     assert "t.archived_at IS NOT NULL" in captured["sql"]
     where_part = captured["sql"].split("WHERE")[1].split("ORDER BY")[0]
     assert "t.archived_at IS NULL" not in where_part
-    assert "t.status IN (%s, %s, %s, %s, %s, %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
         tasks.PARENT_PENDING,
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.PARENT_RAW_REVIEW,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_REVIEW,
-        tasks.CHILD_BLOCKED,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_REVIEW,
         20,
@@ -2588,3 +2587,32 @@ def test_bind_parent_media_item_rejects_non_assignee_non_admin(monkeypatch):
         raise AssertionError("expected PermissionError")
 
     assert execute_calls == []
+
+
+def test_list_task_center_items_waiting_bucket_excludes_blocked(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    tasks.list_task_center_items(
+        tab="mine",
+        user_id=7,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="waiting",
+        page=1,
+        page_size=20,
+    )
+
+    assert "t.status IN (%s, %s, %s, %s, %s)" in captured["sql"]
+    assert tasks.CHILD_BLOCKED not in captured["args"]
