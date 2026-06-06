@@ -2608,7 +2608,11 @@ async function mkiCreateSmallLangTaskFromMetaHot(btn, postId) {
 async function mkiCreateNewProductTaskFromMetaHot(btn, postId) {
   const endpoint = '/tasks/api/new-product';
   const cachedItem = mhItemsById.get(Number(postId));
-  if (!cachedItem || String(cachedItem.local_video_status || '').toLowerCase() !== 'downloaded') {
+  if (
+    !cachedItem
+    || String(cachedItem.local_video_status || '').toLowerCase() !== 'downloaded'
+    || !cachedItem.local_video_url
+  ) {
     mkiToast('warning', '请先完成本地视频入库');
     return;
   }
