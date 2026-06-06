@@ -3796,6 +3796,35 @@ def _mark_child_done_after_final_confirmation(
             _write_event(cur, int(parent_id), "completed", None, None)
 
 
+def _child_task_has_direct_push_history(row: dict) -> bool:
+    task_id = _positive_int((row or {}).get("id"))
+    product_id = _positive_int((row or {}).get("media_product_id"))
+    country_code = str((row or {}).get("country_code") or "").strip()
+    if task_id is None or product_id is None or not country_code:
+        return False
+    push_row = query_one(
+        """
+        SELECT mi.id, mi.pushed_at, mi.latest_push_id,
+               MAX(CASE WHEN mpl.status='success' THEN mpl.id ELSE NULL END) AS success_push_id
+        FROM media_items mi
+        LEFT JOIN media_push_logs mpl ON mpl.item_id=mi.id
+        WHERE mi.task_id=%s
+          AND mi.product_id=%s
+          AND LOWER(mi.lang)=LOWER(TRIM(%s))
+          AND mi.deleted_at IS NULL
+        GROUP BY mi.id, mi.pushed_at, mi.latest_push_id
+        ORDER BY mi.id DESC
+        LIMIT 1
+        """,
+        (int(task_id), int(product_id), country_code),
+    ) or {}
+    return bool(
+        push_row.get("pushed_at")
+        or push_row.get("latest_push_id")
+        or push_row.get("success_push_id")
+    )
+
+
 def confirm_child_step(
     *,
     task_id: int,
@@ -3823,6 +3852,11 @@ def confirm_child_step(
         confirmable_statuses = (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE)
     if row["status"] not in confirmable_statuses:
         raise StateError("child not confirmable")
+    if (
+        normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY
+        and not _child_task_has_direct_push_history(row)
+    ):
+        raise StateError("final push confirmation requires push history")
 
     conn = get_conn()
     try:
@@ -4354,30 +4388,13 @@ def approve_child(*, task_id: int, actor_user_id: int, is_admin: bool = False) -
                     raise PermissionError("only assignee or admin can approve")
 
                 cur.execute(
-                    "UPDATE tasks SET status=%s, last_reason=NULL, "
-                    "completed_at=NOW(), updated_at=NOW() "
+                    "UPDATE tasks SET last_reason=NULL, updated_at=NOW() "
                     "WHERE id=%s AND parent_task_id IS NOT NULL AND status=%s",
-                    (CHILD_DONE, int(task_id), CHILD_REVIEW),
+                    (int(task_id), CHILD_REVIEW),
                 )
                 if cur.rowcount == 0:
                     raise StateError("child not in review")
                 _write_event(cur, task_id, "approved", actor_user_id, None)
-
-                parent_id = row["parent_task_id"]
-                cur.execute(
-                    "SELECT status FROM tasks WHERE parent_task_id=%s", (parent_id,)
-                )
-                statuses = [r["status"] for r in cur.fetchall()]
-                terminal = all(s in (CHILD_DONE, CHILD_CANCELLED) for s in statuses)
-                any_done = any(s == CHILD_DONE for s in statuses)
-                if terminal and any_done:
-                    cur.execute(
-                        "UPDATE tasks SET status=%s, completed_at=NOW(), updated_at=NOW() "
-                        "WHERE id=%s AND status=%s",
-                        (PARENT_ALL_DONE, int(parent_id), PARENT_RAW_DONE),
-                    )
-                    if cur.rowcount:
-                        _write_event(cur, parent_id, "completed", None, None)
             conn.commit()
         except Exception:
             conn.rollback()

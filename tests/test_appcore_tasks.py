@@ -1446,6 +1446,12 @@ def test_final_push_confirmation_can_be_confirmed_after_child_done(monkeypatch):
     monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
     monkeypatch.setattr(
         tasks,
+        "_child_task_has_direct_push_history",
+        lambda row: True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tasks,
         "_write_event",
         lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
             (task_id, event_type, actor_user_id, payload)
@@ -1538,6 +1544,12 @@ def test_final_push_confirmation_marks_assigned_child_done(monkeypatch):
     monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
     monkeypatch.setattr(
         tasks,
+        "_child_task_has_direct_push_history",
+        lambda row: True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tasks,
         "_write_event",
         lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
             (task_id, event_type, actor_user_id, payload)
@@ -1585,6 +1597,85 @@ def test_final_push_confirmation_marks_assigned_child_done(monkeypatch):
         and args == (tasks.PARENT_ALL_DONE, 12, tasks.PARENT_RAW_DONE)
         for sql, args in executes
     )
+
+
+def test_final_push_confirmation_requires_real_push_history(monkeypatch):
+    from appcore import tasks
+
+    writes = []
+    commits = []
+    rollbacks = []
+
+    class FakeCursor:
+        rowcount = 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=None):
+            pass
+
+        def fetchall(self):
+            return [{"status": tasks.CHILD_DONE}]
+
+    class FakeConn:
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            commits.append(True)
+
+        def rollback(self):
+            rollbacks.append(True)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args: {
+            "id": 45,
+            "parent_task_id": 12,
+            "assignee_id": 9,
+            "status": tasks.CHILD_ASSIGNED,
+            "media_product_id": 7,
+            "media_item_id": 1,
+            "country_code": "DE",
+        },
+    )
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+    monkeypatch.setattr(
+        tasks,
+        "_child_task_has_direct_push_history",
+        lambda row: False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_write_event",
+        lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
+            (task_id, event_type, actor_user_id, payload)
+        ),
+    )
+
+    with pytest.raises(tasks.StateError, match="push history"):
+        tasks.confirm_child_step(
+            task_id=45,
+            step_key="final_push_confirmation",
+            actor_user_id=1,
+            is_admin=True,
+        )
+
+    assert writes == []
+    assert commits == []
+    assert rollbacks == []
 
 
 def test_detail_images_status_keeps_all_target_image_evidence(monkeypatch):
@@ -2370,7 +2461,7 @@ def test_submit_child_fails_when_target_lang_item_missing(
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
 
-def test_submit_child_auto_done_keeps_parent_raw_task_completed(
+def test_approve_child_keeps_ready_children_in_review_until_push_confirmation(
     monkeypatch, db_user_admin, db_user_translator, db_product
 ):
     from appcore import tasks
@@ -2419,10 +2510,24 @@ def test_submit_child_auto_done_keeps_parent_raw_task_completed(
     tasks.approve_child(task_id=de_id, actor_user_id=db_user_admin, is_admin=True)
     parent = query_one("SELECT status, completed_at FROM tasks WHERE id=%s", (parent_id,))
     assert parent["status"] == tasks.PARENT_RAW_DONE
+    children = query_all("SELECT status, completed_at FROM tasks WHERE parent_task_id=%s", (parent_id,))
+    assert all(child["status"] == tasks.CHILD_REVIEW for child in children)
+    assert all(child["completed_at"] is None for child in children)
     tasks.approve_child(task_id=fr_id, actor_user_id=db_user_admin, is_admin=True)
     parent = query_one("SELECT status, completed_at FROM tasks WHERE id=%s", (parent_id,))
-    assert parent["status"] == tasks.PARENT_ALL_DONE
+    assert parent["status"] == tasks.PARENT_RAW_DONE
     assert parent["completed_at"] is not None
+    children = query_all("SELECT status, completed_at FROM tasks WHERE parent_task_id=%s", (parent_id,))
+    assert all(child["status"] == tasks.CHILD_REVIEW for child in children)
+    assert all(child["completed_at"] is None for child in children)
+    approved_events = query_all(
+        "SELECT task_id, event_type FROM task_events WHERE task_id IN (%s,%s) AND event_type='approved' ORDER BY task_id",
+        (de_id, fr_id),
+    )
+    assert approved_events == [
+        {"task_id": de_id, "event_type": "approved"},
+        {"task_id": fr_id, "event_type": "approved"},
+    ]
     execute("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE parent_task_id=%s OR id=%s)", (parent_id, parent_id))
     execute("DELETE FROM tasks WHERE parent_task_id=%s OR id=%s", (parent_id, parent_id))
 
@@ -2511,6 +2616,90 @@ def test_approve_child_rejects_non_assignee_without_admin(monkeypatch):
         tasks.approve_child(task_id=44, actor_user_id=3, is_admin=False)
 
     assert conn.rolled_back is True
+
+
+def test_approve_child_records_approval_without_marking_done(monkeypatch):
+    from appcore import tasks
+
+    executed = []
+    writes = []
+    commits = []
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 1
+            self.fetchone_rows = []
+            self.fetchall_rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            normalized = " ".join(str(sql).split())
+            executed.append((normalized, args))
+            if "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL FOR UPDATE" in normalized:
+                self.fetchone_rows = [{
+                    "id": 44,
+                    "parent_task_id": 10,
+                    "status": tasks.CHILD_REVIEW,
+                    "assignee_id": 2,
+                }]
+                return
+            if "SELECT status FROM tasks WHERE parent_task_id=%s" in normalized:
+                self.fetchall_rows = [{"status": tasks.CHILD_REVIEW}]
+
+        def fetchone(self):
+            return self.fetchone_rows.pop(0) if self.fetchone_rows else None
+
+        def fetchall(self):
+            return list(self.fetchall_rows)
+
+    class FakeConn:
+        def __init__(self):
+            self.cursor_obj = FakeCursor()
+
+        def begin(self):
+            pass
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            commits.append(True)
+
+        def rollback(self):
+            raise AssertionError("rollback should not be called")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+    monkeypatch.setattr(tasks, "query_one", lambda sql, args: None)
+    monkeypatch.setattr(
+        tasks,
+        "_write_event",
+        lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
+            (task_id, event_type, actor_user_id, payload)
+        ),
+    )
+
+    tasks.approve_child(task_id=44, actor_user_id=3, is_admin=True)
+
+    assert commits == [True]
+    assert writes == [(44, "approved", 3, None)]
+    assert not any(
+        "UPDATE tasks SET status=%s, last_reason=NULL, completed_at=NOW(), updated_at=NOW()"
+        in sql
+        for sql, _args in executed
+    )
+    assert not any(
+        "UPDATE tasks SET status=%s, completed_at=NOW(), updated_at=NOW() WHERE id=%s AND status=%s"
+        in sql
+        for sql, _args in executed
+    )
 
 
 def test_cancel_child_does_not_change_parent(

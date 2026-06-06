@@ -19,7 +19,11 @@ A task matches `pending_push` when all conditions are true:
 - all push readiness prerequisites except `final_push_confirmation` are confirmed by existing task acceptance data
 - `final_push_confirmation` is not confirmed yet
 
-Because `final_push_confirmation` currently completes a child task into `status='done'`, completed child tasks are outside this filter even when their material has not been pushed yet.
+Administrator translation approval means the material is accepted for push, not that the task is complete. Approval keeps the child task in `review` so the derived `pending_push` filter can own the "素材待推送" state.
+
+`final_push_confirmation` is a completion gate only when the task has real push history for its current target-language material. A manual confirmation event by itself must not move a child task to `done`; otherwise material that has not actually been pushed will still appear as "已完成".
+
+Archived historical tasks are the exception during data repair: if the archived task's product/language has real push history, keep the archived completion state because old task-bound media rows may have been deleted or detached after push.
 
 ## UI Behavior
 
@@ -45,10 +49,16 @@ The derived condition must reuse persisted readiness override/event data and mat
 
 SQL fragments inside the derived condition must be safe for PyMySQL `%s` parameter binding. Literal LIKE wildcards in generated SQL, such as the detail-image `.gif` exclusion, must use `%%` in the Python SQL string so PyMySQL does not treat them as missing format placeholders.
 
+`approve_child()` records approval but must not update child `status` to `done` and must not roll the parent to `all_done`.
+
+`confirm_child_step(..., step_key='final_push_confirmation')` must verify real push history on the current task-bound target-language `media_items` row before writing `manual_step_confirmed` or `completed` events.
+
 ## Verification
 
 - Route tests prove `bucket=pending_push` and `task_status=pending_push` are accepted.
 - Service tests prove `pending_push` uses the derived condition and `todo` excludes it.
 - Service tests prove generated pending-push SQL escapes literal percent signs before PyMySQL receives the statement.
+- Service tests prove admin approval leaves children in `review` and does not roll parents to `all_done`.
+- Service tests prove final push confirmation without real push history is rejected and does not write completion events.
 - Template tests prove the new tab and dropdown option render.
 - `python3 -m compileall appcore/tasks.py web/routes/tasks.py`
