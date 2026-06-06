@@ -2246,18 +2246,9 @@ def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(mon
 
 
 def test_record_push_material_approved_writes_task_event(monkeypatch):
-    import json
-
     from appcore import tasks
 
-    captured = {}
-
-    def fake_execute(sql, args=()):
-        captured["sql"] = sql
-        captured["args"] = args
-        return 1
-
-    monkeypatch.setattr(tasks, "execute", fake_execute)
+    sequence = _install_push_completion_conn(monkeypatch, tasks)
 
     result = tasks.record_push_material_approved(
         task_id=44,
@@ -2268,11 +2259,14 @@ def test_record_push_material_approved_writes_task_event(monkeypatch):
         upstream_status=201,
     )
 
-    payload = json.loads(captured["args"][3])
-    assert "INSERT INTO task_events" in captured["sql"]
-    assert captured["args"][0] == 44
-    assert captured["args"][1] == "push_material_approved"
-    assert captured["args"][2] == 1
+    event = next(
+        item
+        for item in sequence
+        if item[0] == "event" and item[2] == tasks.CHILD_PUSH_MATERIAL_APPROVED_EVENT
+    )
+    payload = event[4]
+    assert event[1] == 44
+    assert event[3] == 1
     assert payload == {
         "source": "push_management",
         "item_id": 7,
@@ -2280,8 +2274,160 @@ def test_record_push_material_approved_writes_task_event(monkeypatch):
         "lang": "de",
         "upstream_status": 201,
     }
-    assert result["event_type"] == "push_material_approved"
+    assert result["event_type"] == tasks.CHILD_PUSH_MATERIAL_APPROVED_EVENT
     assert result["task_id"] == 44
+
+
+def _install_push_completion_conn(
+    monkeypatch,
+    tasks,
+    *,
+    child_status=None,
+    parent_status=None,
+    child_summary=None,
+):
+    import json
+
+    sequence = []
+    child_status = child_status or tasks.CHILD_REVIEW
+    parent_status = parent_status or tasks.PARENT_RAW_DONE
+    child_summary = child_summary or {
+        "total_count": 2,
+        "done_count": 2,
+        "terminal_count": 2,
+    }
+
+    class FakeCursor:
+        def __init__(self):
+            self.rowcount = 0
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, args=()):
+            normalized = " ".join(str(sql).split())
+            if normalized.startswith("SELECT id, parent_task_id, status"):
+                self.rows = [{
+                    "id": 44,
+                    "parent_task_id": 10,
+                    "status": child_status,
+                }]
+                sequence.append(("select_child", args))
+                return
+            if normalized.startswith("UPDATE tasks SET status=%s, last_reason=NULL, completed_at=COALESCE"):
+                self.rowcount = 1
+                sequence.append(("update_child_done", args))
+                return
+            if normalized.startswith("SELECT COUNT(*) AS total_count"):
+                self.rows = [child_summary]
+                sequence.append(("select_child_summary", args))
+                return
+            if normalized.startswith("SELECT id, status FROM tasks WHERE id=%s"):
+                self.rows = [{"id": 10, "status": parent_status}]
+                sequence.append(("select_parent", args))
+                return
+            if normalized.startswith("UPDATE tasks SET status=%s, completed_at=COALESCE"):
+                self.rowcount = 1
+                sequence.append(("update_parent_done", args))
+                return
+            if normalized.startswith("INSERT INTO task_events"):
+                payload = json.loads(args[3]) if args[3] else {}
+                sequence.append(("event", args[0], args[1], args[2], payload))
+                return
+            raise AssertionError(normalized)
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+    class FakeConn:
+        def begin(self):
+            sequence.append(("begin",))
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            sequence.append(("commit",))
+
+        def rollback(self):
+            sequence.append(("rollback",))
+
+        def close(self):
+            sequence.append(("close",))
+
+    monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
+    return sequence
+
+
+def test_record_push_material_approved_completes_child_and_parent(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "execute",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must use transactional completion")),
+    )
+    sequence = _install_push_completion_conn(monkeypatch, tasks)
+
+    result = tasks.record_push_material_approved(
+        task_id=44,
+        actor_user_id=1,
+        item_id=7,
+        product_code="demo-rjc",
+        lang="de",
+        upstream_status=201,
+    )
+
+    assert ("update_child_done", (
+        tasks.CHILD_DONE,
+        44,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+    )) in sequence
+    assert ("update_parent_done", (tasks.PARENT_ALL_DONE, 10, tasks.PARENT_RAW_DONE)) in sequence
+    assert any(item[0] == "event" and item[2] == tasks.CHILD_PUSH_MATERIAL_APPROVED_EVENT for item in sequence)
+    assert any(item[0] == "event" and item[2] == "completed" and item[4]["reason"] == tasks.CHILD_PUSH_MATERIAL_APPROVED_EVENT for item in sequence)
+    assert result["task_id"] == 44
+    assert result["status"] == tasks.CHILD_DONE
+    assert result["parent_completed"] is True
+
+
+def test_record_push_material_skipped_completes_child(monkeypatch):
+    from appcore import tasks
+
+    sequence = _install_push_completion_conn(
+        monkeypatch,
+        tasks,
+        child_summary={
+            "total_count": 2,
+            "done_count": 1,
+            "terminal_count": 1,
+        },
+    )
+
+    result = tasks.record_push_material_skipped(
+        task_id=44,
+        actor_user_id=1,
+        item_id=7,
+        product_code="ice-ball-molds-rjc",
+        lang="de",
+    )
+
+    assert ("update_child_done", (
+        tasks.CHILD_DONE,
+        44,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+    )) in sequence
+    assert not any(item[0] == "update_parent_done" for item in sequence)
+    assert any(item[0] == "event" and item[2] == tasks.CHILD_PUSH_MATERIAL_SKIPPED_EVENT for item in sequence)
+    assert result["event_type"] == tasks.CHILD_PUSH_MATERIAL_SKIPPED_EVENT
+    assert result["status"] == tasks.CHILD_DONE
+    assert result["parent_completed"] is False
 
 
 def test_complete_raw_parent_if_ready_marks_parent_done_and_unblocks_children(monkeypatch):

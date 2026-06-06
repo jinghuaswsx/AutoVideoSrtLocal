@@ -1201,6 +1201,55 @@ def test_mark_pushed_updates_state(logged_in_client, seeded_item):
     assert it["pushed_at"] is not None
 
 
+def test_mark_pushed_records_task_completion_for_unbound_item(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {"updates": []}
+    item = {
+        "id": 295,
+        "product_id": 335,
+        "task_id": None,
+        "lang": "de",
+        "pushed_at": None,
+    }
+    product = {"id": 335, "product_code": "ice-ball-molds-rjc"}
+
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr("web.routes.pushes.pushes.record_push_success", lambda **kwargs: 901)
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.infer_single_child_task_id_for_media_item",
+        lambda product_id, lang: 293,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.update_item_task_id",
+        lambda item_id, task_id: captured["updates"].append((item_id, task_id)),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.record_push_material_approved",
+        lambda **kwargs: captured.setdefault("task_completion", kwargs),
+    )
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/295/mark-pushed",
+        json={"request_payload": {"a": 1}, "response_body": "ok"},
+    )
+
+    assert resp.status_code == 204
+    assert captured["updates"] == [(295, 293)]
+    assert captured["task_completion"] == {
+        "task_id": 293,
+        "actor_user_id": 1,
+        "item_id": 295,
+        "product_code": "ice-ball-molds-rjc",
+        "lang": "de",
+        "upstream_status": None,
+    }
+
+
 def test_mark_failed_keeps_pushed_at_null(logged_in_client, seeded_item):
     pid, item_id = seeded_item
     resp = logged_in_client.post(
@@ -2807,6 +2856,52 @@ def test_skip_marks_item_and_sets_audit_columns(logged_in_client, seeded_item):
     assert row["skip_push"] == 1
     assert row["skip_push_by"] is not None
     assert row["skip_push_at"] is not None
+
+
+def test_skip_records_task_completion_for_unbound_item(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {"updates": []}
+    item = {
+        "id": 295,
+        "product_id": 335,
+        "task_id": None,
+        "lang": "de",
+        "pushed_at": None,
+    }
+    product = {"id": 335, "product_code": "ice-ball-molds-rjc"}
+
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr("web.routes.pushes.pushes.mark_skip_push", lambda item_id, operator_user_id: None)
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.infer_single_child_task_id_for_media_item",
+        lambda product_id, lang: 293,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.update_item_task_id",
+        lambda item_id, task_id: captured["updates"].append((item_id, task_id)),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.record_push_material_skipped",
+        lambda **kwargs: captured.setdefault("task_completion", kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+
+    resp = authed_client_no_db.post("/pushes/api/items/295/skip")
+
+    assert resp.status_code == 204
+    assert captured["updates"] == [(295, 293)]
+    assert captured["task_completion"] == {
+        "task_id": 293,
+        "actor_user_id": 1,
+        "item_id": 295,
+        "product_code": "ice-ball-molds-rjc",
+        "lang": "de",
+    }
 
 
 def test_skip_blocked_for_already_pushed_item(logged_in_client, seeded_item):

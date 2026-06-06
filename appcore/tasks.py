@@ -52,6 +52,7 @@ CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
 CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
 CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
+CHILD_PUSH_MATERIAL_SKIPPED_EVENT = "push_material_skipped"
 TASK_ARCHIVED_EVENT = "archived"
 TASK_AUTO_ARCHIVED_EVENT = "auto_archived"
 TASK_AUTO_ARCHIVE_SOURCE = "task_center_auto_archive"
@@ -1239,6 +1240,10 @@ def _csv_ints(value: Any) -> list[int]:
     return result
 
 
+def _auto_archive_material_resolved_condition(alias: str = "mi") -> str:
+    return f"({alias}.pushed_at IS NOT NULL OR COALESCE({alias}.skip_push, 0)=1)"
+
+
 def _auto_archive_child_candidates(limit: int | None) -> list[dict]:
     args: list[Any] = [CHILD_DONE]
     limit_sql = ""
@@ -1248,7 +1253,8 @@ def _auto_archive_child_candidates(limit: int | None) -> list[dict]:
     return query_all(
         """
         SELECT t.id AS task_id, t.status AS task_status,
-               mi.id AS media_item_id, mi.pushed_at
+               mi.id AS media_item_id, mi.pushed_at,
+               mi.skip_push, mi.skip_push_at
         FROM tasks t
         JOIN (
             SELECT task_id, MAX(id) AS media_item_id
@@ -1261,7 +1267,7 @@ def _auto_archive_child_candidates(limit: int | None) -> list[dict]:
         WHERE t.parent_task_id IS NOT NULL
           AND t.status=%s
           AND t.archived_at IS NULL
-          AND mi.pushed_at IS NOT NULL
+          AND """ + _auto_archive_material_resolved_condition("mi") + """
         ORDER BY t.completed_at ASC, t.id ASC
         """ + limit_sql,
         tuple(args),
@@ -1279,7 +1285,8 @@ def _auto_archive_parent_candidates(limit: int | None) -> list[dict]:
         SELECT p.id AS task_id, p.status AS task_status,
                COUNT(c.id) AS child_count,
                GROUP_CONCAT(c.id ORDER BY c.id SEPARATOR ',') AS child_task_ids,
-               GROUP_CONCAT(mi.id ORDER BY c.id SEPARATOR ',') AS child_media_item_ids
+               GROUP_CONCAT(mi.id ORDER BY c.id SEPARATOR ',') AS child_media_item_ids,
+               SUM(CASE WHEN COALESCE(mi.skip_push, 0)=1 THEN 1 ELSE 0 END) AS skipped_child_count
         FROM tasks p
         JOIN tasks c ON c.parent_task_id=p.id AND c.status=%s
         JOIN (
@@ -1293,7 +1300,7 @@ def _auto_archive_parent_candidates(limit: int | None) -> list[dict]:
         WHERE p.parent_task_id IS NULL
           AND p.status=%s
           AND p.archived_at IS NULL
-          AND mi.pushed_at IS NOT NULL
+          AND """ + _auto_archive_material_resolved_condition("mi") + """
           AND NOT EXISTS (
               SELECT 1
               FROM tasks c2
@@ -1307,7 +1314,7 @@ def _auto_archive_parent_candidates(limit: int | None) -> list[dict]:
               LEFT JOIN media_items mi2 ON mi2.id=latest2.media_item_id
               WHERE c2.parent_task_id=p.id
                 AND c2.status=%s
-                AND (mi2.id IS NULL OR mi2.pushed_at IS NULL)
+                AND (mi2.id IS NULL OR NOT """ + _auto_archive_material_resolved_condition("mi2") + """)
           )
         GROUP BY p.id, p.status
         ORDER BY p.completed_at ASC, p.id ASC
@@ -1384,6 +1391,16 @@ def _append_auto_archive_error(summary: dict, task_id: Any, exc: Exception) -> N
 
 
 def _child_auto_archive_payload(row: dict) -> dict:
+    skip_push = bool((row or {}).get("skip_push"))
+    if skip_push:
+        return {
+            "source": TASK_AUTO_ARCHIVE_SOURCE,
+            "reason": "child_done_and_material_resolved",
+            "media_item_id": _positive_int((row or {}).get("media_item_id")),
+            "pushed_at": _auto_archive_value((row or {}).get("pushed_at")),
+            "skip_push": True,
+            "skip_push_at": _auto_archive_value((row or {}).get("skip_push_at")),
+        }
     return {
         "source": TASK_AUTO_ARCHIVE_SOURCE,
         "reason": "child_done_and_material_pushed",
@@ -1395,12 +1412,18 @@ def _child_auto_archive_payload(row: dict) -> dict:
 def _parent_auto_archive_payload(row: dict) -> dict:
     child_task_ids = _csv_ints((row or {}).get("child_task_ids"))
     child_media_item_ids = _csv_ints((row or {}).get("child_media_item_ids"))
+    skipped_child_count = _positive_int((row or {}).get("skipped_child_count")) or 0
     return {
         "source": TASK_AUTO_ARCHIVE_SOURCE,
-        "reason": "parent_all_done_and_children_pushed",
+        "reason": (
+            "parent_all_done_and_children_resolved"
+            if skipped_child_count
+            else "parent_all_done_and_children_pushed"
+        ),
         "child_count": _positive_int((row or {}).get("child_count")) or len(child_task_ids),
         "child_task_ids": child_task_ids,
         "child_media_item_ids": child_media_item_ids,
+        "skipped_child_count": skipped_child_count,
     }
 
 
@@ -1454,6 +1477,85 @@ def auto_archive_completed_pushed_tasks(limit: int | None = None) -> dict:
             summary["task_ids"].append(task_id)
         else:
             summary["skipped_already_archived"] += 1
+    return summary
+
+
+def _skip_push_completion_backfill_candidates(limit: int | None = None) -> list[dict]:
+    args: list[Any] = [CHILD_ASSIGNED, CHILD_REVIEW]
+    limit_sql = ""
+    if limit is not None:
+        limit_sql = "LIMIT %s"
+        args.append(int(limit))
+    return query_all(
+        """
+        SELECT t.id AS task_id,
+               MAX(mi.id) AS item_id,
+               p.product_code,
+               LOWER(TRIM(COALESCE(t.country_code, ''))) AS lang
+        FROM tasks t
+        JOIN media_products p ON p.id=t.media_product_id
+        JOIN media_items mi ON (
+            mi.task_id=t.id
+            OR (
+                mi.task_id IS NULL
+                AND mi.product_id=t.media_product_id
+                AND LOWER(TRIM(COALESCE(mi.lang, '')))=LOWER(TRIM(COALESCE(t.country_code, '')))
+            )
+        )
+        WHERE t.parent_task_id IS NOT NULL
+          AND t.status IN (%s,%s)
+          AND mi.deleted_at IS NULL
+          AND mi.skip_push=1
+        GROUP BY t.id, p.product_code, t.country_code
+        ORDER BY t.id ASC
+        """ + limit_sql,
+        tuple(args),
+    )
+
+
+def backfill_skip_push_completed_tasks(limit: int | None = None) -> dict:
+    """Complete child tasks whose matching push-management material was marked skip-push."""
+    safe_limit = None
+    if limit is not None:
+        try:
+            safe_limit = max(0, int(limit))
+        except (TypeError, ValueError):
+            safe_limit = None
+    summary = {
+        "scanned": 0,
+        "completed": 0,
+        "errors": 0,
+        "task_ids": [],
+        "error_items": [],
+    }
+    if safe_limit == 0:
+        return summary
+
+    rows = _skip_push_completion_backfill_candidates(safe_limit)
+    summary["scanned"] = len(rows)
+    for row in rows:
+        task_id = _positive_int((row or {}).get("task_id"))
+        item_id = _positive_int((row or {}).get("item_id"))
+        if task_id is None or item_id is None:
+            continue
+        try:
+            record_push_material_skipped(
+                task_id=task_id,
+                actor_user_id=None,
+                item_id=item_id,
+                product_code=(row or {}).get("product_code"),
+                lang=(row or {}).get("lang"),
+            )
+        except Exception as exc:
+            summary["errors"] += 1
+            summary["error_items"].append({
+                "task_id": task_id,
+                "item_id": item_id,
+                "error": str(exc)[:500],
+            })
+            continue
+        summary["completed"] += 1
+        summary["task_ids"].append(task_id)
     return summary
 
 
@@ -1591,26 +1693,147 @@ def record_push_material_approved(
     lang: str | None = "",
     upstream_status: int | None = None,
 ) -> dict:
+    return _record_push_material_completion(
+        task_id=task_id,
+        actor_user_id=actor_user_id,
+        item_id=item_id,
+        product_code=product_code,
+        lang=lang,
+        event_type=CHILD_PUSH_MATERIAL_APPROVED_EVENT,
+        upstream_status=upstream_status,
+    )
+
+
+def record_push_material_skipped(
+    *,
+    task_id: int,
+    actor_user_id: int | None,
+    item_id: int,
+    product_code: str | None = "",
+    lang: str | None = "",
+) -> dict:
+    return _record_push_material_completion(
+        task_id=task_id,
+        actor_user_id=actor_user_id,
+        item_id=item_id,
+        product_code=product_code,
+        lang=lang,
+        event_type=CHILD_PUSH_MATERIAL_SKIPPED_EVENT,
+    )
+
+
+def _record_push_material_completion(
+    *,
+    task_id: int,
+    actor_user_id: int | None,
+    item_id: int,
+    product_code: str | None,
+    lang: str | None,
+    event_type: str,
+    upstream_status: int | None = None,
+) -> dict:
+    task_id = int(task_id)
     payload = {
         "source": "push_management",
         "item_id": int(item_id),
         "product_code": str(product_code or "").strip(),
         "lang": str(lang or "").strip().lower(),
-        "upstream_status": upstream_status,
     }
-    execute(
-        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
-        "VALUES (%s, %s, %s, %s)",
-        (
-            int(task_id),
-            CHILD_PUSH_MATERIAL_APPROVED_EVENT,
-            int(actor_user_id) if actor_user_id is not None else None,
-            json.dumps(payload, ensure_ascii=False),
-        ),
-    )
+    if upstream_status is not None or event_type == CHILD_PUSH_MATERIAL_APPROVED_EVENT:
+        payload["upstream_status"] = upstream_status
+
+    conn = get_conn()
+    parent_completed = False
+    completed = False
+    try:
+        conn.begin()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, parent_task_id, status "
+                    "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL FOR UPDATE",
+                    (task_id,),
+                )
+                child = cur.fetchone()
+                if not child:
+                    raise StateError("child task not found")
+                child_status = child.get("status")
+                if child_status not in (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE):
+                    raise StateError("child not completable from push")
+
+                if child_status != CHILD_DONE:
+                    cur.execute(
+                        "UPDATE tasks SET status=%s, last_reason=NULL, "
+                        "completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
+                        "WHERE id=%s AND parent_task_id IS NOT NULL AND status IN (%s,%s)",
+                        (CHILD_DONE, task_id, CHILD_ASSIGNED, CHILD_REVIEW),
+                    )
+                    completed = cur.rowcount > 0
+
+                _write_event(cur, task_id, event_type, actor_user_id, payload)
+                if completed:
+                    _write_event(
+                        cur,
+                        task_id,
+                        "completed",
+                        actor_user_id,
+                        {**payload, "reason": event_type},
+                    )
+
+                parent_id = _positive_int(child.get("parent_task_id"))
+                if parent_id is not None:
+                    cur.execute(
+                        "SELECT COUNT(*) AS total_count, "
+                        "SUM(CASE WHEN status=%s THEN 1 ELSE 0 END) AS done_count, "
+                        "SUM(CASE WHEN status IN (%s,%s) THEN 1 ELSE 0 END) AS terminal_count "
+                        "FROM tasks WHERE parent_task_id=%s",
+                        (CHILD_DONE, CHILD_DONE, CHILD_CANCELLED, parent_id),
+                    )
+                    summary = cur.fetchone() or {}
+                    total_count = int(summary.get("total_count") or 0)
+                    done_count = int(summary.get("done_count") or 0)
+                    terminal_count = int(summary.get("terminal_count") or 0)
+                    if total_count > 0 and done_count > 0 and terminal_count == total_count:
+                        cur.execute(
+                            "SELECT id, status FROM tasks WHERE id=%s "
+                            "AND parent_task_id IS NULL FOR UPDATE",
+                            (parent_id,),
+                        )
+                        parent = cur.fetchone() or {}
+                        if parent.get("status") != PARENT_ALL_DONE:
+                            cur.execute(
+                                "UPDATE tasks SET status=%s, "
+                                "completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
+                                "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
+                                (PARENT_ALL_DONE, parent_id, PARENT_RAW_DONE),
+                            )
+                            parent_completed = cur.rowcount > 0
+                            if parent_completed:
+                                _write_event(
+                                    cur,
+                                    parent_id,
+                                    "completed",
+                                    actor_user_id,
+                                    {
+                                        "source": "push_management",
+                                        "reason": "children_terminal_after_push_decision",
+                                        "child_task_id": task_id,
+                                        "event_type": event_type,
+                                    },
+                                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
+
     return {
-        "task_id": int(task_id),
-        "event_type": CHILD_PUSH_MATERIAL_APPROVED_EVENT,
+        "task_id": task_id,
+        "event_type": event_type,
+        "status": CHILD_DONE,
+        "completed": completed,
+        "parent_completed": parent_completed,
         "payload": payload,
     }
 

@@ -337,6 +337,47 @@ def _resolve_rework_task_id(item: dict) -> int | None:
         return None
 
 
+def _complete_task_for_push_item(
+    item_id: int,
+    item: dict,
+    *,
+    decision: str,
+    product: dict | None = None,
+    upstream_status: int | None = None,
+) -> dict | None:
+    task_id = _resolve_rework_task_id(item)
+    if task_id is None:
+        return None
+
+    linked_task_id = _positive_int((item or {}).get("task_id"))
+    if linked_task_id is None:
+        medias.update_item_task_id(int(item_id), int(task_id))
+        item = dict(item or {})
+        item["task_id"] = task_id
+
+    if product is None:
+        product_id = _positive_int((item or {}).get("product_id"))
+        product = medias.get_product(product_id) if product_id is not None else None
+    product_code = str((product or {}).get("product_code") or "").strip().lower()
+    lang = str((item or {}).get("lang") or "").strip().lower()
+
+    kwargs = {
+        "task_id": int(task_id),
+        "actor_user_id": int(current_user.id),
+        "item_id": int(item_id),
+        "product_code": product_code,
+        "lang": lang,
+    }
+    if decision == "skipped":
+        return tasks_svc.record_push_material_skipped(**kwargs)
+    if decision == "approved":
+        return tasks_svc.record_push_material_approved(
+            **kwargs,
+            upstream_status=upstream_status,
+        )
+    raise ValueError(f"unsupported push task decision: {decision}")
+
+
 def _quality_check_for_item(item_id: int) -> dict | None:
     try:
         return push_quality_checks.latest_for_item(item_id)
@@ -809,24 +850,20 @@ def api_push(item_id: int):
                 "product_link_url": ad_url,
             },
         )
-        task_id = item.get("task_id")
-        if task_id:
-            try:
-                tasks_svc.record_push_material_approved(
-                     task_id=int(task_id),
-                     actor_user_id=int(current_user.id),
-                     item_id=int(item_id),
-                     product_code=product_code,
-                     lang=lang,
-                     upstream_status=post_result.get("upstream_status"),
-                )
-            except Exception:
-                log.warning(
-                     "record task push approved event failed item_id=%s task_id=%s",
-                     item_id,
-                     task_id,
-                     exc_info=True,
-                )
+        try:
+            _complete_task_for_push_item(
+                item_id,
+                item,
+                decision="approved",
+                product=product,
+                upstream_status=post_result.get("upstream_status"),
+            )
+        except Exception:
+            log.warning(
+                "record task push approved completion failed item_id=%s",
+                item_id,
+                exc_info=True,
+            )
 
         # 推送成功后，回填 mk_id（失败不阻塞主响应，只附在 mk_id_match 里告诉前端）
         mk_id_match: dict[str, Any] = {
@@ -939,6 +976,21 @@ def api_mark_pushed(item_id: int):
         response_body=response_body,
     )
     _audit_push_action(item_id, "push_marked_succeeded")
+    item = medias.get_item(item_id)
+    if item:
+        try:
+            _complete_task_for_push_item(
+                item_id,
+                item,
+                decision="approved",
+                upstream_status=body.get("upstream_status"),
+            )
+        except Exception:
+            log.warning(
+                "record task push marked completion failed item_id=%s",
+                item_id,
+                exc_info=True,
+            )
     return ("", 204)
 
 
@@ -1003,6 +1055,18 @@ def api_skip(item_id: int):
         return _json_response({"error": "already_pushed"}, 409)
     pushes.mark_skip_push(item_id, current_user.id)
     _audit_push_action(item_id, "push_skipped")
+    try:
+        _complete_task_for_push_item(
+            item_id,
+            item,
+            decision="skipped",
+        )
+    except Exception:
+        log.warning(
+            "record task push skipped completion failed item_id=%s",
+            item_id,
+            exc_info=True,
+        )
     return ("", 204)
 
 

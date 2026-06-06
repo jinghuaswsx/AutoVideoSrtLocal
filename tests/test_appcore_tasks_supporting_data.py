@@ -836,6 +836,40 @@ def test_auto_archive_completed_pushed_tasks_archives_done_child_with_pushed_mat
     assert event[4]["pushed_at"] == "2026-06-01T05:33:00"
 
 
+def test_auto_archive_completed_pushed_tasks_archives_done_child_with_skipped_material(monkeypatch):
+    from appcore import tasks
+
+    def fake_query_all(sql, args=()):
+        if "FROM tasks t" in sql:
+            assert "COALESCE(mi.skip_push, 0)=1" in sql
+            return [
+                {
+                    "task_id": 293,
+                    "task_status": tasks.CHILD_DONE,
+                    "media_item_id": 295,
+                    "pushed_at": None,
+                    "skip_push": 1,
+                    "skip_push_at": datetime(2026, 6, 1, 11, 6, 13),
+                }
+            ]
+        if "FROM tasks p" in sql:
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+    calls = _install_auto_archive_conn(monkeypatch, tasks, {293: tasks.CHILD_DONE})
+
+    summary = tasks.auto_archive_completed_pushed_tasks()
+
+    assert summary["archived_children"] == 1
+    event = [call for call in calls if call[0] == "event"][0]
+    assert event[1:4] == (293, "auto_archived", None)
+    assert event[4]["reason"] == "child_done_and_material_resolved"
+    assert event[4]["media_item_id"] == 295
+    assert event[4]["skip_push"] is True
+    assert event[4]["skip_push_at"] == "2026-06-01T11:06:13"
+
+
 def test_auto_archive_completed_pushed_tasks_skips_unpushed_children(monkeypatch):
     from appcore import tasks
 
@@ -854,7 +888,8 @@ def test_auto_archive_completed_pushed_tasks_skips_unpushed_children(monkeypatch
     assert summary["archived_parents"] == 0
     child_sql = captured[0][0]
     assert "t.status=%s" in child_sql
-    assert "pushed_at IS NOT NULL" in child_sql
+    assert "mi.pushed_at IS NOT NULL" in child_sql
+    assert "COALESCE(mi.skip_push, 0)=1" in child_sql
 
 
 def test_auto_archive_completed_pushed_tasks_never_selects_raw_done_parent(monkeypatch):
@@ -912,6 +947,50 @@ def test_auto_archive_completed_pushed_tasks_archives_all_done_parent_when_done_
     assert event[4]["child_task_ids"] == [10, 11]
     assert event[4]["child_media_item_ids"] == [100, 101]
     assert event[4]["task_status"] == tasks.PARENT_ALL_DONE
+
+
+def test_backfill_skip_push_completed_tasks_completes_unbound_matching_material(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    completions = []
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "task_id": 293,
+                "item_id": 295,
+                "product_code": "ice-ball-molds-rjc",
+                "lang": "de",
+            }
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+    monkeypatch.setattr(
+        tasks,
+        "record_push_material_skipped",
+        lambda **kwargs: completions.append(kwargs) or {"task_id": kwargs["task_id"]},
+    )
+
+    summary = tasks.backfill_skip_push_completed_tasks()
+
+    assert "mi.skip_push=1" in captured["sql"]
+    assert "mi.task_id=t.id" in captured["sql"]
+    assert "mi.task_id IS NULL" in captured["sql"]
+    assert captured["args"] == (tasks.CHILD_ASSIGNED, tasks.CHILD_REVIEW)
+    assert completions == [
+        {
+            "task_id": 293,
+            "actor_user_id": None,
+            "item_id": 295,
+            "product_code": "ice-ball-molds-rjc",
+            "lang": "de",
+        }
+    ]
+    assert summary["completed"] == 1
+    assert summary["task_ids"] == [293]
 
 
 def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch):
