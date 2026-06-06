@@ -2275,9 +2275,9 @@ def list_items_for_push(
         where.append(f"i.lang IN ({placeholders})")
         args.extend(langs)
     if keyword:
-        where.append("(i.display_name LIKE %s OR i.filename LIKE %s)")
+        where.append("(i.display_name LIKE %s OR i.filename LIKE %s OR p.name LIKE %s OR p.product_code LIKE %s)")
         like = f"%{keyword}%"
-        args.extend([like, like])
+        args.extend([like, like, like, like])
     if product_term:
         where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
         like = f"%{product_term}%"
