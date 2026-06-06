@@ -350,7 +350,6 @@
     var compareOriginalPanel = document.getElementById("srCompareOriginalPanel");
     var compareResultPanel = document.getElementById("srCompareResultPanel");
     var resumeButton = document.getElementById("srResumeSubtitleRemoval");
-    var taskCenterRerunButton = document.getElementById("srTaskCenterRerunNiuma");
     var resubmitButton = document.getElementById("srResubmitSubtitleRemoval");
     var deleteButton = document.getElementById("srDeleteSubtitleRemoval");
     var submitButton = document.getElementById("srSubmitSubtitleRemoval");
@@ -364,7 +363,6 @@
     var stateTaskSubmittedAt = document.getElementById("srStateTaskSubmittedAt");
     var stateResultReturnedAt = document.getElementById("srStateResultReturnedAt");
     var stateProcessingElapsed = document.getElementById("srStateProcessingElapsed");
-    var pendingActionMode = "submit";
     var DEFAULT_SELECTION_TOP_RATIO = 0.7;
     var DEFAULT_SELECTION_HEIGHT = 100;
     var MIN_SELECTION_SIZE = 20;
@@ -680,57 +678,65 @@
     }
 
     function actionUrlForMode() {
-      if (pendingActionMode === "resubmit") {
-        return bootstrap.resubmit_url || (taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) + "/resubmit" : "");
-      }
       return taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) + "/submit" : "";
+    }
+
+    function setModeControlsDisabled(disabled) {
+      var modeSelect = document.querySelector(".sr-mode-select");
+      if (modeSelect) {
+        modeSelect.classList.toggle("sr-mode-readonly", !!disabled);
+      }
+      modeInputs.forEach(function (input) {
+        input.disabled = !!disabled;
+      });
     }
 
     function updateActionAvailability(state) {
       var taskStatus = (state && state.status) || "";
       var providerTaskId = (state && state.provider_task_id) || "";
       var canPrepareResubmit = taskStatus === "done" || taskStatus === "error" || taskStatus === "interrupted";
-      var canSubmit = taskStatus === "ready" || pendingActionMode === "resubmit";
+      var canSubmit = taskStatus === "ready";
       if (submitButton) {
         submitButton.hidden = !canSubmit;
         submitButton.disabled = !canSubmit;
-        submitButton.textContent = pendingActionMode === "resubmit" ? "重新提交去字幕任务" : "提交去字幕任务";
+        submitButton.textContent = "提交去字幕任务";
       }
       if (resubmitButton) {
-        resubmitButton.hidden = !canPrepareResubmit || pendingActionMode === "resubmit";
+        resubmitButton.hidden = !canPrepareResubmit;
       }
       if (resumeButton) {
         var canResume = !!providerTaskId && (
           taskStatus === "interrupted" ||
+          taskStatus === "error" ||
           taskStatus === "running" ||
           taskStatus === "queued" ||
           taskStatus === "submitted"
         );
         resumeButton.hidden = !canResume;
       }
-      if (taskCenterRerunButton) {
-        var canTaskCenterRerun = !!(state && state.task_center_force_rerun_url) && taskStatus !== "deleted";
-        taskCenterRerunButton.hidden = !canTaskCenterRerun;
-        taskCenterRerunButton.disabled = !canTaskCenterRerun;
-      }
       if (deleteButton) {
         deleteButton.hidden = taskStatus === "deleted";
       }
     }
 
-    function enterResubmitMode() {
-      pendingActionMode = "resubmit";
-      setEraseTypeDisabled(false);
-
-      // Enable remove mode selection and cards
-      var modeSelect = document.querySelector(".sr-mode-select");
-      if (modeSelect) {
-        modeSelect.classList.remove("sr-mode-readonly");
-      }
-      var modeInputs = document.querySelectorAll("input[name='remove_mode']");
-      modeInputs.forEach(function (input) {
-        input.removeAttribute("disabled");
+    function enterResubmitMode(state) {
+      bootstrap = Object.assign({}, bootstrap, state || {}, {
+        status: "ready",
+        remove_mode: "",
+        selection_box: null,
+        position_payload: null,
+        provider_task_id: "",
+        provider_status: "",
+        provider_emsg: "",
+        provider_result_url: "",
+        result_tos_key: "",
+        result_video_path: "",
+        error: "",
       });
+      selectionState.mode = "full";
+      selectionState.box = null;
+      setEraseTypeDisabled(false);
+      setModeControlsDisabled(false);
 
       // Reset result panel display to ready state
       if (resultPanel) {
@@ -758,6 +764,8 @@
       if (statusChip) {
         statusChip.textContent = "ready";
       }
+      renderSubtitleRemovalState(bootstrap);
+      syncMode("full");
 
       updateActionAvailability(bootstrap);
     }
@@ -808,7 +816,7 @@
       var resultVideo = resultFrame && resultFrame.querySelector('video');
       if (resultVideo) {
         resultVideo.addEventListener('error', function () {
-          resultFrame.innerHTML = '<div class="sr-result-empty"><div class="sr-selection-empty-title">结果视频暂不可用</div><div class="sr-hint">源链接可能已过期，请点「重提」重新生成，或用「下载结果」兜底。</div></div>';
+          resultFrame.innerHTML = '<div class="sr-result-empty"><div class="sr-selection-empty-title">结果视频暂不可用</div><div class="sr-hint">源链接可能已过期，请点「从零重跑」重新生成，或用「下载结果」兜底。</div></div>';
         });
       }
 
@@ -848,7 +856,7 @@
         html = [
           '<div class="sr-result-empty">',
           '<div class="sr-selection-empty-title">任务失败</div>',
-          '<div class="sr-hint">' + escapeHtml(taskError || providerMessage || providerStatus || "请检查后台日志后点「重提」重新生成。") + '</div>',
+          '<div class="sr-hint">' + escapeHtml(taskError || providerMessage || providerStatus || "可以先点「重新轮询结果」，确认查不到结果后再点「从零重跑」。") + '</div>',
           '</div>',
         ].join("");
       } else {
@@ -862,8 +870,7 @@
 
       resultPanel.innerHTML = html;
       if (resumeButton) {
-        // status=error 时旧 provider_task_id 在服务侧通常已被清掉，resume 必然 404，仅在 in-flight 时显示。
-        resumeButton.hidden = !(providerTaskId && taskStatus !== "done" && taskStatus !== "error");
+        resumeButton.hidden = !(providerTaskId && taskStatus !== "done" && taskStatus !== "deleted");
       }
       if (resubmitButton) {
         resubmitButton.hidden = taskStatus === "deleted";
@@ -902,7 +909,9 @@
         stateEraseTypeItem.hidden = !isVolc;
         stateEraseTypeItem.classList.toggle("sr-hidden", !isVolc);
       }
-      var mode = state.remove_mode || selectionState.mode || "full";
+      var srStatus = (state && state.status) || "";
+      var isFreshReady = srStatus === "ready" && !(state && state.provider_task_id) && !(state && (state.result_tos_key || state.result_video_path));
+      var mode = state.remove_mode || (isFreshReady ? "full" : (selectionState.mode || "full"));
       selectionState.mode = mode;
       if (selectionOverlay) {
         selectionOverlay.hidden = mode !== "box";
@@ -938,15 +947,13 @@
       if (selectionEmpty) {
         selectionEmpty.hidden = !!(safeSourceVideoUrl || safeThumbnailUrl);
       }
-      if (state.remove_mode) {
-        modeInputs.forEach(function (input) {
-          input.checked = input.value === state.remove_mode;
-        });
-        radioTiles.forEach(function (tile) {
-          var input = tile.querySelector("input[name='remove_mode']");
-          tile.classList.toggle("is-active", !!input && input.checked);
-        });
-      }
+      modeInputs.forEach(function (input) {
+        input.checked = input.value === mode;
+      });
+      radioTiles.forEach(function (tile) {
+        var input = tile.querySelector("input[name='remove_mode']");
+        tile.classList.toggle("is-active", !!input && input.checked);
+      });
       if (mode === "box" && (state.selection_box || state.position_payload)) {
         selectionState.box = normalizeSelectionBox(state.selection_box, state.position_payload);
       }
@@ -959,9 +966,9 @@
       }
       var nextEraseType = isVolc ? ((state && state.erase_text_type) || "subtitle") : "";
       syncEraseType(nextEraseType);
-      var srStatus = (state && state.status) || "";
       var lockStates = { queued: 1, running: 1, submitted: 1, done: 1, error: 1 };
-      setEraseTypeDisabled(!isVolc || (!!lockStates[srStatus] && pendingActionMode !== "resubmit"));
+      setEraseTypeDisabled(!isVolc || !!lockStates[srStatus]);
+      setModeControlsDisabled(srStatus !== "ready");
       renderResultPanel(state);
       updateActionAvailability(state);
       renderComparePreviews(state);
@@ -1192,13 +1199,12 @@
         submitButton.textContent = "提交中…";
         postJson(url, getActionPayload())
           .then(function () {
-            pendingActionMode = "submit";
             submitButton.textContent = "已提交";
             return refreshSubtitleRemovalState();
           })
           .catch(function (error) {
             submitButton.disabled = false;
-            submitButton.textContent = pendingActionMode === "resubmit" ? "重新提交去字幕任务" : "提交去字幕任务";
+            submitButton.textContent = "提交去字幕任务";
             showSubmitError(error.message || "提交失败，请重试");
           });
       });
@@ -1212,37 +1218,7 @@
             return refreshSubtitleRemovalState();
           })
           .catch(function (error) {
-            window.alert(error.message || "继续轮询失败");
-          });
-      });
-    }
-
-    if (taskCenterRerunButton) {
-      taskCenterRerunButton.addEventListener("click", function () {
-        var url = (bootstrap.task_center_force_rerun_url || "");
-        if (!url) {
-          window.alert("当前任务没有可重跑的任务中心入口");
-          return;
-        }
-        if (!window.confirm("确认重跑牛马去字幕？系统会保留旧记录，并重新提交一条新的去字幕任务。")) {
-          return;
-        }
-        var previousText = taskCenterRerunButton.textContent;
-        taskCenterRerunButton.disabled = true;
-        taskCenterRerunButton.textContent = "重跑中...";
-        postJson(url, null)
-          .then(function (data) {
-            var nextTaskId = data && data.raw_processing && data.raw_processing.subtitle_task_id;
-            if (nextTaskId) {
-              window.location.href = "/subtitle-removal/" + encodeURIComponent(nextTaskId);
-              return null;
-            }
-            return refreshSubtitleRemovalState();
-          })
-          .catch(function (error) {
-            taskCenterRerunButton.disabled = false;
-            taskCenterRerunButton.textContent = previousText;
-            window.alert(error.message || "重跑失败");
+            window.alert(error.message || "重新轮询结果失败");
           });
       });
     }
@@ -1250,7 +1226,28 @@
     if (resubmitButton) {
       resubmitButton.addEventListener("click", function () {
         clearSubmitError();
-        enterResubmitMode();
+        var url = (bootstrap.resubmit_url || (taskId ? "/api/subtitle-removal/" + encodeURIComponent(taskId) + "/resubmit" : ""));
+        if (!url) {
+          showSubmitError("任务 ID 缺失，无法从零重跑");
+          return;
+        }
+        if (!window.confirm("确认从零重跑？系统会只保留原始视频，清空旧结果和去除范围。")) {
+          return;
+        }
+        var previousText = resubmitButton.textContent;
+        resubmitButton.disabled = true;
+        resubmitButton.textContent = "重置中...";
+        postJson(url, null)
+          .then(function (state) {
+            resubmitButton.disabled = false;
+            resubmitButton.textContent = previousText;
+            enterResubmitMode(state || {});
+          })
+          .catch(function (error) {
+            resubmitButton.disabled = false;
+            resubmitButton.textContent = previousText;
+            window.alert(error.message || "从零重跑初始化失败");
+          });
       });
     }
 

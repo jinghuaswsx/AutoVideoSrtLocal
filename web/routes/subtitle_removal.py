@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import threading
-import time
 import uuid
 from datetime import datetime
 
@@ -276,24 +275,6 @@ def _cleanup_result_artifacts(task: dict) -> None:
             pass
 
 
-def _coerce_timestamp_seconds(value) -> float:
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, datetime):
-        return value.timestamp()
-    raw = str(value or "").strip()
-    if not raw:
-        return 0.0
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        pass
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def _coerce_timestamp_datetime(value) -> datetime | None:
     if isinstance(value, datetime):
         return value.replace(microsecond=0)
@@ -355,31 +336,19 @@ def _subtitle_removal_timing_payload(task: dict, project_row: dict | None = None
     }
 
 
-def _submission_age_seconds(task_id: str, task: dict) -> float:
-    submitted_at = _coerce_timestamp_seconds(task.get("provider_task_submitted_at"))
-    if submitted_at <= 0:
-        try:
-            row = subtitle_removal_route_store.get_project_created_at(
-                task_id,
-                query_one_func=db_query_one,
-            )
-        except Exception:
-            row = None
-        if row:
-            submitted_at = _coerce_timestamp_seconds(row.get("created_at"))
-    if submitted_at <= 0:
-        return 0.0
-    return max(0.0, time.time() - submitted_at)
-
-
 def _resume_existing_provider_poll(task_id: str, task: dict, user_id: int) -> bool:
     steps = dict(task.get("steps") or {})
     step_messages = dict(task.get("step_messages") or {})
     if (task.get("provider_task_id") or "").strip():
         steps["submit"] = "done"
-        if steps.get("poll") != "done":
-            steps["poll"] = "running"
-            step_messages["poll"] = "正在重新查询已提交的字幕移除任务结果"
+        steps["poll"] = "running"
+        step_messages["poll"] = "正在重新查询已提交的字幕移除任务结果"
+        if steps.get("download_result") != "done":
+            steps["download_result"] = "pending"
+            step_messages["download_result"] = ""
+        if steps.get("upload_result") != "done":
+            steps["upload_result"] = "pending"
+            step_messages["upload_result"] = ""
     if (task.get("vod_result_vid") or "").strip():
         steps["poll"] = "done"
         if steps.get("download_result") != "done":
@@ -393,6 +362,68 @@ def _resume_existing_provider_poll(task_id: str, task: dict, user_id: int) -> bo
         step_messages=step_messages,
     )
     return bool(subtitle_removal_runner.start(task_id, user_id=user_id))
+
+
+def _fresh_run_steps() -> dict:
+    return {
+        "prepare": "done",
+        "submit": "pending",
+        "poll": "pending",
+        "download_result": "pending",
+        "upload_result": "pending",
+    }
+
+
+def _fresh_run_step_messages() -> dict:
+    return {
+        "prepare": "首帧提取和媒体信息解析已完成",
+        "submit": "",
+        "poll": "",
+        "download_result": "",
+        "upload_result": "",
+    }
+
+
+def _reset_task_for_fresh_run(task_id: str, task: dict) -> dict:
+    try:
+        subtitle_backend = _normalize_subtitle_backend(task.get("subtitle_backend"))
+    except ValueError:
+        subtitle_backend = "volc"
+
+    store.update(
+        task_id,
+        status="ready",
+        subtitle_backend=subtitle_backend,
+        remove_mode="",
+        selection_box=None,
+        position_payload=None,
+        erase_text_type="subtitle" if subtitle_backend == "volc" else "",
+        local_vsr_options={},
+        provider_task_id="",
+        provider_task_submitted_at=0.0,
+        submitted_at="",
+        provider_status="",
+        provider_emsg="",
+        provider_result_url="",
+        provider_raw={},
+        poll_attempts=0,
+        last_polled_at=None,
+        result_returned_at="",
+        completed_at="",
+        result_video_path="",
+        result_tos_key="",
+        result_object_info={},
+        vod_upload_job_id="",
+        vod_source_vid="",
+        vod_result_vid="",
+        vod_result_file_name="",
+        vod_result_size=0,
+        vod_result_duration=0.0,
+        error="",
+        steps=_fresh_run_steps(),
+        step_messages=_fresh_run_step_messages(),
+    )
+    return store.get(task_id) or {}
 
 def _ensure_public_source_url(task_id: str, task: dict) -> str:
     source_tos_key = (task.get("source_tos_key") or "").strip()
@@ -649,9 +680,6 @@ def _subtitle_removal_state_payload(
     video_path = (task.get("video_path") or "").strip()
     source_tos_key = (task.get("source_tos_key") or "").strip()
     task_center_parent_task_id = _task_center_parent_task_id_from_subtitle_task(task_id)
-    task_center_force_rerun_url = ""
-    if task_center_parent_task_id and (task.get("subtitle_backend") or "").strip().lower() == "niuma":
-        task_center_force_rerun_url = f"/tasks/api/parent/{task_center_parent_task_id}/force_niuma_rerun"
     payload = {
         "id": task_id,
         "type": task.get("type") or "subtitle_removal",
@@ -688,7 +716,7 @@ def _subtitle_removal_state_payload(
         "resume_poll_url": url_for("subtitle_removal.resume_poll", task_id=task_id),
         "resubmit_url": url_for("subtitle_removal.resubmit", task_id=task_id),
         "task_center_parent_task_id": task_center_parent_task_id,
-        "task_center_force_rerun_url": task_center_force_rerun_url,
+        "task_center_force_rerun_url": "",
         "delete_url": url_for("subtitle_removal.delete_task", task_id=task_id),
         "detail_url": url_for("subtitle_removal.detail_page", task_id=task_id),
         "state_api_url": url_for("subtitle_removal.get_state", task_id=task_id),
@@ -1164,8 +1192,10 @@ def resume_poll(task_id: str):
         return _json_response({"error": "provider_task_id required"}), 400
     if subtitle_removal_runner.is_running(task_id):
         return _json_response({"task_id": task_id, "status": "running"}), 202
-    subtitle_removal_runner.start(task_id, user_id=current_user.id)
-    return _json_response({"task_id": task_id, "status": "queued"}), 202
+    started = _resume_existing_provider_poll(task_id, task, current_user.id)
+    if not started:
+        return _json_response({"error": "unable to start subtitle removal runner"}), 409
+    return _json_response({"task_id": task_id, "status": "running"}), 202
 
 
 @bp.route("/api/subtitle-removal/<task_id>/resubmit", methods=["POST"])
@@ -1178,21 +1208,13 @@ def resubmit(task_id: str):
     try:
         task = _get_owned_task(task_id)
         task_status = (task.get("status") or "").strip()
-        if task_status in {"queued", "running"}:
+        if task_status in {"queued", "running", "submitted"}:
             return _json_response({"error": "task is already running"}), 409
-        provider_task_id = (task.get("provider_task_id") or "").strip()
-        # status=error 的任务 provider 侧通常已清掉旧 task_id，resume 必然 404；强制重新提交。
-        if task_status not in {"done", "ready", "error"} and provider_task_id:
-            age_seconds = _submission_age_seconds(task_id, task)
-            window_seconds = int(getattr(config, "SUBTITLE_REMOVAL_RESUBMIT_POLL_WINDOW_SECONDS", 1800) or 1800)
-            if age_seconds <= window_seconds:
-                if subtitle_removal_runner.is_running(task_id):
-                    return _json_response({"error": "task is already running"}), 409
-                _resume_existing_provider_poll(task_id, task, current_user.id)
-                return _json_response({"task_id": task_id, "status": "running"}), 202
         _cleanup_result_artifacts(task)
-        body = request.get_json(silent=True) or {}
-        return _submit_locked(task_id, task, body)
+        reset_task = _reset_task_for_fresh_run(task_id, task)
+        return _json_response(
+            _subtitle_removal_state_payload(reset_task, task_id)
+        ), 200
     finally:
         lock.release()
 

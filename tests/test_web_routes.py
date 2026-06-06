@@ -356,33 +356,32 @@ def test_subtitle_removal_detail_script_gates_invalid_actions_by_status():
     scripts = Path("web/templates/_subtitle_removal_scripts.html").read_text(encoding="utf-8")
 
     assert "function updateActionAvailability(state)" in scripts
-    assert "var canSubmit = taskStatus === \"ready\" || pendingActionMode === \"resubmit\";" in scripts
+    assert "var canSubmit = taskStatus === \"ready\";" in scripts
     assert "submitButton.hidden = !canSubmit;" in scripts
     assert "var canPrepareResubmit = taskStatus === \"done\" || taskStatus === \"error\" || taskStatus === \"interrupted\";" in scripts
-    assert "resubmitButton.hidden = !canPrepareResubmit || pendingActionMode === \"resubmit\";" in scripts
+    assert "resubmitButton.hidden = !canPrepareResubmit;" in scripts
+    assert "taskStatus === \"error\" ||" in scripts
 
 
-def test_subtitle_removal_detail_resubmit_is_staged_before_posting():
+def test_subtitle_removal_detail_resubmit_resets_before_next_submit():
     scripts = Path("web/templates/_subtitle_removal_scripts.html").read_text(encoding="utf-8")
 
-    assert 'var pendingActionMode = "submit";' in scripts
-    assert "function enterResubmitMode()" in scripts
-    assert 'pendingActionMode = "resubmit";' in scripts
+    assert "function enterResubmitMode(state)" in scripts
     assert "var url = actionUrlForMode();" in scripts
     assert "resubmitButton.addEventListener(\"click\", function () {" in scripts
-    assert "enterResubmitMode();" in scripts
+    assert "确认从零重跑" in scripts
+    assert "enterResubmitMode(state || {});" in scripts
+    assert "postJson(url, null)" in scripts
     assert "postJson(url, getActionPayload())" in scripts
+    assert "pendingActionMode" not in scripts
 
 
-def test_subtitle_removal_detail_task_center_rerun_posts_and_redirects():
+def test_subtitle_removal_detail_does_not_create_new_task_center_rerun_from_detail_page():
     scripts = Path("web/templates/_subtitle_removal_scripts.html").read_text(encoding="utf-8")
 
-    assert 'var taskCenterRerunButton = document.getElementById("srTaskCenterRerunNiuma");' in scripts
-    assert 'var url = (bootstrap.task_center_force_rerun_url || "");' in scripts
-    assert "确认重跑牛马去字幕" in scripts
-    assert "postJson(url, null)" in scripts
-    assert "data.raw_processing && data.raw_processing.subtitle_task_id" in scripts
-    assert 'window.location.href = "/subtitle-removal/" + encodeURIComponent(nextTaskId);' in scripts
+    assert "srTaskCenterRerunNiuma" not in scripts
+    assert "task_center_force_rerun_url" not in scripts
+    assert "data.raw_processing && data.raw_processing.subtitle_task_id" not in scripts
 
 
 def test_misc_upload_redirects_encode_dynamic_task_ids():
@@ -1519,8 +1518,8 @@ def test_subtitle_removal_detail_shell_exposes_result_action_hooks(authed_client
     assert "srResubmitSubtitleRemoval" in body
     assert "srDeleteSubtitleRemoval" in body
     assert "结果操作" in body
-    assert '<button id="srResumeSubtitleRemoval" type="button" class="btn btn-secondary">继续轮询</button>' in body
-    assert '<button id="srResubmitSubtitleRemoval" type="button" class="btn btn-secondary">重提</button>' in body
+    assert '<button id="srResumeSubtitleRemoval" type="button" class="btn btn-secondary">重新轮询结果</button>' in body
+    assert '<button id="srResubmitSubtitleRemoval" type="button" class="btn btn-danger">从零重跑</button>' in body
     assert '<button id="srDeleteSubtitleRemoval" type="button" class="btn btn-danger">删除</button>' in body
     assert "artifact/result" in body
     assert "download/result" in body
@@ -1594,7 +1593,9 @@ def test_subtitle_removal_detail_shell_exposes_result_timing_hooks(authed_client
     assert 'if (value == null || value === "")' in body
 
 
-def test_subtitle_removal_detail_exposes_task_center_rerun_for_tcraw_niuma(authed_client_no_db, monkeypatch):
+def test_subtitle_removal_detail_keeps_task_center_parent_without_new_task_rerun_url(
+    authed_client_no_db, monkeypatch
+):
     task_id = "tcraw-120-7adfa023"
     state = {
         "id": task_id,
@@ -1622,8 +1623,8 @@ def test_subtitle_removal_detail_exposes_task_center_rerun_for_tcraw_niuma(authe
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert '<button id="srTaskCenterRerunNiuma" type="button" class="btn btn-danger">重跑</button>' in body
-    assert '"/tasks/api/parent/120/force_niuma_rerun"' in body
+    assert "srTaskCenterRerunNiuma" not in body
+    assert '"/tasks/api/parent/120/force_niuma_rerun"' not in body
     assert '"task_center_parent_task_id": 120' in body
 
 

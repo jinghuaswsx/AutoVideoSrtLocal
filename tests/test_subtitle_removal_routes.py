@@ -1280,7 +1280,9 @@ def test_subtitle_removal_download_result_redirects_to_tos_when_local_file_missi
     assert response.headers["Location"] == "https://tos.example/result.cleaned.mp4"
 
 
-def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_client_no_db, monkeypatch, tmp_path):
+def test_subtitle_removal_resubmit_resets_task_to_ready_and_cleans_previous_result_artifacts(
+    authed_client_no_db, monkeypatch, tmp_path
+):
     output_root = tmp_path / "output"
     result_path = output_root / "sr-resubmit" / "result.cleaned.mp4"
     result_path.parent.mkdir(parents=True)
@@ -1313,14 +1315,11 @@ def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_clien
         result_video_path=str(result_path),
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
-    monkeypatch.setattr("web.routes.subtitle_removal._submission_age_seconds", lambda task_id, task: 3600)
-    _mock_public_source_stage(monkeypatch)
-    started = {}
     deleted = []
     monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.delete_object", lambda key: deleted.append(key))
     monkeypatch.setattr(
         "web.routes.subtitle_removal.subtitle_removal_runner.start",
-        lambda task_id, user_id=None: started.setdefault("task_id", task_id),
+        lambda task_id, user_id=None: (_ for _ in ()).throw(AssertionError("resubmit should only reset")),
     )
 
     response = authed_client_no_db.post(
@@ -1328,19 +1327,23 @@ def test_subtitle_removal_resubmit_cleans_previous_result_artifacts(authed_clien
         json={"remove_mode": "full"},
     )
 
-    assert response.status_code == 202
-    assert started["task_id"] == "sr-resubmit"
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ready"
     assert deleted == ["artifacts/1/sr-resubmit/subtitle_removal/result.cleaned.mp4"]
     assert not result_path.exists()
     saved = store.get("sr-resubmit")
+    assert saved["status"] == "ready"
     assert saved["provider_task_id"] == ""
-    assert saved["provider_status"] == "queued"
+    assert saved["provider_status"] == ""
     assert saved["provider_result_url"] == ""
     assert saved["result_tos_key"] == ""
     assert saved["result_video_path"] == ""
-    assert saved["remove_mode"] == "full"
-    assert saved["selection_box"] == {"x1": 0, "y1": 0, "x2": 720, "y2": 1280}
-    assert saved["position_payload"] == {"l": 0, "t": 0, "w": 720, "h": 1280}
+    assert saved["remove_mode"] == ""
+    assert saved["selection_box"] is None
+    assert saved["position_payload"] is None
+    assert saved["steps"]["prepare"] == "done"
+    assert saved["steps"]["submit"] == "pending"
+    assert saved["steps"]["poll"] == "pending"
 
 
 def test_subtitle_removal_cleanup_skips_result_path_outside_storage_roots(monkeypatch, tmp_path):
@@ -1367,7 +1370,7 @@ def test_subtitle_removal_cleanup_skips_result_path_outside_storage_roots(monkey
     assert outside_result.read_bytes() == b"result"
 
 
-def test_subtitle_removal_resubmit_recent_provider_task_resumes_poll_without_new_submit(
+def test_subtitle_removal_resume_poll_recent_provider_task_resumes_without_new_submit(
     authed_client_no_db, monkeypatch, tmp_path
 ):
     result_path = tmp_path / "result.cleaned.mp4"
@@ -1395,28 +1398,17 @@ def test_subtitle_removal_resubmit_recent_provider_task_resumes_poll_without_new
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
-    monkeypatch.setattr("web.routes.subtitle_removal._submission_age_seconds", lambda task_id, task: 60)
-    monkeypatch.setattr(
-        "web.routes.subtitle_removal._ensure_public_source_url",
-        lambda task_id, task: (_ for _ in ()).throw(AssertionError("recent resubmit should not stage a new source")),
-    )
-    deleted = []
     started = []
-    monkeypatch.setattr("web.routes.subtitle_removal.tos_clients.delete_object", lambda key: deleted.append(key))
     monkeypatch.setattr(
         "web.routes.subtitle_removal.subtitle_removal_runner.start",
         lambda task_id, user_id=None: started.append((task_id, user_id)) or True,
     )
 
-    response = authed_client_no_db.post(
-        "/api/subtitle-removal/sr-resubmit-recent/resubmit",
-        json={"remove_mode": "full"},
-    )
+    response = authed_client_no_db.post("/api/subtitle-removal/sr-resubmit-recent/resume-poll")
 
     assert response.status_code == 202
     assert response.get_json()["status"] == "running"
     assert started == [("sr-resubmit-recent", 1)]
-    assert deleted == []
     assert result_path.exists()
     saved = store.get("sr-resubmit-recent")
     assert saved["provider_task_id"] == "provider-task-recent"
@@ -1424,13 +1416,9 @@ def test_subtitle_removal_resubmit_recent_provider_task_resumes_poll_without_new
     assert saved["steps"]["poll"] == "running"
 
 
-def test_subtitle_removal_resubmit_error_status_skips_resume_and_resubmits(
+def test_subtitle_removal_resubmit_error_status_resets_to_fresh_ready_task(
     authed_client_no_db, monkeypatch, tmp_path
 ):
-    """status=error 的任务即使 age 在 resume window 内也必须重新提交，不能 resume 旧 provider_task。
-
-    本地 VSR 失败后旧 provider_task_id 已被服务清掉，resume 必然 404，必须强制重新提交。
-    """
     store.create_subtitle_removal(
         "sr-resubmit-error",
         "uploads/source.mp4",
@@ -1466,7 +1454,6 @@ def test_subtitle_removal_resubmit_error_status_skips_resume_and_resubmits(
         },
     )
     monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
-    monkeypatch.setattr("web.routes.subtitle_removal._submission_age_seconds", lambda task_id, task: 60)
     started = []
     monkeypatch.setattr(
         "web.routes.subtitle_removal.subtitle_removal_runner.start",
@@ -1478,16 +1465,20 @@ def test_subtitle_removal_resubmit_error_status_skips_resume_and_resubmits(
         json={"remove_mode": "full"},
     )
 
-    assert response.status_code == 202
-    assert response.get_json()["status"] == "queued"
-    assert started == [("sr-resubmit-error", 1)]
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ready"
+    assert started == []
     saved = store.get("sr-resubmit-error")
-    assert saved["status"] == "queued"
+    assert saved["status"] == "ready"
     assert saved["provider_task_id"] == ""
-    assert saved["provider_status"] == "queued"
+    assert saved["provider_status"] == ""
     assert saved["provider_result_url"] == ""
     assert saved["provider_emsg"] == ""
-    assert saved["steps"]["submit"] == "queued"
+    assert saved["remove_mode"] == ""
+    assert saved["selection_box"] is None
+    assert saved["position_payload"] is None
+    assert saved["local_vsr_options"] == {}
+    assert saved["steps"]["submit"] == "pending"
     assert saved["steps"]["poll"] == "pending"
 
 
@@ -1511,6 +1502,57 @@ def test_subtitle_removal_resume_poll_restarts_runner_for_existing_provider_task
 
     assert response.status_code == 202
     assert started["task_id"] == "sr-resume"
+    saved = store.get("sr-resume")
+    assert saved["status"] == "running"
+    assert saved["steps"]["submit"] == "done"
+    assert saved["steps"]["poll"] == "running"
+
+
+def test_subtitle_removal_resume_poll_recovers_error_task_with_existing_provider_task(
+    authed_client_no_db, monkeypatch
+):
+    store.create_subtitle_removal(
+        "sr-resume-error",
+        "uploads/source.mp4",
+        "output/sr-resume-error",
+        original_filename="source.mp4",
+        user_id=1,
+    )
+    store.update(
+        "sr-resume-error",
+        status="error",
+        error="download failed",
+        provider_task_id="provider-task-err",
+        provider_status="success",
+        provider_result_url="https://provider.example/result.mp4",
+        steps={
+            "prepare": "done",
+            "submit": "done",
+            "poll": "done",
+            "download_result": "error",
+            "upload_result": "pending",
+        },
+    )
+    monkeypatch.setattr("web.routes.subtitle_removal._get_owned_task", lambda task_id: store.get(task_id))
+    started = []
+    monkeypatch.setattr(
+        "web.routes.subtitle_removal.subtitle_removal_runner.start",
+        lambda task_id, user_id=None: started.append((task_id, user_id)) or True,
+    )
+
+    response = authed_client_no_db.post("/api/subtitle-removal/sr-resume-error/resume-poll")
+
+    assert response.status_code == 202
+    assert response.get_json()["status"] == "running"
+    assert started == [("sr-resume-error", 1)]
+    saved = store.get("sr-resume-error")
+    assert saved["status"] == "running"
+    assert saved["error"] == ""
+    assert saved["provider_task_id"] == "provider-task-err"
+    assert saved["steps"]["submit"] == "done"
+    assert saved["steps"]["poll"] == "running"
+    assert saved["steps"]["download_result"] == "pending"
+    assert saved["steps"]["upload_result"] == "pending"
 
 
 def test_subtitle_removal_resume_poll_is_idempotent_when_runner_already_active(authed_client_no_db, monkeypatch):
@@ -1718,7 +1760,9 @@ def test_subtitle_removal_submit_rejects_invalid_erase_text_type(authed_client_n
     assert started == []
 
 
-def test_subtitle_removal_resubmit_overrides_erase_text_type(authed_client_no_db, monkeypatch):
+def test_subtitle_removal_resubmit_resets_erase_type_then_submit_can_override(
+    authed_client_no_db, monkeypatch
+):
     store.create_subtitle_removal(
         "sr-resubmit-erase",
         "uploads/source.mp4",
@@ -1745,8 +1789,15 @@ def test_subtitle_removal_resubmit_overrides_erase_text_type(authed_client_no_db
         lambda task_id, user_id=None: None,
     )
 
+    response = authed_client_no_db.post("/api/subtitle-removal/sr-resubmit-erase/resubmit")
+
+    assert response.status_code == 200
+    saved = store.get("sr-resubmit-erase")
+    assert saved["status"] == "ready"
+    assert saved["erase_text_type"] == "subtitle"
+
     response = authed_client_no_db.post(
-        "/api/subtitle-removal/sr-resubmit-erase/resubmit",
+        "/api/subtitle-removal/sr-resubmit-erase/submit",
         json={"remove_mode": "full", "erase_text_type": "text"},
     )
 
