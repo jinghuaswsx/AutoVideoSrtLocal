@@ -718,10 +718,8 @@
       </div>
     `;
 
-    // Render Translated versions (Split out into a standalone card next to this one!)
-    let cardHtml = '';
-    let dataCardHtml = '';
-    
+    // Render Translated versions in the right panel directly
+    let rightPanelHtml = '';
     if (inLib && card.translated_versions && card.translated_versions.length) {
       const langCnMap = {
         de: '德',
@@ -732,32 +730,51 @@
         en: '英',
         pt: '葡'
       };
-      
+
       const versionsListHtml = card.translated_versions.map(v => {
         const status = v.delivery_status || 'never';
         const statusLabel = status === 'active' ? '投放中' : status === 'stopped' ? '终止' : '未投放';
-        const spend = v.ad_spend != null ? `$${Number(v.ad_spend).toFixed(0)}` : '';
-        const roas = v.roas != null ? `ROAS ${Number(v.roas).toFixed(1)}` : '';
-        const detail = [spend, roas].filter(Boolean).join(' ');
         const langLower = (v.lang || '').toLowerCase();
         const langUpper = langLower.toUpperCase();
         const cnAbbr = langCnMap[langLower] || '';
         const langDisplay = cnAbbr ? `${langUpper}(${cnAbbr})` : langUpper;
-        return `<span class="supplement-version-pill supplement-version-${status}" data-item-id="${v.media_item_id || ''}" data-lang="${escapeHtml(v.lang || '')}" data-product-id="${product ? product.id : ''}" title="点击展开详细数据" style="margin-bottom: 2px;">
-          ${escapeHtml(langDisplay)} ${statusLabel}${detail ? ' ' + detail : ''}
-        </span>`;
+        
+        const tableHtml = adSpendHtmlForVersion(v.ad_performance);
+
+        return `
+          <div class="supplement-version-section" style="margin-bottom: 16px;">
+            <div style="margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+              <span class="supplement-version-pill supplement-version-${status}" style="font-weight: 700;">
+                ${escapeHtml(langDisplay)} ${statusLabel}
+              </span>
+            </div>
+            ${tableHtml}
+          </div>
+        `;
       }).join('');
 
-      dataCardHtml = `
-        <div class="mk-video-card supplement-data-card" data-card-id="${escapeHtml(card.card_id || '')}">
-          <div class="mk-video-title-row" style="margin-top:12px; margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
-            <div class="mk-video-card-title">国家投放数据</div>
-            <span style="font-size:11px; color:var(--oc-fg-muted);">对应已入库素材</span>
-          </div>
-          <div class="supplement-versions" style="border-top: none; margin-top: 0; padding-top: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; flex: 1;">
-            ${versionsListHtml}
-          </div>
-          <div id="supplement-detail-${escapeHtml(card.card_id || '')}" class="supplement-detail-panel" hidden></div>
+      rightPanelHtml = `
+        <div class="supplement-right-header" style="font-size: 14px; font-weight: 700; color: var(--oc-fg); margin-bottom: 12px; border-bottom: 2px solid var(--oc-accent); padding-bottom: 4px; display: inline-block;">国家广告统计数据</div>
+        <div class="supplement-versions-list" style="display: flex; flex-direction: column; gap: 8px;">
+          ${versionsListHtml}
+        </div>
+      `;
+    } else if (inLib) {
+      rightPanelHtml = `
+        <div class="supplement-right-header" style="font-size: 14px; font-weight: 700; color: var(--oc-fg); margin-bottom: 12px; border-bottom: 2px solid var(--oc-accent); padding-bottom: 4px; display: inline-block;">国家广告统计数据</div>
+        <div class="supplement-right-empty" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 200px; color: var(--oc-fg-subtle); text-align: center; gap: 8px;">
+          <div style="font-size: 28px;">📊</div>
+          <div style="font-weight: 600; font-size: 13px; color: var(--oc-fg-muted);">暂无各语种投放数据</div>
+          <div style="font-size: 11px; max-width: 200px; line-height: 1.4;">该素材已成功入库，但尚未创建翻译任务或未产生广告投放数据。</div>
+        </div>
+      `;
+    } else {
+      rightPanelHtml = `
+        <div class="supplement-right-header" style="font-size: 14px; font-weight: 700; color: var(--oc-fg); margin-bottom: 12px; border-bottom: 2px solid var(--oc-accent); padding-bottom: 4px; display: inline-block;">国家广告统计数据</div>
+        <div class="supplement-right-empty" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 200px; color: var(--oc-fg-subtle); text-align: center; gap: 8px;">
+          <div style="font-size: 28px;">📊</div>
+          <div style="font-weight: 600; font-size: 13px; color: var(--oc-fg-muted);">未入库无投放数据</div>
+          <div style="font-size: 11px; max-width: 200px; line-height: 1.4;">请先在左侧点击“加入素材库”，然后在此处查看投放及消耗的详细数据。</div>
         </div>
       `;
     }
@@ -801,62 +818,69 @@
       ? '<button type="button" class="mk-video-play-btn" data-mk-video-play aria-label="播放视频" title="播放视频"></button>'
       : '';
 
-    cardHtml = `
+    const cardHtml = `
       <div class="mk-video-card ${inLib ? 'mk-video-card-in' : 'mk-video-card-out'}" data-card-id="${escapeHtml(card.card_id || '')}">
-        <div class="supplement-card-tag ${tagClass}">${tagText}</div>
-        
-        <div class="mk-video-product-line">
-          <div class="mk-video-product-cn-row">
-            ${safeProductUrl
-              ? `<a class="mk-video-product-cn-name" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</a>`
-              : `<span class="mk-video-product-cn-name" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</span>`
-            }
-            <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(cnName)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制中文产品名">${mkCopyIconSvg()}</button>
+        <div class="supplement-left-panel">
+          <div class="supplement-card-tag ${tagClass}">${tagText}</div>
+          
+          <div class="mk-video-product-line">
+            <div class="mk-video-product-cn-row">
+              ${safeProductUrl
+                ? `<a class="mk-video-product-cn-name" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</a>`
+                : `<span class="mk-video-product-cn-name" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</span>`
+              }
+              <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(cnName)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制中文产品名">${mkCopyIconSvg()}</button>
+            </div>
+            <div class="mk-video-product-en-row">
+              ${safeProductUrl
+                ? `<a class="mk-video-product-en-name" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(enName)}">${escapeHtml(enName)}</a>`
+                : `<span class="mk-video-product-en-name" title="${escapeHtml(enName)}">${escapeHtml(enName)}</span>`
+              }
+              <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(enName)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制英文产品名">${mkCopyIconSvg()}</button>
+            </div>
+            <div class="mk-video-product-code-row">
+              <span class="mk-video-product-code" title="${escapeHtml(productCode)}">${escapeHtml(productCode)}</span>
+              <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(productCode)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制产品 Code">${mkCopyIconSvg()}</button>
+            </div>
           </div>
-          <div class="mk-video-product-en-row">
-            ${safeProductUrl
-              ? `<a class="mk-video-product-en-name" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(enName)}">${escapeHtml(enName)}</a>`
-              : `<span class="mk-video-product-en-name" title="${escapeHtml(enName)}">${escapeHtml(enName)}</span>`
-            }
-            <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(enName)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制英文产品名">${mkCopyIconSvg()}</button>
+
+          <div class="mk-video-title-row" style="margin-top:4px;">
+            <div class="mk-video-card-title mk-line-clamp mk-line-clamp--2" title="${escapeHtml(videoName)}">${escapeHtml(videoName)}</div>
           </div>
-          <div class="mk-video-product-code-row">
-            <span class="mk-video-product-code" title="${escapeHtml(productCode)}">${escapeHtml(productCode)}</span>
-            <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(productCode)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制产品 Code">${mkCopyIconSvg()}</button>
+
+          ${productLinkHtml}
+          ${summaryRowHtml}
+
+          <div class="mk-video-tabs" role="tablist" aria-label="素材预览" style="margin-top: 8px;">
+            <button type="button" class="mk-video-tab active" data-tab="cover">图片</button>
+            <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
           </div>
+
+          <div class="mk-video-frame">
+            <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">
+              ${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${escapeHtml(videoName)}">` : `<span class="mk-video-media-empty">无封面</span>`}
+              ${playButtonHtml}
+            </div>
+            <div class="mk-video-pane" data-pane="video">
+              ${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-mk-video-src="${safeVideoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}
+            </div>
+          </div>
+
+          <div class="mk-video-meta-list" style="margin-top: 8px;">
+            <div class="mk-video-meta-line"><span class="label">广告数:</span><span class="value">${adsCount}</span></div>
+            <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
+            <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadTime}</span></div>
+          </div>
+
+          ${actionsHtml}
         </div>
 
-        <div class="mk-video-title-row" style="margin-top:4px;">
-          <div class="mk-video-card-title mk-line-clamp mk-line-clamp--2" title="${escapeHtml(videoName)}">${escapeHtml(videoName)}</div>
+        <div class="supplement-right-panel">
+          ${rightPanelHtml}
         </div>
-
-        ${productLinkHtml}
-        ${summaryRowHtml}
-
-        <div class="mk-video-tabs" role="tablist" aria-label="素材预览" style="margin-top: 8px;">
-          <button type="button" class="mk-video-tab active" data-tab="cover">图片</button>
-          <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
-        </div>
-
-        <div class="mk-video-frame">
-          <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">
-            ${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${escapeHtml(videoName)}">` : `<span class="mk-video-media-empty">无封面</span>`}
-            ${playButtonHtml}
-          </div>
-          <div class="mk-video-pane" data-pane="video">
-            ${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-mk-video-src="${safeVideoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}
-          </div>
-        </div>
-
-        <div class="mk-video-meta-list" style="margin-top: 8px;">
-          <div class="mk-video-meta-line"><span class="label">广告数:</span><span class="value">${adsCount}</span></div>
-          <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
-          <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadTime}</span></div>
-        </div>
-
-        ${actionsHtml}
-      </div>`;
-    return cardHtml + dataCardHtml;
+      </div>
+    `;
+    return cardHtml;
   }
 
   // Card Tab switching & Inline Video playing

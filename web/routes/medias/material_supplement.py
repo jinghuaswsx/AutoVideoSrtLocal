@@ -20,6 +20,7 @@ from web.auth import admin_required
 
 from . import bp
 from web.routes.medias import db_query
+from appcore.media_video_materials import _attach_ad_plan_details, _empty_ad_performance
 
 log = logging.getLogger(__name__)
 
@@ -140,13 +141,15 @@ def api_product_supplement(product_id: int):
             log.exception("Failed to fetch local MK snapshots for handle=%s", mk_search_handle)
 
     # 3. Query local library items
-    library_items = db_query(
-        "SELECT id, lang, filename, display_name, object_key, created_at "
+    library_items_rows = db_query(
+        "SELECT id, product_id, lang, filename, display_name, object_key, created_at "
         "FROM media_items "
         "WHERE product_id = %s AND deleted_at IS NULL "
         "ORDER BY lang, created_at",
         [product_id],
     )
+    library_items = [dict(r) for r in library_items_rows]
+    _attach_ad_plan_details(library_items)
 
     # 4. Query MK bindings for this product's items
     item_ids = [int(item["id"]) for item in library_items]
@@ -239,14 +242,18 @@ def api_product_supplement(product_id: int):
         if in_library:
             for lang, items_in_lang in lang_items.items():
                 for lib_item in items_in_lang:
-                    lang_ad = ad_by_lang.get(lang, {})
+                    perf = lib_item.get("ad_performance") or _empty_ad_performance()
+                    spend = perf.get("total_spend_usd") or 0.0
+                    active_spend = perf.get("last_7d_spend_usd") or 0.0
+                    status = _delivery_status(spend, active_spend)
                     translated_versions.append({
                         "lang": lang,
                         "lang_name": LANG_NAMES.get(lang, lang),
                         "media_item_id": int(lib_item["id"]),
-                        "delivery_status": lang_ad.get("delivery_status", "never"),
-                        "ad_spend": lang_ad.get("ad_spend_usd", 0.0),
-                        "roas": lang_ad.get("ad_roas"),
+                        "delivery_status": status,
+                        "ad_spend": spend,
+                        "roas": perf.get("roas"),
+                        "ad_performance": perf,
                     })
 
         # Extract video info from local snapshot row
