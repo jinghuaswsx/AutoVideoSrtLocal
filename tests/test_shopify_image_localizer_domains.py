@@ -246,7 +246,7 @@ def test_shopify_store_slug_uses_known_domain_before_cache(tmp_path) -> None:
     assert settings.shopify_store_slug_for_domain("newjoyloo.com", root=tmp_path) == "0ixug9-pv"
     assert settings.shopify_store_slug_for_domain("demo.example", root=tmp_path) == "demo-slug"
 
-    # 没缓存时回退到内置 dict（newjoyloo.com 默认）/ 默认 slug
+    # 没缓存时只允许已知域名使用内置 slug；未知域名不能退回默认店铺。
     settings.save_runtime_config(
         base_url="http://x",
         api_key="key",
@@ -256,10 +256,27 @@ def test_shopify_store_slug_uses_known_domain_before_cache(tmp_path) -> None:
         root=tmp_path,
     )
     assert settings.shopify_store_slug_for_domain("newjoyloo.com", root=tmp_path) == "0ixug9-pv"
-    assert (
-        settings.shopify_store_slug_for_domain("brand-new-store.example", root=tmp_path)
-        == settings.DEFAULT_SHOPIFY_STORE_SLUG
+    assert settings.shopify_store_slug_for_domain("brand-new-store.example", root=tmp_path) == ""
+
+
+def test_controller_rejects_uncached_non_default_store_slug(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    monkeypatch.setattr(controller.settings, "_runtime_root", lambda: tmp_path)
+    settings.save_runtime_config(
+        base_url="http://x",
+        api_key="key",
+        browser_user_data_dir=r"C:\dir",
+        shopify_domain="omurio.com",
+        store_slug_cache={},
+        root=tmp_path,
     )
+
+    with pytest.raises(RuntimeError, match="store slug"):
+        controller.build_shopify_target_url(
+            target="ez",
+            shopify_product_id="9182546460884",
+            lang="fr",
+            shopify_domain="omurio.com",
+        )
 
 
 def test_session_builds_admin_urls_for_selected_store_slug() -> None:

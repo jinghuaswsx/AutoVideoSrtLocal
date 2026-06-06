@@ -71,6 +71,8 @@ from tools.shopify_image_localizer.rpa import ez_cdp
 
 
 BODY_HTML_FIELD_PREFIX = "editable_Ym9keV9odG1s"
+DETAIL_RELOAD_VERIFY_ATTEMPTS = 3
+DETAIL_RELOAD_VERIFY_DELAY_S = 3.0
 SOURCE_INDEX_RE = re.compile(r"from_url_en_(\d+)_", re.I)
 IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.I | re.S)
 IMG_ATTR_RE = re.compile(r"\b(src|alt)\s*=\s*(['\"])(.*?)\2", re.I | re.S)
@@ -159,16 +161,32 @@ def build_insert_image_modal_script() -> str:
 def build_click_save_script() -> str:
     labels = _js_array(SAVE_BUTTON_LABELS)
     return f"""
-(() => {{
+(async () => {{
   const labels = {labels};
   const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
   const isEnabled = (button) => button && button.getAttribute('aria-disabled') !== 'true' && !button.disabled;
-  const buttons = Array.from(document.querySelectorAll('button')).filter((node) => {{
+  const findButtons = () => Array.from(document.querySelectorAll('button')).filter((node) => {{
     const text = normalize(node.innerText || node.textContent || node.getAttribute('aria-label') || '');
     return labels.some((label) => text === normalize(label));
   }});
-  const button = buttons.find(isEnabled) || buttons[buttons.length - 1];
-  if (!button) return {{ok:false, reason:'Save button missing'}};
+  const deadline = Date.now() + 10000;
+  let buttons = [];
+  let button = null;
+  while (Date.now() < deadline) {{
+    buttons = findButtons();
+    button = buttons.find(isEnabled) || null;
+    if (button) break;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }}
+  if (!button) {{
+    return {{
+      ok:false,
+      reason: buttons.length ? 'Save button disabled' : 'Save button missing',
+      total: buttons.length,
+      disabled: buttons.map((node) => Boolean(node.disabled)),
+      ariaDisabled: buttons.map((node) => node.getAttribute('aria-disabled')),
+    }};
+  }}
   button.scrollIntoView({{block:'center'}});
   button.click();
   return {{ok:true, total: buttons.length, disabled:button.disabled, ariaDisabled:button.getAttribute('aria-disabled')}};
@@ -431,6 +449,8 @@ class TaaSession:
         )
         if not result or not result.get("ok"):
             raise RuntimeError(f"failed to click Save: {json.dumps(result, ensure_ascii=False)}")
+        if result.get("disabled") or result.get("ariaDisabled") == "true":
+            raise RuntimeError(f"Save button disabled: {json.dumps(result, ensure_ascii=False)}")
         if self.cdp is None:
             return []
         print("详情图：已点击保存，等待 Shopify 保存响应（最多 35 秒；网络安静 4 秒即继续）")
@@ -506,8 +526,6 @@ class TaaSession:
                 cdn_url = url
         if not cdn_url:
             cdn_url = self._find_uploaded_image_url_in_modal(stem, basename, token)
-        if not cdn_url and seen_cdn_urls:
-            cdn_url = seen_cdn_urls[-1]
         if not cdn_url:
             raise RuntimeError(f"uploaded CDN URL not found for {basename}")
         return cdn_url
@@ -633,9 +651,10 @@ def choose_localized_image(
     if not candidates:
         raise ValueError(f"no localized candidate for token {token}")
 
-    source_index = source_index_from_filename(src)
+    mapped_source_index = (source_index_by_token or {}).get(token)
+    source_index = mapped_source_index
     if source_index is None:
-        source_index = (source_index_by_token or {}).get(token)
+        source_index = source_index_from_filename(src)
     if source_index is not None:
         exact = [row for row in candidates if row.get("source_index") == source_index]
         if exact:
@@ -727,12 +746,12 @@ def plan_body_html_replacements(
                     raise ValueError(f"visual candidate missing local_path for src: {src}")
                 match_method = "visual"
             else:
-                if source_index is None:
-                    if token:
-                        source_index = (source_index_by_token or {}).get(token)
-                    if source_index is None:
-                        key = source_name_key(src)
-                        source_index = (source_index_by_token or {}).get(key or "")
+                mapped_source_index = (source_index_by_token or {}).get(token or "") if token else None
+                if mapped_source_index is not None:
+                    source_index = mapped_source_index
+                elif source_index is None:
+                    key = source_name_key(src)
+                    source_index = (source_index_by_token or {}).get(key or "")
                 if token and candidates_by_token.get(token):
                     candidate = choose_localized_image(
                         src,
@@ -1120,30 +1139,49 @@ def replace_detail_images(
     verify_html = readback_html
     reload_checked = False
     reload_error = ""
+    expected_urls = [row["new"] for row in uploaded_replacements]
     if verify_reload:
         cancellation.throw_if_cancelled(cancel_token)
-        print("详情图：等待 3 秒让 TAA 保存生效，避免 reload 校验触发 502")
-        cancellation.cancellable_sleep(cancel_token, 3.0)
-        try:
-            print("详情图：开始 reload 校验，重新打开 TAA 读取保存后的详情 HTML")
-            with TaaSession(
-                product_id=product_id,
-                shop_locale=shop_locale,
-                user_data_dir=user_data_dir,
-                store_slug=store_slug,
-                port=port,
-                cancel_token=cancel_token,
-            ) as taa:
-                verify_html = taa.current_body_html()
-                reload_checked = True
-                print("详情图：reload 校验完成，已读取保存后的详情 HTML")
-        except cancellation.OperationCancelled:
-            raise
-        except Exception as exc:
-            reload_error = str(exc)
-            print(f"详情图：reload 校验失败，保留当前会话读回结果：{reload_error}")
-
-    expected_urls = [row["new"] for row in uploaded_replacements]
+        for attempt in range(1, DETAIL_RELOAD_VERIFY_ATTEMPTS + 1):
+            print(
+                f"详情图：等待 {DETAIL_RELOAD_VERIFY_DELAY_S:g} 秒让 TAA 保存生效，"
+                f"准备 reload 校验 {attempt}/{DETAIL_RELOAD_VERIFY_ATTEMPTS}"
+            )
+            cancellation.cancellable_sleep(cancel_token, DETAIL_RELOAD_VERIFY_DELAY_S)
+            try:
+                print("详情图：开始 reload 校验，重新打开 TAA 读取保存后的详情 HTML")
+                with TaaSession(
+                    product_id=product_id,
+                    shop_locale=shop_locale,
+                    user_data_dir=user_data_dir,
+                    store_slug=store_slug,
+                    port=port,
+                    cancel_token=cancel_token,
+                ) as taa:
+                    verify_html = taa.current_body_html()
+                    reload_checked = True
+                    print("详情图：reload 校验完成，已读取保存后的详情 HTML")
+                expected_present_now = sum(1 for url in expected_urls if url in verify_html)
+                expected_total_now = len(expected_urls)
+                if not expected_total_now or expected_present_now >= expected_total_now:
+                    break
+                if attempt < DETAIL_RELOAD_VERIFY_ATTEMPTS:
+                    print(
+                        "详情图：reload 校验暂未看到全部新 URL，"
+                        f"expected={expected_present_now}/{expected_total_now}，继续重试"
+                    )
+            except cancellation.OperationCancelled:
+                raise
+            except Exception as exc:
+                reload_error = str(exc)
+                print(f"详情图：reload 校验失败，保留当前会话读回结果：{reload_error}")
+                break
+    expected_present = sum(1 for url in expected_urls if url in verify_html)
+    expected_total = len(expected_urls)
+    if uploaded_replacements and reload_checked and expected_present < expected_total:
+        raise RuntimeError(
+            f"detail save verification failed after reload: expected {expected_present}/{expected_total}"
+        )
     return {
         "status": "done" if uploaded_replacements else "skipped",
         "image_count": plan["image_count"],
@@ -1172,8 +1210,8 @@ def replace_detail_images(
         ],
         "save_network": save_events,
         "verify": {
-            "expected_new_urls_present": sum(1 for url in expected_urls if url in verify_html),
-            "expected_total": len(expected_urls),
+            "expected_new_urls_present": expected_present,
+            "expected_total": expected_total,
             "old_non_shopify_count": sum(
                 1 for src in extract_image_srcs(verify_html)
                 if "cdn.shopify.com/s/files/" not in src

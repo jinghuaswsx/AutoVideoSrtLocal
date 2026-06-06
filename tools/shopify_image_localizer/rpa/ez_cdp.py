@@ -69,6 +69,17 @@ def _run_step(
     return result
 
 
+def _optional_page_wait(page, timeout_ms: int, *, scope: str) -> None:
+    try:
+        page.wait_for_timeout(timeout_ms)
+    except Exception as exc:
+        text = str(exc)
+        if "Target page, context or browser has been closed" in text:
+            _log(f"{scope} optional review wait skipped: page already closed")
+            return
+        raise
+
+
 def _pause_after_action(
     frame,
     scope: str,
@@ -978,7 +989,7 @@ def replace_many(
                     _log(f"[轮播图] 全部 {len(selected_pairs)} 个位置已有 {language}，跳过上传")
                     _log("[轮播图] 已全部替换到目标语言，停留 5 秒供人工检查确认")
                     cancellation.throw_if_cancelled(cancel_token)
-                    page.wait_for_timeout(5000)
+                    _optional_page_wait(page, 5000, scope="[轮播图]")
                     cancellation.throw_if_cancelled(cancel_token)
                 for idx, (slot_idx, path) in enumerate(pending_pairs):
                     cancellation.throw_if_cancelled(cancel_token)

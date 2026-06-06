@@ -10,9 +10,13 @@ This is the production batch path:
 """
 
 import argparse
+import http.client
 import io
 import json
+import socket
+import ssl
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
@@ -38,6 +42,8 @@ STOREFRONT_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )
+STOREFRONT_FETCH_ATTEMPTS = 3
+STOREFRONT_FETCH_RETRY_DELAY_S = 1.0
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
 
 
@@ -67,6 +73,53 @@ def _storefront_headers(product_code: str, *, locale: str = "", store_domain: st
     }
 
 
+def _is_ssl_cert_verification_error(exc: BaseException) -> bool:
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return True
+    reason = getattr(exc, "reason", None)
+    return isinstance(reason, ssl.SSLCertVerificationError)
+
+
+def _is_transient_storefront_error(exc: BaseException) -> bool:
+    reason = getattr(exc, "reason", exc)
+    if isinstance(reason, (ConnectionResetError, TimeoutError, socket.timeout, http.client.RemoteDisconnected)):
+        return True
+    if isinstance(reason, OSError):
+        winerror = getattr(reason, "winerror", None)
+        errno = getattr(reason, "errno", None)
+        if winerror in {10053, 10054, 10060} or errno in {10053, 10054, 10060}:
+            return True
+    text = str(exc).lower()
+    return any(marker in text for marker in ("10054", "connection reset", "remote end closed"))
+
+
+def _urlopen_with_optional_context(
+    request: urllib.request.Request,
+    *,
+    timeout_s: int,
+    context: ssl.SSLContext | None = None,
+):
+    if context is None:
+        return urllib.request.urlopen(request, timeout=timeout_s)
+    return urllib.request.urlopen(request, timeout=timeout_s, context=context)
+
+
+def _urlopen_storefront_json(request: urllib.request.Request, *, timeout_s: int):
+    ssl_context: ssl.SSLContext | None = None
+    for attempt in range(1, STOREFRONT_FETCH_ATTEMPTS + 1):
+        try:
+            return _urlopen_with_optional_context(request, timeout_s=timeout_s, context=ssl_context)
+        except urllib.error.URLError as exc:
+            if _is_ssl_cert_verification_error(exc) and ssl_context is None:
+                ssl_context = ssl._create_unverified_context()
+                continue
+            if _is_transient_storefront_error(exc) and attempt < STOREFRONT_FETCH_ATTEMPTS:
+                time.sleep(STOREFRONT_FETCH_RETRY_DELAY_S * attempt)
+                continue
+            raise
+    raise RuntimeError(f"failed to fetch storefront product JSON: {request.full_url}")
+
+
 def fetch_storefront_product(
     product_code: str,
     *,
@@ -79,7 +132,7 @@ def fetch_storefront_product(
         url,
         headers=_storefront_headers(product_code, locale=locale, store_domain=store_domain),
     )
-    with urllib.request.urlopen(request, timeout=timeout_s) as response:
+    with _urlopen_storefront_json(request, timeout_s=timeout_s) as response:
         payload = json.loads(response.read().decode("utf-8"))
     product = payload.get("product") if isinstance(payload, dict) and isinstance(payload.get("product"), dict) else payload
     if not isinstance(product, dict) or not product.get("id"):
@@ -1124,6 +1177,10 @@ def run(
     store_slug = str(
         getattr(args, "store_slug", "") or settings.shopify_store_slug_for_domain(args.store_domain)
     )
+    if not store_slug:
+        raise RuntimeError(
+            f"Shopify store slug missing for {args.store_domain}; please login and capture the store slug first."
+        )
     cancellation.throw_if_cancelled(cancel_token)
     source_product = fetch_storefront_product(args.product_code, store_domain=args.store_domain)
     cancellation.throw_if_cancelled(cancel_token)
@@ -1505,6 +1562,12 @@ def run(
             expected_urls=expected_urls,
             store_domain=args.store_domain,
         )
+        storefront_expected = int(result["storefront"].get("expected_total") or 0)
+        storefront_present = int(result["storefront"].get("expected_present") or 0)
+        if storefront_expected and storefront_present < storefront_expected:
+            raise RuntimeError(
+                f"storefront detail verification failed: expected {storefront_present}/{storefront_expected}"
+            )
         print(
             "详情图：前台商品页校验完成 "
             f"expected={result['storefront'].get('expected_present')}/"

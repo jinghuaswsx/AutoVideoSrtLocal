@@ -107,8 +107,8 @@ def test_gui_advanced_layout_language_filter_and_stop_button(monkeypatch: pytest
         )
         if list(app.language_box["values"]) != ["意大利语 (it)", "西班牙语 (es)"]:
             errors.append(f"unexpected language values: {list(app.language_box['values'])!r}")
-        if app.language_var.get() != "意大利语 (it)":
-            errors.append(f"unexpected selected language: {app.language_var.get()!r}")
+        if app.language_var.get() != "":
+            errors.append(f"language should not be selected by default: {app.language_var.get()!r}")
 
         assert errors == []
 
@@ -586,6 +586,7 @@ def test_gui_passes_shopify_language_name_from_api_item(monkeypatch: pytest.Monk
                 }
             ]
         )
+        app.language_var.set("Portuguese (PT/pt)")
         app.product_code_var.set("sonic-lens-refresher-rjc")
         app.shopify_product_id_var.set("8559391932589")
 
@@ -835,6 +836,55 @@ def test_gui_backfills_shopify_id_from_open_result(monkeypatch: pytest.MonkeyPat
         )
 
         assert app.shopify_product_id_var.get() == "8559445180589"
+    finally:
+        app.root.destroy()
+
+
+def test_gui_clears_auto_shopify_id_when_domain_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        app.product_code_var.set("funny-3d-frog-sleep-mask-rjc")
+        app.current_shopify_domain_var.set("newjoyloo.com")
+        app._handle_shopify_product_id(
+            "8596095336621",
+            product_code="funny-3d-frog-sleep-mask-rjc",
+            shopify_domain="newjoyloo.com",
+        )
+
+        app.current_shopify_domain_var.set("omurio.com")
+        app._on_shopify_domain_selected()
+
+        assert app.shopify_product_id_var.get() == ""
+    finally:
+        app.root.destroy()
+
+
+def test_gui_clears_auto_shopify_id_when_product_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        app.current_shopify_domain_var.set("newjoyloo.com")
+        app.product_code_var.set("funny-3d-frog-sleep-mask-rjc")
+        app._handle_shopify_product_id(
+            "8596095336621",
+            product_code="funny-3d-frog-sleep-mask-rjc",
+            shopify_domain="newjoyloo.com",
+        )
+
+        app.product_code_var.set("another-product-rjc")
+
+        assert app.shopify_product_id_var.get() == ""
+    finally:
+        app.root.destroy()
+
+
+def test_gui_keeps_manual_shopify_id_when_domain_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        app.shopify_product_id_var.set("manual-id")
+        app.current_shopify_domain_var.set("omurio.com")
+        app._on_shopify_domain_selected()
+
+        assert app.shopify_product_id_var.get() == "manual-id"
     finally:
         app.root.destroy()
 

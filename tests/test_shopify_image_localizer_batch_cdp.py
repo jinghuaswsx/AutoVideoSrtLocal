@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
+import ssl
 import time
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -50,6 +53,75 @@ def test_fetch_storefront_product_uses_browser_like_headers(monkeypatch):
     assert "chrome/" in captured["headers"]["user-agent"].lower()
     assert captured["headers"]["accept-language"]
     assert captured["headers"]["referer"] == "https://omurio.com/products/tool-free-robotics-building-set-rjc"
+
+
+def test_fetch_storefront_product_retries_with_unverified_ssl_for_incomplete_chain(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"id":9182546460884,"handle":"funny-3d-frog-sleep-mask-rjc"}'
+
+    def fake_urlopen(request, timeout, context=None):
+        calls.append({"url": request.full_url, "timeout": timeout, "context": context})
+        if len(calls) == 1:
+            raise urllib.error.URLError(ssl.SSLCertVerificationError("certificate verify failed"))
+        return FakeResponse()
+
+    monkeypatch.setattr(run_product_cdp.urllib.request, "urlopen", fake_urlopen)
+
+    product = run_product_cdp.fetch_storefront_product(
+        "funny-3d-frog-sleep-mask-rjc",
+        store_domain="omurio.com",
+    )
+
+    assert product["id"] == 9182546460884
+    assert len(calls) == 2
+    assert calls[0]["context"] is None
+    assert calls[1]["context"] is not None
+
+
+def test_fetch_storefront_product_retries_transient_connection_reset(monkeypatch):
+    calls = []
+    sleeps = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"id":8596095336621,"handle":"funny-3d-frog-sleep-mask-rjc"}'
+
+    def fake_urlopen(request, timeout):
+        calls.append({"url": request.full_url, "timeout": timeout})
+        if len(calls) == 1:
+            raise urllib.error.URLError(ConnectionResetError(10054, "remote host closed"))
+        return FakeResponse()
+
+    monkeypatch.setattr(run_product_cdp.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(run_product_cdp.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    product = run_product_cdp.fetch_storefront_product(
+        "funny-3d-frog-sleep-mask-rjc",
+        store_domain="newjoyloo.com",
+        locale="es",
+    )
+
+    assert product["id"] == 8596095336621
+    assert [call["url"] for call in calls] == [
+        "https://newjoyloo.com/es/products/funny-3d-frog-sleep-mask-rjc.js",
+        "https://newjoyloo.com/es/products/funny-3d-frog-sleep-mask-rjc.js",
+    ]
+    assert sleeps == [run_product_cdp.STOREFRONT_FETCH_RETRY_DELAY_S]
 
 
 def test_gui_batch_passes_visual_confirmation_callback_to_runner():
@@ -890,6 +962,30 @@ def test_build_detail_source_index_map_prefers_detail_side_indices():
     assert mapping == {token: 12}
 
 
+def test_detail_plan_prefers_source_index_map_over_uploaded_filename_index_for_duplicate_token():
+    token = "fca30445d28fed7f6805aafc55d52592"
+    html = (
+        '<section><img src="https://cdn.shopify.com/files/'
+        f"localized_from_url_en_00_{token}.jpg?v=1"
+        '"></section>'
+    )
+    localized_images = [
+        _localized(f"carousel_from_url_en_00_{token}.jpg"),
+        _localized(f"detail_from_url_en_09_{token}.png"),
+    ]
+
+    plan = taa_cdp.plan_body_html_replacements(
+        html,
+        localized_images,
+        source_index_by_token={token: 9},
+        replace_shopify_cdn=True,
+    )
+
+    assert len(plan["replacements"]) == 1
+    assert plan["replacements"][0]["candidate"]["source_index"] == 9
+    assert "from_url_en_09" in plan["replacements"][0]["candidate"]["filename"]
+
+
 def test_detail_source_index_map_uses_visual_reference_when_detail_reuses_carousel_index(tmp_path):
     token = "69fbbfcf4c49761afb04c9f36b253810"
     slot_path = tmp_path / f"detail_00_{token}.jpg"
@@ -1586,9 +1682,12 @@ def test_replace_detail_images_keeps_saved_result_when_reload_cdp_refused(monkey
     sessions = [SuccessfulTaa(), RefusedReloadTaa()]
 
     def fake_taa_session(**_kwargs):
-        return sessions.pop(0)
+        if sessions:
+            return sessions.pop(0)
+        return RefusedReloadTaa()
 
     monkeypatch.setattr(taa_cdp, "TaaSession", fake_taa_session)
+    monkeypatch.setattr(taa_cdp.cancellation, "cancellable_sleep", lambda *_args, **_kwargs: None)
 
     result = taa_cdp.replace_detail_images(
         product_id="9163927912660",
@@ -1605,7 +1704,7 @@ def test_replace_detail_images_keeps_saved_result_when_reload_cdp_refused(monkey
     assert result["verify"]["expected_total"] == 1
     assert result["verify"]["reload_checked"] is False
     assert "connection refused" in result["verify"]["reload_error"]
-    assert calls == [
+    assert calls[:8] == [
         "enter-success",
         "current_body_html",
         ("upload", image_path.name),
@@ -1614,8 +1713,204 @@ def test_replace_detail_images_keeps_saved_result_when_reload_cdp_refused(monkey
         "click_save",
         "current_body_html",
         "exit-success",
-        "enter-reload",
     ]
+    assert calls.count("enter-reload") >= 1
+
+
+def test_replace_detail_images_fails_when_reload_verification_misses_uploaded_url(monkeypatch, tmp_path):
+    token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    original_src = f"https://cdn.example.com/from_url_en_10_{token}.jpg"
+    cdn_src = f"https://cdn.shopify.com/s/files/1/0000/files/from_url_en_10_{token}.png?v=1"
+    image_path = tmp_path / f"loc_from_url_en_10_{token}.png"
+    image_path.write_bytes(b"image")
+    html_before = f'<section><img src="{original_src}"></section>'
+    saved_html = ""
+
+    class SuccessfulTaa:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def current_body_html(self):
+            return html_before if not saved_html else saved_html
+
+        def upload_image(self, local_path):
+            assert Path(local_path) == image_path
+            return cdn_src
+
+        def close_modal(self):
+            return None
+
+        def set_body_html(self, html):
+            nonlocal saved_html
+            saved_html = html
+            return {"ok": True}
+
+        def click_save(self):
+            return []
+
+    class ReloadTaa:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def current_body_html(self):
+            return html_before
+
+    sessions = [SuccessfulTaa(), ReloadTaa()]
+    monkeypatch.setattr(taa_cdp, "TaaSession", lambda **_kwargs: sessions.pop(0))
+    monkeypatch.setattr(taa_cdp.cancellation, "cancellable_sleep", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(RuntimeError, match="detail save verification"):
+        taa_cdp.replace_detail_images(
+            product_id="9163927912660",
+            shop_locale="de",
+            user_data_dir="C:/chrome-shopify-image-omurio",
+            localized_images=[{"filename": image_path.name, "local_path": str(image_path)}],
+            replace_shopify_cdn=True,
+            verify_reload=True,
+        )
+
+
+def test_replace_detail_images_retries_reload_until_uploaded_url_appears(monkeypatch, tmp_path):
+    token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    original_src = f"https://cdn.example.com/from_url_en_10_{token}.jpg"
+    cdn_src = f"https://cdn.shopify.com/s/files/1/0000/files/from_url_en_10_{token}.png?v=1"
+    image_path = tmp_path / f"loc_from_url_en_10_{token}.png"
+    image_path.write_bytes(b"image")
+    html_before = f'<section><img src="{original_src}"></section>'
+    saved_html = ""
+
+    class SuccessfulTaa:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def current_body_html(self):
+            return html_before if not saved_html else saved_html
+
+        def upload_image(self, local_path):
+            assert Path(local_path) == image_path
+            return cdn_src
+
+        def close_modal(self):
+            return None
+
+        def set_body_html(self, html):
+            nonlocal saved_html
+            saved_html = html
+            return {"ok": True}
+
+        def click_save(self):
+            return []
+
+    class ReloadTaa:
+        def __init__(self, html):
+            self.html = html
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def current_body_html(self):
+            return self.html
+
+    sessions = [SuccessfulTaa(), ReloadTaa(html_before), ReloadTaa(saved_html or html_before)]
+
+    def next_session(**_kwargs):
+        session = sessions.pop(0)
+        if isinstance(session, ReloadTaa) and not sessions:
+            session.html = saved_html
+        return session
+
+    monkeypatch.setattr(taa_cdp, "TaaSession", next_session)
+    monkeypatch.setattr(taa_cdp.cancellation, "cancellable_sleep", lambda *_args, **_kwargs: None)
+
+    result = taa_cdp.replace_detail_images(
+        product_id="9163927912660",
+        shop_locale="de",
+        user_data_dir="C:/chrome-shopify-image-omurio",
+        localized_images=[{"filename": image_path.name, "local_path": str(image_path)}],
+        replace_shopify_cdn=True,
+        verify_reload=True,
+    )
+
+    assert result["verify"]["expected_new_urls_present"] == 1
+    assert result["verify"]["expected_total"] == 1
+
+
+def test_taa_click_save_rejects_disabled_save_button(monkeypatch):
+    class FakeCdp:
+        def collect_events(self, **_kwargs):
+            raise AssertionError("disabled save must not collect network events")
+
+    taa = taa_cdp.TaaSession(
+        product_id="9163927912660",
+        shop_locale="de",
+        user_data_dir="C:/chrome-shopify-image",
+    )
+    taa.cdp = FakeCdp()
+    monkeypatch.setattr(
+        taa,
+        "evaluate",
+        lambda *_args, **_kwargs: {"ok": True, "total": 1, "disabled": True, "ariaDisabled": "true"},
+    )
+
+    with pytest.raises(RuntimeError, match="Save button disabled"):
+        taa.click_save()
+
+
+def test_taa_upload_image_rejects_unmatched_previous_cdn_url(tmp_path, monkeypatch):
+    image_path = tmp_path / "current-upload.png"
+    image_path.write_bytes(b"image")
+
+    class FakeWs:
+        def __init__(self):
+            self.events = [
+                json.dumps(
+                    {
+                        "method": "Network.responseReceived",
+                        "params": {
+                            "response": {
+                                "url": "https://cdn.shopify.com/s/files/1/0000/files/previous-language-image.jpg?v=1",
+                                "status": 200,
+                            }
+                        },
+                    }
+                )
+            ]
+
+        def settimeout(self, _timeout):
+            return None
+
+        def recv(self):
+            if self.events:
+                return self.events.pop(0)
+            raise TimeoutError("quiet")
+
+    class FakeCdp:
+        _ws = FakeWs()
+
+    taa = taa_cdp.TaaSession(
+        product_id="9163927912660",
+        shop_locale="de",
+        user_data_dir="C:/chrome-shopify-image",
+    )
+    taa.cdp = FakeCdp()
+    monkeypatch.setattr(taa, "open_insert_image_modal", lambda: None)
+    monkeypatch.setattr(taa, "_set_file_input", lambda _path: None)
+    monkeypatch.setattr(taa, "_find_uploaded_image_url_in_modal", lambda *_args: "")
+
+    with pytest.raises(RuntimeError, match="uploaded CDN URL not found"):
+        taa.upload_image(str(image_path), timeout_s=0.01)
 
 
 def test_replace_detail_images_uses_uploaded_target_size_when_display_size_url_misses(monkeypatch, tmp_path):
@@ -2066,6 +2361,19 @@ def test_controller_separates_storefront_locale_from_translate_and_adapt_locale(
     assert args.taa_shop_locale == "pt-PT"
 
 
+def test_controller_preserves_api_shop_locale_when_it_differs_from_folder_lang():
+    args = controller._build_batch_args(
+        product_code="sonic-lens-refresher-rjc",
+        lang="fr",
+        shop_locale="fr-CA",
+        shopify_product_id="8559391932589",
+    )
+
+    assert args.lang == "fr"
+    assert args.shop_locale == "fr-CA"
+    assert args.taa_shop_locale == "fr-CA"
+
+
 def test_translate_and_adapt_url_maps_portuguese_to_shopify_region_locale():
     url = session.build_translate_url("8559391932589", "pt")
 
@@ -2324,6 +2632,94 @@ def test_ez_replace_many_pauses_for_review_when_all_slots_already_translated(mon
     assert calls.index(("wait_for_timeout", 5000)) < calls.index(("page_close",))
     output = capsys.readouterr().out
     assert "停留 5 秒" in output
+
+
+def test_ez_replace_many_does_not_fail_when_review_wait_page_is_closed(monkeypatch, capsys):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", url))
+
+        def wait_for_timeout(self, timeout):
+            calls.append(("wait_for_timeout", timeout))
+            raise RuntimeError("Page.wait_for_timeout: Target page, context or browser has been closed")
+
+        def close(self):
+            calls.append(("page_close",))
+
+    class FakeContext:
+        def __init__(self):
+            self.page = FakePage()
+
+        def set_default_timeout(self, timeout):
+            calls.append(("timeout", timeout))
+
+        def new_page(self):
+            calls.append(("new_page",))
+            return self.page
+
+    class FakeBrowser:
+        def __init__(self):
+            self.contexts = [FakeContext()]
+
+        def close(self):
+            calls.append(("browser_close",))
+
+    class FakeChromium:
+        def connect_over_cdp(self, endpoint):
+            calls.append(("connect", endpoint))
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(ez_cdp, "ensure_cdp_chrome", lambda *args, **kwargs: calls.append(("ensure",)))
+    monkeypatch.setattr(ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(ez_cdp, "sync_playwright", lambda: FakePlaywright())
+    monkeypatch.setattr(ez_cdp, "_wait_plugin_frame", lambda page, **kwargs: object())
+    monkeypatch.setattr(
+        ez_cdp,
+        "filter_pairs_missing_language_markers",
+        lambda frame, pairs, language: (
+            [
+                {"slot": 0, "status": "skipped", "reason": f"{language} already exists", "path": "C:/tmp/a.jpg"},
+                {"slot": 1, "status": "skipped", "reason": f"{language} already exists", "path": "C:/tmp/b.jpg"},
+            ],
+            [],
+        ),
+    )
+    monkeypatch.setattr(ez_cdp, "replace_slot", lambda *args, **kwargs: pytest.fail("no upload expected"))
+    monkeypatch.setattr(
+        ez_cdp,
+        "verify_target_language_markers",
+        lambda frame, expected_slots, language: {
+            "ok": True,
+            "expected": len(expected_slots),
+            "matched": len(expected_slots),
+            "missing": [],
+        },
+    )
+
+    result = ez_cdp.replace_many(
+        ez_url="https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
+        user_data_dir=r"C:\chrome-shopify-image",
+        pairs=[(0, "C:/tmp/a.jpg"), (1, "C:/tmp/b.jpg")],
+        language="French",
+    )
+
+    assert [row["status"] for row in result] == ["skipped", "skipped"]
+    assert ("wait_for_timeout", 5000) in calls
+    output = capsys.readouterr().out
+    assert "optional review wait skipped: page already closed" in output
 
 
 def test_ez_replace_many_marks_final_missing_language_markers_failed(monkeypatch, capsys):

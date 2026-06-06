@@ -128,7 +128,7 @@ def known_store_slug_for_domain(domain: str | None) -> str:
 
 
 def shopify_store_slug_for_domain(domain: str | None, root: str | Path | None = None) -> str:
-    """优先用内置已知 slug；其它域名用 runtime config 缓存，缺失时退到默认 slug。"""
+    """优先用内置已知 slug；其它域名只用 runtime config 缓存，缺失时返回空。"""
     normalized = normalize_domain(domain)
     configured = DEFAULT_SHOPIFY_STORE_SLUG_BY_DOMAIN.get(normalized)
     if configured:
@@ -136,7 +136,17 @@ def shopify_store_slug_for_domain(domain: str | None, root: str | Path | None = 
     cached = cached_store_slug_for_domain(normalized, root=root)
     if cached:
         return cached
-    return DEFAULT_SHOPIFY_STORE_SLUG
+    return ""
+
+
+def require_shopify_store_slug_for_domain(domain: str | None, root: str | Path | None = None) -> str:
+    normalized = normalize_domain(domain)
+    slug = shopify_store_slug_for_domain(normalized, root=root)
+    if slug:
+        return slug
+    raise RuntimeError(
+        f"Shopify store slug missing for {normalized}; please click 登录店铺 then 已登录 to capture it."
+    )
 
 
 def browser_user_data_dir_for_domain(base_dir: str, domain: str | None) -> str:

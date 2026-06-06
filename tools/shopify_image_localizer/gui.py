@@ -74,6 +74,12 @@ class ShopifyImageLocalizerApp:
         self._pending_ui_callbacks: list[tuple[int, object, tuple]] = []
         self._pending_ui_lock = threading.Lock()
         self._shutdown_requested = False
+        self._auto_shopify_product_id_context: dict[str, str] | None = None
+        self.product_code_var.trace_add("write", lambda *_args: self._clear_auto_shopify_product_id_if_context_changed())
+        self.current_shopify_domain_var.trace_add(
+            "write",
+            lambda *_args: self._clear_auto_shopify_product_id_if_context_changed(),
+        )
         # 批量语言选择
         self.batch_languages: list[str] = []  # 已选择的批量语言标签列表
         self.current_running_language: str = ""  # 当前正在运行的语言
@@ -1038,10 +1044,11 @@ class ShopifyImageLocalizerApp:
         self.language_label_to_code = mapping
         self.language_label_to_shop_locale = shop_locale_mapping
         self.language_label_to_shopify_name = shopify_name_mapping
+        current_label = self.language_var.get().strip()
         self.language_box.configure(values=labels)
-        if labels and not self.batch_languages:
-            self.language_box.current(0)
-        elif not labels or self.batch_languages:
+        if current_label and current_label in labels and not self.batch_languages:
+            self.language_var.set(current_label)
+        else:
             self.language_var.set("")
         if fallback:
             self.status_var.set("语言列表加载失败，请检查 API Key 和网络连接")
@@ -1074,9 +1081,9 @@ class ShopifyImageLocalizerApp:
         if lang_label in self.batch_languages:
             self.batch_languages.remove(lang_label)
             self._update_batch_languages_display()
-            # 如果批量选择为空,恢复单个语言选择
-            if not self.batch_languages and self.language_items:
-                self.language_box.current(0)
+            # 批量选择清空后也不默认选中第一个语言，避免误跑错误语种。
+            if not self.batch_languages:
+                self.language_var.set("")
 
     def _open_batch_language_dialog(self) -> None:
         """打开批量语言选择弹窗"""
@@ -1162,8 +1169,8 @@ class ShopifyImageLocalizerApp:
             # 如果有批量选择,清空单个语言选择
             if self.batch_languages:
                 self.language_var.set("")
-            elif self.language_items:
-                self.language_box.current(0)
+            else:
+                self.language_var.set("")
 
     def _load_languages_async(self) -> None:
         base_url = settings.DEFAULT_BASE_URL
@@ -1216,6 +1223,29 @@ class ShopifyImageLocalizerApp:
         domain = settings.normalize_domain(self.current_shopify_domain_var.get())
         self.current_shopify_domain_var.set(domain)
         self.login_shopify_button.configure(text="登录店铺")
+
+    def _auto_shopify_product_id_matches_current_context(self) -> bool:
+        context = self._auto_shopify_product_id_context
+        if not context:
+            return False
+        if self.shopify_product_id_var.get().strip() != context.get("shopify_product_id"):
+            self._auto_shopify_product_id_context = None
+            return False
+        current_domain = settings.normalize_domain(self.current_shopify_domain_var.get())
+        current_product_code = self.product_code_var.get().strip().lower()
+        return (
+            current_domain == context.get("shopify_domain")
+            and current_product_code == context.get("product_code")
+        )
+
+    def _clear_auto_shopify_product_id_if_context_changed(self) -> None:
+        if self._auto_shopify_product_id_context is None:
+            return
+        if self._auto_shopify_product_id_matches_current_context():
+            return
+        self._auto_shopify_product_id_context = None
+        self.shopify_product_id_var.set("")
+        self.resolved_shopify_id_label.configure(text="")
 
     def _on_shopify_domain_selected(self) -> None:
         domain = settings.normalize_domain(self.current_shopify_domain_var.get())
@@ -1835,7 +1865,11 @@ class ShopifyImageLocalizerApp:
 
     def _render_open_result(self, result: dict, product_code: str) -> None:
         target_name = "EZ 页面" if result.get("target") == "ez" else "详情页"
-        self._handle_shopify_product_id(result.get("shopify_product_id"))
+        self._handle_shopify_product_id(
+            result.get("shopify_product_id"),
+            product_code,
+            result.get("shopify_domain") or self.current_shopify_domain_var.get(),
+        )
         self._clear_summary()
         self._add_summary("商品 ID", product_code)
         self._add_summary("语言", result.get("lang"))
@@ -1892,6 +1926,8 @@ class ShopifyImageLocalizerApp:
                     0,
                     self._handle_shopify_product_id,
                     product_id,
+                    product_code,
+                    shopify_domain,
                 ),
                 visual_pair_confirm_cb=self._confirm_visual_pairs_threadsafe,
             )
@@ -1984,7 +2020,14 @@ class ShopifyImageLocalizerApp:
                                 skip_kill_chrome=True,
                                 status_cb=lambda msg, lang=lang_label, idx=idx, total=len(language_labels):
                                     self._ui_after(0, lambda: self._handle_status(f"[{idx}/{total}] {msg}")),
-                                shopify_product_id_cb=lambda pid: self._ui_after(0, self._handle_shopify_product_id, pid),
+                                shopify_product_id_cb=lambda pid, product_code=product_code, shopify_domain=shopify_domain:
+                                    self._ui_after(
+                                        0,
+                                        self._handle_shopify_product_id,
+                                        pid,
+                                        product_code,
+                                        shopify_domain,
+                                    ),
                                 visual_pair_confirm_cb=self._confirm_visual_pairs_threadsafe,
                             )
                         except Exception as exc:
@@ -2103,7 +2146,11 @@ class ShopifyImageLocalizerApp:
         messagebox.showinfo("任务结束", "任务已停止，详情请看运行摘要", parent=self.root)
 
     def _render_result(self, result: dict) -> None:
-        self._handle_shopify_product_id(result.get("shopify_product_id"))
+        self._handle_shopify_product_id(
+            result.get("shopify_product_id"),
+            result.get("product_code") or self.product_code_var.get(),
+            result.get("shopify_domain") or self.current_shopify_domain_var.get(),
+        )
         
         # Caching the successfully localized link in the session
         lang_code = result.get("lang")
@@ -2197,9 +2244,21 @@ class ShopifyImageLocalizerApp:
         self._append_log(message)
         self._progress_record_step(message)
 
-    def _handle_shopify_product_id(self, product_id: object) -> None:
+    def _handle_shopify_product_id(
+        self,
+        product_id: object,
+        product_code: str = "",
+        shopify_domain: str = "",
+    ) -> None:
         value = str(product_id or "").strip()
         if value:
+            context_product_code = str(product_code or self.product_code_var.get()).strip().lower()
+            context_domain = settings.normalize_domain(shopify_domain or self.current_shopify_domain_var.get())
+            self._auto_shopify_product_id_context = {
+                "shopify_product_id": value,
+                "product_code": context_product_code,
+                "shopify_domain": context_domain,
+            }
             self.shopify_product_id_var.set(value)
             self.resolved_shopify_id_label.configure(
                 text=f"当前使用: {value}"

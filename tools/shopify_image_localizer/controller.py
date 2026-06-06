@@ -77,16 +77,17 @@ def _build_batch_args(
     normalized_lang = str(lang or "").strip().lower()
     normalized_domain = settings.normalize_domain(shopify_domain)
     language_name = str(shopify_language_name or "").strip() or locales.english_name_for(normalized_lang)
-    taa_shop_locale = locales.translate_and_adapt_locale_for(shop_locale or normalized_lang)
+    storefront_locale = str(shop_locale or normalized_lang).strip().strip("/") or normalized_lang
+    taa_shop_locale = locales.translate_and_adapt_locale_for(storefront_locale)
     return argparse.Namespace(
         product_code=str(product_code or "").strip().lower(),
         lang=normalized_lang,
-        shop_locale=normalized_lang,
+        shop_locale=storefront_locale,
         taa_shop_locale=taa_shop_locale,
         language=language_name,
         product_id=str(shopify_product_id or "").strip(),
         store_domain=normalized_domain,
-        store_slug=settings.shopify_store_slug_for_domain(normalized_domain),
+        store_slug=settings.require_shopify_store_slug_for_domain(normalized_domain),
         browser_user_data_dir=str(browser_user_data_dir or "").strip(),
         bootstrap_timeout_s=600,
         port=run_product_cdp.ez_cdp.DEFAULT_CDP_PORT,
@@ -451,7 +452,7 @@ def build_shopify_target_url(
     product_id = str(shopify_product_id or "").strip()
     if not product_id:
         raise RuntimeError("Shopify ID 不能为空")
-    store_slug = settings.shopify_store_slug_for_domain(shopify_domain)
+    store_slug = settings.require_shopify_store_slug_for_domain(shopify_domain)
     if normalized_target == "ez":
         url = session.build_ez_url(product_id, store_slug=store_slug)
     elif normalized_target == "detail":
