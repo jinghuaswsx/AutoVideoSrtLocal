@@ -1481,7 +1481,7 @@ def auto_archive_completed_pushed_tasks(limit: int | None = None) -> dict:
 
 
 def _skip_push_completion_backfill_candidates(limit: int | None = None) -> list[dict]:
-    args: list[Any] = [CHILD_ASSIGNED, CHILD_REVIEW]
+    args: list[Any] = [CHILD_ASSIGNED, CHILD_REVIEW, CHILD_CANCELLED]
     limit_sql = ""
     if limit is not None:
         limit_sql = "LIMIT %s"
@@ -1495,7 +1495,8 @@ def _skip_push_completion_backfill_candidates(limit: int | None = None) -> list[
         FROM tasks t
         JOIN media_products p ON p.id=t.media_product_id
         JOIN media_items mi ON (
-            mi.task_id=t.id
+            mi.id=t.media_item_id
+            OR mi.task_id=t.id
             OR (
                 mi.task_id IS NULL
                 AND mi.product_id=t.media_product_id
@@ -1503,7 +1504,7 @@ def _skip_push_completion_backfill_candidates(limit: int | None = None) -> list[
             )
         )
         WHERE t.parent_task_id IS NOT NULL
-          AND t.status IN (%s,%s)
+          AND t.status IN (%s,%s,%s)
           AND mi.deleted_at IS NULL
           AND mi.skip_push=1
         GROUP BY t.id, p.product_code, t.country_code
@@ -1745,6 +1746,10 @@ def _record_push_material_completion(
     conn = get_conn()
     parent_completed = False
     completed = False
+    completable_statuses = [CHILD_ASSIGNED, CHILD_REVIEW]
+    if event_type == CHILD_PUSH_MATERIAL_SKIPPED_EVENT:
+        completable_statuses.append(CHILD_CANCELLED)
+    allowed_statuses = tuple(completable_statuses + [CHILD_DONE])
     try:
         conn.begin()
         try:
@@ -1758,15 +1763,16 @@ def _record_push_material_completion(
                 if not child:
                     raise StateError("child task not found")
                 child_status = child.get("status")
-                if child_status not in (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE):
+                if child_status not in allowed_statuses:
                     raise StateError("child not completable from push")
 
                 if child_status != CHILD_DONE:
+                    status_placeholders = ",".join(["%s"] * len(completable_statuses))
                     cur.execute(
                         "UPDATE tasks SET status=%s, last_reason=NULL, "
                         "completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
-                        "WHERE id=%s AND parent_task_id IS NOT NULL AND status IN (%s,%s)",
-                        (CHILD_DONE, task_id, CHILD_ASSIGNED, CHILD_REVIEW),
+                        f"WHERE id=%s AND parent_task_id IS NOT NULL AND status IN ({status_placeholders})",
+                        (CHILD_DONE, task_id, *completable_statuses),
                     )
                     completed = cur.rowcount > 0
 

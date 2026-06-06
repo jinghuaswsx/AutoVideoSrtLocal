@@ -2904,6 +2904,63 @@ def test_skip_records_task_completion_for_unbound_item(
     }
 
 
+def test_skip_records_task_completion_for_source_bound_item(
+    authed_client_no_db,
+    monkeypatch,
+):
+    captured = {"updates": [], "completions": []}
+    item = {
+        "id": 1096,
+        "product_id": 335,
+        "task_id": None,
+        "lang": "en",
+        "pushed_at": None,
+    }
+    product = {"id": 335, "product_code": "ice-ball-molds-rjc"}
+
+    monkeypatch.setattr("web.routes.pushes.medias.get_item", lambda item_id: item)
+    monkeypatch.setattr("web.routes.pushes.medias.get_product", lambda product_id: product)
+    monkeypatch.setattr("web.routes.pushes.pushes.mark_skip_push", lambda item_id, operator_user_id: None)
+    monkeypatch.setattr(
+        "web.routes.pushes.query_all",
+        lambda sql, args=(): [
+            {"id": 293, "country_code": "DE"},
+            {"id": 801, "country_code": "JA"},
+        ],
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.update_item_task_id",
+        lambda item_id, task_id: captured["updates"].append((item_id, task_id)),
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.tasks_svc.record_push_material_skipped",
+        lambda **kwargs: captured["completions"].append(kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr("web.routes.pushes.system_audit.record_from_request", lambda **kwargs: None)
+
+    resp = authed_client_no_db.post("/pushes/api/items/1096/skip")
+
+    assert resp.status_code == 204
+    assert captured["updates"] == []
+    assert captured["completions"] == [
+        {
+            "task_id": 293,
+            "actor_user_id": 1,
+            "item_id": 1096,
+            "product_code": "ice-ball-molds-rjc",
+            "lang": "de",
+        },
+        {
+            "task_id": 801,
+            "actor_user_id": 1,
+            "item_id": 1096,
+            "product_code": "ice-ball-molds-rjc",
+            "lang": "ja",
+        },
+    ]
+
+
 def test_skip_blocked_for_already_pushed_item(logged_in_client, seeded_item):
     _, item_id = seeded_item
     from appcore.db import execute as db_execute

@@ -18,7 +18,7 @@
 
 - [x] **Step 1: Add service tests**
 
-Add tests covering `record_push_material_approved()` and `record_push_material_skipped()` so they prove child status becomes `done`, completion events are written, and parent status can become `all_done`.
+Add tests covering `record_push_material_approved()` and `record_push_material_skipped()` so they prove child status becomes `done`, completion events are written, and parent status can become `all_done`. Add a regression test for historical source-material skip correcting a `cancelled` child task to `done`.
 
 - [x] **Step 2: Run RED tests**
 
@@ -61,7 +61,7 @@ Expected: pass.
 
 - [x] **Step 1: Add route tests**
 
-Add tests proving `/mark-pushed` and `/skip` call the corresponding task service when historical material has no `task_id` and must be resolved by product/language.
+Add tests proving `/mark-pushed` and `/skip` call the corresponding task service when historical material has no `task_id` and must be resolved by product/language. Add a route test proving an English/source material skip completes every child task bound through `tasks.media_item_id`.
 
 - [x] **Step 2: Run RED route tests**
 
@@ -99,11 +99,11 @@ Replace strict `mi.pushed_at IS NOT NULL` checks in auto-archive candidate SQL w
 
 - [x] **Step 1: Add backfill tests**
 
-Add tests proving active child tasks are completed when a matching material is already `skip_push=1`, including unbound historical rows matched by product/language.
+Add tests proving active child tasks are completed when a matching material is already `skip_push=1`, including unbound historical rows matched by product/language, source-material-bound child tasks, and historical `cancelled` child tasks.
 
 - [x] **Step 2: Implement idempotent backfill helper**
 
-Add `backfill_skip_push_completed_tasks(limit: int | None = None) -> dict` that scans `assigned/review` child tasks and calls the shared skip completion helper for each candidate.
+Add `backfill_skip_push_completed_tasks(limit: int | None = None) -> dict` that scans `assigned/review/cancelled` child tasks and calls the shared skip completion helper for each candidate.
 
 ### Task 6: Verification, Commit, Publish
 
