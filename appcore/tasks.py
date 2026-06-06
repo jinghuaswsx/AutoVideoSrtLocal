@@ -39,6 +39,15 @@ PARENT_NON_TERMINAL = (
 PARENT_TERMINAL = (PARENT_ALL_DONE, PARENT_CANCELLED)
 CHILD_NON_TERMINAL = (CHILD_BLOCKED, CHILD_ASSIGNED, CHILD_REVIEW)
 CHILD_TERMINAL = (CHILD_DONE, CHILD_CANCELLED)
+TASK_CENTER_TODO_STATUSES = (
+    PARENT_PENDING,
+    PARENT_RAW_IN_PROGRESS,
+    PARENT_RAW_REVIEW,
+    CHILD_ASSIGNED,
+    CHILD_REVIEW,
+    CHILD_BLOCKED,
+)
+TASK_CENTER_ADMIN_REWORK_STATUSES = (CHILD_ASSIGNED, CHILD_REVIEW)
 CHILD_MANUAL_STEP_CONFIRMED_EVENT = "manual_step_confirmed"
 CHILD_MANUAL_STEP_OUTPUT_EVENT = "manual_step_output_submitted"
 CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
@@ -329,6 +338,79 @@ def _pending_push_condition(
 
 def _pending_push_args() -> tuple[str, str]:
     return (CHILD_ASSIGNED, CHILD_REVIEW)
+
+
+def _pending_push_task_ids_for_rows(rows: Iterable[dict]) -> set[int]:
+    task_ids: list[int] = []
+    for row in rows or []:
+        task_id = _positive_int((row or {}).get("id"))
+        if task_id is None or task_id in task_ids:
+            continue
+        if (row or {}).get("archived_at"):
+            continue
+        if (row or {}).get("parent_task_id") is None:
+            continue
+        if str((row or {}).get("status") or "") not in (CHILD_ASSIGNED, CHILD_REVIEW):
+            continue
+        task_ids.append(task_id)
+    if not task_ids:
+        return set()
+
+    placeholders = ", ".join(["%s"] * len(task_ids))
+    rows = query_all(
+        "SELECT t.id "
+        "FROM tasks t "
+        "LEFT JOIN media_items pending_push_item "
+        "ON pending_push_item.task_id=t.id "
+        "AND pending_push_item.product_id=t.media_product_id "
+        "AND LOWER(pending_push_item.lang)=LOWER(TRIM(COALESCE(t.country_code, ''))) "
+        "AND pending_push_item.deleted_at IS NULL "
+        "LEFT JOIN media_push_status_cache psc_pending_push "
+        "ON psc_pending_push.item_id=pending_push_item.id "
+        f"WHERE t.id IN ({placeholders}) "
+        f"AND {_pending_push_condition()}",
+        tuple(task_ids) + _pending_push_args(),
+    )
+    return {
+        task_id
+        for task_id in (_positive_int((row or {}).get("id")) for row in rows or [])
+        if task_id is not None
+    }
+
+
+def _task_center_display_state(row: dict, pending_push_task_ids: set[int]) -> dict:
+    status = str((row or {}).get("status") or "")
+    task_id = _positive_int((row or {}).get("id"))
+    is_pending_push = task_id is not None and task_id in pending_push_task_ids
+    if is_pending_push:
+        return {
+            "is_pending_push": True,
+            "display_status": TASK_PENDING_PUSH,
+            "display_high_level": TASK_PENDING_PUSH,
+        }
+
+    if bool((row or {}).get("is_rework")) and status in TASK_CENTER_ADMIN_REWORK_STATUSES:
+        return {
+            "is_pending_push": False,
+            "display_status": "admin_rework",
+            "display_high_level": "in_progress",
+        }
+
+    if status == CHILD_BLOCKED:
+        display_status = "blocked"
+    elif status in TASK_CENTER_TODO_STATUSES:
+        display_status = "todo"
+    elif status in (PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE):
+        display_status = "done"
+    elif status in (PARENT_CANCELLED, CHILD_CANCELLED):
+        display_status = "cancelled"
+    else:
+        display_status = status
+    return {
+        "is_pending_push": False,
+        "display_status": display_status,
+        "display_high_level": high_level_status(status),
+    }
 
 
 def infer_single_child_task_id_for_media_item(
@@ -852,6 +934,10 @@ def list_task_center_items(
 ) -> dict:
     page_size = max(1, int(page_size))
     requested_page = max(1, int(page))
+    if bucket == "review":
+        bucket = "todo"
+    if task_status == "review":
+        task_status = "todo"
     where = ["1=1"]
     args: list = []
     task_joins: list[str] = []
@@ -863,6 +949,20 @@ def list_task_center_items(
         condition = _pending_push_condition()
         where.append(f"NOT {condition}" if exclude else condition)
         args.extend(_pending_push_args())
+
+    def add_admin_rework_filter() -> None:
+        where.append(
+            "t.parent_task_id IS NOT NULL "
+            "AND t.status IN (%s, %s) "
+            "AND EXISTS ("
+            "SELECT 1 FROM task_events te_rework "
+            "WHERE te_rework.task_id=t.id AND te_rework.event_type=%s"
+            ")"
+        )
+        args.extend([
+            *TASK_CENTER_ADMIN_REWORK_STATUSES,
+            CHILD_PUSH_REWORK_REJECTED_EVENT,
+        ])
 
     if tab == "mine":
         where.append("t.assignee_id=%s")
@@ -899,22 +999,29 @@ def list_task_center_items(
         where.append("(p.name LIKE %s OR p.product_code LIKE %s)")
         args.extend([like, like])
     if high_status == "in_progress":
-        where.append("t.status NOT IN (%s, %s, %s, %s)")
-        args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE, PARENT_CANCELLED])
+        where.append("t.status NOT IN (%s, %s, %s, %s, %s)")
+        args.extend([
+            PARENT_RAW_DONE,
+            PARENT_ALL_DONE,
+            CHILD_DONE,
+            PARENT_CANCELLED,
+            CHILD_CANCELLED,
+        ])
         add_pending_push_filter(exclude=True)
     elif high_status == "completed":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
     elif high_status == "terminated":
-        where.append("t.status=%s")
-        args.append(PARENT_CANCELLED)
+        where.append("t.status IN (%s, %s)")
+        args.extend([PARENT_CANCELLED, CHILD_CANCELLED])
     if bucket == "todo":
-        where.append("t.status IN (%s, %s, %s)")
-        args.extend([PARENT_RAW_IN_PROGRESS, CHILD_ASSIGNED, CHILD_BLOCKED])
+        where.append("t.status IN (%s, %s, %s, %s, %s, %s)")
+        args.extend(TASK_CENTER_TODO_STATUSES)
         add_pending_push_filter(exclude=True)
     elif bucket == "review":
-        where.append("t.status IN (%s, %s)")
-        args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
+        where.append("t.status IN (%s, %s, %s, %s, %s, %s)")
+        args.extend(TASK_CENTER_TODO_STATUSES)
+        add_pending_push_filter(exclude=True)
     elif bucket == "blocked":
         where.append("t.status = %s")
         args.append(CHILD_BLOCKED)
@@ -927,15 +1034,19 @@ def list_task_center_items(
         raise ValueError("invalid bucket")
 
     if task_status == "todo":
-        where.append("t.status IN (%s, %s, %s)")
-        args.extend([PARENT_PENDING, PARENT_RAW_IN_PROGRESS, CHILD_ASSIGNED])
+        where.append("t.status IN (%s, %s, %s, %s, %s, %s)")
+        args.extend(TASK_CENTER_TODO_STATUSES)
         add_pending_push_filter(exclude=True)
     elif task_status == "review":
-        where.append("t.status IN (%s, %s)")
-        args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
+        where.append("t.status IN (%s, %s, %s, %s, %s, %s)")
+        args.extend(TASK_CENTER_TODO_STATUSES)
+        add_pending_push_filter(exclude=True)
     elif task_status == "blocked":
         where.append("t.status = %s")
         args.append(CHILD_BLOCKED)
+    elif task_status == "admin_rework":
+        add_admin_rework_filter()
+        add_pending_push_filter(exclude=True)
     elif task_status == "done":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
@@ -1017,56 +1128,62 @@ def list_task_center_items(
         "LIMIT %s OFFSET %s"
     )
     rows = query_all(sql, (*count_args, page_size, offset))
+    pending_push_task_ids = _pending_push_task_ids_for_rows(rows)
+    items = []
+    for row in rows:
+        display_state = _task_center_display_state(row, pending_push_task_ids)
+        display_high_level = display_state["display_high_level"]
+        items.append({
+            "id": row["id"],
+            "parent_task_id": row["parent_task_id"],
+            "media_product_id": row["media_product_id"],
+            "media_item_id": row["media_item_id"],
+            "product_name": row["product_name"],
+            "product_code": row.get("product_code"),
+            "source_media_filename": row.get("source_media_filename"),
+            "child_country_codes": row.get("child_country_codes") or "",
+            "country_code": row["country_code"],
+            "assignee_id": row["assignee_id"],
+            "assignee_username": row["assignee_username"],
+            "assignee_display_name": (
+                row.get("assignee_display_name") or row["assignee_username"]
+            ),
+            "status": row["status"],
+            "is_urgent": bool(row.get("is_urgent")),
+            "is_rework": bool(row.get("is_rework")),
+            "is_pending_push": bool(display_state["is_pending_push"]),
+            "display_status": display_state["display_status"],
+            "display_high_level": display_high_level,
+            "high_level": display_high_level,
+            "created_at": (
+                row["created_at"].isoformat() if row.get("created_at") else None
+            ),
+            "updated_at": (
+                row["updated_at"].isoformat() if row.get("updated_at") else None
+            ),
+            "claimed_at": (
+                row["claimed_at"].isoformat() if row.get("claimed_at") else None
+            ),
+            "completed_at": (
+                row["completed_at"].isoformat()
+                if row.get("completed_at")
+                else None
+            ),
+            "cancelled_at": (
+                row["cancelled_at"].isoformat()
+                if row.get("cancelled_at")
+                else None
+            ),
+            "archived_at": (
+                row["archived_at"].isoformat()
+                if row.get("archived_at")
+                else None
+            ),
+            "archived_by": row.get("archived_by"),
+            "last_reason": row.get("last_reason"),
+        })
     return {
-        "items": [
-            {
-                "id": row["id"],
-                "parent_task_id": row["parent_task_id"],
-                "media_product_id": row["media_product_id"],
-                "media_item_id": row["media_item_id"],
-                "product_name": row["product_name"],
-                "product_code": row.get("product_code"),
-                "source_media_filename": row.get("source_media_filename"),
-                "child_country_codes": row.get("child_country_codes") or "",
-                "country_code": row["country_code"],
-                "assignee_id": row["assignee_id"],
-                "assignee_username": row["assignee_username"],
-                "assignee_display_name": (
-                    row.get("assignee_display_name") or row["assignee_username"]
-                ),
-                "status": row["status"],
-                "is_urgent": bool(row.get("is_urgent")),
-                "is_rework": bool(row.get("is_rework")),
-                "high_level": high_level_status(row["status"]),
-                "created_at": (
-                    row["created_at"].isoformat() if row.get("created_at") else None
-                ),
-                "updated_at": (
-                    row["updated_at"].isoformat() if row.get("updated_at") else None
-                ),
-                "claimed_at": (
-                    row["claimed_at"].isoformat() if row.get("claimed_at") else None
-                ),
-                "completed_at": (
-                    row["completed_at"].isoformat()
-                    if row.get("completed_at")
-                    else None
-                ),
-                "cancelled_at": (
-                    row["cancelled_at"].isoformat()
-                    if row.get("cancelled_at")
-                    else None
-                ),
-                "archived_at": (
-                    row["archived_at"].isoformat()
-                    if row.get("archived_at")
-                    else None
-                ),
-                "archived_by": row.get("archived_by"),
-                "last_reason": row["last_reason"],
-            }
-            for row in rows
-        ],
+        "items": items,
         "page": page,
         "page_size": page_size,
         "total": total,
@@ -2538,7 +2655,7 @@ def _parent_review_assets_payload(row: dict) -> dict:
     if review_target:
         current_review = {
             "event_type": "raw_uploaded",
-            "title": "当前待审核：去字幕原始视频素材",
+            "title": "当前待处理：去字幕原始视频素材",
             "asset_count": len(assets),
         }
     return {
@@ -2605,7 +2722,7 @@ def _child_review_assets_payload(row: dict) -> dict:
     if review_target:
         current_review = {
             "event_type": "submitted",
-            "title": "当前待审核：翻译产物",
+            "title": "当前待处理：翻译产物",
             "asset_count": len(assets),
         }
     return {

@@ -437,6 +437,9 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
                 "status": tasks.CHILD_DONE,
                 "is_urgent": False,
                 "is_rework": False,
+                "is_pending_push": False,
+                "display_status": "done",
+                "display_high_level": "completed",
                 "high_level": "completed",
                 "created_at": "2026-05-07T10:00:00",
                 "updated_at": "2026-05-07T10:05:00",
@@ -477,6 +480,122 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     )
 
 
+def test_list_task_center_items_marks_push_pending_review_rows_as_pending_push(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    monkeypatch.setattr(tasks, "_pending_push_task_ids_for_rows", lambda rows: {609}, raising=False)
+    _mock_task_center_count(monkeypatch, tasks, total=1)
+
+    def fake_query_all(sql, args=()):
+        return [
+            {
+                "id": 609,
+                "parent_task_id": 608,
+                "media_product_id": 711,
+                "media_item_id": 1939,
+                "product_name": "不锈钢边缘折叠菜板",
+                "product_code": "anti-slip-lipped-chopping-board-rjc",
+                "source_media_filename": "source.mp4",
+                "child_country_codes": "",
+                "country_code": "DE",
+                "assignee_id": 77,
+                "assignee_username": "translator",
+                "assignee_display_name": "顾倩",
+                "status": tasks.CHILD_REVIEW,
+                "is_urgent": 0,
+                "is_rework": 0,
+                "created_at": datetime(2026, 6, 4, 14, 56, 52),
+                "updated_at": datetime(2026, 6, 6, 13, 9, 14),
+                "claimed_at": None,
+                "completed_at": None,
+                "cancelled_at": None,
+                "archived_at": None,
+                "archived_by": None,
+                "last_reason": None,
+            }
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    result = tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        task_id=609,
+        page=1,
+        page_size=20,
+    )
+
+    item = result["items"][0]
+    assert item["status"] == tasks.CHILD_REVIEW
+    assert item["is_pending_push"] is True
+    assert item["display_status"] == "pending_push"
+    assert item["display_high_level"] == "pending_push"
+    assert item["high_level"] == "pending_push"
+
+
+def test_list_task_center_items_marks_review_rows_as_todo_when_not_pending_push(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    monkeypatch.setattr(tasks, "_pending_push_task_ids_for_rows", lambda rows: set(), raising=False)
+    _mock_task_center_count(monkeypatch, tasks, total=1)
+
+    def fake_query_all(sql, args=()):
+        return [
+            {
+                "id": 610,
+                "parent_task_id": 608,
+                "media_product_id": 711,
+                "media_item_id": 1939,
+                "product_name": "不锈钢边缘折叠菜板",
+                "product_code": "anti-slip-lipped-chopping-board-rjc",
+                "source_media_filename": "source.mp4",
+                "child_country_codes": "",
+                "country_code": "FR",
+                "assignee_id": 77,
+                "assignee_username": "translator",
+                "assignee_display_name": "顾倩",
+                "status": tasks.CHILD_REVIEW,
+                "is_urgent": 0,
+                "is_rework": 0,
+                "created_at": datetime(2026, 6, 4, 14, 56, 52),
+                "updated_at": datetime(2026, 6, 6, 13, 9, 14),
+                "claimed_at": None,
+                "completed_at": None,
+                "cancelled_at": None,
+                "archived_at": None,
+                "archived_by": None,
+                "last_reason": None,
+            }
+        ]
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    result = tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        task_id=610,
+        page=1,
+        page_size=20,
+    )
+
+    item = result["items"][0]
+    assert item["status"] == tasks.CHILD_REVIEW
+    assert item["is_pending_push"] is False
+    assert item["display_status"] == "todo"
+    assert item["display_high_level"] == "in_progress"
+    assert item["high_level"] == "in_progress"
+
+
 def test_list_task_center_items_archived_bucket_can_filter_pre_archive_status(monkeypatch):
     from appcore import tasks
 
@@ -507,8 +626,19 @@ def test_list_task_center_items_archived_bucket_can_filter_pre_archive_status(mo
     assert "t.archived_at IS NOT NULL" in captured["sql"]
     where_part = captured["sql"].split("WHERE")[1].split("ORDER BY")[0]
     assert "t.archived_at IS NULL" not in where_part
-    assert "t.status IN (%s, %s)" in captured["sql"]
-    assert captured["args"] == (tasks.PARENT_RAW_REVIEW, tasks.CHILD_REVIEW, 20, 0)
+    assert "t.status IN (%s, %s, %s, %s, %s, %s)" in captured["sql"]
+    assert captured["args"] == (
+        tasks.PARENT_PENDING,
+        tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.PARENT_RAW_REVIEW,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+        tasks.CHILD_BLOCKED,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+        20,
+        0,
+    )
 
 
 def test_list_task_center_items_can_skip_archive_filter_for_exact_detail_fetch(monkeypatch):
@@ -829,13 +959,16 @@ def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch)
     }
     assert "COUNT(*) AS total" in captured_count["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured_count["sql"]
-    assert "t.status IN (%s, %s, %s)" in captured_count["sql"]
+    assert "t.status IN (%s, %s, %s, %s, %s, %s)" in captured_count["sql"]
     assert captured_count["args"] == (
         2,
         "%Product%",
         "%Product%",
+        tasks.PARENT_PENDING,
         tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.PARENT_RAW_REVIEW,
         tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
         tasks.CHILD_BLOCKED,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_REVIEW,
@@ -844,8 +977,11 @@ def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch)
         2,
         "%Product%",
         "%Product%",
+        tasks.PARENT_PENDING,
         tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.PARENT_RAW_REVIEW,
         tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
         tasks.CHILD_BLOCKED,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_REVIEW,
@@ -949,10 +1085,13 @@ def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
     ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
     assert "t.parent_task_id IS NULL" in captured["sql"]
-    assert "t.status IN (%s, %s, %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s, %s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
+        tasks.PARENT_PENDING,
         tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.PARENT_RAW_REVIEW,
         tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
         tasks.CHILD_BLOCKED,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_REVIEW,
@@ -1356,12 +1495,54 @@ def test_list_task_center_items_todo_bucket_excludes_pending_push(monkeypatch):
         "JSON_EXTRACT(psc_pending_push.readiness_json, '$.final_push_confirmed'))), "
         "'false') NOT IN ('true', '1')"
     ) not in captured["sql"]
-    assert "t.status IN (%s, %s, %s)" in captured["sql"]
+    assert "t.status IN (%s, %s, %s, %s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
         7,
+        tasks.PARENT_PENDING,
         tasks.PARENT_RAW_IN_PROGRESS,
+        tasks.PARENT_RAW_REVIEW,
         tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
         tasks.CHILD_BLOCKED,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+        20,
+        0,
+    )
+
+
+def test_list_task_center_items_filters_admin_rework_status(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        task_status="admin_rework",
+        page=1,
+        page_size=20,
+    )
+
+    assert "te_rework.task_id=t.id" in captured["sql"]
+    assert "te_rework.event_type=%s" in captured["sql"]
+    assert "NOT (" in captured["sql"]
+    assert captured["args"] == (
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+        tasks.CHILD_PUSH_REWORK_REJECTED_EVENT,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_REVIEW,
         20,

@@ -212,6 +212,8 @@ def _render_task_center(
     section: str = "overview",
     bucket: str = "todo",
 ):
+    if bucket == "review":
+        bucket = "todo"
     return render_template(
         "tasks_list.html",
         is_admin=_is_admin(),
@@ -246,7 +248,9 @@ def stats():
 @login_required
 @permission_required("task_center")
 def overview_bucket(bucket: str):
-    if bucket not in {"all", "todo", "review", "blocked", "pending_push", "done", "archived"}:
+    if bucket == "review":
+        bucket = "todo"
+    if bucket not in {"all", "todo", "blocked", "pending_push", "done", "archived"}:
         from flask import abort
         abort(404)
     return _render_task_center(section="overview", bucket=bucket)
@@ -310,7 +314,9 @@ def api_list():
     elif bucket == "archived":
         archived = True
         bucket = ""
-    if bucket and bucket not in {"todo", "review", "blocked", "done", "pending_push"}:
+    elif bucket == "review":
+        bucket = "todo"
+    if bucket and bucket not in {"todo", "blocked", "done", "pending_push"}:
         return _json_response({"error": "invalid bucket"}, 400)
     if task_type == "all":
         task_type = ""
@@ -318,7 +324,9 @@ def api_list():
         return _json_response({"error": "invalid task_type"}, 400)
     if task_status == "all":
         task_status = ""
-    if task_status and task_status not in {"todo", "review", "blocked", "done", "pending_push", "cancelled"}:
+    elif task_status == "review":
+        task_status = "todo"
+    if task_status and task_status not in {"todo", "blocked", "admin_rework", "done", "pending_push", "cancelled"}:
         return _json_response({"error": "invalid task_status"}, 400)
     if urgency == "all":
         urgency = ""

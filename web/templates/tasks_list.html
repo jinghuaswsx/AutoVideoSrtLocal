@@ -154,6 +154,10 @@
 .tc-pager__input { width:76px; text-align:center; }
 .tc-badge { display:inline-flex; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; }
 .tc-badge--in_progress { background:var(--tc-bg-muted); color:var(--tc-fg-muted); }
+.tc-badge--todo { background:var(--tc-bg-muted); color:var(--tc-fg-muted); }
+.tc-badge--blocked { background:var(--tc-warning-bg); color:var(--tc-warning-fg); }
+.tc-badge--admin_rework { background:var(--tc-danger-bg); color:var(--tc-danger-fg); font-weight:700; }
+.tc-badge--pending_push { background:var(--tc-accent-subtle); color:var(--tc-accent); font-weight:700; }
 .tc-badge--completed { background:var(--tc-success-bg); color:var(--tc-success-fg); }
 .tc-badge--terminated { background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
 .tc-badge--urgent { background:var(--tc-danger-bg); color:var(--tc-danger-fg); font-weight:700; }
@@ -583,11 +587,10 @@
       </div>
       <div class="tc-subtabs" role="tablist" aria-label="全部任务状态">
         <button class="tc-subtab {% if active_bucket == 'all' %}active{% endif %}" type="button" data-bucket="all">全部任务</button>
-        <button class="tc-subtab {% if active_bucket == 'todo' %}active{% endif %}" type="button" data-bucket="todo">进行中任务</button>
-        <button class="tc-subtab {% if active_bucket == 'review' %}active{% endif %}" type="button" data-bucket="review">待审核任务</button>
-        <button class="tc-subtab {% if active_bucket == 'blocked' %}active{% endif %}" type="button" data-bucket="blocked">阻塞中任务</button>
-        <button class="tc-subtab {% if active_bucket == 'pending_push' %}active{% endif %}" type="button" data-bucket="pending_push">素材待推送</button>
-        <button class="tc-subtab {% if active_bucket == 'done' %}active{% endif %}" type="button" data-bucket="done">已完成任务</button>
+        <button class="tc-subtab {% if active_bucket == 'todo' %}active{% endif %}" type="button" data-bucket="todo">进行中</button>
+        <button class="tc-subtab {% if active_bucket == 'blocked' %}active{% endif %}" type="button" data-bucket="blocked">阻塞中</button>
+        <button class="tc-subtab {% if active_bucket == 'pending_push' %}active{% endif %}" type="button" data-bucket="pending_push">待推送</button>
+        <button class="tc-subtab {% if active_bucket == 'done' %}active{% endif %}" type="button" data-bucket="done">已完成</button>
         <button class="tc-subtab {% if active_bucket == 'archived' %}active{% endif %}" type="button" data-bucket="archived">已归档</button>
       </div>
     </div>
@@ -610,9 +613,9 @@
       <select id="tcStatusFilter" class="tc-input tc-select" aria-label="任务状态筛选">
         <option value="all" selected>全部状态</option>
         <option value="todo">待处理</option>
-        <option value="review">待审核</option>
-        <option value="blocked">阻塞</option>
-        <option value="pending_push">素材待推送</option>
+        <option value="blocked">阻塞中</option>
+        <option value="admin_rework">管理员打回</option>
+        <option value="pending_push">待推送</option>
         <option value="done">已完成</option>
         <option value="cancelled">已取消</option>
       </select>
@@ -1065,30 +1068,48 @@ function tcFormatElapsedSince(s) {
 }
 function tcStatusLabel(status) {
   const labels = {
-    pending: '待接手',
-    raw_in_progress: '去字幕原始视频素材处理中',
-    raw_review: '去字幕原始视频素材待审核',
-    raw_done: '去字幕原始视频素材已通过',
+    pending: '待处理',
+    raw_in_progress: '待处理',
+    raw_review: '待处理',
+    raw_done: '已完成',
     all_done: '全部完成',
-    blocked: '等待 去字幕原始素材',
+    blocked: '阻塞中',
     assigned: '待处理',
-    review: '待审核',
+    review: '待处理',
+    todo: '待处理',
+    admin_rework: '管理员打回',
+    pending_push: '待推送',
     done: '已完成',
     cancelled: '已取消',
   };
   return labels[status] || status || '—';
 }
 function tcTaskStatusLabel(task) {
-  if (task && task.status === 'assigned' && String(task.last_reason || '').includes('管理员已拒绝')) {
-    return '管理员已拒绝';
+  const displayStatus = task && (task.display_status || (task.is_pending_push ? 'pending_push' : ''));
+  if (displayStatus) return tcStatusLabel(displayStatus);
+  if (task && ['assigned', 'review'].includes(task.status) && String(task.last_reason || '').includes('管理员已拒绝')) {
+    return '管理员打回';
   }
   return tcStatusLabel(task && task.status);
 }
 function tcTaskTypeLabel(task) {
   return task && task.parent_task_id ? '小语种翻译' : '去字幕';
 }
+function tcTaskStatusTone(task) {
+  const displayStatus = task && (task.display_status || (task.is_pending_push ? 'pending_push' : task.status));
+  if (displayStatus === 'pending_push') return 'pending_push';
+  if (displayStatus === 'admin_rework') return 'admin_rework';
+  if (displayStatus === 'blocked') return 'blocked';
+  if (displayStatus === 'todo') return 'todo';
+  if (displayStatus === 'done') return 'completed';
+  if (displayStatus === 'cancelled') return 'terminated';
+  return (task && (task.display_high_level || task.high_level)) || 'in_progress';
+}
+function tcTaskStatusBadge(task) {
+  return `<span class="tc-badge tc-badge--${tcEsc(tcTaskStatusTone(task))}">${tcEsc(tcTaskStatusLabel(task))}</span>`;
+}
 function tcTaskStatusCell(it) {
-  const badge = `<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcTaskStatusLabel(it))}</span>`;
+  const badge = tcTaskStatusBadge(it);
   const parentId = Number(it && it.parent_task_id || 0);
   if (it && it.status === 'blocked' && parentId) {
     return badge + '<div style="margin-top:6px;">' + tcActiveTaskAction(parentId, '去查看等待的任务', false) + '</div>';
@@ -1098,6 +1119,7 @@ function tcTaskStatusCell(it) {
 function tcHighLevelLabel(status) {
   const labels = {
     in_progress: '进行中',
+    pending_push: '待推送',
     completed: '已完成',
     terminated: '已终止',
   };
@@ -1181,7 +1203,7 @@ const TC_EVENT_TEXT = {
   raw_niuma_failed: { title: '牛马去字幕失败', progress: '需要人工处理', tone: 'danger', summary: '自动去字幕没有成功，需要查看失败原因或改走手动上传。' },
   raw_niuma_timeout: { title: '牛马去字幕超时', progress: '需要人工确认', tone: 'danger', summary: '自动去字幕等待超时，需要确认外部任务状态。' },
   raw_manual_uploaded: { title: '手动上传原始视频', progress: '原始视频已补传', tone: 'success', summary: '处理人已手动上传处理后的原始视频文件。' },
-  raw_uploaded: { title: '提交去字幕原始视频素材审核', progress: '等待审核', tone: 'info', summary: '处理人已提交去字幕原始视频素材，等待通过或手动替换后入库。' },
+  raw_uploaded: { title: '提交去字幕原始视频素材审核', progress: '等待处理', tone: 'info', summary: '处理人已提交去字幕原始视频素材，等待通过或手动替换后入库。' },
   approved: { title: '审核通过', progress: '已通过', tone: 'success', summary: '管理员已通过当前审核节点。' },
   rejected: { title: '打回修改', progress: '已打回', tone: 'danger', summary: '管理员打回了任务，需要处理人按原因修改后重新提交。' },
   push_material_approved: { title: '管理员审核通过', progress: '已推送', tone: 'success', summary: '推送管理已完成素材推送，当前任务进入投放素材已通过状态。' },
@@ -1389,7 +1411,7 @@ function tcRenderReviewAsset(asset) {
 function tcRenderReviewAssetList(stepAssets) {
   if (!stepAssets) return '';
   const assets = Array.isArray(stepAssets.assets) ? stepAssets.assets : [];
-  const badge = stepAssets.review_target ? '<span class="tc-review-target-badge">当前待审核</span>' : '';
+  const badge = stepAssets.review_target ? '<span class="tc-review-target-badge">当前待处理</span>' : '';
   const body = assets.length
     ? '<div class="tc-review-grid">' + assets.map(tcRenderReviewAsset).join('') + '</div>'
     : '<div class="tc-review-assets-empty">暂无可预览素材，不能仅凭空白内容判断，请回到处理人确认产物是否已绑定。</div>';
@@ -2952,7 +2974,7 @@ function tcTaskRowAction(it) {
       if (TC_IS_ADMIN || Number(it.assignee_id || 0) === Number(TC_CURRENT_USER_ID || 0)) {
         mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">审核</button>`;
       } else {
-        mainBtn = `<button class="tc-btn" disabled title="等待审核">审核</button>`;
+        mainBtn = `<button class="tc-btn" disabled title="待处理">审核</button>`;
       }
     } else if (status === 'raw_done' || status === 'all_done') {
       mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">查看结果</button>`;
@@ -2970,9 +2992,9 @@ function tcTaskRowAction(it) {
       }
     } else if (status === 'review') {
       if (tcCanReviewChildTask(it)) {
-        mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">审核</button>`;
+        mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">去处理</button>`;
       } else {
-        mainBtn = `<button class="tc-btn" disabled title="等待审核">审核</button>`;
+        mainBtn = `<button class="tc-btn" disabled title="待处理">去处理</button>`;
       }
     } else if (status === 'done') {
       mainBtn = `<button class="tc-btn" onclick="tcOpenDetailAction(${id})">查看结果</button>`;
@@ -3387,7 +3409,7 @@ function tcRenderDetail(task, events, reviewAssets) {
               </h3>
               ${identityRows}
             </div>
-            <div class="tc-detail-status">${tcReworkBadge(task)}${tcUrgentBadge(task)} <span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcTaskStatusLabel(task))}</div>
+            <div class="tc-detail-status">${tcReworkBadge(task)}${tcUrgentBadge(task)} ${tcTaskStatusBadge(task)}</div>
             <div class="tc-detail-meta">
               ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
               负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}

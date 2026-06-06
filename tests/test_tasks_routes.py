@@ -101,12 +101,13 @@ def test_task_center_list_localizes_status_and_uses_action_entry_labels(authed_c
     body = rsp.data.decode("utf-8")
 
     assert "function tcStatusLabel(status)" in body
-    assert "blocked: '等待 去字幕原始素材'" in body
+    assert "blocked: '阻塞中'" in body
     assert "assigned: '待处理'" in body
-    assert "raw_in_progress: '去字幕原始视频素材处理中'" in body
+    assert "raw_in_progress: '待处理'" in body
     assert "function tcTaskStatusLabel(task)" in body
-    assert "管理员已拒绝" in body
-    assert '<span class="tc-badge tc-badge--${tcEsc(it.high_level)}">${tcEsc(tcTaskStatusLabel(it))}</span>' in body
+    assert "管理员打回" in body
+    assert "function tcTaskStatusBadge(task)" in body
+    assert "<td>${tcTaskStatusCell(it)}</td>" in body
     assert "function tcTaskTypeLabel(task)" in body
     assert "const kind = tcTaskTypeLabel(it);" in body
     assert "task && task.parent_task_id ? '小语种翻译' : '去字幕'" in body
@@ -221,19 +222,21 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "全部任务" in body
     assert 'data-section-tab="overview"' in body
     assert 'data-bucket="todo"' in body
-    assert 'data-bucket="review"' in body
+    assert 'data-bucket="review"' not in body
     assert 'data-bucket="blocked"' in body
     assert 'data-bucket="pending_push"' in body
     assert 'data-bucket="done"' in body
     assert 'data-bucket="archived"' in body
-    assert "进行中任务" in body
-    assert "素材待推送" in body
+    assert ">进行中</button>" in body
+    assert ">待推送</button>" in body
     assert ">待处理任务</button>" not in body
-    assert "待审核任务" in body
-    assert "阻塞中任务" in body
-    assert "已完成任务" in body
+    assert "待审核任务" not in body
+    assert ">阻塞中</button>" in body
+    assert ">已完成</button>" in body
     assert "已归档" in body
-    assert '<option value="pending_push">素材待推送</option>' in body
+    assert '<option value="review">' not in body
+    assert '<option value="admin_rework">管理员打回</option>' in body
+    assert '<option value="pending_push">待推送</option>' in body
     assert "function tcRenderTaskPager" in body
     assert "TC_TASK_PAGE_SIZE" in body
     assert "const TC_TASK_PAGE_SIZE = 50;" in body
@@ -732,7 +735,7 @@ def test_api_list_accepts_archived_bucket(authed_client_no_db, monkeypatch):
     assert rsp.status_code == 200
     assert captured["bucket"] == ""
     assert captured["archived"] is True
-    assert captured["task_status"] == "review"
+    assert captured["task_status"] == "todo"
 
 
 def test_api_list_accepts_blocked_bucket(authed_client_no_db, monkeypatch):
@@ -774,6 +777,47 @@ def test_api_list_accepts_pending_push_bucket_and_status(authed_client_no_db, mo
     assert rsp.status_code == 200
     assert captured["bucket"] == "pending_push"
     assert captured["task_status"] == "pending_push"
+
+
+def test_api_list_normalizes_legacy_review_filters_to_todo(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get(
+        "/tasks/api/list?tab=all&bucket=review&task_status=review"
+    )
+
+    assert rsp.status_code == 200
+    assert captured["bucket"] == "todo"
+    assert captured["task_status"] == "todo"
+
+
+def test_api_list_accepts_admin_rework_status_filter(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/list?tab=all&task_status=admin_rework")
+
+    assert rsp.status_code == 200
+    assert captured["task_status"] == "admin_rework"
 
 
 def test_api_list_allows_exact_detail_fetch_to_include_archived(authed_client_no_db, monkeypatch):
@@ -1867,7 +1911,7 @@ def test_api_review_assets_delegates_to_tasks_service(authed_client_no_db, monke
     expected = {
         "current_review": {
             "event_type": "submitted",
-            "title": "当前待审核：翻译产物",
+            "title": "当前待处理：翻译产物",
             "asset_count": 1,
         },
         "steps": [
@@ -1924,12 +1968,13 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     assert "let TC_CURRENT_BUCKET = 'todo';" in body
     assert body.index('data-bucket="all"') < body.index('data-bucket="todo"')
     assert '>全部任务</button>' in body
-    assert '>进行中任务</button>' in body
+    assert '>进行中</button>' in body
     assert '>待处理任务</button>' not in body
     assert 'data-bucket="todo"' in body
-    assert 'data-bucket="review"' in body
+    assert 'data-bucket="review"' not in body
     assert 'data-bucket="blocked"' in body
     assert 'data-bucket="done"' in body
+    assert "待审核" not in body
     assert "<th>创建时间</th>" in body
     assert "<th>更新时间</th>" not in body
     assert "tcRender" in body  # JS bootstrapped
