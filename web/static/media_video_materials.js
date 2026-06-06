@@ -251,20 +251,32 @@
     return `<span class="oc-vm-spend-value">${esc(fmtAdSpend(value))}</span>`;
   }
 
+  function adRoasCell(value) {
+    return `<span class="oc-vm-spend-value roas">${esc(fmtAdRoas(value))}</span>`;
+  }
+
   function adSpendHtml(item) {
     const perf = (item && item.ad_performance) || {};
     return `
       <div class="oc-vm-spend-table" role="presentation">
+        <span class="oc-vm-spend-corner">说明</span>
         <span class="oc-vm-spend-head">今天</span>
         <span class="oc-vm-spend-head">昨天</span>
         <span class="oc-vm-spend-head">7天</span>
         <span class="oc-vm-spend-head">30天</span>
         <span class="oc-vm-spend-head">总消耗</span>
+        <span class="oc-vm-spend-label">广告消耗</span>
         ${adSpendCell(perf.today_spend_usd)}
         ${adSpendCell(perf.yesterday_spend_usd)}
         ${adSpendCell(perf.last_7d_spend_usd)}
         ${adSpendCell(perf.last_30d_spend_usd)}
         ${adSpendCell(perf.total_spend_usd)}
+        <span class="oc-vm-spend-label">ROAS</span>
+        ${adRoasCell(perf.today_roas)}
+        ${adRoasCell(perf.yesterday_roas)}
+        ${adRoasCell(perf.last_7d_roas)}
+        ${adRoasCell(perf.last_30d_roas)}
+        ${adRoasCell(perf.roas)}
       </div>
     `;
   }

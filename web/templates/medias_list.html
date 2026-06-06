@@ -3117,7 +3117,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   background:var(--bg-body,#f2f4f8);
 }
 .oc-vm-total { justify-self:end; }
-.oc-vm-table { min-width:1860px; table-layout:fixed; overflow:visible; }
+.oc-vm-table { min-width:1940px; table-layout:fixed; overflow:visible; }
 .oc-vm-table thead th {
   position:sticky;
   top:0;
@@ -3128,7 +3128,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-vm-table th:nth-child(2), .oc-vm-table td:nth-child(2) { width:92px; }
 .oc-vm-table th:nth-child(5), .oc-vm-table td:nth-child(5) { width:120px; }
 .oc-vm-table th:nth-child(6), .oc-vm-table td:nth-child(6) { width:180px; }
-.oc-vm-table th:nth-child(7), .oc-vm-table td:nth-child(7) { width:340px; }
+.oc-vm-table th:nth-child(7), .oc-vm-table td:nth-child(7) { width:430px; }
 .oc-vm-table th:nth-child(8), .oc-vm-table td:nth-child(8) { width:96px; }
 .oc-vm-table th:nth-child(9), .oc-vm-table td:nth-child(9) { width:250px; }
 .oc-vm-table th:nth-child(11), .oc-vm-table td:nth-child(11) { width:92px; }
@@ -3217,8 +3217,8 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-vm-spend-table {
   display:grid;
-  grid-template-columns:repeat(5, minmax(58px, 1fr));
-  grid-auto-rows:minmax(18px, auto);
+  grid-template-columns:64px repeat(5, minmax(58px, 1fr));
+  grid-auto-rows:minmax(17px, auto);
   column-gap:8px;
   row-gap:2px;
   align-items:baseline;
@@ -3226,6 +3226,22 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   max-width:100%;
   min-width:0;
   font-variant-numeric:tabular-nums;
+}
+.oc-vm-spend-corner,
+.oc-vm-spend-label {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--oc-fg);
+  font-size:11px;
+  font-weight:700;
+  line-height:1.2;
+  text-align:left;
+}
+.oc-vm-spend-corner {
+  color:var(--oc-fg-muted);
+  font-weight:600;
 }
 .oc-vm-spend-head {
   min-width:0;
@@ -3250,6 +3266,9 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   text-align:right;
 }
 .oc-vm-spend-value:last-child {
+  color:var(--oc-accent);
+}
+.oc-vm-spend-value.roas {
   color:var(--oc-accent);
 }
 .oc-vm-roas-inline {

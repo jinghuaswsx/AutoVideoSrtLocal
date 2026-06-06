@@ -114,6 +114,10 @@ def _empty_ad_performance() -> dict[str, Any]:
         "last_7d_spend_usd": 0.0,
         "last_30d_spend_usd": 0.0,
         "purchase_value_usd": 0.0,
+        "today_roas": None,
+        "yesterday_roas": None,
+        "last_7d_roas": None,
+        "last_30d_roas": None,
         "roas": None,
         "matched_ad_count": 0,
         "countries": [],
@@ -388,25 +392,43 @@ def _country_value(candidate: dict[str, Any]) -> str:
     return country
 
 
-def _add_window_spend(performance: dict[str, Any], spend: float, business_date: date | None, today: date) -> None:
-    if spend <= 0 or business_date is None:
+def _add_window_values(
+    performance: dict[str, Any],
+    window_purchase_values: dict[str, float],
+    *,
+    spend: float,
+    purchase_value: float,
+    business_date: date | None,
+    today: date,
+) -> None:
+    if business_date is None:
         return
     yesterday = today - timedelta(days=1)
     last_7d_start = today - timedelta(days=6)
     last_30d_start = today - timedelta(days=29)
     if business_date == today:
         performance["today_spend_usd"] += spend
+        window_purchase_values["today"] += purchase_value
     if business_date == yesterday:
         performance["yesterday_spend_usd"] += spend
+        window_purchase_values["yesterday"] += purchase_value
     if last_7d_start <= business_date <= today:
         performance["last_7d_spend_usd"] += spend
+        window_purchase_values["last_7d"] += purchase_value
     if last_30d_start <= business_date <= today:
         performance["last_30d_spend_usd"] += spend
+        window_purchase_values["last_30d"] += purchase_value
 
 
 def _build_ad_performance(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     performance = _empty_ad_performance()
     today = current_meta_business_date()
+    window_purchase_values = {
+        "today": 0.0,
+        "yesterday": 0.0,
+        "last_7d": 0.0,
+        "last_30d": 0.0,
+    }
     country_map: dict[str, dict[str, Any]] = {}
     for candidate in candidates:
         spend = _float_value(candidate.get("spend_usd"))
@@ -415,7 +437,14 @@ def _build_ad_performance(candidates: list[dict[str, Any]]) -> dict[str, Any]:
         performance["total_spend_usd"] += spend
         performance["purchase_value_usd"] += purchase_value
         performance["matched_ad_count"] += 1
-        _add_window_spend(performance, spend, business_date, today)
+        _add_window_values(
+            performance,
+            window_purchase_values,
+            spend=spend,
+            purchase_value=purchase_value,
+            business_date=business_date,
+            today=today,
+        )
 
         country = _country_value(candidate)
         if not country:
@@ -443,6 +472,10 @@ def _build_ad_performance(candidates: list[dict[str, Any]]) -> dict[str, Any]:
         "purchase_value_usd",
     ):
         performance[key] = _round_money(performance[key])
+    performance["today_roas"] = _roas(window_purchase_values["today"], performance["today_spend_usd"])
+    performance["yesterday_roas"] = _roas(window_purchase_values["yesterday"], performance["yesterday_spend_usd"])
+    performance["last_7d_roas"] = _roas(window_purchase_values["last_7d"], performance["last_7d_spend_usd"])
+    performance["last_30d_roas"] = _roas(window_purchase_values["last_30d"], performance["last_30d_spend_usd"])
     performance["roas"] = _roas(performance["purchase_value_usd"], performance["total_spend_usd"])
     countries = []
     for country_row in country_map.values():

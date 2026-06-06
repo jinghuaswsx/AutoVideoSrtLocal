@@ -240,6 +240,10 @@ def test_list_video_materials_attaches_material_ad_performance_windows_and_count
     assert perf["last_30d_spend_usd"] == 35.0
     assert perf["purchase_value_usd"] == 45.0
     assert perf["roas"] == 1.2857
+    assert perf["today_roas"] == 3.0
+    assert perf["yesterday_roas"] == 0.5
+    assert perf["last_7d_roas"] == 1.3333
+    assert perf["last_30d_roas"] == 1.2857
     assert perf["matched_ad_count"] == 3
     assert perf["countries"] == [
         {
@@ -351,6 +355,9 @@ def test_list_video_materials_merges_latest_realtime_ad_metrics_when_table_exist
     assert perf["total_spend_usd"] == 70.0
     assert perf["today_spend_usd"] == 50.0
     assert perf["yesterday_spend_usd"] == 20.0
+    assert perf["today_roas"] == 2.0
+    assert perf["yesterday_roas"] == 1.0
+    assert perf["last_7d_roas"] == 1.7143
     assert {row["country"]: row["spend_usd"] for row in perf["countries"]} == {"DE": 50.0, "FR": 20.0}
     assert any("meta_ad_realtime_daily_ad_metrics" in sql for kind, sql, _args in calls if kind == "query")
 
@@ -408,6 +415,7 @@ def test_realtime_open_day_skips_same_account_daily_metric(monkeypatch):
     assert perf["total_spend_usd"] == 50.0
     assert perf["today_spend_usd"] == 50.0
     assert perf["purchase_value_usd"] == 100.0
+    assert perf["today_roas"] == 2.0
     assert perf["matched_ad_count"] == 1
 
 
