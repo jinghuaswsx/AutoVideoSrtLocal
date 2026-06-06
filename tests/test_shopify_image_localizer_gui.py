@@ -901,6 +901,7 @@ def test_main_ensures_google_first_cdp_browser_before_gui(monkeypatch: pytest.Mo
         SimpleNamespace(acquire_or_prompt=lambda close_existing: calls.append(("acquire_guard",)) or guard),
         raising=False,
     )
+    monkeypatch.setattr(app_main, "_has_other_shopify_localizer_instances", lambda: False)
 
     class FakeRoot:
         def mainloop(self) -> None:
@@ -944,6 +945,7 @@ def test_main_duplicate_instance_exit_does_not_start(monkeypatch: pytest.MonkeyP
         SimpleNamespace(acquire_or_prompt=lambda close_existing: calls.append(("acquire_guard",)) or None),
         raising=False,
     )
+    monkeypatch.setattr(app_main, "_has_other_shopify_localizer_instances", lambda: False)
     monkeypatch.setattr(
         app_main,
         "_kill_other_shopify_localizer_instances",
@@ -993,6 +995,7 @@ def test_main_duplicate_instance_can_close_previous_then_start(monkeypatch: pyte
         SimpleNamespace(acquire_or_prompt=acquire_or_prompt),
         raising=False,
     )
+    monkeypatch.setattr(app_main, "_has_other_shopify_localizer_instances", lambda: False)
     monkeypatch.setattr(
         app_main,
         "_kill_other_shopify_localizer_instances",
@@ -1016,6 +1019,99 @@ def test_main_duplicate_instance_can_close_previous_then_start(monkeypatch: pyte
 
     assert calls == [
         ("acquire_guard",),
+        ("kill_existing",),
+        ("ensure", r"C:\chrome-shopify-image"),
+        ("mainloop",),
+        ("release_guard",),
+    ]
+
+
+def test_main_legacy_instance_exit_releases_guard_and_does_not_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tools.shopify_image_localizer import main as app_main
+
+    calls: list[tuple] = []
+    guard = SimpleNamespace(release=lambda: calls.append(("release_guard",)))
+
+    monkeypatch.setattr(
+        app_main,
+        "single_instance",
+        SimpleNamespace(
+            acquire_or_prompt=lambda close_existing: calls.append(("acquire_guard",)) or guard,
+            confirm_close_previous_instance=lambda: calls.append(("confirm",)) or False,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(app_main, "_has_other_shopify_localizer_instances", lambda: True)
+    monkeypatch.setattr(
+        app_main,
+        "_kill_other_shopify_localizer_instances",
+        lambda: calls.append(("kill_existing",)),
+    )
+    monkeypatch.setattr(
+        app_main,
+        "ez_cdp",
+        SimpleNamespace(ensure_cdp_chrome=lambda browser_dir: calls.append(("ensure", browser_dir))),
+        raising=False,
+    )
+
+    app_main.main()
+
+    assert calls == [
+        ("acquire_guard",),
+        ("confirm",),
+        ("release_guard",),
+    ]
+
+
+def test_main_legacy_instance_can_close_previous_then_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tools.shopify_image_localizer import main as app_main
+
+    calls: list[tuple] = []
+    guard = SimpleNamespace(release=lambda: calls.append(("release_guard",)))
+
+    class FakeRoot:
+        def mainloop(self) -> None:
+            calls.append(("mainloop",))
+
+    class FakeApp:
+        root = FakeRoot()
+
+    monkeypatch.setattr(
+        app_main,
+        "single_instance",
+        SimpleNamespace(
+            acquire_or_prompt=lambda close_existing: calls.append(("acquire_guard",)) or guard,
+            confirm_close_previous_instance=lambda: calls.append(("confirm",)) or True,
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(app_main, "_has_other_shopify_localizer_instances", lambda: True)
+    monkeypatch.setattr(
+        app_main,
+        "_kill_other_shopify_localizer_instances",
+        lambda: calls.append(("kill_existing",)),
+    )
+    monkeypatch.setattr(
+        app_main,
+        "settings",
+        SimpleNamespace(load_runtime_config=lambda: {"browser_user_data_dir": r"C:\chrome-shopify-image"}),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        app_main,
+        "ez_cdp",
+        SimpleNamespace(ensure_cdp_chrome=lambda browser_dir: calls.append(("ensure", browser_dir))),
+        raising=False,
+    )
+    monkeypatch.setattr(app_main, "ShopifyImageLocalizerApp", lambda: FakeApp())
+
+    app_main.main()
+
+    assert calls == [
+        ("acquire_guard",),
+        ("confirm",),
         ("kill_existing",),
         ("ensure", r"C:\chrome-shopify-image"),
         ("mainloop",),
@@ -1050,6 +1146,7 @@ def test_main_imports_and_starts_when_psutil_is_missing(monkeypatch: pytest.Monk
         SimpleNamespace(acquire_or_prompt=lambda close_existing: calls.append(("acquire_guard",)) or guard),
         raising=False,
     )
+    monkeypatch.setattr(app_main, "_has_other_shopify_localizer_instances", lambda: False)
 
     class FakeRoot:
         def mainloop(self) -> None:

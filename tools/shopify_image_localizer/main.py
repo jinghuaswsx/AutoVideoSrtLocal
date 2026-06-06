@@ -13,12 +13,12 @@ from tools.shopify_image_localizer.gui import ShopifyImageLocalizerApp
 from tools.shopify_image_localizer.rpa import ez_cdp
 
 
-def _kill_other_shopify_localizer_instances() -> None:
-    """Best-effort cleanup for stale ShopifyImageLocalizer instances."""
+def _other_shopify_localizer_instances() -> list:
     if _psutil is None:
-        return
+        return []
 
     current_pid = os.getpid()
+    matches = []
 
     for proc in _psutil.process_iter(["pid", "name", "exe"]):
         try:
@@ -26,16 +26,31 @@ def _kill_other_shopify_localizer_instances() -> None:
                 continue
             name = str(proc.info.get("name") or "").lower()
             if "shopifyimagelocalizer" in name:
-                proc.kill()
+                matches.append(proc)
                 continue
             if "python" in name or "pythonw" in name:
                 try:
                     cmdline = proc.cmdline()
                     cmd_str = " ".join(cmdline).lower()
                     if "shopify_image_localizer" in cmd_str or "tools.shopify_image_localizer" in cmd_str:
-                        proc.kill()
+                        matches.append(proc)
                 except (_psutil.AccessDenied, _psutil.ZombieProcess):
                     pass
+        except (_psutil.NoSuchProcess, _psutil.AccessDenied, _psutil.ZombieProcess):
+            pass
+
+    return matches
+
+
+def _has_other_shopify_localizer_instances() -> bool:
+    return bool(_other_shopify_localizer_instances())
+
+
+def _kill_other_shopify_localizer_instances() -> None:
+    """Best-effort cleanup for stale ShopifyImageLocalizer instances."""
+    for proc in _other_shopify_localizer_instances():
+        try:
+            proc.kill()
         except (_psutil.NoSuchProcess, _psutil.AccessDenied, _psutil.ZombieProcess):
             pass
 
@@ -46,6 +61,11 @@ def main() -> None:
         return
 
     try:
+        if _has_other_shopify_localizer_instances():
+            if not single_instance.confirm_close_previous_instance():
+                return
+            _kill_other_shopify_localizer_instances()
+
         runtime_config = settings.load_runtime_config()
         profile_for_domain = getattr(
             settings,

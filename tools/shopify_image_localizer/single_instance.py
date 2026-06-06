@@ -73,6 +73,10 @@ def acquire_or_prompt(close_existing_callback: Callable[[], None]) -> SingleInst
     return None
 
 
+def confirm_close_previous_instance() -> bool:
+    return _ask_close_previous_instance()
+
+
 def _create_mutex() -> tuple[int, bool, ctypes.WinDLL]:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
