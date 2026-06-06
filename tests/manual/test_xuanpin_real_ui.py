@@ -1,10 +1,11 @@
 import time
 import sys
+import os
 from playwright.sync_api import sync_playwright
 
 TEST_ENV_URL = "http://172.16.254.106:8080"
-TEST_USER = "admin"
-TEST_PASS = "709709@"
+TEST_USER = os.getenv("AUTOVIDEOSRT_TEST_USER", "admin")
+TEST_PASS = os.getenv("AUTOVIDEOSRT_TEST_PASSWORD", "")
 
 def safe_print(msg):
     try:
@@ -50,6 +51,8 @@ def run_real_ui_test():
         current_url = page.url
         safe_print(f"[UI Test] Current page URL: {current_url}")
         if "/auth/login" in current_url or "login" in current_url:
+            if not TEST_PASS:
+                raise RuntimeError("Set AUTOVIDEOSRT_TEST_PASSWORD before running this manual script.")
             safe_print("[UI Test] Login required. Filling in credentials...")
             page.fill("input[name='username']", TEST_USER)
             page.fill("input[name='password']", TEST_PASS)
