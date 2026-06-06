@@ -268,6 +268,44 @@ def test_realtime_scope_cards_js_renders_cost_breakdown_and_ratios():
     assert "shopify_fee_ratio_pct" in render_block
 
 
+def test_realtime_global_cards_have_yesterday_same_time_compare_targets():
+    panel = _realtime_panel_source()
+
+    assert 'id="realtimeRevenueWithShippingCompare"' in panel
+    assert 'id="realtimeOrderCountCompare"' in panel
+    assert 'id="realtimeProfitCompare"' in panel
+    assert panel.index('id="realtimeRevenueWithShipping"') < panel.index('id="realtimeRevenueWithShippingCompare"')
+    assert panel.index('id="realtimeOrderCount"') < panel.index('id="realtimeOrderCountCompare"')
+    assert panel.index('id="realtimeProfitMargin"') < panel.index('id="realtimeProfitCompare"')
+    assert 'id="realtimeNewRevenueWithShippingCompare"' not in panel
+    assert 'id="realtimeOldRevenueWithShippingCompare"' not in panel
+    assert 'id="realtimeUnmatchedRevenueWithShippingCompare"' not in panel
+    assert ".oar-same-time-compare" in _template_source()
+    assert "font-size: 11px;" in _template_source()
+
+
+def test_realtime_global_same_time_compare_js_only_renders_global_scope():
+    template = _template_source()
+    render_block = template[
+        template.index("function renderRealtimeScopeSummary"):
+        template.index("function renderRealtimeFreshness")
+    ]
+
+    assert "function formatRealtimeSameTimeCompare" in template
+    assert "function setRealtimeSameTimeCompare" in template
+    assert "function clearRealtimeSameTimeCompare" in template
+    assert "data.comparison && data.comparison.yesterday_same_time" in render_block
+    assert "if (scope !== 'global')" in render_block
+    assert "realtimeRevenueWithShippingCompare" in render_block
+    assert "realtimeOrderCountCompare" in render_block
+    assert "realtimeProfitCompare" in render_block
+    assert "metric.pct === null" in template
+    assert "metric.pct === undefined" in template
+    assert "toFixed(0)" in template
+    assert "'+'" in template
+    assert "'较昨天同刻 --'" in template
+
+
 def test_realtime_scope_cards_explain_launch_window_in_business_terms():
     template = _template_source()
     scope_text_block = template[
