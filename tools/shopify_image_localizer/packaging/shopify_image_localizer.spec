@@ -6,6 +6,16 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
 root = Path.cwd()
+_OPTIONAL_PLAYWRIGHT_DATA_PATHS = (
+    "/driver/package/lib/vite/traceViewer/",
+    "/driver/package/lib/vite/htmlReport/",
+)
+
+
+def _is_optional_playwright_data(item):
+    source, target = item
+    normalized = f"{source}/{target}".replace("\\", "/")
+    return any(fragment in normalized for fragment in _OPTIONAL_PLAYWRIGHT_DATA_PATHS)
 
 # 由 build_exe.py 在调用 PyInstaller 前注入版本号，构建出 ShopifyImageLocalizer_<major>_<minor>.exe；
 # 没注入时退回到不带版本号的 ShopifyImageLocalizer.exe（直接跑 spec 调试场景）。
@@ -36,7 +46,11 @@ hiddenimports = sorted(set(
         "tools.shopify_image_localizer.locales",
     ]
 ))
-datas = collect_data_files("playwright")
+datas = [
+    item
+    for item in collect_data_files("playwright")
+    if not _is_optional_playwright_data(item)
+]
 
 a = Analysis(
     [str(root / "tools" / "shopify_image_localizer" / "main.py")],
