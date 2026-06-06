@@ -1022,9 +1022,9 @@ def list_task_center_items(
         where.append("t.status IN (%s, %s, %s, %s, %s, %s)")
         args.extend(TASK_CENTER_TODO_STATUSES)
         add_pending_push_filter(exclude=True)
-    elif bucket == "review":
-        where.append("t.status IN (%s, %s, %s, %s, %s, %s)")
-        args.extend(TASK_CENTER_TODO_STATUSES)
+    elif bucket == "waiting":
+        where.append("t.status IN (%s, %s, %s, %s, %s)")
+        args.extend([PARENT_PENDING, PARENT_RAW_IN_PROGRESS, PARENT_RAW_REVIEW, CHILD_ASSIGNED, CHILD_REVIEW])
         add_pending_push_filter(exclude=True)
     elif bucket == "blocked":
         where.append("t.status = %s")
@@ -1041,8 +1041,8 @@ def list_task_center_items(
         raise ValueError("invalid bucket")
 
     if task_status == "todo":
-        where.append("t.status IN (%s, %s, %s, %s, %s, %s)")
-        args.extend(TASK_CENTER_TODO_STATUSES)
+        where.append("t.status IN (%s, %s, %s, %s, %s)")
+        args.extend([PARENT_PENDING, PARENT_RAW_IN_PROGRESS, PARENT_RAW_REVIEW, CHILD_ASSIGNED, CHILD_REVIEW])
         add_pending_push_filter(exclude=True)
     elif task_status == "review":
         where.append("t.status IN (%s, %s, %s, %s, %s, %s)")

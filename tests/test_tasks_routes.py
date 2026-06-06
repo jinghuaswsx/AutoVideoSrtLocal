@@ -2301,7 +2301,7 @@ def test_stats_route_redirects_for_non_admin(authed_user_client_no_db):
 
 
 def test_overview_bucket_route_renders_for_admin(authed_client_no_db):
-    for bucket in ["all", "todo", "review", "blocked", "done", "archived"]:
+    for bucket in ["all", "todo", "waiting", "review", "blocked", "done", "archived"]:
         rsp = authed_client_no_db.get(f"/tasks/overview/{bucket}")
         assert rsp.status_code == 200
         assert "任务中心".encode("utf-8") in rsp.data

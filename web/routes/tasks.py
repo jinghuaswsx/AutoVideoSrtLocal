@@ -250,7 +250,7 @@ def stats():
 def overview_bucket(bucket: str):
     if bucket == "review":
         bucket = "todo"
-    if bucket not in {"all", "todo", "blocked", "pending_push", "done", "archived", "cancelled"}:
+    if bucket not in {"all", "todo", "waiting", "blocked", "pending_push", "done", "archived", "cancelled"}:
         from flask import abort
         abort(404)
     return _render_task_center(section="overview", bucket=bucket)
@@ -316,7 +316,7 @@ def api_list():
         bucket = ""
     elif bucket == "review":
         bucket = "todo"
-    if bucket and bucket not in {"todo", "blocked", "done", "pending_push", "cancelled"}:
+    if bucket and bucket not in {"todo", "waiting", "blocked", "done", "pending_push", "cancelled"}:
         return _json_response({"error": "invalid bucket"}, 400)
     if task_type == "all":
         task_type = ""
