@@ -4909,6 +4909,7 @@
     const prevPage = Math.max(1, currentPage - 1);
     const nextPage = Math.min(pages, currentPage + 1);
     const buttons = [
+      `<span class="oc-vm-page-summary">每页 <strong style="color: #2563eb; font-weight: bold;">${pageSize}</strong> 条数据</span>`,
       `<span class="oc-vm-page-summary" data-page-summary>第 ${currentPage} / ${pages} 页 · 共 ${pages} 页</span>`,
       `<button type="button" data-page="1"${firstDisabled}>首页</button>`,
       `<button type="button" data-page="${prevPage}"${firstDisabled}>上一页</button>`,
