@@ -839,8 +839,14 @@
         const detail = [spend, roas].filter(Boolean).join(' ');
         const langLower = (v.lang || '').toLowerCase();
         const langUpper = langLower.toUpperCase();
-        const cnAbbr = langCnMap[langLower] || '';
-        const langDisplay = cnAbbr ? `${langUpper}(${cnAbbr})` : langUpper;
+        
+        let langDisplay = '';
+        if (langLower === 'all') {
+          langDisplay = '汇总';
+        } else {
+          const cnAbbr = langCnMap[langLower] || '';
+          langDisplay = cnAbbr ? `${langUpper}(${cnAbbr})` : langUpper;
+        }
         
         const isFirst = index === 0;
         const activeClass = isFirst ? 'active' : '';

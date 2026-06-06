@@ -3232,3 +3232,153 @@ def test_detail_image_retranslate_discard_endpoint(authed_client_no_db, monkeypa
     assert resp.status_code == 200
     assert not draft_file.exists()
 
+
+def test_api_product_supplement_aggregates_spend_and_adds_summary_tab(authed_client_no_db, monkeypatch):
+    from web.routes import medias as r
+
+    # Stub media products query
+    product = {"id": 321, "name": "3合1闪存驱动器", "product_code": "4-in-1-usb-flash-drive-for-iphone-ipad-android-pc-rjc"}
+    
+    # We will stub db_query inside web.routes.medias.material_supplement
+    from web.routes.medias import material_supplement
+    
+    db_queries = []
+    
+    def fake_db_query(sql, args=None):
+        sql_lower = sql.lower()
+        db_queries.append((sql, args))
+        if "media_products" in sql_lower:
+            return [product]
+        elif "mingkong_material_daily_snapshots" in sql_lower:
+            return [{
+                "material_key": "key1",
+                "video_name": "2025.06.05-3合1闪存驱动器-原素材-李文龙.mp4",
+                "video_path": "path1.mp4",
+                "video_image_path": "cover1.jpg",
+                "cumulative_90_spend": 0.0,
+                "video_ads_count": 0,
+                "video_author": "李文龙",
+                "video_upload_time": "2025-06-05T00:00:00",
+                "local_cover_object_key": "",
+                "yesterday_spend_delta": 0.0,
+                "mk_product_id": 12,
+                "mk_product_name": "3合1闪存驱动器",
+                "mk_product_link": "http://link",
+                "main_image": "img.jpg",
+                "snapshot_date": "2026-06-06",
+                "snapshot_at": "2026-06-06 12:00:00",
+            }]
+        elif "media_items" in sql_lower:
+            # We return two items: the bound original, and a translation
+            return [
+                {
+                    "id": 2085,
+                    "product_id": 321,
+                    "lang": "en",
+                    "filename": "2025.06.05-3合1闪存驱动器-原素材-李文龙.mp4",
+                    "display_name": "2025.06.05-3合1闪存驱动器-原素材-李文龙.mp4",
+                    "object_key": "key2085",
+                    "created_at": "2025-06-05 12:00:00",
+                },
+                {
+                    "id": 2129,
+                    "product_id": 321,
+                    "lang": "it",
+                    "filename": "2026.06.06-3合1闪存驱动器-原素材-小语种翻译素材(意大利语)-20250605李文龙-蔡靖华.mp4",
+                    "display_name": "2026.06.06-3合1闪存驱动器-原素材-小语种翻译素材(意大利语)-20250605李文龙-蔡靖华.mp4",
+                    "object_key": "key2129",
+                    "created_at": "2026-06-06 12:00:00",
+                }
+            ]
+        elif "media_item_mk_bindings" in sql_lower:
+            return [{"media_item_id": 2085, "mk_video_path": "path1.mp4"}]
+        elif "media_product_lang_ad_summary_cache" in sql_lower:
+            return []
+        return []
+
+    monkeypatch.setattr(material_supplement, "db_query", fake_db_query)
+    
+    # Stub _attach_ad_plan_details to attach ad_performance to translation item 2129
+    def fake_attach_ad_plan_details(items):
+        for item in items:
+            if item["id"] == 2085:
+                item["ad_performance"] = {
+                    "total_spend_usd": 0.0,
+                    "today_spend_usd": 0.0,
+                    "yesterday_spend_usd": 0.0,
+                    "last_7d_spend_usd": 0.0,
+                    "last_30d_spend_usd": 0.0,
+                    "purchase_value_usd": 0.0,
+                    "total_result_count": 0,
+                    "today_result_count": 0,
+                    "yesterday_result_count": 0,
+                    "last_7d_result_count": 0,
+                    "last_30d_result_count": 0,
+                    "today_roas": None,
+                    "yesterday_roas": None,
+                    "last_7d_roas": None,
+                    "last_30d_roas": None,
+                    "roas": None,
+                    "matched_ad_count": 0,
+                    "countries": []
+                }
+            elif item["id"] == 2129:
+                item["ad_performance"] = {
+                    "total_spend_usd": 100.0,
+                    "today_spend_usd": 10.0,
+                    "yesterday_spend_usd": 20.0,
+                    "last_7d_spend_usd": 70.0,
+                    "last_30d_spend_usd": 90.0,
+                    "purchase_value_usd": 120.0,
+                    "total_result_count": 5,
+                    "today_result_count": 1,
+                    "yesterday_result_count": 2,
+                    "last_7d_result_count": 3,
+                    "last_30d_result_count": 4,
+                    "today_roas": 1.5,
+                    "yesterday_roas": 2.0,
+                    "last_7d_roas": 1.7,
+                    "last_30d_roas": 1.3,
+                    "roas": 1.2,
+                    "matched_ad_count": 3,
+                    "countries": [{"country": "IT", "spend_usd": 100.0, "purchase_value_usd": 120.0, "matched_ad_count": 3}]
+                }
+
+    monkeypatch.setattr(material_supplement, "_attach_ad_plan_details", fake_attach_ad_plan_details)
+
+    resp = authed_client_no_db.get("/medias/api/product/321/supplement")
+    assert resp.status_code == 200
+    
+    data = resp.get_json()
+    assert data["product"]["id"] == 321
+    cards = data["cards"]
+    assert len(cards) == 1
+    
+    card = cards[0]
+    # Check parent card left-panel main attributes are overridden
+    assert card["mk_video"]["spends"] == 100.0
+    assert card["mk_video"]["yesterday_spend_delta"] == 20.0
+    assert card["mk_video"]["ads_count"] == 3
+    
+    # Check translated versions list contains "汇总" (all) as first entry
+    tv = card["translated_versions"]
+    assert len(tv) == 3 # 汇总 + en + it
+    
+    assert tv[0]["lang"] == "all"
+    assert tv[0]["lang_name"] == "汇总"
+    assert tv[0]["ad_spend"] == 100.0
+    assert tv[0]["roas"] == 1.2
+    
+    agg_perf = tv[0]["ad_performance"]
+    assert agg_perf["total_spend_usd"] == 100.0
+    assert agg_perf["today_spend_usd"] == 10.0
+    assert agg_perf["yesterday_spend_usd"] == 20.0
+    assert agg_perf["last_7d_spend_usd"] == 70.0
+    assert agg_perf["last_30d_spend_usd"] == 90.0
+    assert agg_perf["purchase_value_usd"] == 120.0
+    assert agg_perf["total_result_count"] == 5
+    
+    # Check en and it are also in tv
+    assert tv[1]["lang"] == "en"
+    assert tv[2]["lang"] == "it"
+

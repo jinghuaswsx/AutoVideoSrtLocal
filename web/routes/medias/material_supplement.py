@@ -62,6 +62,13 @@ def _nullable_float(value: Any) -> float | None:
     return _safe_float(value)
 
 
+def _local_roas(purchase_value: Any, spend: Any) -> float | None:
+    spend_value = _safe_float(spend)
+    if spend_value <= 0:
+        return None
+    return round(_safe_float(purchase_value) / spend_value, 4)
+
+
 def _delivery_status(total_spend: Any, active_spend: Any) -> str:
     if _safe_float(total_spend) <= 0:
         return "never"
@@ -788,8 +795,118 @@ def api_product_supplement(product_id: int):
                             "ad_performance": perf,
                         })
 
+        # Calculate aggregated performance for card and prepend a "汇总" (all) tab
+        card_spends = _safe_float(mk_row.get("cumulative_90_spend"))
+        card_yesterday_spend = _safe_float(mk_row.get("yesterday_spend_delta"))
+        card_ads_count = int(mk_row.get("video_ads_count") or 0)
+
+        if in_library and translated_versions:
+            agg_perf = _empty_ad_performance()
+            window_purchase_values = {
+                "today": 0.0,
+                "yesterday": 0.0,
+                "last_7d": 0.0,
+                "last_30d": 0.0,
+            }
+            # Sum up performance metrics
+            for v in translated_versions:
+                perf = v["ad_performance"]
+                agg_perf["total_spend_usd"] += perf.get("total_spend_usd") or 0.0
+                agg_perf["today_spend_usd"] += perf.get("today_spend_usd") or 0.0
+                agg_perf["yesterday_spend_usd"] += perf.get("yesterday_spend_usd") or 0.0
+                agg_perf["last_7d_spend_usd"] += perf.get("last_7d_spend_usd") or 0.0
+                agg_perf["last_30d_spend_usd"] += perf.get("last_30d_spend_usd") or 0.0
+
+                # Reconstruct window purchase values: spend * roas
+                today_spend = perf.get("today_spend_usd") or 0.0
+                today_roas = perf.get("today_roas")
+                if today_spend > 0 and today_roas is not None:
+                    window_purchase_values["today"] += today_spend * today_roas
+
+                yesterday_spend = perf.get("yesterday_spend_usd") or 0.0
+                yesterday_roas = perf.get("yesterday_roas")
+                if yesterday_spend > 0 and yesterday_roas is not None:
+                    window_purchase_values["yesterday"] += yesterday_spend * yesterday_roas
+
+                last_7d_spend = perf.get("last_7d_spend_usd") or 0.0
+                last_7d_roas = perf.get("last_7d_roas")
+                if last_7d_spend > 0 and last_7d_roas is not None:
+                    window_purchase_values["last_7d"] += last_7d_spend * last_7d_roas
+
+                last_30d_spend = perf.get("last_30d_spend_usd") or 0.0
+                last_30d_roas = perf.get("last_30d_roas")
+                if last_30d_spend > 0 and last_30d_roas is not None:
+                    window_purchase_values["last_30d"] += last_30d_spend * last_30d_roas
+
+                agg_perf["purchase_value_usd"] += perf.get("purchase_value_usd") or 0.0
+                agg_perf["total_result_count"] += perf.get("total_result_count") or 0
+                agg_perf["today_result_count"] += perf.get("today_result_count") or 0
+                agg_perf["yesterday_result_count"] += perf.get("yesterday_result_count") or 0
+                agg_perf["last_7d_result_count"] += perf.get("last_7d_result_count") or 0
+                agg_perf["last_30d_result_count"] += perf.get("last_30d_result_count") or 0
+                agg_perf["matched_ad_count"] += perf.get("matched_ad_count") or 0
+
+                # Merge country-specific data
+                for c in perf.get("countries") or []:
+                    c_code = c.get("country")
+                    if not c_code:
+                        continue
+                    existing = next((item for item in agg_perf["countries"] if item["country"] == c_code), None)
+                    if existing:
+                        existing["spend_usd"] += c.get("spend_usd") or 0.0
+                        existing["purchase_value_usd"] += c.get("purchase_value_usd") or 0.0
+                        existing["matched_ad_count"] += c.get("matched_ad_count") or 0
+                    else:
+                        agg_perf["countries"].append({
+                            "country": c_code,
+                            "spend_usd": c.get("spend_usd") or 0.0,
+                            "purchase_value_usd": c.get("purchase_value_usd") or 0.0,
+                            "matched_ad_count": c.get("matched_ad_count") or 0,
+                            "roas": None
+                        })
+
+            # Recalculate ROAS metrics
+            for c in agg_perf["countries"]:
+                c["spend_usd"] = round(c["spend_usd"], 4)
+                c["purchase_value_usd"] = round(c["purchase_value_usd"], 4)
+                c["roas"] = _local_roas(c["purchase_value_usd"], c["spend_usd"])
+            agg_perf["countries"].sort(key=lambda row: (-_safe_float(row.get("spend_usd")), str(row.get("country") or "")))
+
+            # Round and assign ROAS
+            for key in (
+                "total_spend_usd",
+                "today_spend_usd",
+                "yesterday_spend_usd",
+                "last_7d_spend_usd",
+                "last_30d_spend_usd",
+                "purchase_value_usd",
+            ):
+                agg_perf[key] = round(agg_perf[key], 4)
+
+            agg_perf["today_roas"] = _local_roas(window_purchase_values["today"], agg_perf["today_spend_usd"])
+            agg_perf["yesterday_roas"] = _local_roas(window_purchase_values["yesterday"], agg_perf["yesterday_spend_usd"])
+            agg_perf["last_7d_roas"] = _local_roas(window_purchase_values["last_7d"], agg_perf["last_7d_spend_usd"])
+            agg_perf["last_30d_roas"] = _local_roas(window_purchase_values["last_30d"], agg_perf["last_30d_spend_usd"])
+            agg_perf["roas"] = _local_roas(agg_perf["purchase_value_usd"], agg_perf["total_spend_usd"])
+
+            # Left panel overrides
+            card_spends = agg_perf["total_spend_usd"]
+            card_yesterday_spend = agg_perf["yesterday_spend_usd"]
+            card_ads_count = agg_perf["matched_ad_count"]
+
+            # Prepend Aggregated/Summary version to translated_versions list
+            agg_status = _delivery_status(agg_perf["total_spend_usd"], agg_perf["last_7d_spend_usd"])
+            translated_versions.insert(0, {
+                "lang": "all",
+                "lang_name": "汇总",
+                "media_item_id": 0,
+                "delivery_status": agg_status,
+                "ad_spend": agg_perf["total_spend_usd"],
+                "roas": agg_perf["roas"],
+                "ad_performance": agg_perf,
+            })
+
         # Extract video info from local snapshot row
-        spends = _safe_float(mk_row.get("cumulative_90_spend"))
         card = {
             "card_id": _card_id(video_path, bound_item_id),
             "in_library": in_library,
@@ -798,13 +915,13 @@ def api_product_supplement(product_id: int):
                 "name": mk_row.get("video_name") or "",
                 "path": video_path,
                 "image_path": mk_row.get("video_image_path") or "",
-                "spends": spends,
-                "ads_count": int(mk_row.get("video_ads_count") or 0),
+                "spends": card_spends,
+                "ads_count": card_ads_count,
                 "author": mk_row.get("video_author") or "",
                 "upload_time": mk_row.get("video_upload_time") or "",
                 # Local cover URL if cached
                 "local_cover_object_key": mk_row.get("local_cover_object_key") or "",
-                "yesterday_spend_delta": _safe_float(mk_row.get("yesterday_spend_delta")),
+                "yesterday_spend_delta": card_yesterday_spend,
             },
             "mk_product_id": mk_row.get("mk_product_id"),
             "mk_product_name": mk_row.get("mk_product_name") or "",
