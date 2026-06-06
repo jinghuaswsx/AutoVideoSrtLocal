@@ -251,20 +251,24 @@
   border-top: 1px dashed var(--oc-border);
 }
 .supplement-version-pill {
-  display: inline-block;
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: all 0.15s ease;
   user-select: none;
+  border: 1px solid transparent;
 }
 .supplement-version-pill:hover {
-  transform: scale(1.05);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 .supplement-version-pill.active {
-  box-shadow: 0 0 0 2px #2196F3;
+  border-color: var(--oc-accent) !important;
+  box-shadow: 0 0 0 2px var(--oc-accent-subtle);
 }
 .supplement-version-active { background: #dcfce7; color: #15803d; }
 .supplement-version-stopped { background: #fef2f2; color: #dc2626; }
@@ -748,23 +752,38 @@
         pt: '葡'
       };
 
-      const versionsListHtml = card.translated_versions.map(v => {
+      const versionsTabsHtml = card.translated_versions.map((v, index) => {
         const status = v.delivery_status || 'never';
         const statusLabel = status === 'active' ? '投放中' : status === 'stopped' ? '终止' : '未投放';
+        const spend = v.ad_spend != null ? `$${Number(v.ad_spend).toFixed(0)}` : '';
+        const roas = v.roas != null ? `ROAS ${Number(v.roas).toFixed(1)}` : '';
+        const detail = [spend, roas].filter(Boolean).join(' ');
         const langLower = (v.lang || '').toLowerCase();
         const langUpper = langLower.toUpperCase();
         const cnAbbr = langCnMap[langLower] || '';
         const langDisplay = cnAbbr ? `${langUpper}(${cnAbbr})` : langUpper;
         
-        const tableHtml = adSpendHtmlForVersion(v.ad_performance);
+        const isFirst = index === 0;
+        const activeClass = isFirst ? 'active' : '';
 
         return `
-          <div class="supplement-version-section" style="margin-bottom: 16px;">
-            <div style="margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
-              <span class="supplement-version-pill supplement-version-${status}" style="font-weight: 700;">
-                ${escapeHtml(langDisplay)} ${statusLabel}
-              </span>
-            </div>
+          <button type="button" class="supplement-version-pill supplement-version-${status} ${activeClass}" 
+                  data-target-lang="${langLower}" 
+                  style="display: flex; align-items: center; justify-content: space-between; width: 100%; border: 1px solid var(--oc-border); border-radius: 6px; padding: 6px 12px; background: #fff; cursor: pointer; text-align: left; transition: all 0.15s ease;"
+                  onclick="switchSupplementCountryTab(this)">
+            <span style="font-weight: 700; font-size: 11px;">${escapeHtml(langDisplay)} ${statusLabel}</span>
+            <span style="font-size: 11px; color: var(--oc-fg-muted);">${escapeHtml(detail)}</span>
+          </button>
+        `;
+      }).join('');
+
+      const versionsTablesHtml = card.translated_versions.map((v, index) => {
+        const langLower = (v.lang || '').toLowerCase();
+        const tableHtml = adSpendHtmlForVersion(v.ad_performance);
+        const isFirst = index === 0;
+        
+        return `
+          <div class="supplement-version-detail-block" data-lang="${langLower}" ${isFirst ? '' : 'hidden'}>
             ${tableHtml}
           </div>
         `;
@@ -772,8 +791,11 @@
 
       rightPanelHtml = `
         <div class="supplement-right-header" style="font-size: 14px; font-weight: 700; color: var(--oc-fg); margin-bottom: 12px; border-bottom: 2px solid var(--oc-accent); padding-bottom: 4px; display: inline-block;">国家广告统计数据</div>
-        <div class="supplement-versions-list" style="display: flex; flex-direction: column; gap: 8px;">
-          ${versionsListHtml}
+        <div class="supplement-versions-tabs" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+          ${versionsTabsHtml}
+        </div>
+        <div class="supplement-version-details-container">
+          ${versionsTablesHtml}
         </div>
       `;
     } else if (inLib) {
@@ -1254,6 +1276,25 @@
       </div>
     `;
   }
+
+  window.switchSupplementCountryTab = function(btn) {
+    const container = btn.closest('.supplement-right-panel');
+    if (!container) return;
+    
+    // Deactivate other tabs in this card
+    container.querySelectorAll('.supplement-version-pill').forEach(b => {
+      b.classList.remove('active');
+    });
+    // Activate this tab
+    btn.classList.add('active');
+    
+    const targetLang = btn.dataset.targetLang;
+    
+    // Hide other detail blocks
+    container.querySelectorAll('.supplement-version-detail-block').forEach(block => {
+      block.hidden = (block.dataset.lang !== targetLang);
+    });
+  };
 
 })();
 </script>
