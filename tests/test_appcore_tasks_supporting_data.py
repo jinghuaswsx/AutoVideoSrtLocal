@@ -1355,6 +1355,15 @@ def test_list_task_center_items_todo_bucket_excludes_pending_push(monkeypatch):
     )
 
 
+def test_pending_push_detail_image_sql_escapes_percent_for_pymysql():
+    from appcore import tasks
+
+    condition = tasks._pending_push_condition()
+
+    assert "NOT LIKE '%%.gif'" in condition
+    assert "NOT LIKE '%.gif'" not in condition
+
+
 def test_get_child_readiness_returns_missing_when_lang_item_absent(monkeypatch):
     from appcore import tasks
 

@@ -271,7 +271,7 @@ def _non_gif_detail_image_condition(alias: str) -> str:
     return (
         f"{alias}.deleted_at IS NULL "
         f"AND COALESCE(NULLIF(TRIM({alias}.object_key), ''), '')<>'' "
-        f"AND LOWER({alias}.object_key) NOT LIKE '%.gif' "
+        f"AND LOWER({alias}.object_key) NOT LIKE '%%.gif' "
         f"AND COALESCE(LOWER(SUBSTRING_INDEX({alias}.content_type, ';', 1)), '')<>'image/gif'"
     )
 

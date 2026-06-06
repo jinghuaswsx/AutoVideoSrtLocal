@@ -43,9 +43,12 @@ The task status dropdown adds:
 
 The derived condition must reuse persisted readiness override/event data and material fields. It must not compute heavy external checks or trigger network operations during list loading.
 
+SQL fragments inside the derived condition must be safe for PyMySQL `%s` parameter binding. Literal LIKE wildcards in generated SQL, such as the detail-image `.gif` exclusion, must use `%%` in the Python SQL string so PyMySQL does not treat them as missing format placeholders.
+
 ## Verification
 
 - Route tests prove `bucket=pending_push` and `task_status=pending_push` are accepted.
 - Service tests prove `pending_push` uses the derived condition and `todo` excludes it.
+- Service tests prove generated pending-push SQL escapes literal percent signs before PyMySQL receives the statement.
 - Template tests prove the new tab and dropdown option render.
 - `python3 -m compileall appcore/tasks.py web/routes/tasks.py`
