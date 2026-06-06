@@ -3989,27 +3989,16 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     });
   });
 
-  // 胶囊分页按钮滚动显示逻辑
+  // 胶囊分页按钮显示逻辑
   function checkScrollBottom() {
     const pager = document.getElementById('bottomCapsulePager');
     if (!pager) return;
     if (pager.dataset.hasPages !== 'true') {
       pager.style.display = 'none';
-      pager.classList.remove('visible');
       return;
     }
     pager.style.display = 'flex';
-    const scrollTop = window.scrollY || document.documentElement.scrollTop;
-    const windowHeight = window.innerHeight;
-    const documentHeight = document.documentElement.scrollHeight;
-    if (scrollTop + windowHeight >= documentHeight - 15) {
-      pager.classList.add('visible');
-    } else {
-      pager.classList.remove('visible');
-    }
   }
-  window.addEventListener('scroll', checkScrollBottom, { passive: true });
-  window.addEventListener('resize', checkScrollBottom);
   window.triggerCapsulePagerScrollCheck = checkScrollBottom;
 })();
 </script>
