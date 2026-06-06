@@ -3878,8 +3878,8 @@
         <td class="wrap" style="text-align: center; vertical-align: middle;">${aiEvalCell}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
-        <td>
-          <span class="oc-pill">${count}</span>
+        <td style="text-align: center; vertical-align: middle;">
+          <span class="oc-pill supplement-count-pill">${count}</span>
           <button type="button" class="supplement-btn" data-supplement="${p.id}" data-product-code="${escapeHtml(productCode)}" data-product-name="${escapeHtml(p.name || '')}" title="补素材">补素材</button>
         </td>
         <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary, p.id)}</td>

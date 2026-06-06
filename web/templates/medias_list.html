@@ -4886,11 +4886,21 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 
 
 <style>
+/* 补素材 数量药丸 */
+.supplement-count-pill {
+  display: block !important;
+  width: 60px;
+  margin: 0 auto !important;
+  box-sizing: border-box;
+  text-align: center;
+}
+
 /* 补素材 Button */
 .supplement-btn {
   display: block;
+  width: 60px;
   margin: 6px auto 0;
-  padding: 2px 12px;
+  padding: 2px 0;
   font-size: 11px;
   line-height: 20px;
   font-weight: 600;
@@ -4901,6 +4911,8 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   cursor: pointer;
   transition: background 0.2s, transform 0.15s;
   white-space: nowrap;
+  box-sizing: border-box;
+  text-align: center;
 }
 .supplement-btn:hover {
   background: #1976D2;
