@@ -12,6 +12,25 @@
     mkResults: [],
   };
 
+  const MARKET_LABELS = {
+    DE: '德(DE)',
+    FR: '法(FR)',
+    IT: '意(IT)',
+    ES: '西(ES)',
+    PT: '葡(PT)',
+    NL: '荷(NL)',
+    SV: '瑞(SV)',
+    SE: '瑞(SE)',
+    FI: '芬(FI)',
+    EN: '英(EN)',
+    GB: '英(GB)',
+    UK: '英(UK)',
+    US: '美(US)',
+    CA: '加(CA)',
+    AU: '澳(AU)',
+    MULTI: '多国',
+  };
+
   const $ = (id) => document.getElementById(id);
 
   function esc(value) {
@@ -222,26 +241,42 @@
     return num.toFixed(2);
   }
 
+  function marketDisplayName(code) {
+    const upper = String(code || '').trim().toUpperCase();
+    if (!upper) return '-';
+    return MARKET_LABELS[upper] || upper;
+  }
+
   function adSpendMetric(label, value) {
-    return `<span class="oc-vm-ad-metric"><span>${esc(label)}</span><strong>${esc(fmtAdSpend(value))}</strong></span>`;
+    return `<span class="oc-order-stat"><span>${esc(label)}</span><strong>${esc(fmtAdSpend(value))}</strong></span>`;
   }
 
   function adSpendHtml(item) {
     const perf = (item && item.ad_performance) || {};
     return `
-      <div class="oc-vm-ad-spend">
-        ${adSpendMetric('总', perf.total_spend_usd)}
-        ${adSpendMetric('今', perf.today_spend_usd)}
-        ${adSpendMetric('昨', perf.yesterday_spend_usd)}
-        ${adSpendMetric('7天', perf.last_7d_spend_usd)}
-        ${adSpendMetric('30天', perf.last_30d_spend_usd)}
+      <div class="oc-vm-spend-bar oc-country-metrics-bar">
+        <div class="oc-vm-spend-summary oc-country-metrics-summary">
+          <span class="oc-order-stats-name">总计</span>
+          <span class="oc-vm-spend-values">
+            ${adSpendMetric('总', perf.total_spend_usd)}
+            ${adSpendMetric('今', perf.today_spend_usd)}
+            ${adSpendMetric('昨', perf.yesterday_spend_usd)}
+            ${adSpendMetric('7天', perf.last_7d_spend_usd)}
+            ${adSpendMetric('30天', perf.last_30d_spend_usd)}
+          </span>
+        </div>
       </div>
     `;
   }
 
   function adRoasHtml(item) {
     const perf = (item && item.ad_performance) || {};
-    return `<span class="oc-vm-roas">${esc(fmtAdRoas(perf.roas))}</span>`;
+    return `
+      <span class="oc-vm-roas-inline">
+        <span class="oc-lang-label">总体ROAS</span>
+        <strong>${esc(fmtAdRoas(perf.roas))}</strong>
+      </span>
+    `;
   }
 
   function adCountryHtml(item) {
@@ -250,11 +285,13 @@
     if (!countries.length) {
       return '<span class="oc-vm-muted">-</span>';
     }
-    return `<div class="oc-vm-country-list">` + countries.map(country => `
-      <div class="oc-vm-country-row" title="${esc((country.country || '-') + ' 消耗 ' + fmtAdSpend(country.spend_usd) + ' ROAS ' + fmtAdRoas(country.roas))}">
-        <span class="oc-vm-country-code">${esc(country.country || '-')}</span>
-        <span class="oc-vm-country-spend">${esc(fmtAdSpend(country.spend_usd))}</span>
-        <span class="oc-vm-country-roas">ROAS ${esc(fmtAdRoas(country.roas))}</span>
+    return `<div class="oc-vm-country-list oc-country-metrics-bar">` + countries.map(country => `
+      <div class="oc-vm-country-row oc-country-metrics-line" title="${esc(marketDisplayName(country.country) + ' 消耗 ' + fmtAdSpend(country.spend_usd) + ' ROAS ' + fmtAdRoas(country.roas))}">
+        <span class="oc-vm-country-code">${esc(marketDisplayName(country.country))}</span>
+        <span class="oc-vm-country-values">
+          <span class="oc-vm-country-metric"><span class="oc-lang-label">消耗</span><strong>${esc(fmtAdSpend(country.spend_usd))}</strong></span>
+          <span class="oc-vm-country-metric"><span class="oc-lang-label">ROAS</span><strong>${esc(fmtAdRoas(country.roas))}</strong></span>
+        </span>
       </div>
     `).join('') + `</div>`;
   }

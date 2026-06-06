@@ -85,6 +85,9 @@ def test_video_materials_table_renders_ad_performance_columns(authed_client_no_d
     assert "function adSpendHtml(item)" in script
     assert "function adRoasHtml(item)" in script
     assert "function adCountryHtml(item)" in script
+    assert "oc-country-metrics-bar" in script
+    assert "oc-order-stat" in script
+    assert "function marketDisplayName(code)" in script
     assert "perf.today_spend_usd" in script
     assert "perf.yesterday_spend_usd" in script
     assert "perf.last_7d_spend_usd" in script
