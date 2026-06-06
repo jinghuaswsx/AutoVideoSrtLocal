@@ -539,7 +539,7 @@
 }
 .oar-same-time-compare {
   display: inline-block;
-  font-size: 0.5em;
+  font-size: 0.6667em;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -5160,7 +5160,7 @@
     var rounded = realtimeSameTimeRoundedPct(metric);
     if (!Number.isFinite(rounded)) return null;
     var sign = rounded > 0 ? '+' : '';
-    return sign + rounded.toFixed(0) + '%';
+    return '(' + sign + rounded.toFixed(0) + '%)';
   }
 
   function realtimeSameTimeCompareClass(metric) {
