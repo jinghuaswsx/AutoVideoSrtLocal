@@ -556,7 +556,7 @@ def test_get_realtime_roas_overview_fallback_attaches_current_day_global_compari
             return []
         if "FROM roi_realtime_daily_snapshots" in sql:
             return []
-        if "GROUP BY HOUR" in sql:
+        if "GROUP BY hour" in sql:
             return [
                 {
                     "hour": 18,
