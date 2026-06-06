@@ -6,57 +6,73 @@
 {% block extra_style %}
 {% include "medias/_roas_styles.html" %}
 
-/* ────────── Bottom Capsule Pager ────────── */
-.oc-bottom-capsule-pager {
-  display: none;
-  justify-content: center;
-  gap: var(--oc-sp-4, 16px);
-  margin: 32px 0;
-  width: 100%;
+/* Lock page scroll on /medias page to prevent header jittering */
+html, body {
+  height: 100% !important;
+  overflow: hidden !important;
 }
-.oc-bottom-capsule-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 44px;
-  min-width: 120px;
-  padding: 0 24px;
-  border-radius: 9999px;
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  border: 1px solid var(--oc-border-strong, #d1d5db);
-  background: var(--oc-bg, #fff);
-  color: var(--oc-fg, #111827);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08), 0 3px 6px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
-  cursor: pointer;
+.main-wrap {
+  height: 100vh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
-.oc-bottom-capsule-btn:hover {
-  background: var(--oc-bg-muted, #f3f4f6);
-  transform: translateY(-1px);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+.main-content {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 24px 28px 16px !important;
 }
-.oc-bottom-capsule-btn.primary {
-  background: var(--oc-accent, #3b82f6);
-  color: #fff;
-  border-color: var(--oc-accent, #3b82f6);
+.oc {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  height: 100% !important;
 }
-.oc-bottom-capsule-btn.primary:hover {
-  background: var(--oc-accent-hover, #2563eb);
+.oc-panel-page {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  min-height: 0 !important;
 }
-.oc-bottom-capsule-btn.disabled {
-  opacity: 0.4;
-  pointer-events: none;
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
+.oc-list {
+  flex: 1 !important;
+  overflow: auto !important;
+  margin-top: var(--oc-sp-4) !important;
+  min-height: 0 !important;
 }
-
-/* Allow natural body vertical scrolling */
+.oc-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--oc-sp-4);
+  margin-bottom: 0;
+  padding-bottom: var(--oc-sp-4) !important;
+  flex-wrap: wrap;
+  position: static !important;
+  background: var(--bg-body, #f2f4f8);
+}
+.oc-page-tabs {
+  position: static !important;
+  margin-bottom: var(--oc-sp-3) !important;
+}
+.oc-toolbar, .oc-vm-toolbar {
+  position: static !important;
+}
+.oc-vm-top-pager {
+  position: static !important;
+  padding: var(--oc-sp-2) 0 var(--oc-sp-1) !important;
+}
+.oc-table thead th, .oc-vm-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 6 !important;
+}
 
 /* ────────── Page header ────────── */
-.oc-header { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:0; padding-bottom:var(--oc-sp-5); flex-wrap:wrap; position:sticky; top:56px; z-index:22; background:var(--bg-body,#f2f4f8); }
 .oc-header .title { font-size:22px; font-weight:600; line-height:1.3; letter-spacing:-0.2px; margin:0 0 var(--oc-sp-1); }
 .oc-header .subtitle { display:flex; align-items:center; gap:var(--oc-sp-2); font-size:13px; color:var(--oc-fg-muted); }
 .oc-header .count { display:inline-flex; align-items:center; padding:2px 10px; border-radius:var(--oc-r-full,9999px); background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; font-variant-numeric:tabular-nums; }
@@ -3825,16 +3841,11 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   <!-- List -->
   <div class="oc-pager oc-vm-top-pager" id="topPager" aria-label="产品管理顶部分页" hidden></div>
   <!-- Floating Sticky Header for Product Grid -->
-  <div class="oc-sticky-header-wrapper" id="stickyHeaderWrapper" style="position:sticky; top:var(--sticky-table-thead-top); z-index:22; overflow:hidden; width:100%; display:none; background:var(--bg-body,#f2f4f8); border:1px solid var(--oc-border); border-bottom:none; border-radius:var(--oc-r-lg) var(--oc-r-lg) 0 0; margin-top:var(--oc-sp-4);">
-    <div class="oc-sticky-header-content" id="stickyHeaderContent" style="width:100%; transition: none;"></div>
-  </div>
+
+
+
   <div class="oc-list" id="gridContainer" style="width:100%; overflow:auto;">
     <div id="grid" style="width:100%;"></div>
-    <!-- 底部大胶囊分页跳转按钮 -->
-    <div id="bottomCapsulePager" class="oc-bottom-capsule-pager">
-      <a id="btnCapsulePrev" class="oc-bottom-capsule-btn" href="javascript:void(0)">上一页</a>
-      <a id="btnCapsuleNext" class="oc-bottom-capsule-btn primary" href="javascript:void(0)">下一页</a>
-    </div>
   </div>
   </section>
 
@@ -3856,9 +3867,9 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
     </div>
     <div class="oc-pager oc-vm-top-pager" id="vmTopPager" aria-label="视频素材顶部分页" hidden></div>
     <!-- Floating Sticky Header for Video Materials Grid -->
-    <div class="oc-sticky-header-wrapper" id="vmStickyHeaderWrapper" style="position:sticky; top:var(--sticky-table-thead-top); z-index:22; overflow:hidden; width:100%; display:none; background:var(--bg-body,#f2f4f8); border:1px solid var(--oc-border); border-bottom:none; border-radius:var(--oc-r-lg) var(--oc-r-lg) 0 0; margin-top:var(--oc-sp-4);">
-      <div class="oc-sticky-header-content" id="vmStickyHeaderContent" style="width:100%; transition: none;"></div>
-    </div>
+
+
+
     <div class="oc-list" id="vmListContainer" style="width:100%; overflow:auto;">
       <div id="vmList" style="width:100%;"></div>
     </div>
@@ -3876,6 +3887,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 (function() {
   var TOPBAR = 56;
   function updateStickyOffsets() {
+    return;
     var header = document.querySelector('.oc-header');
     var tabs = document.querySelector('.oc-page-tabs');
     var activePanel = document.querySelector('.oc-panel-page:not([hidden])') || document.querySelector('#mediaProductsPanel');
@@ -3904,6 +3916,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 
   // 浮动表头同步与横向滚动绑定
   function syncFloatingHeader(containerId, wrapperId, contentId) {
+    return;
     const container = document.getElementById(containerId);
     const wrapper = document.getElementById(wrapperId);
     const content = document.getElementById(contentId);
@@ -3941,6 +3954,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   }
 
   function handleFloatingHeaderVisibility() {
+    return;
     const activePanel = document.querySelector('.oc-panel-page:not([hidden])') || document.querySelector('#mediaProductsPanel');
     const isVm = activePanel && activePanel.id === 'videoMaterialsPanel';
     const container = isVm ? document.getElementById('vmListContainer') : document.getElementById('gridContainer');
@@ -3984,16 +3998,27 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     });
   });
 
-  // 胶囊分页按钮显示逻辑
+  // 胶囊分页按钮滚动显示逻辑
   function checkScrollBottom() {
     const pager = document.getElementById('bottomCapsulePager');
     if (!pager) return;
     if (pager.dataset.hasPages !== 'true') {
       pager.style.display = 'none';
+      pager.classList.remove('visible');
       return;
     }
     pager.style.display = 'flex';
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const windowHeight = window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    if (scrollTop + windowHeight >= documentHeight - 15) {
+      pager.classList.add('visible');
+    } else {
+      pager.classList.remove('visible');
+    }
   }
+  window.addEventListener('scroll', checkScrollBottom, { passive: true });
+  window.addEventListener('resize', checkScrollBottom);
   window.triggerCapsulePagerScrollCheck = checkScrollBottom;
 })();
 </script>
@@ -4498,6 +4523,10 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     </div>
   </div>
 </div>
+
+<!-- 底部大胶囊分页跳转按钮 -->
+
+
 
 
 
