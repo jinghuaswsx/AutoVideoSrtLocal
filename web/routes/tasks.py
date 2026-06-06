@@ -256,7 +256,8 @@ def overview_bucket(bucket: str):
 @login_required
 @permission_required("task_center")
 def detail(task_id: int):
-    return _render_task_center(task_id, section="overview", bucket="all")
+    bucket = request.args.get("bucket", "all")
+    return _render_task_center(task_id, section="overview", bucket=bucket)
 
 
 @bp.route("/api/list", methods=["GET"])

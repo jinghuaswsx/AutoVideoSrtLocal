@@ -2472,7 +2472,9 @@ async function tcLoadAssigneeFilterUsers() {
   TC_ASSIGNEE_FILTER_LOAD_PROMISE = tcFetchJson('/tasks/api/translation-work-users')
     .then(data => {
       const users = data.users || data.translators || [];
-      const currentValue = select.value || 'all';
+      const params = new URLSearchParams(window.location.search);
+      const urlValue = params.get('assignee_id');
+      const currentValue = urlValue || (select ? select.value : 'all') || 'all';
       const hasCurrentValue = users.some(user => String(user.id) === String(currentValue));
       select.innerHTML = `<option value="all">全部负责人</option>${users.map(tcAssigneeFilterOption).join('')}`;
       select.value = hasCurrentValue ? String(currentValue) : 'all';
@@ -2634,6 +2636,17 @@ async function tcRenderTaskList(wrap, tab, bucket) {
   const urgency = document.getElementById('tcUrgencyFilter').value || 'all';
   const assigneeId = document.getElementById('tcAssigneeFilter').value || 'all';
   const taskStatus = document.getElementById('tcStatusFilter').value || 'all';
+
+  // 实时更新 URL 状态，不刷新页面
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.set('page', String(TC_TASK_PAGE));
+  if (kw) currentUrl.searchParams.set('keyword', kw); else currentUrl.searchParams.delete('keyword');
+  if (taskType && taskType !== 'all') currentUrl.searchParams.set('task_type', taskType); else currentUrl.searchParams.delete('task_type');
+  if (urgency && urgency !== 'all') currentUrl.searchParams.set('urgency', urgency); else currentUrl.searchParams.delete('urgency');
+  if (assigneeId && assigneeId !== 'all') currentUrl.searchParams.set('assignee_id', assigneeId); else currentUrl.searchParams.delete('assignee_id');
+  if (taskStatus && taskStatus !== 'all') currentUrl.searchParams.set('task_status', taskStatus); else currentUrl.searchParams.delete('task_status');
+  window.history.replaceState({}, '', currentUrl.pathname + currentUrl.search);
+
   const params = new URLSearchParams({
     tab,
     keyword: kw,
@@ -3657,7 +3670,47 @@ function tcSetupStickyHeader() {
     }
   });
 }
+function tcRestoreFiltersFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  
+  const pageParam = params.get('page');
+  if (pageParam) {
+    TC_TASK_PAGE = Math.max(1, parseInt(pageParam) || 1);
+  }
+  
+  const kwParam = params.get('keyword');
+  if (kwParam !== null) {
+    const el = document.getElementById('tcKeyword');
+    if (el) el.value = kwParam;
+  }
+  
+  const typeParam = params.get('task_type');
+  if (typeParam !== null) {
+    const el = document.getElementById('tcTaskTypeFilter');
+    if (el) el.value = typeParam;
+  }
+  
+  const urgencyParam = params.get('urgency');
+  if (urgencyParam !== null) {
+    const el = document.getElementById('tcUrgencyFilter');
+    if (el) el.value = urgencyParam;
+  }
+  
+  const assigneeParam = params.get('assignee_id');
+  if (assigneeParam !== null) {
+    const el = document.getElementById('tcAssigneeFilter');
+    if (el) el.value = assigneeParam;
+  }
+  
+  const statusParam = params.get('task_status');
+  if (statusParam !== null) {
+    const el = document.getElementById('tcStatusFilter');
+    if (el) el.value = statusParam;
+  }
+}
+
 async function tcInitialRender() {
+  tcRestoreFiltersFromUrl();
   await tcRender();
   tcSetupStickyHeader();
   var dlTaskId = tcInitialDetailTaskId();
