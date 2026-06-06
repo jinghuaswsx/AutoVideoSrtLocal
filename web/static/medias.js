@@ -11649,7 +11649,7 @@
 
   window.MediasRawSources = {
     escapeHtml,
-    fetchJSON,
+    requestJSON,
     refreshRawSourceList,
     syncRawSourceCount,
     openTranslateDialog,
@@ -11659,7 +11659,7 @@
 // ======== 补素材 (Supplement Materials) Modal ========
 
 (function() {
-  const { escapeHtml, fetchJSON } = window.MediasRawSources;
+  const { escapeHtml, requestJSON: fetchJSON } = window.MediasRawSources;
 
   function openSupplementModal(productId, productCode, productName) {
   const mask = document.getElementById('supplementModalMask');
