@@ -4886,6 +4886,12 @@
         pager.innerHTML = '';
         pager.hidden = true;
       });
+      const capsulePager = $('bottomCapsulePager');
+      if (capsulePager) {
+        capsulePager.dataset.hasPages = 'false';
+        capsulePager.style.display = 'none';
+        capsulePager.classList.remove('visible');
+      }
       if (typeof window.updateMediaStickyOffsets === 'function') {
         window.requestAnimationFrame(() => window.updateMediaStickyOffsets());
       }
@@ -4943,6 +4949,35 @@
         });
       }
     });
+
+    const capsulePager = $('bottomCapsulePager');
+    if (capsulePager) {
+      capsulePager.dataset.hasPages = 'true';
+      const btnPrev = $('btnCapsulePrev');
+      const btnNext = $('btnCapsuleNext');
+      if (btnPrev && btnNext) {
+        const url = new URL(window.location.href);
+        if (currentPage > 1) {
+          url.searchParams.set('page', currentPage - 1);
+          btnPrev.href = url.pathname + url.search;
+          btnPrev.classList.remove('disabled');
+        } else {
+          btnPrev.href = 'javascript:void(0)';
+          btnPrev.classList.add('disabled');
+        }
+        if (currentPage < pages) {
+          url.searchParams.set('page', currentPage + 1);
+          btnNext.href = url.pathname + url.search;
+          btnNext.classList.remove('disabled');
+        } else {
+          btnNext.href = 'javascript:void(0)';
+          btnNext.classList.add('disabled');
+        }
+      }
+      if (typeof window.triggerCapsulePagerScrollCheck === 'function') {
+        window.triggerCapsulePagerScrollCheck();
+      }
+    }
 
     if (typeof window.updateMediaStickyOffsets === 'function') {
       window.requestAnimationFrame(() => window.updateMediaStickyOffsets());

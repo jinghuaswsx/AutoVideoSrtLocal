@@ -6,6 +6,63 @@
 {% block extra_style %}
 {% include "medias/_roas_styles.html" %}
 
+/* ────────── Bottom Capsule Pager ────────── */
+.oc-bottom-capsule-pager {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  display: none;
+  gap: var(--oc-sp-4, 16px);
+  z-index: 99;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.oc-bottom-capsule-pager.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+.oc-bottom-capsule-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  min-width: 120px;
+  padding: 0 24px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--oc-border-strong, #d1d5db);
+  background: var(--oc-bg, #fff);
+  color: var(--oc-fg, #111827);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08), 0 3px 6px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+.oc-bottom-capsule-btn:hover {
+  background: var(--oc-bg-muted, #f3f4f6);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+}
+.oc-bottom-capsule-btn.primary {
+  background: var(--oc-accent, #3b82f6);
+  color: #fff;
+  border-color: var(--oc-accent, #3b82f6);
+}
+.oc-bottom-capsule-btn.primary:hover {
+  background: var(--oc-accent-hover, #2563eb);
+}
+.oc-bottom-capsule-btn.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 /* Allow natural body vertical scrolling */
 
 /* ────────── Page header ────────── */
@@ -3931,6 +3988,29 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       setTimeout(handleFloatingHeaderVisibility, 50);
     });
   });
+
+  // 胶囊分页按钮滚动显示逻辑
+  function checkScrollBottom() {
+    const pager = document.getElementById('bottomCapsulePager');
+    if (!pager) return;
+    if (pager.dataset.hasPages !== 'true') {
+      pager.style.display = 'none';
+      pager.classList.remove('visible');
+      return;
+    }
+    pager.style.display = 'flex';
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const windowHeight = window.innerHeight;
+    const documentHeight = document.documentElement.scrollHeight;
+    if (scrollTop + windowHeight >= documentHeight - 15) {
+      pager.classList.add('visible');
+    } else {
+      pager.classList.remove('visible');
+    }
+  }
+  window.addEventListener('scroll', checkScrollBottom, { passive: true });
+  window.addEventListener('resize', checkScrollBottom);
+  window.triggerCapsulePagerScrollCheck = checkScrollBottom;
 })();
 </script>
 
@@ -4433,6 +4513,12 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       </div>
     </div>
   </div>
+</div>
+
+<!-- 底部大胶囊分页跳转按钮 -->
+<div id="bottomCapsulePager" class="oc-bottom-capsule-pager">
+  <a id="btnCapsulePrev" class="oc-bottom-capsule-btn" href="javascript:void(0)">上一页</a>
+  <a id="btnCapsuleNext" class="oc-bottom-capsule-btn primary" href="javascript:void(0)">下一页</a>
 </div>
 
 {% block extra_head %}
