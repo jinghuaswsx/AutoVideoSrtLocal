@@ -122,6 +122,25 @@ def test_video_materials_list_resets_scroll_container_and_keeps_header_sticky(au
     assert "top:0" in html
 
 
+def test_video_materials_preview_uses_large_playable_cover(authed_client_no_db):
+    script_response = authed_client_no_db.get("/static/media_video_materials.js")
+    page_response = authed_client_no_db.get("/medias/video")
+
+    assert script_response.status_code == 200
+    assert page_response.status_code == 200
+    script = script_response.get_data(as_text=True)
+    html = page_response.get_data(as_text=True)
+    assert "oc-vm-preview-btn" in script
+    assert "data-video-item" in script
+    assert "function openVideoPlayer(item)" in script
+    assert "vmPlayerMask" in script
+    assert "vmPlayerVideo" in script
+    assert "oc-vm-play" in script
+    assert "width:180px" in html
+    assert "height:320px" in html
+    assert 'id="vmPlayerMask"' in html
+
+
 def test_video_materials_api_defaults_to_page_size_100(authed_client_no_db, monkeypatch):
     captured = {}
 

@@ -186,10 +186,63 @@
 
   function previewHtml(item) {
     const src = item.cover_url || item.thumbnail_url || '';
-    if (src) {
-      return `<img src="${esc(src)}" alt="">`;
+    const videoUrl = item.video_url || '';
+    const preview = src
+      ? `<img src="${esc(src)}" alt="">`
+      : `<span>${icon('film', 24)}</span>`;
+    if (videoUrl) {
+      return `
+        <button type="button" class="oc-vm-preview-btn" data-video-item="${esc(item.id)}" title="播放视频：${esc(item.display_name || item.filename || '')}">
+          ${preview}
+          <span class="oc-vm-play" aria-hidden="true"></span>
+        </button>
+      `;
     }
-    return `<span>${icon('film', 18)}</span>`;
+    return preview;
+  }
+
+  function openVideoPlayer(item) {
+    const mask = $('vmPlayerMask');
+    const video = $('vmPlayerVideo');
+    const title = $('vmPlayerTitle');
+    if (!mask || !video || !item || !item.video_url) return;
+    if (title) title.textContent = item.display_name || item.filename || '视频预览';
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    video.src = item.video_url;
+    mask.hidden = false;
+    video.focus();
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {});
+    }
+  }
+
+  function closeVideoPlayer() {
+    const mask = $('vmPlayerMask');
+    const video = $('vmPlayerVideo');
+    if (video) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }
+    if (mask) mask.hidden = true;
+  }
+
+  function bindVideoPlayerShell() {
+    const mask = $('vmPlayerMask');
+    if (!mask || mask.dataset.bound === '1') return;
+    mask.dataset.bound = '1';
+    mask.querySelectorAll('[data-vm-player-close]').forEach(btn => {
+      btn.addEventListener('click', closeVideoPlayer);
+    });
+    mask.addEventListener('click', event => {
+      if (event.target === mask) closeVideoPlayer();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !mask.hidden) closeVideoPlayer();
+    });
   }
 
   function bindingHtml(item) {
@@ -382,6 +435,12 @@
         if (item) openBindingModal(item);
       });
     });
+    host.querySelectorAll('[data-video-item]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = state.items.find(row => Number(row.id) === Number(btn.dataset.videoItem));
+        if (item) openVideoPlayer(item);
+      });
+    });
     host.querySelectorAll('[data-ad-plan-item]').forEach(btn => {
       btn.addEventListener('click', () => {
         const item = state.items.find(row => Number(row.id) === Number(btn.dataset.adPlanItem));
@@ -556,6 +615,7 @@
   }
 
   function initVideoMaterials() {
+    bindVideoPlayerShell();
     const tabs = document.querySelectorAll('[data-media-tab]');
     if (!tabs.length) return;
     tabs.forEach(btn => btn.addEventListener('click', () => {

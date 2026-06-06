@@ -3117,14 +3117,14 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   background:var(--bg-body,#f2f4f8);
 }
 .oc-vm-total { justify-self:end; }
-.oc-vm-table { min-width:1940px; table-layout:fixed; overflow:visible; }
+.oc-vm-table { min-width:2120px; table-layout:fixed; overflow:visible; }
 .oc-vm-table thead th {
   position:sticky;
   top:0;
   z-index:6;
   background:var(--oc-bg-subtle);
 }
-.oc-vm-table th:nth-child(1), .oc-vm-table td:nth-child(1) { width:72px; }
+.oc-vm-table th:nth-child(1), .oc-vm-table td:nth-child(1) { width:204px; }
 .oc-vm-table th:nth-child(2), .oc-vm-table td:nth-child(2) { width:92px; }
 .oc-vm-table th:nth-child(5), .oc-vm-table td:nth-child(5) { width:120px; }
 .oc-vm-table th:nth-child(6), .oc-vm-table td:nth-child(6) { width:180px; }
@@ -3134,18 +3134,80 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-vm-table th:nth-child(11), .oc-vm-table td:nth-child(11) { width:92px; }
 .oc-vm-table th:nth-child(12), .oc-vm-table td:nth-child(12) { width:138px; }
 .oc-vm-table th:nth-child(13), .oc-vm-table td:nth-child(13) { width:96px; text-align:center; }
-.oc-vm-preview { width:48px; height:64px; }
-.oc-vm-preview img,
-.oc-vm-preview span {
+.oc-vm-preview {
+  width:180px;
+  height:320px;
+  padding:0 !important;
+  vertical-align:middle;
+}
+.oc-vm-preview > img,
+.oc-vm-preview > span,
+.oc-vm-preview-btn {
   display:flex;
   align-items:center;
   justify-content:center;
-  width:48px;
-  height:64px;
-  border-radius:var(--oc-r);
+  width:180px;
+  height:320px;
+  border-radius:var(--oc-r-md);
   background:var(--oc-bg-muted);
-  object-fit:cover;
   color:var(--oc-fg-muted);
+}
+.oc-vm-preview > img,
+.oc-vm-preview-btn img {
+  object-fit:cover;
+}
+.oc-vm-preview-btn {
+  position:relative;
+  border:1px solid var(--oc-border);
+  padding:0;
+  overflow:hidden;
+  cursor:pointer;
+}
+.oc-vm-preview-btn:hover {
+  border-color:var(--oc-accent);
+  box-shadow:0 0 0 2px var(--oc-accent-ring);
+}
+.oc-vm-preview-btn:focus-visible {
+  outline:2px solid var(--oc-accent);
+  outline-offset:2px;
+}
+.oc-vm-play {
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:50px;
+  height:50px;
+  transform:translate(-50%, -50%);
+  border-radius:50%;
+  background:oklch(22% 0.02 235 / 0.68);
+  box-shadow:0 10px 28px oklch(22% 0.02 235 / 0.24);
+}
+.oc-vm-play::before {
+  content:"";
+  position:absolute;
+  left:20px;
+  top:15px;
+  width:0;
+  height:0;
+  border-top:10px solid transparent;
+  border-bottom:10px solid transparent;
+  border-left:15px solid #fff;
+}
+.oc-vm-player-modal {
+  width:min(860px, calc(100vw - 48px));
+}
+.oc-vm-player-body {
+  display:flex;
+  justify-content:center;
+  background:oklch(16% 0.02 235);
+  padding:var(--oc-sp-4);
+}
+.oc-vm-player-video {
+  width:min(360px, calc(100vw - 96px));
+  max-height:78vh;
+  aspect-ratio:9 / 16;
+  background:#000;
+  border-radius:var(--oc-r-md);
 }
 .oc-vm-strong {
   font-weight:600;
@@ -4184,6 +4246,19 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 
 {% include "_medias_edit_modal.html" %}
 {% include "_medias_edit_detail_modal.html" %}
+<div id="vmPlayerMask" class="oc-modal-mask oc" hidden>
+  <div class="oc-modal oc-vm-player-modal" role="dialog" aria-modal="true" aria-labelledby="vmPlayerTitle">
+    <div class="oc-modal-head">
+      <h3 id="vmPlayerTitle">视频预览</h3>
+      <button type="button" class="oc-icon-btn" data-vm-player-close aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-modal-body oc-vm-player-body">
+      <video id="vmPlayerVideo" class="oc-vm-player-video" controls playsinline preload="metadata" tabindex="0"></video>
+    </div>
+  </div>
+</div>
 <div id="vmBindMask" class="oc-modal-mask oc" hidden>
   <div class="oc-modal oc-vm-bind-modal" role="dialog" aria-modal="true" aria-labelledby="vmBindTitle">
     <div class="oc-modal-head oc-vm-bind-head">
