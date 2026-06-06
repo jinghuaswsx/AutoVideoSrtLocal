@@ -268,20 +268,29 @@ def test_realtime_scope_cards_js_renders_cost_breakdown_and_ratios():
     assert "shopify_fee_ratio_pct" in render_block
 
 
-def test_realtime_global_cards_have_yesterday_same_time_compare_targets():
+def test_realtime_global_cards_render_yesterday_same_time_compare_inline():
+    """Docs-anchor: docs/superpowers/specs/2026-06-06-realtime-dashboard-yesterday-same-time-comparison-design.md#文案和样式"""
     panel = _realtime_panel_source()
+    template = _template_source()
 
-    assert 'id="realtimeRevenueWithShippingCompare"' in panel
-    assert 'id="realtimeOrderCountCompare"' in panel
-    assert 'id="realtimeProfitCompare"' in panel
-    assert panel.index('id="realtimeRevenueWithShipping"') < panel.index('id="realtimeRevenueWithShippingCompare"')
-    assert panel.index('id="realtimeOrderCount"') < panel.index('id="realtimeOrderCountCompare"')
-    assert panel.index('id="realtimeProfitMargin"') < panel.index('id="realtimeProfitCompare"')
+    assert 'id="realtimeRevenueWithShipping"' in panel
+    assert 'id="realtimeOrderCount"' in panel
+    assert 'id="realtimeProfit"' in panel
+    assert 'id="realtimeRevenueWithShippingCompare"' not in panel
+    assert 'id="realtimeOrderCountCompare"' not in panel
+    assert 'id="realtimeProfitCompare"' not in panel
     assert 'id="realtimeNewRevenueWithShippingCompare"' not in panel
     assert 'id="realtimeOldRevenueWithShippingCompare"' not in panel
     assert 'id="realtimeUnmatchedRevenueWithShippingCompare"' not in panel
-    assert ".oar-same-time-compare" in _template_source()
-    assert "font-size: 11px;" in _template_source()
+    assert ".oar-same-time-compare" in template
+    assert "font-size: 0.5em;" in template
+    assert "font-weight: 700;" in template
+    assert ".oar-same-time-up" in template
+    assert ".oar-same-time-down" in template
+    assert ".oar-same-time-flat" in template
+    assert "color: var(--success-fg);" in template
+    assert "color: var(--danger-fg);" in template
+    assert "color: var(--fg);" in template
 
 
 def test_realtime_global_same_time_compare_js_only_renders_global_scope():
@@ -292,18 +301,27 @@ def test_realtime_global_same_time_compare_js_only_renders_global_scope():
     ]
 
     assert "function formatRealtimeSameTimeCompare" in template
-    assert "function setRealtimeSameTimeCompare" in template
+    assert "function renderRealtimeValueWithSameTimeCompare" in template
     assert "function clearRealtimeSameTimeCompare" in template
     assert "data.comparison && data.comparison.yesterday_same_time" in render_block
     assert "if (scope !== 'global')" in render_block
-    assert "realtimeRevenueWithShippingCompare" in render_block
-    assert "realtimeOrderCountCompare" in render_block
-    assert "realtimeProfitCompare" in render_block
+    assert "renderRealtimeValueWithSameTimeCompare" in render_block
+    assert "'realtimeRevenueWithShipping'" in render_block
+    assert "'realtimeOrderCount'" in render_block
+    assert "'realtimeProfit'" in render_block
+    assert "realtimeRevenueWithShippingCompare" not in template
+    assert "realtimeOrderCountCompare" not in template
+    assert "realtimeProfitCompare" not in template
     assert "metric.pct === null" in template
     assert "metric.pct === undefined" in template
     assert "toFixed(0)" in template
     assert "'+'" in template
-    assert "'较昨天同刻 --'" in template
+    assert "return null;" in template
+    assert "oar-same-time-compare" in template
+    assert "oar-same-time-up" in template
+    assert "oar-same-time-down" in template
+    assert "oar-same-time-flat" in template
+    assert "较昨天同刻" not in template
 
 
 def test_realtime_scope_cards_explain_launch_window_in_business_terms():

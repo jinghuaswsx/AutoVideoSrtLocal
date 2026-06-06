@@ -57,19 +57,20 @@
 
 ### 文案和样式
 
-三个全局卡片新增独立 sub 行：
+三个全局卡片把昨天同进度变化百分比放在主数字后面，不新增独立 sub 行，不展示中文提示文案：
 
-- 总销售额：`较昨天同刻 +12%`
-- 订单数：`较昨天同刻 -8%`
-- 利润：`较昨天同刻 +5%`
+- 总销售额：`$1,200.00  +12%`
+- 订单数：`60  -8%`
+- 利润：`$240.00  +5%`
 
 显示规范：
 
-- 字号约为主值 50%，可复用或扩展 `.oa-stat-sub`。
+- 百分比与主数字在同一行，间隔约两个空格。
+- 百分比字号约为主数字 50%，加粗显示。
 - 正数显示 `+N%`，负数显示 `-N%`，0 显示 `0%`。
 - 百分比保留 0 位小数。
-- 正数使用现有正向色，负数使用现有亏损 / danger 色，0 或不可计算使用 muted 色。
-- 昨天为 0 且今天大于 0 时显示 `较昨天同刻 --`，因为百分比不可定义；昨天和今天都为 0 时显示 `0%`。
+- 正数使用现有正向色，负数使用现有亏损 / danger 色，0 使用正文黑色。
+- 昨天为 0 且今天大于 0 时百分比不可定义，前端不渲染该行内百分比；昨天和今天都为 0 时显示 `0%`。
 
 ## API 设计
 
@@ -174,21 +175,20 @@
 
 只改 `web/templates/order_analytics.html` 的全局卡片：
 
-- 在 `#realtimeRevenueWithShipping` 卡片增加 `#realtimeRevenueWithShippingCompare`。
-- 在 `#realtimeOrderCount` 卡片增加 `#realtimeOrderCountCompare`。
-- 在 `#realtimeProfit` 卡片现有 `#realtimeProfitSub`、`#realtimeProfitMargin` 之后增加 `#realtimeProfitCompare`。
-
-`renderRealtimeScopeSummary('global', data)` 中读取 `data.comparison.yesterday_same_time.summary`，只在 `enabled=true` 时写入；其它 scope 不渲染。
+- 不新增 `#realtimeRevenueWithShippingCompare`、`#realtimeOrderCountCompare`、`#realtimeProfitCompare` 独立 DOM 节点。
+- `#realtimeRevenueWithShipping`、`#realtimeOrderCount`、`#realtimeProfit` 主值节点内追加行内 `<span class="oar-same-time-compare">+N%</span>`。
+- 行内百分比 class 按数值添加：增长 `oar-same-time-up`，下降 `oar-same-time-down`，无变化 `oar-same-time-flat`。
+- `renderRealtimeScopeSummary('global', data)` 中读取 `data.comparison.yesterday_same_time.summary`，只在 `enabled=true` 时追加；其它 scope 不渲染。
 
 ## 错误和空值
 
-- 后端比较计算失败时，不影响主卡片数据；返回 `enabled=false` 并可在日志记录异常。
+- 后端比较计算失败时，不影响主卡片数据；返回 `enabled=false` 并可在日志记录异常；前端只显示主数字。
 - 昨天没有对应快照时：
   - 订单 / 销售额仍可从订单明细按时间截断计算。
-  - 广告和利润若缺实时广告水位，则利润比较返回 `pct=null`，前端显示 `--`。
+  - 广告和利润若缺实时广告水位，则利润比较返回 `pct=null`，前端不追加百分比。
   - 不退回日终整日广告表。
 - 昨天同刻订单数为 0、今天订单数为 0：显示 `0%`。
-- 昨天同刻订单数为 0、今天订单数大于 0：显示 `--`。
+- 昨天同刻订单数为 0、今天订单数大于 0：不追加百分比。
 
 ## 不做
 
@@ -206,8 +206,8 @@
    - 新增 / 调整水位受限利润汇总 helper。
    - 单日当前业务日全局响应附加 `comparison.yesterday_same_time`。
 3. `web/templates/order_analytics.html`
-   - 增加三个全局卡片 sub 节点。
-   - 增加格式化和渲染逻辑。
+   - 在三个全局主值节点内追加行内百分比。
+   - 增加格式化、样式和渲染逻辑。
 4. `tests/`
    - 增加后端单测覆盖水位、百分比、利润水位受限和非当天禁用。
    - 增加模板/JS 字符串级测试覆盖三个 DOM id 与格式化逻辑。
@@ -229,9 +229,9 @@ pytest tests/test_order_analytics_true_roas.py \
 
 1. 启动 dev server。
 2. 登录后访问 `/order-analytics`，进入实时大盘。
-3. 选择“今天”：全局卡片的总销售额、订单数、利润显示“较昨天同刻 +/-N%”。
-4. 选择“昨天”或自定义非今天范围：三条对比隐藏或显示为空。
-5. 切换店铺筛选 / 产品筛选：三条对比隐藏，避免局部筛选误读为全局对比。
+3. 选择“今天”：全局卡片的总销售额、订单数、利润主数字后显示 `+/-N%`，没有中文提示。
+4. 选择“昨天”或自定义非今天范围：只显示主数字，不追加对比百分比。
+5. 切换店铺筛选 / 产品筛选：只显示主数字，避免局部筛选误读为全局对比。
 
 ## related
 
