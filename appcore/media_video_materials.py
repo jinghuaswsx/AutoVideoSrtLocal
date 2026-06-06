@@ -205,6 +205,8 @@ def list_video_materials(
     rows = query(
         "SELECT i.id, i.product_id, i.lang, i.filename, i.display_name, "
         "       i.object_key, i.thumbnail_path, i.cover_object_key, "
+        "       i.source_raw_id, i.source_ref_id, i.auto_translated, "
+        "       rs.id AS raw_source_id, rs.cover_object_key AS raw_source_cover_object_key, "
         "       i.duration_seconds, i.file_size, i.pushed_at, i.latest_push_id, i.created_at, "
         "       p.name AS product_name, p.product_code, p.mk_id AS product_mk_id, "
         "       u.username AS owner_username, "
@@ -217,6 +219,9 @@ def list_video_materials(
         "JOIN media_products p ON p.id=i.product_id "
         "LEFT JOIN users u ON u.id=i.user_id "
         "LEFT JOIN media_item_mk_bindings b ON b.media_item_id=i.id "
+        "LEFT JOIN media_raw_sources rs "
+        "  ON rs.id=COALESCE(i.source_raw_id, CASE WHEN i.auto_translated=1 THEN i.source_ref_id ELSE NULL END) "
+        " AND rs.deleted_at IS NULL "
         f"WHERE {where_sql} "
         "ORDER BY i.created_at DESC, i.id DESC "
         "LIMIT %s OFFSET %s",
@@ -586,6 +591,27 @@ def _image_cover_url(item: dict[str, Any]) -> str:
     return ""
 
 
+def _mk_cover_url(item: dict[str, Any]) -> str:
+    path = normalize_mk_media_path(str(item.get("mk_video_image_path") or ""))
+    if not path or _looks_like_video_object_key(path):
+        return ""
+    return f"/medias/api/mk-media?path={quote(path, safe='')}"
+
+
+def _source_raw_cover_url(item: dict[str, Any]) -> str:
+    raw_cover_key = item.get("raw_source_cover_object_key")
+    if not raw_cover_key or _looks_like_video_object_key(raw_cover_key):
+        return ""
+    raw_id = _int_value(item.get("raw_source_id"))
+    if raw_id <= 0:
+        raw_id = _int_value(item.get("source_raw_id"))
+    if raw_id <= 0 and item.get("auto_translated"):
+        raw_id = _int_value(item.get("source_ref_id"))
+    if raw_id <= 0:
+        return ""
+    return f"/medias/raw-sources/{raw_id}/cover"
+
+
 def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
     item = _decimal_to_float(row)
     push_success_count = int(item.get("push_success_count") or 0)
@@ -607,6 +633,8 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
     pushed_at_val = item.get("ad_plan_activity_date") if has_ad_plan else None
     thumbnail_url = f"/medias/thumb/{int(item['id'])}" if item.get("thumbnail_path") else ""
     cover_url = _image_cover_url(item)
+    mk_cover_url = _mk_cover_url(item)
+    source_raw_cover_url = _source_raw_cover_url(item)
     return {
         "id": int(item["id"]),
         "product_id": int(item["product_id"]),
@@ -619,7 +647,9 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
         "object_key": item.get("object_key") or "",
         "thumbnail_url": thumbnail_url,
         "cover_url": cover_url,
-        "preview_cover_url": cover_url or thumbnail_url,
+        "source_raw_cover_url": source_raw_cover_url,
+        "mk_cover_url": mk_cover_url,
+        "preview_cover_url": mk_cover_url or source_raw_cover_url or cover_url,
         "video_url": f"/medias/object?object_key={quote(str(item.get('object_key') or ''), safe='')}",
         "duration_seconds": item.get("duration_seconds"),
         "file_size": item.get("file_size"),

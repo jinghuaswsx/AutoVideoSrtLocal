@@ -91,13 +91,15 @@
       }
     ]
   },
-  "preview_cover_url": "/medias/item-cover/123"
+  "mk_cover_url": "/medias/api/mk-media?path=uploads2%2Fposter.jpg",
+  "source_raw_cover_url": "/medias/raw-sources/322/cover",
+  "preview_cover_url": "/medias/raw-sources/322/cover"
 }
 ```
 
 `has_ad_plan` 和 `ad_plan_detail` 保持兼容，仍以匹配广告中最新且消耗最高的 campaign 作为深链入口。
 
-`preview_cover_url` 是视频素材列表唯一可用于预览列的封面图片地址，优先取素材封面，其次取本地缩略图；它不得等于视频播放地址，也不得指向明显的视频对象。`video_url` 只允许在用户点击封面播放时赋给播放器。
+`preview_cover_url` 是视频素材列表唯一可用于预览列的封面图片地址，优先级为：绑定明控素材封面图 `mk_cover_url`、翻译视频关联的原始素材封面 `source_raw_cover_url`、当前素材手动图片封面 `cover_url`。它不得等于视频播放地址，也不得指向明显的视频对象；`thumbnail_url` 是视频抽帧缩略图，不用于列表预览。`video_url` 只允许在用户点击封面播放时赋给播放器。
 
 ## 前端设计
 
@@ -112,7 +114,7 @@
 - `ROAS` 单元格参考产品管理 ROAS 指标样式显示总 ROAS；无消耗时显示 `-`。
 - `国家情况` 单元格参考产品管理“语种和投放情况”的国家/语种分行样式，按消耗倒序渲染国家行：`德(DE) 消耗 $x ROAS y`。
 - 无国家数据时显示 `-`。
-- 视频素材预览封面使用 180x320 竖版尺寸，中间显示播放按钮；列表行只渲染 `preview_cover_url` 图片，不渲染或预加载视频；点击后才在页面内弹出视频播放器播放该素材原视频，不跳出列表页。
+- 视频素材预览封面使用 180x320 竖版尺寸，中间显示播放按钮；列表行只渲染 `preview_cover_url` 图片，不渲染或预加载视频，不使用视频第一帧缩略图；点击后才在页面内弹出视频播放器播放该素材原视频，不跳出列表页。
 
 `web/templates/medias_list.html`：
 

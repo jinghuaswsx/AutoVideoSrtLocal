@@ -16,6 +16,11 @@ def _video_row(**overrides):
         "object_key": "media/items/widget demo.mp4",
         "thumbnail_path": "thumb.jpg",
         "cover_object_key": "cover.jpg",
+        "source_raw_id": None,
+        "source_ref_id": None,
+        "auto_translated": 0,
+        "raw_source_id": None,
+        "raw_source_cover_object_key": None,
         "duration_seconds": 12.5,
         "file_size": 1024,
         "pushed_at": None,
@@ -83,7 +88,9 @@ def test_list_video_materials_filters_and_serializes(monkeypatch):
     assert payload["items"][0]["mk_binding"]["mk_video_path"] == "materials/widget.mp4"
     assert payload["items"][0]["cover_url"] == "/medias/item-cover/11"
     assert payload["items"][0]["thumbnail_url"] == "/medias/thumb/11"
-    assert payload["items"][0]["preview_cover_url"] == "/medias/item-cover/11"
+    assert payload["items"][0]["mk_cover_url"] == "/medias/api/mk-media?path=materials%2Fwidget.jpg"
+    assert payload["items"][0]["source_raw_cover_url"] == ""
+    assert payload["items"][0]["preview_cover_url"] == "/medias/api/mk-media?path=materials%2Fwidget.jpg"
     assert payload["items"][0]["video_url"] == "/medias/object?object_key=media%2Fitems%2Fwidget%20demo.mp4"
     assert payload["items"][0]["ad_plan_detail"]["code"] == "widget-rjc-campaign"
     assert payload["items"][0]["ad_plan_detail"]["ad_account_id"] == "1253003326160754"
@@ -459,25 +466,30 @@ def test_serialize_video_material_includes_campaign_detail_link():
 def test_serialize_video_material_preview_cover_never_uses_video_object_key():
     item = mvm.serialize_video_material(_video_row(
         cover_object_key="media/items/demo.mp4",
+        mk_video_image_path="",
         thumbnail_path="thumb.jpg",
     ))
 
     assert item["cover_url"] == ""
     assert item["thumbnail_url"] == "/medias/thumb/11"
-    assert item["preview_cover_url"] == "/medias/thumb/11"
+    assert item["preview_cover_url"] == ""
     assert item["preview_cover_url"] != item["video_url"]
 
 
-def test_serialize_video_material_preview_cover_is_empty_without_image_cover():
+def test_serialize_video_material_preview_cover_prefers_source_raw_cover():
     item = mvm.serialize_video_material(_video_row(
-        cover_object_key="media/items/demo.mp4",
-        thumbnail_path="",
+        cover_object_key="translated-cover.png",
+        mk_video_image_path="",
+        source_raw_id=322,
+        source_ref_id=322,
+        auto_translated=1,
+        raw_source_id=322,
+        raw_source_cover_object_key="media/raw/source-cover.png",
     ))
 
-    assert item["cover_url"] == ""
-    assert item["thumbnail_url"] == ""
-    assert item["preview_cover_url"] == ""
-    assert item["video_url"] == "/medias/object?object_key=media%2Fitems%2Fwidget%20demo.mp4"
+    assert item["cover_url"] == "/medias/item-cover/11"
+    assert item["source_raw_cover_url"] == "/medias/raw-sources/322/cover"
+    assert item["preview_cover_url"] == "/medias/raw-sources/322/cover"
 
 
 def test_serialize_video_material_without_ad_campaign_code_returns_no_link():
