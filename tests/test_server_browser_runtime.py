@@ -208,6 +208,16 @@ def test_ad_order_backfill_units_are_registered_with_expected_schedules():
     assert "OnCalendar=Mon *-*-* 20:30:00" in weekly_timer
 
 
+def test_usd_cny_exchange_rate_sync_timer_runs_daily_at_6am():
+    service = _read("deploy/server_browser/autovideosrt-usd-cny-exchange-rate-sync.service")
+    timer = _read("deploy/server_browser/autovideosrt-usd-cny-exchange-rate-sync.timer")
+
+    assert "tools/usd_cny_exchange_rate_sync.py" in service
+    assert "After=network-online.target mysql.service" in service
+    assert "OnCalendar=*-*-* 06:00:00" in timer
+    assert "Persistent=true" in timer
+
+
 def test_browser_automation_timers_are_staggered_to_reduce_lock_contention():
     shopify = _read("deploy/server_browser/autovideosrt-shopifyid-sync.timer")
     roi = _read("deploy/server_browser/autovideosrt-roi-realtime-sync.timer")

@@ -137,6 +137,22 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "待部署",
         "log_table": "scheduled_task_runs",
     },
+    "usd_cny_exchange_rate_sync": {
+        "code": "usd_cny_exchange_rate_sync",
+        "name": "USD/CNY 每日基准汇率同步",
+        "description": (
+            "每天北京时间 06:00 拉取 USD/CNY 汇率，使用 Frankfurter 主源与 Open ER API、FloatRates "
+            "两个校验源做三源交叉验证；最大相对差异 <= 5% 才归档为当天订单核算基准。Docs-anchor: "
+            "docs/superpowers/specs/2026-06-06-usd-cny-daily-exchange-rate-design.md"
+        ),
+        "schedule": "每天 06:00（北京时间，三来源交叉验证）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-usd-cny-exchange-rate-sync.timer",
+        "runner": "tools/usd_cny_exchange_rate_sync.py",
+        "deployment": "待部署",
+        "log_table": "scheduled_task_runs",
+    },
     "sku_actual_breakeven_roas": {
         "code": "sku_actual_breakeven_roas",
         "name": "SKU 实际保本 ROAS 快照",

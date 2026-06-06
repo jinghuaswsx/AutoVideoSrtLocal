@@ -1,0 +1,16 @@
+[Unit]
+Description=AutoVideoSrt USD/CNY daily exchange-rate sync
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/autovideosrt
+EnvironmentFile=-/opt/autovideosrt/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/usd_cny_exchange_rate_sync.py
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=120

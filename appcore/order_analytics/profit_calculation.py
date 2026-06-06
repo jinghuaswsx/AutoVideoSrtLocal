@@ -181,6 +181,9 @@ def calculate_line_profit(
         "missing_fields": missing,
         "cost_basis": {
             "rmb_per_usd": float(rmb_per_usd),
+            "exchange_rate_source": line.get("exchange_rate_source"),
+            "exchange_rate_date": line.get("exchange_rate_date"),
+            "exchange_rate_source_id": line.get("exchange_rate_source_id"),
             "return_reserve_rate": float(return_reserve_rate),
             "purchase_price_cny": float(purchase_cny),
             "shipping_cost_cny": float(shipping_cost_cny),

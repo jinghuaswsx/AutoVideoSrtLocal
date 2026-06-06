@@ -29,6 +29,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from appcore.db import query, query_one
+from appcore import exchange_rates
 from appcore.order_analytics.cost_allocation import (
     allocate_shipping_to_line,
     get_sku_daily_ad_spend,
@@ -103,6 +104,13 @@ def _compute_order_shipping(lines: list[dict]) -> dict[str, float]:
     return shipping
 
 
+def _resolve_business_date(line: dict) -> date | None:
+    business_date = line.get("meta_business_date")
+    if business_date is None and line.get("order_paid_at"):
+        business_date = line["order_paid_at"].date()
+    return business_date
+
+
 def _process_line(
     line: dict,
     *,
@@ -112,11 +120,10 @@ def _process_line(
     sku_spend_cache: dict,
     rmb_per_usd: Decimal,
     return_reserve_rate: Decimal,
+    exchange_rate_basis: dict[str, Any] | None = None,
 ) -> dict:
     """单行核算。返回 calculate_line_profit 结果（含 status, profit_usd 等）。"""
-    business_date = line.get("meta_business_date")
-    if business_date is None and line.get("order_paid_at"):
-        business_date = line["order_paid_at"].date()
+    business_date = _resolve_business_date(line)
     product_id = line.get("product_id")
     line_amount = float(line.get("line_amount") or 0)
     quantity = int(line.get("quantity") or 1)
@@ -189,6 +196,7 @@ def _process_line(
         "product_purchase_price_cny": purchase_price,
         "shipping_cost_cny": shipping_cost_cny,
         "shipping_cost_source": shipping_cost_source,
+        **(exchange_rate_basis or {}),
     }
     return calculate_line_profit(
         line_input,
@@ -207,24 +215,32 @@ def backfill(
 ) -> dict[str, Any]:
     """主回填函数。返回汇总统计。"""
     from appcore.order_analytics.profit_calculation import get_configured_return_reserve_rate
-    rmb = rmb_per_usd or get_configured_rmb_per_usd()
+    manual_rate = Decimal(str(rmb_per_usd)) if rmb_per_usd is not None else None
+    configured_fallback_rate = get_configured_rmb_per_usd()
+    run_rate = manual_rate if manual_rate is not None else None
     if return_reserve_rate is None:
         return_reserve_rate = get_configured_return_reserve_rate()
-    log.info("backfill window: %s ~ %s, rmb_per_usd=%s, dry_run=%s",
-             date_from, date_to, rmb, dry_run)
+    exchange_rate_mode = "manual_override" if manual_rate is not None else "daily_archive"
+    log.info("backfill window: %s ~ %s, exchange_rate_mode=%s, dry_run=%s",
+             date_from, date_to, exchange_rate_mode, dry_run)
 
     if not dry_run:
         run_id = start_profit_run(
             task_code="backfill",
             window_start_at=datetime.combine(date_from, datetime.min.time()),
             window_end_at=datetime.combine(date_to, datetime.max.time()),
-            rmb_per_usd=float(rmb),
+            rmb_per_usd=float(run_rate) if run_rate is not None else None,
             return_reserve_rate=float(return_reserve_rate),
         )
     else:
         run_id = None
 
     totals = {"lines_total": 0, "lines_ok": 0, "lines_incomplete": 0, "lines_error": 0}
+    exchange_rate_stats = {
+        "mode": exchange_rate_mode,
+        "fallback_lines": 0,
+        "manual_override": float(manual_rate) if manual_rate is not None else None,
+    }
     sku_units_cache: dict = {}
     sku_spend_cache: dict = {}
     samples: list[dict] = []  # dry_run 用，前 5 行预览
@@ -235,18 +251,41 @@ def backfill(
             lines = query(_LINE_QUERY, (m_start, m_end))
             order_totals = _compute_order_total_line_amount(lines)
             order_shipping = _compute_order_shipping(lines)
+            if manual_rate is None:
+                business_dates = [
+                    d for d in (_resolve_business_date(line) for line in lines)
+                    if d is not None
+                ]
+                rate_lookup_map = exchange_rates.get_usd_to_cny_map(
+                    business_dates,
+                    fallback_rate=configured_fallback_rate,
+                )
+            else:
+                rate_lookup_map = {}
+                manual_lookup = exchange_rates.manual_rate_lookup(manual_rate)
 
             for line in lines:
                 pkg = line.get("dxm_package_id") or ""
                 try:
+                    biz_for_rate = _resolve_business_date(line)
+                    if manual_rate is not None:
+                        rate_lookup = manual_lookup
+                    else:
+                        rate_lookup = rate_lookup_map.get(
+                            biz_for_rate,
+                            exchange_rates.configured_fallback_lookup(configured_fallback_rate),
+                        )
+                    if rate_lookup.source == "configured_fallback":
+                        exchange_rate_stats["fallback_lines"] += 1
                     result, biz_date = _process_line(
                         line,
                         order_total_amount=order_totals.get(pkg, 0),
                         order_shipping=order_shipping.get(pkg, 0),
                         sku_units_cache=sku_units_cache,
                         sku_spend_cache=sku_spend_cache,
-                        rmb_per_usd=rmb,
+                        rmb_per_usd=rate_lookup.rate,
                         return_reserve_rate=return_reserve_rate,
+                        exchange_rate_basis=rate_lookup.cost_basis(),
                     )
                     totals["lines_total"] += 1
                     if result["status"] == "ok":
@@ -284,6 +323,7 @@ def backfill(
             unalloc += get_unallocated_ad_spend(business_date=d)
             d += timedelta(days=1)
         totals["unallocated_ad_spend_usd"] = round(unalloc, 4)
+        totals["exchange_rate"] = exchange_rate_stats
 
         if not dry_run:
             finish_profit_run(

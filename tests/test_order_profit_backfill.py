@@ -62,3 +62,102 @@ def test_process_line_uses_meta_business_date_for_ad_allocation(monkeypatch):
         "units_date": date(2026, 4, 30),
         "spend_date": date(2026, 4, 30),
     }
+
+
+def test_backfill_uses_daily_exchange_rate_per_business_date(monkeypatch):
+    """未手工指定汇率时，同一窗口内不同业务日必须用各自归档汇率。"""
+    rates_seen: list[Decimal] = []
+    basis_seen: list[dict] = []
+
+    lines = [
+        {
+            "dxm_order_line_id": 201,
+            "product_id": 7,
+            "quantity": 1,
+            "line_amount": Decimal("100.00"),
+            "order_amount": Decimal("100.00"),
+            "ship_amount": Decimal("0.00"),
+            "buyer_country": "US",
+            "order_paid_at": datetime(2026, 6, 6, 8, 30, 0),
+            "paid_at": datetime(2026, 6, 6, 8, 30, 0),
+            "meta_business_date": date(2026, 6, 6),
+            "dxm_package_id": "PKG-201",
+            "logistic_fee": None,
+            "purchase_price": Decimal("10.00"),
+            "packet_cost_actual": Decimal("5.00"),
+            "packet_cost_estimated": None,
+        },
+        {
+            "dxm_order_line_id": 202,
+            "product_id": 7,
+            "quantity": 1,
+            "line_amount": Decimal("100.00"),
+            "order_amount": Decimal("100.00"),
+            "ship_amount": Decimal("0.00"),
+            "buyer_country": "US",
+            "order_paid_at": datetime(2026, 6, 7, 8, 30, 0),
+            "paid_at": datetime(2026, 6, 7, 8, 30, 0),
+            "meta_business_date": date(2026, 6, 7),
+            "dxm_package_id": "PKG-202",
+            "logistic_fee": None,
+            "purchase_price": Decimal("10.00"),
+            "packet_cost_actual": Decimal("5.00"),
+            "packet_cost_estimated": None,
+        },
+    ]
+
+    monkeypatch.setattr(opb, "query", lambda sql, params=(): lines)
+    monkeypatch.setattr(opb, "get_configured_rmb_per_usd", lambda: Decimal("6.83"))
+    monkeypatch.setattr(opb, "get_sku_daily_units", lambda **kwargs: 1)
+    monkeypatch.setattr(opb, "get_sku_daily_ad_spend", lambda **kwargs: 0)
+    monkeypatch.setattr(opb, "get_unallocated_ad_spend", lambda **kwargs: 0)
+
+    class FakeLookup:
+        def __init__(self, rate: str, rate_date: date, source_id: int):
+            self.rate = Decimal(rate)
+            self.source = "daily_archive"
+            self.rate_date = rate_date
+            self.source_id = source_id
+
+        def cost_basis(self):
+            return {
+                "exchange_rate_source": self.source,
+                "exchange_rate_date": self.rate_date.isoformat(),
+                "exchange_rate_source_id": self.source_id,
+            }
+
+    monkeypatch.setattr(
+        opb.exchange_rates,
+        "get_usd_to_cny_map",
+        lambda dates, fallback_rate=None: {
+            date(2026, 6, 6): FakeLookup("6.70", date(2026, 6, 6), 1),
+            date(2026, 6, 7): FakeLookup("6.90", date(2026, 6, 7), 2),
+        },
+    )
+
+    def fake_calculate(line_input, *, rmb_per_usd, return_reserve_rate):
+        rates_seen.append(rmb_per_usd)
+        basis_seen.append(
+            {
+                "source": line_input["exchange_rate_source"],
+                "date": line_input["exchange_rate_date"],
+                "source_id": line_input["exchange_rate_source_id"],
+            }
+        )
+        return {
+            "status": "ok",
+            "dxm_order_line_id": line_input["dxm_order_line_id"],
+            "profit_usd": 1,
+            "missing_fields": [],
+        }
+
+    monkeypatch.setattr(opb, "calculate_line_profit", fake_calculate)
+
+    result = opb.backfill(date(2026, 6, 6), date(2026, 6, 7), dry_run=True)
+
+    assert rates_seen == [Decimal("6.70"), Decimal("6.90")]
+    assert basis_seen == [
+        {"source": "daily_archive", "date": "2026-06-06", "source_id": 1},
+        {"source": "daily_archive", "date": "2026-06-07", "source_id": 2},
+    ]
+    assert result["totals"]["exchange_rate"]["fallback_lines"] == 0
