@@ -360,6 +360,7 @@
     const prevPage = Math.max(1, page - 1);
     const nextPage = Math.min(pages, page + 1);
     const buttons = [
+      `<span class="oc-vm-page-summary">每页 <strong style="color: #2563eb; font-weight: bold;">${pageSize}</strong> 条数据</span>`,
       `<span class="oc-vm-page-summary" data-vm-page-summary>第 ${page} / ${pages} 页 · 共 ${pages} 页</span>`,
       `<button type="button" data-vm-page="1"${firstDisabled}>首页</button>`,
       `<button type="button" data-vm-page="${prevPage}"${firstDisabled}>上一页</button>`,
