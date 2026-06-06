@@ -2499,7 +2499,11 @@ document.querySelectorAll('[data-section-tab]').forEach(btn => {
 document.querySelectorAll('[data-bucket]').forEach(btn => {
   btn.addEventListener('click', () => {
     const bucket = btn.dataset.bucket || 'all';
-    window.location.href = `/tasks/overview/${bucket}`;
+    const params = new URLSearchParams(window.location.search);
+    params.delete('page'); // 切换子 Tab 时重置页码
+    params.delete('bucket'); // 移除冗余的 bucket 参数
+    const searchStr = params.toString();
+    window.location.href = `/tasks/overview/${bucket}` + (searchStr ? '?' + searchStr : '');
   });
 });
 document.getElementById('tcRefresh').addEventListener('click', () => { TC_TASK_PAGE = 1; tcRender(); });
@@ -2817,7 +2821,10 @@ function tcTaskJumpPage(event, totalPages) {
 }
 function tcTaskDetailUrl(id) {
   const taskId = Number(id || 0);
-  return taskId > 0 ? '/tasks/detail/' + encodeURIComponent(String(taskId)) : '/tasks/';
+  if (taskId <= 0) return '/tasks/';
+  const params = new URLSearchParams(window.location.search);
+  params.set('bucket', TC_CURRENT_BUCKET);
+  return '/tasks/detail/' + encodeURIComponent(String(taskId)) + '?' + params.toString();
 }
 function tcOpenDetailAction(id) {
   window.location.href = tcTaskDetailUrl(id);
@@ -3250,7 +3257,18 @@ async function tcRefreshDetail(id, btn) {
     tcSetDetailRefreshBusy(btn, false);
   }
 }
-function tcCloseDetail() { document.getElementById('tcDetailDrawer').style.display = 'none'; TC_DETAIL_TASK_ID = null; TC_DETAIL_CURRENT_TASK = null; }
+function tcCloseDetail() {
+  document.getElementById('tcDetailDrawer').style.display = 'none';
+  TC_DETAIL_TASK_ID = null;
+  TC_DETAIL_CURRENT_TASK = null;
+
+  // 隐藏详情后，无刷切回列表 URL，保留过滤参数并清理冗余的 bucket 参数
+  const currentUrl = new URL(window.location.href);
+  const bucket = TC_CURRENT_BUCKET || 'all';
+  currentUrl.pathname = `/tasks/overview/${bucket}`;
+  currentUrl.searchParams.delete('bucket');
+  window.history.replaceState({}, '', currentUrl.pathname + currentUrl.search);
+}
 
 let TC_FEEDBACK_IMAGE_LAST_FOCUS = null;
 function tcOpenFeedbackImageModal(url, label) {
