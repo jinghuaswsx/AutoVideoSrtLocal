@@ -10,8 +10,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from pathlib import PurePosixPath
+from typing import Any, Mapping
 
 from flask import jsonify, request
 from flask_login import login_required
@@ -35,6 +37,8 @@ LANG_NAMES: dict[str, str] = {
 }
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
+_SPACE_RE = re.compile(r"\s+")
+_MAX_AD_DETAIL_DAYS = 180
 
 
 def _json(payload: dict, status: int = 200):
@@ -77,7 +81,6 @@ def _card_id(video_path: str, media_item_id: int | None = None) -> str:
         return f"lib-{media_item_id}-{path_hash}"
     return f"mk-{path_hash}"
 
-
 def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
     if lib_item['id'] == bound_item['id']:
         return True
@@ -105,6 +108,493 @@ def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
             return True
             
     return False
+
+
+def _iso(value: Any) -> str | None:
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ")
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value) if value else None
+
+
+def _normalize_material_name(value: str | None) -> str:
+    raw = str(value or "").strip().replace("\\", "/")
+    if not raw:
+        return ""
+    raw = raw.split("?", 1)[0].split("#", 1)[0]
+    name = PurePosixPath(raw).name.strip().lower()
+    return _SPACE_RE.sub(" ", name)
+
+
+def _term_no_ext(value: str) -> str:
+    normalized = _normalize_material_name(value)
+    if "." in normalized:
+        return normalized.rsplit(".", 1)[0]
+    return normalized
+
+
+def _row_matches_term(row: dict, term: str) -> bool:
+    needle = str(term or "").strip().lower()
+    if not needle:
+        return False
+    ad_name = str(row.get("ad_name") or "").lower()
+    ad_code = str(row.get("normalized_ad_code") or "").lower()
+    return needle in ad_name or needle in ad_code
+
+
+def _match_reason(row: dict, terms: list[dict[str, str]]) -> str:
+    for item in terms:
+        if _row_matches_term(row, item["term"]):
+            return item["reason"]
+    return "unknown"
+
+
+def _add_match_term(terms: list[dict[str, str]], seen: set[str], value: Any, reason: str) -> None:
+    raw = str(value or "").strip()
+    if not raw:
+        return
+    candidates = [raw, _normalize_material_name(raw), _term_no_ext(raw)]
+    for candidate in candidates:
+        normalized = str(candidate or "").strip().lower()
+        if len(normalized) < 4 or normalized in seen:
+            continue
+        seen.add(normalized)
+        terms.append({"term": normalized, "reason": reason})
+
+
+def _ad_detail_date_range(args: Mapping[str, Any], *, today: date | None = None) -> tuple[date, date]:
+    today = today or date.today()
+
+    def parse_date(value: Any, default: date) -> date:
+        text = str(value or "").strip()
+        if not text:
+            return default
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError as exc:
+            raise ValueError("日期格式必须是 YYYY-MM-DD") from exc
+
+    date_to = parse_date(args.get("date_to"), today)
+    date_from = parse_date(args.get("date_from"), date_to - timedelta(days=29))
+    if date_from > date_to:
+        raise ValueError("date_from 不能晚于 date_to")
+    if (date_to - date_from).days + 1 > _MAX_AD_DETAIL_DAYS:
+        raise ValueError(f"日期范围不能超过 {_MAX_AD_DETAIL_DAYS} 天")
+    return date_from, date_to
+
+
+def _load_product(product_id: int, query_fn=db_query) -> dict | None:
+    rows = query_fn(
+        "SELECT id, name, product_code FROM media_products "
+        "WHERE id = %s AND deleted_at IS NULL",
+        [product_id],
+    )
+    return rows[0] if rows else None
+
+
+def _load_mk_videos(product_code: str, query_fn=db_query) -> list[dict]:
+    mk_search_handle = _strip_rjc(product_code) if product_code else ""
+    if not mk_search_handle:
+        return []
+    search_terms = [mk_search_handle]
+    rjc_handle = f"{mk_search_handle}-rjc"
+    if rjc_handle.lower() != mk_search_handle.lower():
+        search_terms.append(rjc_handle)
+    placeholders = ",".join(["%s"] * len(search_terms))
+    return query_fn(
+        f"""
+        SELECT s.*
+        FROM mingkong_material_daily_snapshots s
+        JOIN mingkong_material_sync_runs r ON r.id = s.run_id AND r.status = 'success'
+        JOIN (
+            SELECT s2.material_key, MAX(s2.snapshot_at) AS latest_snapshot_at
+            FROM mingkong_material_daily_snapshots s2
+            JOIN mingkong_material_sync_runs r2 ON r2.id = s2.run_id AND r2.status = 'success'
+            WHERE LOWER(s2.product_code) IN ({placeholders})
+            GROUP BY s2.material_key
+        ) latest ON latest.material_key = s.material_key
+               AND latest.latest_snapshot_at = s.snapshot_at
+        ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC
+        """,
+        [t.lower() for t in search_terms],
+    )
+
+
+def _load_library_items(product_id: int, query_fn=db_query) -> list[dict]:
+    return query_fn(
+        "SELECT id, lang, filename, display_name, object_key, task_id, created_at "
+        "FROM media_items "
+        "WHERE product_id = %s AND deleted_at IS NULL "
+        "ORDER BY lang, created_at, id",
+        [product_id],
+    )
+
+
+def _load_mk_bindings(item_ids: list[int], query_fn=db_query) -> tuple[dict[str, int], dict[int, str]]:
+    bindings_by_path: dict[str, int] = {}
+    bindings_by_item: dict[int, str] = {}
+    if not item_ids:
+        return bindings_by_path, bindings_by_item
+    id_placeholders = ",".join(["%s"] * len(item_ids))
+    rows = query_fn(
+        "SELECT media_item_id, mk_video_path "
+        f"FROM media_item_mk_bindings WHERE media_item_id IN ({id_placeholders})",
+        item_ids,
+    )
+    for row in rows:
+        path = str(row.get("mk_video_path") or "").strip()
+        media_item_id = int(row["media_item_id"])
+        if path:
+            bindings_by_path[path] = media_item_id
+            bindings_by_item[media_item_id] = path
+    return bindings_by_path, bindings_by_item
+
+
+def _load_lang_ad_summary(product_id: int, query_fn=db_query) -> dict[str, dict]:
+    rows = query_fn(
+        "SELECT lang, ad_spend_usd, active_7d_ad_spend_usd, purchase_value_usd, "
+        "       ad_roas, pushed_video_count, item_count "
+        "FROM media_product_lang_ad_summary_cache "
+        "WHERE product_id = %s",
+        [product_id],
+    )
+    out: dict[str, dict] = {}
+    for row in rows:
+        lang = str(row.get("lang") or "").strip().lower()
+        if not lang:
+            continue
+        spend = _safe_float(row.get("ad_spend_usd"))
+        active_spend = _safe_float(row.get("active_7d_ad_spend_usd"))
+        out[lang] = {
+            "lang": lang,
+            "lang_name": LANG_NAMES.get(lang, lang),
+            "ad_spend_usd": spend,
+            "active_7d_ad_spend_usd": active_spend,
+            "purchase_value_usd": _safe_float(row.get("purchase_value_usd")),
+            "ad_roas": _nullable_float(row.get("ad_roas")),
+            "pushed_video_count": int(row.get("pushed_video_count") or 0),
+            "item_count": int(row.get("item_count") or 0),
+            "delivery_status": _delivery_status(spend, active_spend),
+        }
+    return out
+
+
+def _load_product_ad_summary(product_id: int, query_fn=db_query) -> dict:
+    rows = query_fn(
+        "SELECT order_revenue_usd, shipping_revenue_usd, total_revenue_usd, "
+        "       ad_spend_usd, active_7d_ad_spend_usd, overall_roas, "
+        "       delivery_status, computed_at "
+        "FROM media_product_ad_summary_cache WHERE product_id = %s",
+        [product_id],
+    )
+    if not rows:
+        return {
+            "order_revenue_usd": 0.0,
+            "shipping_revenue_usd": 0.0,
+            "total_revenue_usd": 0.0,
+            "ad_spend_usd": 0.0,
+            "active_7d_ad_spend_usd": 0.0,
+            "overall_roas": None,
+            "delivery_status": "never",
+            "computed_at": None,
+        }
+    row = rows[0]
+    return {
+        "order_revenue_usd": _safe_float(row.get("order_revenue_usd")),
+        "shipping_revenue_usd": _safe_float(row.get("shipping_revenue_usd")),
+        "total_revenue_usd": _safe_float(row.get("total_revenue_usd")),
+        "ad_spend_usd": _safe_float(row.get("ad_spend_usd")),
+        "active_7d_ad_spend_usd": _safe_float(row.get("active_7d_ad_spend_usd")),
+        "overall_roas": _nullable_float(row.get("overall_roas")),
+        "delivery_status": row.get("delivery_status") or "never",
+        "computed_at": _iso(row.get("computed_at")),
+    }
+
+
+def _group_library_items_by_lang(items: list[dict]) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = {}
+    for item in items:
+        lang = str(item.get("lang") or "en").strip().lower()
+        grouped.setdefault(lang, []).append(item)
+    return grouped
+
+
+def _lang_material_summary(lang_items: dict[str, list[dict]], ad_by_lang: dict[str, dict]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for lang, items in sorted(lang_items.items()):
+        ad_info = ad_by_lang.get(lang, {})
+        out[lang] = {
+            "lang": lang,
+            "lang_name": LANG_NAMES.get(lang, lang),
+            "item_count": len(items),
+            "media_item_ids": [int(item["id"]) for item in items],
+            "sample_media_item_id": int(items[0]["id"]) if items else None,
+            "delivery_status": ad_info.get("delivery_status", "never"),
+            "ad_spend_usd": ad_info.get("ad_spend_usd", 0.0),
+            "ad_roas": ad_info.get("ad_roas"),
+            "pushed_video_count": ad_info.get("pushed_video_count", 0),
+        }
+    return out
+
+
+def _deduped_lang_ad_rows(lang_items: dict[str, list[dict]], ad_by_lang: dict[str, dict]) -> list[dict]:
+    rows: list[dict] = []
+    for lang, items in sorted(lang_items.items()):
+        if not items:
+            continue
+        lang_ad = ad_by_lang.get(lang, {})
+        rows.append({
+            "lang": lang,
+            "lang_name": LANG_NAMES.get(lang, lang),
+            "media_item_ids": [int(item["id"]) for item in items],
+            "sample_media_item_id": int(items[0]["id"]),
+            "item_count": len(items),
+            "delivery_status": lang_ad.get("delivery_status", "never"),
+            "ad_spend": lang_ad.get("ad_spend_usd", 0.0),
+            "roas": lang_ad.get("ad_roas"),
+            "pushed_video_count": lang_ad.get("pushed_video_count", 0),
+        })
+    return rows
+
+
+def build_product_video_workbench(product_id: int, *, sort_by: str = "spend_90", query_fn=db_query) -> dict:
+    product = _load_product(product_id, query_fn=query_fn)
+    if not product:
+        raise LookupError("product_not_found")
+    product_code = str(product.get("product_code") or "").strip()
+    mk_search_handle = _strip_rjc(product_code) if product_code else ""
+
+    mk_videos: list[dict] = []
+    if mk_search_handle:
+        try:
+            mk_videos = _load_mk_videos(product_code, query_fn=query_fn)
+        except Exception:
+            log.exception("Failed to fetch local MK snapshots for workbench handle=%s", mk_search_handle)
+
+    library_items = _load_library_items(product_id, query_fn=query_fn)
+    item_ids = [int(item["id"]) for item in library_items]
+    bindings_by_path, _bindings_by_item = _load_mk_bindings(item_ids, query_fn=query_fn)
+    ad_by_lang = _load_lang_ad_summary(product_id, query_fn=query_fn)
+    product_ad_summary = _load_product_ad_summary(product_id, query_fn=query_fn)
+    lang_items = _group_library_items_by_lang(library_items)
+    language_materials = _lang_material_summary(lang_items, ad_by_lang)
+    deduped_lang_ad_rows = _deduped_lang_ad_rows(lang_items, ad_by_lang)
+
+    if mk_videos:
+        from appcore.mingkong_materials import _enrich_material_yesterday_delta
+        first_video = mk_videos[0]
+        try:
+            _enrich_material_yesterday_delta(
+                mk_videos,
+                snapshot_date=str(first_video.get("snapshot_date") or ""),
+                snapshot_at=str(first_video.get("snapshot_at") or ""),
+            )
+        except Exception:
+            log.exception("Failed to enrich yesterday delta for workbench")
+
+    cards: list[dict] = []
+    seen_paths: set[str] = set()
+    for mk_row in mk_videos:
+        video_path = str(mk_row.get("video_path") or "").strip()
+        if not video_path or video_path in seen_paths:
+            continue
+        seen_paths.add(video_path)
+
+        bound_item_id = bindings_by_path.get(video_path)
+        bound_item = None
+        if bound_item_id is not None:
+            bound_item = next(
+                (item for item in library_items if int(item["id"]) == int(bound_item_id)),
+                None,
+            )
+        in_library = bound_item_id is not None
+        spends = _safe_float(mk_row.get("cumulative_90_spend"))
+        cards.append({
+            "card_id": _card_id(video_path, bound_item_id),
+            "in_library": in_library,
+            "media_item_id": bound_item_id,
+            "bound_item": {
+                "id": int(bound_item["id"]),
+                "lang": bound_item.get("lang") or "en",
+                "filename": bound_item.get("filename") or "",
+                "display_name": bound_item.get("display_name") or "",
+                "task_id": bound_item.get("task_id"),
+            } if bound_item else None,
+            "mk_video": {
+                "name": mk_row.get("video_name") or "",
+                "path": video_path,
+                "image_path": mk_row.get("video_image_path") or "",
+                "spends": spends,
+                "ads_count": int(mk_row.get("video_ads_count") or 0),
+                "author": mk_row.get("video_author") or "",
+                "upload_time": _iso(mk_row.get("video_upload_time")) or "",
+                "local_cover_object_key": mk_row.get("local_cover_object_key") or "",
+                "yesterday_spend_delta": _safe_float(mk_row.get("yesterday_spend_delta")),
+            },
+            "mk_product_id": mk_row.get("mk_product_id"),
+            "mk_product_name": mk_row.get("mk_product_name") or "",
+            "mk_product_link": mk_row.get("mk_product_link") or "",
+            "main_image": mk_row.get("main_image") or "",
+            "lang_ad_summary": deduped_lang_ad_rows if in_library else [],
+            "snapshot_date": str(mk_row.get("snapshot_date") or ""),
+            "snapshot_at": _iso(mk_row.get("snapshot_at")) or "",
+        })
+
+    if sort_by == "spend_yesterday":
+        cards.sort(key=lambda c: (not c["in_library"], -_safe_float(c["mk_video"].get("yesterday_spend_delta") or 0.0), -int(c["mk_video"].get("ads_count") or 0)))
+    elif sort_by == "ads_count":
+        cards.sort(key=lambda c: (not c["in_library"], -int(c["mk_video"].get("ads_count") or 0), -_safe_float(c["mk_video"].get("spends") or 0.0)))
+    else:
+        cards.sort(key=lambda c: (not c["in_library"], -_safe_float(c["mk_video"].get("spends") or 0.0), -int(c["mk_video"].get("ads_count") or 0)))
+
+    total_mk = len(cards)
+    in_lib_count = sum(1 for card in cards if card["in_library"])
+    return {
+        "product": {
+            "id": product_id,
+            "name": product.get("name") or "",
+            "product_code": product_code,
+            "mk_search_handle": mk_search_handle,
+        },
+        "summary": {
+            "total_mk_videos": total_mk,
+            "in_library": in_lib_count,
+            "not_in_library": total_mk - in_lib_count,
+            "local_material_count": len(library_items),
+        },
+        "ad_summary": product_ad_summary,
+        "lang_coverage": language_materials,
+        "cards": cards,
+    }
+
+
+def _load_ad_detail_match_terms(product_id: int, args: Mapping[str, Any], query_fn=db_query) -> list[dict[str, str]]:
+    terms: list[dict[str, str]] = []
+    seen: set[str] = set()
+    media_item_id_raw = args.get("media_item_id")
+    if media_item_id_raw:
+        try:
+            media_item_id = int(media_item_id_raw)
+        except (TypeError, ValueError):
+            media_item_id = 0
+        if media_item_id > 0:
+            rows = query_fn(
+                "SELECT id, filename, display_name FROM media_items "
+                "WHERE id = %s AND product_id = %s AND deleted_at IS NULL",
+                [media_item_id, product_id],
+            )
+            if rows:
+                item = rows[0]
+                _add_match_term(terms, seen, item.get("filename"), "filename")
+                _add_match_term(terms, seen, item.get("display_name"), "display_name")
+
+    video_path = str(args.get("video_path") or "").strip()
+    if video_path:
+        rows = query_fn(
+            "SELECT video_name FROM mingkong_material_daily_snapshots "
+            "WHERE video_path = %s ORDER BY snapshot_at DESC LIMIT 1",
+            [video_path],
+        )
+        if rows:
+            _add_match_term(terms, seen, rows[0].get("video_name"), "mk_video_name")
+        _add_match_term(terms, seen, PurePosixPath(video_path.replace("\\", "/")).name, "mk_video_path")
+    return terms
+
+
+def build_video_workbench_ad_detail(
+    product_id: int,
+    args: Mapping[str, Any],
+    *,
+    query_fn=db_query,
+    today: date | None = None,
+) -> dict:
+    product = _load_product(product_id, query_fn=query_fn)
+    if not product:
+        raise LookupError("product_not_found")
+    date_from, date_to = _ad_detail_date_range(args, today=today)
+    terms = _load_ad_detail_match_terms(product_id, args, query_fn=query_fn)
+    if not terms:
+        return {
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "match_terms": [],
+            "summary": {
+                "spend_usd": 0.0,
+                "purchase_value_usd": 0.0,
+                "result_count": 0,
+                "roas": None,
+                "matched_ad_count": 0,
+            },
+            "rows": [],
+        }
+
+    match_clauses = []
+    match_args: list[Any] = []
+    for item in terms:
+        like = f"%{item['term']}%"
+        match_clauses.append("(LOWER(COALESCE(m.ad_name, '')) LIKE %s OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE %s)")
+        match_args.extend([like, like])
+    rows = query_fn(
+        "SELECT m.id, m.ad_account_id, m.ad_account_name, "
+        "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
+        "       m.report_date, m.product_code AS campaign_name, "
+        "       m.normalized_ad_code, m.ad_name, m.market_country, "
+        "       m.spend_usd, m.purchase_value_usd, m.result_count "
+        "FROM meta_ad_daily_ad_metrics m "
+        "WHERE m.product_id = %s "
+        "  AND COALESCE(m.spend_usd, 0) > 0 "
+        "  AND DATE(COALESCE(m.meta_business_date, m.report_date)) BETWEEN %s AND %s "
+        f"  AND ({' OR '.join(match_clauses)}) "
+        "ORDER BY activity_date DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
+        "LIMIT 500",
+        [product_id, date_from.isoformat(), date_to.isoformat(), *match_args],
+    )
+    out_rows: list[dict] = []
+    seen_metric_ids: set[str] = set()
+    total_spend = 0.0
+    total_purchase = 0.0
+    total_results = 0
+    for row in rows:
+        metric_id = f"daily:{row.get('id')}"
+        if metric_id in seen_metric_ids:
+            continue
+        seen_metric_ids.add(metric_id)
+        spend = _safe_float(row.get("spend_usd"))
+        purchase = _safe_float(row.get("purchase_value_usd"))
+        results = int(row.get("result_count") or 0)
+        total_spend += spend
+        total_purchase += purchase
+        total_results += results
+        out_rows.append({
+            "id": row.get("id"),
+            "activity_date": _iso(row.get("activity_date")),
+            "report_date": _iso(row.get("report_date")),
+            "ad_account_id": row.get("ad_account_id"),
+            "ad_account_name": row.get("ad_account_name"),
+            "campaign_name": row.get("campaign_name"),
+            "ad_name": row.get("ad_name"),
+            "normalized_ad_code": row.get("normalized_ad_code"),
+            "market_country": row.get("market_country"),
+            "spend_usd": spend,
+            "purchase_value_usd": purchase,
+            "result_count": results,
+            "roas": round(purchase / spend, 4) if spend > 0 else None,
+            "match_reason": _match_reason(row, terms),
+        })
+    return {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "match_terms": terms,
+        "summary": {
+            "spend_usd": round(total_spend, 4),
+            "purchase_value_usd": round(total_purchase, 4),
+            "result_count": total_results,
+            "roas": round(total_purchase / total_spend, 4) if total_spend > 0 else None,
+            "matched_ad_count": len(out_rows),
+        },
+        "rows": out_rows,
+    }
 
 
 # ------------------------------------------------------------------
@@ -348,6 +838,30 @@ def api_product_supplement(product_id: int):
             "not_in_library": total_mk - in_lib_count,
         },
     })
+
+
+@bp.route("/api/product/<int:product_id>/video-workbench", methods=["GET"])
+@login_required
+@admin_required
+def api_product_video_workbench(product_id: int):
+    sort_by = (request.args.get("sort_by") or request.args.get("sort") or "spend_90").strip().lower()
+    try:
+        return _json(build_product_video_workbench(product_id, sort_by=sort_by))
+    except LookupError:
+        return _json({"error": "product_not_found", "message": "产品不存在"}, 404)
+
+
+@bp.route("/api/product/<int:product_id>/video-workbench/ad-detail", methods=["GET"])
+@login_required
+@admin_required
+def api_product_video_workbench_ad_detail(product_id: int):
+    try:
+        payload = build_video_workbench_ad_detail(product_id, request.args)
+    except LookupError:
+        return _json({"error": "product_not_found", "message": "产品不存在"}, 404)
+    except ValueError as exc:
+        return _json({"error": "bad_request", "message": str(exc)}, 400)
+    return _json(payload)
 
 
 # ------------------------------------------------------------------

@@ -412,6 +412,7 @@ video_tab_page = _pages.video_tab_page
 product_detail_page = _pages.product_detail_page
 translation_tasks_page = _pages.translation_tasks_page
 product_supplement_page = _pages.product_supplement_page
+product_video_workbench_page = _pages.product_video_workbench_page
 api_list_active_users = _pages.api_list_active_users
 api_list_languages = _pages.api_list_languages
 mk_selection_page = _pages.mk_selection_page
@@ -489,3 +490,5 @@ api_product_link_availability_run = _link_check_routes.api_product_link_availabi
 
 api_product_supplement = _material_supplement.api_product_supplement
 api_video_material_ad_detail = _material_supplement.api_video_material_ad_detail
+api_product_video_workbench = _material_supplement.api_product_video_workbench
+api_product_video_workbench_ad_detail = _material_supplement.api_product_video_workbench_ad_detail

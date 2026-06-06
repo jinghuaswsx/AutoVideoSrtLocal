@@ -4864,10 +4864,18 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 }
 
 /* 补素材 Button */
-.supplement-btn {
+.supplement-action-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.supplement-btn,
+.material-workbench-btn {
   display: block;
   width: 60px;
-  margin: 6px auto 0;
+  margin: 0 auto;
   padding: 2px 0;
   font-size: 11px;
   line-height: 20px;
@@ -4882,11 +4890,20 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   box-sizing: border-box;
   text-align: center;
 }
+.material-workbench-btn {
+  width: 72px;
+  background: #0f766e;
+}
 .supplement-btn:hover {
   background: #1976D2;
   transform: scale(1.05);
 }
-.supplement-btn:active {
+.material-workbench-btn:hover {
+  background: #0d5f59;
+  transform: scale(1.05);
+}
+.supplement-btn:active,
+.material-workbench-btn:active {
   transform: scale(0.97);
 }
 </style>

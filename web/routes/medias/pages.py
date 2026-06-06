@@ -5,7 +5,7 @@ import re
 from flask import abort, redirect, render_template, request, url_for
 from flask_login import login_required
 
-from web.auth import permission_required
+from web.auth import admin_required, permission_required
 from appcore import medias
 from web.services.media_pages import (
     build_admin_required_response,
@@ -112,6 +112,21 @@ def product_supplement_page(pid: int):
         abort(404)
     return render_template(
         "medias_product_supplement.html",
+        product=product,
+        product_id=pid,
+    )
+
+
+@bp.route("/product/video_workbench/<int:pid>", methods=["GET"])
+@login_required
+@admin_required
+@permission_required("medias")
+def product_video_workbench_page(pid: int):
+    product = medias.get_product(pid)
+    if not _routes_module()._can_access_product(product):
+        abort(404)
+    return render_template(
+        "medias_product_video_workbench.html",
         product=product,
         product_id=pid,
     )

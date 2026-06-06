@@ -1,0 +1,133 @@
+# 素材管理视频素材决策台设计
+
+Date: 2026-06-06
+
+## Anchors
+
+- `AGENTS.md`：素材管理路由验证、登录/管理员门禁、POST CSRF 要求。
+- `2026-05-28-medias-product-ad-status-cache-design.md`：产品与语种广告汇总缓存、广告明细匹配口径、同语种多素材去重原则。
+- `2026-04-26-mk-import-design.md`：`POST /mk-import/video` 负责把明空视频加入素材库。
+- `2026-05-16-task-center-e2e-flow-design.md`：已入库素材走 `POST /tasks/api/parent` 创建任务中心父任务。
+- `2026-05-20-task-center-per-language-assignment-design.md`：创建小语种任务时支持 `language_assignments` 按语种指派负责人。
+
+## Context
+
+`/medias/product/addvideo/<pid>` 当前以明空素材卡片为主，只能粗略看到是否已入库和语种投放概览。运营需要一个产品级工作台，在同一页完成素材判断、广告数据核对、加入素材库和创建小语种任务。
+
+现有页面还存在一个展示问题：语种广告缓存是 `product_id + lang` 聚合，但补素材页按 `media_items` 每条素材生成“国家投放数据”。同一语种有多条已入库素材时，同一份 DE/FR/IT 等广告数据会重复显示。
+
+## Goals
+
+1. 新增路由 `/medias/product/video_workbench/<pid>`，作为“视频素材决策台”第一版。
+2. 顶部展示产品总览：产品信息、明空素材数量、已入库数量、未入库数量、产品整体广告状态和语种覆盖。
+3. 卡片展示每条明空视频的素材情况：视频预览、明空来源、广告热度、是否已入库、绑定本地素材、去重后的语种投放概览。
+4. 未入库素材可直接调用现有 `POST /mk-import/video` 加入素材库。
+5. 已入库素材可在本页选择语种和负责人，调用现有 `POST /tasks/api/parent` 创建小语种任务。
+6. 每张视频卡提供“广告数据”入口，弹窗支持日期范围，展示该视频相关广告汇总和明细。
+
+## Non-Goals
+
+1. 不替代任务中心详情页；任务创建后仍跳转任务中心跟进。
+2. 不新增数据库表。
+3. 不改变广告匹配算法总口径；首版沿用素材广告详情口径。
+4. 不在卡片列表实时扫广告大表；列表只读缓存和明空快照，广告明细仅在弹窗懒加载。
+5. 不改 `/medias/product/addvideo/<pid>` 旧页面本身；产品列表保留“补素材”按钮，并在其下方新增“素材工作台”按钮跳转到新工作台。
+
+## Data
+
+### Product And Material
+
+- `media_products`：产品基础信息。
+- `mingkong_material_daily_snapshots`：明空视频快照、90 天消耗、昨日消耗、广告数量、封面和视频路径。
+- `media_items`：本地素材库视频。
+- `media_item_mk_bindings`：明空视频路径与本地素材绑定关系。
+
+### Summary Ads
+
+- `media_product_ad_summary_cache`：产品整体广告状态、整体 ROAS、广告消耗。
+- `media_product_lang_ad_summary_cache`：产品语种广告消耗、购买金额、ROAS、推送视频数。
+
+### Ad Detail
+
+视频广告数据弹窗读取 `meta_ad_daily_ad_metrics`，首版按以下条件匹配：
+
+1. `product_id` 必须等于当前产品。
+2. `spend_usd > 0`。
+3. 日期范围使用 `DATE(COALESCE(meta_business_date, report_date))`。
+4. 优先按本地素材 `filename` / `display_name` 命中 `ad_name` 或 `normalized_ad_code`。
+5. 明空未入库素材按明空视频名命中 `ad_name` 或 `normalized_ad_code`。
+
+弹窗明细返回 `match_reason`，用于区分 `filename`、`display_name`、`mk_video_name` 等匹配来源。若未来加入国家兜底匹配，必须显式标注，避免把产品级广告误认为视频级广告。
+
+### Task
+
+- 任务创建使用 `POST /tasks/api/parent`。
+- 请求体包含 `media_product_id`、`media_item_id`、`raw_processor_id`、`countries`、`language_assignments`。
+- `countries` 与 `language_assignments` 使用大写语种/国家码。
+
+## UX Flow
+
+1. 用户打开 `/medias/product/video_workbench/<pid>`。
+2. 页面请求 workbench overview API，加载产品总览和视频卡片。
+3. 用户按 90 天消耗、昨日消耗或广告数排序。
+4. 用户点击视频卡“广告数据”，弹窗默认近 30 天，可切换日期范围。
+5. 未入库视频点击“加入素材库”，成功后卡片更新为已入库。
+6. 已入库视频点击“创建小语种任务”，弹窗选择国家、原视频处理人和各语种负责人。
+7. 创建成功后显示父任务 ID，并提供任务中心跳转。
+
+产品列表入口：
+
+1. “补素材”按钮继续打开 `/medias/product/addvideo/<pid>`。
+2. “素材工作台”按钮位于“补素材”下方，打开 `/medias/product/video_workbench/<pid>`。
+
+## API
+
+### Page
+
+- `GET /medias/product/video_workbench/<pid>`
+  - `@login_required`
+  - `@permission_required("medias")`
+  - 渲染 `medias_product_video_workbench.html`
+
+### Overview
+
+- `GET /medias/api/product/<pid>/video-workbench?sort_by=spend_90|spend_yesterday|ads_count`
+  - `@login_required`
+  - `@admin_required`
+  - 返回产品、汇总、语种覆盖和卡片列表。
+  - 卡片中的语种投放概览必须按 `lang` 去重。
+
+### Video Ad Detail
+
+- `GET /medias/api/product/<pid>/video-workbench/ad-detail`
+  - Query:
+    - `video_path`
+    - `media_item_id`
+    - `date_from`
+    - `date_to`
+  - 返回 `summary` 与 `rows`。
+  - 日期最多允许 180 天，避免一次扫全表。
+
+## First Usable Version
+
+第一版必须可用但保持收敛：
+
+1. 新页面能打开并加载卡片。
+2. 国家投放数据不重复。
+3. 未入库素材可以加入素材库。
+4. 已入库素材可以创建小语种任务。
+5. 广告弹窗能按日期范围加载汇总和明细。
+6. 新路由未登录返回 302，登录后页面 200。
+
+## Verification
+
+1. 路由测试覆盖新页面登录门禁与模板渲染。
+2. service/API 测试覆盖语种投放数据按 lang 去重。
+3. 广告详情测试覆盖日期参数、匹配条件和汇总字段。
+4. 模板静态测试覆盖：
+   - `/medias/api/product/${productId}/video-workbench`
+   - 广告数据弹窗
+   - `POST /mk-import/video`
+   - `POST /tasks/api/parent`
+   - CSRF header
+5. `python -m compileall web/routes/medias appcore`
