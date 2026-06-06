@@ -2022,7 +2022,7 @@
         <table class="oa-table oar-compact-table">
           <thead>
             <tr>
-              <th>广告日小时（BJ/UTC+8）<br><span class="oar-th-sub">北京时间范围</span></th>
+              <th>广告日小时<br><span class="oar-th-sub">北京时间 / 德国柏林时间</span></th>
               <th>订单数</th>
               <th>商品销售额</th>
               <th>商品件数</th>
@@ -6137,8 +6137,12 @@
     var bjRange = row.window_start_at && row.window_end_at
       ? '北京时间（UTC+8） ' + formatRoasWindow(row.window_start_at, row.window_end_at)
       : '';
+    var berlinRange = row.berlin_window_start_at && row.berlin_window_end_at
+      ? '德国柏林时间（Europe/Berlin） ' + formatRoasWindow(row.berlin_window_start_at, row.berlin_window_end_at)
+      : '';
     return '<div class="oar-hour-main">' + escapeHtml(main) + '</div>' +
-      (bjRange ? '<div class="oar-hour-sub">' + escapeHtml(bjRange) + '</div>' : '');
+      (bjRange ? '<div class="oar-hour-sub">' + escapeHtml(bjRange) + '</div>' : '') +
+      (berlinRange ? '<div class="oar-hour-sub">' + escapeHtml(berlinRange) + '</div>' : '');
   }
 
   function formatTimeRule(period, points) {

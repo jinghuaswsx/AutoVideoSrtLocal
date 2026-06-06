@@ -10,6 +10,7 @@ import sys
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ._constants import META_ATTRIBUTION_CUTOVER_HOUR_BJ, META_ATTRIBUTION_TIMEZONE
 from ._helpers import (
@@ -58,6 +59,16 @@ _META_PURCHASE_ROAS_CORRECTION_FACTOR = 1.5
 _DEFAULT_SITE_CODES: tuple[str, ...] = ("newjoy", "omurio")
 _ALLOWED_SITE_CODES: frozenset[str] = frozenset(_DEFAULT_SITE_CODES)
 _DEFAULT_STORE_SCOPE = ",".join(_DEFAULT_SITE_CODES)
+_BERLIN_TIMEZONE = "Europe/Berlin"
+
+
+def _berlin_local_iso_from_bj(value: datetime) -> str:
+    return (
+        value.replace(tzinfo=ZoneInfo(META_ATTRIBUTION_TIMEZONE))
+        .astimezone(ZoneInfo(_BERLIN_TIMEZONE))
+        .replace(tzinfo=None, microsecond=0)
+        .isoformat()
+    )
 
 
 def _normalize_site_codes(site_codes: Any) -> tuple[str, ...]:
@@ -2519,10 +2530,14 @@ def _load_realtime_order_hourly(
     for hour in range(24):
         row = orders_by_hour.get(hour, {})
         order_revenue = _money(row.get("order_revenue"))
+        window_start = day_start + timedelta(hours=hour)
+        window_end = day_start + timedelta(hours=hour + 1)
         item = {
             "hour": hour,
-            "window_start_at": day_start + timedelta(hours=hour),
-            "window_end_at": day_start + timedelta(hours=hour + 1),
+            "window_start_at": window_start,
+            "window_end_at": window_end,
+            "berlin_window_start_at": _berlin_local_iso_from_bj(window_start),
+            "berlin_window_end_at": _berlin_local_iso_from_bj(window_end),
             "order_count": int(row.get("order_count") or 0),
             "line_count": int(row.get("line_count") or 0),
             "units": int(row.get("units") or 0),

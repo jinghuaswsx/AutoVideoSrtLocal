@@ -1366,6 +1366,8 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
     assert result["summary"]["order_count"] == 9
     assert len(result["hourly"]) == 24
     assert result["hourly"][0]["window_start_at"] == day_start
+    assert result["hourly"][0]["berlin_window_start_at"] == "2026-05-07T10:00:00"
+    assert result["hourly"][0]["berlin_window_end_at"] == "2026-05-07T11:00:00"
     assert result["hourly"][0]["order_count"] == 4
     assert result["hourly"][16]["order_count"] == 0
     assert result["hourly"][0]["ad_spend"] is None
@@ -2174,20 +2176,23 @@ def test_realtime_tab_has_product_sales_subtab(authed_client_no_db):
     assert "renderRealtimeProductSales(" in body
 
 
-def test_realtime_roas_trend_hour_column_shows_timezone_and_bj_range(authed_client_no_db):
+def test_realtime_roas_trend_hour_column_shows_timezone_and_bj_berlin_range(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
     trend = panel[panel.index('id="realtimeSubTrend"'):]
 
-    assert "广告日小时（BJ/UTC+8）" in trend
-    assert "北京时间范围" in trend
+    assert "广告日小时" in trend
+    assert "北京时间 / 德国柏林时间" in trend
     assert "function formatRealtimeHourCell(row)" in body
     assert "return startHour + ':00-' + endHour + ':00 广告日小时';" in body
     assert "北京时间（UTC+8） " in body
+    assert "德国柏林时间（Europe/Berlin） " in body
     assert "row.window_start_at" in body
     assert "row.window_end_at" in body
+    assert "row.berlin_window_start_at" in body
+    assert "row.berlin_window_end_at" in body
 
 
 def test_realtime_tab_has_order_profit_detail_subtab(authed_client_no_db):
