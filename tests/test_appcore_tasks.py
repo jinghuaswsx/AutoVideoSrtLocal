@@ -2283,6 +2283,8 @@ def _install_push_completion_conn(
     tasks,
     *,
     child_status=None,
+    child_row=None,
+    material_row=None,
     parent_status=None,
     child_summary=None,
 ):
@@ -2290,6 +2292,24 @@ def _install_push_completion_conn(
 
     sequence = []
     child_status = child_status or tasks.CHILD_REVIEW
+    child_row = child_row or {
+        "id": 44,
+        "parent_task_id": 10,
+        "status": child_status,
+        "media_product_id": 335,
+        "country_code": "DE",
+    }
+    child_row = dict(child_row)
+    child_row.setdefault("status", child_status)
+    child_row.setdefault("parent_task_id", 10)
+    material_row = material_row or {
+        "id": 7,
+        "task_id": 44,
+        "product_id": child_row.get("media_product_id", 335),
+        "lang": str(child_row.get("country_code") or "DE").lower(),
+        "pushed_at": "2026-06-06 10:00:00",
+        "skip_push": 1,
+    }
     parent_status = parent_status or tasks.PARENT_RAW_DONE
     child_summary = child_summary or {
         "total_count": 2,
@@ -2311,12 +2331,12 @@ def _install_push_completion_conn(
         def execute(self, sql, args=()):
             normalized = " ".join(str(sql).split())
             if normalized.startswith("SELECT id, parent_task_id, status"):
-                self.rows = [{
-                    "id": 44,
-                    "parent_task_id": 10,
-                    "status": child_status,
-                }]
+                self.rows = [child_row]
                 sequence.append(("select_child", args))
+                return
+            if normalized.startswith("SELECT id, task_id, product_id, lang"):
+                self.rows = [material_row] if material_row else []
+                sequence.append(("select_material", args))
                 return
             if normalized.startswith("UPDATE tasks SET status=%s, last_reason=NULL, completed_at=COALESCE"):
                 self.rowcount = 1
@@ -2428,6 +2448,182 @@ def test_record_push_material_skipped_completes_child(monkeypatch):
     assert result["event_type"] == tasks.CHILD_PUSH_MATERIAL_SKIPPED_EVENT
     assert result["status"] == tasks.CHILD_DONE
     assert result["parent_completed"] is False
+
+
+def test_record_push_material_completion_rejects_source_language_material(monkeypatch):
+    from appcore import tasks
+
+    sequence = _install_push_completion_conn(
+        monkeypatch,
+        tasks,
+        child_row={
+            "id": 742,
+            "parent_task_id": 740,
+            "status": tasks.CHILD_ASSIGNED,
+            "media_product_id": 609,
+            "country_code": "ES",
+        },
+        material_row={
+            "id": 1397,
+            "task_id": None,
+            "product_id": 609,
+            "lang": "en",
+            "skip_push": 1,
+        },
+    )
+
+    with pytest.raises(tasks.StateError, match="target-language material"):
+        tasks.record_push_material_skipped(
+            task_id=742,
+            actor_user_id=None,
+            item_id=1397,
+            product_code="any-fabric-clamping-mop-rjc",
+            lang="en",
+        )
+
+    assert not any(item[0] == "update_child_done" for item in sequence)
+    assert ("rollback",) in sequence
+
+
+@pytest.mark.parametrize(
+    "material_row",
+    [
+        {"id": 296, "task_id": 999, "product_id": 335, "lang": "de"},
+        {"id": 297, "task_id": None, "product_id": 999, "lang": "de"},
+    ],
+)
+def test_record_push_material_completion_rejects_unrelated_material(monkeypatch, material_row):
+    from appcore import tasks
+
+    sequence = _install_push_completion_conn(
+        monkeypatch,
+        tasks,
+        child_row={
+            "id": 293,
+            "parent_task_id": 200,
+            "status": tasks.CHILD_REVIEW,
+            "media_product_id": 335,
+            "country_code": "DE",
+        },
+        material_row=material_row,
+    )
+
+    with pytest.raises(tasks.StateError, match="target-language material"):
+        tasks.record_push_material_approved(
+            task_id=293,
+            actor_user_id=1,
+            item_id=material_row["id"],
+            product_code="ice-ball-molds-rjc",
+            lang="de",
+            upstream_status=201,
+        )
+
+    assert not any(item[0] == "update_child_done" for item in sequence)
+    assert ("rollback",) in sequence
+
+
+def test_record_push_material_completion_accepts_unbound_target_language_material(monkeypatch):
+    from appcore import tasks
+
+    sequence = _install_push_completion_conn(
+        monkeypatch,
+        tasks,
+        child_row={
+            "id": 293,
+            "parent_task_id": 200,
+            "status": tasks.CHILD_REVIEW,
+            "media_product_id": 335,
+            "country_code": "DE",
+        },
+        material_row={
+            "id": 295,
+            "task_id": None,
+            "product_id": 335,
+            "lang": "de",
+            "pushed_at": "2026-06-06 10:00:00",
+        },
+        child_summary={
+            "total_count": 1,
+            "done_count": 1,
+            "terminal_count": 1,
+        },
+    )
+
+    result = tasks.record_push_material_approved(
+        task_id=293,
+        actor_user_id=1,
+        item_id=295,
+        product_code="ice-ball-molds-rjc",
+        lang="de",
+        upstream_status=201,
+    )
+
+    assert ("update_child_done", (
+        tasks.CHILD_DONE,
+        293,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
+    )) in sequence
+    assert result["completed"] is True
+
+
+def test_record_push_material_approved_requires_push_history(monkeypatch):
+    from appcore import tasks
+
+    sequence = _install_push_completion_conn(
+        monkeypatch,
+        tasks,
+        material_row={
+            "id": 295,
+            "task_id": 44,
+            "product_id": 335,
+            "lang": "de",
+            "pushed_at": None,
+            "skip_push": 0,
+        },
+    )
+
+    with pytest.raises(tasks.StateError, match="push success history"):
+        tasks.record_push_material_approved(
+            task_id=44,
+            actor_user_id=1,
+            item_id=295,
+            product_code="ice-ball-molds-rjc",
+            lang="de",
+            upstream_status=201,
+        )
+
+    assert not any(item[0] == "update_child_done" for item in sequence)
+    assert ("rollback",) in sequence
+
+
+def test_record_push_material_skipped_requires_skip_mark(monkeypatch):
+    from appcore import tasks
+
+    sequence = _install_push_completion_conn(
+        monkeypatch,
+        tasks,
+        material_row={
+            "id": 295,
+            "task_id": 44,
+            "product_id": 335,
+            "lang": "de",
+            "pushed_at": None,
+            "skip_push": 0,
+        },
+    )
+
+    with pytest.raises(tasks.StateError, match="skip-push mark"):
+        tasks.record_push_material_skipped(
+            task_id=44,
+            actor_user_id=1,
+            item_id=295,
+            product_code="ice-ball-molds-rjc",
+            lang="de",
+        )
+
+    assert not any(item[0] == "update_child_done" for item in sequence)
+    assert ("rollback",) in sequence
 
 
 def test_record_push_material_skipped_rejects_cancelled_child(monkeypatch):
