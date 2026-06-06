@@ -811,6 +811,24 @@ def test_task_definitions_include_sku_actual_breakeven_roas():
     assert "2026-05-10-sku-actual-breakeven-roas-design.md" in task["description"]
 
 
+def test_task_definitions_include_usd_cny_exchange_rate_sync():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["usd_cny_exchange_rate_sync"]
+    assert task["schedule"] == "每天 06:00（北京时间，三来源交叉验证）"
+    assert task["source_type"] == "systemd"
+    assert task["source_ref"] == "autovideosrt-usd-cny-exchange-rate-sync.timer"
+    assert task["runner"] == "tools/usd_cny_exchange_rate_sync.py"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "Frankfurter" in task["description"]
+    assert "Open ER API" in task["description"]
+    assert "FloatRates" in task["description"]
+    assert "<= 5%" in task["description"]
+    assert "2026-06-06-usd-cny-daily-exchange-rate-design.md" in task["description"]
+
+
 def test_task_definitions_include_dianxiaomi_listing_ranking_sync():
     from appcore import scheduled_tasks
 

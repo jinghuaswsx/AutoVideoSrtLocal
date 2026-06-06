@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt USD/CNY exchange-rate sync daily
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
+Unit=autovideosrt-usd-cny-exchange-rate-sync.service
+
+[Install]
+WantedBy=timers.target

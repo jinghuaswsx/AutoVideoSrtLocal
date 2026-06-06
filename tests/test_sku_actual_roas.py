@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import date, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -91,6 +92,55 @@ def test_aggregate_rows_uses_7pct_when_payment_missing_and_nulls_unprofitable_ro
     assert row["fee_source"] == "estimated_7pct"
     assert row["shopify_fee_usd"] == pytest.approx(0.7)
     assert row["actual_breakeven_roas"] is None
+
+
+def test_aggregate_rows_uses_daily_exchange_rates_by_business_date():
+    from appcore import sku_actual_roas
+
+    class FakeLookup:
+        def __init__(self, rate):
+            self.rate = rate
+
+    rows = [
+        {
+            "dxm_package_id": "pkg-1",
+            "extended_order_id": "#1001",
+            "product_display_sku": "SKU-C",
+            "quantity": 1,
+            "line_amount": 20,
+            "ship_amount": 0,
+            "logistic_fee": 0,
+            "purchase_price_cny": 70,
+            "yuncang_unit_price": None,
+            "product_purchase_price": None,
+            "meta_business_date": date(2026, 6, 6),
+        },
+        {
+            "dxm_package_id": "pkg-2",
+            "extended_order_id": "#1002",
+            "product_display_sku": "SKU-C",
+            "quantity": 1,
+            "line_amount": 20,
+            "ship_amount": 0,
+            "logistic_fee": 0,
+            "purchase_price_cny": 70,
+            "yuncang_unit_price": None,
+            "product_purchase_price": None,
+            "meta_business_date": date(2026, 6, 7),
+        },
+    ]
+
+    snapshots = sku_actual_roas.aggregate_sku_rows(
+        rows,
+        {},
+        rates_by_date={
+            date(2026, 6, 6): FakeLookup(Decimal("7")),
+            date(2026, 6, 7): FakeLookup(Decimal("10")),
+        },
+    )
+
+    row = snapshots["SKU-C"]
+    assert row["purchase_cost_usd"] == pytest.approx(17.0)
 
 
 def test_compute_loads_orders_payments_and_upserts_snapshots(monkeypatch):

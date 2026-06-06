@@ -19,6 +19,7 @@ from web.services.order_analytics_responses import (
 from web.upload_util import client_filename_basename
 
 from appcore import order_analytics as oa
+from appcore import exchange_rates
 from appcore import meta_ad_accounts
 from appcore import meta_ad_manual_sync
 from appcore import system_audit
@@ -436,6 +437,21 @@ def stats():
 def ad_stats():
     """返回 Meta 广告长期数据统计概览。"""
     return _json_response(_json_safe(oa.get_meta_ad_stats()))
+
+
+@bp.route("/order-analytics/exchange-rates")
+@login_required
+@permission_required("data_analytics")
+def exchange_rate_archive():
+    """返回最近 USD/CNY 每日基准汇率归档。
+
+    Docs-anchor: docs/superpowers/specs/2026-06-06-usd-cny-daily-exchange-rate-design.md
+    """
+    limit = request.args.get("limit", default=30, type=int) or 30
+    return _json_response(_json_safe({
+        "rows": exchange_rates.list_usd_cny_daily_rates(limit=limit),
+        "limit": max(1, min(365, int(limit))),
+    }))
 
 
 @bp.route("/order-analytics/ad-periods")

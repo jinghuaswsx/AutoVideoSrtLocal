@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
+from appcore import exchange_rates
 from appcore.db import execute, query
 from appcore.product_roas import get_configured_rmb_per_usd
 
@@ -61,13 +62,31 @@ def _allocate_shipping_to_line(
     return order_shipping_usd * (line_amount / order_total_line_amount)
 
 
+def _row_rate(
+    row: dict[str, Any],
+    *,
+    fixed_rate: Decimal | None,
+    rates_by_date: dict[date, Any] | None,
+) -> Decimal:
+    if fixed_rate is not None:
+        return fixed_rate
+    row_date = row.get("meta_business_date")
+    lookup = (rates_by_date or {}).get(row_date)
+    if lookup is None:
+        return _decimal(get_configured_rmb_per_usd())
+    if hasattr(lookup, "rate"):
+        return _decimal(getattr(lookup, "rate"))
+    return _decimal(lookup)
+
+
 def aggregate_sku_rows(
     rows: list[dict[str, Any]],
     real_fees_by_order: dict[str, Any],
     *,
     rmb_per_usd: Any | None = None,
+    rates_by_date: dict[date, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    rate = _decimal(rmb_per_usd if rmb_per_usd is not None else get_configured_rmb_per_usd())
+    fixed_rate = _decimal(rmb_per_usd) if rmb_per_usd is not None else None
     order_line_totals: dict[str, Decimal] = defaultdict(Decimal)
     order_shipping: dict[str, Decimal] = {}
     order_revenue: dict[str, Decimal] = defaultdict(Decimal)
@@ -99,6 +118,7 @@ def aggregate_sku_rows(
             order_shipping_usd=order_shipping.get(package_id, Decimal("0")),
         )
         revenue = line_amount + shipping_alloc
+        rate = _row_rate(row, fixed_rate=fixed_rate, rates_by_date=rates_by_date)
         purchase_cny = _positive_decimal(
             row.get("purchase_price_cny"),
             row.get("yuncang_unit_price"),
@@ -164,7 +184,7 @@ def _load_order_rows(window_start: date, window_end: date) -> list[dict[str, Any
         """
         SELECT d.dxm_package_id, d.extended_order_id, d.product_display_sku,
                d.quantity, d.line_amount, d.ship_amount, d.logistic_fee,
-               d.purchase_price_cny,
+               d.purchase_price_cny, d.meta_business_date,
                y.unit_price AS yuncang_unit_price,
                m.purchase_price AS product_purchase_price
         FROM dianxiaomi_order_lines d
@@ -250,7 +270,27 @@ def compute_sku_actual_breakeven_roas(
     rows = _load_order_rows(window_start, window_end)
     order_names = [str(row.get("extended_order_id") or "").strip() for row in rows]
     real_fees = _load_real_fees_by_order(order_names)
-    snapshots = aggregate_sku_rows(rows, real_fees, rmb_per_usd=rmb_per_usd)
+    rates_by_date = None
+    exchange_rate_mode = "manual_override" if rmb_per_usd is not None else "daily_archive"
+    exchange_rate_fallback_dates: list[str] = []
+    if rmb_per_usd is None:
+        rate_dates = [
+            row.get("meta_business_date")
+            for row in rows
+            if row.get("meta_business_date") is not None
+        ]
+        rates_by_date = exchange_rates.get_usd_to_cny_map(rate_dates)
+        exchange_rate_fallback_dates = sorted(
+            d.isoformat()
+            for d, lookup in rates_by_date.items()
+            if getattr(lookup, "source", None) == "configured_fallback"
+        )
+    snapshots = aggregate_sku_rows(
+        rows,
+        real_fees,
+        rmb_per_usd=rmb_per_usd,
+        rates_by_date=rates_by_date,
+    )
 
     written = 0
     for snapshot in snapshots.values():
@@ -269,6 +309,8 @@ def compute_sku_actual_breakeven_roas(
         "skus": len(snapshots),
         "snapshots_written": written,
         "source_run_id": source_run_id,
+        "exchange_rate_mode": exchange_rate_mode,
+        "exchange_rate_fallback_dates": exchange_rate_fallback_dates,
     }
 
 
