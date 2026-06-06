@@ -1300,8 +1300,9 @@ def test_get_realtime_roas_overview_prefers_latest_order_snapshot_when_ad_pendin
     assert result["snapshots"][0]["id"] == 633
 
 
-def test_realtime_snapshot_branch_still_returns_24_hourly_order_rows(monkeypatch):
+def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monkeypatch):
     snapshot_at = datetime(2026, 5, 7, 20, 40)
+    day_start = datetime(2026, 5, 7, 16, 0)
 
     def fake_query(sql, args=()):
         if "FROM roi_daily_roas_nodes" in sql:
@@ -1323,18 +1324,23 @@ def test_realtime_snapshot_branch_still_returns_24_hourly_order_rows(monkeypatch
                     "ad_data_status": "ok",
                 }
             ]
-        if "SELECT HOUR(" in sql and "GROUP BY HOUR" in sql:
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY" in sql:
+            assert "TIMESTAMPDIFF(HOUR" in sql
+            assert "GROUP BY hour" in sql
+            assert args[0] == day_start
+            assert args[1] == day_start
+            assert args[2] == snapshot_at
             return [
                 {
-                    "hour": 9,
+                    "hour": 0,
                     "order_count": 4,
                     "line_count": 5,
                     "units": 7,
                     "order_revenue": 400.0,
                     "line_revenue": 390.0,
                     "shipping_revenue": 40.0,
-                    "first_order_at": datetime(2026, 5, 7, 9, 5),
-                    "last_order_at": datetime(2026, 5, 7, 9, 55),
+                    "first_order_at": datetime(2026, 5, 7, 16, 5),
+                    "last_order_at": datetime(2026, 5, 7, 16, 55),
                     "last_order_updated_at": datetime(2026, 5, 7, 20, 35),
                 }
             ]
@@ -1359,8 +1365,10 @@ def test_realtime_snapshot_branch_still_returns_24_hourly_order_rows(monkeypatch
 
     assert result["summary"]["order_count"] == 9
     assert len(result["hourly"]) == 24
-    assert result["hourly"][9]["order_count"] == 4
-    assert result["hourly"][9]["ad_spend"] is None
+    assert result["hourly"][0]["window_start_at"] == day_start
+    assert result["hourly"][0]["order_count"] == 4
+    assert result["hourly"][16]["order_count"] == 0
+    assert result["hourly"][0]["ad_spend"] is None
     assert result["snapshots"][0]["id"] == 701
 
 
@@ -1417,7 +1425,7 @@ def test_realtime_current_business_day_product_filter_uses_realtime_campaign_sna
                     "clicks": 30,
                 },
             ]
-        if "SELECT HOUR(" in sql and "GROUP BY HOUR" in sql:
+        if "TIMESTAMPDIFF(HOUR" in sql and "GROUP BY hour" in sql:
             return []
         if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql and "FROM dianxiaomi_order_lines d" in sql:
             assert "d.meta_business_date=%s" in sql

@@ -2480,8 +2480,9 @@ def _load_realtime_order_hourly(
         unmatched=unmatched_ads,
     )
     sites = _normalize_site_codes(site_codes)
+    business_hour_expr = "TIMESTAMPDIFF(HOUR, %s, " + order_time_expr + ")"
     order_rows = query(
-        "SELECT HOUR(" + order_time_expr + ") AS hour, "
+        "SELECT " + business_hour_expr + " AS hour, "
         "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
         "COUNT(*) AS line_count, "
         "SUM(COALESCE(d.quantity, 0)) AS units, "
@@ -2496,9 +2497,9 @@ def _load_realtime_order_hourly(
         "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
         + product_sql +
-        "GROUP BY HOUR(" + order_time_expr + ") "
+        "GROUP BY hour "
         "ORDER BY hour",
-        tuple([day_start, day_end] + product_args),
+        tuple([day_start, day_start, day_end] + product_args),
     )
     orders_by_hour = {
         int(row["hour"]): row for row in order_rows if row.get("hour") is not None

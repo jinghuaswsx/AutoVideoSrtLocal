@@ -15,9 +15,10 @@
 
 1. 当天全量实时大盘仍优先使用 `roi_realtime_daily_snapshots` 作为 KPI 汇总和广告费选源。
 2. 当天命中快照分支时，`ROAS 走势 -> 当日节点记录` 必须仍返回 24 条 `hourly`，每小时订单数使用店小秘订单明细聚合。
-3. 小时订单口径保持现有明细分支一致：按 Meta 业务日窗口内 `COALESCE(order_paid_at, attribution_time_at, order_created_at)` 的小时分组，`COUNT(DISTINCT dxm_package_id)` 计订单数。
-4. 本次不拆分小时广告费。快照分支的 `hourly[*].ad_spend` 和 `hourly[*].true_roas` 可保持空值；图表仍使用 `roi_daily_roas_nodes` / `roas_points`。
-5. 单店 / 产品筛选 / 新品老品 scope 继续走既有明细路径，不读取双店全量预聚合快照。
+3. 小时订单口径保持现有明细分支一致：按 Meta 业务日窗口内 `COALESCE(order_paid_at, attribution_time_at, order_created_at)` 分组，`COUNT(DISTINCT dxm_package_id)` 计订单数。
+4. 小时行必须按 Meta 业务日窗口的相对小时分组：`00:00-01:00` 代表 `day_start_at` 到 `day_start_at + 1h`，不是北京时间自然日 00:00 到 01:00。对于 16:00 切日的当前业务日，昨天 16:00-17:00 的订单应进入第 0 小时行，不能显示在表格下半段造成“未来小时已有数据”的误解。
+5. 本次不拆分小时广告费。快照分支的 `hourly[*].ad_spend` 和 `hourly[*].true_roas` 可保持空值；图表仍使用 `roi_daily_roas_nodes` / `roas_points`。
+6. 单店 / 产品筛选 / 新品老品 scope 继续走既有明细路径，不读取双店全量预聚合快照。
 
 ## 设计
 

@@ -206,7 +206,7 @@ def test_unmatched_launch_scope_includes_null_product_orders_and_unmatched_ads(m
 
     def fake_query(sql, args=()):
         calls.append((sql, args))
-        if "FROM dianxiaomi_order_lines d" in sql and "HOUR(" in sql:
+        if "FROM dianxiaomi_order_lines d" in sql and "TIMESTAMPDIFF(HOUR" in sql:
             assert "d.product_id IS NULL" in sql
             return [{
                 "hour": 2,
