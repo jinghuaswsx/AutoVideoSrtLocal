@@ -3442,9 +3442,6 @@ function tcDetailButtons(task, isParent) {
   const id = task.id;
   const status = task.status;
   const btns = [];
-  if (TC_IS_ADMIN) {
-    btns.push(tcTaskUrgencyAction(task));
-  }
   if (isParent) {
     if (tcCanForceRerunNiuma(task, isParent)) {
       btns.push(`<button class="tc-btn" onclick="tcForceRerunNiuma(${id})">强制重跑</button>`);
@@ -3456,7 +3453,7 @@ function tcDetailButtons(task, isParent) {
       }
     }
     if (TC_IS_ADMIN && ['pending','raw_in_progress','raw_review','raw_done'].includes(status)) {
-      btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('parent', ${id}, 'cancel')">取消</button>`);
+      btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('parent', ${id}, 'cancel')">取消任务</button>`);
     }
   } else {
     if (status === 'assigned') {
@@ -3467,19 +3464,9 @@ function tcDetailButtons(task, isParent) {
       btns.push(`<button class="tc-btn" onclick="tcChildJumpHistory(${id}, '${country}', ${productId}, '${productCode}')">翻译任务记录</button>`);
       btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'submit')">提交完成</button>`);
     }
-    if (status === 'review' && !TC_IS_ADMIN && tcCanReviewChildTask(task)) {
-      btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'approve')">通过</button>`);
-    }
-    if (status === 'review' && TC_IS_ADMIN) {
-      btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'approve')">通过</button>`);
-      btns.push(`<button class="tc-btn" onclick="tcOpenReason('child', ${id}, 'reject')">打回</button>`);
-    }
     if (TC_IS_ADMIN && ['blocked','assigned','review'].includes(status)) {
-      btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('child', ${id}, 'cancel')">取消</button>`);
+      btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('child', ${id}, 'cancel')">取消任务</button>`);
     }
-  }
-  if (TC_IS_ADMIN) {
-    btns.push(`<button class="tc-btn" onclick="tcOpenBindModal(${id}, ${!!isParent})">绑定产出物</button>`);
   }
   return btns.join('');
 }
