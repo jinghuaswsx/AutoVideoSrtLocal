@@ -1300,6 +1300,78 @@ def test_get_realtime_roas_overview_prefers_latest_order_snapshot_when_ad_pendin
     assert result["snapshots"][0]["id"] == 633
 
 
+def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monkeypatch):
+    snapshot_at = datetime(2026, 5, 7, 20, 40)
+    day_start = datetime(2026, 5, 7, 16, 0)
+
+    def fake_query(sql, args=()):
+        if "FROM roi_daily_roas_nodes" in sql:
+            return []
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return [
+                {
+                    "id": 701,
+                    "snapshot_at": snapshot_at,
+                    "source_run_id": 888,
+                    "order_count": 9,
+                    "line_count": 10,
+                    "units": 14,
+                    "order_revenue_usd": 900.0,
+                    "shipping_revenue_usd": 90.0,
+                    "ad_spend_usd": 300.0,
+                    "last_order_at": datetime(2026, 5, 7, 20, 30),
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                }
+            ]
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY" in sql:
+            assert "TIMESTAMPDIFF(HOUR" in sql
+            assert "GROUP BY hour" in sql
+            assert args[0] == day_start
+            assert args[1] == day_start
+            assert args[2] == snapshot_at
+            return [
+                {
+                    "hour": 0,
+                    "order_count": 4,
+                    "line_count": 5,
+                    "units": 7,
+                    "order_revenue": 400.0,
+                    "line_revenue": 390.0,
+                    "shipping_revenue": 40.0,
+                    "first_order_at": datetime(2026, 5, 7, 16, 5),
+                    "last_order_at": datetime(2026, 5, 7, 16, 55),
+                    "last_order_updated_at": datetime(2026, 5, 7, 20, 35),
+                }
+            ]
+        if "FROM roi_hourly_sync_runs" in sql:
+            return [{"last_order_updated_at": datetime(2026, 5, 7, 20, 36)}]
+        if "MAX(r.finished_at)" in sql:
+            return [{"last_ad_updated_at": datetime(2026, 5, 7, 20, 40)}]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return []
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        "2026-05-07",
+        now=datetime(2026, 5, 7, 20, 45),
+    )
+
+    assert result["summary"]["order_count"] == 9
+    assert len(result["hourly"]) == 24
+    assert result["hourly"][0]["window_start_at"] == day_start
+    assert result["hourly"][0]["order_count"] == 4
+    assert result["hourly"][16]["order_count"] == 0
+    assert result["hourly"][0]["ad_spend"] is None
+    assert result["snapshots"][0]["id"] == 701
+
+
 def test_realtime_current_business_day_product_filter_uses_realtime_campaign_snapshot(monkeypatch):
     target = oa._parse_meta_date("2026-05-07")
     snapshot_at = datetime(2026, 5, 8, 13, 20)
@@ -1353,6 +1425,8 @@ def test_realtime_current_business_day_product_filter_uses_realtime_campaign_sna
                     "clicks": 30,
                 },
             ]
+        if "TIMESTAMPDIFF(HOUR" in sql and "GROUP BY hour" in sql:
+            return []
         if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql and "FROM dianxiaomi_order_lines d" in sql:
             assert "d.meta_business_date=%s" in sql
             assert args[0] == target
