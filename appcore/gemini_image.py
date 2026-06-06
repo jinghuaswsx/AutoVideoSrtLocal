@@ -491,7 +491,7 @@ def _generate_via_genai(
     if timeout_ms is not None:
         generate_config_kwargs["http_options"] = genai_types.HttpOptions(timeout=timeout_ms)
     if image_size:
-        generate_config_kwargs["modalities"] = ["IMAGE"]
+        generate_config_kwargs["response_modalities"] = ["IMAGE"]
         generate_config_kwargs["image_config"] = {"image_size": image_size}
         
     if generate_config_kwargs:
