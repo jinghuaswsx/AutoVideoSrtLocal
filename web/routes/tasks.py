@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import re
 from functools import wraps
@@ -10,7 +11,7 @@ from flask import Blueprint, current_app, render_template, request
 from flask_login import current_user, login_required
 
 from web.auth import permission_required
-from appcore import local_media_storage, object_keys
+from appcore import local_media_storage, new_product_tasks, object_keys
 from appcore import raw_video_pool as rvp_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
@@ -189,6 +190,43 @@ def _parse_language_assignments(raw_value, countries: list[str]) -> dict[str, in
     return normalized
 
 
+def _parse_new_product_countries(raw_value) -> list[str]:
+    if isinstance(raw_value, list):
+        values = raw_value
+    else:
+        raw_text = str(raw_value or "").strip()
+        if not raw_text:
+            return []
+        if raw_text.startswith("["):
+            try:
+                parsed = json.loads(raw_text)
+            except Exception:
+                parsed = []
+            values = parsed if isinstance(parsed, list) else []
+        else:
+            values = raw_text.split(",")
+    return _normalize_countries(values)
+
+
+def _parse_new_product_language_assignments(raw_value):
+    if isinstance(raw_value, dict):
+        return raw_value
+    raw_text = str(raw_value or "").strip()
+    if not raw_text:
+        return None
+    try:
+        parsed = json.loads(raw_text)
+    except Exception as exc:
+        raise ValueError("language_assignments must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("language_assignments must be an object")
+    return parsed
+
+
+def _truthy_form_value(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _validate_translation_targets(
     *,
     translator_id: int | None,
@@ -232,6 +270,14 @@ def _render_task_center(
 @permission_required("task_center")
 def index():
     return _render_task_center(section="overview", bucket="todo")
+
+
+@bp.route("/new-product")
+@login_required
+@permission_required("task_center")
+@admin_required
+def new_product_page():
+    return render_template("task_new_product.html")
 
 
 @bp.route("/stats")
@@ -502,6 +548,91 @@ def api_create_parent():
             item_id,
         )
     return _json_response({"parent_task_id": parent_id, "raw_processing": raw_processing})
+
+
+@bp.route("/api/new-product", methods=["POST"])
+@login_required
+@permission_required("task_center")
+@admin_required
+def api_create_new_product_task():
+    try:
+        if request.content_type and request.content_type.startswith("multipart/form-data"):
+            form = request.form
+            countries = _parse_new_product_countries(form.get("countries"))
+            language_assignments = _parse_new_product_language_assignments(
+                form.get("language_assignments")
+            )
+            result = new_product_tasks.create_from_upload(
+                product_name=form.get("product_name") or "",
+                product_link=form.get("product_link") or "",
+                product_main_image_url=form.get("product_main_image_url") or "",
+                product_code=form.get("product_code") or "",
+                owner_id=int(form.get("owner_id") or 0),
+                video_file=request.files.get("video_file"),
+                countries=countries,
+                language_assignments=language_assignments,
+                raw_processor_id=int(form.get("raw_processor_id") or 0),
+                created_by=int(current_user.id),
+                is_urgent=_truthy_form_value(form.get("is_urgent")),
+                force=_truthy_form_value(form.get("force")),
+            )
+        else:
+            payload = request.get_json(silent=True) or {}
+            source = str(payload.get("source") or "").strip()
+            if source != "meta_hot_post":
+                return _json_response({"error": "unsupported source"}, 400)
+            countries = _parse_new_product_countries(payload.get("countries") or [])
+            language_assignments = _parse_new_product_language_assignments(
+                payload.get("language_assignments")
+            )
+            result = new_product_tasks.create_from_meta_hot_post(
+                post_id=int(payload.get("post_id") or 0),
+                owner_id=int(payload.get("owner_id") or 0),
+                countries=countries,
+                language_assignments=language_assignments,
+                raw_processor_id=int(payload.get("raw_processor_id") or 0),
+                created_by=int(current_user.id),
+                is_urgent=payload.get("is_urgent") is True,
+                force=bool(payload.get("force")),
+            )
+    except (ValueError, new_product_tasks.NewProductTaskError) as exc:
+        return _json_response({"error": str(exc)}, 400)
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.exception("create new product task failed")
+        return _json_response({"error": f"Internal error: {exc}"}, 500)
+
+    _audit_task_action(
+        int(result["parent_task_id"]),
+        "task_new_product_created",
+        {
+            "source": result.get("source"),
+            "media_product_id": result.get("media_product_id"),
+            "media_item_id": result.get("media_item_id"),
+            "countries": result.get("countries"),
+            "language_assignments": result.get("language_assignments"),
+            "raw_processor_id": result.get("raw_processor_id"),
+            "is_urgent": result.get("is_urgent"),
+            **(
+                {"meta_hot_post_id": result.get("meta_hot_post_id")}
+                if result.get("meta_hot_post_id") else {}
+            ),
+        },
+    )
+    try:
+        _trigger_material_evaluation(
+            product_id=int(result["media_product_id"]),
+            media_item_id=int(result["media_item_id"]),
+            force=False,
+            manual=False,
+            product_url_override=result.get("product_link") or None,
+        )
+    except Exception:
+        current_app.logger.exception(
+            "trigger material evaluation after new product task create failed product_id=%s item_id=%s",
+            result.get("media_product_id"),
+            result.get("media_item_id"),
+        )
+    return _json_response(result, 201)
 
 
 @bp.route("/api/parent/<int:tid>/claim", methods=["POST"])

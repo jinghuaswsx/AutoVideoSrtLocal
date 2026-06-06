@@ -1,4 +1,5 @@
 import io
+import json
 
 from web.routes import tasks as tasks_route_module
 
@@ -1016,6 +1017,148 @@ def test_create_parent_task_missing_params(authed_client_no_db):
     rsp = authed_client_no_db.post("/tasks/api/parent", json={})
     assert rsp.status_code == 400
     assert "error" in rsp.get_json()
+
+
+def test_new_product_task_page_renders_form(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/new-product")
+
+    assert rsp.status_code == 200
+    body = rsp.get_data(as_text=True)
+    assert "创建新产品和任务" in body
+    assert "/tasks/api/new-product" in body
+    assert "nptVideoFile" in body
+    assert "nptRawProcessor" in body
+    assert "language_assignments" in body
+    assert "product_detail_url" in body
+
+
+def test_create_new_product_task_from_upload_calls_service(authed_client_no_db, monkeypatch):
+    captured = {}
+    audit_calls = []
+    evaluation_calls = []
+
+    def fake_create_from_upload(**kwargs):
+        captured.update(kwargs)
+        return {
+            "ok": True,
+            "source": "upload",
+            "media_product_id": 12,
+            "media_item_id": 34,
+            "parent_task_id": 56,
+            "countries": ["DE", "FR"],
+            "language_assignments": {"DE": 9, "FR": 10},
+            "raw_processor_id": 8,
+            "is_urgent": True,
+            "product_link": "https://example.test/products/demo",
+            "product_detail_url": "/medias/demo",
+        }
+
+    monkeypatch.setattr("web.routes.tasks.new_product_tasks.create_from_upload", fake_create_from_upload)
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._trigger_material_evaluation",
+        lambda **kwargs: evaluation_calls.append(kwargs) or True,
+    )
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/new-product",
+        data={
+            "product_name": "Demo Product",
+            "product_link": "https://example.test/products/demo",
+            "product_main_image_url": "https://cdn.example.test/demo.jpg",
+            "product_code": "demo",
+            "owner_id": "11",
+            "raw_processor_id": "8",
+            "countries": json.dumps(["de", "FR"]),
+            "language_assignments": json.dumps({"DE": 9, "FR": 10}),
+            "is_urgent": "on",
+            "video_file": (io.BytesIO(b"fake video"), "demo.mp4"),
+        },
+    )
+
+    assert rsp.status_code == 201
+    assert rsp.get_json()["parent_task_id"] == 56
+    assert captured["product_name"] == "Demo Product"
+    assert captured["owner_id"] == 11
+    assert captured["raw_processor_id"] == 8
+    assert captured["countries"] == ["DE", "FR"]
+    assert captured["language_assignments"] == {"DE": 9, "FR": 10}
+    assert captured["is_urgent"] is True
+    assert captured["force"] is False
+    assert captured["created_by"] == 1
+    assert captured["video_file"].filename == "demo.mp4"
+    assert audit_calls[0][0:2] == (56, "task_new_product_created")
+    assert evaluation_calls == [
+        {
+            "product_id": 12,
+            "media_item_id": 34,
+            "force": False,
+            "manual": False,
+            "product_url_override": "https://example.test/products/demo",
+        }
+    ]
+
+
+def test_create_new_product_task_from_meta_hot_post_calls_service(authed_client_no_db, monkeypatch):
+    captured = {}
+    audit_calls = []
+
+    def fake_create_from_meta_hot_post(**kwargs):
+        captured.update(kwargs)
+        return {
+            "ok": True,
+            "source": "meta_hot_post",
+            "meta_hot_post_id": 77,
+            "media_product_id": 12,
+            "media_item_id": 34,
+            "parent_task_id": 56,
+            "countries": ["DE"],
+            "language_assignments": {"DE": 9},
+            "raw_processor_id": 8,
+            "is_urgent": True,
+            "product_detail_url": "/medias/meta-hot-77",
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.new_product_tasks.create_from_meta_hot_post",
+        fake_create_from_meta_hot_post,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+    monkeypatch.setattr("web.routes.tasks._trigger_material_evaluation", lambda **kwargs: True)
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/new-product",
+        json={
+            "source": "meta_hot_post",
+            "post_id": 77,
+            "owner_id": 9,
+            "raw_processor_id": 8,
+            "countries": ["DE"],
+            "language_assignments": {"DE": 9},
+            "is_urgent": True,
+            "force": True,
+        },
+    )
+
+    assert rsp.status_code == 201
+    assert rsp.get_json()["source"] == "meta_hot_post"
+    assert captured == {
+        "post_id": 77,
+        "owner_id": 9,
+        "countries": ["DE"],
+        "language_assignments": {"DE": 9},
+        "raw_processor_id": 8,
+        "created_by": 1,
+        "is_urgent": True,
+        "force": True,
+    }
+    assert audit_calls[0][2]["meta_hot_post_id"] == 77
 
 
 def test_translation_work_users_route_returns_users(authed_client_no_db, monkeypatch):

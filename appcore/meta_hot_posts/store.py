@@ -241,6 +241,14 @@ def list_hot_posts(
                p.is_pushed,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                p.local_product_id, p.local_media_item_id,
+               (
+                 SELECT MAX(t.id)
+                 FROM tasks t
+                 WHERE t.parent_task_id IS NULL
+                   AND t.media_item_id = p.local_media_item_id
+                   AND t.archived_at IS NULL
+                   AND t.status <> 'cancelled'
+               ) AS new_product_parent_task_id,
                {favorite_select},
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
@@ -322,6 +330,14 @@ def list_favorite_hot_posts(
                p.is_pushed,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                p.local_product_id, p.local_media_item_id,
+               (
+                 SELECT MAX(t.id)
+                 FROM tasks t
+                 WHERE t.parent_task_id IS NULL
+                   AND t.media_item_id = p.local_media_item_id
+                   AND t.archived_at IS NULL
+                   AND t.status <> 'cancelled'
+               ) AS new_product_parent_task_id,
                fav.created_at AS favorited_at,
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,
@@ -407,6 +423,14 @@ def list_today_new_hot_posts(
                p.is_pushed,
                p.is_marked, p.mark_status, p.marked_at, p.marked_by,
                p.local_product_id, p.local_media_item_id,
+               (
+                 SELECT MAX(t.id)
+                 FROM tasks t
+                 WHERE t.parent_task_id IS NULL
+                   AND t.media_item_id = p.local_media_item_id
+                   AND t.archived_at IS NULL
+                   AND t.status <> 'cancelled'
+               ) AS new_product_parent_task_id,
                {favorite_select},
                p.video_url, p.image_url, p.invisible, p.invisible_region,
                p.message_html, p.message_zh_html, p.message_zh_status,

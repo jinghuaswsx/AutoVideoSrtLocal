@@ -167,6 +167,8 @@ def test_list_today_new_hot_posts_filters_by_first_seen_today():
     assert "va.id AS video_copyability_analysis_id" in data_sql
     assert "LEFT JOIN meta_hot_post_europe_assessments e" in data_sql
     assert "e.suitability_score AS europe_fit_score" in data_sql
+    assert "AS new_product_parent_task_id" in data_sql
+    assert "t.media_item_id = p.local_media_item_id" in data_sql
     assert "ORDER BY p.first_seen_at DESC" in data_sql
     assert "COALESCE(p.sync_period_likes, 0) DESC" in data_sql
     assert data_params == [50, 0]
@@ -308,6 +310,8 @@ def test_list_favorite_hot_posts_sorts_by_user_choice():
     assert "LEFT JOIN meta_hot_post_europe_assessments e" in data_sql
     assert "e.suitability_score AS europe_fit_score" in data_sql
     assert "va.summary_zh AS video_copyability_summary_zh" in data_sql
+    assert "AS new_product_parent_task_id" in data_sql
+    assert "t.media_item_id = p.local_media_item_id" in data_sql
     assert "WHERE fav.user_id = %s" in data_sql
     assert "ORDER BY COALESCE(p.latest_likes, 0) DESC, fav.created_at DESC" in data_sql
     assert data_params == [88, 20, 20]
@@ -453,6 +457,10 @@ def test_list_hot_posts_selects_local_video_cache_fields():
     assert "p.local_video_error" in data_sql
     assert "p.local_video_downloaded_at" in data_sql
     assert "p.local_video_attempts" in data_sql
+    assert "AS new_product_parent_task_id" in data_sql
+    assert "t.media_item_id = p.local_media_item_id" in data_sql
+    assert "t.archived_at IS NULL" in data_sql
+    assert "t.status <> 'cancelled'" in data_sql
 
 
 def test_next_pending_local_videos_selects_undownloaded_video_rows():
