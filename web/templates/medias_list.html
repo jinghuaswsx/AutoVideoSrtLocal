@@ -3215,34 +3215,41 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   white-space:normal;
   overflow-wrap:anywhere;
 }
-.oc-vm-spend-bar {
-  min-width:0;
-}
-.oc-vm-spend-summary {
+.oc-vm-spend-table {
   display:grid;
-  grid-template-columns:44px 1fr;
-  align-items:center;
-  gap:8px;
+  grid-template-columns:repeat(5, minmax(58px, 1fr));
+  grid-auto-rows:minmax(18px, auto);
+  column-gap:8px;
+  row-gap:2px;
+  align-items:baseline;
   width:100%;
   max-width:100%;
-  padding-bottom:0;
-  border-bottom:0;
-  font-weight:700;
-}
-.oc-vm-spend-values {
-  display:grid;
-  grid-template-columns:repeat(5, max-content);
-  gap:7px;
   min-width:0;
+  font-variant-numeric:tabular-nums;
 }
-.oc-vm-spend-values .oc-order-stat {
-  gap:2px;
+.oc-vm-spend-head {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--oc-fg-muted);
+  font-size:11px;
+  font-weight:600;
+  line-height:1.2;
+  text-align:right;
 }
-.oc-vm-spend-values .oc-order-stat strong {
+.oc-vm-spend-value {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
   color:var(--oc-fg);
   font-size:12px;
+  font-weight:700;
+  line-height:1.25;
+  text-align:right;
 }
-.oc-vm-spend-values .oc-order-stat:first-child strong {
+.oc-vm-spend-value:last-child {
   color:var(--oc-accent);
 }
 .oc-vm-roas-inline {

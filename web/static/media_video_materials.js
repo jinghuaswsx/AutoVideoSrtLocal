@@ -247,24 +247,24 @@
     return MARKET_LABELS[upper] || upper;
   }
 
-  function adSpendMetric(label, value) {
-    return `<span class="oc-order-stat"><span>${esc(label)}</span><strong>${esc(fmtAdSpend(value))}</strong></span>`;
+  function adSpendCell(value) {
+    return `<span class="oc-vm-spend-value">${esc(fmtAdSpend(value))}</span>`;
   }
 
   function adSpendHtml(item) {
     const perf = (item && item.ad_performance) || {};
     return `
-      <div class="oc-vm-spend-bar oc-country-metrics-bar">
-        <div class="oc-vm-spend-summary oc-country-metrics-summary">
-          <span class="oc-order-stats-name">总计</span>
-          <span class="oc-vm-spend-values">
-            ${adSpendMetric('总', perf.total_spend_usd)}
-            ${adSpendMetric('今', perf.today_spend_usd)}
-            ${adSpendMetric('昨', perf.yesterday_spend_usd)}
-            ${adSpendMetric('7天', perf.last_7d_spend_usd)}
-            ${adSpendMetric('30天', perf.last_30d_spend_usd)}
-          </span>
-        </div>
+      <div class="oc-vm-spend-table" role="presentation">
+        <span class="oc-vm-spend-head">今天</span>
+        <span class="oc-vm-spend-head">昨天</span>
+        <span class="oc-vm-spend-head">7天</span>
+        <span class="oc-vm-spend-head">30天</span>
+        <span class="oc-vm-spend-head">总消耗</span>
+        ${adSpendCell(perf.today_spend_usd)}
+        ${adSpendCell(perf.yesterday_spend_usd)}
+        ${adSpendCell(perf.last_7d_spend_usd)}
+        ${adSpendCell(perf.last_30d_spend_usd)}
+        ${adSpendCell(perf.total_spend_usd)}
       </div>
     `;
   }
