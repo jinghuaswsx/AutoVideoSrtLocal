@@ -1056,8 +1056,102 @@
       const search = mkDetailBtn.dataset.mkSearch || '';
       window.open(`/xuanpin/mk?q=${encodeURIComponent(search)}&range=all`, '_blank');
       return;
-    }
   });
+
+  // Copy helpers
+  function mkCopyIconSvg() {
+    return `<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+  }
+
+  window.copyMkText = function(text, btn) {
+    if (!navigator.clipboard) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        mkiToast('success', '已复制到剪贴板');
+      } catch (err) {
+        mkiToast('error', '复制失败');
+      }
+      document.body.removeChild(textarea);
+      return;
+    }
+    navigator.clipboard.writeText(text).then(() => {
+      mkiToast('success', '已复制到剪贴板');
+    }).catch(() => {
+      mkiToast('error', '复制失败');
+    });
+  };
+
+  function mkiToast(type, msg) {
+    const toast = document.createElement('div');
+    toast.className = `mki-toast mki-toast--${type}`;
+    toast.style.cssText = `
+      position: fixed; top: 20px; right: 20px; z-index: 9999;
+      padding: 10px 16px; border-radius: 6px; background: #333; color: #fff;
+      font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      opacity: 0; transform: translateY(-10px); transition: all 0.2s ease;
+      font-family: sans-serif;
+    `;
+    if (type === 'success') {
+      toast.style.background = '#22c55e';
+    } else if (type === 'error') {
+      toast.style.background = '#ef4444';
+    }
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateY(0)';
+    }, 10);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(-10px)';
+      setTimeout(() => {
+        document.body.removeChild(toast);
+      }, 200);
+    }, 2500);
+  }
+
+  function heatLevel(adsCount) {
+    const count = Number(adsCount || 0);
+    if (count >= 10) return {label:'高', cls:'heat-high'};
+    if (count >= 5) return {label:'中', cls:'heat-medium'};
+    return {label:'低', cls:'heat-low'};
+  }
+
+  function extractProductCnNameFromFilename(filename) {
+    const basename = String(filename || '').split(/[/\\]/).pop().trim();
+    if (!basename) return "";
+    const stem = basename.replace(/\.[A-Za-z0-9]{1,8}$/, "");
+    const rest = stem.replace(/^\d{4}[.-]\d{2}\.\d{2}-/, "");
+    const parts = rest.split("-").map(p => p.trim()).filter(Boolean);
+    const cnParts = parts.filter(p => /[\u4e00-\u9fa5]/.test(p));
+    return cnParts.join(' ') || '';
+  }
+
+  function extractProductEnNameFromFilename(filename) {
+    const basename = String(filename || '').split(/[/\\]/).pop().trim();
+    if (!basename) return "";
+    const stem = basename.replace(/\.[A-Za-z0-9]{1,8}$/, "");
+    const rest = stem.replace(/^\d{4}[.-]\d{2}\.\d{2}-/, "");
+    const parts = rest.split("-").map(p => p.trim()).filter(Boolean);
+    const enParts = parts.filter(p => !/[\u4e00-\u9fa5]/.test(p));
+    const filtered = enParts.filter(p => !/^(原素材|rjc|copy|translated)$/i.test(p));
+    return filtered.join(' ') || '';
+  }
+
+  function cleanEnglishProductName(enName) {
+    let val = String(enName || '').trim();
+    if (!val) return '';
+    if (val.includes(' - ')) {
+      val = val.split(' - ')[0].trim();
+    }
+    return val;
+  }
 
 })();
 </script>
