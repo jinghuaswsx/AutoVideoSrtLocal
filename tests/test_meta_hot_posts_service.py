@@ -1043,6 +1043,61 @@ def test_build_list_response_omits_missing_local_video_and_cover_urls(monkeypatc
     assert item["local_video_cover_url"] == ""
 
 
+def test_import_hot_post_uses_space_free_media_display_name(monkeypatch, tmp_path):
+    video = tmp_path / "source.mp4"
+    video.write_bytes(b"video")
+    captured: dict[str, object] = {}
+    query_calls: list[str] = []
+
+    def fake_query_one(sql, args=()):
+        query_calls.append(sql)
+        if "FROM meta_hot_posts" in sql:
+            return {
+                "id": 77,
+                "local_product_id": None,
+                "local_media_item_id": None,
+                "local_video_status": "downloaded",
+                "local_video_path": "meta_hot_posts/videos/77.mp4",
+                "local_video_cover_path": "",
+                "local_video_duration_seconds": 1.0,
+                "product_title": "E2E Meta Product With Spaces",
+                "product_url": "https://example.com/products/e2e-meta",
+                "product_main_image_url": "https://example.com/main.jpg",
+                "image_url": "",
+            }
+        if "FROM media_products" in sql:
+            return None
+        return None
+
+    def fake_execute(sql, args=()):
+        if "INSERT INTO media_products" in sql:
+            return 123
+        return 1
+
+    def fake_write_stream(dest_key, handle):
+        captured["dest_key"] = dest_key
+        captured["bytes"] = handle.read()
+
+    def fake_create_item(**kwargs):
+        captured["create_item"] = kwargs
+        return 456
+
+    monkeypatch.setattr("appcore.db.query_one", fake_query_one)
+    monkeypatch.setattr("appcore.db.execute", fake_execute)
+    monkeypatch.setattr(service.video_localization, "resolve_local_video_path", lambda path: video)
+    monkeypatch.setattr("appcore.local_media_storage.write_stream", fake_write_stream)
+    monkeypatch.setattr("appcore.medias.create_item", fake_create_item)
+
+    result = service.import_hot_post(77, translator_id=238, actor_user_id=1)
+
+    create_payload = captured["create_item"]
+    assert result["media_product_id"] == 123
+    assert result["media_item_id"] == 456
+    assert create_payload["filename"] == "meta_hot_77.mp4"
+    assert create_payload["display_name"] == "meta_hot_77.mp4"
+    assert " " not in create_payload["display_name"]
+
+
 def test_build_list_response_can_fallback_to_raw_json_duration_for_online_only(monkeypatch):
     monkeypatch.setattr(
         service.store,

@@ -1548,7 +1548,7 @@ def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dic
         user_id=owner_uid,
         filename=filename,
         object_key=dest_key,
-        display_name=row.get("product_title") or f"Meta热帖素材 {post_id}",
+        display_name=filename,
         duration_seconds=duration_seconds if duration_seconds > 0 else None,
         file_size=file_size,
         cover_object_key=cover_key,
