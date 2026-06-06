@@ -505,6 +505,10 @@ def api_list():
     audit_result = (request.args.get("audit_result") or "").strip()
     if audit_result not in _AUDIT_RESULT_FILTERS:
         audit_result = ""
+    new_product_raw = (request.args.get("new_product") or "").strip()
+    if new_product_raw not in {"", "1", "0"}:
+        new_product_raw = ""
+    new_product = None if new_product_raw == "" else new_product_raw == "1"
     date_from = (request.args.get("date_from") or "").strip() or None
     date_to = (request.args.get("date_to") or "").strip() or None
     sort = (request.args.get("sort") or "created_at_desc").strip()
@@ -529,6 +533,7 @@ def api_list():
         product_term=product_term,
         owner_id=owner_id,
         audit_result=audit_result,
+        new_product=new_product,
         date_from=date_from,
         date_to=date_to,
         sort=sort,

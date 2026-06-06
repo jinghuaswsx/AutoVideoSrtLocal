@@ -2254,6 +2254,7 @@ def list_items_for_push(
     product_term: str = "",
     owner_id: int | None = None,
     audit_result: str = "",
+    new_product: bool | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     sort: str = "created_at_desc",
@@ -2269,6 +2270,14 @@ def list_items_for_push(
     args: list[Any] = []
 
     owner_id_expr, owner_name_expr = _media_push_owner_exprs()
+    product_has_successful_push_sql = (
+        "EXISTS ("
+        "         SELECT 1 FROM media_items pushed_item "
+        "         JOIN media_push_logs push_log ON push_log.item_id = pushed_item.id "
+        "         WHERE pushed_item.product_id = p.id "
+        "           AND push_log.status = 'success'"
+        "       )"
+    )
 
     if langs:
         placeholders = ",".join(["%s"] * len(langs))
@@ -2289,6 +2298,10 @@ def list_items_for_push(
     if audit_result:
         where.append("p.ai_evaluation_result = %s")
         args.append(audit_result)
+    if new_product is True:
+        where.append(f"NOT {product_has_successful_push_sql}")
+    elif new_product is False:
+        where.append(product_has_successful_push_sql)
     if date_from:
         if len(date_from) == 10:
             date_from_dt = f"{date_from} 00:00:00"
@@ -2317,12 +2330,7 @@ def list_items_for_push(
     order_direction = "ASC" if sort == "created_at_asc" else "DESC"
     base_sql = (
         f"SELECT i.*, p.name AS product_name, p.product_code, p.mk_id, "
-        f"       NOT EXISTS ("
-        f"         SELECT 1 FROM media_items pushed_item "
-        f"         JOIN media_push_logs push_log ON push_log.item_id = pushed_item.id "
-        f"         WHERE pushed_item.product_id = p.id "
-        f"           AND push_log.status = 'success'"
-        f"       ) AS is_new_product_for_push, "
+        f"       NOT {product_has_successful_push_sql} AS is_new_product_for_push, "
         f"       p.localized_links_json, p.ad_supported_langs, "
         f"       p.shopify_image_status_json, "
         f"       p.selling_points, p.importance, "

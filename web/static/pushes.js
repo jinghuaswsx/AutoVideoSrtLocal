@@ -62,6 +62,7 @@
     keyword: '',
     owner_id: '',
     audit_result: '',
+    new_product: '',
     date_from: '',
     date_to: '',
     sort: 'created_at_desc',
@@ -323,12 +324,14 @@
     const langSel = document.getElementById('f-lang');
     const ownerSel = document.getElementById('f-owner');
     const auditResultSel = document.getElementById('f-audit-result');
+    const newProductSel = document.getElementById('f-new-product');
     const sortSel = document.getElementById('f-sort');
 
     setSelectValue(statusSel, paramValue(params, 'status', DEFAULT_FILTERS.status), DEFAULT_FILTERS.status);
     setSelectValue(langSel, paramValue(params, 'lang', DEFAULT_FILTERS.lang), DEFAULT_FILTERS.lang);
     setSelectValue(ownerSel, paramValue(params, 'owner_id', DEFAULT_FILTERS.owner_id), DEFAULT_FILTERS.owner_id);
     setSelectValue(auditResultSel, paramValue(params, 'audit_result', DEFAULT_FILTERS.audit_result), DEFAULT_FILTERS.audit_result);
+    setSelectValue(newProductSel, paramValue(params, 'new_product', DEFAULT_FILTERS.new_product), DEFAULT_FILTERS.new_product);
     setSelectValue(sortSel, normalizeSort(paramValue(params, 'sort', DEFAULT_FILTERS.sort)), DEFAULT_FILTERS.sort);
     document.getElementById('f-keyword').value = paramValue(params, 'keyword', DEFAULT_FILTERS.keyword);
     document.getElementById('f-date-from').value = paramValue(params, 'date_from', DEFAULT_FILTERS.date_from);
@@ -348,6 +351,8 @@
     params.set('owner_id', ownerSel ? ownerSel.value : '');
     const auditResultSel = document.getElementById('f-audit-result');
     params.set('audit_result', auditResultSel ? auditResultSel.value : '');
+    const newProductSel = document.getElementById('f-new-product');
+    params.set('new_product', newProductSel ? newProductSel.value : '');
     const df = document.getElementById('f-date-from').value;
     params.set('date_from', df);
     const dt = document.getElementById('f-date-to').value;
@@ -1506,6 +1511,7 @@
       document.getElementById('f-lang').value = '';
       document.getElementById('f-owner').value = '';
       document.getElementById('f-audit-result').value = '';
+      document.getElementById('f-new-product').value = '';
       document.getElementById('f-sort').value = 'created_at_desc';
       state.page = 1; load();
     });

@@ -21,6 +21,16 @@ def test_pushes_template_contains_audit_result_filter():
     assert '<option value="不适合推广">不适合推广</option>' in template
 
 
+def test_pushes_template_contains_new_product_filter():
+    template = Path("web/templates/pushes_list.html").read_text(encoding="utf-8")
+
+    assert 'for="f-new-product"' in template
+    assert 'id="f-new-product"' in template
+    assert '<option value="" selected>全部</option>' in template
+    assert '<option value="1">新品</option>' in template
+    assert '<option value="0">非新品</option>' in template
+
+
 def test_pushes_template_contains_created_at_sort_control():
     template = Path("web/templates/pushes_list.html").read_text(encoding="utf-8")
 
@@ -186,6 +196,7 @@ def test_pushes_script_persists_filters_pagination_and_sort_in_url():
     assert "params.set('keyword', keyword);" in script
     assert "params.set('owner_id', ownerSel ? ownerSel.value : '');" in script
     assert "params.set('audit_result', auditResultSel ? auditResultSel.value : '');" in script
+    assert "params.set('new_product', newProductSel ? newProductSel.value : '');" in script
     assert "params.set('date_from', df);" in script
     assert "params.set('date_to', dt);" in script
     assert "params.set('sort', sortSel.value || 'created_at_desc');" in script
@@ -206,6 +217,7 @@ def test_pushes_css_styles_product_link_and_copy_button():
     assert ".pm-copy-btn" in css
     assert ".audit-cell" in css
     assert ".audit-detail-pre" in css
+    assert ".filter-group-new-product" in css
 
 
 def test_pushes_template_has_secondary_screen_table_shell_and_columns():

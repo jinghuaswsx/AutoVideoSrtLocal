@@ -194,6 +194,7 @@
 /* 日期范围：起始 / 至 / 截止 同行对齐 */
 .filter-group-range { min-width: 260px; }
 .filter-group-sort { min-width: 180px; }
+.filter-group-new-product { min-width: 150px; }
 .date-range {
   display: flex;
   align-items: center;
@@ -1206,7 +1207,8 @@
   .filter-group-status,
   .filter-group-lang,
   .filter-group-owner,
-  .filter-group-audit {
+  .filter-group-audit,
+  .filter-group-new-product {
     grid-column: span 2;
   }
   .filter-group-product,
@@ -1320,7 +1322,8 @@
   .filter-group-status,
   .filter-group-lang,
   .filter-group-owner,
-  .filter-group-audit {
+  .filter-group-audit,
+  .filter-group-new-product {
     grid-column: span 2;
   }
   .filter-group-product,

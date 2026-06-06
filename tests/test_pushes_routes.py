@@ -87,6 +87,27 @@ def test_pushes_api_items_passes_audit_result_filter(authed_client_no_db, monkey
     assert captured["kwargs"]["audit_result"] == "不适合推广"
 
 
+def test_pushes_api_items_passes_new_product_filter(authed_client_no_db, monkeypatch):
+    captured = []
+
+    def fake_list_items_for_push(**kwargs):
+        captured.append(kwargs)
+        return [], 0
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        fake_list_items_for_push,
+    )
+
+    new_resp = authed_client_no_db.get("/pushes/api/items?new_product=1&page=1")
+    old_resp = authed_client_no_db.get("/pushes/api/items?new_product=0&page=1")
+
+    assert new_resp.status_code == 200
+    assert old_resp.status_code == 200
+    assert captured[0]["new_product"] is True
+    assert captured[1]["new_product"] is False
+
+
 def test_pushes_api_items_list_does_not_load_quality_check(authed_client_no_db, monkeypatch):
     row = {
         "id": 101,

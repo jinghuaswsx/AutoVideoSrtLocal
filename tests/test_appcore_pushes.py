@@ -1716,6 +1716,67 @@ def test_list_items_for_push_selects_new_product_push_flag(monkeypatch):
     assert "pushed_item.deleted_at" not in sql
 
 
+def test_list_items_for_push_filters_new_product_push_flag(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args):
+        captured["count_sql"] = sql
+        captured["count_args"] = args
+        return {"c": 0}
+
+    def fake_query(sql, args):
+        captured["list_sql"] = sql
+        captured["list_args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query_one", fake_query_one)
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    rows, total = pushes.list_items_for_push(new_product=True, offset=0, limit=None)
+
+    assert rows == []
+    assert total == 0
+    assert "AND NOT EXISTS" in captured["count_sql"]
+    assert "media_push_logs" in captured["count_sql"]
+    assert "push_log.status = 'success'" in captured["count_sql"]
+    assert "AND NOT EXISTS" in captured["list_sql"]
+
+
+def test_list_items_for_push_filters_existing_product_push_flag(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args):
+        captured["count_sql"] = sql
+        captured["count_args"] = args
+        return {"c": 0}
+
+    def fake_query(sql, args):
+        captured["list_sql"] = sql
+        captured["list_args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query_one", fake_query_one)
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    rows, total = pushes.list_items_for_push(new_product=False, offset=0, limit=None)
+
+    assert rows == []
+    assert total == 0
+    assert "AND EXISTS" in captured["count_sql"]
+    assert "AND NOT EXISTS" not in captured["count_sql"]
+    assert "media_push_logs" in captured["count_sql"]
+    assert "push_log.status = 'success'" in captured["count_sql"]
+    assert "WHERE i.deleted_at IS NULL AND p.deleted_at IS NULL AND EXISTS" in captured["count_sql"]
+
+
 def test_pushes_serialize_row_includes_new_product_push_flag():
     from web.routes.pushes import _serialize_row
 

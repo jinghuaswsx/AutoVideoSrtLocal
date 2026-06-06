@@ -41,9 +41,23 @@ have been pushed successfully.
 - `web/static/pushes.css` gives the column a stable width and styles the badge as
   roughly double-size blue text without making old products noisy.
 
+## New Product Filter
+
+- `/pushes` adds a `新品标签` select in the filter toolbar with options
+  `全部` / `新品` / `非新品`; the default is `全部`.
+- The filter is persisted in the URL as `new_product`:
+  - empty or missing: all rows
+  - `1`: only rows whose product is new for push
+  - `0`: only rows whose product is not new for push
+- `/pushes/api/items` validates the same values and passes a boolean product-new
+  filter to `appcore.pushes.list_items_for_push()`.
+- `appcore.pushes.list_items_for_push()` applies the filter with the same
+  product-level successful-push rule used by `is_new_product_for_push`, so the
+  badge and filter cannot diverge.
+
 ## Verification
 
 - Unit/static tests cover the SQL field, serialized API field, template column,
-  JavaScript row rendering, and CSS badge class.
+  JavaScript row rendering, CSS badge class, and `新品标签` filter persistence.
 - Tests must avoid local Windows MySQL. DB-backed tests can only run on the
   documented test or server environment.
