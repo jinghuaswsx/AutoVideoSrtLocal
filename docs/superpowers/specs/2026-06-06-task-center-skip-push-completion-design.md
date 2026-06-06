@@ -24,11 +24,9 @@ Both paths must move the child task to `status='done'`, set `completed_at` if it
 
 `unskip` only clears the material's skip flag. It does not reopen a task by itself; reopening remains an explicit rework/reset action.
 
-Historical rows can have `media_items.task_id IS NULL`. For those rows, push management must infer the task from the material's `product_id` and `lang` using the same task-resolution logic already used by push rework.
+Historical rows can have `media_items.task_id IS NULL`. For those rows, push management must infer the task from the target-language material's `product_id` and `lang` using the same task-resolution logic already used by push rework.
 
-Some translation child tasks are bound to an English/source `media_items` row through `tasks.media_item_id` rather than to the generated target-language material. If that bound source material is marked `skip_push=1`, all non-archived child tasks bound to that source material are considered resolved. Historical backfill may correct `assigned`, `review`, or `cancelled` child tasks to `done` for this source-material skip case, because the administrator's push decision is that the material should not be pushed.
-
-Task `293` is the concrete production case: its bound English source material is already marked not to push, so the task must still be completed during historical backfill even though the target-language material is not currently visible in push management.
+English/source materials can be automatically marked `skip_push=1` by the system. That flag is not a task-completion signal for small-language translation child tasks bound to the same source material. Task completion from skip-push only applies to the corresponding target-language material, not to the EN source material.
 
 ## Backend Design
 
@@ -50,9 +48,8 @@ Existing `record_push_material_approved()` should call the shared helper. Add `r
 
 Task completion failures should be logged without masking the material push/skip response, matching the existing push-success behavior.
 
-Add a backfill helper that scans child tasks still in `assigned`, `review`, or `cancelled` and completes them when there is a matching material with `skip_push=1`. Matching uses:
+Add a backfill helper that scans child tasks still in `assigned` or `review` and completes them when there is a matching target-language material with `skip_push=1`. Matching uses:
 
-- `media_items.id = tasks.media_item_id` for source-material-bound child tasks;
 - exact `media_items.task_id = tasks.id`, or
 - `media_items.product_id = tasks.media_product_id` and `LOWER(media_items.lang) = LOWER(tasks.country_code)` for historical unbound material rows.
 
@@ -70,7 +67,8 @@ Parent auto-archive uses the same resolved-material condition for all completed 
 ## Verification
 
 - Service tests prove successful push completion marks child `done` and can advance the parent to `all_done`.
-- Service tests prove skip completion marks `assigned`, `review`, and historical `cancelled` children `done`.
-- Route tests prove manual `mark-pushed` and `skip` resolve historical unbound materials, source-material-bound tasks, and call the task service.
+- Service tests prove skip completion marks `assigned` and `review` children `done`.
+- Route tests prove manual `mark-pushed` and `skip` resolve historical unbound target-language materials and call the task service.
+- Route tests prove EN/source material skip-push does not complete child translation tasks.
 - Auto-archive tests prove skipped completed materials are eligible for archive and unresolved materials are not.
 - Compile checks cover `appcore/tasks.py` and `web/routes/pushes.py`.

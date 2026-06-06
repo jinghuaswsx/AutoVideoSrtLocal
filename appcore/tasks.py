@@ -1490,7 +1490,7 @@ def auto_archive_completed_pushed_tasks(limit: int | None = None) -> dict:
 
 
 def _skip_push_completion_backfill_candidates(limit: int | None = None) -> list[dict]:
-    args: list[Any] = [CHILD_ASSIGNED, CHILD_REVIEW, CHILD_CANCELLED]
+    args: list[Any] = [CHILD_ASSIGNED, CHILD_REVIEW]
     limit_sql = ""
     if limit is not None:
         limit_sql = "LIMIT %s"
@@ -1504,8 +1504,7 @@ def _skip_push_completion_backfill_candidates(limit: int | None = None) -> list[
         FROM tasks t
         JOIN media_products p ON p.id=t.media_product_id
         JOIN media_items mi ON (
-            mi.id=t.media_item_id
-            OR mi.task_id=t.id
+            mi.task_id=t.id
             OR (
                 mi.task_id IS NULL
                 AND mi.product_id=t.media_product_id
@@ -1513,7 +1512,7 @@ def _skip_push_completion_backfill_candidates(limit: int | None = None) -> list[
             )
         )
         WHERE t.parent_task_id IS NOT NULL
-          AND t.status IN (%s,%s,%s)
+          AND t.status IN (%s,%s)
           AND mi.deleted_at IS NULL
           AND mi.skip_push=1
         GROUP BY t.id, p.product_code, t.country_code
@@ -1524,7 +1523,7 @@ def _skip_push_completion_backfill_candidates(limit: int | None = None) -> list[
 
 
 def backfill_skip_push_completed_tasks(limit: int | None = None) -> dict:
-    """Complete child tasks whose matching push-management material was marked skip-push."""
+    """Complete active child tasks whose target-language material was marked skip-push."""
     safe_limit = None
     if limit is not None:
         try:
@@ -1756,8 +1755,6 @@ def _record_push_material_completion(
     parent_completed = False
     completed = False
     completable_statuses = [CHILD_ASSIGNED, CHILD_REVIEW]
-    if event_type == CHILD_PUSH_MATERIAL_SKIPPED_EVENT:
-        completable_statuses.append(CHILD_CANCELLED)
     allowed_statuses = tuple(completable_statuses + [CHILD_DONE])
     try:
         conn.begin()

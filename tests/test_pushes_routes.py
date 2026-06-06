@@ -2904,7 +2904,7 @@ def test_skip_records_task_completion_for_unbound_item(
     }
 
 
-def test_skip_records_task_completion_for_source_bound_item(
+def test_skip_ignores_source_bound_en_item(
     authed_client_no_db,
     monkeypatch,
 ):
@@ -2927,6 +2927,7 @@ def test_skip_records_task_completion_for_source_bound_item(
             {"id": 293, "country_code": "DE"},
             {"id": 801, "country_code": "JA"},
         ],
+        raising=False,
     )
     monkeypatch.setattr(
         "web.routes.pushes.medias.update_item_task_id",
@@ -2943,22 +2944,7 @@ def test_skip_records_task_completion_for_source_bound_item(
 
     assert resp.status_code == 204
     assert captured["updates"] == []
-    assert captured["completions"] == [
-        {
-            "task_id": 293,
-            "actor_user_id": 1,
-            "item_id": 1096,
-            "product_code": "ice-ball-molds-rjc",
-            "lang": "de",
-        },
-        {
-            "task_id": 801,
-            "actor_user_id": 1,
-            "item_id": 1096,
-            "product_code": "ice-ball-molds-rjc",
-            "lang": "ja",
-        },
-    ]
+    assert captured["completions"] == []
 
 
 def test_skip_blocked_for_already_pushed_item(logged_in_client, seeded_item):

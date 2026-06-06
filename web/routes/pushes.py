@@ -98,7 +98,7 @@ def index():
 
 from appcore import medias, push_quality_checks, pushes, system_audit
 from appcore import tasks as tasks_svc
-from appcore.db import query_one, query_all
+from appcore.db import query_one
 
 _PAGE_SIZE_DEFAULT = 20
 _AUDIT_RESULT_FILTERS = {"适合推广", "部分适合推广", "不适合推广"}
@@ -337,37 +337,6 @@ def _resolve_rework_task_id(item: dict) -> int | None:
         return None
 
 
-def _source_bound_task_targets(item_id: int) -> list[dict]:
-    rows = query_all(
-        """
-        SELECT id, country_code
-        FROM tasks
-        WHERE media_item_id=%s
-          AND parent_task_id IS NOT NULL
-          AND status IN (%s,%s,%s,%s)
-        ORDER BY id ASC
-        """,
-        (
-            int(item_id),
-            tasks_svc.CHILD_ASSIGNED,
-            tasks_svc.CHILD_REVIEW,
-            tasks_svc.CHILD_CANCELLED,
-            tasks_svc.CHILD_DONE,
-        ),
-    )
-    targets: list[dict] = []
-    for row in rows:
-        task_id = _positive_int((row or {}).get("id"))
-        if task_id is None:
-            continue
-        targets.append({
-            "task_id": task_id,
-            "lang": str((row or {}).get("country_code") or "").strip().lower(),
-            "bind_item": False,
-        })
-    return targets
-
-
 def _complete_task_for_push_item(
     item_id: int,
     item: dict,
@@ -384,8 +353,6 @@ def _complete_task_for_push_item(
             "lang": str((item or {}).get("lang") or "").strip().lower(),
             "bind_item": False,
         }]
-    elif decision == "skipped" and str((item or {}).get("lang") or "").strip().lower() == "en":
-        targets = _source_bound_task_targets(int(item_id))
 
     if not targets:
         task_id = _resolve_rework_task_id(item)

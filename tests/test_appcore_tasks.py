@@ -2422,7 +2422,6 @@ def test_record_push_material_skipped_completes_child(monkeypatch):
         44,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_REVIEW,
-        tasks.CHILD_CANCELLED,
     )) in sequence
     assert not any(item[0] == "update_parent_done" for item in sequence)
     assert any(item[0] == "event" and item[2] == tasks.CHILD_PUSH_MATERIAL_SKIPPED_EVENT for item in sequence)
@@ -2431,7 +2430,7 @@ def test_record_push_material_skipped_completes_child(monkeypatch):
     assert result["parent_completed"] is False
 
 
-def test_record_push_material_skipped_completes_cancelled_child(monkeypatch):
+def test_record_push_material_skipped_rejects_cancelled_child(monkeypatch):
     from appcore import tasks
 
     sequence = _install_push_completion_conn(
@@ -2445,23 +2444,17 @@ def test_record_push_material_skipped_completes_cancelled_child(monkeypatch):
         },
     )
 
-    result = tasks.record_push_material_skipped(
-        task_id=293,
-        actor_user_id=1,
-        item_id=1096,
-        product_code="ice-ball-molds-rjc",
-        lang="de",
-    )
+    with pytest.raises(tasks.StateError, match="child not completable from push"):
+        tasks.record_push_material_skipped(
+            task_id=293,
+            actor_user_id=1,
+            item_id=1096,
+            product_code="ice-ball-molds-rjc",
+            lang="de",
+        )
 
-    assert ("update_child_done", (
-        tasks.CHILD_DONE,
-        293,
-        tasks.CHILD_ASSIGNED,
-        tasks.CHILD_REVIEW,
-        tasks.CHILD_CANCELLED,
-    )) in sequence
-    assert result["status"] == tasks.CHILD_DONE
-    assert result["event_type"] == tasks.CHILD_PUSH_MATERIAL_SKIPPED_EVENT
+    assert not any(item[0] == "update_child_done" for item in sequence)
+    assert ("rollback",) in sequence
 
 
 def test_complete_raw_parent_if_ready_marks_parent_done_and_unblocks_children(monkeypatch):

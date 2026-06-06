@@ -977,14 +977,10 @@ def test_backfill_skip_push_completed_tasks_completes_unbound_matching_material(
     summary = tasks.backfill_skip_push_completed_tasks()
 
     assert "mi.skip_push=1" in captured["sql"]
-    assert "mi.id=t.media_item_id" in captured["sql"]
+    assert "mi.id=t.media_item_id" not in captured["sql"]
     assert "mi.task_id=t.id" in captured["sql"]
     assert "mi.task_id IS NULL" in captured["sql"]
-    assert captured["args"] == (
-        tasks.CHILD_ASSIGNED,
-        tasks.CHILD_REVIEW,
-        tasks.CHILD_CANCELLED,
-    )
+    assert captured["args"] == (tasks.CHILD_ASSIGNED, tasks.CHILD_REVIEW)
     assert completions == [
         {
             "task_id": 293,
