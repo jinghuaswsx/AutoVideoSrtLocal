@@ -2302,44 +2302,55 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-detail-image {
   position:relative;
-  margin-top:22px;
-  overflow:visible;
+  margin-top:0;
+  overflow:hidden;
   display:flex;
   flex-direction:column;
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-r-md);
+  background:var(--oc-bg);
+  transition:border-color var(--oc-dur-fast) var(--oc-ease),
+             box-shadow var(--oc-dur-fast) var(--oc-ease);
+}
+.oc-detail-image:hover {
+  border-color:var(--oc-accent);
+  box-shadow:var(--oc-shadow-sm);
+}
+.oc-detail-image.is-selected {
+  border-color:var(--oc-accent);
+  box-shadow:0 0 0 2px var(--oc-accent-ring);
 }
 .oc-detail-image-inner {
   position:relative;
   aspect-ratio:1/1;
-  border:1px solid var(--oc-border);
-  border-radius:var(--oc-r-md);
   overflow:hidden;
   background:var(--oc-bg-subtle);
-  transition:border-color var(--oc-dur-fast) var(--oc-ease),
-             box-shadow var(--oc-dur-fast) var(--oc-ease);
-}
-.oc-detail-image:hover .oc-detail-image-inner {
-  border-color:var(--oc-accent);
-  box-shadow:var(--oc-shadow-sm);
-}
-.oc-detail-image.is-selected .oc-detail-image-inner {
-  border-color:var(--oc-accent);
-  box-shadow:0 0 0 2px var(--oc-accent-ring);
 }
 .oc-detail-image img, .oc-detail-image-inner img {
   width:100%; height:100%; object-fit:cover; display:block;
 }
+.oc-detail-image-header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:6px 8px;
+  background:var(--oc-bg-subtle);
+  border-bottom:1px solid var(--oc-border);
+}
+.oc-detail-image-header-left {
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
 .oc-detail-image-select-wrap {
-  position:absolute; top:6px; left:6px;
-  width:24px; height:24px; display:flex; align-items:center; justify-content:center;
-  border-radius:var(--oc-r-full, 9999px);
-  background:oklch(22% 0.02 235 / 0.72);
-  cursor:pointer; z-index:2;
+  width:16px; height:16px; display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
 }
 .oc-detail-image-select {
   position:absolute; opacity:0; pointer-events:none;
 }
 .oc-detail-image-select-wrap span {
-  width:14px; height:14px; border:1.5px solid var(--oc-bg);
+  width:14px; height:14px; border:1.5px solid var(--oc-border-strong);
   border-radius:4px; background:transparent;
   transition:background var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease);
 }
@@ -2348,54 +2359,25 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-detail-image-select:checked + span::after {
   content:""; display:block; width:7px; height:4px;
-  border-left:2px solid var(--oc-bg); border-bottom:2px solid var(--oc-bg);
+  border-left:2px solid #fff; border-bottom:2px solid #fff;
   transform:translate(2px,3px) rotate(-45deg);
 }
 .oc-detail-image-select:focus-visible + span {
   box-shadow:0 0 0 2px var(--oc-accent-ring);
 }
 .oc-detail-image-idx {
-  position:absolute; bottom:6px; left:6px;
-  display:inline-flex; align-items:center; justify-content:center;
-  min-width:22px; height:22px; padding:0 6px;
-  border-radius:var(--oc-r-full, 9999px);
-  background:oklch(22% 0.02 235 / 0.72); color:#fff;
-  font-size:11px; font-weight:600; font-variant-numeric:tabular-nums;
-  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
-}
-.oc-detail-image-replace {
-  position:absolute; right:6px; bottom:6px;
-  height:24px; padding:0 8px;
-  display:inline-flex; align-items:center; justify-content:center;
-  border:none; border-radius:var(--oc-r-full, 9999px);
-  background:var(--oc-accent); color:#fff;
-  font-size:11px; font-weight:600;
-  cursor:pointer;
-  z-index:3;
-  transition:background var(--oc-dur-fast) var(--oc-ease),
-             bottom var(--oc-dur-fast) var(--oc-ease);
-}
-.oc-detail-image-replace[hidden] { display:none; }
-.oc-detail-image-replace:hover { background:var(--oc-accent-hover); }
-.oc-detail-image-replace:focus-visible {
-  outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring);
-}
-.oc-detail-image:hover:has(.oc-detail-image-eval-btn, .oc-detail-image-retranslate-btn) .oc-detail-image-replace {
-  bottom:38px;
+  font-size:12px; font-weight:600; color:var(--oc-fg-muted);
+  font-variant-numeric:tabular-nums;
 }
 .oc-detail-image-del {
-  position:absolute; top:6px; right:6px;
-  width:24px; height:24px; display:flex; align-items:center; justify-content:center;
-  border:none; border-radius:var(--oc-r-full, 9999px);
-  background:oklch(22% 0.02 235 / 0.72); color:#fff;
+  width:20px; height:20px; display:flex; align-items:center; justify-content:center;
+  border:none; border-radius:4px;
+  background:transparent; color:var(--oc-fg-muted);
   cursor:pointer;
-  transition:background var(--oc-dur-fast) var(--oc-ease);
-  opacity:1;
+  transition:all var(--oc-dur-fast) var(--oc-ease);
 }
-.oc-detail-image-del:hover { background:var(--oc-danger); }
-.oc-detail-image-del:focus-visible {
-  outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring);
-}
+.oc-detail-image-del:hover { background:var(--oc-danger-bg); color:var(--oc-danger-fg); }
+.oc-detail-image-del svg { width:12px; height:12px; }
 
 .oc-detail-images-actions {
   display:flex; align-items:center; gap:var(--oc-sp-3);
@@ -2407,10 +2389,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 
 /* 质量检测条 (Banner) */
 .oc-detail-image-eval-banner {
-  position:absolute;
-  top:-22px;
-  left:-1px;
-  right:-1px;
+  position:relative;
   height:22px;
   display:flex;
   align-items:center;
@@ -2420,80 +2399,67 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   color:#fff;
   z-index:3;
   pointer-events:none;
-  backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
   text-shadow:0 1px 2px rgba(0,0,0,0.15);
-  box-shadow:0 -1px 3px rgba(0,0,0,0.05);
-  border-radius:var(--oc-r-md) var(--oc-r-md) 0 0;
+  border-radius:0;
+  border-bottom:1px solid rgba(0,0,0,0.05);
 }
 .oc-detail-image-eval-banner.eval-green {
-  background:rgba(34, 197, 94, 0.85);
+  background:rgba(34, 197, 94, 0.9);
 }
 .oc-detail-image-eval-banner.eval-yellow {
-  background:rgba(245, 158, 11, 0.85);
+  background:rgba(245, 158, 11, 0.9);
 }
 .oc-detail-image-eval-banner.eval-red {
-  background:rgba(239, 68, 68, 0.85);
+  background:rgba(239, 68, 68, 0.9);
 }
 .oc-detail-image-eval-banner.eval-blue {
-  background:rgba(37, 99, 235, 0.85);
+  background:rgba(37, 99, 235, 0.9);
 }
 
-/* 详情图框内"质量检测"按钮 */
-.oc-detail-image-eval-btn {
-  position:absolute; left:6px; right:6px; bottom:6px;
-  height:26px; display:inline-flex; align-items:center; justify-content:center; gap:4px;
-  border:none; border-radius:var(--oc-r-full, 9999px);
-  background:oklch(38% 0.085 230); color:#fff;
-  font-size:11px; font-weight:600; cursor:pointer;
-  transition:all var(--oc-dur-fast) var(--oc-ease);
-  box-shadow:0 2px 6px rgba(0,0,0,0.1);
-  z-index:2;
-  opacity:0;
-  transform:translateY(4px);
+/* Footer layout for buttons */
+.oc-detail-image-footer {
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:8px;
+  background:var(--oc-bg);
+  border-top:1px solid var(--oc-border);
 }
-.oc-detail-image:hover .oc-detail-image-eval-btn {
-  opacity:1;
-  transform:translateY(0);
+.oc-detail-image-footer:not(:has(button:not([hidden]))) {
+  display:none;
+}
+.oc-detail-image-footer button {
+  width:100%;
+  height:26px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  border:none;
+  border-radius:var(--oc-r-md);
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+  transition:all var(--oc-dur-fast) var(--oc-ease);
+}
+
+.oc-detail-image-replace {
+  background:var(--oc-accent); color:#fff;
+}
+.oc-detail-image-replace:hover { background:var(--oc-accent-hover); }
+
+.oc-detail-image-eval-btn {
+  background:oklch(38% 0.085 230); color:#fff;
 }
 .oc-detail-image-eval-btn:hover {
   background:oklch(48% 0.085 230);
-  box-shadow:0 4px 10px rgba(0,0,0,0.15);
-}
-.oc-detail-image-eval-btn svg {
-  margin-right:2px;
 }
 
-/* 详情图框内"重新翻译"按钮 */
 .oc-detail-image-retranslate-btn {
-  position:absolute; left:6px; right:6px; bottom:6px;
-  height:26px; display:inline-flex; align-items:center; justify-content:center; gap:4px;
-  border:none; border-radius:var(--oc-r-full, 9999px);
   background:oklch(58% 0.18 240); color:#fff;
-  font-size:11px; font-weight:600; cursor:pointer;
-  transition:all var(--oc-dur-fast) var(--oc-ease);
-  box-shadow:0 2px 6px rgba(0,0,0,0.1);
-  z-index:2;
-  opacity:0;
-  transform:translateY(4px);
-}
-.oc-detail-image:hover .oc-detail-image-retranslate-btn {
-  opacity:1;
-  transform:translateY(0);
 }
 .oc-detail-image-retranslate-btn:hover {
   background:oklch(64% 0.18 240);
-  box-shadow:0 4px 10px rgba(0,0,0,0.15);
-}
-.oc-detail-image-retranslate-btn svg {
-  margin-right:2px;
-}
-
-/* 当卡片内同时有检测和重译按钮时，让他们并排显示 */
-.oc-detail-image.has-both-btns .oc-detail-image-eval-btn {
-  right: auto; width: calc(50% - 9px); left: 6px;
-}
-.oc-detail-image.has-both-btns .oc-detail-image-retranslate-btn {
-  left: auto; width: calc(50% - 9px); right: 6px;
 }
 
 /* ────────── mk_id inline edit ────────── */
