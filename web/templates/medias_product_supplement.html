@@ -101,10 +101,10 @@
   background: var(--oc-bg-muted);
 }
 
-/* Card Grid Styles: 2 columns on desktop to take up 50% screen space */
+/* Card Grid Styles: auto-fill minmax 248px to allow standard and double width cards */
 .mk-video-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--mk-video-card-w), 1fr));
   gap: var(--oc-sp-4);
   justify-content: flex-start;
   align-content: start;
@@ -112,10 +112,10 @@
 
 .mk-video-card {
   position: relative;
-  width: auto;
+  width: var(--mk-video-card-w);
   display: flex;
-  flex-direction: row;
-  gap: var(--oc-sp-4);
+  flex-direction: column;
+  gap: var(--oc-sp-2);
   border: 1px solid var(--oc-border);
   border-radius: var(--oc-r-md);
   overflow: hidden;
@@ -134,6 +134,13 @@
 }
 .mk-video-card-out {
   border-left: 3px solid #94a3b8;
+}
+
+.mk-video-card.double-col {
+  grid-column: span 2;
+  width: auto;
+  flex-direction: row;
+  gap: var(--oc-sp-4);
 }
 
 /* Card Split Panels */
@@ -426,9 +433,18 @@
 }
 
 @media (max-width: 992px) {
-  .mk-video-grid { grid-template-columns: 1fr; }
-  .mk-video-card { flex-direction: column; }
-  .supplement-right-panel { border-left: none; padding-left: 0; border-top: 1px solid var(--oc-border); padding-top: 16px; }
+  .mk-video-grid { grid-template-columns: repeat(auto-fill, minmax(var(--mk-video-card-w), 1fr)); }
+  .mk-video-card.double-col {
+    grid-column: span 1;
+    flex-direction: column;
+  }
+  .supplement-right-panel {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--oc-border);
+    padding-top: 16px;
+    margin-top: 8px;
+  }
 }
 
 /* Page states */
@@ -854,7 +870,7 @@
 
       rightPanelHtml = `
         <div class="supplement-right-header" style="font-size: 14px; font-weight: 700; color: var(--oc-fg); margin-bottom: 12px; border-bottom: 2px solid var(--oc-accent); padding-bottom: 4px; display: inline-block;">国家广告统计数据</div>
-        <div class="supplement-versions-tabs" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;">
+        <div class="supplement-versions-tabs" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; max-width: 320px; width: 100%;">
           ${versionsTabsHtml}
         </div>
         <div class="supplement-version-details-container">
@@ -920,8 +936,9 @@
       ? '<button type="button" class="mk-video-play-btn" data-mk-video-play aria-label="播放视频" title="播放视频"></button>'
       : '';
 
+    const hasData = inLib && card.translated_versions && card.translated_versions.length > 0;
     const cardHtml = `
-      <div class="mk-video-card ${inLib ? 'mk-video-card-in' : 'mk-video-card-out'}" data-card-id="${escapeHtml(card.card_id || '')}">
+      <div class="mk-video-card ${inLib ? 'mk-video-card-in' : 'mk-video-card-out'} ${hasData ? 'double-col' : ''}" data-card-id="${escapeHtml(card.card_id || '')}">
         <div class="supplement-left-panel">
           <div class="supplement-card-tag ${tagClass}">${tagText}</div>
           
@@ -977,9 +994,11 @@
           ${actionsHtml}
         </div>
 
+        ${hasData ? `
         <div class="supplement-right-panel">
           ${rightPanelHtml}
         </div>
+        ` : ''}
       </div>
     `;
     return cardHtml;
