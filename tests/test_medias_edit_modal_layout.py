@@ -97,17 +97,21 @@ def test_medias_list_uses_two_column_grid_for_row_actions():
     assert "grid-template-columns:repeat(2, minmax(0, max-content));" in html
 
 
-def test_medias_product_table_uses_single_floating_header_mechanism():
+def test_medias_product_table_header_sticks_inside_list_container():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
     rule_match = re.search(r"\.oc-table thead th\s*\{([^}]*)\}", html)
     assert rule_match is not None
     table_header_rule = rule_match.group(1)
+    container_sticky_rule = re.search(
+        r"\.oc-table thead th,\s*\.oc-vm-table thead th\s*\{([^}]*)\}",
+        html,
+    )
 
-    assert "position:sticky" not in table_header_rule.replace(" ", "")
+    assert container_sticky_rule is not None
+    assert "position: sticky !important;" in container_sticky_rule.group(1)
+    assert "top: 0 !important;" in container_sticky_rule.group(1)
     assert "--sticky-table-thead-top" not in table_header_rule
-    assert 'id="stickyHeaderWrapper"' in html
-    assert "syncFloatingHeader('gridContainer', 'stickyHeaderWrapper', 'stickyHeaderContent')" in html
 
 
 def test_medias_listing_status_pill_keeps_text_horizontal():

@@ -543,7 +543,7 @@
     });
   }
 
-  function renderProductLangAdBar(coverage, langAdSummary, adSummary) {
+  function renderProductLangAdBar(coverage, langAdSummary, adSummary, productId) {
     const coverageMap = coverage || {};
     const langSummary = langAdSummary || {};
     const productSummary = adSummary || {};
@@ -573,9 +573,14 @@
     const body = lines.length
       ? lines.join('')
       : '<div class="oc-lang-empty oc-country-metrics-line muted">—</div>';
+    
+    const btnHtml = productId
+      ? `<button type="button" class="oc-btn text sm" data-product-ad-orders-report="${productId}" style="color: var(--oc-accent); font-weight: 600; padding: 0; cursor: pointer;">查看数据</button>`
+      : '';
+
     return `<div class="oc-lang-bar oc-country-metrics-bar">`
       + `<div class="oc-lang-summary oc-country-metrics-summary">`
-      + `<div></div>`
+      + `<div style="display: flex; align-items: center;">${btnHtml}</div>`
       + `<div></div>`
       + `<div class="oc-lang-roas">`
       + `<div class="oc-lang-roas-block"><span class="oc-lang-label">总体ROAS</span><strong style="color: #2563eb;">${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
@@ -3230,6 +3235,12 @@
         const product = items.find(item => Number(item.id) === Number(b.dataset.roas));
         openRoasModal(product || null);
       }));
+    grid.querySelectorAll('[data-product-ad-orders-report]').forEach(b =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const product = items.find(item => Number(item.id) === Number(b.dataset.productAdOrdersReport));
+        openAdOrdersReportModal(product || null);
+      }));
     grid.querySelectorAll('[data-product-links-push]').forEach(b =>
       b.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -3523,9 +3534,125 @@
     _skuDetailProduct = null;
   }
 
+  function openAdOrdersReportModal(product) {
+    if (!product) return;
+    const pid = Number(product.id);
+    const mask = document.getElementById('adOrdersReportMask');
+    if (!mask) return;
+
+    document.getElementById('adOrdersReportTitle').textContent = `语种投放及单量详情 · ${product.name || ''}`;
+    const pidEl = document.getElementById('adOrdersReportProductId');
+    if (pidEl) pidEl.textContent = pid || '—';
+    document.getElementById('adOrdersReportProductCode').textContent = product.product_code || '—';
+    document.getElementById('adOrdersReportProductName').textContent = product.name || '—';
+
+    const tbody = document.getElementById('adOrdersReportRows');
+    const empty = document.getElementById('adOrdersReportEmpty');
+    
+    // Show loading skeleton
+    tbody.innerHTML = '<tr><td colspan="16" style="text-align: center; padding: 20px;"><div class="oc-skel" style="height: 100px; margin: 0;"></div></td></tr>';
+    empty.hidden = true;
+    mask.hidden = false;
+
+    fetchJSON(`/medias/api/products/${pid}/ad-orders-report`)
+      .then(data => {
+        if (Number(data.product_id) !== pid) return;
+        const byLang = data.by_lang || {};
+        const total = data.total || {};
+
+        // Determine which codes to display
+        const activeCodes = mediaProductLangOrder(product.lang_coverage, product.lang_ad_summary) || [];
+        const allCodesSet = new Set(activeCodes);
+        Object.keys(byLang).forEach(code => allCodesSet.add(code));
+        const codesList = Array.from(allCodesSet);
+
+        if (codesList.length === 0 && !total.total_spend && !total.total_orders) {
+          tbody.innerHTML = '';
+          empty.hidden = false;
+          return;
+        }
+
+        empty.hidden = true;
+
+        // Render rows
+        let html = '';
+
+        function renderMetricCell(spend, orders, roas) {
+          const spendStr = spend !== null && spend !== undefined ? fmtAdSpend(spend) : '<span class="muted">—</span>';
+          const ordersStr = orders !== null && orders !== undefined ? fmtOrderCount(orders) : '<span class="muted">—</span>';
+          
+          let roasStr = '<span class="muted">—</span>';
+          if (roas !== null && roas !== undefined) {
+            const roasNum = Number(roas);
+            const cls = roasNum <= 1.5 ? 'roas-good' : (roasNum <= 3.0 ? '' : 'roas-bad');
+            roasStr = `<span class="${cls}">${roasNum.toFixed(2)}</span>`;
+          }
+          return `
+            <td style="text-align: right; font-family: var(--font-mono, ui-monospace, Consolas, monospace);">${spendStr}</td>
+            <td style="text-align: right; font-family: var(--font-mono, ui-monospace, Consolas, monospace);">${ordersStr}</td>
+            <td style="text-align: right; font-family: var(--font-mono, ui-monospace, Consolas, monospace);">${roasStr}</td>
+          `;
+        }
+
+        // Render total row at top
+        html += `
+          <tr style="font-weight: bold; background: var(--oc-bg-subtle);">
+            <td style="text-align: left;">总计</td>
+            ${renderMetricCell(total.today_spend, total.today_orders, total.today_roas)}
+            ${renderMetricCell(total.yesterday_spend, total.yesterday_orders, total.yesterday_roas)}
+            ${renderMetricCell(total.last_7d_spend, total.last_7d_orders, total.last_7d_roas)}
+            ${renderMetricCell(total.last_30d_spend, total.last_30d_orders, total.last_30d_roas)}
+            ${renderMetricCell(total.total_spend, total.total_orders, total.total_roas)}
+          </tr>
+        `;
+
+        // Render country rows
+        codesList.forEach(code => {
+          const row = byLang[code] || _empty_report_row();
+          html += `
+            <tr>
+              <td style="text-align: left;">${escapeHtml(langDisplayName(code))}</td>
+              ${renderMetricCell(row.today_spend, row.today_orders, row.today_roas)}
+              ${renderMetricCell(row.yesterday_spend, row.yesterday_orders, row.yesterday_roas)}
+              ${renderMetricCell(row.last_7d_spend, row.last_7d_orders, row.last_7d_roas)}
+              ${renderMetricCell(row.last_30d_spend, row.last_30d_orders, row.last_30d_roas)}
+              ${renderMetricCell(row.total_spend, row.total_orders, row.total_roas)}
+            </tr>
+          `;
+        });
+
+        tbody.innerHTML = html;
+      })
+      .catch(err => {
+        tbody.innerHTML = `<tr><td colspan="16" style="text-align: center; padding: 20px; color: var(--oc-danger);">${escapeHtml(err.message || '加载失败，请稍后重试')}</td></tr>`;
+      });
+  }
+
+  function _empty_report_row() {
+    return {
+      today_spend: null, today_orders: 0, today_roas: null,
+      yesterday_spend: null, yesterday_orders: 0, yesterday_roas: null,
+      last_7d_spend: null, last_7d_orders: 0, last_7d_roas: null,
+      last_30d_spend: null, last_30d_orders: 0, last_30d_roas: null,
+      total_spend: null, total_orders: 0, total_roas: null
+    };
+  }
+
+  function closeAdOrdersReportModal() {
+    const mask = document.getElementById('adOrdersReportMask');
+    if (mask) mask.hidden = true;
+  }
+
   // Bind once on module load (the modal lives in the static template, not
   // in the dynamically-rendered rowHTML).
   document.addEventListener('DOMContentLoaded', () => {
+    const reportClose = document.getElementById('adOrdersReportClose');
+    const reportCancel = document.getElementById('adOrdersReportCancel');
+    const reportMask = document.getElementById('adOrdersReportMask');
+    if (reportClose) reportClose.addEventListener('click', closeAdOrdersReportModal);
+    if (reportCancel) reportCancel.addEventListener('click', closeAdOrdersReportModal);
+    if (reportMask) reportMask.addEventListener('click', (e) => { if (e.target === reportMask) closeAdOrdersReportModal(); });
+
     const close = document.getElementById('skuDetailClose');
     const cancel = document.getElementById('skuDetailCancel');
     const refresh = document.getElementById('skuDetailRefresh');
@@ -3716,7 +3843,7 @@
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td><span class="oc-pill">${count}</span></td>
-        <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary)}</td>
+        <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary, p.id)}</td>
         <td>${renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
         <td class="muted mono product-time-cell">${timeCell}</td>
@@ -9673,6 +9800,7 @@
     }
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && $('roasModalMask') && !$('roasModalMask').hidden) closeRoasModal();
+      if (e.key === 'Escape' && $('adOrdersReportMask') && !$('adOrdersReportMask').hidden) closeAdOrdersReportModal();
     });
 
     $('cwAddBtn').addEventListener('click', () => {

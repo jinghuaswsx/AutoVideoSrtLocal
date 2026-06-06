@@ -459,6 +459,17 @@ def api_refresh_product_shopify_sku(pid: int):
     return routes._refresh_shopify_sku_flask_response(result)
 
 
+@bp.route("/api/products/<int:pid>/ad-orders-report", methods=["GET"])
+@login_required
+def api_product_ad_orders_report(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    from appcore.media_product_ad_orders_report import get_product_ad_orders_report
+    return get_product_ad_orders_report(pid)
+
+
 @bp.route("/<int:pid>/roas")
 @login_required
 def roas_page(pid: int):
@@ -470,3 +481,4 @@ def roas_page(pid: int):
         "medias/roas.html",
         **routes._build_roas_page_context(product),
     )
+
