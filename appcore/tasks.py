@@ -1134,7 +1134,7 @@ def list_task_center_items(
         "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "
         f"WHERE {where_sql} "
-        "ORDER BY (CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END) ASC, is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC "
+        "ORDER BY (CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END) ASC, (CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) ASC, is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC "
         "LIMIT %s OFFSET %s"
     )
     rows = query_all(sql, (*count_args, page_size, offset))

@@ -467,7 +467,7 @@ def test_list_task_center_items_filters_and_serializes_rows(monkeypatch):
     assert "t.archived_at IS NULL" in captured["sql"]
     assert "(p.name LIKE %s OR p.product_code LIKE %s)" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
-    assert "ORDER BY (CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END) ASC, is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
+    assert "ORDER BY (CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END) ASC, (CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) ASC, is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (
         2,
         "%Product%",
@@ -1288,8 +1288,36 @@ def test_list_task_center_items_orders_urgent_before_created(monkeypatch):
         page_size=20,
     ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
 
-    assert "ORDER BY (CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END) ASC, is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
+    assert "ORDER BY (CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END) ASC, (CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) ASC, is_rework DESC, t.is_urgent DESC, t.created_at DESC, t.id DESC" in captured["sql"]
     assert captured["args"] == (20, 0)
+
+
+def test_list_task_center_items_orders_blocked_after_active(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    tasks.list_task_center_items(
+        tab="all",
+        user_id=1,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="",
+        page=1,
+        page_size=20,
+    )
+
+    assert "(CASE WHEN t.status = 'blocked' THEN 1 ELSE 0 END) ASC" in captured["sql"]
 
 
 def test_list_task_center_items_filters_urgent_and_normal(monkeypatch):
@@ -1517,7 +1545,7 @@ def test_list_task_center_items_filters_pending_push_from_cached_readiness(monke
 
     assert "JOIN media_push_status_cache psc_pending_push" in captured["sql"]
     assert "JOIN media_items pending_push_item" in captured["sql"]
-    assert "pending_push_item.task_id=t.id" in captured["sql"]
+    assert "mi_sub.task_id=t.id" in captured["sql"]
     assert "psc_pending_push.item_id=pending_push_item.id" in captured["sql"]
     assert "t.parent_task_id IS NOT NULL" in captured["sql"]
     assert "t.status IN (%s, %s)" in captured["sql"]
