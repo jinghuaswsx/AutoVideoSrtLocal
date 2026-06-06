@@ -3300,16 +3300,16 @@
 </style>
 <div class="oa-panel {% if active_tab == 'ads' %}active{% endif %}" id="panelAds">
   <nav class="oa-subtabs" id="adsSubtabs" role="tablist" aria-label="广告分析子 Tab">
-    <button type="button" class="oa-subtab-btn is-active" data-ads-subtab="overview" aria-pressed="true">概览</button>
+    <button type="button" class="oa-subtab-btn" data-ads-subtab="overview" aria-pressed="false">概览</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="unmatched-campaigns" aria-pressed="false">未匹配产品广告计划</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="campaign" aria-pressed="false">Campaign</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="adset" aria-pressed="false">Ad Set</button>
-    <button type="button" class="oa-subtab-btn" data-ads-subtab="ad" aria-pressed="false">Ad</button>
+    <button type="button" class="oa-subtab-btn is-active" data-ads-subtab="ad" aria-pressed="true">Ad</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="manual-input" aria-pressed="false">人工录入</button>
   </nav>
 
   <!-- 概览 sub-panel：保留原有「按产品汇总」内容 -->
-  <div class="oa-subpanel is-active" data-subpanel="overview">
+  <div class="oa-subpanel" data-subpanel="overview">
     <div class="oa-ad-layout">
       <div class="oa-controls">
         <button class="btn btn-default btn-sm" onclick="matchAdProducts()">重新匹配产品</button>
@@ -3434,7 +3434,7 @@
       ('adset', 'Ad Set', '搜索 Ad Set 标题...'),
       ('ad', 'Ad', '搜索 Ad 标题...')
     ] %}
-  <div class="oa-subpanel" data-subpanel="{{ level }}" data-level="{{ level }}">
+  <div class="oa-subpanel {% if level == 'ad' %}is-active{% endif %}" data-subpanel="{{ level }}" data-level="{{ level }}">
     <!-- list 视图 -->
     <div class="ads-level-list" data-level-list="{{ level }}">
       <div class="ads-level-toolbar">
@@ -9019,9 +9019,25 @@
     initAds = function() {
       __origInitAds.apply(this, arguments);
       initAdsLevelTabs();
+      var params = new URLSearchParams(window.location.search);
+      var level = (params.get('ads_level') || '').trim().toLowerCase();
+      var code = (params.get('ads_code') || '').trim();
+      var hasDeepLink = params.get('tab') === 'ads' && ADS_LEVELS.indexOf(level) !== -1 && code;
+      if (!hasDeepLink) {
+        setAdsSubtab('ad');
+      }
     };
   } else {
-    document.addEventListener('DOMContentLoaded', initAdsLevelTabs);
+    document.addEventListener('DOMContentLoaded', function() {
+      initAdsLevelTabs();
+      var params = new URLSearchParams(window.location.search);
+      var level = (params.get('ads_level') || '').trim().toLowerCase();
+      var code = (params.get('ads_code') || '').trim();
+      var hasDeepLink = params.get('tab') === 'ads' && ADS_LEVELS.indexOf(level) !== -1 && code;
+      if (!hasDeepLink) {
+        setAdsSubtab('ad');
+      }
+    });
   }
 
   function adsActivateTopTab() {
