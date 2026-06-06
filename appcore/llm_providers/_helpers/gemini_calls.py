@@ -193,14 +193,14 @@ def get_image_client(
     client = _image_clients.get(cache_key)
     if client is None:
         if backend == "cloud":
-            if project:
+            if api_key:
+                client = genai.Client(vertexai=True, api_key=api_key)
+            elif project:
                 client = genai.Client(
                     vertexai=True,
                     project=project,
                     location=location or "global",
                 )
-            else:
-                client = genai.Client(vertexai=True, api_key=api_key)
         else:
             client = genai.Client(api_key=api_key)
         _image_clients[cache_key] = client

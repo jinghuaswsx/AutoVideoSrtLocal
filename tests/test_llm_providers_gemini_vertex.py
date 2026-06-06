@@ -27,6 +27,44 @@ def test_vertex_chat_delegates_to_translate_vertex_call():
     assert m.call_args[0][1] == "gemini-3.1-flash-lite-preview"
 
 
+def test_googlewj_adapter_registered_and_uses_dedicated_text_credentials():
+    adapter = get_adapter("google_wj")
+    with patch("appcore.llm_providers._helpers.vertex_json._call_vertex_json",
+               return_value=({"ok": True},
+                             {"input_tokens": 5, "output_tokens": 3},
+                             '{"ok":true}')) as m:
+        result = adapter.chat(
+            model="gemini-3.5-flash",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+    assert adapter.provider_code == "google_wj"
+    assert result["json"] == {"ok": True}
+    assert m.call_args.kwargs["provider_config_code"] == "google_wj_text"
+
+
+def test_googlewj_adapter_resolves_image_credentials_from_dedicated_row():
+    adapter = get_adapter("google_wj")
+    cfg = LlmProviderConfig(
+        provider_code="google_wj_image",
+        display_name="GoogleWJ image",
+        group_code="image",
+        api_key="wj-key",
+        model_id="gemini-3.1-flash-image-preview",
+        extra_config={"project": "project-wj", "location": "global"},
+    )
+
+    with patch("appcore.llm_providers.gemini_vertex_adapter.require_provider_config",
+               return_value=cfg) as m_require:
+        creds = adapter.resolve_credentials(user_id=None, media_kind="image")
+
+    m_require.assert_called_once_with("google_wj_image")
+    assert creds["provider_code"] == "google_wj_image"
+    assert creds["api_key"] == "wj-key"
+    assert creds["project"] == "project-wj"
+    assert creds["location"] == "global"
+
+
 def test_vertex_generate_supports_media_with_schema(tmp_path):
     image_path = tmp_path / "source.jpg"
     image_path.write_bytes(b"fake-image")

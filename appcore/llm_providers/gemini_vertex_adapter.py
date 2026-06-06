@@ -61,11 +61,11 @@ def _build_inline_contents(prompt: str, media) -> list:
 
 
 def _client_cache_key(api_key: str, project: str, location: str) -> str:
-    if project:
-        return f"project:{project}:{location}"
     if api_key:
         key_hash = hashlib.sha1(api_key.encode("utf-8")).hexdigest()[:16]
-        return f"api_key:{key_hash}"
+        return f"api_key:{key_hash}:{project}:{location}"
+    if project:
+        return f"project:{project}:{location}"
     raise RuntimeError(
         "Vertex AI channel is not configured: missing api_key or extra_config.project"
     )
@@ -75,14 +75,14 @@ def _get_client(api_key: str, project: str, location: str) -> genai.Client:
     cache_key = _client_cache_key(api_key, project, location)
     client = _clients.get(cache_key)
     if client is None:
-        if project:
+        if api_key:
+            client = genai.Client(vertexai=True, api_key=api_key)
+        elif project:
             client = genai.Client(
                 vertexai=True,
                 project=project,
                 location=location or "global",
             )
-        else:
-            client = genai.Client(vertexai=True, api_key=api_key)
         _clients[cache_key] = client
     return client
 
@@ -90,8 +90,20 @@ def _get_client(api_key: str, project: str, location: str) -> genai.Client:
 class GeminiVertexAdapter(LLMAdapter):
     provider_code = "gemini_vertex"
 
+    def credential_provider_code(
+        self,
+        *,
+        media_kind: str | None = None,
+        model_id: str | None = None,
+    ) -> str:
+        return credential_provider_for_adapter(
+            self.provider_code,
+            media_kind=media_kind,
+            model_id=model_id,
+        )
+
     def resolve_credentials(self, user_id, *, media_kind: str | None = None):
-        provider_code = credential_provider_for_adapter("gemini_vertex", media_kind=media_kind)
+        provider_code = self.credential_provider_code(media_kind=media_kind)
         cfg = require_provider_config(provider_code)
         extra = cfg.extra_config or {}
         project = (extra.get("project") or "").strip()
@@ -119,6 +131,10 @@ class GeminiVertexAdapter(LLMAdapter):
             messages, model, response_format,
             temperature=temperature if temperature is not None else 0.2,
             max_output_tokens=max_output_tokens or 4096,
+            provider_config_code=self.credential_provider_code(
+                media_kind="text",
+                model_id=model,
+            ),
         )
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
@@ -238,5 +254,9 @@ class GeminiVertexAdapter(LLMAdapter):
                     continue
                 break
         raise RuntimeError(f"Vertex Gemini call failed: {last_err}") from last_err
+
+
+class GoogleWJVertexAdapter(GeminiVertexAdapter):
+    provider_code = "google_wj"
 
 

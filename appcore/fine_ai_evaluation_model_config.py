@@ -21,12 +21,14 @@ ALLOWED_PROVIDERS = (
     "openrouter",
     "gemini_aistudio",
     "gemini_vertex",
+    "google_wj",
 )
 
 PROVIDER_LABELS = {
     "openrouter": "OPENROUTER",
     "gemini_aistudio": "GOOGLE AI STUDIO",
     "gemini_vertex": "GOOGLE VERTEX AI",
+    "google_wj": "GOOGLE WJ",
 }
 
 DEFAULT_PROVIDERS = {

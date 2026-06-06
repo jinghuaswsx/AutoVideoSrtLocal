@@ -317,6 +317,26 @@ def test_save_provider_config_creates_google_vertex_adc_row(fake_db):
     assert cfg.extra_config == {"project": "project-x", "location": "global"}
 
 
+def test_save_provider_config_creates_googlewj_vertex_row(fake_db):
+    assert lpc.get_provider_config("google_wj_text") is None
+    lpc.save_provider_config(
+        "google_wj_text",
+        {
+            "api_key": "vertex-key",
+            "model_id": "gemini-3.5-flash",
+            "extra_config": {"project": "project-wj", "location": "global"},
+        },
+        updated_by=1,
+    )
+    cfg = lpc.get_provider_config("google_wj_text")
+    assert cfg is not None
+    assert cfg.display_name == "GoogleWJ Vertex AI (text)"
+    assert cfg.group_code == "text_llm"
+    assert cfg.api_key == "vertex-key"
+    assert cfg.model_id == "gemini-3.5-flash"
+    assert cfg.extra_config == {"project": "project-wj", "location": "global"}
+
+
 def test_save_provider_config_creates_elevenlabs_backup_row(fake_db):
     assert lpc.get_provider_config("elevenlabs_tts_backup") is None
     lpc.save_provider_config(
@@ -344,6 +364,13 @@ def test_credential_provider_for_adapter_splits_text_and_image():
     assert lpc.credential_provider_for_adapter("gemini_vertex", media_kind="image") == "gemini_cloud_image"
     assert lpc.credential_provider_for_adapter("gemini_vertex_adc") == "gemini_vertex_adc_text"
     assert lpc.credential_provider_for_adapter("gemini_vertex_adc", media_kind="image") == "gemini_vertex_adc_image"
+    assert lpc.credential_provider_for_adapter("google_wj") == "google_wj_text"
+    assert lpc.credential_provider_for_adapter("google_wj", media_kind="image") == "google_wj_image"
+
+
+def test_credential_provider_for_adapter_googlewj_splits_text_and_image():
+    assert lpc.credential_provider_for_adapter("google_wj") == "google_wj_text"
+    assert lpc.credential_provider_for_adapter("google_wj", media_kind="image") == "google_wj_image"
 
 
 def test_credential_provider_for_adapter_single_row_providers():

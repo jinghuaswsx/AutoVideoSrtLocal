@@ -10,6 +10,7 @@ _DEFAULT_MODEL = get_use_case("link_check.same_image")["default_model"]
 _PROVIDER_CHANNELS = {
     "gemini_aistudio": "aistudio",
     "gemini_vertex": "cloud",
+    "google_wj": "googlewj",
     "openrouter": "openrouter",
     "doubao": "doubao",
 }
