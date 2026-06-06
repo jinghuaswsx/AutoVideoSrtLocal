@@ -368,6 +368,139 @@
   grid-column: 1 / -1;
 }
 .supplement-error { color: var(--oc-danger); }
+/* Product line in card (copied/aligned with xuanpin/mk) */
+.mk-video-product-line {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--oc-fg-muted);
+}
+.mk-video-product-cn-row, .mk-video-product-en-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mk-video-product-cn-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--oc-fg);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mk-video-product-cn-name:hover { text-decoration: underline; color: var(--oc-accent); }
+.mk-video-product-en-name {
+  font-size: 12px;
+  color: var(--oc-fg-subtle);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mk-video-product-en-name:hover { text-decoration: underline; color: var(--oc-accent); }
+
+.mk-icon-copy-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--oc-fg-subtle);
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.mk-icon-copy-btn:hover {
+  opacity: 1;
+  color: var(--oc-accent);
+}
+
+.mk-video-product-code-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--oc-fg-subtle);
+  margin-top: 1px;
+}
+.mk-video-product-code {
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.mk-video-product-link-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  margin-top: 2px;
+  border-top: 1px solid var(--oc-border);
+  padding-top: var(--oc-sp-2);
+}
+.mk-video-product-link {
+  color: var(--oc-accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.mk-video-product-link:hover {
+  text-decoration: underline;
+}
+
+/* Heat and Summary styles */
+.mk-video-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 11px;
+  color: var(--oc-fg-muted);
+  border-top: 1px solid var(--oc-border);
+  padding-top: var(--oc-sp-2);
+  margin-top: 2px;
+}
+.mk-video-summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.mk-video-summary-item .value {
+  font-weight: 600;
+  color: var(--oc-fg);
+}
+.mk-heat-badge {
+  display: inline-block;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.mk-heat-badge.heat-high { background: #fee2e2; color: #ef4444; }
+.mk-heat-badge.heat-medium { background: #fef3c7; color: #d97706; }
+.mk-heat-badge.heat-low { background: #f1f5f9; color: #64748b; }
+
+/* Supplement Data Card (Split view for delivery data) */
+.supplement-data-card {
+  border-left: 3px solid #22c55e !important;
+  background: var(--oc-bg-subtle) !important;
+}
+.supplement-data-card .mk-video-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--oc-fg);
+  border-bottom: 2px solid var(--oc-accent);
+  padding-bottom: 4px;
+  display: inline-block;
+}
 </style>
 {% endblock %}
 
@@ -377,7 +510,12 @@
     <div class="supplement-summary-info" id="supplementSummaryInfo">
       <span class="muted">加载中…</span>
     </div>
-    <div class="supplement-actions">
+    <div class="supplement-actions" style="display:flex; align-items:center; gap:10px;">
+      <select id="supplementSortSelect" class="oc-select" style="height:32px; padding:0 8px; border-radius:var(--oc-r); border:1px solid var(--oc-border-strong); font-size:13px; outline:none; background:#fff; cursor:pointer;">
+        <option value="spend_90">90天消耗排序</option>
+        <option value="ads_count">广告数排序</option>
+        <option value="spend_yesterday">昨日消耗排序</option>
+      </select>
       <button type="button" id="supplementZoomBtn" class="oc-btn oc-btn--ghost" onclick="toggleSupplementZoom()">卡片放大 2x</button>
       <a class="oc-btn oc-btn--ghost" href="/medias/product" target="_blank" rel="noopener noreferrer">返回素材管理</a>
     </div>
@@ -428,21 +566,44 @@
   // Restore zoom on load
   applyZoom(isZoomed);
 
-  // Load supplement materials data
-  fetch(`/medias/api/product/${productId}/supplement`)
-    .then(r => {
-      if (!r.ok) throw new Error('接口请求失败');
-      return r.json();
-    })
-    .then(data => {
-      renderSummary(data);
-      renderCards(data);
-    })
-    .catch(err => {
-      grid.innerHTML = `<div class="supplement-error">数据加载失败：${escapeHtml(err.message || '请稍后重试')}</div>`;
-      summaryEl.innerHTML = '';
-      if (summaryNote) summaryNote.textContent = '加载失败';
+  let currentSortBy = 'spend_90';
+
+  function loadSupplement(sortBy) {
+    currentSortBy = sortBy;
+    grid.innerHTML = `
+      <div class="supplement-loading-state" style="width:100%; grid-column:1/-1;">
+        <div class="oc-skel" style="height:550px;"></div>
+        <div class="oc-skel" style="height:550px;"></div>
+        <div class="oc-skel" style="height:550px;"></div>
+        <div class="oc-skel" style="height:550px;"></div>
+      </div>
+    `;
+    fetch(`/medias/api/product/${productId}/supplement?sort_by=${sortBy}`)
+      .then(r => {
+        if (!r.ok) throw new Error('接口请求失败');
+        return r.json();
+      })
+      .then(data => {
+        renderSummary(data);
+        renderCards(data);
+      })
+      .catch(err => {
+        grid.innerHTML = `<div class="supplement-error">数据加载失败：${escapeHtml(err.message || '请稍后重试')}</div>`;
+        summaryEl.innerHTML = '';
+        if (summaryNote) summaryNote.textContent = '加载失败';
+      });
+  }
+
+  // Bind change event to sort select
+  const sortSelect = document.getElementById('supplementSortSelect');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', function() {
+      loadSupplement(this.value);
     });
+    loadSupplement(sortSelect.value);
+  } else {
+    loadSupplement('spend_90');
+  }
 
   function escapeHtml(s) {
     if (s == null) return '';
@@ -515,8 +676,52 @@
     const author = mk.author || '--';
     const uploadTime = mk.upload_time ? String(mk.upload_time).split('T')[0] : '--';
 
-    // Render Translated versions for in-library cards
-    let versionsHtml = '';
+    // Chinese and English product name resolution
+    let cnName = card.mk_product_name || productName || '';
+    if (!cnName) {
+      const extractedCn = extractProductCnNameFromFilename(videoName);
+      cnName = /[\u4e00-\u9fa5]/.test(extractedCn) ? extractedCn : '';
+    }
+    cnName = cnName || productName || '无中文产品名';
+
+    // Estimate/Extract English Name
+    const enName = cleanEnglishProductName(extractProductEnNameFromFilename(videoName)) || 'Natural Product';
+
+    // Heat Level Calculation
+    const heat = heatLevel(adsCount);
+
+    // Product Link HTML
+    const productLinkRaw = String(card.mk_product_link || '').trim();
+    const safeProductUrl = productLinkRaw ? escapeHtml(productLinkRaw) : '';
+    const productLinkCopyHtml = productLinkRaw
+      ? `<button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(productLinkRaw)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制产品链接">${mkCopyIconSvg()}</button>`
+      : '';
+    const productLinkLabel = escapeHtml(productLinkRaw);
+    const productLinkHtml = productLinkRaw
+      ? `<div class="mk-video-product-link-row">
+           <a class="mk-video-product-link" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${productLinkLabel}">${productLinkLabel}</a>
+           ${productLinkCopyHtml}
+         </div>`
+      : '';
+
+    // Heat & Spends Summary Row
+    const yesterdayDeltaVal = mk.yesterday_spend_delta;
+    const hasYesterdayDelta = yesterdayDeltaVal !== undefined && yesterdayDeltaVal !== null;
+    const spendText = spends;
+    const yesterdayDeltaHtml = `<span class="mk-video-summary-item"><span class="label">昨日消耗:</span><span class="value">${hasYesterdayDelta ? `$${Number(yesterdayDeltaVal).toFixed(2)}` : '-'}</span></span>`;
+
+    const summaryRowHtml = `
+      <div class="mk-video-summary-row">
+        <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
+        <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${spendText}</span></span>
+        ${yesterdayDeltaHtml}
+      </div>
+    `;
+
+    // Render Translated versions (Split out into a standalone card next to this one!)
+    let cardHtml = '';
+    let dataCardHtml = '';
+    
     if (inLib && card.translated_versions && card.translated_versions.length) {
       const langCnMap = {
         de: '德',
@@ -527,23 +732,34 @@
         en: '英',
         pt: '葡'
       };
-      versionsHtml = '<div class="supplement-versions">' +
-        card.translated_versions.map(v => {
-          const status = v.delivery_status || 'never';
-          const statusLabel = status === 'active' ? '投放中' : status === 'stopped' ? '终止' : '未投放';
-          const spend = v.ad_spend != null ? `$${Number(v.ad_spend).toFixed(0)}` : '';
-          const roas = v.roas != null ? `ROAS ${Number(v.roas).toFixed(1)}` : '';
-          const detail = [spend, roas].filter(Boolean).join(' ');
-          const langLower = (v.lang || '').toLowerCase();
-          const langUpper = langLower.toUpperCase();
-          const cnAbbr = langCnMap[langLower] || '';
-          const langDisplay = cnAbbr ? `${langUpper}(${cnAbbr})` : langUpper;
-          return `<span class="supplement-version-pill supplement-version-${status}" data-item-id="${v.media_item_id || ''}" data-lang="${escapeHtml(v.lang || '')}" data-product-id="${product ? product.id : ''}" title="点击展开详细数据">
-            ${escapeHtml(langDisplay)} ${statusLabel}${detail ? ' ' + detail : ''}
-          </span>`;
-        }).join('') +
-        '</div>' +
-        `<div id="supplement-detail-${escapeHtml(card.card_id || '')}" class="supplement-detail-panel" hidden></div>`;
+      
+      const versionsListHtml = card.translated_versions.map(v => {
+        const status = v.delivery_status || 'never';
+        const statusLabel = status === 'active' ? '投放中' : status === 'stopped' ? '终止' : '未投放';
+        const spend = v.ad_spend != null ? `$${Number(v.ad_spend).toFixed(0)}` : '';
+        const roas = v.roas != null ? `ROAS ${Number(v.roas).toFixed(1)}` : '';
+        const detail = [spend, roas].filter(Boolean).join(' ');
+        const langLower = (v.lang || '').toLowerCase();
+        const langUpper = langLower.toUpperCase();
+        const cnAbbr = langCnMap[langLower] || '';
+        const langDisplay = cnAbbr ? `${langUpper}(${cnAbbr})` : langUpper;
+        return `<span class="supplement-version-pill supplement-version-${status}" data-item-id="${v.media_item_id || ''}" data-lang="${escapeHtml(v.lang || '')}" data-product-id="${product ? product.id : ''}" title="点击展开详细数据" style="margin-bottom: 2px;">
+          ${escapeHtml(langDisplay)} ${statusLabel}${detail ? ' ' + detail : ''}
+        </span>`;
+      }).join('');
+
+      dataCardHtml = `
+        <div class="mk-video-card supplement-data-card" data-card-id="${escapeHtml(card.card_id || '')}">
+          <div class="mk-video-title-row" style="margin-top:12px; margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
+            <div class="mk-video-card-title">国家投放数据</div>
+            <span style="font-size:11px; color:var(--oc-fg-muted);">对应已入库素材</span>
+          </div>
+          <div class="supplement-versions" style="border-top: none; margin-top: 0; padding-top: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; flex: 1;">
+            ${versionsListHtml}
+          </div>
+          <div id="supplement-detail-${escapeHtml(card.card_id || '')}" class="supplement-detail-panel" hidden></div>
+        </div>
+      `;
     }
 
     // Actions
@@ -585,15 +801,39 @@
       ? '<button type="button" class="mk-video-play-btn" data-mk-video-play aria-label="播放视频" title="播放视频"></button>'
       : '';
 
-    return `
+    cardHtml = `
       <div class="mk-video-card ${inLib ? 'mk-video-card-in' : 'mk-video-card-out'}" data-card-id="${escapeHtml(card.card_id || '')}">
         <div class="supplement-card-tag ${tagClass}">${tagText}</div>
         
-        <div class="mk-video-title-row" style="margin-top:24px;">
+        <div class="mk-video-product-line">
+          <div class="mk-video-product-cn-row">
+            ${safeProductUrl
+              ? `<a class="mk-video-product-cn-name" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</a>`
+              : `<span class="mk-video-product-cn-name" title="${escapeHtml(cnName)}">${escapeHtml(cnName)}</span>`
+            }
+            <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(cnName)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制中文产品名">${mkCopyIconSvg()}</button>
+          </div>
+          <div class="mk-video-product-en-row">
+            ${safeProductUrl
+              ? `<a class="mk-video-product-en-name" href="${safeProductUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(enName)}">${escapeHtml(enName)}</a>`
+              : `<span class="mk-video-product-en-name" title="${escapeHtml(enName)}">${escapeHtml(enName)}</span>`
+            }
+            <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(enName)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制英文产品名">${mkCopyIconSvg()}</button>
+          </div>
+          <div class="mk-video-product-code-row">
+            <span class="mk-video-product-code" title="${escapeHtml(productCode)}">${escapeHtml(productCode)}</span>
+            <button type="button" class="mk-icon-copy-btn" data-copy-text="${escapeHtml(productCode)}" onclick="event.stopPropagation(); copyMkText(this.dataset.copyText, this)" title="复制产品 Code">${mkCopyIconSvg()}</button>
+          </div>
+        </div>
+
+        <div class="mk-video-title-row" style="margin-top:4px;">
           <div class="mk-video-card-title mk-line-clamp mk-line-clamp--2" title="${escapeHtml(videoName)}">${escapeHtml(videoName)}</div>
         </div>
 
-        <div class="mk-video-tabs" role="tablist" aria-label="素材预览">
+        ${productLinkHtml}
+        ${summaryRowHtml}
+
+        <div class="mk-video-tabs" role="tablist" aria-label="素材预览" style="margin-top: 8px;">
           <button type="button" class="mk-video-tab active" data-tab="cover">图片</button>
           <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
         </div>
@@ -608,9 +848,8 @@
           </div>
         </div>
 
-        <div class="mk-video-meta-list">
+        <div class="mk-video-meta-list" style="margin-top: 8px;">
           <div class="mk-video-meta-line"><span class="label">广告数:</span><span class="value">${adsCount}</span></div>
-          <div class="mk-video-meta-line"><span class="label">90天消耗:</span><span class="value">${spends}</span></div>
           <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
           <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadTime}</span></div>
         </div>

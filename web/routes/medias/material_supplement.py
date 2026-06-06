@@ -86,6 +86,7 @@ def _card_id(video_path: str, media_item_id: int | None = None) -> str:
 @admin_required
 def api_product_supplement(product_id: int):
     """聚合本地明空视频快照、素材库状态和广告投放表现。"""
+    sort_by = (request.args.get("sort_by") or request.args.get("sort") or "spend_90").strip().lower()
 
     # 1. Look up product
     products = db_query(
@@ -206,7 +207,20 @@ def api_product_supplement(product_id: int):
             entry["ad_roas"] = ad_info["ad_roas"]
         lang_coverage[lang] = entry
 
-    # 7. Build unified card list from local snapshots
+    # 7. Enrich yesterday spend delta for snapshots
+    if mk_videos:
+        from appcore.mingkong_materials import _enrich_material_yesterday_delta
+        first_video = mk_videos[0]
+        try:
+            _enrich_material_yesterday_delta(
+                mk_videos,
+                snapshot_date=str(first_video.get("snapshot_date") or ""),
+                snapshot_at=str(first_video.get("snapshot_at") or ""),
+            )
+        except Exception:
+            log.exception("Failed to enrich yesterday delta for supplement page")
+
+    # 8. Build unified card list from local snapshots
     cards: list[dict] = []
     seen_paths: set[str] = set()
 
@@ -251,6 +265,7 @@ def api_product_supplement(product_id: int):
                 "upload_time": mk_row.get("video_upload_time") or "",
                 # Local cover URL if cached
                 "local_cover_object_key": mk_row.get("local_cover_object_key") or "",
+                "yesterday_spend_delta": _safe_float(mk_row.get("yesterday_spend_delta")),
             },
             "mk_product_id": mk_row.get("mk_product_id"),
             "mk_product_name": mk_row.get("mk_product_name") or "",
@@ -263,8 +278,13 @@ def api_product_supplement(product_id: int):
         }
         cards.append(card)
 
-    # Sort: in_library=True first, then by spends descending
-    cards.sort(key=lambda c: (not c["in_library"], -(c["mk_video"].get("spends") or 0)))
+    # Sort: in_library=True first, then by the selected criteria
+    if sort_by == "spend_yesterday":
+        cards.sort(key=lambda c: (not c["in_library"], -_safe_float(c["mk_video"].get("yesterday_spend_delta") or 0.0), -int(c["mk_video"].get("ads_count") or 0)))
+    elif sort_by == "ads_count":
+        cards.sort(key=lambda c: (not c["in_library"], -int(c["mk_video"].get("ads_count") or 0), -_safe_float(c["mk_video"].get("spends") or 0.0)))
+    else:  # spend_90
+        cards.sort(key=lambda c: (not c["in_library"], -_safe_float(c["mk_video"].get("spends") or 0.0), -int(c["mk_video"].get("ads_count") or 0)))
 
     total_mk = len(cards)
     in_lib_count = sum(1 for c in cards if c["in_library"])
