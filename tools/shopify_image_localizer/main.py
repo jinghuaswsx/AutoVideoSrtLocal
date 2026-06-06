@@ -8,7 +8,7 @@ try:
 except ModuleNotFoundError:
     _psutil = None
 
-from tools.shopify_image_localizer import settings
+from tools.shopify_image_localizer import settings, single_instance
 from tools.shopify_image_localizer.gui import ShopifyImageLocalizerApp
 from tools.shopify_image_localizer.rpa import ez_cdp
 
@@ -41,25 +41,27 @@ def _kill_other_shopify_localizer_instances() -> None:
 
 
 def main() -> None:
-    try:
-        _kill_other_shopify_localizer_instances()
-    except Exception:
-        pass
+    instance_guard = single_instance.acquire_or_prompt(_kill_other_shopify_localizer_instances)
+    if instance_guard is None:
+        return
 
-    runtime_config = settings.load_runtime_config()
-    profile_for_domain = getattr(
-        settings,
-        "browser_user_data_dir_for_domain",
-        lambda base_dir, _domain: base_dir,
-    )
-    ez_cdp.ensure_cdp_chrome(
-        profile_for_domain(
-            runtime_config["browser_user_data_dir"],
-            runtime_config.get("shopify_domain"),
+    try:
+        runtime_config = settings.load_runtime_config()
+        profile_for_domain = getattr(
+            settings,
+            "browser_user_data_dir_for_domain",
+            lambda base_dir, _domain: base_dir,
         )
-    )
-    app = ShopifyImageLocalizerApp()
-    app.root.mainloop()
+        ez_cdp.ensure_cdp_chrome(
+            profile_for_domain(
+                runtime_config["browser_user_data_dir"],
+                runtime_config.get("shopify_domain"),
+            )
+        )
+        app = ShopifyImageLocalizerApp()
+        app.root.mainloop()
+    finally:
+        instance_guard.release()
 
 
 if __name__ == "__main__":
