@@ -8,21 +8,11 @@
 
 /* ────────── Bottom Capsule Pager ────────── */
 .oc-bottom-capsule-pager {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%) translateY(20px);
   display: none;
+  justify-content: center;
   gap: var(--oc-sp-4, 16px);
-  z-index: 99;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.oc-bottom-capsule-pager.visible {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateX(-50%) translateY(0);
+  margin: 32px 0;
+  width: 100%;
 }
 .oc-bottom-capsule-btn {
   display: inline-flex;
@@ -3840,6 +3830,11 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   </div>
   <div class="oc-list" id="gridContainer" style="width:100%; overflow:auto;">
     <div id="grid" style="width:100%;"></div>
+    <!-- 底部大胶囊分页跳转按钮 -->
+    <div id="bottomCapsulePager" class="oc-bottom-capsule-pager">
+      <a id="btnCapsulePrev" class="oc-bottom-capsule-btn" href="javascript:void(0)">上一页</a>
+      <a id="btnCapsuleNext" class="oc-bottom-capsule-btn primary" href="javascript:void(0)">下一页</a>
+    </div>
   </div>
   </section>
 
@@ -4504,11 +4499,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   </div>
 </div>
 
-<!-- 底部大胶囊分页跳转按钮 -->
-<div id="bottomCapsulePager" class="oc-bottom-capsule-pager">
-  <a id="btnCapsulePrev" class="oc-bottom-capsule-btn" href="javascript:void(0)">上一页</a>
-  <a id="btnCapsuleNext" class="oc-bottom-capsule-btn primary" href="javascript:void(0)">下一页</a>
-</div>
+
 
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='bulk_translate_ui.css') }}">
