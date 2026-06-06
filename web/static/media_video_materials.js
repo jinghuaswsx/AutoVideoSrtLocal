@@ -186,9 +186,12 @@
 
   function previewHtml(item) {
     const src = item.preview_cover_url || '';
+    const finalSrc = src || (item.mk_binding && item.mk_binding.mk_video_image_path
+      ? '/medias/api/mk-media?path=' + encodeURIComponent(item.mk_binding.mk_video_image_path)
+      : '');
     const videoUrl = item.video_url || '';
-    const preview = src
-      ? `<img src="${esc(src)}" alt="">`
+    const preview = finalSrc
+      ? `<img src="${esc(finalSrc)}" alt="">`
       : `<span>${icon('film', 24)}</span>`;
     if (videoUrl) {
       return `

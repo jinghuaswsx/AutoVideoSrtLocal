@@ -3231,6 +3231,15 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   text-overflow:ellipsis;
   white-space:nowrap;
 }
+.oc-vm-table .oc-vm-strong,
+.oc-vm-table .oc-vm-muted,
+.oc-vm-table .oc-vm-binding-name,
+.oc-vm-table .oc-vm-binding-meta {
+  white-space:normal;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:break-all;
+}
 .oc-vm-plan {
   display:inline-flex;
   align-items:center;
