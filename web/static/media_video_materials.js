@@ -157,6 +157,7 @@
       const scrollHost = $('vmListContainer') || host;
       scrollHost.scrollTop = 0;
       scrollHost.scrollLeft = 0;
+      window.scrollTo(0, 0);
       updateStickyOffsetsSoon();
     } catch (err) {
       host.innerHTML = `<div class="oc-state"><div class="icon">${icon('alert', 28)}</div><p class="title">加载失败</p><p class="desc">${esc(err.message || err)}</p></div>`;

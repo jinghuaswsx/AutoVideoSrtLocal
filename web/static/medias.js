@@ -3066,6 +3066,12 @@
       renderPager(data.total, data.page, data.page_size);
       const pill = $('totalPill');
       if (pill) pill.textContent = `共 ${data.total} 个产品`;
+      const gridContainer = $('gridContainer');
+      if (gridContainer) {
+        gridContainer.scrollTop = 0;
+        gridContainer.scrollLeft = 0;
+      }
+      window.scrollTo(0, 0);
     } catch (e) {
       if (requestSeq !== state.listRequestSeq) return;
       $('grid').innerHTML = `
