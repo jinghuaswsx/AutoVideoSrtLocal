@@ -273,6 +273,15 @@
   width: 11px;
   height: 11px;
 }
+.tc-artifact-copy-btn {
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
+}
+.tc-artifact-copy-btn svg {
+  width: 11px;
+  height: 11px;
+}
 .tc-process-timeline { position:relative; padding-left:20px; }
 .tc-process-timeline::before { content:""; position:absolute; left:7px; top:4px; bottom:4px; width:2px; background:var(--tc-border); }
 .tc-event { position:relative; margin:0 0 12px; padding:12px 14px; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
@@ -3180,7 +3189,7 @@ function tcRenderArtifactsRows(data) {
     ]);
     return '<div style="display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px dashed var(--tc-border); flex-wrap:wrap;">'
       + '<span class="tc-badge" style="font-size:10px;">' + tcEsc(tcLanguageLabel(it.lang || '')) + '</span>'
-      + '<span style="flex:1; font-size:12px;" title="' + tcEsc(it.filename || '') + '">' + tcEsc(it.display_name || it.filename || '?') + '</span>'
+      + '<span style="flex:1; font-size:12px; display:inline-flex; align-items:center; gap:4px; min-width:0;" title="' + tcEsc(it.filename || '') + '"><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + tcEsc(it.display_name || it.filename || '?') + '</span>' + tcCopyIconButton(it.filename || it.display_name || '', '复制文件名', 'tc-artifact-copy-btn') + '</span>'
       + pushedBadge
       + actions
       + '</div>';
