@@ -240,6 +240,7 @@ from . import mk_selection as _mk_selection
 from . import tabcut_selection as _tabcut_selection
 from . import media_upload as _media_upload
 from . import video_materials as _video_materials
+from . import material_supplement as _material_supplement
 
 from ._helpers import _can_access_product, _material_evaluation_message, _schedule_material_evaluation
 from ._helpers import _delete_media_object, _MAX_IMAGE_BYTES, _MAX_RAW_VIDEO_BYTES, _ALLOWED_IMAGE_TYPES, _ALLOWED_RAW_VIDEO_TYPES
@@ -484,3 +485,6 @@ api_product_link_check_get = _link_check_routes.api_product_link_check_get
 api_product_link_check_detail = _link_check_routes.api_product_link_check_detail
 api_product_link_availability_get = _link_check_routes.api_product_link_availability_get
 api_product_link_availability_run = _link_check_routes.api_product_link_availability_run
+
+api_product_supplement = _material_supplement.api_product_supplement
+api_video_material_ad_detail = _material_supplement.api_video_material_ad_detail
