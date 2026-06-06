@@ -350,6 +350,13 @@ def test_image_model_registry_is_channel_scoped():
     ) == "doubao-seedream-5-0-260128"
 
 
+def test_resolve_channel_falls_back_to_apimart_when_settings_unavailable():
+    from appcore import gemini_image
+
+    with patch("appcore.image_translate_settings.get_channel", side_effect=RuntimeError("db down")):
+        assert gemini_image._resolve_channel() == "apimart"
+
+
 def test_long_running_image_timeouts_are_tripled():
     from appcore.llm_providers._helpers.gemini_calls import _FILE_ACTIVE_TIMEOUT
     from appcore import gemini_image

@@ -86,7 +86,7 @@ def _safe_image_translate_channel() -> str:
     try:
         return its.get_channel()
     except Exception:
-        return "aistudio"
+        return "apimart"
 
 
 def _safe_image_translate_default_model(channel: str) -> str:

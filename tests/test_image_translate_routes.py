@@ -54,6 +54,14 @@ def test_models_endpoint_returns_list(authed_client_no_db, monkeypatch):
     assert any(m["id"] == "gpt-image-2" for m in data["items"])
 
 
+def test_safe_image_translate_channel_falls_back_to_apimart(monkeypatch):
+    from web.routes import image_translate as r
+
+    monkeypatch.setattr(r.its, "get_channel", lambda: (_ for _ in ()).throw(RuntimeError("db down")))
+
+    assert r._safe_image_translate_channel() == "apimart"
+
+
 def test_models_endpoint_uses_global_default_model_for_current_channel(authed_client_no_db, monkeypatch):
     from web.routes import image_translate as r
 

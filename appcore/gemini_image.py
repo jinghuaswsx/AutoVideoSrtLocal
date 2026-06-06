@@ -301,13 +301,13 @@ def _finish_reason(resp: Any) -> str:
 
 
 def _resolve_channel() -> str:
-    """读取 system_settings 里保存的通道；缺省 aistudio。"""
+    """读取 system_settings 里保存的通道；缺省 APIMART。"""
     try:
         from appcore.image_translate_settings import get_channel
         return get_channel()
     except Exception:
-        logger.debug("读取 image_translate.channel 失败，回落 aistudio", exc_info=True)
-        return "aistudio"
+        logger.debug("读取 image_translate.channel 失败，回落 apimart", exc_info=True)
+        return "apimart"
 
 
 def _classify_error(exc: Exception) -> type[Exception]:
