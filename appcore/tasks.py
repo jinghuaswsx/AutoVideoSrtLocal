@@ -1731,6 +1731,44 @@ def record_push_material_skipped(
     )
 
 
+def _assert_push_completion_target_material(
+    cur,
+    *,
+    task_id: int,
+    child: dict,
+    item_id: int,
+    event_type: str,
+) -> None:
+    cur.execute(
+        "SELECT id, task_id, product_id, lang, pushed_at, skip_push FROM media_items "
+        "WHERE id=%s AND deleted_at IS NULL",
+        (int(item_id),),
+    )
+    item = cur.fetchone()
+    if not item:
+        raise StateError("target-language material not found")
+
+    child_product_id = _positive_int(child.get("media_product_id"))
+    item_product_id = _positive_int(item.get("product_id"))
+    child_lang = str(child.get("country_code") or "").strip().lower()
+    item_lang = str(item.get("lang") or "").strip().lower()
+    item_task_id = _positive_int(item.get("task_id"))
+    if not child_product_id or not child_lang:
+        raise StateError("target-language material required for push completion")
+    if item_product_id != child_product_id or item_lang != child_lang:
+        raise StateError("target-language material required for push completion")
+    if item_task_id is not None and item_task_id != int(task_id):
+        raise StateError("target-language material required for push completion")
+    if event_type == CHILD_PUSH_MATERIAL_APPROVED_EVENT:
+        if not item.get("pushed_at"):
+            raise StateError("push success history required for task completion")
+    elif event_type == CHILD_PUSH_MATERIAL_SKIPPED_EVENT:
+        if _positive_int(item.get("skip_push")) != 1:
+            raise StateError("skip-push mark required for task completion")
+    else:
+        raise StateError("unsupported push completion event")
+
+
 def _record_push_material_completion(
     *,
     task_id: int,
@@ -1761,7 +1799,7 @@ def _record_push_material_completion(
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, parent_task_id, status "
+                    "SELECT id, parent_task_id, status, media_product_id, country_code "
                     "FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL FOR UPDATE",
                     (task_id,),
                 )
@@ -1771,6 +1809,13 @@ def _record_push_material_completion(
                 child_status = child.get("status")
                 if child_status not in allowed_statuses:
                     raise StateError("child not completable from push")
+                _assert_push_completion_target_material(
+                    cur,
+                    task_id=task_id,
+                    child=child,
+                    item_id=int(item_id),
+                    event_type=event_type,
+                )
 
                 if child_status != CHILD_DONE:
                     status_placeholders = ",".join(["%s"] * len(completable_statuses))
@@ -3997,7 +4042,7 @@ def get_child_readiness(task_id: int) -> dict:
 
 
 def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -> dict:
-    """Submit a ready translation child task for review; admin approval marks it done."""
+    """Submit a ready translation child task for review; push decisions mark it done."""
     row = query_one(
         "SELECT * FROM tasks WHERE id=%s AND parent_task_id IS NOT NULL",
         (int(task_id),),
@@ -4628,8 +4673,7 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
 
 
 def approve_child(*, task_id: int, actor_user_id: int, is_admin: bool = False) -> None:
-    """处理人或管理员审核通过翻译；若该父任务下所有子都 done/cancelled 且至少一条 done，
-    则父任务自动 all_done。"""
+    """处理人或管理员审核通过翻译；不直接完成任务，后续由推送决策完成。"""
     conn = get_conn()
     try:
         conn.begin()
