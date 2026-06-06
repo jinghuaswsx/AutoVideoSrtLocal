@@ -223,14 +223,17 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert 'data-bucket="todo"' in body
     assert 'data-bucket="review"' in body
     assert 'data-bucket="blocked"' in body
+    assert 'data-bucket="pending_push"' in body
     assert 'data-bucket="done"' in body
     assert 'data-bucket="archived"' in body
     assert "进行中任务" in body
+    assert "素材待推送" in body
     assert ">待处理任务</button>" not in body
     assert "待审核任务" in body
     assert "阻塞中任务" in body
     assert "已完成任务" in body
     assert "已归档" in body
+    assert '<option value="pending_push">素材待推送</option>' in body
     assert "function tcRenderTaskPager" in body
     assert "TC_TASK_PAGE_SIZE" in body
     assert "const TC_TASK_PAGE_SIZE = 50;" in body
@@ -749,6 +752,28 @@ def test_api_list_accepts_blocked_bucket(authed_client_no_db, monkeypatch):
 
     assert rsp.status_code == 200
     assert captured["bucket"] == "blocked"
+
+
+def test_api_list_accepts_pending_push_bucket_and_status(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_task_center_items(**kwargs):
+        captured.update(kwargs)
+        return {"items": [], "page": kwargs["page"], "page_size": kwargs["page_size"]}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.list_task_center_items",
+        fake_list_task_center_items,
+        raising=False,
+    )
+
+    rsp = authed_client_no_db.get(
+        "/tasks/api/list?tab=all&bucket=pending_push&task_status=pending_push"
+    )
+
+    assert rsp.status_code == 200
+    assert captured["bucket"] == "pending_push"
+    assert captured["task_status"] == "pending_push"
 
 
 def test_api_list_allows_exact_detail_fetch_to_include_archived(authed_client_no_db, monkeypatch):
@@ -2240,6 +2265,12 @@ def test_overview_bucket_route_renders_for_admin(authed_client_no_db):
 def test_overview_invalid_bucket_returns_404(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/overview/invalid_bucket")
     assert rsp.status_code == 404
+
+
+def test_overview_pending_push_bucket_renders(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/overview/pending_push")
+    assert rsp.status_code == 200
+    assert 'data-bucket="pending_push"' in rsp.data.decode("utf-8")
 
 
 def test_api_stats_endpoint_delegates_to_tasks_service(authed_client_no_db, monkeypatch):

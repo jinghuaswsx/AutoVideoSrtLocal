@@ -586,6 +586,7 @@
         <button class="tc-subtab {% if active_bucket == 'todo' %}active{% endif %}" type="button" data-bucket="todo">进行中任务</button>
         <button class="tc-subtab {% if active_bucket == 'review' %}active{% endif %}" type="button" data-bucket="review">待审核任务</button>
         <button class="tc-subtab {% if active_bucket == 'blocked' %}active{% endif %}" type="button" data-bucket="blocked">阻塞中任务</button>
+        <button class="tc-subtab {% if active_bucket == 'pending_push' %}active{% endif %}" type="button" data-bucket="pending_push">素材待推送</button>
         <button class="tc-subtab {% if active_bucket == 'done' %}active{% endif %}" type="button" data-bucket="done">已完成任务</button>
         <button class="tc-subtab {% if active_bucket == 'archived' %}active{% endif %}" type="button" data-bucket="archived">已归档</button>
       </div>
@@ -611,6 +612,7 @@
         <option value="todo">待处理</option>
         <option value="review">待审核</option>
         <option value="blocked">阻塞</option>
+        <option value="pending_push">素材待推送</option>
         <option value="done">已完成</option>
         <option value="cancelled">已取消</option>
       </select>

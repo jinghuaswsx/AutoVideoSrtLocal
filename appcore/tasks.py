@@ -46,6 +46,7 @@ CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
 TASK_ARCHIVED_EVENT = "archived"
 TASK_AUTO_ARCHIVED_EVENT = "auto_archived"
 TASK_AUTO_ARCHIVE_SOURCE = "task_center_auto_archive"
+TASK_PENDING_PUSH = "pending_push"
 LANGUAGE_SUPPORTED_LABEL = "商品投放语种适配"
 LANGUAGE_SUPPORTED_HINT = "目标语种需要先在广告语种中启用，才能进入推送。"
 FINAL_PUSH_CONFIRMATION_STEP_KEY = "final_push_confirmation"
@@ -118,6 +119,15 @@ CHILD_MANUAL_OUTPUT_STEP_KINDS = {
     "push_texts": "text",
     "detail_images": "images",
 }
+PENDING_PUSH_REQUIRED_READINESS_KEYS = (
+    "is_listed",
+    "has_object",
+    "has_cover",
+    "has_copywriting",
+    "lang_supported",
+    "has_push_texts",
+    "shopify_image_confirmed",
+)
 RAW_NIUMA_EVENT_TYPES = {
     "raw_niuma_submitted",
     "raw_niuma_done",
@@ -244,6 +254,88 @@ def _positive_int(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return number if number > 0 else None
+
+
+def _json_bool_expr(json_column: str, key: str) -> str:
+    return f"LOWER(JSON_UNQUOTE(JSON_EXTRACT({json_column}, '$.{key}'))) IN ('true', '1')"
+
+
+def _json_not_true_expr(json_column: str, key: str) -> str:
+    return (
+        f"COALESCE(LOWER(JSON_UNQUOTE(JSON_EXTRACT({json_column}, '$.{key}'))), "
+        "'false') NOT IN ('true', '1')"
+    )
+
+
+def _non_gif_detail_image_condition(alias: str) -> str:
+    return (
+        f"{alias}.deleted_at IS NULL "
+        f"AND COALESCE(NULLIF(TRIM({alias}.object_key), ''), '')<>'' "
+        f"AND LOWER({alias}.object_key) NOT LIKE '%.gif' "
+        f"AND COALESCE(LOWER(SUBSTRING_INDEX({alias}.content_type, ';', 1)), '')<>'image/gif'"
+    )
+
+
+def _pending_push_detail_images_condition() -> str:
+    source_ok = _non_gif_detail_image_condition("pending_push_src_di")
+    target_ok = _non_gif_detail_image_condition("pending_push_tgt_di")
+    return (
+        "("
+        "NOT EXISTS ("
+        "SELECT 1 FROM media_product_detail_images pending_push_src_di "
+        "WHERE pending_push_src_di.product_id=t.media_product_id "
+        "AND LOWER(pending_push_src_di.lang)='en' "
+        f"AND {source_ok}"
+        ") "
+        "OR EXISTS ("
+        "SELECT 1 FROM media_product_detail_images pending_push_tgt_di "
+        "WHERE pending_push_tgt_di.product_id=t.media_product_id "
+        "AND LOWER(pending_push_tgt_di.lang)=LOWER(TRIM(COALESCE(t.country_code, ''))) "
+        f"AND {target_ok}"
+        ")"
+        ")"
+    )
+
+
+def _pending_push_product_links_condition() -> str:
+    return (
+        "EXISTS ("
+        "SELECT 1 FROM media_product_link_availability pending_push_link "
+        "WHERE pending_push_link.product_id=t.media_product_id "
+        "AND LOWER(pending_push_link.lang)=LOWER(TRIM(COALESCE(t.country_code, ''))) "
+        "AND pending_push_link.ok=1"
+        ")"
+    )
+
+
+def _pending_push_condition(
+    *,
+    item_alias: str = "pending_push_item",
+    cache_alias: str = "psc_pending_push",
+) -> str:
+    readiness_json = f"{cache_alias}.readiness_json"
+    required = " AND ".join(
+        _json_bool_expr(readiness_json, key)
+        for key in PENDING_PUSH_REQUIRED_READINESS_KEYS
+    )
+    return (
+        "("
+        "t.parent_task_id IS NOT NULL "
+        "AND t.status IN (%s, %s) "
+        f"AND {item_alias}.id IS NOT NULL "
+        f"AND {item_alias}.pushed_at IS NULL "
+        f"AND COALESCE({item_alias}.skip_push, 0)=0 "
+        f"AND {cache_alias}.item_id IS NOT NULL "
+        f"AND {required} "
+        f"AND {_pending_push_detail_images_condition()} "
+        f"AND {_pending_push_product_links_condition()} "
+        f"AND {_json_not_true_expr(readiness_json, 'final_push_confirmed')}"
+        ")"
+    )
+
+
+def _pending_push_args() -> tuple[str, str]:
+    return (CHILD_ASSIGNED, CHILD_REVIEW)
 
 
 def infer_single_child_task_id_for_media_item(
@@ -769,6 +861,15 @@ def list_task_center_items(
     requested_page = max(1, int(page))
     where = ["1=1"]
     args: list = []
+    task_joins: list[str] = []
+    pending_push_join_needed = False
+
+    def add_pending_push_filter(*, exclude: bool = False) -> None:
+        nonlocal pending_push_join_needed
+        pending_push_join_needed = True
+        condition = _pending_push_condition()
+        where.append(f"NOT {condition}" if exclude else condition)
+        args.extend(_pending_push_args())
 
     if tab == "mine":
         where.append("t.assignee_id=%s")
@@ -807,6 +908,7 @@ def list_task_center_items(
     if high_status == "in_progress":
         where.append("t.status NOT IN (%s, %s, %s, %s)")
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE, PARENT_CANCELLED])
+        add_pending_push_filter(exclude=True)
     elif high_status == "completed":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
@@ -816,6 +918,7 @@ def list_task_center_items(
     if bucket == "todo":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_RAW_IN_PROGRESS, CHILD_ASSIGNED, CHILD_BLOCKED])
+        add_pending_push_filter(exclude=True)
     elif bucket == "review":
         where.append("t.status IN (%s, %s)")
         args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
@@ -825,12 +928,15 @@ def list_task_center_items(
     elif bucket == "done":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
+    elif bucket == TASK_PENDING_PUSH:
+        add_pending_push_filter()
     elif bucket:
         raise ValueError("invalid bucket")
 
     if task_status == "todo":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_PENDING, PARENT_RAW_IN_PROGRESS, CHILD_ASSIGNED])
+        add_pending_push_filter(exclude=True)
     elif task_status == "review":
         where.append("t.status IN (%s, %s)")
         args.extend([PARENT_RAW_REVIEW, CHILD_REVIEW])
@@ -840,16 +946,33 @@ def list_task_center_items(
     elif task_status == "done":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
+    elif task_status == TASK_PENDING_PUSH:
+        add_pending_push_filter()
     elif task_status == "cancelled":
         where.append("t.status IN (%s, %s)")
         args.extend([PARENT_CANCELLED, CHILD_CANCELLED])
     elif task_status and task_status != "all":
         raise ValueError("invalid task_status")
 
+    if pending_push_join_needed:
+        task_joins.append(
+            "LEFT JOIN media_items pending_push_item "
+            "ON pending_push_item.task_id=t.id "
+            "AND pending_push_item.product_id=t.media_product_id "
+            "AND LOWER(pending_push_item.lang)=LOWER(TRIM(COALESCE(t.country_code, ''))) "
+            "AND pending_push_item.deleted_at IS NULL "
+        )
+        task_joins.append(
+            "LEFT JOIN media_push_status_cache psc_pending_push "
+            "ON psc_pending_push.item_id=pending_push_item.id "
+        )
+    task_join_sql = "".join(task_joins)
+
     where_sql = " AND ".join(where)
     count_sql = (
         "SELECT COUNT(*) AS total "
         "FROM tasks t "
+        f"{task_join_sql}"
         "JOIN media_products p ON p.id=t.media_product_id "
         f"WHERE {where_sql}"
     )
@@ -892,6 +1015,7 @@ def list_task_center_items(
         "       ) THEN 1 ELSE 0 END) AS is_rework, "
         f"       u.username AS assignee_username, {assignee_name_expr} AS assignee_display_name "
         "FROM tasks t "
+        f"{task_join_sql}"
         "JOIN media_products p ON p.id=t.media_product_id "
         "LEFT JOIN media_items source_mi ON source_mi.id=t.media_item_id "
         "LEFT JOIN users u ON u.id=t.assignee_id "

@@ -837,6 +837,8 @@ def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch)
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_BLOCKED,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
     )
     assert captured_list["args"] == (
         2,
@@ -845,6 +847,8 @@ def test_list_task_center_items_returns_total_pages_and_clamps_page(monkeypatch)
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_BLOCKED,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
         5,
         10,
     )
@@ -950,6 +954,8 @@ def test_list_task_center_items_parent_only_filters_parent_tasks(monkeypatch):
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_BLOCKED,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
         20,
         0,
     )
@@ -1263,12 +1269,87 @@ def test_list_task_center_items_filters_todo_bucket_without_claim_pool(monkeypat
 
     assert "t.assignee_id=%s" in captured["sql"]
     assert "t.parent_task_id IS NULL AND t.status=%s" not in captured["sql"]
+
+
+def test_list_task_center_items_filters_pending_push_from_cached_readiness(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    assert tasks.list_task_center_items(
+        tab="mine",
+        user_id=7,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="pending_push",
+        page=1,
+        page_size=20,
+    ) == {"items": [], "page": 1, "page_size": 20, "total": 0, "total_all": 0, "total_pages": 1}
+
+    assert "JOIN media_push_status_cache psc_pending_push" in captured["sql"]
+    assert "JOIN media_items pending_push_item" in captured["sql"]
+    assert "pending_push_item.task_id=t.id" in captured["sql"]
+    assert "psc_pending_push.item_id=pending_push_item.id" in captured["sql"]
+    assert "t.parent_task_id IS NOT NULL" in captured["sql"]
+    assert "t.status IN (%s, %s)" in captured["sql"]
+    assert "pending_push_item.pushed_at IS NULL" in captured["sql"]
+    assert "JSON_UNQUOTE(JSON_EXTRACT(psc_pending_push.readiness_json, '$.final_push_confirmed'))" in captured["sql"]
+    assert "FROM media_product_detail_images pending_push_src_di" in captured["sql"]
+    assert "FROM media_product_detail_images pending_push_tgt_di" in captured["sql"]
+    assert "FROM media_product_link_availability pending_push_link" in captured["sql"]
+    assert "pending_push_link.ok=1" in captured["sql"]
+    assert tasks.CHILD_ASSIGNED in captured["args"]
+    assert tasks.CHILD_REVIEW in captured["args"]
+
+
+def test_list_task_center_items_todo_bucket_excludes_pending_push(monkeypatch):
+    from appcore import tasks
+
+    captured = {}
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda alias: f"{alias}.display_name", raising=False)
+    _mock_task_center_count(monkeypatch, tasks)
+
+    def fake_query_all(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr(tasks, "query_all", fake_query_all)
+
+    tasks.list_task_center_items(
+        tab="mine",
+        user_id=7,
+        can_process_raw_video=True,
+        keyword="",
+        high_status="",
+        bucket="todo",
+        page=1,
+        page_size=20,
+    )
+
+    assert "NOT (" in captured["sql"]
+    assert "JOIN media_push_status_cache psc_pending_push" in captured["sql"]
+    assert "JOIN media_items pending_push_item" in captured["sql"]
+    assert "psc_pending_push.item_id=pending_push_item.id" in captured["sql"]
+    assert "JSON_UNQUOTE(JSON_EXTRACT(psc_pending_push.readiness_json, '$.final_push_confirmed'))" in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
         7,
         tasks.PARENT_RAW_IN_PROGRESS,
         tasks.CHILD_ASSIGNED,
         tasks.CHILD_BLOCKED,
+        tasks.CHILD_ASSIGNED,
+        tasks.CHILD_REVIEW,
         20,
         0,
     )
