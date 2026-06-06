@@ -59,7 +59,6 @@
   const DEFAULT_FILTERS = {
     status: 'pending',
     lang: '',
-    product: '',
     keyword: '',
     owner_id: '',
     audit_result: '',
@@ -331,7 +330,6 @@
     setSelectValue(ownerSel, paramValue(params, 'owner_id', DEFAULT_FILTERS.owner_id), DEFAULT_FILTERS.owner_id);
     setSelectValue(auditResultSel, paramValue(params, 'audit_result', DEFAULT_FILTERS.audit_result), DEFAULT_FILTERS.audit_result);
     setSelectValue(sortSel, normalizeSort(paramValue(params, 'sort', DEFAULT_FILTERS.sort)), DEFAULT_FILTERS.sort);
-    document.getElementById('f-product').value = paramValue(params, 'product', DEFAULT_FILTERS.product);
     document.getElementById('f-keyword').value = paramValue(params, 'keyword', DEFAULT_FILTERS.keyword);
     document.getElementById('f-date-from').value = paramValue(params, 'date_from', DEFAULT_FILTERS.date_from);
     document.getElementById('f-date-to').value = paramValue(params, 'date_to', DEFAULT_FILTERS.date_to);
@@ -344,8 +342,6 @@
     params.set('status', statusSel.value);
     const langSel = document.getElementById('f-lang');
     params.set('lang', langSel.value);
-    const product = document.getElementById('f-product').value.trim();
-    params.set('product', product);
     const keyword = document.getElementById('f-keyword').value.trim();
     params.set('keyword', keyword);
     const ownerSel = document.getElementById('f-owner');

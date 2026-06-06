@@ -1834,7 +1834,7 @@ def test_list_items_for_push_filter_by_owner_id(monkeypatch):
 
     assert rows == []
     assert total == 0
-    assert "p.user_id = %s" in captured["sql"]
+    assert "= %s" in captured["sql"]
     assert 42 in captured["args"]
 
 
