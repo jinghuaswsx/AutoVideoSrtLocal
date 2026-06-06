@@ -392,6 +392,8 @@ def test_build_list_response_hydrates_europe_fit_fields(monkeypatch):
 
 
 def test_build_ai_analysis_request_preview_for_europe_translation(monkeypatch):
+    monkeypatch.setattr(service, "_local_video_file_exists", lambda path: True)
+    monkeypatch.setattr(service, "_local_output_file_exists", lambda path: True)
     monkeypatch.setattr(
         service.store,
         "get_hot_post_ai_analysis_row",
@@ -938,6 +940,8 @@ def test_build_video_copyability_response_runs_unified_video_queue(monkeypatch):
 
 
 def test_build_europe_top_response_hydrates_assessment_fields(monkeypatch):
+    monkeypatch.setattr(service, "_local_video_file_exists", lambda path: True)
+    monkeypatch.setattr(service, "_local_output_file_exists", lambda path: True)
     monkeypatch.setattr(
         service.store,
         "list_top_europe_fit_materials",
@@ -980,6 +984,8 @@ def test_build_europe_top_response_hydrates_assessment_fields(monkeypatch):
 
 
 def test_build_list_response_prefers_persisted_local_video_metadata(monkeypatch):
+    monkeypatch.setattr(service, "_local_video_file_exists", lambda path: True)
+    monkeypatch.setattr(service, "_local_output_file_exists", lambda path: True)
     monkeypatch.setattr(
         service.store,
         "list_hot_posts",
@@ -1009,6 +1015,34 @@ def test_build_list_response_prefers_persisted_local_video_metadata(monkeypatch)
     assert item["local_video_cover_url"] == "/xuanpin/api/meta-hot-posts/1/local-video-cover"
 
 
+def test_build_list_response_omits_missing_local_video_and_cover_urls(monkeypatch):
+    monkeypatch.setattr(service, "_local_video_file_exists", lambda path: False)
+    monkeypatch.setattr(service, "_local_output_file_exists", lambda path: False)
+    monkeypatch.setattr(
+        service.store,
+        "list_hot_posts",
+        lambda args: {
+            "items": [
+                {
+                    "id": 1,
+                    "sku_prices_json": "[]",
+                    "local_video_status": "downloaded",
+                    "local_video_path": "meta_hot_posts/videos/1.mp4",
+                    "local_video_cover_path": "meta_hot_posts/video_covers/1/thumbnail.jpg",
+                }
+            ],
+            "total": 1,
+            "page": 1,
+            "page_size": 50,
+        },
+    )
+
+    item = service.build_list_response({}).payload["items"][0]
+
+    assert item["local_video_url"] == ""
+    assert item["local_video_cover_url"] == ""
+
+
 def test_build_list_response_can_fallback_to_raw_json_duration_for_online_only(monkeypatch):
     monkeypatch.setattr(
         service.store,
@@ -1033,6 +1067,8 @@ def test_build_list_response_can_fallback_to_raw_json_duration_for_online_only(m
 
 
 def test_hydrate_generates_tos_video_and_cover_urls_when_backup_enabled(monkeypatch):
+    monkeypatch.setattr(service, "_local_video_file_exists", lambda path: False)
+    monkeypatch.setattr(service, "_local_output_file_exists", lambda path: False)
     monkeypatch.setattr(service.store, "list_hot_posts", lambda args: {
         "items": [
             {

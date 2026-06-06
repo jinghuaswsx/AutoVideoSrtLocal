@@ -311,6 +311,20 @@ def _normalize_mark_status(value: Any) -> str | None:
     return None
 
 
+def _local_video_file_exists(relative_path: Any) -> bool:
+    raw = str(relative_path or "").strip()
+    if not raw:
+        return False
+    return video_localization.resolve_local_video_path(raw) is not None
+
+
+def _local_output_file_exists(relative_path: Any) -> bool:
+    raw = str(relative_path or "").strip()
+    if not raw:
+        return False
+    return video_localization.resolve_output_relative_file_path(raw) is not None
+
+
 def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item = dict(row)
     raw_json = _decode_json_object(item.pop("raw_json", None))
@@ -336,15 +350,20 @@ def _hydrate_item(row: Mapping[str, Any]) -> dict[str, Any]:
     item["message_is_translated"] = bool(translated_message)
     if translated_message:
         item["message_html"] = translated_message
-    if (
+    has_downloaded_video = (
         item.get("id")
         and item.get("local_video_status") == "downloaded"
         and item.get("local_video_path")
-    ):
-        item["local_video_url"] = f"/xuanpin/api/meta-hot-posts/{int(item['id'])}/local-video"
+    )
+    if has_downloaded_video:
+        item["local_video_url"] = (
+            f"/xuanpin/api/meta-hot-posts/{int(item['id'])}/local-video"
+            if _local_video_file_exists(item.get("local_video_path"))
+            else ""
+        )
         item["local_video_cover_url"] = (
             f"/xuanpin/api/meta-hot-posts/{int(item['id'])}/local-video-cover"
-            if item.get("local_video_cover_path")
+            if _local_output_file_exists(item.get("local_video_cover_path"))
             else ""
         )
         from appcore import tos_backup_storage
@@ -1547,4 +1566,3 @@ def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dic
         "media_item_id": item_id,
         "is_new_product": is_new,
     }
-

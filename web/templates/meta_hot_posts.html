@@ -1276,7 +1276,7 @@ function renderCard(row) {
     ? `<button class="mh-link-btn mki-btn--disabled" type="button" disabled>已入库</button>`
     : `<button class="mh-link-btn mki-import-btn" type="button" onclick="mkiImportMetaHotPost(this, ${postId})">加入素材库</button>`;
 
-  const canCreateNewProductTask = String(row.local_video_status || '').toLowerCase() === 'downloaded';
+  const canCreateNewProductTask = String(row.local_video_status || '').toLowerCase() === 'downloaded' && !!row.local_video_url;
   const newProductTaskBtn = newProductTaskId
     ? `<button class="mh-link-btn mki-btn--disabled" type="button" disabled>任务 #${newProductTaskId}</button>`
     : canCreateNewProductTask
