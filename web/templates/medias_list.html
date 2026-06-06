@@ -6,30 +6,7 @@
 {% block extra_style %}
 {% include "medias/_roas_styles.html" %}
 
-/* Lock viewport height and disable body vertical scroll to prevent dual scrollbars and scroll leaks */
-html, body {
-  height: 100% !important;
-  overflow: hidden !important;
-}
-.main-wrap {
-  height: 100vh !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-}
-.main-content {
-  flex: 1 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-.oc {
-  flex: 1 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-  height: 100% !important;
-}
+/* Allow natural body vertical scrolling */
 
 /* ────────── Page header ────────── */
 .oc-header { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--oc-sp-4); margin-bottom:0; padding-bottom:var(--oc-sp-5); flex-wrap:wrap; position:sticky; top:56px; z-index:22; background:var(--bg-body,#f2f4f8); }
@@ -697,7 +674,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 /* ────────── Table（列表） ────────── */
 .oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:clip; font-size:13px; table-layout:auto; }
 .oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
-.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; position:sticky; top:0; z-index:2; }
+.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; position:sticky; top:var(--sticky-table-thead-top, 0px); z-index:2; }
 .oc-table-medias { min-width: 2138px; }
 .oc-table-medias th, .oc-table-medias td { padding:8px 5px !important; }
 .oc-table-medias thead th { text-align:center !important; white-space:nowrap !important; }
@@ -3800,10 +3777,13 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 
   <!-- List -->
   <div class="oc-pager oc-vm-top-pager" id="topPager" aria-label="产品管理顶部分页" hidden></div>
+  <!-- Floating Sticky Header for Product Grid -->
+  <div class="oc-sticky-header-wrapper" id="stickyHeaderWrapper" style="position:sticky; top:var(--sticky-table-thead-top); z-index:22; overflow:hidden; width:100%; display:none; background:var(--bg-body,#f2f4f8); border:1px solid var(--oc-border); border-bottom:none; border-radius:var(--oc-r-lg) var(--oc-r-lg) 0 0; margin-top:var(--oc-sp-4);">
+    <div class="oc-sticky-header-content" id="stickyHeaderContent" style="width:100%; transition: none;"></div>
+  </div>
   <div class="oc-list" id="gridContainer" style="width:100%; overflow:auto;">
     <div id="grid" style="width:100%;"></div>
   </div>
-  <div class="oc-pager" id="bottomPager" aria-label="产品管理底部分页" hidden></div>
   </section>
 
   <section id="videoMaterialsPanel" class="oc-panel-page" role="tabpanel"{% if medias_active_tab != 'videos' %} hidden{% endif %}>
@@ -3823,10 +3803,13 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
       <span class="count oc-vm-total" id="vmTotalPill">共 0 条素材</span>
     </div>
     <div class="oc-pager oc-vm-top-pager" id="vmTopPager" aria-label="视频素材顶部分页" hidden></div>
+    <!-- Floating Sticky Header for Video Materials Grid -->
+    <div class="oc-sticky-header-wrapper" id="vmStickyHeaderWrapper" style="position:sticky; top:var(--sticky-table-thead-top); z-index:22; overflow:hidden; width:100%; display:none; background:var(--bg-body,#f2f4f8); border:1px solid var(--oc-border); border-bottom:none; border-radius:var(--oc-r-lg) var(--oc-r-lg) 0 0; margin-top:var(--oc-sp-4);">
+      <div class="oc-sticky-header-content" id="vmStickyHeaderContent" style="width:100%; transition: none;"></div>
+    </div>
     <div class="oc-list" id="vmListContainer" style="width:100%; overflow:auto;">
       <div id="vmList" style="width:100%;"></div>
     </div>
-    <div class="oc-pager" id="vmBottomPager" aria-label="视频素材底部分页" hidden></div>
   </section>
 </div>
 <script>
@@ -3859,12 +3842,95 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
     document.documentElement.style.setProperty('--sticky-tabs-top', tabsTop + 'px');
     document.documentElement.style.setProperty('--sticky-toolbar-top', toolbarTop + 'px');
     document.documentElement.style.setProperty('--sticky-pager-top', pagerTop + 'px');
-    var tableTop = pagerTop + ph + 16; /* 16px list margin-top */
-    list.style.height = Math.max(window.innerHeight - tableTop - 120, 320) + 'px';
+    var tableTop = pagerTop + (topPager && !topPager.hasAttribute('hidden') ? ph : 0);
+    document.documentElement.style.setProperty('--sticky-table-thead-top', tableTop + 'px');
+    list.style.height = 'auto';
   }
   window.updateMediaStickyOffsets = updateStickyOffsets;
   updateStickyOffsets();
   window.addEventListener('resize', updateStickyOffsets);
+
+  // 浮动表头同步与横向滚动绑定
+  function syncFloatingHeader(containerId, wrapperId, contentId) {
+    const container = document.getElementById(containerId);
+    const wrapper = document.getElementById(wrapperId);
+    const content = document.getElementById(contentId);
+    if (!container || !wrapper || !content) return;
+    
+    container.addEventListener('scroll', function() {
+      content.style.transform = 'translateX(-' + this.scrollLeft + 'px)';
+    });
+
+    function copyThead() {
+      const table = container.querySelector('.oc-table');
+      if (!table) {
+        wrapper.style.display = 'none';
+        content.innerHTML = '';
+        return;
+      }
+      content.innerHTML = '';
+      const headTable = document.createElement('table');
+      headTable.className = table.className;
+      headTable.style.cssText = table.style.cssText;
+      
+      const colgroup = table.querySelector('colgroup');
+      if (colgroup) headTable.appendChild(colgroup.cloneNode(true));
+      
+      const thead = table.querySelector('thead');
+      if (thead) headTable.appendChild(thead.cloneNode(true));
+      
+      content.appendChild(headTable);
+      handleFloatingHeaderVisibility();
+    }
+    
+    const observer = new MutationObserver(copyThead);
+    observer.observe(container, { childList: true, subtree: true });
+    copyThead();
+  }
+
+  function handleFloatingHeaderVisibility() {
+    const activePanel = document.querySelector('.oc-panel-page:not([hidden])') || document.querySelector('#mediaProductsPanel');
+    const isVm = activePanel && activePanel.id === 'videoMaterialsPanel';
+    const container = isVm ? document.getElementById('vmListContainer') : document.getElementById('gridContainer');
+    const wrapper = isVm ? document.getElementById('vmStickyHeaderWrapper') : document.getElementById('stickyHeaderWrapper');
+    if (!container || !wrapper) return;
+    
+    const table = container.querySelector('.oc-table');
+    if (!table) {
+      wrapper.style.display = 'none';
+      return;
+    }
+    
+    const rect = table.getBoundingClientRect();
+    const tableTopLimit = parseFloat(document.documentElement.style.getPropertyValue('--sticky-table-thead-top')) || 0;
+    
+    if (rect.top < tableTopLimit && rect.bottom > (tableTopLimit + 40)) {
+      wrapper.style.display = 'block';
+      wrapper.style.width = container.getBoundingClientRect().width + 'px';
+      const content = wrapper.querySelector('.oc-sticky-header-content');
+      if (content) {
+        content.style.transform = 'translateX(-' + container.scrollLeft + 'px)';
+      }
+    } else {
+      wrapper.style.display = 'none';
+    }
+  }
+
+  syncFloatingHeader('gridContainer', 'stickyHeaderWrapper', 'stickyHeaderContent');
+  syncFloatingHeader('vmListContainer', 'vmStickyHeaderWrapper', 'vmStickyHeaderContent');
+
+  window.addEventListener('scroll', handleFloatingHeaderVisibility);
+  window.addEventListener('resize', handleFloatingHeaderVisibility);
+
+  document.querySelectorAll('.oc-page-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const w = document.getElementById('stickyHeaderWrapper');
+      const vw = document.getElementById('vmStickyHeaderWrapper');
+      if (w) w.style.display = 'none';
+      if (vw) vw.style.display = 'none';
+      setTimeout(handleFloatingHeaderVisibility, 50);
+    });
+  });
 })();
 </script>
 
