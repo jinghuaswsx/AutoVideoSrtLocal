@@ -1446,12 +1446,6 @@ def test_final_push_confirmation_can_be_confirmed_after_child_done(monkeypatch):
     monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
     monkeypatch.setattr(
         tasks,
-        "_child_task_has_direct_push_history",
-        lambda row: True,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        tasks,
         "_write_event",
         lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
             (task_id, event_type, actor_user_id, payload)
@@ -1472,7 +1466,7 @@ def test_final_push_confirmation_can_be_confirmed_after_child_done(monkeypatch):
 
     assert result == {
         "step_key": "final_push_confirmation",
-        "completed": True,
+        "completed": False,
         "status": tasks.CHILD_DONE,
     }
     assert commits == [True]
@@ -1487,7 +1481,7 @@ def test_final_push_confirmation_can_be_confirmed_after_child_done(monkeypatch):
     ]
 
 
-def test_final_push_confirmation_marks_assigned_child_done(monkeypatch):
+def test_final_push_confirmation_records_readiness_without_marking_child_done(monkeypatch):
     from appcore import tasks
 
     writes = []
@@ -1544,12 +1538,6 @@ def test_final_push_confirmation_marks_assigned_child_done(monkeypatch):
     monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
     monkeypatch.setattr(
         tasks,
-        "_child_task_has_direct_push_history",
-        lambda row: True,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        tasks,
         "_write_event",
         lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
             (task_id, event_type, actor_user_id, payload)
@@ -1570,8 +1558,8 @@ def test_final_push_confirmation_marks_assigned_child_done(monkeypatch):
 
     assert result == {
         "step_key": "final_push_confirmation",
-        "completed": True,
-        "status": tasks.CHILD_DONE,
+        "completed": False,
+        "status": tasks.CHILD_ASSIGNED,
     }
     assert commits == [True]
     assert writes == [
@@ -1581,25 +1569,11 @@ def test_final_push_confirmation_marks_assigned_child_done(monkeypatch):
             1,
             {"key": "final_push_confirmation"},
         ),
-        (45, "completed", 1, {"reason": "final_push_confirmation"}),
-        (12, "completed", None, None),
     ]
-    assert any(
-        "UPDATE tasks SET status=%s, last_reason=NULL, completed_at=NOW(), updated_at=NOW() "
-        "WHERE id=%s AND parent_task_id IS NOT NULL AND status IN"
-        in sql
-        and args[:2] == (tasks.CHILD_DONE, 45)
-        for sql, args in executes
-    )
-    assert any(
-        "UPDATE tasks SET status=%s, completed_at=NOW(), updated_at=NOW() WHERE id=%s AND status=%s"
-        in sql
-        and args == (tasks.PARENT_ALL_DONE, 12, tasks.PARENT_RAW_DONE)
-        for sql, args in executes
-    )
+    assert executes == []
 
 
-def test_final_push_confirmation_requires_real_push_history(monkeypatch):
+def test_final_push_confirmation_does_not_require_real_push_history(monkeypatch):
     from appcore import tasks
 
     writes = []
@@ -1653,28 +1627,33 @@ def test_final_push_confirmation_requires_real_push_history(monkeypatch):
     monkeypatch.setattr(tasks, "get_conn", lambda: FakeConn())
     monkeypatch.setattr(
         tasks,
-        "_child_task_has_direct_push_history",
-        lambda row: False,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        tasks,
         "_write_event",
         lambda cur, task_id, event_type, actor_user_id, payload: writes.append(
             (task_id, event_type, actor_user_id, payload)
         ),
     )
 
-    with pytest.raises(tasks.StateError, match="push history"):
-        tasks.confirm_child_step(
-            task_id=45,
-            step_key="final_push_confirmation",
-            actor_user_id=1,
-            is_admin=True,
-        )
+    result = tasks.confirm_child_step(
+        task_id=45,
+        step_key="final_push_confirmation",
+        actor_user_id=1,
+        is_admin=True,
+    )
 
-    assert writes == []
-    assert commits == []
+    assert result == {
+        "step_key": "final_push_confirmation",
+        "completed": False,
+        "status": tasks.CHILD_ASSIGNED,
+    }
+    assert writes == [
+        (
+            45,
+            tasks.CHILD_MANUAL_STEP_CONFIRMED_EVENT,
+            1,
+            {"key": "final_push_confirmation"},
+        )
+    ]
+    assert commits == [True]
     assert rollbacks == []
 
 

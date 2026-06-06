@@ -3756,75 +3756,6 @@ def _refresh_push_status_cache_for_child_task(task_id: int, row: dict) -> None:
         )
 
 
-def _mark_child_done_after_final_confirmation(
-    cur,
-    *,
-    task_id: int,
-    parent_id: int | None,
-    actor_user_id: int,
-) -> None:
-    cur.execute(
-        "UPDATE tasks SET status=%s, last_reason=NULL, "
-        "completed_at=NOW(), updated_at=NOW() "
-        "WHERE id=%s AND parent_task_id IS NOT NULL "
-        "AND status IN (%s,%s)",
-        (CHILD_DONE, int(task_id), CHILD_ASSIGNED, CHILD_REVIEW),
-    )
-    if cur.rowcount == 0:
-        raise StateError("child not confirmable")
-    _write_event(
-        cur,
-        int(task_id),
-        "completed",
-        int(actor_user_id),
-        {"reason": FINAL_PUSH_CONFIRMATION_STEP_KEY},
-    )
-
-    if parent_id is None:
-        return
-    cur.execute("SELECT status FROM tasks WHERE parent_task_id=%s", (int(parent_id),))
-    statuses = [r["status"] for r in cur.fetchall()]
-    terminal = all(s in (CHILD_DONE, CHILD_CANCELLED) for s in statuses)
-    any_done = any(s == CHILD_DONE for s in statuses)
-    if terminal and any_done:
-        cur.execute(
-            "UPDATE tasks SET status=%s, completed_at=NOW(), updated_at=NOW() "
-            "WHERE id=%s AND status=%s",
-            (PARENT_ALL_DONE, int(parent_id), PARENT_RAW_DONE),
-        )
-        if cur.rowcount:
-            _write_event(cur, int(parent_id), "completed", None, None)
-
-
-def _child_task_has_direct_push_history(row: dict) -> bool:
-    task_id = _positive_int((row or {}).get("id"))
-    product_id = _positive_int((row or {}).get("media_product_id"))
-    country_code = str((row or {}).get("country_code") or "").strip()
-    if task_id is None or product_id is None or not country_code:
-        return False
-    push_row = query_one(
-        """
-        SELECT mi.id, mi.pushed_at, mi.latest_push_id,
-               MAX(CASE WHEN mpl.status='success' THEN mpl.id ELSE NULL END) AS success_push_id
-        FROM media_items mi
-        LEFT JOIN media_push_logs mpl ON mpl.item_id=mi.id
-        WHERE mi.task_id=%s
-          AND mi.product_id=%s
-          AND LOWER(mi.lang)=LOWER(TRIM(%s))
-          AND mi.deleted_at IS NULL
-        GROUP BY mi.id, mi.pushed_at, mi.latest_push_id
-        ORDER BY mi.id DESC
-        LIMIT 1
-        """,
-        (int(task_id), int(product_id), country_code),
-    ) or {}
-    return bool(
-        push_row.get("pushed_at")
-        or push_row.get("latest_push_id")
-        or push_row.get("success_push_id")
-    )
-
-
 def confirm_child_step(
     *,
     task_id: int,
@@ -3852,11 +3783,6 @@ def confirm_child_step(
         confirmable_statuses = (CHILD_ASSIGNED, CHILD_REVIEW, CHILD_DONE)
     if row["status"] not in confirmable_statuses:
         raise StateError("child not confirmable")
-    if (
-        normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY
-        and not _child_task_has_direct_push_history(row)
-    ):
-        raise StateError("final push confirmation requires push history")
 
     conn = get_conn()
     try:
@@ -3870,16 +3796,6 @@ def confirm_child_step(
                     int(actor_user_id),
                     {"key": normalized_key},
                 )
-                if (
-                    normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY
-                    and row["status"] != CHILD_DONE
-                ):
-                    _mark_child_done_after_final_confirmation(
-                        cur,
-                        task_id=int(task_id),
-                        parent_id=_positive_int(row.get("parent_task_id")),
-                        actor_user_id=int(actor_user_id),
-                    )
             conn.commit()
         except Exception:
             conn.rollback()
@@ -3890,8 +3806,8 @@ def confirm_child_step(
     if normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY:
         return {
             "step_key": normalized_key,
-            "completed": True,
-            "status": CHILD_DONE,
+            "completed": False,
+            "status": row["status"],
         }
     return {"step_key": normalized_key}
 

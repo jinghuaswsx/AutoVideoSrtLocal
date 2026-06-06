@@ -21,7 +21,9 @@ A task matches `pending_push` when all conditions are true:
 
 Administrator translation approval means the material is accepted for push, not that the task is complete. Approval keeps the child task in `review` so the derived `pending_push` filter can own the "素材待推送" state.
 
-`final_push_confirmation` is a completion gate only when the task has real push history for its current target-language material. A manual confirmation event by itself must not move a child task to `done`; otherwise material that has not actually been pushed will still appear as "已完成".
+`final_push_confirmation` means an operator has confirmed the current target-language material is ready to push. It has no dependency on push history: material can only be pushed after it is ready, so this confirmation must be allowed before any `media_push_logs` or `media_items.pushed_at` value exists.
+
+A manual `final_push_confirmation` event by itself must not move a child task to `done`; otherwise material that is only ready to push, but has not actually been pushed, will still appear as "已完成". Completion is driven by the real push flow after push success.
 
 Archived historical tasks are the exception during data repair: if the archived task's product/language has real push history, keep the archived completion state because old task-bound media rows may have been deleted or detached after push.
 
@@ -51,7 +53,7 @@ SQL fragments inside the derived condition must be safe for PyMySQL `%s` paramet
 
 `approve_child()` records approval but must not update child `status` to `done` and must not roll the parent to `all_done`.
 
-`confirm_child_step(..., step_key='final_push_confirmation')` must verify real push history on the current task-bound target-language `media_items` row before writing `manual_step_confirmed` or `completed` events.
+`confirm_child_step(..., step_key='final_push_confirmation')` records the readiness confirmation regardless of push history and must not write `completed` events or update task status to `done`.
 
 ## Verification
 
@@ -59,6 +61,6 @@ SQL fragments inside the derived condition must be safe for PyMySQL `%s` paramet
 - Service tests prove `pending_push` uses the derived condition and `todo` excludes it.
 - Service tests prove generated pending-push SQL escapes literal percent signs before PyMySQL receives the statement.
 - Service tests prove admin approval leaves children in `review` and does not roll parents to `all_done`.
-- Service tests prove final push confirmation without real push history is rejected and does not write completion events.
+- Service tests prove final push confirmation without real push history is accepted as readiness, does not write completion events, and does not update child or parent task status.
 - Template tests prove the new tab and dropdown option render.
 - `python3 -m compileall appcore/tasks.py web/routes/tasks.py`
