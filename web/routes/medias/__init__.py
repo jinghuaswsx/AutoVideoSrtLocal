@@ -411,6 +411,7 @@ product_tab_page = _pages.product_tab_page
 video_tab_page = _pages.video_tab_page
 product_detail_page = _pages.product_detail_page
 translation_tasks_page = _pages.translation_tasks_page
+product_supplement_page = _pages.product_supplement_page
 api_list_active_users = _pages.api_list_active_users
 api_list_languages = _pages.api_list_languages
 mk_selection_page = _pages.mk_selection_page

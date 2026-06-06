@@ -1,0 +1,811 @@
+{% extends "layout.html" %}
+{% block title %}补素材 - {{ product.name }} - AutoVideoSrt{% endblock %}
+{% block page_title %}
+<span class="selection-center-title">补素材 — {{ product.name }}</span>
+<span class="selection-center-title-note" id="supplementSummaryNote">加载中...</span>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+:root {
+  --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
+  --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
+  --oc-border-strong: oklch(84% 0.015 230); --oc-fg: oklch(22% 0.020 235);
+  --oc-fg-muted: oklch(48% 0.018 230); --oc-fg-subtle: oklch(62% 0.015 230);
+  --oc-accent: oklch(56% 0.16 230); --oc-accent-hover: oklch(50% 0.17 230);
+  --oc-accent-subtle: oklch(94% 0.04 225); --oc-danger: oklch(58% 0.18 25);
+  --oc-success-bg: oklch(95% 0.04 165); --oc-success-fg: oklch(38% 0.09 165);
+  --oc-warning-bg: oklch(96% 0.05 85); --oc-warning-fg: oklch(42% 0.10 60);
+  --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
+  --oc-sp-2: 8px; --oc-sp-3: 12px; --oc-sp-4: 16px; --oc-sp-5: 20px;
+  --mk-video-card-w: 248px; --mk-video-media-w: 216px; --mk-video-media-h: 384px;
+}
+
+.oc {
+  font-family: "Inter Tight", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--oc-fg);
+}
+.oc * { box-sizing: border-box; }
+
+.supplement-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.supplement-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-lg);
+  background: #fff;
+}
+
+.supplement-summary-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--oc-fg-muted);
+}
+.supplement-sep { color: #cbd5e1; }
+
+.supplement-lang-summary {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.supplement-lang-active { background: #dcfce7; color: #15803d; }
+.supplement-lang-stopped { background: #fef2f2; color: #dc2626; }
+.supplement-lang-never { background: #f1f5f9; color: #64748b; }
+
+.supplement-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.oc-btn {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: var(--oc-r);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: background 120ms;
+}
+.oc-btn--primary {
+  background: var(--oc-accent);
+  color: #fff;
+}
+.oc-btn--primary:hover {
+  background: var(--oc-accent-hover);
+}
+.oc-btn--ghost {
+  background: #fff;
+  border: 1px solid var(--oc-border-strong);
+  color: var(--oc-fg);
+}
+.oc-btn--ghost:hover {
+  background: var(--oc-bg-muted);
+}
+
+/* Card Grid Styles (copied from mk_selection.html) */
+.mk-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--mk-video-card-w), var(--mk-video-card-w)));
+  gap: var(--oc-sp-4);
+  justify-content: flex-start;
+  align-content: start;
+}
+
+.mk-video-card {
+  position: relative;
+  width: var(--mk-video-card-w);
+  display: flex;
+  flex-direction: column;
+  gap: var(--oc-sp-2);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-md);
+  overflow: hidden;
+  background: #fff;
+  padding: var(--oc-sp-3);
+  font-size: 13px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.mk-video-card:hover {
+  box-shadow: 0 4px 16px rgba(15,23,42,0.08);
+  border-color: #93c5fd;
+}
+.mk-video-card-in {
+  border-left: 3px solid #22c55e;
+}
+.mk-video-card-out {
+  border-left: 3px solid #94a3b8;
+}
+
+/* Tags on Card */
+.supplement-card-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.supplement-tag-in {
+  background: #22c55e;
+  color: #fff;
+}
+.supplement-tag-out {
+  background: #64748b;
+  color: #fff;
+}
+
+.mk-line-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.mk-line-clamp--1 { -webkit-line-clamp: 1; min-height: 1.35em; }
+.mk-line-clamp--2 { -webkit-line-clamp: 2; min-height: calc(1.35em * 2); }
+.mk-line-clamp--3 { -webkit-line-clamp: 3; min-height: calc(1.45em * 3); }
+
+.mk-video-card-title { font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--oc-fg); }
+.mk-video-title-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 6px; }
+.mk-video-title-actions { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 1px; }
+
+.mk-video-detail-link {
+  height: 22px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: #fff;
+  color: var(--oc-accent);
+  text-decoration: none;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.mk-video-detail-link:hover { background: var(--oc-bg-muted); border-color: var(--oc-accent); }
+
+.mk-video-tabs { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: var(--oc-sp-2); border-bottom: 1px solid var(--oc-border); }
+.mk-video-tab { height: 26px; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--oc-fg-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.mk-video-tab:hover:not(:disabled) { color: var(--oc-fg); }
+.mk-video-tab.active { color: var(--oc-accent); border-bottom-color: var(--oc-accent); }
+.mk-video-tab:disabled { opacity: .45; cursor: not-allowed; }
+
+.mk-video-frame { position: relative; width: var(--mk-video-media-w); max-width: 100%; height: var(--mk-video-media-h); margin: 0 auto; border: 1px solid var(--oc-border); border-radius: var(--oc-r); background: oklch(22% 0.02 235); color: var(--oc-fg-subtle); overflow: hidden; }
+.mk-video-pane { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; }
+.mk-video-pane.active { display: flex; }
+.mk-video-cover-frame img, .mk-video-source { width: 100%; height: 100%; display: block; background: oklch(22% 0.02 235); }
+.mk-video-cover-frame img { object-fit: cover; }
+
+.mk-video-play-btn {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 46px; height: 46px; border-radius: 9999px; border: 1px solid rgba(255,255,255,.88);
+  background: rgba(15,23,42,.68); color: #fff; display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 4px 10px rgba(15,23,42,.2);
+  transition: background .15s ease, transform .15s ease, box-shadow .15s ease;
+  z-index: 2;
+}
+.mk-video-play-btn::before { content: ""; display: block; margin-left: 2px; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 13px solid currentColor; }
+.mk-video-play-btn:hover { background: rgba(15,23,42,.82); transform: translate(-50%, -50%) scale(1.05); }
+
+.mk-video-source { object-fit: contain; border: 0; }
+.mk-video-media-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: var(--oc-sp-3); text-align: center; font-size: 11px; color: var(--oc-fg-subtle); background: var(--oc-bg-muted); }
+
+.mk-video-meta-list { display: flex; flex-direction: column; gap: 4px; margin-top: var(--oc-sp-2); font-size: 11px; color: var(--oc-fg-muted); }
+.mk-video-meta-line { display: flex; align-items: flex-start; gap: 6px; }
+.mk-video-meta-line .label { white-space: nowrap; }
+.mk-video-meta-line .value { color: var(--oc-fg); word-break: break-all; }
+
+/* Translated Versions and pills */
+.supplement-versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--oc-border);
+}
+.supplement-version-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+.supplement-version-pill:hover {
+  transform: scale(1.05);
+}
+.supplement-version-pill.active {
+  box-shadow: 0 0 0 2px #2196F3;
+}
+.supplement-version-active { background: #dcfce7; color: #15803d; }
+.supplement-version-stopped { background: #fef2f2; color: #dc2626; }
+.supplement-version-never { background: #f1f5f9; color: #64748b; }
+
+.supplement-detail-panel {
+  margin-top: 6px;
+  padding: 8px;
+  background: var(--oc-bg-subtle);
+  border-radius: 6px;
+  font-size: 12px;
+  width: 100%;
+}
+.supplement-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.supplement-detail-table th,
+.supplement-detail-table td {
+  padding: 4px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--oc-border);
+}
+.supplement-detail-table th {
+  font-weight: 600;
+  color: var(--oc-fg-muted);
+}
+.supplement-detail-loading,
+.supplement-detail-error {
+  text-align: center;
+  padding: 8px;
+  color: var(--oc-fg-muted);
+}
+.supplement-detail-error { color: var(--oc-danger); }
+
+/* Card Action buttons */
+.supplement-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.mki-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: var(--oc-r);
+  background: var(--oc-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+.mki-btn:hover:not(:disabled) {
+  background: var(--oc-accent-hover);
+}
+.mki-btn:disabled {
+  background: var(--oc-bg-muted);
+  color: var(--oc-fg-subtle);
+  cursor: not-allowed;
+  border-color: var(--oc-border);
+}
+.mki-btn--ghost {
+  background: #fff;
+  color: var(--oc-fg);
+}
+.mki-btn--ghost:hover:not(:disabled) {
+  background: var(--oc-bg-muted);
+}
+
+/* Zoomed layout */
+@media (min-width: 769px) {
+  .oc.mk-zoomed {
+    --mk-video-card-w: 496px;
+    --mk-video-media-w: 464px;
+    --mk-video-media-h: 768px;
+  }
+  .oc.mk-zoomed .mk-video-grid {
+    grid-template-columns: repeat(auto-fill, minmax(var(--mk-video-card-w), var(--mk-video-card-w)));
+  }
+  .oc.mk-zoomed .mk-video-card-title { font-size: 16px; }
+  .oc.mk-zoomed .mk-video-meta-list { font-size: 13px; }
+  .oc.mk-zoomed .mk-video-detail-link { height: 28px; padding: 0 10px; font-size: 13px; }
+  .oc.mk-zoomed .mki-btn { height: 32px; padding: 0 12px; font-size: 13px; }
+}
+
+@media (max-width: 720px) {
+  .mk-video-grid { grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); }
+  .mk-video-card { width: auto; }
+  .mk-video-frame { width: 100%; height: auto; aspect-ratio: 9 / 16; }
+}
+
+/* Page states */
+.supplement-loading-state {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 248px));
+  gap: 16px;
+}
+.oc-skel {
+  background: var(--oc-bg-subtle);
+  border-radius: var(--oc-r-md);
+  border: 1px solid var(--oc-border);
+}
+.supplement-empty,
+.supplement-error {
+  text-align: center;
+  padding: 80px 20px;
+  font-size: 16px;
+  color: var(--oc-fg-muted);
+  width: 100%;
+  grid-column: 1 / -1;
+}
+.supplement-error { color: var(--oc-danger); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="supplementPage" class="oc supplement-page" data-product-id="{{ product_id }}" data-product-code="{{ product.product_code }}" data-product-name="{{ product.name }}">
+  <div class="supplement-toolbar">
+    <div class="supplement-summary-info" id="supplementSummaryInfo">
+      <span class="muted">加载中…</span>
+    </div>
+    <div class="supplement-actions">
+      <button type="button" id="supplementZoomBtn" class="oc-btn oc-btn--ghost" onclick="toggleSupplementZoom()">卡片放大 2x</button>
+      <a class="oc-btn oc-btn--ghost" href="/medias/product" target="_blank" rel="noopener noreferrer">返回素材管理</a>
+    </div>
+  </div>
+
+  <div id="supplementGrid" class="mk-video-grid">
+    <div class="supplement-loading-state" style="width:100%; grid-column:1/-1;">
+      <div class="oc-skel" style="height:550px;"></div>
+      <div class="oc-skel" style="height:550px;"></div>
+      <div class="oc-skel" style="height:550px;"></div>
+      <div class="oc-skel" style="height:550px;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const productId = parseInt(document.getElementById('supplementPage').dataset.productId, 10);
+  const productCode = document.getElementById('supplementPage').dataset.productCode || '';
+  const productName = document.getElementById('supplementPage').dataset.productName || '';
+
+  const grid = document.getElementById('supplementGrid');
+  const summaryEl = document.getElementById('supplementSummaryInfo');
+  const summaryNote = document.getElementById('supplementSummaryNote');
+
+  // Zoom logic
+  const ZOOM_STORAGE_KEY = 'autovideosrt_supplement_zoom';
+  let isZoomed = localStorage.getItem(ZOOM_STORAGE_KEY) === '1';
+
+  function applyZoom(zoom) {
+    isZoomed = Boolean(zoom);
+    const container = document.getElementById('supplementPage');
+    if (container) container.classList.toggle('mk-zoomed', isZoomed);
+    const btn = document.getElementById('supplementZoomBtn');
+    if (btn) {
+      btn.textContent = isZoomed ? '恢复卡片' : '卡片放大 2x';
+      btn.classList.toggle('active', isZoomed);
+    }
+    localStorage.setItem(ZOOM_STORAGE_KEY, isZoomed ? '1' : '0');
+  }
+
+  window.toggleSupplementZoom = function() {
+    applyZoom(!isZoomed);
+  };
+
+  // Restore zoom on load
+  applyZoom(isZoomed);
+
+  // Load supplement materials data
+  fetch(`/medias/api/product/${productId}/supplement`)
+    .then(r => {
+      if (!r.ok) throw new Error('接口请求失败');
+      return r.json();
+    })
+    .then(data => {
+      renderSummary(data);
+      renderCards(data);
+    })
+    .catch(err => {
+      grid.innerHTML = `<div class="supplement-error">数据加载失败：${escapeHtml(err.message || '请稍后重试')}</div>`;
+      summaryEl.innerHTML = '';
+      if (summaryNote) summaryNote.textContent = '加载失败';
+    });
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function renderSummary(data) {
+    const s = data.summary || {};
+    const langCov = data.lang_coverage || {};
+    const langList = Object.keys(langCov).filter(k => k !== 'en').map(k => {
+      const lc = langCov[k];
+      const status = lc.delivery_status || 'never';
+      const statusLabel = status === 'active' ? '投放中' : status === 'stopped' ? '终止' : '未投放';
+      return `<span class="supplement-lang-summary supplement-lang-${status}">${k.toUpperCase()} ${statusLabel}</span>`;
+    }).join(' ');
+
+    summaryEl.innerHTML = `
+      <span>明空素材: <b>${s.total_mk_videos || 0}</b></span>
+      <span class="supplement-sep">·</span>
+      <span>已入库: <b style="color:#22c55e;">${s.in_library || 0}</b></span>
+      <span class="supplement-sep">·</span>
+      <span>未入库: <b style="color:#94a3b8;">${s.not_in_library || 0}</b></span>
+      ${langList ? `<span class="supplement-sep">·</span><span>语种覆盖: ${langList}</span>` : ''}
+    `;
+
+    if (summaryNote) {
+      summaryNote.textContent = `共 ${s.total_mk_videos || 0} 条明空视频素材`;
+    }
+  }
+
+  function renderCards(data) {
+    const cards = data.cards || [];
+    if (!cards.length) {
+      grid.innerHTML = '<div class="supplement-empty">明空选品中心未找到该产品的视频素材</div>';
+      return;
+    }
+    grid.innerHTML = cards.map(card => renderCard(card, data.product)).join('');
+  }
+
+  function renderCard(card, product) {
+    const inLib = card.in_library;
+    const mk = card.mk_video || {};
+    const tagClass = inLib ? 'supplement-tag-in' : 'supplement-tag-out';
+    const tagText = inLib ? '已入库' : '未入库';
+
+    // Cover url
+    const localCoverKey = mk.local_cover_object_key || '';
+    const coverPath = mk.image_path || '';
+    let coverUrl = '';
+    if (localCoverKey) {
+      coverUrl = `/medias/object?object_key=${encodeURIComponent(localCoverKey)}`;
+    } else if (coverPath) {
+      coverUrl = `/xuanpin/api/mk-media?path=${encodeURIComponent(coverPath)}`;
+    }
+    const safeCoverUrl = escapeHtml(coverUrl);
+
+    // Video url
+    const videoPath = mk.path || '';
+    const videoUrl = videoPath ? '/xuanpin/api/mk-video?path=' + encodeURIComponent(videoPath) : '';
+    const safeVideoUrl = escapeHtml(videoUrl);
+
+    const videoName = mk.name || '未命名素材';
+    const spends = mk.spends != null ? `$${Number(mk.spends).toFixed(2)}` : '—';
+    const adsCount = mk.ads_count || 0;
+    const author = mk.author || '--';
+    const uploadTime = mk.upload_time ? String(mk.upload_time).split('T')[0] : '--';
+
+    // Render Translated versions for in-library cards
+    let versionsHtml = '';
+    if (inLib && card.translated_versions && card.translated_versions.length) {
+      versionsHtml = '<div class="supplement-versions">' +
+        card.translated_versions.map(v => {
+          const status = v.delivery_status || 'never';
+          const statusLabel = status === 'active' ? '投放中' : status === 'stopped' ? '终止' : '未投放';
+          const spend = v.ad_spend != null ? `$${Number(v.ad_spend).toFixed(0)}` : '';
+          const roas = v.roas != null ? `R${Number(v.roas).toFixed(1)}` : '';
+          const detail = [spend, roas].filter(Boolean).join(' ');
+          return `<span class="supplement-version-pill supplement-version-${status}" data-item-id="${v.media_item_id || ''}" data-lang="${escapeHtml(v.lang || '')}" data-product-id="${product ? product.id : ''}" title="点击展开详细数据">
+            ${escapeHtml((v.lang || '').toUpperCase())} ${statusLabel}${detail ? ' ' + detail : ''}
+          </span>`;
+        }).join('') +
+        '</div>' +
+        `<div id="supplement-detail-${escapeHtml(card.card_id || '')}" class="supplement-detail-panel" hidden></div>`;
+    }
+
+    // Actions
+    let actionsHtml = '';
+    const productCodeClean = product ? (product.product_code || '').replace(/-rjc$/i, '') : '';
+    if (inLib) {
+      actionsHtml = `
+        <div class="supplement-card-actions">
+          <button class="mki-btn mki-btn--ghost supplement-action-translate"
+                  data-product-id="${product ? product.id : ''}"
+                  data-product-code="${escapeHtml(productCodeClean)}"
+                  title="创建小语种翻译任务">翻译任务</button>
+          <a class="mki-btn" href="/medias/video?keyword=${encodeURIComponent(videoName)}" target="_blank" rel="noopener noreferrer" title="查看素材详情">查看详情</a>
+        </div>`;
+    } else {
+      const mkProductId = card.mk_product_id || '';
+      const mkProductName = card.mk_product_name || '';
+      const productCodeFull = product ? (product.mk_search_handle || product.product_code || '') : '';
+      actionsHtml = `
+        <div class="supplement-card-actions">
+          <button class="mki-btn supplement-action-import"
+                  data-mk-product-id="${escapeHtml(String(mkProductId))}"
+                  data-mk-product-name="${escapeHtml(mkProductName)}"
+                  data-video-path="${escapeHtml(videoPath)}"
+                  data-video-name="${escapeHtml(videoName)}"
+                  data-cover-path="${escapeHtml(coverPath)}"
+                  data-product-code="${escapeHtml(productCodeFull)}"
+                  data-product-link="${escapeHtml(mk.product_link || '')}"
+                  data-main-image="${escapeHtml(mk.main_image || '')}"
+                  title="加入素材库">加入素材库</button>
+          <button class="mki-btn mki-btn--ghost supplement-action-mk-detail"
+                  data-mk-search="${encodeURIComponent(productCodeClean)}"
+                  title="在明空选品中心查看">明空查看</button>
+        </div>`;
+    }
+
+    const posterAttr = coverUrl ? ` poster="${safeCoverUrl}"` : '';
+    const playButtonHtml = videoUrl
+      ? '<button type="button" class="mk-video-play-btn" data-mk-video-play aria-label="播放视频" title="播放视频"></button>'
+      : '';
+
+    return `
+      <div class="mk-video-card ${inLib ? 'mk-video-card-in' : 'mk-video-card-out'}" data-card-id="${escapeHtml(card.card_id || '')}">
+        <div class="supplement-card-tag ${tagClass}">${tagText}</div>
+        
+        <div class="mk-video-title-row" style="margin-top:24px;">
+          <div class="mk-video-card-title mk-line-clamp mk-line-clamp--2" title="${escapeHtml(videoName)}">${escapeHtml(videoName)}</div>
+        </div>
+
+        <div class="mk-video-tabs" role="tablist" aria-label="素材预览">
+          <button type="button" class="mk-video-tab active" data-tab="cover">图片</button>
+          <button type="button" class="mk-video-tab" data-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
+        </div>
+
+        <div class="mk-video-frame">
+          <div class="mk-video-pane mk-video-cover-frame active" data-pane="cover">
+            ${coverUrl ? `<img src="${safeCoverUrl}" loading="lazy" decoding="async" alt="${escapeHtml(videoName)}">` : `<span class="mk-video-media-empty">无封面</span>`}
+            ${playButtonHtml}
+          </div>
+          <div class="mk-video-pane" data-pane="video">
+            ${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-mk-video-src="${safeVideoUrl}"${posterAttr}></video>` : `<span class="mk-video-media-empty">无视频</span>`}
+          </div>
+        </div>
+
+        <div class="mk-video-meta-list">
+          <div class="mk-video-meta-line"><span class="label">广告数:</span><span class="value">${adsCount}</span></div>
+          <div class="mk-video-meta-line"><span class="label">90天消耗:</span><span class="value">${spends}</span></div>
+          <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${author}</span></div>
+          <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${uploadTime}</span></div>
+        </div>
+
+        ${versionsHtml}
+        ${actionsHtml}
+      </div>`;
+  }
+
+  // Card Tab switching & Inline Video playing
+  function activateVideoTab(tab, options = {}) {
+    if (!tab || tab.disabled) return;
+    const card = tab.closest('.mk-video-card');
+    if (!card) return;
+    const target = tab.dataset.tab || 'cover';
+    card.querySelectorAll('.mk-video-tab').forEach(btn => {
+      btn.classList.toggle('active', btn === tab);
+    });
+    card.querySelectorAll('.mk-video-pane').forEach(pane => {
+      pane.classList.toggle('active', pane.dataset.pane === target);
+    });
+    if (target === 'video') {
+      const video = card.querySelector('.mk-video-source');
+      const src = video?.dataset?.mkVideoSrc || '';
+      if (video && src && !video.getAttribute('src')) {
+        video.setAttribute('src', src);
+      }
+      if (options.play && video && typeof video.play === 'function') {
+        const playResult = video.play();
+        if (playResult && typeof playResult.catch === 'function') {
+          playResult.catch(() => {});
+        }
+      }
+    }
+  }
+
+  function playVideoFromButton(button) {
+    const card = button?.closest('.mk-video-card');
+    if (!card) return;
+    const videoTab = card.querySelector('.mk-video-tab[data-tab="video"]');
+    if (!videoTab || videoTab.disabled) return;
+    activateVideoTab(videoTab, {play: true});
+  }
+
+  function pauseOtherVideos(activeVideo) {
+    document.querySelectorAll('.mk-video-source').forEach(video => {
+      if (video !== activeVideo && !video.paused && !video.ended) {
+        video.pause();
+      }
+    });
+  }
+
+  document.addEventListener('play', function(e) {
+    const video = e.target;
+    if (video && video.tagName === 'VIDEO' && video.classList.contains('mk-video-source')) {
+      pauseOtherVideos(video);
+    }
+  }, true);
+
+  // Ad metrics detailed lazy-load
+  function toggleVersionDetail(pill) {
+    const itemId = pill.dataset.itemId;
+    const lang = pill.dataset.lang;
+    const productId = pill.dataset.productId;
+    if (!productId || !lang) return;
+
+    const card = pill.closest('.mk-video-card');
+    if (!card) return;
+    const detailPanel = card.querySelector('.supplement-detail-panel');
+    if (!detailPanel) return;
+
+    if (!detailPanel.hidden && detailPanel.dataset.activeLang === lang) {
+      detailPanel.hidden = true;
+      pill.classList.remove('active');
+      return;
+    }
+
+    card.querySelectorAll('.supplement-version-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+
+    detailPanel.hidden = false;
+    detailPanel.dataset.activeLang = lang;
+    detailPanel.innerHTML = '<div class="supplement-detail-loading">加载中…</div>';
+
+    fetch(`/medias/api/video-material/${productId}/ad-detail?lang=${encodeURIComponent(lang)}`)
+      .then(r => {
+        if (!r.ok) throw new Error('请求错误');
+        return r.json();
+      })
+      .then(data => {
+        detailPanel.innerHTML = renderAdDetailTable(data);
+      })
+      .catch(err => {
+        detailPanel.innerHTML = `<div class="supplement-detail-error">加载失败: ${escapeHtml(err.message || '')}</div>`;
+      });
+  }
+
+  function renderAdDetailTable(data) {
+    const spend = v => v != null ? `$${Number(v).toFixed(2)}` : '—';
+    const roas = v => v != null ? Number(v).toFixed(2) : '—';
+    const count = v => v != null ? String(v) : '—';
+    return `
+      <table class="supplement-detail-table">
+        <thead><tr><th>指标</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>广告消耗</td><td>${spend(data.ad_spend_usd)}</td></tr>
+          <tr><td>购买金额</td><td>${spend(data.purchase_value_usd)}</td></tr>
+          <tr><td>ROAS</td><td>${roas(data.ad_roas)}</td></tr>
+          <tr><td>最近7天消耗</td><td>${spend(data.active_7d_ad_spend_usd)}</td></tr>
+          <tr><td>已推送视频数</td><td>${count(data.pushed_video_count)}</td></tr>
+          <tr><td>投放状态</td><td>${escapeHtml(data.delivery_status === 'active' ? '投放中' : data.delivery_status === 'stopped' ? '终止' : '未投放')}</td></tr>
+        </tbody>
+      </table>`;
+  }
+
+  // Import video to local library
+  async function importMaterial(btn) {
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '入库中…';
+
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    const headers = {'Content-Type': 'application/json'};
+    if (csrfMeta) headers['X-CSRFToken'] = csrfMeta.getAttribute('content');
+
+    try {
+      const rsp = await fetch('/mk-import/video', {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify({
+          mk_video_metadata: {
+            mk_id: parseInt(btn.dataset.mkProductId) || null,
+            product_name: btn.dataset.mkProductName || '',
+            product_code: btn.dataset.productCode || '',
+            product_link: btn.dataset.productLink || null,
+            video_path: btn.dataset.videoPath || null,
+            cover_path: btn.dataset.coverPath || null,
+            filename: btn.dataset.videoName || '',
+            main_image: btn.dataset.mainImage || null,
+          }
+        }),
+      });
+      if (!rsp.ok) {
+        const err = await rsp.json().catch(() => ({error: rsp.statusText}));
+        throw new Error(err.detail || err.error || rsp.statusText);
+      }
+      btn.textContent = '✓ 已入库';
+      btn.classList.add('mki-btn--ghost');
+      
+      // Update UI elements on card immediately
+      const card = btn.closest('.mk-video-card');
+      if (card) {
+        const tag = card.querySelector('.supplement-card-tag');
+        if (tag) {
+          tag.textContent = '已入库';
+          tag.className = 'supplement-card-tag supplement-tag-in';
+        }
+        card.classList.remove('mk-video-card-out');
+        card.classList.add('mk-video-card-in');
+      }
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = original;
+      window.alert('入库失败：' + e.message);
+    }
+  }
+
+  // Global click router
+  document.addEventListener('click', function(e) {
+    const playBtn = e.target.closest('[data-mk-video-play]');
+    if (playBtn) {
+      e.preventDefault();
+      playVideoFromButton(playBtn);
+      return;
+    }
+
+    const tab = e.target.closest('.mk-video-tab');
+    if (tab) {
+      activateVideoTab(tab);
+      return;
+    }
+
+    const pill = e.target.closest('.supplement-version-pill');
+    if (pill) {
+      toggleVersionDetail(pill);
+      return;
+    }
+
+    const importBtn = e.target.closest('.supplement-action-import');
+    if (importBtn) {
+      importMaterial(importBtn);
+      return;
+    }
+
+    const translateBtn = e.target.closest('.supplement-action-translate');
+    if (translateBtn) {
+      const search = translateBtn.dataset.productCode || '';
+      window.open(`/xuanpin/mk?q=${encodeURIComponent(search)}&range=all`, '_blank');
+      return;
+    }
+
+    const mkDetailBtn = e.target.closest('.supplement-action-mk-detail');
+    if (mkDetailBtn) {
+      const search = mkDetailBtn.dataset.mkSearch || '';
+      window.open(`/xuanpin/mk?q=${encodeURIComponent(search)}&range=all`, '_blank');
+      return;
+    }
+  });
+
+})();
+</script>
+{% endblock %}
