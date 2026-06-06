@@ -4921,6 +4921,9 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   justify-content: center;
   backdrop-filter: blur(4px);
 }
+.supplement-modal-mask[hidden] {
+  display: none !important;
+}
 .supplement-modal {
   width: 95vw;
   max-width: 1400px;
@@ -5178,7 +5181,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 </style>
 
 <!-- 补素材 Modal -->
-<div id="supplementModalMask" class="supplement-modal-mask" hidden>
+<div id="supplementModalMask" class="supplement-modal-mask" onclick="if(event.target === this) closeSupplementModal()" hidden>
   <div class="supplement-modal">
     <div class="supplement-modal-header">
       <div class="supplement-modal-header-left">
@@ -5186,7 +5189,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
         <span id="supplementProductCode" class="supplement-product-code"></span>
       </div>
       <div id="supplementSummaryInfo" class="supplement-summary-info"></div>
-      <button type="button" class="supplement-modal-close oc-icon-btn" aria-label="关闭">
+      <button type="button" class="supplement-modal-close oc-icon-btn" aria-label="关闭" onclick="closeSupplementModal()">
         <svg width="20" height="20"><use href="#ic-close"/></svg>
       </button>
     </div>

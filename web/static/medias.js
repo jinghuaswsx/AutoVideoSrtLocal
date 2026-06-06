@@ -11932,59 +11932,57 @@ function supplementCreateTranslation(btn) {
 }
 
 // Event delegation for supplement modal
-document.addEventListener('DOMContentLoaded', () => {
-  // Open button click
-  document.addEventListener('click', e => {
-    const supplementBtn = e.target.closest('[data-supplement]');
-    if (supplementBtn) {
-      const pid = supplementBtn.dataset.supplement;
-      const pcode = supplementBtn.dataset.productCode || '';
-      const pname = supplementBtn.dataset.productName || '';
-      openSupplementModal(pid, pcode, pname);
-      return;
-    }
+// Open button click
+document.addEventListener('click', e => {
+  const supplementBtn = e.target.closest('[data-supplement]');
+  if (supplementBtn) {
+    const pid = supplementBtn.dataset.supplement;
+    const pcode = supplementBtn.dataset.productCode || '';
+    const pname = supplementBtn.dataset.productName || '';
+    openSupplementModal(pid, pcode, pname);
+    return;
+  }
 
-    // Close modal
-    if (e.target.closest('.supplement-modal-close') || e.target.id === 'supplementModalMask') {
-      closeSupplementModal();
-      return;
-    }
+  // Close modal
+  if (e.target.closest('.supplement-modal-close') || e.target.id === 'supplementModalMask') {
+    closeSupplementModal();
+    return;
+  }
 
-    // Version pill click
-    const versionPill = e.target.closest('.supplement-version-pill');
-    if (versionPill) {
-      toggleSupplementVersionDetail(versionPill);
-      return;
-    }
+  // Version pill click
+  const versionPill = e.target.closest('.supplement-version-pill');
+  if (versionPill) {
+    toggleSupplementVersionDetail(versionPill);
+    return;
+  }
 
-    // Import button
-    const importBtn = e.target.closest('.supplement-action-import');
-    if (importBtn) {
-      supplementImportMaterial(importBtn);
-      return;
-    }
+  // Import button
+  const importBtn = e.target.closest('.supplement-action-import');
+  if (importBtn) {
+    supplementImportMaterial(importBtn);
+    return;
+  }
 
-    // Translate button
-    const translateBtn = e.target.closest('.supplement-action-translate');
-    if (translateBtn) {
-      supplementCreateTranslation(translateBtn);
-      return;
-    }
+  // Translate button
+  const translateBtn = e.target.closest('.supplement-action-translate');
+  if (translateBtn) {
+    supplementCreateTranslation(translateBtn);
+    return;
+  }
 
-    // MK detail button
-    const mkDetailBtn = e.target.closest('.supplement-action-mk-detail');
-    if (mkDetailBtn) {
-      const search = mkDetailBtn.dataset.mkSearch || '';
-      window.open(`/xuanpin/mk?q=${search}&range=all`, '_blank');
-      return;
-    }
-  });
+  // MK detail button
+  const mkDetailBtn = e.target.closest('.supplement-action-mk-detail');
+  if (mkDetailBtn) {
+    const search = mkDetailBtn.dataset.mkSearch || '';
+    window.open(`/xuanpin/mk?q=${search}&range=all`, '_blank');
+    return;
+  }
+});
 
-  // Close on Escape
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      const mask = document.getElementById('supplementModalMask');
-      if (mask && !mask.hidden) closeSupplementModal();
-    }
-  });
+// Close on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const mask = document.getElementById('supplementModalMask');
+    if (mask && !mask.hidden) closeSupplementModal();
+  }
 });
