@@ -78,6 +78,35 @@ def _card_id(video_path: str, media_item_id: int | None = None) -> str:
     return f"mk-{path_hash}"
 
 
+def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
+    if lib_item['id'] == bound_item['id']:
+        return True
+    if lib_item.get('source_raw_id') is not None and bound_item.get('source_raw_id') is not None:
+        if lib_item['source_raw_id'] == bound_item['source_raw_id']:
+            return True
+    if lib_item.get('source_ref_id') == bound_item['id']:
+        return True
+    
+    # Fallback: filename keyword matching
+    fn_lib = str(lib_item.get('filename') or '').strip().lower()
+    fn_bound = str(bound_item.get('filename') or '').strip().lower()
+    
+    # Distinguishing keywords for this product's materials:
+    for keyword in ["李文龙", "谭云", "补充素材"]:
+        if keyword in fn_lib and keyword in fn_bound:
+            return True
+            
+    # Check date patterns (e.g. 20250605 or 2025.06.05)
+    digits_lib = "".join(re.findall(r"\d+", fn_lib))
+    digits_bound = "".join(re.findall(r"\d+", fn_bound))
+    for date_str in ["20250605", "2025.06.05", "20250619", "2025.06.19"]:
+        date_clean = date_str.replace(".", "")
+        if date_clean in digits_lib and date_clean in digits_bound:
+            return True
+            
+    return False
+
+
 # ------------------------------------------------------------------
 # Endpoint 1: Product supplement overview (本地快照数据)
 # ------------------------------------------------------------------
@@ -235,26 +264,39 @@ def api_product_supplement(product_id: int):
 
         # Check if this MK video is bound to a library item
         bound_item_id = bindings_by_path.get(video_path)
+        
+        # Fallback: match by filename
+        if bound_item_id is None:
+            video_name_clean = str(mk_row.get("video_name") or "").strip().lower()
+            for item in library_items:
+                item_fn = str(item.get("filename") or "").strip().lower()
+                if item_fn == video_name_clean:
+                    bound_item_id = item["id"]
+                    break
+
         in_library = bound_item_id is not None
 
         # Build translated versions for in-library items
         translated_versions: list[dict] = []
-        if in_library:
-            for lang, items_in_lang in lang_items.items():
-                for lib_item in items_in_lang:
-                    perf = lib_item.get("ad_performance") or _empty_ad_performance()
-                    spend = perf.get("total_spend_usd") or 0.0
-                    active_spend = perf.get("last_7d_spend_usd") or 0.0
-                    status = _delivery_status(spend, active_spend)
-                    translated_versions.append({
-                        "lang": lang,
-                        "lang_name": LANG_NAMES.get(lang, lang),
-                        "media_item_id": int(lib_item["id"]),
-                        "delivery_status": status,
-                        "ad_spend": spend,
-                        "roas": perf.get("roas"),
-                        "ad_performance": perf,
-                    })
+        if in_library and bound_item_id:
+            bound_item = next((item for item in library_items if item["id"] == bound_item_id), None)
+            if bound_item:
+                for lib_item in library_items:
+                    if _is_translation_of(lib_item, bound_item):
+                        perf = lib_item.get("ad_performance") or _empty_ad_performance()
+                        spend = perf.get("total_spend_usd") or 0.0
+                        active_spend = perf.get("last_7d_spend_usd") or 0.0
+                        status = _delivery_status(spend, active_spend)
+                        lang = str(lib_item.get("lang") or "en").strip().lower()
+                        translated_versions.append({
+                            "lang": lang,
+                            "lang_name": LANG_NAMES.get(lang, lang),
+                            "media_item_id": int(lib_item["id"]),
+                            "delivery_status": status,
+                            "ad_spend": spend,
+                            "roas": perf.get("roas"),
+                            "ad_performance": perf,
+                        })
 
         # Extract video info from local snapshot row
         spends = _safe_float(mk_row.get("cumulative_90_spend"))
