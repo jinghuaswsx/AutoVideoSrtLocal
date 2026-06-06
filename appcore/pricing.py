@@ -44,7 +44,7 @@ def _load_prices() -> dict[tuple[str, str], dict]:
 
 # AI Studio、Vertex 和 Vertex ADC 对同名 Gemini 模型定价相同，这里维护一次即可
 # 查找顺序：自家精确 → 同组精确 → 自家通配 → 同组通配
-_GEMINI_PRICING_GROUP = ("gemini_aistudio", "gemini_vertex", "gemini_vertex_adc")
+_GEMINI_PRICING_GROUP = ("gemini_aistudio", "gemini_vertex", "google_wj", "gemini_vertex_adc")
 
 
 def _lookup(provider: str, model: str) -> dict | None:

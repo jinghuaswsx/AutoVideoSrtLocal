@@ -95,25 +95,26 @@ TRANSLATE_PROVIDERS = [
 DEFAULT_TRANSLATE_PROVIDER = "vertex_gemini_31_flash_lite"
 
 BINDING_ALLOWED_PROVIDERS = (
-    "openrouter", "doubao", "gemini_aistudio", "gemini_vertex",
+    "openrouter", "doubao", "gemini_aistudio", "gemini_vertex", "google_wj",
 )
 BINDING_PROVIDER_LABELS = {
     "openrouter": "OpenRouter",
     "doubao": "Doubao ARK",
     "gemini_aistudio": "Google AI Studio",
     "gemini_vertex": "Google Cloud (Vertex AI)",
+    "google_wj": "GoogleWJ",
 }
 VOICE_SELECTION_ASSESS_USE_CASE = "voice_selection.assess"
 VOICE_SELECTION_ASSESS_PROVIDERS = (
-    "openrouter", "gemini_vertex", "gemini_aistudio",
+    "openrouter", "gemini_vertex", "gemini_aistudio", "google_wj",
 )
 IMAGE_TEXT_DETECT_PROVIDERS = (
-    "gemini_aistudio", "gemini_vertex", "openrouter",
+    "gemini_aistudio", "gemini_vertex", "google_wj", "openrouter",
 )
 IMAGE_TEXT_DETECT_MODEL = "gemini-3.1-flash-lite"
 META_HOT_POSTS_TRANSLATE_USE_CASE = "meta_hot_posts.translate_message"
 META_HOT_POSTS_TRANSLATE_PROVIDERS = (
-    "gemini_aistudio", "gemini_vertex", "openrouter",
+    "gemini_aistudio", "gemini_vertex", "google_wj", "openrouter",
 )
 META_HOT_POSTS_TRANSLATE_MODEL_OPTIONS = (
     ("gemini_3_flash", "Gemini 3 Flash"),

@@ -120,10 +120,10 @@ def _call_vertex_json(
         cfg_kwargs["response_schema"] = schema
     cfg = genai_types.GenerateContentConfig(**cfg_kwargs)
 
-    if project:
-        client = genai.Client(vertexai=True, project=project, location=location)
-    else:
+    if api_key:
         client = genai.Client(vertexai=True, api_key=api_key)
+    elif project:
+        client = genai.Client(vertexai=True, project=project, location=location)
     resp = client.models.generate_content(
         model=model_id,
         contents=user_content,

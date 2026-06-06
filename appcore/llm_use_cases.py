@@ -9,6 +9,7 @@ LLM_PROVIDER_CODES = frozenset({
     "doubao",
     "gemini_aistudio",
     "gemini_vertex",
+    "google_wj",
     "gemini_vertex_adc",
 })
 

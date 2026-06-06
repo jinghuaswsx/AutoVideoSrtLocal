@@ -976,6 +976,41 @@ def test_local_image2_channel_registered_for_image_translate():
     assert gemini_image._channel_provider("local_image_2") == "local_image_2"
 
 
+def test_googlewj_channel_registered_for_image_translate():
+    from appcore import gemini_image
+
+    assert "googlewj" in gemini_image.IMAGE_MODELS_BY_CHANNEL
+    assert gemini_image.default_image_model("googlewj") == "gemini-3.1-flash-image-preview"
+    assert gemini_image._channel_provider("googlewj") == "google_wj"
+
+
+def test_generate_image_googlewj_uses_vertex_backend_and_provider_label():
+    from appcore import gemini_image
+
+    client = MagicMock()
+    client.models.generate_content.return_value = _fake_response(b"PNG-WJ", "image/png")
+    with patch.object(gemini_image, "_get_image_client", return_value=client) as m_client, \
+         patch.object(gemini_image, "_resolve_gemini_image_credentials",
+                      return_value=("WJ-KEY", "project-wj", "global", None)), \
+         patch.object(gemini_image.ai_billing, "log_request") as m_log:
+        out, mime = gemini_image.generate_image(
+            prompt="translate",
+            source_image=b"RAW",
+            source_mime="image/png",
+            model="gemini-3.1-flash-image-preview",
+            channel="GoogleWJ",
+            user_id=8,
+            project_id="img-wj",
+        )
+
+    assert out == b"PNG-WJ"
+    assert mime == "image/png"
+    assert m_client.call_args.kwargs["backend"] == "cloud"
+    assert m_client.call_args.kwargs["project"] == "project-wj"
+    assert m_log.call_args.kwargs["provider"] == "google_wj"
+    assert m_log.call_args.kwargs["extra"]["channel"] == "googlewj"
+
+
 def test_generate_image_local_image2_uses_low_quality_1k_square():
     from appcore import gemini_image
 
@@ -1526,6 +1561,39 @@ def test_resolve_gemini_image_credentials_fallback_cloud():
         assert api_key == "fallback-cloud-key"
         assert project == "fallback-cloud-project"
         assert location == "us-west1"
+
+
+def test_resolve_gemini_image_credentials_fallback_googlewj():
+    from appcore import gemini_image
+    from appcore.llm_provider_configs import LlmProviderConfig
+
+    configs = {
+        "google_wj_image": LlmProviderConfig(
+            provider_code="google_wj_image",
+            display_name="image",
+            group_code="image",
+            api_key="",
+            extra_config={},
+            enabled=True,
+        ),
+        "google_wj_text": LlmProviderConfig(
+            provider_code="google_wj_text",
+            display_name="text",
+            group_code="text_llm",
+            api_key="fallback-wj-key",
+            extra_config={"project": "fallback-wj-project", "location": "global"},
+            enabled=True,
+        ),
+    }
+
+    def fake_require(code):
+        return configs[code]
+
+    with patch("appcore.gemini_image.require_provider_config", fake_require):
+        api_key, project, location, model_id = gemini_image._resolve_gemini_image_credentials("googlewj")
+        assert api_key == "fallback-wj-key"
+        assert project == "fallback-wj-project"
+        assert location == "global"
 
 
 def test_resolve_gemini_image_credentials_fallback_cloud_adc():

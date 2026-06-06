@@ -6,6 +6,7 @@ PROVIDER_DISPLAY_NAMES = {
     "openrouter": "OpenRouter",
     "gemini_aistudio": "Google AI Studio",
     "gemini_vertex": "Google Vertex",
+    "google_wj": "GoogleWJ",
     "gemini_vertex_adc": "Google Vertex ADC",
     "doubao": "Doubao",
 }

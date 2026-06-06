@@ -115,6 +115,11 @@ IMAGE_MODELS_BY_CHANNEL: dict[str, list[tuple[str, str]]] = {
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
         ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
     ],
+    "googlewj": [
+        ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
+        ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
+        ("gemini-2.5-flash-image-preview", "Nano Banana 1（初代）"),
+    ],
     "openrouter": [
         ("gemini-3.1-flash-image-preview", "Nano Banana 2（快速）"),
         ("gemini-3-pro-image-preview", "Nano Banana Pro（高保真）"),
@@ -377,6 +382,8 @@ def _channel_provider(channel: str) -> str:
         return "openrouter"
     if channel == "cloud":
         return "gemini_vertex"
+    if channel == "googlewj":
+        return "google_wj"
     if channel == "apimart":
         return "apimart"
     if channel == "local_image_2":
@@ -607,20 +614,26 @@ def _resolve_gemini_image_credentials(channel: str) -> tuple[str, str, str, str 
     """
     if channel == "cloud":
         provider_code = "gemini_cloud_image"
+        fallback_provider_code = "gemini_cloud_text"
+    elif channel == "googlewj":
+        provider_code = "google_wj_image"
+        fallback_provider_code = "google_wj_text"
     else:
         provider_code = "gemini_aistudio_image"
+        fallback_provider_code = "gemini_aistudio_text"
     try:
         cfg = require_provider_config(provider_code)
     except ProviderConfigError as exc:
         raise GeminiImageError(str(exc)) from exc
     api_key = (cfg.api_key or "").strip()
     extra = cfg.extra_config or {}
-    project = (extra.get("project") or "").strip() if channel == "cloud" else ""
-    location = (extra.get("location") or "global").strip() if channel == "cloud" else ""
-    if channel == "cloud" and not (api_key or project):
-        # fallback to gemini_cloud_text
+    is_vertex_channel = channel in {"cloud", "googlewj"}
+    project = (extra.get("project") or "").strip() if is_vertex_channel else ""
+    location = (extra.get("location") or "global").strip() if is_vertex_channel else ""
+    if is_vertex_channel and not (api_key or project):
+        # fallback to the matching text credential row
         try:
-            text_cfg = require_provider_config("gemini_cloud_text")
+            text_cfg = require_provider_config(fallback_provider_code)
             fallback_key = (text_cfg.api_key or "").strip()
             text_extra = text_cfg.extra_config or {}
             fallback_project = (text_extra.get("project") or "").strip()
@@ -634,11 +647,11 @@ def _resolve_gemini_image_credentials(channel: str) -> tuple[str, str, str, str 
             raise GeminiImageError(
                 f"缺少供应商配置 {provider_code}.api_key 或 extra_config.project，请在 /settings 填写。"
             )
-    if channel != "cloud" and not api_key:
+    if not is_vertex_channel and not api_key:
         if provider_code == "gemini_aistudio_image":
             # fallback to gemini_aistudio_text
             try:
-                text_cfg = require_provider_config("gemini_aistudio_text")
+                text_cfg = require_provider_config(fallback_provider_code)
                 fallback_key = (text_cfg.api_key or "").strip()
                 if fallback_key:
                     api_key = fallback_key
@@ -649,6 +662,10 @@ def _resolve_gemini_image_credentials(channel: str) -> tuple[str, str, str, str 
                 f"缺少供应商配置 {provider_code}.api_key，请在 /settings 填写。"
             )
     return api_key, project, location, (cfg.model_id or None)
+
+
+def _genai_backend_for_channel(channel: str) -> str:
+    return "cloud" if channel in {"cloud", "googlewj"} else channel
 
 
 def _resolve_seedream_size(source_image: bytes) -> str:
@@ -1283,7 +1300,7 @@ def generate_image(
                     model_id = db_model
                 image_bytes, mime, resp = _generate_via_genai(
                     prompt, source_image, source_mime, model_id,
-                    backend=channel,
+                    backend=_genai_backend_for_channel(channel),
                     api_key=api_key,
                     project=project, location=location,
                     image_size=openrouter_image_size,

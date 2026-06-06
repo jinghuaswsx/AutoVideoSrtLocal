@@ -552,6 +552,22 @@ def test_settings_get_renders_global_image_translate_model_select(admin_no_db_cl
     assert "Nano Banana Pro（高保真）" in body
 
 
+def test_settings_get_renders_googlewj_image_translate_channel(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="googlewj"), \
+         patch("web.routes.settings.get_image_translate_default_model",
+               return_value="gemini-3.1-flash-image-preview"):
+        resp = admin_no_db_client.get("/settings?tab=providers")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'value="googlewj" selected' in body
+    assert "GoogleWJ" in body
+
+
 def test_settings_get_renders_meta_hot_posts_translate_model_controls(admin_no_db_client):
     with patch("web.routes.settings.get_all", return_value={}), \
          patch("web.routes.settings._provider_rows_by_group",
