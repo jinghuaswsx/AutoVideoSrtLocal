@@ -224,7 +224,8 @@
 /* Translated Versions and pills */
 .supplement-versions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
   margin-top: 8px;
   padding-top: 8px;
@@ -517,15 +518,28 @@
     // Render Translated versions for in-library cards
     let versionsHtml = '';
     if (inLib && card.translated_versions && card.translated_versions.length) {
+      const langCnMap = {
+        de: '德',
+        fr: '法',
+        es: '西',
+        it: '意',
+        ja: '日',
+        en: '英',
+        pt: '葡'
+      };
       versionsHtml = '<div class="supplement-versions">' +
         card.translated_versions.map(v => {
           const status = v.delivery_status || 'never';
           const statusLabel = status === 'active' ? '投放中' : status === 'stopped' ? '终止' : '未投放';
           const spend = v.ad_spend != null ? `$${Number(v.ad_spend).toFixed(0)}` : '';
-          const roas = v.roas != null ? `R${Number(v.roas).toFixed(1)}` : '';
+          const roas = v.roas != null ? `ROAS ${Number(v.roas).toFixed(1)}` : '';
           const detail = [spend, roas].filter(Boolean).join(' ');
+          const langLower = (v.lang || '').toLowerCase();
+          const langUpper = langLower.toUpperCase();
+          const cnAbbr = langCnMap[langLower] || '';
+          const langDisplay = cnAbbr ? `${langUpper}(${cnAbbr})` : langUpper;
           return `<span class="supplement-version-pill supplement-version-${status}" data-item-id="${v.media_item_id || ''}" data-lang="${escapeHtml(v.lang || '')}" data-product-id="${product ? product.id : ''}" title="点击展开详细数据">
-            ${escapeHtml((v.lang || '').toUpperCase())} ${statusLabel}${detail ? ' ' + detail : ''}
+            ${escapeHtml(langDisplay)} ${statusLabel}${detail ? ' ' + detail : ''}
           </span>`;
         }).join('') +
         '</div>' +
