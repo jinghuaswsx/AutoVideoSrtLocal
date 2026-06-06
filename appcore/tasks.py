@@ -127,6 +127,7 @@ PENDING_PUSH_REQUIRED_READINESS_KEYS = (
     "lang_supported",
     "has_push_texts",
     "shopify_image_confirmed",
+    "final_push_confirmed",
 )
 RAW_NIUMA_EVENT_TYPES = {
     "raw_niuma_submitted",
@@ -260,13 +261,6 @@ def _json_bool_expr(json_column: str, key: str) -> str:
     return f"LOWER(JSON_UNQUOTE(JSON_EXTRACT({json_column}, '$.{key}'))) IN ('true', '1')"
 
 
-def _json_not_true_expr(json_column: str, key: str) -> str:
-    return (
-        f"COALESCE(LOWER(JSON_UNQUOTE(JSON_EXTRACT({json_column}, '$.{key}'))), "
-        "'false') NOT IN ('true', '1')"
-    )
-
-
 def _non_gif_detail_image_condition(alias: str) -> str:
     return (
         f"{alias}.deleted_at IS NULL "
@@ -329,7 +323,6 @@ def _pending_push_condition(
         f"AND {required} "
         f"AND {_pending_push_detail_images_condition()} "
         f"AND {_pending_push_product_links_condition()} "
-        f"AND {_json_not_true_expr(readiness_json, 'final_push_confirmed')}"
         ")"
     )
 

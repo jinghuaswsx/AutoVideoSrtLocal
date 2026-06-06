@@ -16,8 +16,8 @@ A task matches `pending_push` when all conditions are true:
 - `tasks.status IN ('assigned', 'review')`
 - the target-language `media_items` row is resolved by `media_items.task_id = tasks.id`, matching `media_items.lang` to `tasks.country_code`
 - that target-language `media_items.pushed_at IS NULL`
-- all push readiness prerequisites except `final_push_confirmation` are confirmed by existing task acceptance data
-- `final_push_confirmation` is not confirmed yet
+- all push readiness prerequisites, including `final_push_confirmation`, are confirmed by existing task acceptance data
+- the push-management status for the corresponding material is therefore `pending` / 待推送 rather than `not_ready`
 
 Administrator translation approval means the material is accepted for push, not that the task is complete. Approval keeps the child task in `review` so the derived `pending_push` filter can own the "素材待推送" state.
 

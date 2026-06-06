@@ -1303,7 +1303,14 @@ def test_list_task_center_items_filters_pending_push_from_cached_readiness(monke
     assert "t.parent_task_id IS NOT NULL" in captured["sql"]
     assert "t.status IN (%s, %s)" in captured["sql"]
     assert "pending_push_item.pushed_at IS NULL" in captured["sql"]
-    assert "JSON_UNQUOTE(JSON_EXTRACT(psc_pending_push.readiness_json, '$.final_push_confirmed'))" in captured["sql"]
+    assert (
+        "LOWER(JSON_UNQUOTE(JSON_EXTRACT(psc_pending_push.readiness_json, "
+        "'$.final_push_confirmed'))) IN ('true', '1')"
+    ) in captured["sql"]
+    assert (
+        "JSON_EXTRACT(psc_pending_push.readiness_json, '$.final_push_confirmed'))), "
+        "'false') NOT IN ('true', '1')"
+    ) not in captured["sql"]
     assert "FROM media_product_detail_images pending_push_src_di" in captured["sql"]
     assert "FROM media_product_detail_images pending_push_tgt_di" in captured["sql"]
     assert "FROM media_product_link_availability pending_push_link" in captured["sql"]
@@ -1341,7 +1348,14 @@ def test_list_task_center_items_todo_bucket_excludes_pending_push(monkeypatch):
     assert "JOIN media_push_status_cache psc_pending_push" in captured["sql"]
     assert "JOIN media_items pending_push_item" in captured["sql"]
     assert "psc_pending_push.item_id=pending_push_item.id" in captured["sql"]
-    assert "JSON_UNQUOTE(JSON_EXTRACT(psc_pending_push.readiness_json, '$.final_push_confirmed'))" in captured["sql"]
+    assert (
+        "LOWER(JSON_UNQUOTE(JSON_EXTRACT(psc_pending_push.readiness_json, "
+        "'$.final_push_confirmed'))) IN ('true', '1')"
+    ) in captured["sql"]
+    assert (
+        "JSON_EXTRACT(psc_pending_push.readiness_json, '$.final_push_confirmed'))), "
+        "'false') NOT IN ('true', '1')"
+    ) not in captured["sql"]
     assert "t.status IN (%s, %s, %s)" in captured["sql"]
     assert captured["args"] == (
         7,
