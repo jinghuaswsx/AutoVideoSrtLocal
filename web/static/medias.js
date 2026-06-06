@@ -3625,7 +3625,7 @@
 
         // Render total row at top
         html += `
-          <tr style="font-weight: bold; background: var(--oc-bg-subtle);">
+          <tr class="oc-total-row" style="font-weight: bold; background: var(--oc-bg-subtle);">
             <td style="text-align: left;">总计</td>
             ${renderMetricCell(total.today_spend, total.today_orders, total.today_roas)}
             ${renderMetricCell(total.yesterday_spend, total.yesterday_orders, total.yesterday_roas)}
