@@ -132,6 +132,8 @@ def test_video_materials_preview_uses_large_playable_cover(authed_client_no_db):
     html = page_response.get_data(as_text=True)
     assert "oc-vm-preview-btn" in script
     assert "data-video-item" in script
+    assert "const src = item.preview_cover_url || '';" in script
+    assert "item.cover_url || item.thumbnail_url" not in script
     assert "function openVideoPlayer(item)" in script
     assert "vmPlayerMask" in script
     assert "vmPlayerVideo" in script

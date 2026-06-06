@@ -571,6 +571,21 @@ def _load_realtime_ad_candidates_for_materials(product_ids: list[int]) -> list[d
     return rows
 
 
+_VIDEO_OBJECT_EXTENSIONS = (".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")
+
+
+def _looks_like_video_object_key(value: Any) -> bool:
+    path = str(value or "").split("?", 1)[0].lower()
+    return path.endswith(_VIDEO_OBJECT_EXTENSIONS)
+
+
+def _image_cover_url(item: dict[str, Any]) -> str:
+    cover_key = item.get("cover_object_key")
+    if cover_key and not _looks_like_video_object_key(cover_key):
+        return f"/medias/item-cover/{int(item['id'])}"
+    return ""
+
+
 def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
     item = _decimal_to_float(row)
     push_success_count = int(item.get("push_success_count") or 0)
@@ -590,6 +605,8 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
         }
     has_ad_plan = bool(item.get("ad_campaign_code"))
     pushed_at_val = item.get("ad_plan_activity_date") if has_ad_plan else None
+    thumbnail_url = f"/medias/thumb/{int(item['id'])}" if item.get("thumbnail_path") else ""
+    cover_url = _image_cover_url(item)
     return {
         "id": int(item["id"]),
         "product_id": int(item["product_id"]),
@@ -600,8 +617,9 @@ def serialize_video_material(row: dict[str, Any]) -> dict[str, Any]:
         "filename": item.get("filename") or "",
         "display_name": item.get("display_name") or item.get("filename") or "",
         "object_key": item.get("object_key") or "",
-        "thumbnail_url": f"/medias/thumb/{int(item['id'])}" if item.get("thumbnail_path") else "",
-        "cover_url": f"/medias/item-cover/{int(item['id'])}" if item.get("cover_object_key") else "",
+        "thumbnail_url": thumbnail_url,
+        "cover_url": cover_url,
+        "preview_cover_url": cover_url or thumbnail_url,
         "video_url": f"/medias/object?object_key={quote(str(item.get('object_key') or ''), safe='')}",
         "duration_seconds": item.get("duration_seconds"),
         "file_size": item.get("file_size"),

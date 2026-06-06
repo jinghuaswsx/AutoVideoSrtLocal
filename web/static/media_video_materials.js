@@ -185,7 +185,7 @@
   }
 
   function previewHtml(item) {
-    const src = item.cover_url || item.thumbnail_url || '';
+    const src = item.preview_cover_url || '';
     const videoUrl = item.video_url || '';
     const preview = src
       ? `<img src="${esc(src)}" alt="">`

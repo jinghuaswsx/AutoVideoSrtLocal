@@ -81,6 +81,9 @@ def test_list_video_materials_filters_and_serializes(monkeypatch):
     assert payload["items"][0]["has_ad_plan"] is True
     assert payload["items"][0]["ad_plan_status"] == "has"
     assert payload["items"][0]["mk_binding"]["mk_video_path"] == "materials/widget.mp4"
+    assert payload["items"][0]["cover_url"] == "/medias/item-cover/11"
+    assert payload["items"][0]["thumbnail_url"] == "/medias/thumb/11"
+    assert payload["items"][0]["preview_cover_url"] == "/medias/item-cover/11"
     assert payload["items"][0]["video_url"] == "/medias/object?object_key=media%2Fitems%2Fwidget%20demo.mp4"
     assert payload["items"][0]["ad_plan_detail"]["code"] == "widget-rjc-campaign"
     assert payload["items"][0]["ad_plan_detail"]["ad_account_id"] == "1253003326160754"
@@ -451,6 +454,30 @@ def test_serialize_video_material_includes_campaign_detail_link():
         "/order-analytics?tab=ads&ads_level=campaign&ads_code=glow-go-rjc"
         "&ads_name=Glow+Go+Campaign&ad_account_id=1253003326160754"
     )
+
+
+def test_serialize_video_material_preview_cover_never_uses_video_object_key():
+    item = mvm.serialize_video_material(_video_row(
+        cover_object_key="media/items/demo.mp4",
+        thumbnail_path="thumb.jpg",
+    ))
+
+    assert item["cover_url"] == ""
+    assert item["thumbnail_url"] == "/medias/thumb/11"
+    assert item["preview_cover_url"] == "/medias/thumb/11"
+    assert item["preview_cover_url"] != item["video_url"]
+
+
+def test_serialize_video_material_preview_cover_is_empty_without_image_cover():
+    item = mvm.serialize_video_material(_video_row(
+        cover_object_key="media/items/demo.mp4",
+        thumbnail_path="",
+    ))
+
+    assert item["cover_url"] == ""
+    assert item["thumbnail_url"] == ""
+    assert item["preview_cover_url"] == ""
+    assert item["video_url"] == "/medias/object?object_key=media%2Fitems%2Fwidget%20demo.mp4"
 
 
 def test_serialize_video_material_without_ad_campaign_code_returns_no_link():
