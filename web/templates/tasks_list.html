@@ -3381,7 +3381,10 @@ function tcRenderDetail(task, events, reviewAssets) {
         <div class="tc-detail-sticky-top">
           <div class="tc-detail-sticky-main">
             <div class="tc-detail-title-block">
-              <h3>${tcEsc(task.product_name)}</h3>
+              <h3 style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;">
+                <span>${tcEsc(task.product_name)}</span>
+                <span style="font-size: 10px; color: var(--tc-fg-muted); font-weight: normal;">创建时间：${tcEsc(tcFormatTime(task.created_at))}</span>
+              </h3>
               ${identityRows}
             </div>
             <div class="tc-detail-status">${tcReworkBadge(task)}${tcUrgentBadge(task)} <span class="tc-badge tc-badge--${tcEsc(task.high_level)}">${tcEsc(tcHighLevelLabel(task.high_level))}</span> · ${tcEsc(tcTaskStatusLabel(task))}</div>
