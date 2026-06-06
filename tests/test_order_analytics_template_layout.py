@@ -283,7 +283,7 @@ def test_realtime_global_cards_render_yesterday_same_time_compare_inline():
     assert 'id="realtimeOldRevenueWithShippingCompare"' not in panel
     assert 'id="realtimeUnmatchedRevenueWithShippingCompare"' not in panel
     assert ".oar-same-time-compare" in template
-    assert "font-size: 0.5em;" in template
+    assert "font-size: 0.6667em;" in template
     assert "font-weight: 700;" in template
     assert ".oar-same-time-up" in template
     assert ".oar-same-time-down" in template
@@ -316,6 +316,7 @@ def test_realtime_global_same_time_compare_js_only_renders_global_scope():
     assert "metric.pct === undefined" in template
     assert "toFixed(0)" in template
     assert "'+'" in template
+    assert "return '(' + sign + rounded.toFixed(0) + '%)';" in template
     assert "return null;" in template
     assert "oar-same-time-compare" in template
     assert "oar-same-time-up" in template

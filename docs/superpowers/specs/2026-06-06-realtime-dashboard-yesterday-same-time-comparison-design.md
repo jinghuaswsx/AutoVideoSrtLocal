@@ -59,14 +59,14 @@
 
 三个全局卡片把昨天同进度变化百分比放在主数字后面，不新增独立 sub 行，不展示中文提示文案：
 
-- 总销售额：`$1,200.00  +12%`
-- 订单数：`60  -8%`
-- 利润：`$240.00  +5%`
+- 总销售额：`$1,200.00  (+12%)`
+- 订单数：`60  (-8%)`
+- 利润：`$240.00  (0%)`
 
 显示规范：
 
 - 百分比与主数字在同一行，间隔约两个空格。
-- 百分比字号约为主数字 50%，加粗显示。
+- 百分比字号约为主数字 2/3，加粗显示，并用括号包裹。
 - 正数显示 `+N%`，负数显示 `-N%`，0 显示 `0%`。
 - 百分比保留 0 位小数。
 - 正数使用现有正向色，负数使用现有亏损 / danger 色，0 使用正文黑色。
@@ -176,7 +176,7 @@
 只改 `web/templates/order_analytics.html` 的全局卡片：
 
 - 不新增 `#realtimeRevenueWithShippingCompare`、`#realtimeOrderCountCompare`、`#realtimeProfitCompare` 独立 DOM 节点。
-- `#realtimeRevenueWithShipping`、`#realtimeOrderCount`、`#realtimeProfit` 主值节点内追加行内 `<span class="oar-same-time-compare">+N%</span>`。
+- `#realtimeRevenueWithShipping`、`#realtimeOrderCount`、`#realtimeProfit` 主值节点内追加行内 `<span class="oar-same-time-compare">(+N%)</span>`。
 - 行内百分比 class 按数值添加：增长 `oar-same-time-up`，下降 `oar-same-time-down`，无变化 `oar-same-time-flat`。
 - `renderRealtimeScopeSummary('global', data)` 中读取 `data.comparison.yesterday_same_time.summary`，只在 `enabled=true` 时追加；其它 scope 不渲染。
 
