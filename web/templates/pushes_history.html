@@ -1336,7 +1336,16 @@
       `<button type="button" data-page="${Math.max(1, page - 1)}"${firstDisabled}>上一页</button>`
     ];
 
-    for (let p = Math.max(1, page - 2); p <= Math.min(totalPages, page + 2); p++) {
+    let start = Math.max(1, page - 2);
+    let end = Math.min(totalPages, page + 2);
+    if (totalPages > 5) {
+      if (start === 1) {
+        end = 5;
+      } else if (end === totalPages) {
+        start = totalPages - 4;
+      }
+    }
+    for (let p = start; p <= end; p++) {
       buttons.push(`<button type="button" class="${p === page ? 'active' : ''}" data-page="${p}">${p}</button>`);
     }
 

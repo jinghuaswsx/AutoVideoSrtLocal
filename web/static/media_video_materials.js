@@ -492,7 +492,16 @@
       `<button type="button" data-vm-page="1"${firstDisabled}>首页</button>`,
       `<button type="button" data-vm-page="${prevPage}"${firstDisabled}>上一页</button>`,
     ];
-    for (let p = Math.max(1, page - 2); p <= Math.min(pages, page + 2); p++) {
+    let start = Math.max(1, page - 2);
+    let end = Math.min(pages, page + 2);
+    if (pages > 5) {
+      if (start === 1) {
+        end = 5;
+      } else if (end === pages) {
+        start = pages - 4;
+      }
+    }
+    for (let p = start; p <= end; p++) {
       buttons.push(`<button type="button" class="${p === page ? 'active' : ''}" data-vm-page="${p}">${p}</button>`);
     }
     buttons.push(`<button type="button" data-vm-page="${nextPage}"${lastDisabled}>下一页</button>`);

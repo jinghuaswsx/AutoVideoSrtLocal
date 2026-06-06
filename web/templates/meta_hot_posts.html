@@ -1495,8 +1495,15 @@ function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
     `<button type="button"${disabledPrev} onclick="${loaderName}(1)">首页</button>`,
     `<button type="button"${disabledPrev} onclick="${loaderName}(${Math.max(1, page - 1)})">上一页</button>`,
   ];
-  const start = Math.max(1, page - 2);
-  const end = Math.min(safeLastPage, page + 2);
+  let start = Math.max(1, page - 2);
+  let end = Math.min(safeLastPage, page + 2);
+  if (safeLastPage > 5) {
+    if (start === 1) {
+      end = 5;
+    } else if (end === safeLastPage) {
+      start = safeLastPage - 4;
+    }
+  }
   for (let i = start; i <= end; i += 1) {
     const active = i === page ? ' active' : '';
     buttons.push(`<button type="button" class="${active.trim()}" onclick="${loaderName}(${i})">${i}</button>`);
