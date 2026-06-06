@@ -418,6 +418,22 @@
 .oa-table.oar-compact-table th, .oa-table.oar-compact-table td {
   padding: 9px var(--space-3); vertical-align: top;
 }
+.oar-hour-cell {
+  min-width: 220px;
+  white-space: nowrap;
+}
+.oar-hour-main {
+  color: var(--fg);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.oar-hour-sub,
+.oar-th-sub {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.35;
+}
 .oar-campaign-table th:first-child,
 .oar-campaign-table td:first-child {
   width: 280px;
@@ -1995,7 +2011,7 @@
         <table class="oa-table oar-compact-table">
           <thead>
             <tr>
-              <th>小时</th>
+              <th>广告日小时（BJ/UTC+8）<br><span class="oar-th-sub">北京时间范围</span></th>
               <th>订单数</th>
               <th>商品销售额</th>
               <th>商品件数</th>
@@ -5334,8 +5350,11 @@
         }
         rows.forEach(function(row) {
           var tr = document.createElement('tr');
+          var hourTd = document.createElement('td');
+          hourTd.className = 'oar-hour-cell';
+          hourTd.innerHTML = formatRealtimeHourCell(row);
+          tr.appendChild(hourTd);
           [
-            typeof row.hour === 'number' ? String(row.hour).padStart(2, '0') + ':00-' + String(row.hour + 1).padStart(2, '0') + ':00' : row.hour,
             row.order_count || 0,
             fmtMoney(row.order_revenue),
             row.units || 0,
@@ -6062,6 +6081,23 @@
   function formatShortDateTime(value) {
     if (!value) return '-';
     return String(value).replace('T', ' ').slice(0, 16);
+  }
+
+  function formatRealtimeBusinessHour(hour) {
+    if (typeof hour !== 'number') return hour || '-';
+    var startHour = String(hour).padStart(2, '0');
+    var endHour = String(hour + 1).padStart(2, '0');
+    return startHour + ':00-' + endHour + ':00 广告日小时';
+  }
+
+  function formatRealtimeHourCell(row) {
+    row = row || {};
+    var main = formatRealtimeBusinessHour(row.hour);
+    var bjRange = row.window_start_at && row.window_end_at
+      ? '北京时间（UTC+8） ' + formatRoasWindow(row.window_start_at, row.window_end_at)
+      : '';
+    return '<div class="oar-hour-main">' + escapeHtml(main) + '</div>' +
+      (bjRange ? '<div class="oar-hour-sub">' + escapeHtml(bjRange) + '</div>' : '');
   }
 
   function formatTimeRule(period, points) {

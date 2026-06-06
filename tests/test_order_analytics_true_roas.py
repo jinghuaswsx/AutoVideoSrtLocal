@@ -2174,6 +2174,22 @@ def test_realtime_tab_has_product_sales_subtab(authed_client_no_db):
     assert "renderRealtimeProductSales(" in body
 
 
+def test_realtime_roas_trend_hour_column_shows_timezone_and_bj_range(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    panel = _extract_realtime_panel(body)
+    trend = panel[panel.index('id="realtimeSubTrend"'):]
+
+    assert "广告日小时（BJ/UTC+8）" in trend
+    assert "北京时间范围" in trend
+    assert "function formatRealtimeHourCell(row)" in body
+    assert "return startHour + ':00-' + endHour + ':00 广告日小时';" in body
+    assert "北京时间（UTC+8） " in body
+    assert "row.window_start_at" in body
+    assert "row.window_end_at" in body
+
+
 def test_realtime_tab_has_order_profit_detail_subtab(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert response.status_code == 200
