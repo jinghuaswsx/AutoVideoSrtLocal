@@ -1717,6 +1717,100 @@ def test_replace_detail_images_keeps_saved_result_when_reload_cdp_refused(monkey
     assert calls.count("enter-reload") >= 1
 
 
+def test_replace_detail_images_reconnects_when_upload_cdp_resets(monkeypatch, tmp_path):
+    token_a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    token_b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    original_a = f"https://cdn.example.com/from_url_en_10_{token_a}.jpg"
+    original_b = f"https://cdn.example.com/from_url_en_11_{token_b}.jpg"
+    cdn_a = f"https://cdn.shopify.com/s/files/1/0000/files/from_url_en_10_{token_a}.png?v=1"
+    cdn_b = f"https://cdn.shopify.com/s/files/1/0000/files/from_url_en_11_{token_b}.png?v=1"
+    image_a = tmp_path / f"loc_from_url_en_10_{token_a}.png"
+    image_b = tmp_path / f"loc_from_url_en_11_{token_b}.png"
+    image_a.write_bytes(b"image-a")
+    image_b.write_bytes(b"image-b")
+    html_before = f'<section><img src="{original_a}"><img src="{original_b}"></section>'
+    saved_html = ""
+    calls = []
+
+    class ResettingTaa:
+        def __enter__(self):
+            calls.append("enter-resetting")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            calls.append("exit-resetting")
+
+        def current_body_html(self):
+            calls.append("current-resetting")
+            return html_before
+
+        def upload_image(self, local_path):
+            name = Path(local_path).name
+            calls.append(("upload-resetting", name))
+            if name == image_a.name:
+                return cdn_a
+            raise ConnectionResetError(10054, "remote host closed")
+
+        def close_modal(self):
+            calls.append("close-resetting-modal")
+
+    class ReconnectedTaa:
+        def __enter__(self):
+            calls.append("enter-reconnected")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            calls.append("exit-reconnected")
+
+        def current_body_html(self):
+            calls.append("current-reconnected")
+            return saved_html or html_before
+
+        def upload_image(self, local_path):
+            name = Path(local_path).name
+            calls.append(("upload-reconnected", name))
+            assert name == image_b.name
+            return cdn_b
+
+        def close_modal(self):
+            calls.append("close-reconnected-modal")
+
+        def set_body_html(self, html):
+            nonlocal saved_html
+            calls.append("set-reconnected-html")
+            saved_html = html
+            return {"ok": True}
+
+        def click_save(self):
+            calls.append("save-reconnected")
+            return []
+
+    sessions = [ResettingTaa(), ReconnectedTaa()]
+    monkeypatch.setattr(taa_cdp, "TaaSession", lambda **_kwargs: sessions.pop(0))
+    monkeypatch.setattr(taa_cdp.cancellation, "cancellable_sleep", lambda *_args, **_kwargs: None)
+
+    result = taa_cdp.replace_detail_images(
+        product_id="9163927912660",
+        shop_locale="de",
+        user_data_dir="C:/chrome-shopify-image-omurio",
+        localized_images=[
+            {"filename": image_a.name, "local_path": str(image_a)},
+            {"filename": image_b.name, "local_path": str(image_b)},
+        ],
+        replace_shopify_cdn=True,
+        verify_reload=False,
+    )
+
+    assert result["status"] == "done"
+    assert result["replacement_count"] == 2
+    assert result["verify"]["expected_new_urls_present"] == 2
+    assert ("upload-resetting", image_a.name) in calls
+    assert ("upload-resetting", image_b.name) in calls
+    assert ("upload-reconnected", image_b.name) in calls
+    assert ("upload-reconnected", image_a.name) not in calls
+    assert "set-reconnected-html" in calls
+
+
 def test_replace_detail_images_fails_when_reload_verification_misses_uploaded_url(monkeypatch, tmp_path):
     token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     original_src = f"https://cdn.example.com/from_url_en_10_{token}.jpg"

@@ -40,6 +40,24 @@ def _url_sha256(url: str, *, timeout: float = 15.0) -> str:
         return ""
 
 
+def _is_transient_cdp_disconnect(exc: BaseException) -> bool:
+    if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, TimeoutError)):
+        return True
+    if isinstance(exc, OSError) and getattr(exc, "winerror", None) in {10053, 10054, 10060}:
+        return True
+    class_name = exc.__class__.__name__
+    if class_name in {
+        "WebSocketConnectionClosedException",
+        "WebSocketTimeoutException",
+    }:
+        return True
+    message = str(exc).lower()
+    return (
+        "connection to remote host was lost" in message
+        or "remote host" in message and "closed" in message
+    )
+
+
 def _local_image_size(path: str) -> tuple[int, int]:
     if not path:
         return 0, 0
@@ -1071,14 +1089,25 @@ def replace_detail_images(
     verify_reload: bool = True,
     cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict[str, Any]:
-    with TaaSession(
-        product_id=product_id,
-        shop_locale=shop_locale,
-        user_data_dir=user_data_dir,
-        store_slug=store_slug,
-        port=port,
-        cancel_token=cancel_token,
-    ) as taa:
+    def open_session() -> TaaSession:
+        cm = TaaSession(
+            product_id=product_id,
+            shop_locale=shop_locale,
+            user_data_dir=user_data_dir,
+            store_slug=store_slug,
+            port=port,
+            cancel_token=cancel_token,
+        )
+        return cm.__enter__()
+
+    def close_session(session_obj: TaaSession | None) -> None:
+        if session_obj is None:
+            return
+        session_obj.__exit__(None, None, None)
+
+    taa: TaaSession | None = None
+    try:
+        taa = open_session()
         cancellation.throw_if_cancelled(cancel_token)
         html_before = taa.current_body_html()
         plan = plan_body_html_replacements(
@@ -1101,7 +1130,26 @@ def replace_detail_images(
                 f"sha={candidate_sha[:16] if candidate_sha else '?'} "
                 f"match={row.get('match_method')}"
             )
-            cdn_url = taa.upload_image(local_path)
+            cdn_url = ""
+            for upload_attempt in (1, 2):
+                try:
+                    if taa is None:
+                        taa = open_session()
+                    cdn_url = taa.upload_image(local_path)
+                    break
+                except cancellation.OperationCancelled:
+                    raise
+                except Exception as exc:
+                    if upload_attempt >= 2 or not _is_transient_cdp_disconnect(exc):
+                        raise
+                    print(f"详情图：上传时 CDP 连接中断，将重开 TAA 并重试当前图片：{exc}")
+                    try:
+                        taa.close_modal()
+                    except Exception:
+                        pass
+                    close_session(taa)
+                    taa = None
+                    cancellation.cancellable_sleep(cancel_token, 2.0)
             print(f"详情图：第 {upload_idx}/{total} 张 已上传 → {cdn_url}")
             uploaded_replacements.append({
                 "token": row["token"],
@@ -1119,6 +1167,8 @@ def replace_detail_images(
             if upload_idx < total:
                 print(f"详情图：节流等待 1 秒，避免触发 Shopify CDN 上传限流")
                 cancellation.cancellable_sleep(cancel_token, 1.0)
+        if taa is None:
+            taa = open_session()
         taa.close_modal()
 
         save_events: list[dict[str, Any]] = []
@@ -1135,6 +1185,8 @@ def replace_detail_images(
             readback_html = taa.current_body_html()
         else:
             readback_html = html_before
+    finally:
+        close_session(taa)
 
     verify_html = readback_html
     reload_checked = False
