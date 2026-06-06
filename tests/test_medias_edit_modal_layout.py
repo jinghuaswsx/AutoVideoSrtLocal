@@ -97,18 +97,42 @@ def test_medias_list_uses_two_column_grid_for_row_actions():
     assert "grid-template-columns:repeat(2, minmax(0, max-content));" in html
 
 
+def test_medias_product_table_header_sticks_inside_list_container():
+    html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    rule_match = re.search(r"\.oc-table thead th\s*\{([^}]*)\}", html)
+    assert rule_match is not None
+    table_header_rule = rule_match.group(1)
+    container_sticky_rule = re.search(
+        r"\.oc-table thead th,\s*\.oc-vm-table thead th\s*\{([^}]*)\}",
+        html,
+    )
+
+    assert container_sticky_rule is not None
+    assert "position: sticky !important;" in container_sticky_rule.group(1)
+    assert "top: 0 !important;" in container_sticky_rule.group(1)
+    assert "--sticky-table-thead-top" not in table_header_rule
+
+
 def test_medias_listing_status_pill_keeps_text_horizontal():
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+    table_start = script.index('<table class="oc-table oc-table-medias"')
+    colgroup_start = script.index("<colgroup>", table_start)
+    colgroup_end = script.index("</colgroup>", colgroup_start)
+    colgroup = script[colgroup_start:colgroup_end]
+    widths = [int(value) for value in re.findall(r'<col style="width:(\d+)px">', colgroup)]
 
-    assert '<col style="width:80px">\n        <col style="width:88px">\n        <col style="width:56px">' in script
+    assert widths[6] >= 70
+    assert widths[7] >= 80
+    assert widths[8] >= 70
     assert ".listing-status-cell { text-align:center; white-space:nowrap; }" in html
     assert ".oc-listing-pill { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; min-width:44px; height:32px; padding:0 10px; border-radius:9999px; font-size:13px; font-weight:500; line-height:1.25; text-align:center; white-space:nowrap; }" in html
 
 
 def test_medias_product_table_leaves_space_between_cover_and_name_columns():
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
-    table_start = script.index('<table class="oc-table"')
+    table_start = script.index('<table class="oc-table oc-table-medias"')
     colgroup_start = script.index("<colgroup>", table_start)
     colgroup_end = script.index("</colgroup>", colgroup_start)
     colgroup = script[colgroup_start:colgroup_end]
@@ -116,7 +140,7 @@ def test_medias_product_table_leaves_space_between_cover_and_name_columns():
 
     assert widths[1] >= 128
     assert widths[2] >= 130
-    assert '<td class="name wrap">${nameCell}</td>' in script
+    assert '<td class="wrap product-info-td">${productInfoCell}</td>' in script
 
 
 def test_detail_images_support_multi_select_delete_assets():

@@ -737,7 +737,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 /* ────────── Table（列表） ────────── */
 .oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:clip; font-size:13px; table-layout:auto; }
 .oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
-.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; position:sticky; top:var(--sticky-table-thead-top, 0px); z-index:2; }
+.oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; }
 .oc-table-medias { min-width: 2138px; }
 .oc-table-medias th, .oc-table-medias td { padding:8px 5px !important; }
 .oc-table-medias thead th { text-align:center !important; white-space:nowrap !important; }
@@ -3675,6 +3675,75 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   flex-shrink: 0;
   margin-left: 4px;
 }
+
+/* ────────── Ad Orders Report modal ────────── */
+#adOrdersReportMask.oc-ad-orders-report-mask {
+  inset:0 0 0 220px;
+  padding:10vh 5vw;
+  align-items:stretch;
+  justify-content:flex-end;
+}
+.oc-ad-orders-report-modal {
+  width:100%;
+  height:100%;
+  max-width:none;
+  max-height:none;
+}
+.oc-ad-orders-report-modal .oc-modal-body {
+  padding:var(--oc-sp-5);
+  display:flex;
+  flex:1 1 auto;
+  flex-direction:column;
+  gap:var(--oc-sp-4);
+  min-height:0;
+  overflow:hidden;
+}
+.oc-ad-orders-report-meta {
+  display:flex;
+  flex-direction:column;
+  gap:var(--oc-sp-3);
+}
+.oc-ad-orders-report-table-wrap {
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+  max-height:none;
+  border:1px solid var(--oc-border);
+  border-radius:var(--oc-radius);
+}
+.oc-ad-orders-report-table {
+  width:100%;
+  min-width:1500px;
+  border-collapse:collapse;
+}
+.oc-ad-orders-report-table th {
+  background:var(--oc-bg-subtle);
+  position:sticky;
+  top:0;
+  z-index:1;
+  font-size:12px;
+  font-weight:600;
+  color:var(--oc-fg-muted);
+  border-bottom:1px solid var(--oc-border-strong);
+  padding:8px 10px;
+}
+.oc-ad-orders-report-table td {
+  font-size:13px;
+  padding:8px 10px;
+  border-bottom:1px solid var(--oc-border);
+}
+.oc-ad-orders-report-table tr:hover td {
+  background:var(--oc-bg-subtle);
+}
+@media (max-width: 1024px) {
+  #adOrdersReportMask.oc-ad-orders-report-mask {
+    inset:0;
+    padding:0;
+  }
+  .oc-ad-orders-report-modal {
+    border-radius:0;
+  }
+}
 {% endblock %}
 
 {% block content %}
@@ -4296,6 +4365,71 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
         <button type="button" id="skuDetailAddManual" class="oc-btn ghost">新增手动变体</button>
         <button type="button" id="skuDetailCancel" class="oc-btn ghost">关闭</button>
         <button type="button" id="skuDetailRefresh" class="oc-btn primary">从店小秘刷新</button>
+      </div>
+  </div>
+</div>
+
+<div id="adOrdersReportMask" class="oc-modal-mask oc oc-ad-orders-report-mask" hidden>
+  <div class="oc-modal oc-ad-orders-report-modal" role="dialog" aria-modal="true" aria-labelledby="adOrdersReportTitle">
+    <div class="oc-modal-head">
+      <h3 id="adOrdersReportTitle">语种投放及单量详情</h3>
+      <button type="button" id="adOrdersReportClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-modal-body">
+      <div class="oc-ad-orders-report-meta">
+        <dl class="oc-sku-meta-grid">
+          <div><dt>产品 ID</dt><dd id="adOrdersReportProductId" class="mono">—</dd></div>
+          <div><dt>产品编码</dt><dd id="adOrdersReportProductCode" class="mono">—</dd></div>
+          <div><dt>产品名称</dt><dd id="adOrdersReportProductName">—</dd></div>
+        </dl>
+      </div>
+      <div class="oc-ad-orders-report-table-wrap">
+        <table class="oc-table oc-ad-orders-report-table">
+          <thead>
+            <tr>
+              <th rowspan="2" style="width:120px; text-align:left; vertical-align:middle;">国家/语种</th>
+              <th colspan="3" style="text-align:center;">今天</th>
+              <th colspan="3" style="text-align:center;">昨天</th>
+              <th colspan="3" style="text-align:center;">7天</th>
+              <th colspan="3" style="text-align:center;">30天</th>
+              <th colspan="3" style="text-align:center;">总计</th>
+            </tr>
+            <tr>
+              <th style="width:90px; text-align:right;">消耗</th>
+              <th style="width:70px; text-align:right;">单量</th>
+              <th style="width:80px; text-align:right;">ROAS</th>
+              <th style="width:90px; text-align:right;">消耗</th>
+              <th style="width:70px; text-align:right;">单量</th>
+              <th style="width:80px; text-align:right;">ROAS</th>
+              <th style="width:90px; text-align:right;">消耗</th>
+              <th style="width:70px; text-align:right;">单量</th>
+              <th style="width:80px; text-align:right;">ROAS</th>
+              <th style="width:90px; text-align:right;">消耗</th>
+              <th style="width:70px; text-align:right;">单量</th>
+              <th style="width:80px; text-align:right;">ROAS</th>
+              <th style="width:90px; text-align:right;">消耗</th>
+              <th style="width:70px; text-align:right;">单量</th>
+              <th style="width:80px; text-align:right;">ROAS</th>
+            </tr>
+          </thead>
+          <tbody id="adOrdersReportRows"></tbody>
+        </table>
+      </div>
+      <div id="adOrdersReportEmpty" class="oc-state oc-sku-detail-empty" hidden>
+        <p class="title">该产品暂无投放与订单数据</p>
+      </div>
+    </div>
+    <div class="oc-modal-foot">
+      <button type="button" id="adOrdersReportCancel" class="oc-btn ghost">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div style="display:none">
+  <div>
+    <div>
       </div>
   </div>
 </div>

@@ -2459,6 +2459,101 @@ def _build_scoped_roas_points(
     return points
 
 
+def _load_realtime_order_hourly(
+    day_start: datetime,
+    day_end: datetime,
+    *,
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+    site_codes: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Return 24 hourly order rows for the realtime trend table.
+
+    Spec: docs/superpowers/specs/2026-06-06-realtime-roas-trend-today-hourly-orders-design.md
+    """
+    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
+    product_sql, product_args = _product_filter_sql(
+        "d.product_id",
+        product_id,
+        product_ids=product_ids,
+        unmatched=unmatched_ads,
+    )
+    sites = _normalize_site_codes(site_codes)
+    order_rows = query(
+        "SELECT HOUR(" + order_time_expr + ") AS hour, "
+        "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
+        "COUNT(*) AS line_count, "
+        "SUM(COALESCE(d.quantity, 0)) AS units, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
+        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
+        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
+        "MIN(" + order_time_expr + ") AS first_order_at, "
+        "MAX(" + order_time_expr + ") AS last_order_at, "
+        "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
+        "FROM dianxiaomi_order_lines d "
+        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
+        "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
+        + product_sql +
+        "GROUP BY HOUR(" + order_time_expr + ") "
+        "ORDER BY hour",
+        tuple([day_start, day_end] + product_args),
+    )
+    orders_by_hour = {
+        int(row["hour"]): row for row in order_rows if row.get("hour") is not None
+    }
+    summary = {
+        "order_count": 0,
+        "line_count": 0,
+        "units": 0,
+        "order_revenue": 0.0,
+        "line_revenue": 0.0,
+        "shipping_revenue": 0.0,
+    }
+    first_order_at = None
+    last_order_at = None
+    last_order_updated_at = None
+    hourly: list[dict[str, Any]] = []
+    for hour in range(24):
+        row = orders_by_hour.get(hour, {})
+        order_revenue = _money(row.get("order_revenue"))
+        item = {
+            "hour": hour,
+            "window_start_at": day_start + timedelta(hours=hour),
+            "window_end_at": day_start + timedelta(hours=hour + 1),
+            "order_count": int(row.get("order_count") or 0),
+            "line_count": int(row.get("line_count") or 0),
+            "units": int(row.get("units") or 0),
+            "order_revenue": order_revenue,
+            "line_revenue": _money(row.get("line_revenue")),
+            "shipping_revenue": _money(row.get("shipping_revenue")),
+            "ad_spend": None,
+            "true_roas": None,
+        }
+        hourly.append(item)
+        for key in ("order_count", "line_count", "units"):
+            summary[key] += item[key]
+        for key in ("order_revenue", "line_revenue", "shipping_revenue"):
+            summary[key] = round(summary[key] + float(item[key]), 2)
+        if row.get("first_order_at") and (first_order_at is None or row["first_order_at"] < first_order_at):
+            first_order_at = row["first_order_at"]
+        if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
+            last_order_at = row["last_order_at"]
+        if row.get("last_order_updated_at") and (
+            last_order_updated_at is None or row["last_order_updated_at"] > last_order_updated_at
+        ):
+            last_order_updated_at = row["last_order_updated_at"]
+    return {
+        "hourly": hourly,
+        "orders_by_hour": orders_by_hour,
+        "summary": summary,
+        "first_order_at": first_order_at,
+        "last_order_at": last_order_at,
+        "last_order_updated_at": last_order_updated_at,
+    }
+
+
 def _get_realtime_order_summary(
     target: date,
     data_until: datetime,
@@ -3374,6 +3469,12 @@ def get_realtime_roas_overview(
                 product_id=normalized_product_id,
                 site_codes=normalized_site_codes,
             )
+            hourly_order_stats = _load_realtime_order_hourly(
+                day_start,
+                snapshot_at,
+                product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
+            )
             campaign_details = _get_realtime_campaign_details(
                 target,
                 snapshot_at,
@@ -3504,7 +3605,7 @@ def get_realtime_roas_overview(
                     "order_data_status": snap.get("order_data_status") or "ok",
                     "ad_data_status": snap.get("ad_data_status") or "pending_source",
                 },
-                "hourly": [],
+                "hourly": hourly_order_stats["hourly"],
                 "roas_points": roas_points,
                 "snapshots": [snap],
                 "order_details": order_details,
@@ -3542,6 +3643,11 @@ def get_realtime_roas_overview(
         shipping_revenue = _money(snap.get("shipping_revenue_usd"))
         revenue_with_shipping = _revenue_with_shipping(order_revenue, shipping_revenue)
         ad_spend = _money(snap.get("ad_spend_usd"))
+        hourly_order_stats = _load_realtime_order_hourly(
+            day_start,
+            snapshot_at,
+            site_codes=normalized_site_codes,
+        )
         order_detail_total = (
             _count_realtime_order_details(
                 target,
@@ -3672,7 +3778,7 @@ def get_realtime_roas_overview(
                 "order_data_status": snap.get("order_data_status") or "ok",
                 "ad_data_status": snap.get("ad_data_status") or "pending_source",
             },
-            "hourly": [],
+            "hourly": hourly_order_stats["hourly"],
             "roas_points": roas_points,
             "snapshots": [snap],
             "order_details": order_details,
@@ -3707,32 +3813,13 @@ def get_realtime_roas_overview(
             site_codes=normalized_site_codes,
         )
 
-    order_time_expr = "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at)"
-    product_sql, product_args = _product_filter_sql(
-        "d.product_id",
-        normalized_product_id,
+    hourly_order_stats = _load_realtime_order_hourly(
+        day_start,
+        day_end,
+        product_id=normalized_product_id,
         product_ids=launch_product_ids,
-        unmatched=launch_scope_unmatched,
-    )
-    order_rows = query(
-        "SELECT HOUR(" + order_time_expr + ") AS hour, "
-        "COUNT(DISTINCT d.dxm_package_id) AS order_count, "
-        "COUNT(*) AS line_count, "
-        "SUM(COALESCE(d.quantity, 0)) AS units, "
-        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue, "
-        "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS line_revenue, "
-        "SUM(COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)) AS shipping_revenue, "
-        "MIN(" + order_time_expr + ") AS first_order_at, "
-        "MAX(" + order_time_expr + ") AS last_order_at, "
-        "MAX(COALESCE(d.imported_at, d.updated_at, d.created_at)) AS last_order_updated_at "
-        "FROM dianxiaomi_order_lines d "
-        "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
-        "WHERE " + _site_codes_in_sql(normalized_site_codes, "d.site_code") +
-        "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
-        + product_sql +
-        "GROUP BY HOUR(" + order_time_expr + ") "
-        "ORDER BY hour",
-        tuple([day_start, day_end] + product_args),
+        unmatched_ads=launch_scope_unmatched,
+        site_codes=normalized_site_codes,
     )
     realtime_ad_summary = None
     if (
@@ -3825,7 +3912,7 @@ def get_realtime_roas_overview(
         elif launch_scope_unmatched:
             ad_rows = []
 
-    orders_by_hour = {int(row["hour"]): row for row in order_rows if row.get("hour") is not None}
+    orders_by_hour = hourly_order_stats["orders_by_hour"]
     if normalized_launch_scope:
         roas_points = _build_scoped_roas_points(
             target=target,
@@ -3839,49 +3926,15 @@ def get_realtime_roas_overview(
         )
     ad = ad_rows[0] if ad_rows else {}
     summary = {
-        "order_count": 0,
-        "line_count": 0,
-        "units": 0,
-        "order_revenue": 0.0,
-        "line_revenue": 0.0,
-        "shipping_revenue": 0.0,
+        **hourly_order_stats["summary"],
         "ad_spend": _money(ad.get("ad_spend")),
         "meta_purchase_value": _money(ad.get("meta_purchase_value")),
         "meta_purchases": int(ad.get("meta_purchases") or 0),
     }
-    first_order_at = None
-    last_order_at = None
-    last_order_updated_at = None
-    hourly: list[dict[str, Any]] = []
-    for hour in range(24):
-        row = orders_by_hour.get(hour, {})
-        order_revenue = _money(row.get("order_revenue"))
-        item = {
-            "hour": hour,
-            "window_start_at": day_start + timedelta(hours=hour),
-            "window_end_at": day_start + timedelta(hours=hour + 1),
-            "order_count": int(row.get("order_count") or 0),
-            "line_count": int(row.get("line_count") or 0),
-            "units": int(row.get("units") or 0),
-            "order_revenue": order_revenue,
-            "line_revenue": _money(row.get("line_revenue")),
-            "shipping_revenue": _money(row.get("shipping_revenue")),
-            "ad_spend": None,
-            "true_roas": None,
-        }
-        hourly.append(item)
-        for key in ("order_count", "line_count", "units"):
-            summary[key] += item[key]
-        for key in ("order_revenue", "line_revenue", "shipping_revenue"):
-            summary[key] = round(summary[key] + float(item[key]), 2)
-        if row.get("first_order_at") and (first_order_at is None or row["first_order_at"] < first_order_at):
-            first_order_at = row["first_order_at"]
-        if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
-            last_order_at = row["last_order_at"]
-        if row.get("last_order_updated_at") and (
-            last_order_updated_at is None or row["last_order_updated_at"] > last_order_updated_at
-        ):
-            last_order_updated_at = row["last_order_updated_at"]
+    first_order_at = hourly_order_stats["first_order_at"]
+    last_order_at = hourly_order_stats["last_order_at"]
+    last_order_updated_at = hourly_order_stats["last_order_updated_at"]
+    hourly = hourly_order_stats["hourly"]
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
