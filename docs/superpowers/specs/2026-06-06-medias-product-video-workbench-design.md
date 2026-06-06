@@ -42,6 +42,17 @@ Date: 2026-06-06
 - `media_items`：本地素材库视频。
 - `media_item_mk_bindings`：明空视频路径与本地素材绑定关系。
 
+工作台判断“已入库”的来源：
+
+1. 首选 `media_item_mk_bindings.mk_video_path = mingkong_material_daily_snapshots.video_path`，标记为 `media_item_mk_bindings`。
+2. 对早期没有绑定表记录的历史素材，允许产品内高置信度兜底：
+   - 明空 `video_name` 精确等于本地素材 `filename` 或 `display_name`。
+   - 明空 `video_path` basename 精确等于本地素材 `filename`、`display_name` 或 `object_key` basename。
+   - 兜底只在当前 `product_id` 的 `media_items` 内匹配，不跨产品，不做关键词、日期、人员等模糊推断。
+   - 兜底命中标记为 `media_items_legacy_product_scope`，前端展示为“历史匹配”，与绑定表命中区分。
+
+该兜底只改变工作台展示与操作入口，不自动写入 `media_item_mk_bindings`。批量历史绑定回填需另开审核流程，先展示候选再确认，避免误绑。
+
 ### Summary Ads
 
 - `media_product_ad_summary_cache`：产品整体广告状态、整体 ROAS、广告消耗。
@@ -114,10 +125,11 @@ Date: 2026-06-06
 
 1. 新页面能打开并加载卡片。
 2. 国家投放数据不重复。
-3. 未入库素材可以加入素材库。
-4. 已入库素材可以创建小语种任务。
-5. 广告弹窗能按日期范围加载汇总和明细。
-6. 新路由未登录返回 302，登录后页面 200。
+3. 绑定表命中和历史高置信度命中的素材都能在工作台显示为已入库，并展示匹配来源。
+4. 未入库素材可以加入素材库。
+5. 已入库素材可以创建小语种任务。
+6. 广告弹窗能按日期范围加载汇总和明细。
+7. 新路由未登录返回 302，登录后页面 200。
 
 ## Verification
 

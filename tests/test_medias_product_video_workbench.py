@@ -31,6 +31,7 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "X-CSRFToken" in html
     assert "vwAdModal" in html
     assert "vwTaskModal" in html
+    assert "历史匹配本地素材" in html
 
 
 def test_video_workbench_page_requires_login(authed_client_no_db):
@@ -108,12 +109,85 @@ def test_build_product_video_workbench_dedupes_language_ad_rows(monkeypatch):
     assert payload["lang_coverage"]["de"]["item_count"] == 2
     card = payload["cards"][0]
     assert card["media_item_id"] == 10
+    assert card["library_match_source"] == "media_item_mk_bindings"
     lang_codes = [row["lang"] for row in card["lang_ad_summary"]]
     assert lang_codes.count("de") == 1
     assert lang_codes.count("fr") == 1
     de_row = next(row for row in card["lang_ad_summary"] if row["lang"] == "de")
     assert de_row["media_item_ids"] == [11, 12]
     assert de_row["item_count"] == 2
+
+
+def test_build_product_video_workbench_matches_legacy_library_item_by_exact_filename(monkeypatch):
+    from web.routes.medias import material_supplement as route
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials._enrich_material_yesterday_delta",
+        lambda rows, **kwargs: None,
+    )
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            return [{"id": 320, "name": "Legacy Product", "product_code": "legacy-rjc"}]
+        if "FROM mingkong_material_daily_snapshots s" in sql:
+            return [
+                {
+                    "material_key": "mk-legacy",
+                    "video_path": "uploads2/202510/1761711986.mp4",
+                    "video_name": "2025.10.29-手机屏幕放大器-原素材-补充素材-指派-G-苏齐齐.mp4",
+                    "video_image_path": "/cover/legacy.jpg",
+                    "cumulative_90_spend": "8060.00",
+                    "video_ads_count": 10,
+                    "video_author": "苏齐齐",
+                    "video_upload_time": "2025-10-29",
+                    "yesterday_spend_delta": "0.00",
+                    "snapshot_date": "2026-06-06",
+                    "snapshot_at": datetime(2026, 6, 6, 10, 0, 0),
+                    "mk_product_id": 3200,
+                    "mk_product_name": "手机屏幕放大器",
+                    "mk_product_link": "",
+                    "main_image": "",
+                }
+            ]
+        if "FROM media_items" in sql and "WHERE product_id = %s" in sql:
+            return [
+                {
+                    "id": 191,
+                    "lang": "en",
+                    "filename": "2025.10.29-手机屏幕放大器-原素材-补充素材-指派-G-苏齐齐.mp4",
+                    "display_name": "2025.10.29-手机屏幕放大器-原素材-补充素材-指派-G-苏齐齐.mp4",
+                    "object_key": "legacy/191.mp4",
+                    "task_id": None,
+                    "created_at": datetime(2026, 4, 17, 17, 7, 34),
+                },
+                {
+                    "id": 193,
+                    "lang": "de",
+                    "filename": "2026.04.16-手机屏幕放大器-原素材-补充素材(德语)-指派-蔡靖华.mp4",
+                    "display_name": "2026.04.16-手机屏幕放大器-原素材-补充素材(德语)-指派-蔡靖华.mp4",
+                    "object_key": "legacy/193.mp4",
+                    "task_id": None,
+                    "created_at": datetime(2026, 4, 17, 17, 25, 12),
+                },
+            ]
+        if "FROM media_item_mk_bindings" in sql:
+            return []
+        if "FROM media_product_lang_ad_summary_cache" in sql:
+            return [{"lang": "de", "ad_spend_usd": "2348.08", "active_7d_ad_spend_usd": "0.00", "purchase_value_usd": "3257.30", "ad_roas": "1.387", "pushed_video_count": 0, "item_count": 1}]
+        if "FROM media_product_ad_summary_cache" in sql:
+            return [{"ad_spend_usd": "3583.78", "active_7d_ad_spend_usd": "10.00", "overall_roas": "1.6", "delivery_status": "active"}]
+        raise AssertionError(sql)
+
+    payload = route.build_product_video_workbench(320, query_fn=fake_query)
+
+    assert payload["summary"]["total_mk_videos"] == 1
+    assert payload["summary"]["in_library"] == 1
+    card = payload["cards"][0]
+    assert card["in_library"] is True
+    assert card["media_item_id"] == 191
+    assert card["library_match_source"] == "media_items_legacy_product_scope"
+    assert card["library_match_reason"] == "video_name:filename"
+    assert card["bound_item"]["match_source"] == "media_items_legacy_product_scope"
 
 
 def test_build_video_workbench_ad_detail_summarizes_date_range():
@@ -194,7 +268,7 @@ def test_video_workbench_ad_detail_rejects_too_wide_date_range():
     with pytest.raises(ValueError, match="日期范围不能超过"):
         route.build_video_workbench_ad_detail(
             321,
-            {"date_from": "2026-01-01", "date_to": "2026-06-06"},
+            {"date_from": "2025-01-01", "date_to": "2026-06-06"},
             query_fn=lambda sql, params=None: [{"id": 321, "name": "Demo", "product_code": "demo-rjc"}],
             today=date(2026, 6, 6),
         )

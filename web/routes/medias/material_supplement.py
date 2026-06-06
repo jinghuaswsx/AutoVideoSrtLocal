@@ -258,6 +258,50 @@ def _load_mk_bindings(item_ids: list[int], query_fn=db_query) -> tuple[dict[str,
     return bindings_by_path, bindings_by_item
 
 
+def _legacy_match_values_for_item(item: dict) -> list[tuple[str, str]]:
+    values: list[tuple[str, str]] = []
+    for field in ("filename", "display_name"):
+        raw = str(item.get(field) or "").strip()
+        if raw:
+            values.append((_normalize_material_name(raw), field))
+    object_key = str(item.get("object_key") or "").strip()
+    if object_key:
+        values.append((_normalize_material_name(object_key), "object_key_basename"))
+    return [(value, source) for value, source in values if len(value) >= 4]
+
+
+def _build_legacy_library_match_index(library_items: list[dict]) -> dict[str, dict]:
+    index: dict[str, dict] = {}
+    # Prefer English/original rows when several legacy rows have the same visible name.
+    sorted_items = sorted(
+        library_items,
+        key=lambda item: (
+            str(item.get("lang") or "en").strip().lower() != "en",
+            _iso(item.get("created_at")) or "",
+            int(item.get("id") or 0),
+        ),
+    )
+    for item in sorted_items:
+        for value, source in _legacy_match_values_for_item(item):
+            index.setdefault(value, {"item": item, "reason": source})
+    return index
+
+
+def _find_legacy_library_match(mk_row: dict, legacy_index: dict[str, dict]) -> tuple[dict | None, str | None]:
+    candidates: list[tuple[str, str]] = []
+    video_name = str(mk_row.get("video_name") or "").strip()
+    if video_name:
+        candidates.append((_normalize_material_name(video_name), "video_name"))
+    video_path = str(mk_row.get("video_path") or "").strip()
+    if video_path:
+        candidates.append((_normalize_material_name(video_path), "video_path_basename"))
+    for value, source in candidates:
+        match = legacy_index.get(value)
+        if match:
+            return match["item"], f"{source}:{match['reason']}"
+    return None, None
+
+
 def _load_lang_ad_summary(product_id: int, query_fn=db_query) -> dict[str, dict]:
     rows = query_fn(
         "SELECT lang, ad_spend_usd, active_7d_ad_spend_usd, purchase_value_usd, "
@@ -387,6 +431,7 @@ def build_product_video_workbench(product_id: int, *, sort_by: str = "spend_90",
     lang_items = _group_library_items_by_lang(library_items)
     language_materials = _lang_material_summary(lang_items, ad_by_lang)
     deduped_lang_ad_rows = _deduped_lang_ad_rows(lang_items, ad_by_lang)
+    legacy_match_index = _build_legacy_library_match_index(library_items)
 
     if mk_videos:
         from appcore.mingkong_materials import _enrich_material_yesterday_delta
@@ -410,23 +455,36 @@ def build_product_video_workbench(product_id: int, *, sort_by: str = "spend_90",
 
         bound_item_id = bindings_by_path.get(video_path)
         bound_item = None
+        library_match_source = None
+        library_match_reason = None
         if bound_item_id is not None:
             bound_item = next(
                 (item for item in library_items if int(item["id"]) == int(bound_item_id)),
                 None,
             )
+            library_match_source = "media_item_mk_bindings"
+            library_match_reason = "mk_video_path"
+        else:
+            bound_item, library_match_reason = _find_legacy_library_match(mk_row, legacy_match_index)
+            if bound_item:
+                bound_item_id = int(bound_item["id"])
+                library_match_source = "media_items_legacy_product_scope"
         in_library = bound_item_id is not None
         spends = _safe_float(mk_row.get("cumulative_90_spend"))
         cards.append({
             "card_id": _card_id(video_path, bound_item_id),
             "in_library": in_library,
             "media_item_id": bound_item_id,
+            "library_match_source": library_match_source,
+            "library_match_reason": library_match_reason,
             "bound_item": {
                 "id": int(bound_item["id"]),
                 "lang": bound_item.get("lang") or "en",
                 "filename": bound_item.get("filename") or "",
                 "display_name": bound_item.get("display_name") or "",
                 "task_id": bound_item.get("task_id"),
+                "match_source": library_match_source,
+                "match_reason": library_match_reason,
             } if bound_item else None,
             "mk_video": {
                 "name": mk_row.get("video_name") or "",

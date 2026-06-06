@@ -337,8 +337,11 @@
       </span>`;
     }).join('');
     const bound = card.bound_item || {};
+    const matchSource = card.library_match_source || bound.match_source || '';
+    const isLegacyMatch = matchSource === 'media_items_legacy_product_scope';
+    const tagText = inLib ? (isLegacyMatch ? '历史入库' : '已入库') : '未入库';
     const state = inLib
-      ? `已绑定本地素材 #${bound.id || card.media_item_id || '-'} ${bound.filename ? ' / ' + esc(bound.filename) : ''}`
+      ? `${isLegacyMatch ? '历史匹配本地素材' : '已绑定本地素材'} #${bound.id || card.media_item_id || '-'} ${bound.filename ? ' / ' + esc(bound.filename) : ''}`
       : '尚未加入素材库';
     const link = card.mk_product_link ? `<a class="vw-link" href="${esc(card.mk_product_link)}" target="_blank" rel="noopener noreferrer">${esc(card.mk_product_link)}</a>` : '<span class="vw-sub">无产品链接</span>';
     const media = coverUrl
@@ -354,7 +357,7 @@
          <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`;
     return `
       <div class="vw-card ${inLib ? 'is-in' : ''}" data-card-id="${esc(card.card_id)}">
-        <div class="vw-tag">${inLib ? '已入库' : '未入库'}</div>
+        <div class="vw-tag" title="${esc(isLegacyMatch ? '产品内文件名/路径精确匹配，未写入绑定表' : '')}">${tagText}</div>
         <div class="vw-title" title="${esc(mk.name || '')}">${esc(mk.name || '未命名素材')}</div>
         <div class="vw-sub">${esc(card.mk_product_name || productName || '无产品名')}</div>
         <div class="vw-sub">${link}</div>
