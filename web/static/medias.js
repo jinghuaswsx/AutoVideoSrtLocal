@@ -11662,6 +11662,6 @@ document.addEventListener('click', e => {
   const supplementBtn = e.target.closest('[data-supplement]');
   if (supplementBtn) {
     const pid = supplementBtn.dataset.supplement;
-    window.open(`/medias/products/${pid}/supplement`, '_blank');
+    window.open(`/medias/product/addvideo/${pid}`, '_blank');
   }
 });

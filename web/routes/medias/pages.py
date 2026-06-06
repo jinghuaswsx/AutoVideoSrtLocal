@@ -103,7 +103,7 @@ def translation_tasks_page(pid: int):
     )
 
 
-@bp.route("/products/<int:pid>/supplement", methods=["GET"])
+@bp.route("/product/addvideo/<int:pid>", methods=["GET"])
 @login_required
 @permission_required("medias")
 def product_supplement_page(pid: int):
