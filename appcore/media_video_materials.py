@@ -114,6 +114,11 @@ def _empty_ad_performance() -> dict[str, Any]:
         "last_7d_spend_usd": 0.0,
         "last_30d_spend_usd": 0.0,
         "purchase_value_usd": 0.0,
+        "total_result_count": 0,
+        "today_result_count": 0,
+        "yesterday_result_count": 0,
+        "last_7d_result_count": 0,
+        "last_30d_result_count": 0,
         "today_roas": None,
         "yesterday_roas": None,
         "last_7d_roas": None,
@@ -403,6 +408,7 @@ def _add_window_values(
     *,
     spend: float,
     purchase_value: float,
+    result_count: int,
     business_date: date | None,
     today: date,
 ) -> None:
@@ -413,15 +419,19 @@ def _add_window_values(
     last_30d_start = today - timedelta(days=29)
     if business_date == today:
         performance["today_spend_usd"] += spend
+        performance["today_result_count"] += result_count
         window_purchase_values["today"] += purchase_value
     if business_date == yesterday:
         performance["yesterday_spend_usd"] += spend
+        performance["yesterday_result_count"] += result_count
         window_purchase_values["yesterday"] += purchase_value
     if last_7d_start <= business_date <= today:
         performance["last_7d_spend_usd"] += spend
+        performance["last_7d_result_count"] += result_count
         window_purchase_values["last_7d"] += purchase_value
     if last_30d_start <= business_date <= today:
         performance["last_30d_spend_usd"] += spend
+        performance["last_30d_result_count"] += result_count
         window_purchase_values["last_30d"] += purchase_value
 
 
@@ -438,15 +448,18 @@ def _build_ad_performance(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     for candidate in candidates:
         spend = _float_value(candidate.get("spend_usd"))
         purchase_value = _float_value(candidate.get("purchase_value_usd"))
+        result_count = max(0, _int_value(candidate.get("result_count")))
         business_date = _date_value(candidate.get("activity_date"))
         performance["total_spend_usd"] += spend
         performance["purchase_value_usd"] += purchase_value
+        performance["total_result_count"] += result_count
         performance["matched_ad_count"] += 1
         _add_window_values(
             performance,
             window_purchase_values,
             spend=spend,
             purchase_value=purchase_value,
+            result_count=result_count,
             business_date=business_date,
             today=today,
         )
@@ -503,7 +516,7 @@ def _load_ad_candidates_for_materials(product_ids: list[int]) -> list[dict[str, 
         "       m.ad_account_id, m.ad_account_name, "
         "       CONCAT('daily:', m.id) AS metric_id, "
         "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
-        "       m.spend_usd, m.purchase_value_usd, m.market_country, m.id "
+        "       m.spend_usd, m.result_count, m.purchase_value_usd, m.market_country, m.id "
         "FROM meta_ad_daily_ad_metrics m "
         f"WHERE m.product_id IN ({placeholders}) AND COALESCE(m.spend_usd, 0) > 0 "
         "ORDER BY activity_date DESC, COALESCE(spend_usd, 0) DESC, id DESC",
@@ -536,7 +549,7 @@ def _load_realtime_ad_candidates_for_materials(product_ids: list[int]) -> list[d
         "       m.ad_account_id, m.ad_account_name, "
         "       CONCAT('realtime:', m.id) AS metric_id, "
         "       m.business_date AS activity_date, "
-        "       m.spend_usd, m.purchase_value_usd, m.country_code, m.id "
+        "       m.spend_usd, m.result_count, m.purchase_value_usd, m.country_code, m.id "
         "FROM ("
         "  SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at "
         "  FROM meta_ad_realtime_daily_ad_metrics rt "

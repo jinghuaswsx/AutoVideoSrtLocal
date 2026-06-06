@@ -93,6 +93,7 @@ def test_video_materials_table_renders_ad_performance_columns(authed_client_no_d
     assert "oc-vm-spend-head\">总消耗" in script
     assert "oc-vm-spend-label\">广告消耗" in script
     assert "oc-vm-spend-label\">ROAS" in script
+    assert "oc-vm-spend-label\">订单量" in script
     assert "总计" not in script
     assert "function marketDisplayName(code)" in script
     assert "perf.today_spend_usd" in script
@@ -103,6 +104,11 @@ def test_video_materials_table_renders_ad_performance_columns(authed_client_no_d
     assert "perf.yesterday_roas" in script
     assert "perf.last_7d_roas" in script
     assert "perf.last_30d_roas" in script
+    assert "perf.today_result_count" in script
+    assert "perf.yesterday_result_count" in script
+    assert "perf.last_7d_result_count" in script
+    assert "perf.last_30d_result_count" in script
+    assert "perf.total_result_count" in script
     assert "adCountryHtml(item)" in script
 
 

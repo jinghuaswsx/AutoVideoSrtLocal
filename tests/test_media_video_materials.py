@@ -191,6 +191,7 @@ def test_list_video_materials_attaches_material_ad_performance_windows_and_count
                     "ad_account_name": "Omurio",
                     "activity_date": date(2026, 6, 5),
                     "spend_usd": 10,
+                    "result_count": 1,
                     "purchase_value_usd": 30,
                     "market_country": "DE",
                     "id": 100,
@@ -205,6 +206,7 @@ def test_list_video_materials_attaches_material_ad_performance_windows_and_count
                     "ad_account_name": "Omurio",
                     "activity_date": date(2026, 6, 4),
                     "spend_usd": 20,
+                    "result_count": 2,
                     "purchase_value_usd": 10,
                     "market_country": "FR",
                     "id": 101,
@@ -219,6 +221,7 @@ def test_list_video_materials_attaches_material_ad_performance_windows_and_count
                     "ad_account_name": "Omurio",
                     "activity_date": date(2026, 5, 10),
                     "spend_usd": 5,
+                    "result_count": 3,
                     "purchase_value_usd": 5,
                     "market_country": None,
                     "id": 102,
@@ -229,6 +232,7 @@ def test_list_video_materials_attaches_material_ad_performance_windows_and_count
                     "ad_name": "other-material.mp4",
                     "activity_date": date(2026, 6, 5),
                     "spend_usd": 99,
+                    "result_count": 99,
                     "purchase_value_usd": 99,
                     "market_country": "DE",
                     "id": 103,
@@ -249,6 +253,11 @@ def test_list_video_materials_attaches_material_ad_performance_windows_and_count
     assert perf["last_7d_spend_usd"] == 30.0
     assert perf["last_30d_spend_usd"] == 35.0
     assert perf["purchase_value_usd"] == 45.0
+    assert perf["today_result_count"] == 1
+    assert perf["yesterday_result_count"] == 2
+    assert perf["last_7d_result_count"] == 3
+    assert perf["last_30d_result_count"] == 6
+    assert perf["total_result_count"] == 6
     assert perf["roas"] == 1.2857
     assert perf["today_roas"] == 3.0
     assert perf["yesterday_roas"] == 0.5
@@ -331,6 +340,7 @@ def test_list_video_materials_merges_latest_realtime_ad_metrics_when_table_exist
                     "ad_account_name": "Realtime",
                     "activity_date": date(2026, 6, 5),
                     "spend_usd": 50,
+                    "result_count": 5,
                     "purchase_value_usd": 100,
                     "country_code": "DE",
                     "id": 200,
@@ -348,6 +358,7 @@ def test_list_video_materials_merges_latest_realtime_ad_metrics_when_table_exist
                     "ad_account_name": "Daily",
                     "activity_date": date(2026, 6, 4),
                     "spend_usd": 20,
+                    "result_count": 2,
                     "purchase_value_usd": 20,
                     "market_country": "FR",
                     "id": 100,
@@ -365,6 +376,10 @@ def test_list_video_materials_merges_latest_realtime_ad_metrics_when_table_exist
     assert perf["total_spend_usd"] == 70.0
     assert perf["today_spend_usd"] == 50.0
     assert perf["yesterday_spend_usd"] == 20.0
+    assert perf["today_result_count"] == 5
+    assert perf["yesterday_result_count"] == 2
+    assert perf["last_7d_result_count"] == 7
+    assert perf["total_result_count"] == 7
     assert perf["today_roas"] == 2.0
     assert perf["yesterday_roas"] == 1.0
     assert perf["last_7d_roas"] == 1.7143

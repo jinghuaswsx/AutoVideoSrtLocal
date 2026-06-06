@@ -294,6 +294,12 @@
     return num.toFixed(2);
   }
 
+  function fmtAdResultCount(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return '0';
+    return Math.round(num).toLocaleString('en-US');
+  }
+
   function marketDisplayName(code) {
     const upper = String(code || '').trim().toUpperCase();
     if (!upper) return '-';
@@ -306,6 +312,10 @@
 
   function adRoasCell(value) {
     return `<span class="oc-vm-spend-value roas">${esc(fmtAdRoas(value))}</span>`;
+  }
+
+  function adResultCell(value) {
+    return `<span class="oc-vm-spend-value">${esc(fmtAdResultCount(value))}</span>`;
   }
 
   function adSpendHtml(item) {
@@ -330,6 +340,12 @@
         ${adRoasCell(perf.last_7d_roas)}
         ${adRoasCell(perf.last_30d_roas)}
         ${adRoasCell(perf.roas)}
+        <span class="oc-vm-spend-label">订单量</span>
+        ${adResultCell(perf.today_result_count)}
+        ${adResultCell(perf.yesterday_result_count)}
+        ${adResultCell(perf.last_7d_result_count)}
+        ${adResultCell(perf.last_30d_result_count)}
+        ${adResultCell(perf.total_result_count)}
       </div>
     `;
   }
