@@ -1002,6 +1002,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-lang-roas { color:var(--oc-fg-muted); white-space:nowrap; display: inline-flex; align-items: baseline; gap: 1px; }
 .oc-lang-roas strong { font-size: 13px; font-weight: 700; color: var(--oc-fg); margin-right: 4px; margin-left: 2px; }
 .oc-lang-roas .oc-lang-label { color: var(--oc-fg-subtle); opacity: 0.85; }
+.oc-roas-highlight {
+  color: #2563eb !important;
+  font-weight: bold !important;
+  font-size: 1.5em !important;
+  line-height: 1;
+}
 .oc-lang-push-count { color:var(--oc-fg); font-weight:700; }
 .oc-lang-push-zero { color:var(--oc-danger-fg); font-size:24px; font-weight:900; line-height:1; }
 .oc-lang-empty { font-size:12px; }
@@ -4417,12 +4423,26 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       </button>
     </div>
     <div class="oc-modal-body">
-      <div class="oc-ad-orders-report-meta">
-        <dl class="oc-sku-meta-grid">
-          <div><dt>产品 ID</dt><dd id="adOrdersReportProductId" class="mono">—</dd></div>
-          <div><dt>产品编码</dt><dd id="adOrdersReportProductCode" class="mono">—</dd></div>
-          <div><dt>产品名称</dt><dd id="adOrdersReportProductName">—</dd></div>
-        </dl>
+      <div class="oc-ad-orders-report-meta-layout" style="display:flex; gap:24px; align-items:flex-start; margin-bottom:16px;">
+        <div id="adOrdersReportCoverWrapper" style="width:200px; height:200px; border:1px solid var(--oc-border); border-radius:8px; overflow:hidden; background:var(--oc-bg-subtle); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <img id="adOrdersReportCover" style="width:100%; height:100%; object-fit:contain;" src="" alt="产品主图">
+        </div>
+        <div style="flex:1; display:flex; flex-direction:column; gap:12px; min-width:0; padding-top:4px;">
+          <div style="font-size:13px; color:var(--oc-fg-muted);">产品 ID: <span id="adOrdersReportProductId" class="mono" style="font-weight:600; color:var(--oc-fg);">—</span></div>
+          <div>
+            <div style="font-size:13px; color:var(--oc-fg-muted); margin-bottom:4px;">产品编码</div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span id="adOrdersReportProductCode" class="mono" style="font-size:26px; font-weight:bold; color:#2563eb; line-height:1.2; word-break:break-all;">—</span>
+              <button type="button" id="adOrdersReportCopyCode" class="oc-btn icon-only ghost" title="复制产品编码" style="width:32px; height:32px; padding:0; border:none; background:transparent; color:#2563eb; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;">
+                <svg width="18" height="18"><use href="#ic-copy"/></svg>
+              </button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:13px; color:var(--oc-fg-muted); margin-bottom:4px;">产品名称</div>
+            <div id="adOrdersReportProductName" style="font-size:26px; font-weight:bold; color:#2563eb; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;">—</div>
+          </div>
+        </div>
       </div>
       <div class="oc-ad-orders-report-table-wrap">
         <table class="oc-table oc-ad-orders-report-table">

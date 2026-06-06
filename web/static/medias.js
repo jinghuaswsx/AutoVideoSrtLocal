@@ -504,7 +504,9 @@
   function fmtAdRoas(value) {
     if (value === null || value === undefined || value === '') return '<span class="muted">—</span>';
     const num = Number(value);
-    return isFinite(num) ? num.toFixed(2) : '<span class="muted">—</span>';
+    if (!isFinite(num)) return '<span class="muted">—</span>';
+    if (num <= 0) return num.toFixed(2);
+    return `<span class="oc-roas-highlight">${num.toFixed(2)}</span>`;
   }
 
   function fmtAdSpend(value) {
@@ -3323,15 +3325,16 @@
     if (!calc || calc.effective_roas === null || calc.effective_roas === undefined) return '<span class="muted">—</span>';
     const num = Number(calc.effective_roas);
     if (!isFinite(num)) return '<span class="muted">—</span>';
-    const cls = num <= 1.5 ? 'roas-good' : (num <= 3 ? '' : 'roas-bad');
     const basisLabel = calc.effective_basis === 'actual' ? '小包实费' : '小包预估';
-    return `<span class="${cls}">${num.toFixed(2)}<span class="muted" style="font-size:11px;"> ${basisLabel}</span></span>`;
+    if (num <= 0) {
+      return `<span>${num.toFixed(2)}</span><span class="muted" style="font-size:11px;"> ${basisLabel}</span>`;
+    }
+    return `<span class="oc-roas-highlight">${num.toFixed(2)}</span><span class="muted" style="font-size:11px;"> ${basisLabel}</span>`;
   }
   function fmtActualBreakevenRoas(snapshot) {
     if (!snapshot || snapshot.value === null || snapshot.value === undefined) return '<span class="muted">—</span>';
     const num = Number(snapshot.value);
     if (!isFinite(num)) return '<span class="muted">—</span>';
-    const cls = num <= 1.5 ? 'roas-good' : (num <= 3 ? '' : 'roas-bad');
     const sourceLabel = snapshot.fee_source === 'real'
       ? '手续费真实'
       : (snapshot.fee_source === 'mixed' ? '手续费部分真实' : '手续费7%估算');
@@ -3342,7 +3345,10 @@
       ? `${snapshot.orders_count}单`
       : '';
     const title = [windowText, ordersText].filter(Boolean).join(' · ');
-    return `<span class="${cls}" title="${escapeHtml(title)}">${num.toFixed(2)}<span class="muted" style="font-size:11px;"> ${sourceLabel}</span></span>`;
+    if (num <= 0) {
+      return `<span title="${escapeHtml(title)}">${num.toFixed(2)}</span><span class="muted" style="font-size:11px;"> ${sourceLabel}</span>`;
+    }
+    return `<span class="oc-roas-highlight" title="${escapeHtml(title)}">${num.toFixed(2)}</span><span class="muted" style="font-size:11px;"> ${sourceLabel}</span>`;
   }
   function editValue(value) {
     return value === null || value === undefined ? '' : String(value);
@@ -3546,6 +3552,24 @@
     document.getElementById('adOrdersReportProductCode').textContent = product.product_code || '—';
     document.getElementById('adOrdersReportProductName').textContent = product.name || '—';
 
+    const coverUrl = safeMediaSrc(product.cover_thumbnail_url);
+    const coverWrapper = document.getElementById('adOrdersReportCoverWrapper');
+    const coverImg = document.getElementById('adOrdersReportCover');
+    if (coverWrapper && coverImg) {
+      if (coverUrl) {
+        coverImg.src = coverUrl;
+        coverWrapper.style.display = 'flex';
+      } else {
+        coverImg.src = '';
+        coverWrapper.style.display = 'none';
+      }
+    }
+
+    const copyBtn = document.getElementById('adOrdersReportCopyCode');
+    if (copyBtn) {
+      copyBtn.dataset.productCode = product.product_code || '';
+    }
+
     const tbody = document.getElementById('adOrdersReportRows');
     const empty = document.getElementById('adOrdersReportEmpty');
     
@@ -3584,8 +3608,13 @@
           let roasStr = '<span class="muted">—</span>';
           if (roas !== null && roas !== undefined) {
             const roasNum = Number(roas);
-            const cls = roasNum <= 1.5 ? 'roas-good' : (roasNum <= 3.0 ? '' : 'roas-bad');
-            roasStr = `<span class="${cls}">${roasNum.toFixed(2)}</span>`;
+            if (isFinite(roasNum)) {
+              if (roasNum <= 0) {
+                roasStr = roasNum.toFixed(2);
+              } else {
+                roasStr = `<span class="oc-roas-highlight">${roasNum.toFixed(2)}</span>`;
+              }
+            }
           }
           return `
             <td style="text-align: right; font-family: var(--font-mono, ui-monospace, Consolas, monospace);">${spendStr}</td>
@@ -3652,6 +3681,13 @@
     if (reportClose) reportClose.addEventListener('click', closeAdOrdersReportModal);
     if (reportCancel) reportCancel.addEventListener('click', closeAdOrdersReportModal);
     if (reportMask) reportMask.addEventListener('click', (e) => { if (e.target === reportMask) closeAdOrdersReportModal(); });
+
+    const reportCopyCode = document.getElementById('adOrdersReportCopyCode');
+    if (reportCopyCode) {
+      reportCopyCode.addEventListener('click', () => {
+        copyProductCode(reportCopyCode);
+      });
+    }
 
     const close = document.getElementById('skuDetailClose');
     const cancel = document.getElementById('skuDetailCancel');
