@@ -1028,6 +1028,9 @@ def list_task_center_items(
     elif bucket == "done":
         where.append("t.status IN (%s, %s, %s)")
         args.extend([PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE])
+    elif bucket == "cancelled":
+        where.append("t.status IN (%s, %s)")
+        args.extend([PARENT_CANCELLED, CHILD_CANCELLED])
     elif bucket == TASK_PENDING_PUSH:
         add_pending_push_filter()
     elif bucket:
