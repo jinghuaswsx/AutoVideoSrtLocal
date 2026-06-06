@@ -3473,7 +3473,6 @@ function tcDetailButtons(task, isParent) {
       const productId = Number(task.media_product_id || 0);
       btns.push(`<button class="tc-btn" onclick="tcChildJumpTranslate(${id}, '${country}', ${productId}, '${productCode}')">翻译</button>`);
       btns.push(`<button class="tc-btn" onclick="tcChildJumpHistory(${id}, '${country}', ${productId}, '${productCode}')">翻译任务记录</button>`);
-      btns.push(`<button class="tc-btn tc-btn--primary" onclick="tcAction('child', ${id}, 'submit')">提交完成</button>`);
     }
     if (TC_IS_ADMIN && ['blocked','assigned','review'].includes(status)) {
       btns.push(`<button class="tc-btn tc-btn--danger" onclick="tcOpenReason('child', ${id}, 'cancel')">取消任务</button>`);
