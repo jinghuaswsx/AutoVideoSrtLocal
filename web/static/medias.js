@@ -11658,9 +11658,10 @@
 
 // ======== 补素材 (Supplement Materials) Modal ========
 
-const { escapeHtml, fetchJSON } = window.MediasRawSources;
+(function() {
+  const { escapeHtml, fetchJSON } = window.MediasRawSources;
 
-function openSupplementModal(productId, productCode, productName) {
+  function openSupplementModal(productId, productCode, productName) {
   const mask = document.getElementById('supplementModalMask');
   if (!mask) return;
   mask.hidden = false;
@@ -11983,9 +11984,13 @@ document.addEventListener('click', e => {
 });
 
 // Close on Escape
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    const mask = document.getElementById('supplementModalMask');
-    if (mask && !mask.hidden) closeSupplementModal();
-  }
-});
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const mask = document.getElementById('supplementModalMask');
+      if (mask && !mask.hidden) closeSupplementModal();
+    }
+  });
+
+  window.openSupplementModal = openSupplementModal;
+  window.closeSupplementModal = closeSupplementModal;
+})();
