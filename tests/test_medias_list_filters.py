@@ -230,7 +230,9 @@ def test_medias_list_html_has_filter_dropdowns():
     assert "delivery_status" in js
     assert "oc-delivery-pill" in js
     assert "oc-lang-push-zero" in js
-    assert "总体ROAS" in js
+    assert "订单ROAS" in js
+    assert "广告ROAS" in js
+    assert "总体ROAS" not in js
 
 
 def test_medias_toolbar_compacts_actions_and_filters():
