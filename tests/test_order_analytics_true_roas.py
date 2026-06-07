@@ -1343,6 +1343,18 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
                     "first_order_at": datetime(2026, 5, 7, 16, 5),
                     "last_order_at": datetime(2026, 5, 7, 16, 55),
                     "last_order_updated_at": datetime(2026, 5, 7, 20, 35),
+                },
+                {
+                    "hour": 1,
+                    "order_count": 1,
+                    "line_count": 1,
+                    "units": 1,
+                    "order_revenue": 70.0,
+                    "line_revenue": 70.0,
+                    "shipping_revenue": 0.0,
+                    "first_order_at": datetime(2026, 5, 7, 17, 5),
+                    "last_order_at": datetime(2026, 5, 7, 17, 55),
+                    "last_order_updated_at": datetime(2026, 5, 7, 20, 35),
                 }
             ]
         if "FROM roi_hourly_sync_runs" in sql:
@@ -1353,7 +1365,7 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
             assert args == (target, snapshot_at)
             return [
                 {
-                    "snapshot_at": datetime(2026, 5, 7, 17, 0),
+                    "snapshot_at": datetime(2026, 5, 7, 16, 40),
                     "ad_account_id": "act_newjoy",
                     "ad_account_name": "Newjoy",
                     "campaign_id": "cmp_1",
@@ -1361,6 +1373,19 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
                     "normalized_campaign_code": "newjoy-rjc",
                     "result_count": 1,
                     "spend_usd": 70.0,
+                    "purchase_value_usd": 0,
+                    "impressions": 100,
+                    "clicks": 5,
+                },
+                {
+                    "snapshot_at": datetime(2026, 5, 7, 17, 40),
+                    "ad_account_id": "act_newjoy",
+                    "ad_account_name": "Newjoy",
+                    "campaign_id": "cmp_1",
+                    "campaign_name": "newjoy-rjc",
+                    "normalized_campaign_code": "newjoy-rjc",
+                    "result_count": 1,
+                    "spend_usd": 100.0,
                     "purchase_value_usd": 0,
                     "impressions": 100,
                     "clicks": 5,
@@ -1374,6 +1399,19 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
                     "normalized_campaign_code": "omurio-rjc",
                     "result_count": 1,
                     "spend_usd": 40.0,
+                    "purchase_value_usd": 0,
+                    "impressions": 100,
+                    "clicks": 5,
+                },
+                {
+                    "snapshot_at": datetime(2026, 5, 7, 17, 20),
+                    "ad_account_id": "act_omurio",
+                    "ad_account_name": "Omurio",
+                    "campaign_id": "cmp_2",
+                    "campaign_name": "omurio-rjc",
+                    "normalized_campaign_code": "omurio-rjc",
+                    "result_count": 1,
+                    "spend_usd": 45.0,
                     "purchase_value_usd": 0,
                     "impressions": 100,
                     "clicks": 5,
@@ -1405,6 +1443,8 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
     assert result["hourly"][16]["order_count"] == 0
     assert result["hourly"][0]["ad_spend"] == 110.0
     assert result["hourly"][0]["true_roas"] == 4.0
+    assert result["hourly"][1]["ad_spend"] == 35.0
+    assert result["hourly"][1]["true_roas"] == 2.0
     assert result["hourly"][16]["ad_spend"] is None
     assert result["scope"]["hourly_ad_ready"] is True
     assert result["snapshots"][0]["id"] == 701
