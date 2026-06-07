@@ -23,6 +23,7 @@ BASE_RATE = Decimal("0.025")
 FIXED_FEE = Decimal("0.30")
 CROSS_BORDER_RATE = Decimal("0.010")
 CURRENCY_CONVERSION_RATE = Decimal("0.015")
+FORWARD_ESTIMATE_PERCENTAGE_RATE_MULTIPLIER = Decimal("1.076")
 
 DEFAULT_STORE_COUNTRY = "US"
 DEFAULT_SETTLEMENT_CURRENCY = "USD"
@@ -81,6 +82,10 @@ def estimate_fee_for_buyer_country(
 
     buyer_country 缺失时退化为"未知卡 + USD 结账" → Tier B_estimated。
     未来 CSV 反推校验可据此校准国家假设。
+
+    2026-06-06 校准：店小秘订单行没有支付方式字段，无法在前向估算时
+    精确识别 PayPal。按 2026-05 真实 Payments 数据，对百分比费率部分
+    乘以 FORWARD_ESTIMATE_PERCENTAGE_RATE_MULTIPLIER；固定费仍保持 $0.30。
     """
     if not buyer_country:
         return calculate_shopify_fee(
@@ -89,6 +94,7 @@ def estimate_fee_for_buyer_country(
             card_country=None,
             settlement_currency=settlement_currency,
             store_country=store_country,
+            percentage_rate_multiplier=FORWARD_ESTIMATE_PERCENTAGE_RATE_MULTIPLIER,
         )
     presentment_currency = infer_presentment_currency_from_country(buyer_country)
     return calculate_shopify_fee(
@@ -97,6 +103,7 @@ def estimate_fee_for_buyer_country(
         card_country=buyer_country,
         settlement_currency=settlement_currency,
         store_country=store_country,
+        percentage_rate_multiplier=FORWARD_ESTIMATE_PERCENTAGE_RATE_MULTIPLIER,
     )
 
 
@@ -106,8 +113,10 @@ def split_shopify_fee_for_order(
     buyer_country: str | None,
     settlement_currency: str = DEFAULT_SETTLEMENT_CURRENCY,
     store_country: str = DEFAULT_STORE_COUNTRY,
+    percentage_rate_multiplier: Any = FORWARD_ESTIMATE_PERCENTAGE_RATE_MULTIPLIER,
 ) -> dict[str, Any]:
     amount_d = _to_decimal(amount)
+    multiplier = _to_decimal(percentage_rate_multiplier)
     settlement_currency = settlement_currency.upper()
     store_country = store_country.upper()
     normalized_country = buyer_country.strip().upper() if buyer_country else None
@@ -138,12 +147,12 @@ def split_shopify_fee_for_order(
         is_cross_border = True
 
     needs_conversion = presentment_currency.upper() != settlement_currency
-    platform_fee_d = amount_d * BASE_RATE + FIXED_FEE
+    platform_fee_d = amount_d * BASE_RATE * multiplier + FIXED_FEE
     international_card_fee_d = (
-        amount_d * CROSS_BORDER_RATE if is_cross_border else Decimal("0")
+        amount_d * CROSS_BORDER_RATE * multiplier if is_cross_border else Decimal("0")
     )
     currency_conversion_fee_d = (
-        amount_d * CURRENCY_CONVERSION_RATE if needs_conversion else Decimal("0")
+        amount_d * CURRENCY_CONVERSION_RATE * multiplier if needs_conversion else Decimal("0")
     )
     platform_fee = _round2(platform_fee_d)
     international_card_fee = _round2(international_card_fee_d)
@@ -203,6 +212,7 @@ def calculate_shopify_fee(
     *,
     settlement_currency: str = DEFAULT_SETTLEMENT_CURRENCY,
     store_country: str = DEFAULT_STORE_COUNTRY,
+    percentage_rate_multiplier: Any = Decimal("1"),
 ) -> dict[str, Any]:
     """计算 Shopify Payments 单笔交易手续费、净到账、tier、费率分解。
 
@@ -212,12 +222,14 @@ def calculate_shopify_fee(
         card_country: 发卡国 ISO 2-letter；None 表示未知，按保守估算（国际卡）
         settlement_currency: 店铺结算币种，默认 USD
         store_country: 店铺所在国，默认 US
+        percentage_rate_multiplier: 只乘百分比费率部分；固定费不放大。
 
     Returns:
         {amount, fee, net, tier, rate_breakdown}
         tier 在 card_country=None 时附 _estimated 后缀
     """
     amount_d = _to_decimal(amount)
+    multiplier = _to_decimal(percentage_rate_multiplier)
     needs_conversion = presentment_currency.upper() != settlement_currency.upper()
     if card_country is None:
         is_cross_border = True
@@ -226,12 +238,13 @@ def calculate_shopify_fee(
         is_cross_border = card_country.upper() != store_country.upper()
         tier_suffix = ""
 
-    rate = BASE_RATE
+    uncalibrated_rate = BASE_RATE
     if is_cross_border:
-        rate += CROSS_BORDER_RATE
+        uncalibrated_rate += CROSS_BORDER_RATE
     if needs_conversion:
-        rate += CURRENCY_CONVERSION_RATE
+        uncalibrated_rate += CURRENCY_CONVERSION_RATE
 
+    rate = uncalibrated_rate * multiplier
     fee_d = amount_d * rate + FIXED_FEE
     fee = _round2(fee_d)
     net = _round2(amount_d - Decimal(str(fee)))
@@ -253,6 +266,8 @@ def calculate_shopify_fee(
             "base_rate": float(BASE_RATE),
             "cross_border_rate": float(CROSS_BORDER_RATE) if is_cross_border else 0.0,
             "currency_conversion_rate": float(CURRENCY_CONVERSION_RATE) if needs_conversion else 0.0,
+            "uncalibrated_total_percentage_rate": float(uncalibrated_rate),
+            "percentage_rate_multiplier": float(multiplier),
             "total_percentage_rate": float(rate),
             "fixed_fee": float(FIXED_FEE),
         },

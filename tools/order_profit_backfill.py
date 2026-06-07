@@ -46,8 +46,6 @@ from appcore.order_analytics.profit_repository import (
     start_profit_run,
     upsert_profit_line,
 )
-from appcore.product_roas import get_configured_rmb_per_usd
-
 log = logging.getLogger(__name__)
 
 
@@ -216,7 +214,6 @@ def backfill(
     """主回填函数。返回汇总统计。"""
     from appcore.order_analytics.profit_calculation import get_configured_return_reserve_rate
     manual_rate = Decimal(str(rmb_per_usd)) if rmb_per_usd is not None else None
-    configured_fallback_rate = get_configured_rmb_per_usd()
     run_rate = manual_rate if manual_rate is not None else None
     if return_reserve_rate is None:
         return_reserve_rate = get_configured_return_reserve_rate()
@@ -258,7 +255,6 @@ def backfill(
                 ]
                 rate_lookup_map = exchange_rates.get_usd_to_cny_map(
                     business_dates,
-                    fallback_rate=configured_fallback_rate,
                 )
             else:
                 rate_lookup_map = {}
@@ -273,9 +269,9 @@ def backfill(
                     else:
                         rate_lookup = rate_lookup_map.get(
                             biz_for_rate,
-                            exchange_rates.configured_fallback_lookup(configured_fallback_rate),
+                            exchange_rates.configured_fallback_lookup(),
                         )
-                    if rate_lookup.source == "configured_fallback":
+                    if rate_lookup.source in {"fallback_30d_average", "configured_fallback"}:
                         exchange_rate_stats["fallback_lines"] += 1
                     result, biz_date = _process_line(
                         line,

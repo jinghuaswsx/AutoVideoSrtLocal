@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Iterable
@@ -20,6 +20,12 @@ log = logging.getLogger(__name__)
 
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 DEFAULT_TOLERANCE_RATIO = Decimal("0.05")
+FALLBACK_WINDOW_DAYS = 30
+FALLBACK_CALCULATION_METHOD = "daily_archive_30d_average"
+FALLBACK_LOGIC_DESCRIPTION = (
+    "最近 30 天已归档 USD/CNY 基准汇率的算术平均值；"
+    "缺当天基准时优先使用该值；无样本时退回系统配置汇率"
+)
 FRANKFURTER_URL = "https://api.frankfurter.app/latest?from=USD&to=CNY"
 OPEN_ER_API_URL = "https://open.er-api.com/v6/latest/USD"
 FLOATRATES_URL = "https://www.floatrates.com/daily/usd.json"
@@ -336,7 +342,7 @@ def manual_rate_lookup(rate: Any) -> ExchangeRateLookup:
     )
 
 
-def configured_fallback_lookup(rate: Any | None = None) -> ExchangeRateLookup:
+def _configured_setting_lookup(rate: Any | None = None) -> ExchangeRateLookup:
     if rate is None:
         from appcore.product_roas import get_configured_rmb_per_usd
 
@@ -345,6 +351,19 @@ def configured_fallback_lookup(rate: Any | None = None) -> ExchangeRateLookup:
         rate=_positive_decimal(rate, label="configured fallback rmb_per_usd"),
         source="configured_fallback",
     )
+
+
+def configured_fallback_lookup(rate: Any | None = None) -> ExchangeRateLookup:
+    """Return the effective fallback lookup.
+
+    With no explicit legacy rate, analytics uses the dynamic 30-day average
+    fallback first. The old system setting remains the final guardrail.
+    """
+    if rate is None:
+        dynamic = get_current_usd_cny_fallback_lookup()
+        if dynamic is not None:
+            return dynamic
+    return _configured_setting_lookup(rate)
 
 
 def _date_from_db(value: Any) -> date | None:
@@ -362,6 +381,15 @@ def _lookup_from_row(row: dict[str, Any]) -> ExchangeRateLookup:
         rate=_positive_decimal(row.get("usd_to_cny"), label="usd_to_cny"),
         source="daily_archive",
         rate_date=_date_from_db(row.get("rate_date")),
+        source_id=int(row["id"]) if row.get("id") is not None else None,
+    )
+
+
+def _fallback_lookup_from_row(row: dict[str, Any]) -> ExchangeRateLookup:
+    return ExchangeRateLookup(
+        rate=_positive_decimal(row.get("usd_to_cny"), label="fallback usd_to_cny"),
+        source="fallback_30d_average",
+        rate_date=_date_from_db(row.get("fallback_date")),
         source_id=int(row["id"]) if row.get("id") is not None else None,
     )
 
@@ -413,6 +441,167 @@ def list_usd_cny_daily_rates(*, limit: int = 30) -> list[dict[str, Any]]:
             "source_run_id": int(row["source_run_id"]) if row.get("source_run_id") is not None else None,
         })
     return out
+
+
+def _datetime_or_text(value: Any) -> Any:
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
+def _fallback_row_summary(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]) if row.get("id") is not None else None,
+        "fallback_date": _date_from_db(row.get("fallback_date")).isoformat()
+        if row.get("fallback_date") is not None else None,
+        "usd_to_cny": float(row.get("usd_to_cny") or 0),
+        "window_start": _date_from_db(row.get("window_start")).isoformat()
+        if row.get("window_start") is not None else None,
+        "window_end": _date_from_db(row.get("window_end")).isoformat()
+        if row.get("window_end") is not None else None,
+        "sample_count": int(row.get("sample_count") or 0),
+        "source_rate_ids": _json_value(row.get("source_rate_ids_json")) or [],
+        "calculation_method": row.get("calculation_method") or FALLBACK_CALCULATION_METHOD,
+        "logic": FALLBACK_LOGIC_DESCRIPTION,
+        "synced_at": _datetime_or_text(row.get("synced_at")),
+        "updated_at": _datetime_or_text(row.get("updated_at")),
+        "source_run_id": int(row["source_run_id"]) if row.get("source_run_id") is not None else None,
+    }
+
+
+def refresh_usd_cny_fallback_rate(
+    *,
+    fallback_date: date | None = None,
+    window_days: int = FALLBACK_WINDOW_DAYS,
+    source_run_id: int | None = None,
+) -> dict[str, Any]:
+    """Upsert the dynamic fallback from recent validated daily archives."""
+    effective_date = fallback_date or _today_beijing()
+    safe_window_days = max(1, int(window_days or FALLBACK_WINDOW_DAYS))
+    window_start = effective_date - timedelta(days=safe_window_days - 1)
+    rows = query(
+        """
+        SELECT id, rate_date, usd_to_cny
+        FROM usd_cny_daily_exchange_rates
+        WHERE rate_date BETWEEN %s AND %s
+        ORDER BY rate_date ASC
+        """,
+        (window_start, effective_date),
+    )
+    if not rows:
+        raise RuntimeError(
+            "cannot refresh USD/CNY fallback rate: no validated daily archive samples"
+        )
+    total = sum((_positive_decimal(row.get("usd_to_cny"), label="usd_to_cny") for row in rows), Decimal("0"))
+    average = total / Decimal(len(rows))
+    source_ids = [int(row["id"]) for row in rows if row.get("id") is not None]
+    execute(
+        """
+        INSERT INTO usd_cny_fallback_exchange_rates (
+          fallback_date, usd_to_cny,
+          window_start, window_end, sample_count, source_rate_ids_json,
+          calculation_method, source_run_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          usd_to_cny=VALUES(usd_to_cny),
+          window_start=VALUES(window_start),
+          window_end=VALUES(window_end),
+          sample_count=VALUES(sample_count),
+          source_rate_ids_json=VALUES(source_rate_ids_json),
+          calculation_method=VALUES(calculation_method),
+          source_run_id=VALUES(source_run_id),
+          synced_at=NOW(),
+          updated_at=NOW()
+        """,
+        (
+            effective_date,
+            _q6(average),
+            window_start,
+            effective_date,
+            len(rows),
+            json.dumps(source_ids, ensure_ascii=False),
+            FALLBACK_CALCULATION_METHOD,
+            source_run_id,
+        ),
+    )
+    row = query_one(
+        """
+        SELECT id, fallback_date, usd_to_cny, window_start, window_end,
+               sample_count, source_rate_ids_json, calculation_method,
+               synced_at, updated_at, source_run_id
+        FROM usd_cny_fallback_exchange_rates
+        WHERE fallback_date = %s
+        """,
+        (effective_date,),
+    )
+    if row:
+        return _fallback_row_summary(row)
+    return {
+        "fallback_date": effective_date.isoformat(),
+        "usd_to_cny": float(_q6(average)),
+        "window_start": window_start.isoformat(),
+        "window_end": effective_date.isoformat(),
+        "sample_count": len(rows),
+        "source_rate_ids": source_ids,
+        "calculation_method": FALLBACK_CALCULATION_METHOD,
+        "logic": FALLBACK_LOGIC_DESCRIPTION,
+        "source_run_id": source_run_id,
+    }
+
+
+def get_current_usd_cny_fallback_lookup() -> ExchangeRateLookup | None:
+    try:
+        row = query_one(
+            """
+            SELECT id, fallback_date, usd_to_cny
+            FROM usd_cny_fallback_exchange_rates
+            ORDER BY fallback_date DESC
+            LIMIT 1
+            """
+        )
+    except Exception:
+        log.warning("failed to read usd_cny_fallback_exchange_rates", exc_info=True)
+        return None
+    if not row:
+        return None
+    return _fallback_lookup_from_row(row)
+
+
+def list_usd_cny_fallback_rates(*, limit: int = 30) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(365, int(limit or 30)))
+    rows = query(
+        """
+        SELECT id, fallback_date, usd_to_cny, window_start, window_end,
+               sample_count, source_rate_ids_json, calculation_method,
+               synced_at, updated_at, source_run_id
+        FROM usd_cny_fallback_exchange_rates
+        ORDER BY fallback_date DESC
+        LIMIT %s
+        """,
+        (safe_limit,),
+    )
+    return [_fallback_row_summary(row) for row in rows or []]
+
+
+def exchange_rate_admin_payload(*, limit: int = 30) -> dict[str, Any]:
+    safe_limit = max(1, min(365, int(limit or 30)))
+    fallback_history = list_usd_cny_fallback_rates(limit=safe_limit)
+    return {
+        "limit": safe_limit,
+        "rows": list_usd_cny_daily_rates(limit=safe_limit),
+        "current_fallback": fallback_history[0] if fallback_history else None,
+        "fallback_history": fallback_history,
+        "fallback_logic": {
+            "calculation_method": FALLBACK_CALCULATION_METHOD,
+            "window_days": FALLBACK_WINDOW_DAYS,
+            "description": FALLBACK_LOGIC_DESCRIPTION,
+            "fallback_order": [
+                "daily_archive",
+                "fallback_30d_average",
+                "configured_fallback",
+            ],
+        },
+    }
 
 
 def get_usd_to_cny_for_date(

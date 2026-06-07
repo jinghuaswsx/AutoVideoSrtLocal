@@ -18,7 +18,7 @@
 3. 小时订单口径保持现有明细分支一致：按 Meta 业务日窗口内 `COALESCE(order_paid_at, attribution_time_at, order_created_at)` 分组，`COUNT(DISTINCT dxm_package_id)` 计订单数。
 4. 小时行必须按 Meta 业务日窗口的相对小时分组：`00:00-01:00` 代表 `day_start_at` 到 `day_start_at + 1h`，不是北京时间自然日 00:00 到 01:00。对于 16:00 切日的当前业务日，昨天 16:00-17:00 的订单应进入第 0 小时行，不能显示在表格下半段造成“未来小时已有数据”的误解。
 5. 前端「当日节点记录」第一列必须明示时区和对应关系：表头标注广告日小时、北京时间和德国柏林时间；每行展示广告日相对小时（例如 `00:00-01:00 广告日小时`）、后端 `window_start_at` / `window_end_at` 对应的北京时间范围，以及同一窗口换算到 `Europe/Berlin` 的德国柏林时间范围，避免把业务日相对小时误读为北京时间或德国自然日小时。
-6. 本次不拆分小时广告费。快照分支的 `hourly[*].ad_spend` 和 `hourly[*].true_roas` 可保持空值；图表仍使用 `roi_daily_roas_nodes` / `roas_points`。
+6. 本次不拆分小时广告费。快照分支的 `hourly[*].ad_spend` 和 `hourly[*].true_roas` 可保持空值；图表仍使用 `roi_daily_roas_nodes` / `roas_points`。2026-06-07 update: 该限制已被 [2026-06-07-realtime-roas-trend-hourly-ad-spend-design.md](2026-06-07-realtime-roas-trend-hourly-ad-spend-design.md) 覆盖，新口径要求后端按实时 campaign 累计快照差分补齐小时广告费和小时 ROAS。
 7. 单店 / 产品筛选 / 新品老品 scope 继续走既有明细路径，不读取双店全量预聚合快照。
 
 ## 设计

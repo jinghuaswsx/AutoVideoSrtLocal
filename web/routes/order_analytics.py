@@ -443,15 +443,12 @@ def ad_stats():
 @login_required
 @permission_required("data_analytics")
 def exchange_rate_archive():
-    """返回最近 USD/CNY 每日基准汇率归档。
+    """返回最近 USD/CNY 每日基准汇率归档和动态兜底历史。
 
     Docs-anchor: docs/superpowers/specs/2026-06-06-usd-cny-daily-exchange-rate-design.md
     """
     limit = request.args.get("limit", default=30, type=int) or 30
-    return _json_response(_json_safe({
-        "rows": exchange_rates.list_usd_cny_daily_rates(limit=limit),
-        "limit": max(1, min(365, int(limit))),
-    }))
+    return _json_response(_json_safe(exchange_rates.exchange_rate_admin_payload(limit=limit)))
 
 
 @bp.route("/order-analytics/ad-periods")

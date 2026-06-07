@@ -817,7 +817,7 @@ def test_task_definitions_include_usd_cny_exchange_rate_sync():
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
     task = definitions["usd_cny_exchange_rate_sync"]
-    assert task["schedule"] == "每天 06:00（北京时间，三来源交叉验证）"
+    assert task["schedule"] == "每天 06:00（北京时间，三来源交叉验证 + 30 天平均兜底）"
     assert task["source_type"] == "systemd"
     assert task["source_ref"] == "autovideosrt-usd-cny-exchange-rate-sync.timer"
     assert task["runner"] == "tools/usd_cny_exchange_rate_sync.py"
@@ -826,6 +826,7 @@ def test_task_definitions_include_usd_cny_exchange_rate_sync():
     assert "Open ER API" in task["description"]
     assert "FloatRates" in task["description"]
     assert "<= 5%" in task["description"]
+    assert "最近 30 天" in task["description"]
     assert "2026-06-06-usd-cny-daily-exchange-rate-design.md" in task["description"]
 
 
