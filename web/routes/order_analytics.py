@@ -26,6 +26,7 @@ from appcore import system_audit
 from appcore import weekly_roas_report as wrr
 from appcore.order_analytics import data_quality as dq
 from appcore.order_analytics import manual_ad_spend, order_profit_aggregation
+from appcore.order_analytics import weekly_ai_report as wai
 
 log = logging.getLogger(__name__)
 
@@ -238,6 +239,7 @@ def _realtime_store_options() -> list[dict[str, str]]:
 @bp.route("/order-analytics/country-dashboard-view")
 @bp.route("/order-analytics/true-roas-view")
 @bp.route("/order-analytics/weekly-roas-view")
+@bp.route("/order-analytics/weekly-ai-analysis-view")
 @bp.route("/order-analytics/import-view")
 @bp.route("/order-analytics/shopify-analytics-view")
 @login_required
@@ -257,6 +259,7 @@ def page():
             "/order-analytics/country-dashboard-view": "countryDashboard",
             "/order-analytics/true-roas-view": "trueRoas",
             "/order-analytics/weekly-roas-view": "weeklyRoas",
+            "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
             "/order-analytics/import-view": "import",
             "/order-analytics/shopify-analytics-view": "analytics",
         }
@@ -792,6 +795,94 @@ def weekly_roas_report():
         return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
         log.exception("weekly roas report query failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+
+def _parse_weekly_ai_week_start(value: str | None) -> tuple[date, date]:
+    text = (value or "").strip()
+    if text:
+        week_start = datetime.strptime(text, "%Y-%m-%d").date()
+        week_start = wai.normalize_week_start(week_start)
+        return week_start, week_start + timedelta(days=6)
+    return wai.previous_complete_business_week()
+
+
+@bp.route("/order-analytics/weekly-ai-analysis/report")
+@login_required
+@permission_required("data_analytics")
+def weekly_ai_analysis_report():
+    try:
+        week_start, week_end = _parse_weekly_ai_week_start(request.args.get("week_start"))
+        report = wai.get_or_build_report_payload(week_start, week_end)
+        return _json_response(_json_safe(report))
+    except ValueError as exc:
+        return _json_response(error="invalid_date", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("weekly ai analysis report query failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+
+@bp.route("/order-analytics/weekly-ai-analysis/generate", methods=["POST"])
+@login_required
+@permission_required("data_analytics")
+def weekly_ai_analysis_generate():
+    payload = request.get_json(silent=True) or {}
+    try:
+        week_start, week_end = _parse_weekly_ai_week_start(payload.get("week_start"))
+        report = wai.generate_ai_report(
+            week_start,
+            week_end,
+            user_id=getattr(current_user, "id", None),
+            force=bool(payload.get("force")),
+            generated_by="manual",
+        )
+        _audit_order_analytics_action(
+            "order_analytics_weekly_ai_analysis_generated",
+            target_type="weekly_ai_analysis_report",
+            target_label=f"{week_start.isoformat()}~{week_end.isoformat()}",
+            status="success" if report.get("status") == "success" else "failure",
+            detail={
+                "week_start": week_start.isoformat(),
+                "week_end": week_end.isoformat(),
+                "status": report.get("status"),
+                "data_quality_status": (report.get("data_quality") or {}).get("status"),
+            },
+        )
+        return _json_response(_json_safe(report))
+    except ValueError as exc:
+        return _json_response(error="invalid_date", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("weekly ai analysis generation failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+
+@bp.route("/order-analytics/weekly-ai-analysis/weeks")
+@login_required
+@permission_required("data_analytics")
+def weekly_ai_analysis_weeks():
+    try:
+        week_start, week_end = wai.previous_complete_business_week()
+        return _json_response(_json_safe({
+            "default_week": {
+                "week_start": week_start,
+                "week_end": week_end,
+                "week_definition": "sunday_to_saturday",
+            },
+            "recent_weeks": wai.list_recent_reports(limit=12),
+            "data_quality": {
+                "status": "ok",
+                "source_mode": "report_index",
+                "business_date_from": week_start.isoformat(),
+                "business_date_to": week_end.isoformat(),
+                "warnings": [],
+                "errors": [],
+                "checks": [],
+                "watermarks": {},
+                "generated_at": datetime.now(_CST).replace(microsecond=0).isoformat(sep=" "),
+            },
+        }))
+    except Exception as exc:
+        log.exception("weekly ai analysis weeks query failed: %s", exc)
         return _json_response(error="internal_error", detail=str(exc)), 500
 
 

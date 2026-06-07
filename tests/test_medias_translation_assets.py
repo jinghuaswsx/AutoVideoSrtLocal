@@ -289,6 +289,18 @@ def test_medias_product_table_renders_order_stats_column():
     assert "renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)" in script
 
 
+def test_medias_product_table_renders_stability_column():
+    script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    template = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "<th>稳定分级</th>" in script
+    assert "function renderProductStabilityBadge(p)" in script
+    assert "stability.status !== 'stable'" in script
+    assert "renderProductStabilityBadge(p)" in script
+    assert ".oc-stability-pill" in template
+    assert "稳定品" in script
+
+
 def test_medias_product_table_uses_compact_sku_and_time_columns():
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     template = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")

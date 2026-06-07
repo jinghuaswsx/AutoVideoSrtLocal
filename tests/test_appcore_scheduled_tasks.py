@@ -583,6 +583,17 @@ def test_task_definitions_include_tos_backup():
     assert definitions["tos_backup"]["schedule"] == "每天 02:00"
 
 
+def test_task_definitions_include_weekly_ai_analysis_report():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["weekly_ai_analysis_report"]
+    assert task["schedule"] == "每周日 12:00"
+    assert task["runner"] == "appcore.order_analytics.weekly_ai_report.run_scheduled_report"
+    assert task["log_table"] == "scheduled_task_runs"
+
+
 def test_task_definitions_include_two_hour_dianxiaomi_sku_and_purchase_sync():
     from appcore import scheduled_tasks
 
@@ -644,6 +655,20 @@ def test_task_definitions_include_media_product_ad_status_cache_refresh():
     assert task["runner"] == "appcore.media_product_ad_status_cache_scheduler.tick_once"
     assert task["log_table"] == "scheduled_task_runs"
     assert "2026-05-28-medias-product-ad-status-cache-design.md" in task["description"]
+
+
+def test_task_definitions_include_media_product_stability_refresh():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["media_product_stability_refresh"]
+    assert task["schedule"] == "每 6 小时"
+    assert task["source_type"] == "apscheduler"
+    assert task["source_ref"] == "media_product_stability_refresh"
+    assert task["runner"] == "appcore.media_product_stability_scheduler.tick_once"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "2026-06-07-weekly-ai-analysis-report-design.md" in task["description"]
 
 
 def test_task_definitions_include_apimart_balance_watchdog():

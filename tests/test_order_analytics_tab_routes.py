@@ -26,6 +26,7 @@ def test_order_analytics_sub_routes_unauthenticated_302(client):
         "/order-analytics/country-dashboard-view",
         "/order-analytics/true-roas-view",
         "/order-analytics/weekly-roas-view",
+        "/order-analytics/weekly-ai-analysis-view",
         "/order-analytics/import-view",
         "/order-analytics/shopify-analytics-view",
     ]
@@ -48,6 +49,7 @@ def test_order_analytics_sub_routes_authenticated_200(authed_client_no_db):
         "/order-analytics/country-dashboard-view": "countryDashboard",
         "/order-analytics/true-roas-view": "trueRoas",
         "/order-analytics/weekly-roas-view": "weeklyRoas",
+        "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
         "/order-analytics/import-view": "import",
         "/order-analytics/shopify-analytics-view": "analytics",
     }

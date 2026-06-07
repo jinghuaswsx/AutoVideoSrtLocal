@@ -109,6 +109,29 @@ def test_new_product_launch_analysis_tab_is_next_to_realtime():
     assert "新品投放分析" in mobile
 
 
+def test_weekly_ai_analysis_tab_and_panel_present():
+    template = _template_source()
+    topbar_start = template.index('<span class="oa-tabs oa-tabs-topbar"')
+    topbar_end = template.index("</span>", topbar_start)
+    topbar = template[topbar_start:topbar_end]
+    mobile_start = template.index('<nav class="oa-mobile-tabs"')
+    mobile_end = template.index("</nav>", mobile_start)
+    mobile = template[mobile_start:mobile_end]
+
+    assert 'data-tab="weeklyAiAnalysis"' in topbar
+    assert 'data-tab="weeklyAiAnalysis"' in mobile
+    assert "每周 AI 分析" in topbar
+    assert "每周 AI 分析" in mobile
+    assert 'id="panelWeeklyAiAnalysis"' in template
+    assert 'id="weeklyAiDqBar"' in template
+    assert 'id="weeklyAiStabilitySummary"' in template
+    assert 'id="weeklyAiStabilityBody"' in template
+    assert 'id="weeklyAiProductBody"' in template
+    assert 'id="weeklyAiAdBody"' in template
+    assert "renderWeeklyAiProductStability" in template
+    assert "initWeeklyAiAnalysis" in template
+
+
 def test_new_product_launch_panel_has_three_scope_tabs_and_request_param():
     template = _template_source()
     panel = _new_product_launch_panel_source()

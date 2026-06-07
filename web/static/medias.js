@@ -683,6 +683,29 @@
       + `</div>`;
   }
 
+  function renderProductStabilityBadge(p) {
+    const stability = (p || {}).stability || {};
+    if (stability.status !== 'stable') {
+      return '<span class="muted">—</span>';
+    }
+    const marks = Array.isArray(stability.stable_marks) ? stability.stable_marks : [];
+    const titleParts = [
+      `7天单量 ${Number(stability.last_7d_orders || 0)}`,
+      `30天单量 ${Number(stability.last_30d_orders || 0)}`,
+      `7天日均 ${Number(stability.avg_7d_orders || 0).toFixed(2)}`,
+      `30天日均 ${Number(stability.avg_30d_orders || 0).toFixed(2)}`,
+      `7天最低日单 ${Number(stability.min_daily_orders_7d || 0)}`,
+      `ROAS ${stability.overall_roas === null || stability.overall_roas === undefined ? '—' : Number(stability.overall_roas).toFixed(2)}`
+    ];
+    const markHtml = marks.length
+      ? marks.map((mark) => `<span class="oc-stability-subpill">${escapeHtml(mark)}</span>`).join('')
+      : '';
+    return `<div class="oc-stability-cell" title="${escapeHtml(titleParts.join(' / '))}">`
+      + `<span class="oc-stability-pill">稳定品</span>`
+      + `<div class="oc-stability-subpills">${markHtml}</div>`
+      + `</div>`;
+  }
+
   function icon(name, size = 14) {
     return `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#ic-${name}"/></svg>`;
   }
@@ -3184,6 +3207,7 @@
         <col style="width:70px">
         <col style="width:290px">
         <col style="width:320px">
+        <col style="width:112px">
         <col style="width:92px">
         <col style="width:112px">
         <col style="width:104px">
@@ -3202,6 +3226,7 @@
           <th>素材数</th>
           <th>语种和投放情况</th>
           <th>单量情况</th>
+          <th>稳定分级</th>
           <th>投放情况</th>
           <th>创建时间</th>
           <th>投放推送</th>
@@ -3893,6 +3918,7 @@
         </td>
         <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary, p.id)}</td>
         <td>${renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)}</td>
+        <td class="product-stability-cell">${renderProductStabilityBadge(p)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
         <td class="muted mono product-time-cell">${timeCell}</td>
         <td class="product-push-cell">

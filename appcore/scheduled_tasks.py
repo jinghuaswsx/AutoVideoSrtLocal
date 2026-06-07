@@ -402,6 +402,22 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "media_product_stability_refresh": {
+        "code": "media_product_stability_refresh",
+        "name": "素材管理产品稳定分级刷新",
+        "description": (
+            "每 6 小时按最近 7 天 / 30 天订单、投放状态和广告消耗刷新产品稳定分级缓存，"
+            "供素材管理稳定品标签和每周 AI 分析稳定产品分级表使用。Docs-anchor: "
+            "docs/superpowers/specs/2026-06-07-weekly-ai-analysis-report-design.md#产品稳定分级2026-06-07-追加"
+        ),
+        "schedule": "每 6 小时",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "media_product_stability_refresh",
+        "runner": "appcore.media_product_stability_scheduler.tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "apimart_balance_watchdog": {
         "code": "apimart_balance_watchdog",
         "name": "APIMART 余额看护",
@@ -552,6 +568,18 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "source_label": "Web 进程 APScheduler",
         "source_ref": "weekly_roas_report",
         "runner": "appcore.weekly_roas_report.run_scheduled_snapshot",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
+    "weekly_ai_analysis_report": {
+        "code": "weekly_ai_analysis_report",
+        "name": "每周 AI 分析报告",
+        "description": "每周日 12:00 汇总上周日到本周六的实时大盘、广告、订单和产品盈亏数据，生成 weekly_ai_analysis_reports 周度 AI 业务分析。",
+        "schedule": "每周日 12:00",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "weekly_ai_analysis_report",
+        "runner": "appcore.order_analytics.weekly_ai_report.run_scheduled_report",
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
