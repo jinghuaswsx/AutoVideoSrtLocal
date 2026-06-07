@@ -234,6 +234,28 @@ def test_realtime_summary_splits_global_new_old_and_unmatched_scope_cards():
     assert 'id="realtimeUnmatchedSpend"' in panel
 
 
+def test_realtime_unmatched_scope_card_links_to_detail_pages():
+    panel = _realtime_panel_source()
+    template = _template_source()
+    link_block = template[
+        template.index("function updateRealtimeUnmatchedDetailLinks"):
+        template.index("function initNewProductLaunch", template.index("function updateRealtimeUnmatchedDetailLinks"))
+    ]
+
+    assert 'id="realtimeUnmatchedOrdersLink"' in panel
+    assert 'id="realtimeUnmatchedAdsLink"' in panel
+    assert 'href="/order-analytics/realtime-unmatched-orders"' in panel
+    assert 'href="/order-analytics/realtime-unmatched-ads"' in panel
+    assert 'target="_blank" rel="noopener noreferrer"' in panel
+    assert "function updateRealtimeUnmatchedDetailLinks()" in template
+    assert "updateRealtimeUnmatchedDetailLinks();" in template
+    assert "start_date" in link_block
+    assert "end_date" in link_block
+    assert "site_code" in link_block
+    assert "product_launch_window_days" in link_block
+    assert "product_id" not in link_block
+
+
 def test_realtime_scope_cards_include_cost_breakdown_and_ratio_targets():
     panel = _realtime_panel_source()
 

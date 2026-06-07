@@ -257,12 +257,47 @@
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border);
 }
+.oar-scope-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
 .oar-scope-title {
   margin: 0;
   color: var(--fg);
   font-size: var(--text-base);
   font-weight: 700;
   line-height: 1.25;
+}
+.oar-scope-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.oar-scope-detail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.oar-scope-detail-link:hover {
+  background: var(--bg-muted);
+}
+.oar-scope-detail-link[aria-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
 }
 .oar-scope-source {
   margin-top: var(--space-1);
@@ -1863,7 +1898,13 @@
       <section class="oar-scope-card oar-scope-card--unmatched" data-realtime-scope-card="unmatched" aria-labelledby="realtimeUnmatchedScopeTitle">
         <div class="oar-scope-card-head">
           <div>
-            <h3 class="oar-scope-title" id="realtimeUnmatchedScopeTitle">未匹配广告和订单</h3>
+            <div class="oar-scope-title-row">
+              <h3 class="oar-scope-title" id="realtimeUnmatchedScopeTitle">未匹配广告和订单</h3>
+              <span class="oar-scope-detail-actions" aria-label="未匹配明细">
+                <a class="oar-scope-detail-link" id="realtimeUnmatchedOrdersLink" href="/order-analytics/realtime-unmatched-orders" target="_blank" rel="noopener noreferrer">未匹配订单</a>
+                <a class="oar-scope-detail-link" id="realtimeUnmatchedAdsLink" href="/order-analytics/realtime-unmatched-ads" target="_blank" rel="noopener noreferrer">未匹配广告</a>
+              </span>
+            </div>
             <div class="oar-scope-source" id="realtimeUnmatchedSource">product_launch_scope=unmatched · 未匹配广告和订单同口径核算</div>
           </div>
           <span class="oar-scope-chip">未匹配</span>
@@ -4648,6 +4689,35 @@
     return { start: s, end: e };
   }
 
+  function updateRealtimeUnmatchedDetailLinks() {
+    var links = [
+      { id: 'realtimeUnmatchedOrdersLink', path: '/order-analytics/realtime-unmatched-orders' },
+      { id: 'realtimeUnmatchedAdsLink', path: '/order-analytics/realtime-unmatched-ads' }
+    ];
+    var range;
+    try {
+      range = getRealtimeDateRange();
+    } catch (err) {
+      range = null;
+    }
+    links.forEach(function(item) {
+      var link = document.getElementById(item.id);
+      if (!link) return;
+      if (!range) {
+        link.href = '#';
+        link.setAttribute('aria-disabled', 'true');
+        return;
+      }
+      var params = new URLSearchParams();
+      params.set('start_date', range.start);
+      params.set('end_date', range.end);
+      if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
+      params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');
+      link.href = item.path + '?' + params.toString();
+      link.setAttribute('aria-disabled', 'false');
+    });
+  }
+
   function initNewProductLaunch() {
     var realtimeSite = document.getElementById('realtimeSiteFilter');
     var nplSite = document.getElementById('nplSiteFilter');
@@ -5041,6 +5111,7 @@
 
   // ── 入口：同步刷新顶部卡片 + 子 tab ─────────────────
   function loadRealtimeOverview() {
+    updateRealtimeUnmatchedDetailLinks();
     loadRealtimeTopCards();
     loadRealtimeSubTabs();
   }

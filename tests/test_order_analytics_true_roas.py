@@ -2152,6 +2152,135 @@ def test_realtime_overview_endpoint_forwards_order_detail_pagination(authed_clie
     assert captured["order_page_size"] == 30
 
 
+def test_realtime_unmatched_detail_pages_render_and_require_login(authed_client_no_db):
+    for path, title in (
+        ("/order-analytics/realtime-unmatched-orders", "实时大盘未匹配订单"),
+        ("/order-analytics/realtime-unmatched-ads", "实时大盘未匹配广告"),
+    ):
+        response = authed_client_no_db.get(path)
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert title in body
+        assert "product_launch_scope=unmatched" in body
+
+        anonymous = authed_client_no_db.application.test_client()
+        anonymous_response = anonymous.get(path)
+        assert anonymous_response.status_code == 302
+
+
+def test_realtime_unmatched_orders_data_forwards_unmatched_scope(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_overview(date_text=None, **kwargs):
+        captured["date_text"] = date_text
+        captured.update(kwargs)
+        return {
+            "period": {"start_date": kwargs.get("start_date"), "end_date": kwargs.get("end_date")},
+            "scope": {
+                "product_launch_scope": kwargs.get("product_launch_scope"),
+                "ad_source": "meta_ad_daily_campaign_metrics",
+                "ad_granularity": "daily",
+            },
+            "freshness": {},
+            "summary": {
+                "order_count": 1,
+                "units": 2,
+                "order_revenue": 10.0,
+                "shipping_revenue": 3.0,
+                "revenue_with_shipping": 13.0,
+            },
+            "order_profit_summary": {"order_count": 1},
+            "order_details": [{"dxm_package_id": "PKG-1", "product_ids": None}],
+            "order_details_page": {"page": kwargs.get("order_page"), "page_size": kwargs.get("order_page_size"), "total": 1, "pages": 1},
+            "campaigns": [],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr(
+        "web.routes.order_analytics.dq.build_for_realtime_overview",
+        lambda **kwargs: {"status": "ok", "source_mode": kwargs.get("source_mode")},
+    )
+
+    response = authed_client_no_db.get(
+        "/order-analytics/realtime-unmatched-orders/data"
+        "?start_date=2026-06-01&end_date=2026-06-07"
+        "&site_code=newjoy&product_launch_window_days=15&page=2&page_size=80"
+    )
+
+    assert response.status_code == 200
+    assert captured["date_text"] is None
+    assert captured["start_date"] == "2026-06-01"
+    assert captured["end_date"] == "2026-06-07"
+    assert captured["include_details"] is True
+    assert captured["product_launch_scope"] == "unmatched"
+    assert captured["product_launch_window_days"] == 15
+    assert captured["site_codes"] == ["newjoy"]
+    assert captured["order_page"] == 2
+    assert captured["order_page_size"] == 80
+    assert captured["page"] == 1
+    assert captured["page_size"] == 1
+    payload = response.get_json()
+    assert payload["type"] == "orders"
+    assert payload["rows"] == [{"dxm_package_id": "PKG-1", "product_ids": None}]
+    assert payload["page"]["total"] == 1
+
+
+def test_realtime_unmatched_ads_data_filters_matched_no_units(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_overview(date_text=None, **kwargs):
+        captured["date_text"] = date_text
+        captured.update(kwargs)
+        return {
+            "period": {"start_date": kwargs.get("start_date"), "end_date": kwargs.get("end_date")},
+            "scope": {
+                "product_launch_scope": kwargs.get("product_launch_scope"),
+                "ad_source": "meta_ad_daily_campaign_metrics",
+                "ad_granularity": "daily",
+            },
+            "freshness": {},
+            "summary": {"ad_spend": 99.99},
+            "order_details": [],
+            "order_details_page": {"page": 1, "page_size": 1, "total": 0, "pages": 0},
+            "campaigns": [
+                {
+                    "campaign_name": "unknown-product",
+                    "allocation_reason": "unmatched_product",
+                    "spend_usd": 12.34,
+                    "purchase_value_usd": 56.78,
+                },
+                {
+                    "campaign_name": "matched-no-units",
+                    "allocation_reason": "matched_no_units",
+                    "spend_usd": 87.65,
+                    "purchase_value_usd": 0.0,
+                },
+            ],
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr(
+        "web.routes.order_analytics.dq.build_for_realtime_overview",
+        lambda **kwargs: {"status": "ok", "source_mode": kwargs.get("source_mode")},
+    )
+
+    response = authed_client_no_db.get(
+        "/order-analytics/realtime-unmatched-ads/data"
+        "?start_date=2026-06-01&end_date=2026-06-07&page=1&page_size=50"
+    )
+
+    assert response.status_code == 200
+    assert captured["include_details"] is True
+    assert captured["product_launch_scope"] == "unmatched"
+    assert captured["order_page"] == 1
+    assert captured["order_page_size"] == 1
+    payload = response.get_json()
+    assert payload["type"] == "ads"
+    assert payload["summary"]["count"] == 1
+    assert payload["summary"]["spend_usd"] == 12.34
+    assert [row["campaign_name"] for row in payload["rows"]] == ["unknown-product"]
+
+
 # ── 前端模板回归 ─────────────────────────────────────────
 
 
