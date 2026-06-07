@@ -58,14 +58,14 @@ def test_calculate_line_profit_revenue_is_line_amount_plus_shipping():
 
 
 def test_calculate_line_profit_shopify_fee_uses_buyer_country_proxy():
-    """DE buyer (本地卡 + EUR 结账) → Tier D，fee = 5.0% × revenue + 0.30。"""
+    """DE buyer (本地卡 + EUR 结账) → Tier D，百分比费率应用 1.076 校准乘数。"""
     result = calculate_line_profit(
         _complete_line_input(buyer_country="DE", line_amount_usd=22.13,
                               shipping_allocated_usd=0),
         rmb_per_usd=Decimal("6.83"),
     )
-    # revenue = 22.13, Tier D → fee = 22.13*0.05 + 0.30 = 1.4065 → 1.41
-    assert abs(result["shopify_fee_usd"] - 1.41) <= 0.02
+    # revenue = 22.13, Tier D → fee = 22.13*0.05*1.076 + 0.30 = 1.490094 → 1.49
+    assert abs(result["shopify_fee_usd"] - 1.49) <= 0.02
     assert result["shopify_tier"] == "D"
 
 
@@ -183,8 +183,8 @@ def test_calculate_line_profit_single_sku_fallback_uses_line_revenue():
     )
     line.pop("order_total_revenue_usd", None)  # 不传，触发 fallback
     result = calculate_line_profit(line, rmb_per_usd=Decimal("6.83"))
-    # Tier D fee = 22.13 × 0.05 + 0.30 = 1.41
-    assert abs(result["shopify_fee_usd"] - 1.41) <= 0.02
+    # Tier D fee = 22.13 × 0.05 × 1.076 + 0.30 = 1.49
+    assert abs(result["shopify_fee_usd"] - 1.49) <= 0.02
 
 
 def test_calculate_line_profit_multi_sku_fee_split_by_order_amount():
@@ -192,8 +192,8 @@ def test_calculate_line_profit_multi_sku_fee_split_by_order_amount():
 
     订单含 2 行：line1 = $20，line2 = $10，订单运费 $0
     - 旧行为（错）：行 1 fee = $20 × 0.025 + 0.30 = 0.80, 行 2 fee = $10 × 0.025 + 0.30 = 0.55, 合计 1.35
-    - 新行为（对）：订单 fee = $30 × 0.025 + 0.30 = 1.05; 行 1 摊 1.05 × 20/30 = 0.70, 行 2 摊 0.35
-    - 合计 1.05（少 0.30 = 多算的固定费）
+    - 新行为（对）：订单 fee = $30 × 0.025 × 1.076 + 0.30 = 1.11; 行 1 摊 1.11 × 20/30 = 0.74, 行 2 摊 0.37
+    - 合计 1.11（少 0.30 = 多算的固定费，固定费未被乘数放大）
     """
     line1 = _complete_line_input(
         line_amount_usd=20.0, shipping_allocated_usd=0.0,
@@ -208,8 +208,8 @@ def test_calculate_line_profit_multi_sku_fee_split_by_order_amount():
     r1 = calculate_line_profit(line1, rmb_per_usd=Decimal("6.83"))
     r2 = calculate_line_profit(line2, rmb_per_usd=Decimal("6.83"))
     total_fee = r1["shopify_fee_usd"] + r2["shopify_fee_usd"]
-    # 整单 fee = 30 × 0.025 + 0.30 = 1.05
-    assert abs(total_fee - 1.05) <= 0.02
+    # 整单 fee = 30 × 0.025 × 1.076 + 0.30 = 1.11
+    assert abs(total_fee - 1.11) <= 0.02
     # 大行摊得多
     assert r1["shopify_fee_usd"] > r2["shopify_fee_usd"]
 
