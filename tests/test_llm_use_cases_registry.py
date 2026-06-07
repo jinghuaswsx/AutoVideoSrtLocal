@@ -115,7 +115,7 @@ def test_order_analytics_weekly_ai_analysis_use_case_registered():
     assert uc["module"] == "order_analytics"
     assert uc["label"] == "每周 AI 分析"
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3-flash-preview"
+    assert uc["default_model"] == "google/gemini-flash-1.5"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
     assert MODULE_LABELS["order_analytics"] == "数据分析"

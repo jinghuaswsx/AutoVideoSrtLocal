@@ -721,7 +721,7 @@ USE_CASES: dict[str, UseCase] = {
         "每周 AI 分析",
         "基于实时大盘、广告计划、产品销量和产品盈亏数据生成每周业务分析报告",
         "openrouter",
-        "google/gemini-3-flash-preview",
+        "google/gemini-flash-1.5",
         "openrouter",
         "tokens",
     ),

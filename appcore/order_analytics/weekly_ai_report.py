@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from appcore import llm_client, scheduled_tasks
 from appcore.order_analytics import product_profit_list
 from appcore.order_analytics._constants import (
+    COUNTRY_TO_LANG,
     META_ATTRIBUTION_CUTOVER_HOUR_BJ,
     META_ATTRIBUTION_TIMEZONE,
 )
@@ -39,6 +40,34 @@ _STATUS_RANK = {
     "mismatch": 3,
     "error": 4,
 }
+_COUNTRY_EXPANSION_STAGES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("stage_1", "先补齐德法", ("DE", "FR")),
+    ("stage_2", "再扩西意日", ("ES", "IT", "JP")),
+    ("stage_3", "继续扩葡荷瑞", ("PT", "NL", "SE")),
+)
+_COUNTRY_LABELS = {
+    "DE": "德国",
+    "FR": "法国",
+    "ES": "西班牙",
+    "IT": "意大利",
+    "JP": "日本",
+    "PT": "葡萄牙",
+    "NL": "荷兰",
+    "SE": "瑞典",
+}
+_LANG_TO_PRIMARY_COUNTRY = {
+    "de": "DE",
+    "fr": "FR",
+    "es": "ES",
+    "it": "IT",
+    "ja": "JP",
+    "pt": "PT",
+    "nl": "NL",
+    "sv": "SE",
+}
+for _country, _lang in COUNTRY_TO_LANG.items():
+    _LANG_TO_PRIMARY_COUNTRY.setdefault(str(_lang).lower(), str(_country).upper())
+_RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
 
 
 def _facade():
@@ -61,6 +90,12 @@ def load_product_stability_summary(*args, **kwargs):
     from appcore import media_product_stability
 
     return media_product_stability.load_stability_summary(*args, **kwargs)
+
+
+def load_product_lang_ad_summary_cache(product_ids):
+    from appcore import media_product_ad_status_cache
+
+    return media_product_ad_status_cache.get_product_lang_ad_summary_cache(product_ids)
 
 
 def get_realtime_roas_overview(*args, **kwargs):
@@ -187,6 +222,28 @@ def _loads_json(value: Any, default: Any = None) -> Any:
         except json.JSONDecodeError:
             return default
     return default
+
+
+def _date_value(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _strip_rjc(product_code: str) -> str:
+    return _RJC_SUFFIX_RE.sub("", str(product_code or "").strip()).strip()
+
+
+def _placeholders(values: list[Any]) -> str:
+    return ",".join(["%s"] * len(values))
 
 
 def _quality_from_overview(overview: dict[str, Any], business_day: date, store: str) -> dict[str, Any]:
@@ -710,6 +767,496 @@ def _rule_findings(
     return findings
 
 
+def _flatten_stability_items(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    buckets = summary.get("buckets") or {}
+    seen: set[tuple[str, str]] = set()
+    items: list[dict[str, Any]] = []
+    for status, rows in buckets.items():
+        for row in rows or []:
+            item = dict(row or {})
+            item_status = str(item.get("status") or status or "").strip().lower()
+            if item_status:
+                item["status"] = item_status
+            key = (str(item.get("product_id") or ""), str(item.get("product_code") or "").strip().lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append(item)
+    return items
+
+
+def _stability_delivery_start(item: dict[str, Any]) -> date | None:
+    details = item.get("details") if isinstance(item.get("details"), dict) else {}
+    return _date_value(
+        item.get("delivery_start_date")
+        or details.get("delivery_start_date")
+        or item.get("delivery_start_time")
+        or details.get("delivery_start_time")
+    )
+
+
+def _stability_has_ad_data(item: dict[str, Any]) -> bool:
+    status = str(item.get("status") or "").strip().lower()
+    return bool(
+        status not in {"", "never"}
+        or _safe_float(item.get("total_ad_spend_usd")) > 0
+        or _safe_float(item.get("active_7d_ad_spend_usd")) > 0
+    )
+
+
+def _sort_and_limit_stability_buckets(
+    buckets: dict[str, list[dict[str, Any]]],
+    *,
+    limit: int,
+) -> dict[str, list[dict[str, Any]]]:
+    out: dict[str, list[dict[str, Any]]] = {}
+    for key, rows in buckets.items():
+        sorted_rows = sorted(
+            rows or [],
+            key=lambda item: (
+                -_safe_int(item.get("last_7d_orders")),
+                -_safe_int(item.get("last_30d_orders")),
+                str(item.get("product_code") or ""),
+            ),
+        )
+        out[key] = sorted_rows[:limit] if limit > 0 else sorted_rows
+    return out
+
+
+def _build_weekly_product_scope(
+    product_stability: dict[str, Any],
+    *,
+    week_end: date,
+    limit: int = 50,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, set[Any]]]:
+    items = _flatten_stability_items(product_stability)
+    bucket_keys = ("stable", "secondary_stable", "potential", "test", "stopped", "never", "insufficient_history")
+    buckets: dict[str, list[dict[str, Any]]] = {key: [] for key in bucket_keys}
+    counts = {
+        "total": len(items),
+        "stable_total": 0,
+        "stable_7d": 0,
+        "stable_30d": 0,
+        "secondary_stable": 0,
+        "potential": 0,
+        "test": 0,
+        "stopped": 0,
+        "never": 0,
+        "insufficient_history": 0,
+        "evaluated_total": 0,
+    }
+    scope_sets: dict[str, set[Any]] = {
+        "eligible_ids": set(),
+        "eligible_codes": set(),
+        "active_ids": set(),
+        "active_codes": set(),
+        "supplement_ids": set(),
+        "supplement_codes": set(),
+    }
+    under_7_samples: list[dict[str, Any]] = []
+    without_ad_samples: list[dict[str, Any]] = []
+
+    for raw_item in items:
+        item = dict(raw_item)
+        status = str(item.get("status") or "never").strip().lower()
+        start_date = _stability_delivery_start(item)
+        delivery_age_days = (week_end - start_date).days + 1 if start_date and start_date <= week_end else 0
+        has_ad_data = _stability_has_ad_data(item)
+        weekly_eligible = bool(has_ad_data and delivery_age_days >= 7)
+        display_status = status
+        if not has_ad_data:
+            display_status = "never"
+        elif not weekly_eligible:
+            display_status = "insufficient_history"
+        elif display_status not in buckets:
+            display_status = "test"
+
+        item["weekly_delivery_start_date"] = start_date.isoformat() if start_date else None
+        item["weekly_delivery_age_days"] = delivery_age_days
+        item["weekly_eligible_for_analysis"] = weekly_eligible
+        item["weekly_display_status"] = display_status
+        if display_status == "insufficient_history":
+            item["display_label"] = "投放未满7天"
+
+        if display_status == "stable":
+            counts["stable_total"] += 1
+        elif display_status in counts:
+            counts[display_status] += 1
+        if weekly_eligible:
+            counts["evaluated_total"] += 1
+            pid = _safe_int(item.get("product_id"))
+            code = str(item.get("product_code") or "").strip().lower()
+            if pid:
+                scope_sets["eligible_ids"].add(pid)
+            if code:
+                scope_sets["eligible_codes"].add(code)
+            if display_status in {"stable", "secondary_stable", "potential", "test"}:
+                if pid:
+                    scope_sets["active_ids"].add(pid)
+                if code:
+                    scope_sets["active_codes"].add(code)
+            if display_status in {"stable", "secondary_stable"}:
+                if pid:
+                    scope_sets["supplement_ids"].add(pid)
+                if code:
+                    scope_sets["supplement_codes"].add(code)
+        elif has_ad_data and len(under_7_samples) < 10:
+            under_7_samples.append({
+                "product_id": item.get("product_id"),
+                "product_code": item.get("product_code"),
+                "product_name": item.get("product_name"),
+                "delivery_start_date": item.get("weekly_delivery_start_date"),
+                "delivery_age_days": delivery_age_days,
+            })
+        elif not has_ad_data and len(without_ad_samples) < 10:
+            without_ad_samples.append({
+                "product_id": item.get("product_id"),
+                "product_code": item.get("product_code"),
+                "product_name": item.get("product_name"),
+            })
+
+        if display_status == "stable":
+            if item.get("stable_7d"):
+                counts["stable_7d"] += 1
+            if item.get("stable_30d"):
+                counts["stable_30d"] += 1
+        buckets[display_status].append(item)
+
+    scoped_summary = {
+        "counts": counts,
+        "buckets": _sort_and_limit_stability_buckets(buckets, limit=limit),
+        "warnings": product_stability.get("warnings") or [],
+        "computed_at": product_stability.get("computed_at"),
+        "scope_note": "仅将截至本周结束日投放满 7 天的产品纳入经营评估。",
+    }
+    product_scope = {
+        "filter_applied": bool(items),
+        "week_end": week_end.isoformat(),
+        "minimum_delivery_days": 7,
+        "evaluated_product_count": counts["evaluated_total"],
+        "excluded_under_7d_count": counts["insufficient_history"],
+        "excluded_without_ad_data_count": counts["never"],
+        "excluded_under_7d_samples": under_7_samples,
+        "excluded_without_ad_data_samples": without_ad_samples,
+        "notes": [
+            "投放起始时间按自然日截断，起始日计为第 1 天。",
+            "商品方向、广告动作、稳定分级和补素材建议只使用投放满 7 天的产品样本。",
+        ],
+    }
+    return scoped_summary, product_scope, scope_sets
+
+
+def _row_matches_scope(row: dict[str, Any], *, ids: set[Any], codes: set[Any], prefix: str = "") -> bool:
+    id_fields = (
+        f"{prefix}product_id" if prefix else "product_id",
+        "matched_product_id",
+        "product_id",
+    )
+    code_fields = (
+        f"{prefix}product_code" if prefix else "product_code",
+        "matched_product_code",
+        "normalized_campaign_code",
+        "product_code",
+    )
+    for field in id_fields:
+        pid = _safe_int(row.get(field))
+        if pid and pid in ids:
+            return True
+    for field in code_fields:
+        code = str(row.get(field) or "").strip().lower()
+        if code and code in codes:
+            return True
+    return False
+
+
+def _filter_rows_for_scope(
+    rows: list[dict[str, Any]],
+    *,
+    product_scope: dict[str, Any],
+    scope_sets: dict[str, set[Any]],
+    active_only: bool = True,
+) -> list[dict[str, Any]]:
+    if not product_scope.get("filter_applied"):
+        return rows
+    ids = scope_sets["active_ids" if active_only else "eligible_ids"]
+    codes = scope_sets["active_codes" if active_only else "eligible_codes"]
+    return [row for row in rows if _row_matches_scope(row, ids=ids, codes=codes)]
+
+
+def _country_for_lang(lang: str) -> str | None:
+    normalized = str(lang or "").strip().lower()
+    if not normalized:
+        return None
+    return _LANG_TO_PRIMARY_COUNTRY.get(normalized) or _LANG_TO_PRIMARY_COUNTRY.get(normalized.split("-", 1)[0])
+
+
+def _country_sort_key(country: str) -> tuple[int, int, str]:
+    country = str(country or "").upper()
+    for stage_index, (_code, _label, countries) in enumerate(_COUNTRY_EXPANSION_STAGES):
+        if country in countries:
+            return (stage_index, countries.index(country), country)
+    return (99, 99, country)
+
+
+def _good_market_rows(lang_summary: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    ladder_countries = {country for _stage, _label, countries in _COUNTRY_EXPANSION_STAGES for country in countries}
+    for lang, item in (lang_summary or {}).items():
+        country = _country_for_lang(lang)
+        if not country or country not in ladder_countries:
+            continue
+        active_spend = _safe_float(item.get("active_7d_ad_spend_usd"))
+        total_spend = _safe_float(item.get("ad_spend_usd"))
+        roas = item.get("ad_roas")
+        has_delivery_record = (
+            total_spend > 0
+            or active_spend > 0
+            or _safe_int(item.get("pushed_video_count")) > 0
+            or _safe_int(item.get("item_count")) > 0
+        )
+        is_active = active_spend > 0 or str(item.get("delivery_status") or "").lower() == "active"
+        if not (has_delivery_record and is_active):
+            continue
+        if roas is not None and _safe_float(roas) < 1.1:
+            continue
+        rows.append({
+            "country": country,
+            "country_name": _COUNTRY_LABELS.get(country, country),
+            "lang": str(lang or "").lower(),
+            "active_7d_ad_spend_usd": _round_money(active_spend),
+            "ad_spend_usd": _round_money(total_spend),
+            "ad_roas": _round_ratio(roas),
+            "pushed_video_count": _safe_int(item.get("pushed_video_count")),
+            "item_count": _safe_int(item.get("item_count")),
+        })
+    return sorted(rows, key=lambda row: _country_sort_key(row["country"]))
+
+
+def _country_expansion_recommendation(
+    product: dict[str, Any],
+    *,
+    good_markets: list[dict[str, Any]],
+    active_countries: set[str],
+) -> dict[str, Any] | None:
+    if not good_markets:
+        return None
+    good_countries = {row["country"] for row in good_markets}
+    ordered_good = sorted(good_countries, key=_country_sort_key)
+    for stage_code, stage_label, countries in _COUNTRY_EXPANSION_STAGES:
+        stage_set = set(countries)
+        if stage_set.issubset(good_countries):
+            continue
+        targets = [country for country in countries if country not in active_countries]
+        if not targets:
+            targets = [country for country in countries if country not in good_countries]
+        if not targets:
+            continue
+        return {
+            "product_id": product.get("product_id"),
+            "product_code": product.get("product_code") or "",
+            "product_name": product.get("product_name") or product.get("name") or "",
+            "stage": stage_code,
+            "stage_label": stage_label,
+            "current_good_countries": ordered_good,
+            "current_good_country_names": [_COUNTRY_LABELS.get(country, country) for country in ordered_good],
+            "recommended_countries": targets,
+            "recommended_country_names": [_COUNTRY_LABELS.get(country, country) for country in targets],
+            "reason": (
+                "该产品已在 "
+                + "、".join(_COUNTRY_LABELS.get(country, country) for country in ordered_good)
+                + f" 有有效投放表现，下一步按阶梯{stage_label}。"
+            ),
+        }
+    return None
+
+
+def _load_quality_materials(product_code: str, *, limit: int = 5) -> list[dict[str, Any]]:
+    handle = _strip_rjc(product_code)
+    if not handle:
+        return []
+    search_terms = [handle.lower()]
+    rjc_handle = f"{handle}-rjc".lower()
+    if rjc_handle not in search_terms:
+        search_terms.append(rjc_handle)
+    placeholders = _placeholders(search_terms)
+    rows = query(
+        f"""
+        SELECT s.material_key, s.video_name, s.video_path, s.video_image_path,
+               s.cumulative_90_spend, s.video_ads_count, s.video_author,
+               s.snapshot_date, s.snapshot_at
+        FROM mingkong_material_daily_snapshots s
+        JOIN mingkong_material_sync_runs r ON r.id = s.run_id AND r.status = 'success'
+        JOIN (
+            SELECT s2.material_key, MAX(s2.snapshot_at) AS latest_snapshot_at
+            FROM mingkong_material_daily_snapshots s2
+            JOIN mingkong_material_sync_runs r2 ON r2.id = s2.run_id AND r2.status = 'success'
+            WHERE LOWER(s2.product_code) IN ({placeholders})
+            GROUP BY s2.material_key
+        ) latest ON latest.material_key = s.material_key
+               AND latest.latest_snapshot_at = s.snapshot_at
+        WHERE LOWER(s.product_code) IN ({placeholders})
+        ORDER BY s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id ASC
+        LIMIT %s
+        """,
+        tuple(search_terms + search_terms + [int(limit) * 3]),
+    )
+    materials: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for row in rows or []:
+        material_key = str(row.get("material_key") or row.get("video_path") or "").strip()
+        if not material_key or material_key in seen_keys:
+            continue
+        seen_keys.add(material_key)
+        spend = _safe_float(row.get("cumulative_90_spend"))
+        ads_count = _safe_int(row.get("video_ads_count"))
+        if spend < 50 and ads_count < 3:
+            continue
+        materials.append({
+            "material_key": material_key,
+            "material_name": row.get("video_name") or "",
+            "video_path": row.get("video_path") or "",
+            "image_path": row.get("video_image_path") or "",
+            "spend_90_usd": _round_money(spend),
+            "ads_count": ads_count,
+            "author": row.get("video_author") or "",
+            "snapshot_date": str(row.get("snapshot_date") or ""),
+            "snapshot_at": _serialize_value(row.get("snapshot_at")),
+        })
+        if len(materials) >= limit:
+            break
+    return materials
+
+
+def _build_product_index(product_rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+    index: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in product_rows or []:
+        pid = str(row.get("product_id") or "")
+        code = str(row.get("product_code") or "").strip().lower()
+        if pid:
+            index.setdefault(("id", pid), row)
+        if code:
+            index.setdefault(("code", code), row)
+    return index
+
+
+def _merge_product_context(item: dict[str, Any], product_index: dict[tuple[str, str], dict[str, Any]]) -> dict[str, Any]:
+    product = (
+        product_index.get(("id", str(item.get("product_id") or "")))
+        or product_index.get(("code", str(item.get("product_code") or "").strip().lower()))
+        or {}
+    )
+    merged = dict(product)
+    merged.setdefault("product_id", item.get("product_id"))
+    merged.setdefault("product_code", item.get("product_code") or "")
+    merged.setdefault("name", item.get("product_name") or item.get("name") or "")
+    merged["product_name"] = merged.get("name") or item.get("product_name") or ""
+    merged["stability_status"] = item.get("status")
+    merged["stable_marks"] = item.get("stable_marks") or []
+    merged["last_7d_orders"] = item.get("last_7d_orders")
+    merged["avg_7d_orders"] = item.get("avg_7d_orders")
+    return merged
+
+
+def _build_product_supplement_recommendations(
+    *,
+    product_stability: dict[str, Any],
+    product_rows: list[dict[str, Any]],
+    scope_sets: dict[str, set[Any]],
+) -> dict[str, Any]:
+    buckets = product_stability.get("buckets") or {}
+    candidate_items = list(buckets.get("stable") or []) + list(buckets.get("secondary_stable") or [])
+    product_index = _build_product_index(product_rows)
+    candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in candidate_items:
+        pid = _safe_int(item.get("product_id"))
+        code = str(item.get("product_code") or "").strip().lower()
+        if not ((pid and pid in scope_sets["supplement_ids"]) or (code and code in scope_sets["supplement_codes"])):
+            continue
+        key = (str(pid or ""), code)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(_merge_product_context(item, product_index))
+
+    product_ids = [_safe_int(item.get("product_id")) for item in candidates if _safe_int(item.get("product_id")) > 0]
+    try:
+        lang_summary_map = load_product_lang_ad_summary_cache(product_ids)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai load lang ad summary failed", exc_info=True)
+        return {
+            "country_expansion": [],
+            "material_fill": [],
+            "warnings": [{"code": "lang_ad_summary_unavailable", "message": f"语种广告缓存加载失败：{str(exc)[:160]}"}],
+        }
+
+    country_expansion: list[dict[str, Any]] = []
+    material_fill: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    for product in candidates[:30]:
+        pid = _safe_int(product.get("product_id"))
+        lang_summary = lang_summary_map.get(pid, {}) if pid else {}
+        good_markets = _good_market_rows(lang_summary)
+        if not good_markets:
+            continue
+        active_countries = {
+            _country_for_lang(lang) or ""
+            for lang, item in (lang_summary or {}).items()
+            if _safe_float(item.get("active_7d_ad_spend_usd")) > 0 or _safe_float(item.get("ad_spend_usd")) > 0
+        }
+        active_countries.discard("")
+        expansion = _country_expansion_recommendation(product, good_markets=good_markets, active_countries=active_countries)
+        if expansion:
+            country_expansion.append(expansion)
+        try:
+            materials = _load_quality_materials(str(product.get("product_code") or ""), limit=3)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("weekly_ai load quality materials failed product_id=%s", pid, exc_info=True)
+            warnings.append({
+                "code": "quality_materials_unavailable",
+                "product_id": pid,
+                "product_code": product.get("product_code") or "",
+                "message": f"优质素材加载失败：{str(exc)[:160]}",
+            })
+            materials = []
+        if not materials:
+            continue
+        for market in good_markets[:4]:
+            for material in materials[:2]:
+                material_fill.append({
+                    "product_id": product.get("product_id"),
+                    "product_code": product.get("product_code") or "",
+                    "product_name": product.get("product_name") or product.get("name") or "",
+                    "target_country": market["country"],
+                    "target_country_name": market["country_name"],
+                    "target_lang": market["lang"],
+                    "country_roas": market.get("ad_roas"),
+                    "country_active_7d_ad_spend_usd": market.get("active_7d_ad_spend_usd"),
+                    "material_key": material["material_key"],
+                    "material_name": material["material_name"],
+                    "video_path": material["video_path"],
+                    "spend_90_usd": material["spend_90_usd"],
+                    "ads_count": material["ads_count"],
+                    "reason": (
+                        f"{market['country_name']}仍有有效投放表现，"
+                        f"该英语素材 90 天消耗 {material['spend_90_usd']}、广告数 {material['ads_count']}，"
+                        "适合本土化后补一组。"
+                    ),
+                })
+                if len(material_fill) >= 40:
+                    break
+            if len(material_fill) >= 40:
+                break
+        if len(material_fill) >= 40:
+            break
+
+    return {
+        "country_expansion": country_expansion[:30],
+        "material_fill": material_fill[:40],
+        "warnings": warnings,
+    }
+
+
 def build_weekly_data_package(
     week_start: date,
     week_end: date | None = None,
@@ -741,21 +1288,6 @@ def build_weekly_data_package(
     campaign_rows = _aggregate_campaigns(all_overviews)
     daily_global = daily_by_store["all"]
     segments = _build_segments(daily_global)
-    low_order_products = {
-        "one_to_two": [
-            row for row in product_rows
-            if 1 <= _safe_int(row.get("order_count")) <= 2
-        ],
-        "three_to_five": [
-            row for row in product_rows
-            if 3 <= _safe_int(row.get("order_count")) <= 5
-        ],
-    }
-    for key in low_order_products:
-        low_order_products[key] = sorted(
-            low_order_products[key],
-            key=lambda item: (-_safe_float(item.get("ad_cost_usd")), -_safe_int(item.get("order_count"))),
-        )[:20]
 
     today = (now or datetime.now(_CST)).astimezone(_CST).date() if (now or datetime.now(_CST)).tzinfo else (now or datetime.now(_CST)).date()
     extra_warnings: list[dict[str, Any]] = []
@@ -770,21 +1302,58 @@ def build_weekly_data_package(
         week_end=week_end,
         extra_warnings=product_warnings + extra_warnings,
     )
-    rule_findings = _rule_findings(
-        segments=segments,
-        daily_by_store=daily_by_store,
-        product_rows=product_rows,
-        campaign_rows=campaign_rows,
-    )
     try:
-        product_stability = load_product_stability_summary(limit=50)
+        product_stability_raw = load_product_stability_summary(limit=0)
     except Exception as exc:
         from appcore import media_product_stability
 
         log.warning("load product stability summary failed", exc_info=True)
-        product_stability = media_product_stability.empty_stability_summary(
+        product_stability_raw = media_product_stability.empty_stability_summary(
             warning=f"产品稳定分级缓存暂不可用：{str(exc)[:160]}"
         )
+    product_stability, product_scope, product_scope_sets = _build_weekly_product_scope(
+        product_stability_raw,
+        week_end=week_end,
+        limit=50,
+    )
+    analysis_product_rows = _filter_rows_for_scope(
+        product_rows,
+        product_scope=product_scope,
+        scope_sets=product_scope_sets,
+        active_only=True,
+    )
+    analysis_campaign_rows = _filter_rows_for_scope(
+        campaign_rows,
+        product_scope=product_scope,
+        scope_sets=product_scope_sets,
+        active_only=True,
+    )
+    low_order_products = {
+        "one_to_two": [
+            row for row in analysis_product_rows
+            if 1 <= _safe_int(row.get("order_count")) <= 2
+        ],
+        "three_to_five": [
+            row for row in analysis_product_rows
+            if 3 <= _safe_int(row.get("order_count")) <= 5
+        ],
+    }
+    for key in low_order_products:
+        low_order_products[key] = sorted(
+            low_order_products[key],
+            key=lambda item: (-_safe_float(item.get("ad_cost_usd")), -_safe_int(item.get("order_count"))),
+        )[:20]
+    rule_findings = _rule_findings(
+        segments=segments,
+        daily_by_store=daily_by_store,
+        product_rows=analysis_product_rows,
+        campaign_rows=analysis_campaign_rows,
+    )
+    supplement_recommendations = _build_product_supplement_recommendations(
+        product_stability=product_stability,
+        product_rows=analysis_product_rows,
+        scope_sets=product_scope_sets,
+    )
     return {
         "period": {
             "week_start": week_start,
@@ -800,17 +1369,21 @@ def build_weekly_data_package(
         "daily_by_store": daily_by_store,
         "segments": segments,
         "product_rows": product_rows,
+        "analysis_product_rows": analysis_product_rows,
         "product_profit_summary": product_profit_summary,
         "campaign_rows": campaign_rows,
+        "analysis_campaign_rows": analysis_campaign_rows,
         "product_stability": product_stability,
+        "product_scope": product_scope,
+        "product_supplement_recommendations": supplement_recommendations,
         "low_order_products": low_order_products,
         "rule_findings": rule_findings,
     }
 
 
 def _compact_for_prompt(package: dict[str, Any]) -> dict[str, Any]:
-    product_rows = package.get("product_rows") or []
-    campaign_rows = package.get("campaign_rows") or []
+    product_rows = package.get("analysis_product_rows") or package.get("product_rows") or []
+    campaign_rows = package.get("analysis_campaign_rows") or package.get("campaign_rows") or []
     return {
         "period": package.get("period"),
         "data_quality": package.get("data_quality"),
@@ -818,6 +1391,7 @@ def _compact_for_prompt(package: dict[str, Any]) -> dict[str, Any]:
         "daily_global": package.get("daily_global"),
         "daily_by_store": package.get("daily_by_store"),
         "segments": package.get("segments"),
+        "product_scope": package.get("product_scope"),
         "top_products_by_profit": sorted(
             product_rows,
             key=lambda row: -_safe_float(row.get("profit_usd")),
@@ -827,6 +1401,7 @@ def _compact_for_prompt(package: dict[str, Any]) -> dict[str, Any]:
             key=lambda row: _safe_float(row.get("profit_usd")),
         )[:20],
         "product_stability": package.get("product_stability"),
+        "product_supplement_recommendations": package.get("product_supplement_recommendations"),
         "low_order_products": package.get("low_order_products"),
         "top_campaigns_by_spend": campaign_rows[:25],
         "rule_findings": package.get("rule_findings"),
@@ -842,10 +1417,13 @@ def build_ai_prompt(package: dict[str, Any]) -> list[dict[str, str]]:
     user = (
         "请分析这一周业务有没有问题、商品方向怎么调、广告层面怎么调。"
         "重点比较周一到周三与周四到周六，并结合周日、周五到周六压力段、"
-        "店铺拆分、产品利润、广告计划消耗、低单量产品和稳定产品分级。输出 JSON schema："
+        "店铺拆分、产品利润、广告计划消耗、低单量产品、稳定产品分级和补素材建议。"
+        "商品和广告结论只能基于 product_scope 中已满 7 天投放的样本；"
+        "material_supplement 必须优先复述数据里的扩国家和英语素材补位建议，不要编造素材。输出 JSON schema："
         "{business_health:{status,summary,evidence[]},"
         "product_direction:{scale[],watch[],cut[]},"
         "ad_actions:{increase[],reduce[],pause[]},"
+        "material_supplement:{country_expansion[],material_fill[]},"
         "risk_flags:[{level,message}],executive_summary:[]}。"
         "数据如下：\n"
         + json.dumps(_serialize(compact), ensure_ascii=False)

@@ -16,7 +16,11 @@ def test_classify_product_marks_7d_stable_by_daily_floor_and_total():
         product_id=1,
         product_code="P1",
         daily_orders=_orders(today, 7, 20),
-        ad_summary={"delivery_status": "active", "active_7d_ad_spend_usd": 10},
+        ad_summary={
+            "delivery_status": "active",
+            "active_7d_ad_spend_usd": 10,
+            "delivery_start_time": "2026-06-01T14:00:00",
+        },
         today=today,
     )
 
@@ -36,7 +40,11 @@ def test_classify_product_marks_7d_stable_by_weekly_total():
     row = stability.classify_product(
         product_id=1,
         daily_orders=daily,
-        ad_summary={"delivery_status": "active", "active_7d_ad_spend_usd": 10},
+        ad_summary={
+            "delivery_status": "active",
+            "active_7d_ad_spend_usd": 10,
+            "delivery_start_time": "2026-06-01",
+        },
         today=today,
     )
 
@@ -52,7 +60,11 @@ def test_classify_product_marks_30d_stable():
     row = stability.classify_product(
         product_id=1,
         daily_orders=_orders(today, 30, 20),
-        ad_summary={"delivery_status": "active", "active_7d_ad_spend_usd": 10},
+        ad_summary={
+            "delivery_status": "active",
+            "active_7d_ad_spend_usd": 10,
+            "delivery_start_time": "2026-05-01",
+        },
         today=today,
     )
 
@@ -61,20 +73,28 @@ def test_classify_product_marks_30d_stable():
     assert "30天稳定" in row["stable_marks"]
 
 
-def test_classify_product_splits_potential_test_stopped_and_never():
+def test_classify_product_splits_secondary_test_stopped_and_never():
     from appcore import media_product_stability as stability
 
     today = date(2026, 6, 7)
-    potential = stability.classify_product(
+    secondary = stability.classify_product(
         product_id=1,
-        daily_orders=_orders(today, 7, 6),
-        ad_summary={"delivery_status": "active", "active_7d_ad_spend_usd": 5},
+        daily_orders=_orders(today, 7, 11),
+        ad_summary={
+            "delivery_status": "active",
+            "active_7d_ad_spend_usd": 5,
+            "delivery_start_time": "2026-06-01",
+        },
         today=today,
     )
     test = stability.classify_product(
         product_id=2,
         daily_orders=_orders(today, 7, 4),
-        ad_summary={"delivery_status": "active", "active_7d_ad_spend_usd": 5},
+        ad_summary={
+            "delivery_status": "active",
+            "active_7d_ad_spend_usd": 5,
+            "delivery_start_time": "2026-06-01",
+        },
         today=today,
     )
     stopped = stability.classify_product(
@@ -90,11 +110,33 @@ def test_classify_product_splits_potential_test_stopped_and_never():
         today=today,
     )
 
-    assert potential["status"] == "potential"
+    assert secondary["status"] == "secondary_stable"
+    assert secondary["stable_marks"] == ["二级稳定"]
     assert test["status"] == "test"
     assert stopped["status"] == "stopped"
     assert stopped["stable_7d"] is False
     assert never["status"] == "never"
+
+
+def test_classify_product_requires_full_7_delivery_days():
+    from appcore import media_product_stability as stability
+
+    today = date(2026, 6, 7)
+    row = stability.classify_product(
+        product_id=1,
+        daily_orders=_orders(today, 7, 20),
+        ad_summary={
+            "delivery_status": "active",
+            "active_7d_ad_spend_usd": 10,
+            "delivery_start_time": "2026-06-02T14:30:00",
+        },
+        today=today,
+    )
+
+    assert row["status"] == "insufficient_history"
+    assert row["stable_7d"] is False
+    assert row["delivery_age_days"] == 6
+    assert row["eligible_for_weekly_analysis"] is False
 
 
 def test_stability_summary_counts_and_limits_rows():
@@ -117,9 +159,11 @@ def test_stability_summary_counts_and_limits_rows():
             "stable_30d": True,
             "last_7d_orders": 90,
         },
-        {"product_id": 3, "product_code": "P", "status": "potential", "last_7d_orders": 50},
+        {"product_id": 3, "product_code": "P", "status": "secondary_stable", "last_7d_orders": 77},
+        {"product_id": 6, "product_code": "LEGACY", "status": "potential", "last_7d_orders": 50},
         {"product_id": 4, "product_code": "T", "status": "test", "last_7d_orders": 8},
         {"product_id": 5, "product_code": "X", "status": "stopped", "last_7d_orders": 0},
+        {"product_id": 7, "product_code": "N", "status": "insufficient_history", "last_7d_orders": 80},
     ]
 
     summary = stability.stability_summary_from_rows(rows, limit=1)
@@ -127,8 +171,10 @@ def test_stability_summary_counts_and_limits_rows():
     assert summary["counts"]["stable_total"] == 2
     assert summary["counts"]["stable_7d"] == 1
     assert summary["counts"]["stable_30d"] == 1
+    assert summary["counts"]["secondary_stable"] == 1
     assert summary["counts"]["potential"] == 1
     assert summary["counts"]["test"] == 1
     assert summary["counts"]["stopped"] == 1
+    assert summary["counts"]["insufficient_history"] == 1
     assert len(summary["buckets"]["stable"]) == 1
     assert summary["buckets"]["stable"][0]["product_code"] == "S7"

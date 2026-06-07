@@ -126,9 +126,12 @@ def test_weekly_ai_analysis_tab_and_panel_present():
     assert 'id="weeklyAiDqBar"' in template
     assert 'id="weeklyAiStabilitySummary"' in template
     assert 'id="weeklyAiStabilityBody"' in template
+    assert 'id="weeklyAiSupplementCountryBody"' in template
+    assert 'id="weeklyAiSupplementMaterialBody"' in template
     assert 'id="weeklyAiProductBody"' in template
     assert 'id="weeklyAiAdBody"' in template
     assert "renderWeeklyAiProductStability" in template
+    assert "renderWeeklyAiSupplementRecommendations" in template
     assert "initWeeklyAiAnalysis" in template
 
 
