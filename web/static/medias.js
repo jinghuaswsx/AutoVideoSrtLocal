@@ -3080,6 +3080,10 @@
     if (deliveryStatusEl && deliveryStatusEl.value && deliveryStatusEl.value !== 'all') {
       params.set('delivery_status', deliveryStatusEl.value);
     }
+    const stabilityStatusEl = $('filterStabilityStatus');
+    if (stabilityStatusEl && stabilityStatusEl.value && stabilityStatusEl.value !== 'all') {
+      params.set('stability_status', stabilityStatusEl.value);
+    }
     const productSourceEl = $('filterProductSource');
     if (productSourceEl && productSourceEl.value && productSourceEl.value !== 'all') {
       params.set('product_source', productSourceEl.value);
@@ -9850,6 +9854,8 @@
     if (filterRoas) filterRoas.addEventListener('change', () => runSearchNow());
     const filterDelivery = $('filterDeliveryStatus');
     if (filterDelivery) filterDelivery.addEventListener('change', () => runSearchNow());
+    const filterStability = $('filterStabilityStatus');
+    if (filterStability) filterStability.addEventListener('change', () => runSearchNow());
     const filterSource = $('filterProductSource');
     if (filterSource) filterSource.addEventListener('change', () => runSearchNow());
 

@@ -162,7 +162,8 @@ html, body {
 
 /* ────────── Toolbar ────────── */
 .oc-toolbar { display:block; padding:var(--oc-sp-3) var(--oc-sp-4); background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); margin-bottom:0; position:sticky; top:var(--sticky-toolbar-top,130px); z-index:21; }
-.oc-toolbar-filter-row { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr 1fr 1.4fr; gap:var(--oc-sp-3); align-items:center; width:100%; }
+/* Docs-anchor: docs/superpowers/specs/2026-06-08-medias-stability-filter-mobile-alignment.md */
+.oc-toolbar-filter-row { display:grid; grid-template-columns:minmax(180px,1.45fr) repeat(4,minmax(132px,1fr)) minmax(160px,1.15fr) minmax(150px,1.15fr); gap:var(--oc-sp-3); align-items:center; width:100%; }
 .oc-search { position:relative; min-width:0; max-width:none; width:100%; }
 .oc-search .leading { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--oc-fg-subtle); pointer-events:none; }
 .oc-search input { width:100%; height:32px; padding:0 12px 0 34px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r); background:var(--oc-bg); color:var(--oc-fg); font-size:13px; font-family:inherit; outline:none; transition:border-color var(--oc-dur-fast) var(--oc-ease), box-shadow var(--oc-dur-fast) var(--oc-ease); }
@@ -819,7 +820,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-table { width:100%; border-collapse:separate; border-spacing:0; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-lg); overflow:clip; font-size:13px; table-layout:auto; }
 .oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
 .oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; }
-.oc-table-medias { min-width: 2138px; }
+.oc-table-medias { min-width: 2176px; }
 .oc-table-medias th, .oc-table-medias td { padding:8px 5px !important; }
 .oc-table-medias thead th { text-align:center !important; white-space:nowrap !important; }
 .oc-table tbody tr:hover { background:var(--oc-bg-subtle); }
@@ -838,6 +839,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-table td.name a:hover { color:var(--oc-accent); }
 .oc-table th:last-child, .oc-table td.actions { text-align:center; }
 .oc-table td.actions { white-space:normal; min-width:260px; }
+.oc-table-medias td.actions { min-width:0; }
 .oc-table td.actions .oc-btn svg { margin-right:2px; }
 .oc-table td.oc-product-id-cell { vertical-align:middle; }
 .oc-product-id-main { line-height:1.35; overflow-wrap:anywhere; word-break:break-all; }
@@ -3190,8 +3192,8 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
     min-width:0;
   }
   .oc-table-medias {
-    width:2138px !important;
-    min-width:2138px !important;
+    width:2176px !important;
+    min-width:2176px !important;
     table-layout:fixed;
   }
   .oc-vm-table {
@@ -4203,6 +4205,17 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
         <option value="active">投放中</option>
         <option value="stopped">终止投放</option>
         <option value="never">未投</option>
+      </select>
+      <select id="filterStabilityStatus" class="oc-select" title="按稳定分级筛选">
+        <option value="all">稳定分级：全部</option>
+        <option value="stable">稳定品</option>
+        <option value="stable_7d">7天稳定</option>
+        <option value="stable_30d">30天稳定</option>
+        <option value="secondary_stable">二级稳定品</option>
+        <option value="test">测试品</option>
+        <option value="stopped">已停投</option>
+        <option value="never">未投放</option>
+        <option value="insufficient_history">投放未满7天</option>
       </select>
       <select id="filterProductSource" class="oc-select" title="按产品来源筛选">
         <option value="all">产品来源：全部</option>

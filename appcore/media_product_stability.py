@@ -28,6 +28,27 @@ STATUS_LABELS = {
     STATUS_INSUFFICIENT_HISTORY: "投放未满7天",
 }
 
+FILTER_ALL = "all"
+FILTER_STABLE_7D = "stable_7d"
+FILTER_STABLE_30D = "stable_30d"
+
+STABILITY_STATUS_FILTERS = (
+    FILTER_ALL,
+    STATUS_STABLE,
+    FILTER_STABLE_7D,
+    FILTER_STABLE_30D,
+    STATUS_SECONDARY_STABLE,
+    STATUS_TEST,
+    STATUS_STOPPED,
+    STATUS_NEVER,
+    STATUS_INSUFFICIENT_HISTORY,
+)
+
+
+def normalize_stability_status_filter(value: Any) -> str:
+    normalized = str(value or FILTER_ALL).strip().lower()
+    return normalized if normalized in STABILITY_STATUS_FILTERS else FILTER_ALL
+
 
 def _safe_int(value: Any) -> int:
     if value is None:
