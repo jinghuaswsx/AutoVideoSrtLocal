@@ -72,7 +72,7 @@ def test_mingkong_fine_ai_auto_evaluation_registered():
     assert enriched["log_source"] == "db:mingkong_fine_ai_auto_evaluations"
 
 
-def test_mingkong_fine_ai_auto_evaluation_scheduler_default_limit_is_two(monkeypatch):
+def test_mingkong_fine_ai_auto_evaluation_scheduler_default_limit_is_one(monkeypatch):
     from appcore import mingkong_fine_ai_auto_evaluation_scheduler as scheduler
 
     captured = {}
@@ -83,8 +83,8 @@ def test_mingkong_fine_ai_auto_evaluation_scheduler_default_limit_is_two(monkeyp
 
     monkeypatch.setattr(scheduler.mingkong_fine_ai_auto_evaluation, "tick_once", fake_tick_once)
 
-    assert scheduler.tick_once() == {"limit": 2}
-    assert captured["limit"] == 2
+    assert scheduler.tick_once() == {"limit": 1}
+    assert captured["limit"] == 1
 
 
 def test_mingkong_fine_ai_auto_evaluation_scheduler_not_registered_in_app_scheduler():

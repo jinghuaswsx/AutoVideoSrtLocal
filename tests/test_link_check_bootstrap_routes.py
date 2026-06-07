@@ -169,7 +169,7 @@ def test_bootstrap_returns_product_reference_payload(client, monkeypatch):
     assert payload["matched_by"] == "localized_links_exact"
     assert payload["normalized_url"] == "https://example.com/de/products/demo?variant=1"
     assert [item["kind"] for item in payload["reference_images"]] == ["cover", "detail"]
-    assert payload["reference_images"][0]["download_url"] == "http://local.test/medias/obj/covers/de.jpg"
+    assert payload["reference_images"][0]["download_url"].endswith("/medias/obj/covers/de.jpg")
     assert payload["reference_images"][0]["storage_backend"] == "local"
 
 

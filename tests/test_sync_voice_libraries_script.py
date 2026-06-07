@@ -52,6 +52,7 @@ def test_sync_language_caps_metadata_to_1000_and_records_remote_total(monkeypatc
 
     monkeypatch.setattr(sync_driver, "sync_shared_voice_variants", fake_sync_shared_voice_variants)
     monkeypatch.setattr(sync_driver, "embed_missing_voice_variants", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(sync_driver, "backfill_missing_preview_speech_rates", lambda *args, **kwargs: 0)
     monkeypatch.setattr(sync_driver, "ensure_voice_variants_table", lambda: None)
     monkeypatch.setattr(sync_driver, "_summary_row", lambda lang: stats)
     monkeypatch.setattr(sync_driver, "_save_state", lambda state: None)
@@ -76,6 +77,7 @@ def test_sync_language_stays_partial_until_all_existing_rows_are_embedded(monkey
 
     monkeypatch.setattr(sync_driver, "sync_shared_voice_variants", fake_sync_shared_voice_variants)
     monkeypatch.setattr(sync_driver, "embed_missing_voice_variants", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(sync_driver, "backfill_missing_preview_speech_rates", lambda *args, **kwargs: 0)
     monkeypatch.setattr(sync_driver, "ensure_voice_variants_table", lambda: None)
     monkeypatch.setattr(sync_driver, "_summary_row", lambda lang: {"total": 1001, "embedded": 1000})
     monkeypatch.setattr(sync_driver, "_save_state", lambda state: None)

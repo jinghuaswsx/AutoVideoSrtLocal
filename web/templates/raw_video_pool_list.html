@@ -259,7 +259,7 @@ function rvpTaskEntryAction(t) {
   if (!t.subtitle_detail_url) {
     return '<button class="rvp-btn" disabled>任务详情</button>';
   }
-  return `<a class="rvp-btn" href="${rvpAttr(t.subtitle_detail_url)}" target="_blank" rel="noopener">任务详情</a>`;
+  return `<a class="rvp-btn" href="${rvpAttr(t.subtitle_detail_url)}" target="_blank" rel="noopener noreferrer">任务详情</a>`;
 }
 
 function rvpTaskRowAction(t) {
@@ -333,9 +333,9 @@ function rvpRenderTaskDetail(task, events) {
     buttons.push(`<button class="rvp-btn rvp-btn--primary" onclick="rvpOpenUpload(${id}, '${rvpEsc(task.source_media_filename || task.mp4_filename || '').replace(/'/g, '&#39;')}')">上传替换视频</button>`);
   }
   if (task.subtitle_detail_url) {
-    buttons.push(`<a class="rvp-btn" href="${rvpAttr(task.subtitle_detail_url)}" target="_blank" rel="noopener">牛马去字幕详情</a>`);
+    buttons.push(`<a class="rvp-btn" href="${rvpAttr(task.subtitle_detail_url)}" target="_blank" rel="noopener noreferrer">牛马去字幕详情</a>`);
   }
-  buttons.push(`<a class="rvp-btn" href="${rvpAttr(task.task_center_url || ('/tasks/?task_id=' + id))}" target="_blank" rel="noopener">任务中心详情</a>`);
+  buttons.push(`<a class="rvp-btn" href="${rvpAttr(task.task_center_url || ('/tasks/?task_id=' + id))}" target="_blank" rel="noopener noreferrer">任务中心详情</a>`);
   return `<div class="rvp-detail-title">
       <h3>${rvpEsc(task.product_name || '原始素材任务')}</h3>
       <div class="rvp-task-meta">${rvpEsc(['#' + id, task.product_code || '', task.source_media_filename || ''].filter(Boolean).join(' · '))}</div>

@@ -40,7 +40,7 @@ def test_fine_ai_prompts_require_chinese_human_readable_output():
     assert "country_name 和 country_name_zh 都输出中文国家名" in country_prompt
 
 
-def test_fine_ai_gemini_client_invokes_manual_default_vertex_without_search_and_with_url_context(monkeypatch):
+def test_fine_ai_gemini_client_invokes_manual_default_openrouter_without_search_and_with_url_context(monkeypatch):
     from appcore import fine_ai_gemini_client as mod
 
     calls = []
@@ -78,8 +78,8 @@ def test_fine_ai_gemini_client_invokes_manual_default_vertex_without_search_and_
     assert result["country_code"] == "DE"
     assert calls[0][0] == "fine_ai_evaluation.country"
     kwargs = calls[0][1]
-    assert kwargs["provider_override"] == "gemini_vertex"
-    assert kwargs["model_override"] == "gemini-3.5-flash"
+    assert kwargs["provider_override"] == "openrouter"
+    assert kwargs["model_override"] == "google/gemini-3.5-flash"
     assert kwargs["google_search"] is False
     assert kwargs["url_context"] is True
     assert kwargs["timeout_seconds"] == 60.0
@@ -195,12 +195,12 @@ def test_fine_ai_gemini_client_records_full_safe_llm_trace(monkeypatch):
 
     trace = client.last_call_trace
     assert result["country_code"] == "DE"
-    assert trace["provider"] == "gemini_vertex"
-    assert trace["model_id"] == "gemini-3.5-flash"
+    assert trace["provider"] == "openrouter"
+    assert trace["model_id"] == "google/gemini-3.5-flash"
     assert trace["use_case_code"] == "fine_ai_evaluation.country"
     assert trace["request"]["system_prompt"] == mod.COUNTRY_EVALUATION_SYSTEM_PROMPT
     assert "Sample" in trace["request"]["prompt"]
-    assert trace["request"]["payload"]["provider_override"] == "gemini_vertex"
+    assert trace["request"]["payload"]["provider_override"] == "openrouter"
     assert trace["request"]["payload"]["media"] == ["G:/tmp/card_15s_llm.mp4"]
     assert trace["response"]["summary"]["input_tokens"] == 11
     assert trace["response"]["parsed_json"]["country_code"] == "DE"
@@ -356,8 +356,10 @@ def _country_result():
             "product_market_fit_score": 70,
             "demand_score": 70,
             "competition_score": 70,
+            "aesthetic_fit_score": 70,
             "pricing_score": 70,
             "creative_fit_score": 70,
+            "cultural_fit_score": 70,
             "landing_page_fit_score": 70,
             "operational_fit_score": 70,
             "compliance_risk_score": 70,
@@ -365,8 +367,10 @@ def _country_result():
         "decision": {"final_decision": "TEST", "confidence": "medium", "one_sentence_reason": "", "why": [], "blocking_issues": []},
         "market_fit": {"local_positioning": "", "target_segments": [], "use_cases": [], "demand_analysis": {"summary": "", "facts": [], "inferences": [], "evidence_gaps": []}, "seasonality": [], "market_entry_notes": []},
         "competitor_analysis": {"summary": "", "competitors": [], "competitive_advantages": [], "competitive_disadvantages": [], "evidence_gaps": []},
+        "aesthetic_analysis": {},
         "pricing_analysis": {"current_price": None, "current_currency": "", "recommended_price_range": {"min": None, "max": None, "currency": "EUR"}, "pricing_commentary": "", "margin_inputs_missing": [], "cannot_calculate_reasons": []},
         "creative_fit": {"creative_missing": True, "assets_reviewed": {"cover_images": [], "product_images": [], "videos": []}, "cover_image_audit": {"score": 0, "issues": [], "localization_needed": [], "claim_risks": [], "recommended_cover_directions": []}, "product_image_audit": {"score": 0, "issues": [], "recommended_image_directions": []}, "video_audit": {"score": 0, "timestamp_findings": [], "hook_analysis": "", "proof_gaps": [], "scenes_to_keep": [], "scenes_to_replace_or_reshoot": []}, "localized_copy_directions": {"cover_text_direction": [], "hook_direction": [], "cta_direction": [], "language_notes": []}, "final_creative_decision": "NO_CREATIVE_PROVIDED"},
+        "cultural_analysis": {},
         "landing_page_localization": {"localization_difficulty": 50, "hero_section": {"title_direction": "", "subtitle_direction": "", "cta_direction": "", "image_direction": ""}, "sections_needed": [], "trust_elements_needed": [], "claims_to_avoid_or_rewrite": [], "unit_and_currency_notes": [], "faq_directions": []},
         "risks": {"claim_risks": [], "compliance_risks": [], "operational_risks": [], "trust_risks": [], "localization_risks": []},
         "recommendations": {"recommended_positioning": "", "ad_test_angles": [], "audience_suggestions": [], "landing_page_actions": [], "creative_actions": [], "first_30_day_test_plan": {"test_priority": "medium", "creative_variants": [], "landing_page_variants": [], "success_metrics": [], "kill_criteria": [], "scale_criteria": []}},
@@ -499,7 +503,5 @@ def test_gemini_3_5_flash_pricing_fallback(monkeypatch):
     assert source == "pricebook"
     # 10000 * 0.0000102 + 5000 * 0.0000612 = 0.102 + 0.306 = 0.408
     assert cost == Decimal("0.408000")
-
-
 
 

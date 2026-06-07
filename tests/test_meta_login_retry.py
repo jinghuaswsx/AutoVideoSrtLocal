@@ -101,6 +101,11 @@ def test_final_sync_autofills_and_retries_after_failed_auth(monkeypatch, tmp_pat
         lambda path, target_date, account: {"rows": 2, "matched": 1, "spend_usd": 0.0},
     )
     monkeypatch.setattr(meta_daily_final_sync, "_refresh_final_roas_snapshot", lambda target_date, source_run_id: 11)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_recompute_order_profit_after_final_sync",
+        lambda target_date, source_run_id: {"status": "skipped"},
+    )
 
     result = meta_daily_final_sync.run_final_sync(date(2026, 5, 7), mode="run")
 
@@ -168,6 +173,11 @@ def test_final_sync_autofill_retry_preserves_adset_level(monkeypatch, tmp_path):
         lambda path, target_date, account: {"rows": 3, "matched": 1, "spend_usd": 0.0},
     )
     monkeypatch.setattr(meta_daily_final_sync, "_refresh_final_roas_snapshot", lambda target_date, source_run_id: 12)
+    monkeypatch.setattr(
+        meta_daily_final_sync,
+        "_recompute_order_profit_after_final_sync",
+        lambda target_date, source_run_id: {"status": "skipped"},
+    )
 
     result = meta_daily_final_sync.run_final_sync(
         date(2026, 1, 23),

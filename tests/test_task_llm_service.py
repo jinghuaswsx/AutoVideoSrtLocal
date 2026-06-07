@@ -7,7 +7,7 @@ import pytest
     ("provider", "expected"),
     [
         ("doubao", "doubao"),
-        ("vertex_adc_gemini_35_flash", "gemini_aistudio"),
+        ("vertex_adc_gemini_35_flash", "gemini_vertex"),
         ("vertex_gemini_35_flash", "gemini_vertex"),
         ("gpt_5_mini", "openrouter"),
         ("openrouter", "openrouter"),

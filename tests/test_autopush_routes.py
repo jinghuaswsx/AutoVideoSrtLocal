@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -12,6 +13,18 @@ if str(AUTOPUSH_DIR) not in sys.path:
     sys.path.insert(0, str(AUTOPUSH_DIR))
 
 
+def _load_autopush_main():
+    spec = importlib.util.spec_from_file_location(
+        "autopush_main_under_test",
+        AUTOPUSH_DIR / "main.py",
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _build_client(monkeypatch):
     monkeypatch.setenv("AUTOVIDEO_BASE_URL", "http://example.com")
     monkeypatch.setenv("AUTOVIDEO_API_KEY", "demo-key")
@@ -21,8 +34,7 @@ def _build_client(monkeypatch):
 
     settings = importlib.import_module("backend.settings")
     settings.get_settings.cache_clear()
-    main = importlib.import_module("main")
-    main = importlib.reload(main)
+    main = _load_autopush_main()
     return TestClient(main.create_app())
 
 

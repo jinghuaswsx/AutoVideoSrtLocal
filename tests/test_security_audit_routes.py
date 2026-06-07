@@ -53,7 +53,9 @@ def test_security_audit_page_forbidden_for_normal_admin(monkeypatch):
         user_id=2,
     )
 
-    assert client.get("/admin/security-audit").status_code == 403
+    resp = client.get("/admin/security-audit", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
 
 
 def test_security_audit_api_forbidden_for_normal_user(monkeypatch):
@@ -64,7 +66,9 @@ def test_security_audit_api_forbidden_for_normal_user(monkeypatch):
         user_id=3,
     )
 
-    assert client.get("/admin/security-audit/api/logs").status_code == 403
+    resp = client.get("/admin/security-audit/api/logs", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
 
 
 def test_security_audit_api_returns_logs(monkeypatch):

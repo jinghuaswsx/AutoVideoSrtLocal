@@ -37,7 +37,7 @@ def test_resolve_returns_db_value_when_present():
     assert not m_exec.called
 
 
-def test_resolve_normalizes_non_meta_video_adc_binding_to_aistudio():
+def test_resolve_normalizes_adc_binding_to_vertex():
     row = {
         "provider_code": "gemini_vertex_adc",
         "model_id": "google/gemini-3.5-flash",
@@ -47,7 +47,7 @@ def test_resolve_normalizes_non_meta_video_adc_binding_to_aistudio():
     with patch("appcore.llm_bindings.query_one", return_value=row), \
          patch("appcore.llm_bindings.execute") as m_exec:
         result = llm_bindings.resolve("material_evaluation.evaluate")
-    assert result["provider"] == "gemini_aistudio"
+    assert result["provider"] == "gemini_vertex"
     assert result["model"] == "gemini-3.5-flash"
     assert result["source"] == "db"
     assert not m_exec.called
@@ -75,7 +75,7 @@ def test_resolve_keeps_voice_selection_adc_binding():
     }
     with patch("appcore.llm_bindings.query_one", return_value=row):
         result = llm_bindings.resolve("voice_selection.assess")
-    assert result["provider"] == "gemini_vertex_adc"
+    assert result["provider"] == "gemini_vertex"
     assert result["model"] == "gemini-3.5-flash"
 
 
@@ -89,7 +89,7 @@ def test_resolve_keeps_video_analysis_adc_binding(use_case):
     }
     with patch("appcore.llm_bindings.query_one", return_value=row):
         result = llm_bindings.resolve(use_case)
-    assert result["provider"] == "gemini_vertex_adc"
+    assert result["provider"] == "gemini_vertex"
     assert result["model"] == "gemini-3.5-flash"
 
 
@@ -199,7 +199,7 @@ def test_upsert_serializes_extra_dict():
     assert args[5] == 7
 
 
-def test_upsert_normalizes_non_meta_video_adc_binding_to_aistudio():
+def test_upsert_normalizes_adc_binding_to_vertex():
     with patch("appcore.llm_bindings.execute") as m_exec:
         llm_bindings.upsert(
             "video_cover.video_analysis",
@@ -208,7 +208,7 @@ def test_upsert_normalizes_non_meta_video_adc_binding_to_aistudio():
             updated_by=7,
         )
     args = m_exec.call_args[0][1]
-    assert args[1] == "gemini_aistudio"
+    assert args[1] == "gemini_vertex"
     assert args[2] == "gemini-3.5-flash"
 
 
@@ -234,7 +234,7 @@ def test_upsert_keeps_voice_selection_adc_binding():
             updated_by=7,
         )
     args = m_exec.call_args[0][1]
-    assert args[1] == "gemini_vertex_adc"
+    assert args[1] == "gemini_vertex"
     assert args[2] == "gemini-3.5-flash"
 
 
@@ -248,7 +248,7 @@ def test_upsert_keeps_video_analysis_adc_binding(use_case):
             updated_by=7,
         )
     args = m_exec.call_args[0][1]
-    assert args[1] == "gemini_vertex_adc"
+    assert args[1] == "gemini_vertex"
     assert args[2] == "gemini-3.5-flash"
 
 

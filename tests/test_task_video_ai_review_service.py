@@ -99,7 +99,7 @@ def test_start_task_video_ai_review_returns_conflict_when_review_is_running():
     review = _FakeReviewModule(fail_with=_ReviewInProgressError("run-active"))
     outcome = start_task_video_ai_review(
         "task-1",
-        user=SimpleNamespace(id=7, is_admin=True),
+        user=SimpleNamespace(id=7, is_superadmin=True),
         load_task=lambda task_id: {"_user_id": 8},
         review_module=review,
     )

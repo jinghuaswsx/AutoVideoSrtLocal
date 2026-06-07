@@ -190,14 +190,14 @@ def test_generate_image_cloud_adc_override_uses_vertex_adc_backend():
     assert out == b"PNG"
     assert mime == "image/png"
     assert recorded == {
-        "credential_channel": "cloud_adc",
+        "credential_channel": "cloud",
         "api_key": "",
         "backend": "cloud",
         "project": "adc-project",
         "location": "global",
     }
-    assert m_log.call_args.kwargs["provider"] == "gemini_vertex_adc"
-    assert m_log.call_args.kwargs["extra"]["channel"] == "cloud_adc"
+    assert m_log.call_args.kwargs["provider"] == "gemini_vertex"
+    assert m_log.call_args.kwargs["extra"]["channel"] == "cloud"
 
 
 def test_generate_image_cloud_channel_errors_without_key():
@@ -1630,20 +1630,20 @@ def test_resolve_gemini_image_credentials_fallback_googlewj():
         assert location == "global"
 
 
-def test_resolve_gemini_image_credentials_fallback_cloud_adc():
+def test_resolve_gemini_image_credentials_fallback_cloud():
     from appcore import gemini_image
     from appcore.llm_provider_configs import LlmProviderConfig
 
     configs = {
-        "gemini_vertex_adc_image": LlmProviderConfig(
-            provider_code="gemini_vertex_adc_image",
+        "gemini_cloud_image": LlmProviderConfig(
+            provider_code="gemini_cloud_image",
             display_name="image",
             group_code="image",
             extra_config={},
             enabled=True
         ),
-        "gemini_vertex_adc_text": LlmProviderConfig(
-            provider_code="gemini_vertex_adc_text",
+        "gemini_cloud_text": LlmProviderConfig(
+            provider_code="gemini_cloud_text",
             display_name="text",
             group_code="text_llm",
             extra_config={"project": "fallback-adc-project", "location": "global"},
@@ -1655,7 +1655,7 @@ def test_resolve_gemini_image_credentials_fallback_cloud_adc():
         return configs[code]
 
     with patch("appcore.gemini_image.require_provider_config", fake_require):
-        api_key, project, location, model_id = gemini_image._resolve_gemini_image_credentials("cloud_adc")
+        api_key, project, location, model_id = gemini_image._resolve_gemini_image_credentials("cloud")
         assert api_key == ""
         assert project == "fallback-adc-project"
         assert location == "global"

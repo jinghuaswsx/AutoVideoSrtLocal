@@ -13,6 +13,11 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
     monkeypatch.setattr(pushes.medias, "get_language_name", lambda code: code)
     monkeypatch.setattr(pushes.system_settings, "get_setting", lambda key: None)
     monkeypatch.setattr(
+        pushes,
+        "get_product_links_target_url",
+        lambda: "https://os.wedev.vip/dify/shopify/medias/links",
+    )
+    monkeypatch.setattr(
         pushes.product_link_domains,
         "list_enabled_product_domains",
         lambda product_id: [
@@ -1127,5 +1132,4 @@ def test_medias_product_links_push_payload_raises_400_when_no_match(
     assert resp.status_code == 400
     data = resp.get_json()
     assert data["error"] == "必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。"
-
 

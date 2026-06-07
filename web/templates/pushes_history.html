@@ -1156,7 +1156,7 @@
       } else {
         tbody.innerHTML = state.items.map(it => {
           const thumb = it.cover_url
-            ? `<div class="history-video-thumb"><img src="${escapeHtml(it.cover_url)}"><a href="${escapeHtml(it.video_url)}" target="_blank" class="plan-play play-btn">▶</a></div>`
+            ? `<div class="history-video-thumb"><img src="${escapeHtml(it.cover_url)}"><a href="${escapeHtml(it.video_url)}" target="_blank" rel="noopener noreferrer" class="plan-play play-btn">▶</a></div>`
             : `<div class="history-video-thumb" style="background:#f3f4f6;"><span style="color:#9ca3af; font-size:24px;">🎞</span></div>`;
             
           const mainImageUrl = `/medias/cover/${it.product_id}`;
@@ -1484,7 +1484,7 @@
     } else {
       videos.forEach(v => {
         const sizeFormatted = v.size ? (v.size / (1024 * 1024)).toFixed(2) + ' MB' : '-';
-        const urlLink = v.url ? `<div class="modal-material-links"><a href="${escapeHtml(v.url)}" target="_blank">🔗 打开视频素材</a></div>` : '';
+        const urlLink = v.url ? `<div class="modal-material-links"><a href="${escapeHtml(v.url)}" target="_blank" rel="noopener noreferrer">🔗 打开视频素材</a></div>` : '';
         const coverImg = v.image_url ? `<img src="${escapeHtml(v.image_url)}">` : '<span style="color:var(--oc-fg-subtle, #9ca3af); font-size:20px;">🎞</span>';
         
         videosContainer.innerHTML += `
@@ -1534,7 +1534,7 @@
       links.forEach(l => {
         linksContainer.innerHTML += `
           <div class="modal-link-item">
-            <a href="${escapeHtml(l)}" target="_blank" class="modal-link-url">${escapeHtml(l)}</a>
+            <a href="${escapeHtml(l)}" target="_blank" rel="noopener noreferrer" class="modal-link-url">${escapeHtml(l)}</a>
             <button class="btn-mini-copy" data-text="${escapeHtml(l)}" type="button">
               <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               复制

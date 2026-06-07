@@ -25,8 +25,10 @@ def test_dialogue_step_names_replace_voice_match_with_speaker_detect_and_ab():
     )
 
     assert "voice_match" not in names
-    assert names[names.index("speaker_detect") + 1] == "voice_match_ab"
+    assert names[names.index("speaker_detect") + 1] == "speaker_confirm"
+    assert names[names.index("speaker_confirm") + 1] == "voice_match_ab"
     assert names.index("speaker_detect") < names.index("alignment")
+    assert names.index("speaker_confirm") < names.index("alignment")
     assert names.index("voice_match_ab") < names.index("alignment")
     assert names.index("alignment") < names.index("translate")
 
@@ -47,8 +49,10 @@ def test_get_pipeline_steps_builds_dialogue_steps_from_base_omni_config(monkeypa
     names = [name for name, _fn in steps]
 
     assert "voice_match" not in names
-    assert names[names.index("speaker_detect") + 1] == "voice_match_ab"
+    assert names[names.index("speaker_detect") + 1] == "speaker_confirm"
+    assert names[names.index("speaker_confirm") + 1] == "voice_match_ab"
     assert names.index("speaker_detect") < names.index("alignment")
+    assert names.index("speaker_confirm") < names.index("alignment")
     assert names.index("voice_match_ab") < names.index("alignment")
     assert names.index("alignment") < names.index("translate")
 

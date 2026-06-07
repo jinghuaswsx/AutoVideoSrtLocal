@@ -105,18 +105,18 @@ def test_models_endpoint_allows_single_task_channel_override(authed_client_no_db
     assert any(channel["id"] == "doubao" for channel in data["channels"])
 
 
-def test_models_endpoint_allows_vertex_adc_channel_override(authed_client_no_db, monkeypatch):
-    resp = authed_client_no_db.get("/api/image-translate/models?channel=cloud_adc")
+def test_models_endpoint_allows_cloud_channel_override(authed_client_no_db, monkeypatch):
+    resp = authed_client_no_db.get("/api/image-translate/models?channel=cloud")
 
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["channel"] == "cloud_adc"
+    assert data["channel"] == "cloud"
     assert data["default_model_id"] == "gemini-3.1-flash-image-preview"
     assert data["items"][0] == {
         "id": "gemini-3.1-flash-image-preview",
         "name": "Nano Banana 2（快速）",
     }
-    assert {"id": "cloud_adc", "name": "Google Vertex AI (ADC)"} in data["channels"]
+    assert {"id": "cloud", "name": "Google Cloud (Vertex AI)"} in data["channels"]
 
 
 def test_medias_default_image_task_uses_local_image2_low_serial(authed_client_no_db, monkeypatch):
@@ -1125,7 +1125,7 @@ def test_use_source_item_clears_result_model_origin(authed_client_no_db, monkeyp
     assert written["data"] == b"SRC"
 
 
-def test_api_state_marks_legacy_invalid_task_model_origin(authed_client_no_db, monkeypatch):
+def test_api_state_falls_back_for_legacy_invalid_task_channel(authed_client_no_db, monkeypatch):
     from web import store
 
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
@@ -1140,9 +1140,9 @@ def test_api_state_marks_legacy_invalid_task_model_origin(authed_client_no_db, m
 
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["channel"] == "cloud_adc"
+    assert data["channel"] == "apimart"
     assert data["model_id"] == "gpt-image-2"
-    assert data["model_origin_valid"] is False
+    assert data["model_origin_valid"] is True
 
 
 def test_api_state_marks_valid_task_model_origin(authed_client_no_db, monkeypatch):
@@ -1150,7 +1150,7 @@ def test_api_state_marks_valid_task_model_origin(authed_client_no_db, monkeypatc
 
     tid = _prep_task(authed_client_no_db, monkeypatch, with_done=True)
     task = store.get(tid)
-    task["channel"] = "cloud_adc"
+    task["channel"] = "cloud"
     task["model_id"] = "gemini-3.1-flash-image-preview"
 
     resp = authed_client_no_db.get(f"/api/image-translate/{tid}")

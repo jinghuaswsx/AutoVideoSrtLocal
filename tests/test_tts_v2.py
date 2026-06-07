@@ -40,7 +40,7 @@ def test_generate_refines_when_over_tolerance(tmp_path):
     def fake_duration(path):
         return next(durations)
 
-    def fake_refine(prev_text, over_ratio, target_chars, user_id):
+    def fake_refine(prev_text, over_ratio, target_chars, user_id, language):
         return "Short version."
 
     with (
@@ -137,7 +137,7 @@ def test_refine_text_uses_translate_lab_use_case():
         return {"json": {"translated_text": "Short."}, "text": None, "raw": None, "usage": {}}
 
     with patch("pipeline.tts_v2.gemini_generate", side_effect=fake_generate):
-        out = mod._refine_text("Long text", 0.36, 18, 9)
+        out = mod._refine_text("Long text", 0.36, 18, 9, "en")
 
     assert out == "Short."
     assert "Long text" in captured["prompt"]

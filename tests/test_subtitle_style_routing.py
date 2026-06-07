@@ -35,6 +35,9 @@ def test_en_start_persists_subtitle_style(authed_client_no_db, tmp_path, monkeyp
         f"/api/tasks/{task_id}/start",
         json={
             "voice_id": "auto",
+            "source_language": "zh",
+            "target_language": "en",
+            "target_market": "US",
             "subtitle_font": "Poppins Bold",
             "subtitle_size": 18,
             "subtitle_position_y": 0.42,

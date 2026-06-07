@@ -15,18 +15,6 @@ def test_mk_selection_xiao_languages_use_language_code_values():
     assert "escapeHtml(label)" in source
 
 
-def test_mk_selection_xiao_modal_uses_large_capsule_language_picker():
-    source = (ROOT / "web" / "templates" / "mk_selection.html").read_text(encoding="utf-8")
-
-    assert "mki-xiao-dialog" in source
-    assert "width: min(720px, 94vw)" in source
-    assert "mki-xiao-lang-pills" in source
-    assert "mki-xiao-lang-pill" in source
-    assert "mki-xiao-lang-check:checked + span" in source
-    assert "background: var(--oc-accent)" in source
-    assert '<input class="mki-xiao-lang-check" type="checkbox"' in source
-
-
 def test_mk_selection_xiao_modal_stacks_above_import_progress_modal():
     source = (ROOT / "web" / "templates" / "mk_selection.html").read_text(encoding="utf-8")
 

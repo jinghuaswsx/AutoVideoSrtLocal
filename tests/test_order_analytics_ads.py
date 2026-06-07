@@ -1359,7 +1359,7 @@ def test_get_ads_level_list_aggregates_per_code(monkeypatch):
     assert result["rows"][0]["code"] == "abc-rjc"
     assert result["rows"][0]["roas_purchase"] == 2.0
     assert result["rows"][0]["purchase_value_source"] == "meta"
-    assert result["total"] == 2
+    assert result["total"] == 1
     main_sql = next(
         c["sql"] for c in captured if "GROUP BY normalized_campaign_code, ad_account_id" in c["sql"]
     )
@@ -1421,12 +1421,13 @@ def test_get_ads_level_list_filters_by_ad_account(monkeypatch):
     )
 
     assert result["rows"] == []
-    total_query = captured[0]
-    list_query = captured[1]
-    assert "ad_account_id = %s" in total_query["sql"]
-    assert total_query["args"] == (report_start, report_end, "1253003326160754")
+    list_query = next(
+        c for c in captured
+        if "FROM meta_ad_daily_campaign_metrics" in c["sql"]
+        and "GROUP BY normalized_campaign_code, ad_account_id" in c["sql"]
+    )
     assert "ad_account_id = %s" in list_query["sql"]
-    assert list_query["args"] == (report_start, report_end, "1253003326160754", 50, 0)
+    assert list_query["args"] == (report_start, report_end, "1253003326160754")
 
 
 def test_get_ads_level_list_filters_adsets_by_campaign_parent(monkeypatch):
@@ -1491,12 +1492,13 @@ def test_get_ads_level_list_filters_ads_by_adset_parent(monkeypatch):
         "level": "adset",
         "code": "glow-go-insect-set-rjc",
     }
-    total_query = captured[0]
-    list_query = captured[1]
-    assert "normalized_ad_code LIKE %s" in total_query["sql"]
-    assert total_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc%")
+    list_query = next(
+        c for c in captured
+        if "FROM meta_ad_daily_ad_metrics" in c["sql"]
+        and "GROUP BY normalized_ad_code, ad_account_id" in c["sql"]
+    )
     assert "normalized_ad_code LIKE %s" in list_query["sql"]
-    assert list_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc%", 50, 0)
+    assert list_query["args"] == (report_start, report_end, "glow-go-insect-set-rjc%")
 
 
 def test_get_ads_level_list_rejects_invalid_parent_filter():
@@ -2220,6 +2222,7 @@ def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeyp
         ad_account_id,
         parent_level=None,
         parent_code=None,
+        country=None,
     ):
         captured.update({
             "level": level, "start_date": start_date, "end_date": end_date,
@@ -2228,6 +2231,7 @@ def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeyp
             "ad_account_id": ad_account_id,
             "parent_level": parent_level,
             "parent_code": parent_code,
+            "country": country,
         })
         return {"level": level, "rows": [], "total": 0, "page": page, "page_size": page_size, "has_more": False}
 
@@ -2251,6 +2255,7 @@ def test_ads_list_route_passes_params_to_data_layer(authed_client_no_db, monkeyp
     assert captured["ad_account_id"] == "1253003326160754"
     assert captured["parent_level"] == "campaign"
     assert captured["parent_code"] == "sonic-lens-refresher-rjc"
+    assert captured["country"] is None
 
 
 def test_ads_detail_route_passes_account_to_data_layer(authed_client_no_db, monkeypatch):

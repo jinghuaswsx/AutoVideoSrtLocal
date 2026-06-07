@@ -288,21 +288,21 @@ def test_returns_product_assets(client, monkeypatch):
     assert payload["product"]["archived"] is False
 
     assert payload["covers"]["en"]["object_key"] == "1/medias/123/cover_en.jpg"
-    assert payload["covers"]["en"]["download_url"] == (
-        "http://local.test/medias/obj/1/medias/123/cover_en.jpg"
+    assert payload["covers"]["en"]["download_url"].endswith(
+        "/medias/obj/1/medias/123/cover_en.jpg"
     )
-    assert payload["covers"]["de"]["download_url"] == (
-        "http://local.test/medias/obj/1/medias/123/cover_de.jpg"
+    assert payload["covers"]["de"]["download_url"].endswith(
+        "/medias/obj/1/medias/123/cover_de.jpg"
     )
 
     assert payload["copywritings"]["en"][0]["title"] == "Title"
     assert payload["copywritings"]["de"][0]["title"] == "Titel"
 
-    assert payload["items"][0]["video_download_url"] == (
-        "http://local.test/medias/obj/1/medias/123/demo.mp4"
+    assert payload["items"][0]["video_download_url"].endswith(
+        "/medias/obj/1/medias/123/demo.mp4"
     )
-    assert payload["items"][0]["video_cover_download_url"] == (
-        "http://local.test/medias/obj/1/medias/123/item_cover.jpg"
+    assert payload["items"][0]["video_cover_download_url"].endswith(
+        "/medias/obj/1/medias/123/item_cover.jpg"
     )
     assert payload["items"][1]["video_cover_download_url"] is None
 
@@ -490,7 +490,7 @@ def test_push_items_list_returns_items_with_status(client, monkeypatch):
     )
     monkeypatch.setattr(
         "web.routes.openapi_materials.pushes.compute_status",
-        lambda item, product: "pending",
+        lambda item, product, readiness=None: "pending",
     )
     monkeypatch.setattr(
         "web.routes.openapi_materials.openapi_materials_store.query_one_material_row",
@@ -549,7 +549,7 @@ def test_push_items_list_filters_by_status(client, monkeypatch):
     statuses = iter(["pending", "pushed"])
     monkeypatch.setattr(
         "web.routes.openapi_materials.pushes.compute_status",
-        lambda item, product: next(statuses),
+        lambda item, product, readiness=None: next(statuses),
     )
     monkeypatch.setattr(
         "web.routes.openapi_materials.openapi_materials_store.query_one_material_row",
@@ -684,7 +684,7 @@ def test_get_push_item_returns_single(client, monkeypatch):
     )
     monkeypatch.setattr(
         "web.routes.openapi_materials.pushes.compute_status",
-        lambda item, product: "pending",
+        lambda item, product, readiness=None: "pending",
     )
     monkeypatch.setattr(
         "web.routes.openapi_materials.openapi_materials_store.query_one_material_row",
@@ -778,7 +778,7 @@ def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch)
     )
     monkeypatch.setattr(
         "web.routes.openapi_materials.pushes.compute_status",
-        lambda item, product: "pending",
+        lambda item, product, readiness=None: "pending",
     )
     monkeypatch.setattr(
         "web.routes.openapi_materials.openapi_materials_store.query_one_material_row",

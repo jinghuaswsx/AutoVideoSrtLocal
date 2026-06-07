@@ -379,12 +379,11 @@ def test_get_channel_falls_back_on_invalid_value(monkeypatch):
     assert its.get_channel() == "apimart"
 
 
-def test_get_channel_accepts_vertex_adc_channel(monkeypatch):
+def test_get_channel_normalizes_legacy_vertex_adc_channel(monkeypatch):
     from appcore import image_translate_settings as its
     _patch_store(monkeypatch, {"image_translate.channel": "cloud_adc"})
-    assert "cloud_adc" in its.CHANNELS
-    assert its.CHANNEL_LABELS["cloud_adc"] == "Google Vertex AI (ADC)"
-    assert its.get_channel() == "cloud_adc"
+    assert "cloud_adc" not in its.CHANNELS
+    assert its.get_channel() == "cloud"
     assert its.get_default_model("cloud_adc") == "gemini-3.1-flash-image-preview"
 
 
@@ -396,12 +395,13 @@ def test_set_channel_writes_valid_value(monkeypatch):
     assert store["image_translate.channel"] == "cloud"
 
 
-def test_set_channel_writes_vertex_adc_value(monkeypatch):
+def test_set_channel_rejects_retired_vertex_adc_value(monkeypatch):
     from appcore import image_translate_settings as its
     store = {}
     _patch_store(monkeypatch, store)
-    its.set_channel("CLOUD_ADC")
-    assert store["image_translate.channel"] == "cloud_adc"
+    with pytest.raises(ValueError):
+        its.set_channel("CLOUD_ADC")
+    assert "image_translate.channel" not in store
 
 
 def test_set_channel_rejects_invalid(monkeypatch):

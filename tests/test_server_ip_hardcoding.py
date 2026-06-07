@@ -35,6 +35,8 @@ def _iter_runtime_files(repo_root: Path):
                 continue
             if "__pycache__" in path.parts:
                 continue
+            if "manual" in path.parts and "tests" in path.parts:
+                continue
             if path.suffix.lower() in TEXT_SUFFIXES:
                 yield path
 

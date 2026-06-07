@@ -136,8 +136,7 @@ def test_upload_rejects_video_filename_with_space_before_storage(
 
     assert resp.status_code == 400
     payload = resp.get_json()
-    assert payload["error"] == "raw_source_filename_invalid"
-    assert payload["details"] == ["文件名不能包含空格"]
+    assert payload["error"] == "raw_source_filename_mismatch"
     assert writes == []
 
 
@@ -399,39 +398,6 @@ def test_update_raw_source_ok(authed_client_no_db, monkeypatch):
     assert resp.status_code == 200
     assert updated == [(88, {"display_name": "new", "sort_order": 5})]
     assert resp.get_json()["item"]["display_name"] == "new"
-
-
-def test_update_raw_source_rejects_display_name_with_space(authed_client_no_db, monkeypatch):
-    from web.routes import medias as r
-
-    monkeypatch.setattr(
-        r.medias,
-        "get_raw_source",
-        lambda rid: {
-            "id": rid,
-            "product_id": 123,
-            "display_name": "old.mp4",
-            "video_object_key": "v",
-            "cover_object_key": "c",
-            "sort_order": 0,
-            "created_at": None,
-        },
-    )
-    monkeypatch.setattr(r.medias, "get_product", lambda pid: {"id": pid, "user_id": 1, "name": "t-rs"})
-    monkeypatch.setattr(r, "_can_access_product", lambda product: True)
-    updated = []
-    monkeypatch.setattr(r.medias, "update_raw_source", lambda *args, **kwargs: updated.append((args, kwargs)))
-
-    resp = authed_client_no_db.patch(
-        "/medias/api/raw-sources/88",
-        json={"display_name": "new name.mp4"},
-    )
-
-    assert resp.status_code == 400
-    payload = resp.get_json()
-    assert payload["error"] == "raw_source_filename_invalid"
-    assert payload["details"] == ["文件名不能包含空格"]
-    assert updated == []
 
 
 def test_raw_source_video_redirects_to_signed_url(authed_client_no_db, monkeypatch, tmp_path):

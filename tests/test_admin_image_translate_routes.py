@@ -1,6 +1,10 @@
 def test_get_prompts_requires_admin(monkeypatch):
     from web.app import create_app
 
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     normal_user = {"id": 2, "username": "u", "role": "user", "is_active": 1}
     monkeypatch.setattr("web.auth.get_by_id", lambda uid: normal_user if int(uid) == 2 else None)
 
@@ -10,8 +14,9 @@ def test_get_prompts_requires_admin(monkeypatch):
         sess["_user_id"] = "2"
         sess["_fresh"] = True
 
-    resp = client.get("/admin/api/image-translate/prompts")
-    assert resp.status_code == 403
+    resp = client.get("/admin/api/image-translate/prompts", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
 
 
 def test_admin_get_all_prompts_returns_dynamic_language_objects(authed_client_no_db, monkeypatch):
@@ -77,7 +82,7 @@ def test_admin_settings_script_moves_voice_library_sync_to_top():
     assert "stack.prepend(section)" in script
 
 
-def test_admin_settings_template_has_shopifyid_sync_bottom_card():
+def test_admin_settings_template_places_shopifyid_sync_before_voice_library_card():
     from pathlib import Path
 
     template = Path("web/templates/admin_settings.html").read_text(encoding="utf-8")
@@ -85,7 +90,7 @@ def test_admin_settings_template_has_shopifyid_sync_bottom_card():
     assert 'id="shopifyidSyncCard"' in template
     assert "Shopify ID 同步" in template
     assert "shopifyidSyncTriggerBtn" in template
-    assert template.index('id="shopifyidSyncCard"') > template.index('id="voice-library-sync"')
+    assert template.index('id="shopifyidSyncCard"') < template.index('id="voice-library-sync"')
 
 
 def test_admin_shopifyid_sync_trigger_route(authed_client_no_db, monkeypatch):

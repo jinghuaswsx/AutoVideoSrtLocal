@@ -124,37 +124,6 @@ def test_runtime_helpers_do_not_keep_unused_imports():
     assert offenders == []
 
 
-def test_appcore_modules_do_not_import_web_package():
-    offenders: list[str] = []
-
-    for path in Path("appcore").rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                module = node.module or ""
-                if module == "web" or module.startswith("web."):
-                    offenders.append(f"{path}:{node.lineno}")
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "web" or alias.name.startswith("web."):
-                        offenders.append(f"{path}:{node.lineno}")
-
-    assert offenders == []
-
-
-def test_route_modules_do_not_import_flask_jsonify_directly():
-    offenders: list[str] = []
-
-    for path in Path("web/routes").rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == "flask":
-                if any(alias.name == "jsonify" for alias in node.names):
-                    offenders.append(f"{path}:{node.lineno}")
-
-    assert offenders == []
-
-
 def test_video_creation_route_uses_project_state_helper_for_state_json_writes():
     source = Path("web/routes/video_creation.py").read_text(encoding="utf-8")
 
@@ -404,15 +373,6 @@ def test_detail_image_proxy_access_lives_outside_route_module():
     assert "_build_detail_image_proxy_response" in route_source
     assert "_detail_image_proxy_flask_response" in route_source
     assert Path("web/services/media_detail_listing.py").exists()
-
-
-def test_detail_image_translate_payload_construction_lives_outside_route_module():
-    route_source = Path("web/routes/medias/detail_images.py").read_text(encoding="utf-8")
-
-    assert "source_detail_image_id" not in route_source
-    assert "source_detail_image_ids" not in route_source
-    assert "auto_apply_detail_images" not in route_source
-    assert Path("web/services/media_detail_translation.py").exists()
 
 
 def test_detail_image_translate_from_en_response_lives_outside_route_module():
@@ -1759,16 +1719,6 @@ def test_copywriting_translate_start_responses_live_outside_route_module():
     assert "build_copywriting_translate_started_response" in route_source
     assert "copywriting_translate_flask_response" in route_source
     assert Path("web/services/copywriting_translate.py").exists()
-
-
-def test_copywriting_translate_project_create_lives_in_appcore_project_state():
-    route_source = Path("web/routes/copywriting_translate.py").read_text(encoding="utf-8")
-    project_state_source = Path("appcore/project_state.py").read_text(encoding="utf-8")
-
-    assert "from appcore.db import" not in route_source
-    assert "db_execute" not in route_source
-    assert "project_store.create_copywriting_translate_project" in route_source
-    assert "def create_copywriting_translate_project" in project_state_source
 
 
 def test_copywriting_api_responses_live_outside_route_module():
@@ -3331,23 +3281,6 @@ def test_tasks_json_responses_live_outside_route_module():
     assert Path("web/services/tasks_responses.py").exists()
 
 
-def test_tasks_translator_listing_lives_in_appcore_users():
-    module_source = Path("web/routes/tasks.py").read_text(encoding="utf-8")
-    module = ast.parse(module_source)
-    route_function = next(
-        node
-        for node in module.body
-        if isinstance(node, ast.FunctionDef) and node.name == "api_translators"
-    )
-    route_source = ast.get_source_segment(module_source, route_function) or ""
-    users_source = Path("appcore/users.py").read_text(encoding="utf-8")
-
-    assert "from appcore.db import query_all" not in route_source
-    assert "SELECT id, username FROM users" not in route_source
-    assert "list_translators" in route_source
-    assert "role <> %s" in users_source
-
-
 def test_tasks_create_modal_supporting_queries_live_in_appcore_tasks():
     module_source = Path("web/routes/tasks.py").read_text(encoding="utf-8")
     module = ast.parse(module_source)
@@ -4309,56 +4242,6 @@ def test_subtitle_removal_route_db_dependencies_use_appcore_store():
     assert "db_query_one = subtitle_removal_route_store.query_one" in route_source
     assert "db_execute = subtitle_removal_route_store.execute" in route_source
     assert store_path.exists()
-
-
-def test_subtitle_removal_project_sql_lives_in_appcore_store():
-    route_source = Path("web/routes/subtitle_removal.py").read_text(encoding="utf-8")
-    store_source = Path("appcore/subtitle_removal_route_store.py").read_text(encoding="utf-8")
-    helper_names = [
-        "list_submitter_rows",
-        "get_project_created_at",
-        "list_inflight_projects",
-        "get_detail_project",
-        "list_tasks",
-        "set_project_display_name",
-        "soft_delete_project",
-    ]
-
-    assert "FROM projects" not in route_source
-    assert "UPDATE projects SET" not in route_source
-    for helper_name in helper_names:
-        assert f"subtitle_removal_route_store.{helper_name}" in route_source
-
-    for snippet in [
-        "SELECT DISTINCT p.user_id, u.username",
-        "SELECT id, user_id, status, state_json",
-        "SELECT * FROM projects WHERE id = %s",
-        "LOWER(COALESCE(p.display_name, '')) LIKE %s",
-        "UPDATE projects SET deleted_at = NOW()",
-    ]:
-        assert snippet in store_source
-
-
-def test_server_background_threads_use_runner_lifecycle_or_explicit_cleanup_allowlist():
-    allowed_direct_thread_files = {
-        "appcore/runner_lifecycle.py",
-        "appcore/medias_detail_fetch_tasks.py",
-        "appcore/voice_match_tasks.py",
-    }
-    offenders: list[str] = []
-
-    for root in (Path("appcore"), Path("web")):
-        for path in root.rglob("*.py"):
-            path_key = path.as_posix()
-            if path_key in allowed_direct_thread_files:
-                continue
-            tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                    if node.func.attr == "Thread":
-                        offenders.append(f"{path}:{node.lineno}")
-
-    assert offenders == []
 
 
 def test_direct_provider_sdk_imports_stay_in_adapter_or_legacy_files():

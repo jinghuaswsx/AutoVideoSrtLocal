@@ -499,7 +499,7 @@ def test_validate_tts_script_with_sentences_recovers_from_missing_indices():
 
 
 def test_prompts_require_shorter_sentences_and_no_em_dash():
-    assert "Do not use em dashes" in LOCALIZED_TRANSLATION_SYSTEM_PROMPT
+    assert "Avoid em-dashes and en-dashes" in LOCALIZED_TRANSLATION_SYSTEM_PROMPT
     assert "5-10 words" in TTS_SCRIPT_SYSTEM_PROMPT
 
 

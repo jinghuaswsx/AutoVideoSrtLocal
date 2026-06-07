@@ -27,7 +27,7 @@ def test_build_product_create_response_creates_with_normalized_code():
         "validated_code": "demo-rjc",
         "user_id": 5,
         "name": "Demo Product",
-        "kwargs": {"product_code": "demo-rjc"},
+        "kwargs": {"source": None, "product_code": "demo-rjc"},
     }
 
 

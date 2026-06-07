@@ -103,7 +103,7 @@ def test_invoke_generate_logs_media_network_estimate(tmp_path):
     assert request_payload["network_estimate"]["media"][0]["bytes"] == 5
 
 
-def test_google_vertex_adc_marks_proxy_required_in_usage_payload():
+def test_google_vertex_marks_proxy_required_in_usage_payload():
     fake_adapter = MagicMock()
     fake_adapter.chat.return_value = {
         "text": "ok",
@@ -112,7 +112,7 @@ def test_google_vertex_adc_marks_proxy_required_in_usage_payload():
         "usage": {},
     }
     with patch("appcore.llm_client.llm_bindings.resolve",
-               return_value=_fake_binding("gemini_vertex_adc", "gemini-2.5-flash")), \
+               return_value=_fake_binding("gemini_vertex", "gemini-2.5-flash")), \
          patch("appcore.llm_client.get_adapter", return_value=fake_adapter), \
          patch("appcore.llm_client._log_usage") as m_log:
         llm_client.invoke_chat(
