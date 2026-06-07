@@ -650,10 +650,26 @@ button.mh-link-btn { cursor:pointer; }
   <div id="mkiXiaoModal" class="mki-xiao-backdrop">
     <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
       <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
+      <div id="mkiXiaoTaskKindWrap" class="mki-xiao-field" hidden>
+        <span class="mki-xiao-label">任务类型：</span>
+        <div class="mki-xiao-options">
+          <label class="mki-xiao-option"><input type="radio" name="mkiXiaoTaskKind" value="new_product" checked> 新品任务</label>
+          <label class="mki-xiao-option"><input type="radio" name="mkiXiaoTaskKind" value="supplement"> 补充素材</label>
+        </div>
+      </div>
+      <div id="mkiXiaoProductSearchWrap" class="mki-xiao-field" hidden>
+        <label class="mki-xiao-label" for="mkiXiaoProductSearch">选择目标产品：</label>
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px;">
+          <input id="mkiXiaoProductSearch" class="mh-select" type="search" placeholder="产品名 / Product Code / 产品 ID" style="height:36px;">
+          <button id="mkiXiaoProductSearchBtn" class="mh-btn secondary" type="button">搜索</button>
+        </div>
+        <div id="mkiXiaoSelectedProduct" class="mki-xiao-status" hidden></div>
+        <div id="mkiXiaoProductResults" style="display:grid; gap:6px; margin-top:8px; max-height:220px; overflow:auto;"></div>
+      </div>
       <div class="mki-xiao-field">
         <label class="mki-xiao-label" for="mkiXiaoTranslator">产品负责人 / 默认翻译负责人：</label>
         <select id="mkiXiaoTranslator" class="mh-select" style="width:100%; height:36px;"></select>
-        <div class="mki-progress-domain-subtitle" style="font-size:11px; color:var(--mh-muted); margin-top:4px;">顶部负责人用于素材归属和默认分配；每个目标语种可在卡片内单独改负责人。</div>
+        <div class="mki-progress-domain-subtitle" style="font-size:11px; color:var(--mh-muted); margin-top:4px;">新品任务中用于产品归属；补充素材沿用目标产品负责人。每个目标语种可单独改负责人。</div>
       </div>
       <div class="mki-xiao-field">
         <label class="mki-xiao-label" for="mkiXiaoRawProcessor">原视频处理人：</label>
@@ -1280,8 +1296,8 @@ function renderCard(row) {
   const newProductTaskBtn = newProductTaskId
     ? `<button class="mh-link-btn mki-btn--disabled" type="button" disabled>任务 #${newProductTaskId}</button>`
     : canCreateNewProductTask
-    ? `<button class="mh-link-btn" type="button" onclick="mkiCreateNewProductTaskFromMetaHot(this, ${postId})">新品任务</button>`
-    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先完成本地视频入库">新品任务</button>`;
+    ? `<button class="mh-link-btn" type="button" onclick="mkiCreateNewProductTaskFromMetaHot(this, ${postId})">新素材任务</button>`
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先完成本地视频入库">新素材任务</button>`;
 
   const smallLangBtn = isImported
     ? `<button class="mh-link-btn" type="button" onclick="mkiCreateSmallLangTaskFromMetaHot(this, ${postId})" data-mki-local-product-id="${localProductId}" data-mki-local-item-id="${localItemId}">创建小语种任务</button>`
@@ -2272,6 +2288,8 @@ let mkiXiaoLockTranslator = false;
 let mkiXiaoCurrentEndpoint = '/tasks/api/parent';
 let mkiXiaoAiProductId = null;
 let mkiXiaoFineAiSourceButton = null;
+let mkiXiaoEnableTaskKind = false;
+let mkiXiaoSelectedProduct = null;
 
 function mkiXiaoLangCode(lang) {
   if (lang && typeof lang === 'object') {
@@ -2322,9 +2340,16 @@ function mkiXiaoSetControlsDisabled(disabled) {
   var translator = document.getElementById('mkiXiaoTranslator');
   var raw = document.getElementById('mkiXiaoRawProcessor');
   var urgent = document.getElementById('mkiXiaoUrgent');
+  var productSearch = document.getElementById('mkiXiaoProductSearch');
+  var productSearchBtn = document.getElementById('mkiXiaoProductSearchBtn');
   if (translator) translator.disabled = !!disabled || !!mkiXiaoLockTranslator;
   if (raw) raw.disabled = !!disabled;
   if (urgent) urgent.disabled = !!disabled;
+  if (productSearch) productSearch.disabled = !!disabled;
+  if (productSearchBtn) productSearchBtn.disabled = !!disabled;
+  document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+    radio.disabled = !!disabled;
+  });
   document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]').forEach(function(cb) {
     var isExisting = cb.getAttribute('data-mki-existing') === '1';
     cb.disabled = !!disabled || isExisting;
@@ -2402,11 +2427,130 @@ function mkiXiaoRequestError(endpoint, rsp, data) {
   return new Error('请求 ' + endpoint + ' 返回 ' + statusText + '：' + (detail || '无错误详情'));
 }
 
+function mkiXiaoCurrentTaskKind() {
+  if (!mkiXiaoEnableTaskKind) return 'new_product';
+  var checked = document.querySelector('input[name="mkiXiaoTaskKind"]:checked');
+  return checked && checked.value === 'supplement' ? 'supplement' : 'new_product';
+}
+
+function mkiXiaoRenderSelectedProduct(product) {
+  var box = document.getElementById('mkiXiaoSelectedProduct');
+  if (!box) return;
+  if (!product) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  box.hidden = false;
+  box.className = 'mki-xiao-status mki-xiao-status--success';
+  box.innerHTML = '<strong>已选择产品 #' + escapeHtml(product.id) + '</strong>'
+    + '<div>' + escapeHtml(product.name || '') + '</div>'
+    + '<div>Product Code: ' + escapeHtml(product.product_code || '-')
+    + ' · 负责人: ' + escapeHtml(product.owner_name || product.owner_id || '-') + '</div>';
+}
+
+function mkiXiaoSelectProduct(product) {
+  mkiXiaoSelectedProduct = product || null;
+  mkiXiaoRenderSelectedProduct(mkiXiaoSelectedProduct);
+  var input = document.getElementById('mkiXiaoProductSearch');
+  var results = document.getElementById('mkiXiaoProductResults');
+  if (input && product) input.value = product.name || product.product_code || product.id || '';
+  if (results && product) results.innerHTML = '';
+}
+
+function mkiXiaoRenderProductResults(items) {
+  var results = document.getElementById('mkiXiaoProductResults');
+  if (!results) return;
+  if (!items.length) {
+    results.innerHTML = '<div class="mki-xiao-status">没有匹配产品</div>';
+    return;
+  }
+  results.innerHTML = items.map(function(product) {
+    return '<div class="mki-xiao-status" style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center;">'
+      + '<div><strong>#' + escapeHtml(product.id) + ' ' + escapeHtml(product.name || '') + '</strong>'
+      + '<div>Product Code: ' + escapeHtml(product.product_code || '-')
+      + ' · 负责人: ' + escapeHtml(product.owner_name || product.owner_id || '-') + '</div></div>'
+      + '<button class="mh-btn secondary" type="button" data-mki-xiao-product="' + escapeHtml(product.id) + '">选择</button>'
+      + '</div>';
+  }).join('');
+  results.querySelectorAll('[data-mki-xiao-product]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = Number(btn.dataset.mkiXiaoProduct || 0);
+      mkiXiaoSelectProduct(items.find(function(item) { return Number(item.id) === id; }) || null);
+    });
+  });
+}
+
+async function mkiXiaoSearchProducts(productId) {
+  var input = document.getElementById('mkiXiaoProductSearch');
+  var results = document.getElementById('mkiXiaoProductResults');
+  var url = productId
+    ? '/tasks/api/material-products?product_id=' + encodeURIComponent(productId)
+    : '/tasks/api/material-products?q=' + encodeURIComponent(input ? input.value || '' : '');
+  if (results) results.innerHTML = '<div class="mki-xiao-status">搜索中...</div>';
+  var resp = await fetch(url);
+  var data = await resp.json().catch(function() { return {}; });
+  if (!resp.ok) throw new Error(data.error || '产品搜索失败');
+  var items = data.items || [];
+  if (productId && items.length) mkiXiaoSelectProduct(items[0]);
+  else mkiXiaoRenderProductResults(items);
+}
+
+function mkiXiaoSyncTaskKindUI() {
+  var wrap = document.getElementById('mkiXiaoProductSearchWrap');
+  if (!wrap) return;
+  wrap.hidden = !mkiXiaoEnableTaskKind || mkiXiaoCurrentTaskKind() !== 'supplement';
+}
+
 async function mkiXiaoOpenModal(options = {}) {
   mkiXiaoLockTranslator = !!options.lockTranslator;
   mkiXiaoCurrentEndpoint = options.endpoint || '/tasks/api/parent';
   mkiXiaoAiProductId = Number(options.productId || 0) || null;
   mkiXiaoFineAiSourceButton = options.sourceButton || null;
+  mkiXiaoEnableTaskKind = !!options.enableTaskKind;
+  mkiXiaoSelectedProduct = null;
+
+  var kindWrap = document.getElementById('mkiXiaoTaskKindWrap');
+  var searchWrap = document.getElementById('mkiXiaoProductSearchWrap');
+  var searchInput = document.getElementById('mkiXiaoProductSearch');
+  var searchBtn = document.getElementById('mkiXiaoProductSearchBtn');
+  var results = document.getElementById('mkiXiaoProductResults');
+  if (kindWrap) kindWrap.hidden = !mkiXiaoEnableTaskKind;
+  if (searchWrap) searchWrap.hidden = true;
+  if (searchInput) searchInput.value = '';
+  if (results) results.innerHTML = '';
+  mkiXiaoRenderSelectedProduct(null);
+  document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+    radio.checked = radio.value === (options.defaultTaskKind || 'new_product');
+    radio.onchange = function() { mkiXiaoSyncTaskKindUI(); };
+  });
+  if (searchBtn) {
+    searchBtn.onclick = function() {
+      mkiXiaoSearchProducts().catch(function(error) {
+        var productResults = document.getElementById('mkiXiaoProductResults');
+        if (productResults) productResults.innerHTML = '<div class="mki-xiao-status mki-xiao-status--error">搜索失败：' + escapeHtml(error.message || error) + '</div>';
+      });
+    };
+  }
+  if (searchInput) {
+    searchInput.onkeydown = function(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (searchBtn) searchBtn.click();
+      }
+    };
+  }
+  mkiXiaoSyncTaskKindUI();
+  if (mkiXiaoEnableTaskKind && options.targetProductId) {
+    document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+      radio.checked = radio.value === 'supplement';
+    });
+    mkiXiaoSyncTaskKindUI();
+    mkiXiaoSearchProducts(Number(options.targetProductId)).catch(function(error) {
+      var productResults = document.getElementById('mkiXiaoProductResults');
+      if (productResults) productResults.innerHTML = '<div class="mki-xiao-status mki-xiao-status--error">预选产品失败：' + escapeHtml(error.message || error) + '</div>';
+    });
+  }
 
   try {
     mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
@@ -2512,9 +2656,14 @@ function mkiXiaoOK() {
   var rawProcessorId = parseInt(document.getElementById('mkiXiaoRawProcessor').value);
   var countries = mkiXiaoSelectedCountries();
   var urgentEl = document.getElementById('mkiXiaoUrgent');
+  var currentTaskKind = mkiXiaoCurrentTaskKind();
   var languageAssignments = {};
   if (!translatorId) { alert('请选择小语种翻译负责人'); return; }
   if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
+  if (mkiXiaoEnableTaskKind && currentTaskKind === 'supplement' && (!mkiXiaoSelectedProduct || !mkiXiaoSelectedProduct.id)) {
+    alert('请先搜索并选择要补充素材的目标产品');
+    return;
+  }
   if (!countries.length) { alert('请选择目标国家'); return; }
   for (var i = 0; i < countries.length; i++) {
     var code = String(countries[i] || '').trim().toUpperCase();
@@ -2525,7 +2674,19 @@ function mkiXiaoOK() {
   }
   mkiXiaoSetBusy(true);
   mkiXiaoSetStatus('running', '<strong>正在创建任务</strong><div>正在请求 ' + escapeHtml(mkiXiaoCurrentEndpoint) + '</div>');
-  if (mkiXiaoResolve) { mkiXiaoResolve({translatorId: translatorId, rawProcessorId: rawProcessorId, countries: countries, languageAssignments: languageAssignments, force: mkiXiaoIsForce(), isUrgent: !!(urgentEl && urgentEl.checked)}); mkiXiaoResolve = null; }
+  if (mkiXiaoResolve) {
+    mkiXiaoResolve({
+      translatorId: translatorId,
+      rawProcessorId: rawProcessorId,
+      countries: countries,
+      languageAssignments: languageAssignments,
+      force: mkiXiaoIsForce(),
+      isUrgent: !!(urgentEl && urgentEl.checked),
+      taskKind: currentTaskKind,
+      targetProductId: mkiXiaoSelectedProduct && mkiXiaoSelectedProduct.id ? Number(mkiXiaoSelectedProduct.id) : null
+    });
+    mkiXiaoResolve = null;
+  }
 }
 
 function mkiXiaoCancel() {
@@ -2619,11 +2780,13 @@ async function mkiCreateNewProductTaskFromMetaHot(btn, postId) {
   const itemId = Number(cachedItem.local_media_item_id || 0);
   const productId = Number(cachedItem.local_product_id || 0);
   const selection = await mkiXiaoOpenModal({
-    title: '创建新品任务',
+    title: '创建新素材任务',
     endpoint: endpoint,
     productId: productId,
     itemId: itemId,
-    sourceButton: btn
+    sourceButton: btn,
+    enableTaskKind: true,
+    defaultTaskKind: 'new_product'
   });
   if (!selection) return;
   if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
@@ -2639,8 +2802,10 @@ async function mkiCreateNewProductTaskFromMetaHot(btn, postId) {
       headers: metaHotJsonHeaders(),
       body: JSON.stringify({
         source: 'meta_hot_post',
+        task_kind: selection.taskKind || 'new_product',
         post_id: Number(postId),
         owner_id: selection.translatorId,
+        target_product_id: selection.taskKind === 'supplement' ? selection.targetProductId : null,
         raw_processor_id: selection.rawProcessorId,
         countries: selection.countries,
         language_assignments: mkiXiaoLanguageAssignments(selection),
@@ -2660,7 +2825,7 @@ async function mkiCreateNewProductTaskFromMetaHot(btn, postId) {
     btn.classList.add('mki-btn--disabled');
     btn.disabled = true;
     mkiXiaoShowCreateSuccess(taskId);
-    mkiToast('success', '新品任务已创建 #' + taskId);
+    mkiToast('success', (selection.taskKind === 'supplement' ? '补充素材任务' : '新品任务') + '已创建 #' + taskId);
   } catch (e) {
     btn.disabled = false;
     btn.textContent = original;

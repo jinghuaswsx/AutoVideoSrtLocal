@@ -28,6 +28,9 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "/medias/api/product/${productId}/video-workbench/ad-detail" in html
     assert "fetchJson('/mk-import/video'" in html
     assert "fetchJson('/tasks/api/parent'" in html
+    assert 'data-action="supplement-task"' in html
+    assert "补素材任务" in html
+    assert "media_product_id: productId" in html
     assert "X-CSRFToken" in html
     assert "vwAdModal" in html
     assert "vwTaskModal" in html
