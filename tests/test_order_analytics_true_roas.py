@@ -1301,6 +1301,7 @@ def test_get_realtime_roas_overview_prefers_latest_order_snapshot_when_ad_pendin
 
 
 def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monkeypatch):
+    target = oa._parse_meta_date("2026-05-07")
     snapshot_at = datetime(2026, 5, 7, 20, 40)
     day_start = datetime(2026, 5, 7, 16, 0)
 
@@ -1348,6 +1349,38 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
             return [{"last_order_updated_at": datetime(2026, 5, 7, 20, 36)}]
         if "MAX(r.finished_at)" in sql:
             return [{"last_ad_updated_at": datetime(2026, 5, 7, 20, 40)}]
+        if "SELECT snapshot_at, ad_account_id" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            assert args == (target, snapshot_at)
+            return [
+                {
+                    "snapshot_at": datetime(2026, 5, 7, 17, 0),
+                    "ad_account_id": "act_newjoy",
+                    "ad_account_name": "Newjoy",
+                    "campaign_id": "cmp_1",
+                    "campaign_name": "newjoy-rjc",
+                    "normalized_campaign_code": "newjoy-rjc",
+                    "result_count": 1,
+                    "spend_usd": 70.0,
+                    "purchase_value_usd": 0,
+                    "impressions": 100,
+                    "clicks": 5,
+                },
+                {
+                    "snapshot_at": datetime(2026, 5, 7, 16, 40),
+                    "ad_account_id": "act_omurio",
+                    "ad_account_name": "Omurio",
+                    "campaign_id": "cmp_2",
+                    "campaign_name": "omurio-rjc",
+                    "normalized_campaign_code": "omurio-rjc",
+                    "result_count": 1,
+                    "spend_usd": 40.0,
+                    "purchase_value_usd": 0,
+                    "impressions": 100,
+                    "clicks": 5,
+                },
+            ]
+        if "SELECT MAX(snapshot_at) AS latest_at" in sql and "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return [{"latest_at": datetime(2026, 5, 7, 17, 0)}]
         if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
             return []
         if "FROM meta_ad_daily_campaign_metrics" in sql:
@@ -1370,7 +1403,10 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
     assert result["hourly"][0]["berlin_window_end_at"] == "2026-05-07T11:00:00"
     assert result["hourly"][0]["order_count"] == 4
     assert result["hourly"][16]["order_count"] == 0
-    assert result["hourly"][0]["ad_spend"] is None
+    assert result["hourly"][0]["ad_spend"] == 110.0
+    assert result["hourly"][0]["true_roas"] == 4.0
+    assert result["hourly"][16]["ad_spend"] is None
+    assert result["scope"]["hourly_ad_ready"] is True
     assert result["snapshots"][0]["id"] == 701
 
 
