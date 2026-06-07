@@ -29,6 +29,25 @@ def _parse_date(value: str | None):
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
+def _refresh_fallback_summary(*, rate_date, run_id: int | None) -> dict:
+    try:
+        summary = exchange_rates.refresh_usd_cny_fallback_rate(
+            fallback_date=rate_date,
+            source_run_id=run_id,
+        )
+        return {
+            **summary,
+            "status": "success",
+        }
+    except Exception as exc:  # noqa: BLE001 - fallback update must not hide source failure
+        log.warning("USD/CNY fallback refresh failed: %s", exc, exc_info=True)
+        return {
+            "status": "failed",
+            "fallback_date": rate_date.isoformat(),
+            "error": str(exc),
+        }
+
+
 def run_sync(
     *,
     rate_date=None,
@@ -42,18 +61,34 @@ def run_sync(
             tolerance_ratio=tolerance_ratio,
             source_run_id=run_id,
         )
+        fallback_summary = _refresh_fallback_summary(
+            rate_date=effective_rate_date,
+            run_id=run_id,
+        )
         summary = {
             **summary,
             "task_code": TASK_CODE,
+            "fallback": fallback_summary,
         }
-        scheduled_tasks.finish_run(run_id, status="success", summary=summary)
+        task_status = "success" if fallback_summary.get("status") == "success" else "failed"
+        scheduled_tasks.finish_run(
+            run_id,
+            status=task_status,
+            summary=summary,
+            error_message=fallback_summary.get("error") if task_status == "failed" else None,
+        )
         print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
         return summary
     except exchange_rates.ExchangeRateValidationError as exc:
+        fallback_summary = _refresh_fallback_summary(
+            rate_date=effective_rate_date,
+            run_id=run_id,
+        )
         summary = {
             "task_code": TASK_CODE,
             "rate_date": effective_rate_date.isoformat(),
             "error": str(exc),
+            "fallback": fallback_summary,
             **exc.summary,
         }
         scheduled_tasks.finish_run(
@@ -64,10 +99,15 @@ def run_sync(
         )
         raise
     except Exception as exc:
+        fallback_summary = _refresh_fallback_summary(
+            rate_date=effective_rate_date,
+            run_id=run_id,
+        )
         summary = {
             "task_code": TASK_CODE,
             "rate_date": effective_rate_date.isoformat(),
             "error": str(exc),
+            "fallback": fallback_summary,
         }
         scheduled_tasks.finish_run(
             run_id,
@@ -98,11 +138,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run_sync(
+    summary = run_sync(
         rate_date=_parse_date(args.rate_date),
         tolerance_ratio=Decimal(str(args.tolerance_ratio)),
     )
-    return 0
+    return 1 if (summary.get("fallback") or {}).get("status") == "failed" else 0
 
 
 if __name__ == "__main__":

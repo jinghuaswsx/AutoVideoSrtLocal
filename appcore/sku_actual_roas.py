@@ -8,7 +8,6 @@ from typing import Any
 
 from appcore import exchange_rates
 from appcore.db import execute, query
-from appcore.product_roas import get_configured_rmb_per_usd
 
 
 ESTIMATED_FEE_RATE = Decimal("0.07")
@@ -73,7 +72,7 @@ def _row_rate(
     row_date = row.get("meta_business_date")
     lookup = (rates_by_date or {}).get(row_date)
     if lookup is None:
-        return _decimal(get_configured_rmb_per_usd())
+        return _decimal(exchange_rates.configured_fallback_lookup().rate)
     if hasattr(lookup, "rate"):
         return _decimal(getattr(lookup, "rate"))
     return _decimal(lookup)
@@ -283,7 +282,7 @@ def compute_sku_actual_breakeven_roas(
         exchange_rate_fallback_dates = sorted(
             d.isoformat()
             for d, lookup in rates_by_date.items()
-            if getattr(lookup, "source", None) == "configured_fallback"
+            if getattr(lookup, "source", None) in {"fallback_30d_average", "configured_fallback"}
         )
     snapshots = aggregate_sku_rows(
         rows,
