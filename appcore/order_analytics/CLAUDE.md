@@ -7,6 +7,7 @@
 - 业务日对齐：`docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md`
 - 实时大盘店铺筛选：`docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md`
 - 实时大盘小时广告费：`docs/superpowers/specs/2026-06-07-realtime-roas-trend-hourly-ad-spend-design.md`
+- 实时大盘估算证据页：`docs/superpowers/specs/2026-06-07-realtime-dashboard-estimate-evidence-design.md`
 - 未分摊广告费 campaign 跳转：`docs/superpowers/specs/2026-05-10-realtime-unallocated-campaign-navigation.md`
 - 未匹配订单 / 广告明细页：`docs/superpowers/specs/2026-06-07-realtime-unmatched-detail-pages-design.md`
 - 数据质量护栏：`docs/analytics-data-quality-guardrails.md`

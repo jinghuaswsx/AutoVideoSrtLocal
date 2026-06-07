@@ -332,6 +332,10 @@
   opacity: 0.5;
   pointer-events: none;
 }
+.oar-estimate-sub.is-active {
+  color: var(--warning-fg);
+  font-weight: 700;
+}
 .oar-scope-source {
   margin-top: var(--space-1);
   color: var(--fg-muted);
@@ -1860,7 +1864,12 @@
       <section class="oar-scope-card oar-scope-card--global" data-realtime-scope-card="global" aria-labelledby="realtimeGlobalScopeTitle">
         <div class="oar-scope-card-head">
           <div>
-            <h3 class="oar-scope-title" id="realtimeGlobalScopeTitle">全局数据</h3>
+            <div class="oar-scope-title-row">
+              <h3 class="oar-scope-title" id="realtimeGlobalScopeTitle">全局数据</h3>
+              <span class="oar-scope-detail-actions" aria-label="全局估算明细">
+                <a class="oar-scope-detail-link" id="realtimeEstimateLink" href="/order-analytics/realtime-estimates" target="_blank" rel="noopener noreferrer" aria-disabled="true">估算数据</a>
+              </span>
+            </div>
             <div class="oar-scope-source" id="realtimeGlobalSource">当前筛选全部产品 · 无新品/老品过滤</div>
           </div>
           <span class="oar-scope-chip">全局</span>
@@ -1870,8 +1879,8 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">运费</div><div class="oa-stat-value" id="realtimeShipping">$0.00</div><div class="oa-stat-sub">订单收取的运费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">总销售额</div><div class="oa-stat-value" id="realtimeRevenueWithShipping">$0.00</div><div class="oa-stat-sub">商品销售额 + 运费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">广告消耗费用</div><div class="oa-stat-value" id="realtimeSpend">$0.00</div><div class="oa-stat-sub" id="realtimeSpendRatio">占总销售额 -</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimePurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimePurchaseCostRatio">占总销售额 -</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeLogisticsCostRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimePurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimePurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimePurchaseEstimateRatio">估算占比 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeShopifyFeeRatio">占总销售额 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeRoas">-</div><div class="oa-stat-sub" id="realtimeWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeMetaRoas">-</div><div class="oa-stat-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div></div>
@@ -1884,7 +1893,12 @@
       <section class="oar-scope-card oar-scope-card--new" data-realtime-scope-card="new" aria-labelledby="realtimeNewScopeTitle">
         <div class="oar-scope-card-head">
           <div>
-            <h3 class="oar-scope-title" id="realtimeNewScopeTitle">新品数据</h3>
+            <div class="oar-scope-title-row">
+              <h3 class="oar-scope-title" id="realtimeNewScopeTitle">新品数据</h3>
+              <span class="oar-scope-detail-actions" aria-label="新品估算明细">
+                <a class="oar-scope-detail-link" id="realtimeNewEstimateLink" href="/order-analytics/realtime-estimates" target="_blank" rel="noopener noreferrer" aria-disabled="true">估算数据</a>
+              </span>
+            </div>
             <div class="oar-scope-source" id="realtimeNewSource">上广告时间近 7 天内 · 与新品投放分析一致</div>
           </div>
           <span class="oar-scope-chip" id="realtimeNewScopeChip">新品 7 天</span>
@@ -1894,8 +1908,8 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">运费</div><div class="oa-stat-value" id="realtimeNewShipping">$0.00</div><div class="oa-stat-sub">订单收取的运费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">总销售额</div><div class="oa-stat-value" id="realtimeNewRevenueWithShipping">$0.00</div><div class="oa-stat-sub">商品销售额 + 运费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">广告消耗费用</div><div class="oa-stat-value" id="realtimeNewSpend">$0.00</div><div class="oa-stat-sub" id="realtimeNewSpendRatio">占总销售额 -</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeNewPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeNewPurchaseCostRatio">占总销售额 -</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeNewLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeNewLogisticsCostRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeNewPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeNewPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeNewPurchaseEstimateRatio">估算占比 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeNewLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeNewLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeNewLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeNewShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeNewShopifyFeeRatio">占总销售额 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeNewRoas">-</div><div class="oa-stat-sub" id="realtimeNewWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeNewMetaRoas">-</div><div class="oa-stat-sub" id="realtimeNewMetaRoasSub">Meta 后台成效口径</div></div>
@@ -1908,7 +1922,12 @@
       <section class="oar-scope-card oar-scope-card--old" data-realtime-scope-card="old" aria-labelledby="realtimeOldScopeTitle">
         <div class="oar-scope-card-head">
           <div>
-            <h3 class="oar-scope-title" id="realtimeOldScopeTitle">老品数据</h3>
+            <div class="oar-scope-title-row">
+              <h3 class="oar-scope-title" id="realtimeOldScopeTitle">老品数据</h3>
+              <span class="oar-scope-detail-actions" aria-label="老品估算明细">
+                <a class="oar-scope-detail-link" id="realtimeOldEstimateLink" href="/order-analytics/realtime-estimates" target="_blank" rel="noopener noreferrer" aria-disabled="true">估算数据</a>
+              </span>
+            </div>
             <div class="oar-scope-source" id="realtimeOldSource">上广告时间 7 天前 · 与新品投放分析一致</div>
           </div>
           <span class="oar-scope-chip" id="realtimeOldScopeChip">老品 7 天前</span>
@@ -1918,8 +1937,8 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">运费</div><div class="oa-stat-value" id="realtimeOldShipping">$0.00</div><div class="oa-stat-sub">订单收取的运费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">总销售额</div><div class="oa-stat-value" id="realtimeOldRevenueWithShipping">$0.00</div><div class="oa-stat-sub">商品销售额 + 运费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">广告消耗费用</div><div class="oa-stat-value" id="realtimeOldSpend">$0.00</div><div class="oa-stat-sub" id="realtimeOldSpendRatio">占总销售额 -</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeOldPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeOldPurchaseCostRatio">占总销售额 -</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeOldLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeOldLogisticsCostRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeOldPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeOldPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeOldPurchaseEstimateRatio">估算占比 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeOldLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeOldLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeOldLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeOldShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeOldShopifyFeeRatio">占总销售额 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeOldRoas">-</div><div class="oa-stat-sub" id="realtimeOldWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeOldMetaRoas">-</div><div class="oa-stat-sub" id="realtimeOldMetaRoasSub">Meta 后台成效口径</div></div>
@@ -1935,6 +1954,7 @@
             <div class="oar-scope-title-row">
               <h3 class="oar-scope-title" id="realtimeUnmatchedScopeTitle">未匹配广告和订单</h3>
               <span class="oar-scope-detail-actions" aria-label="未匹配明细">
+                <a class="oar-scope-detail-link" id="realtimeUnmatchedEstimateLink" href="/order-analytics/realtime-estimates" target="_blank" rel="noopener noreferrer" aria-disabled="true">估算数据</a>
                 <a class="oar-scope-detail-link" id="realtimeUnmatchedOrdersLink" href="/order-analytics/realtime-unmatched-orders" target="_blank" rel="noopener noreferrer">未匹配订单</a>
                 <a class="oar-scope-detail-link" id="realtimeUnmatchedAdsLink" href="/order-analytics/realtime-unmatched-ads" target="_blank" rel="noopener noreferrer">未匹配广告</a>
               </span>
@@ -1948,8 +1968,8 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">运费</div><div class="oa-stat-value" id="realtimeUnmatchedShipping">$0.00</div><div class="oa-stat-sub">未匹配订单运费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">总销售额</div><div class="oa-stat-value" id="realtimeUnmatchedRevenueWithShipping">$0.00</div><div class="oa-stat-sub">商品销售额 + 运费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">广告消耗费用</div><div class="oa-stat-value" id="realtimeUnmatchedSpend">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedSpendRatio">占总销售额 -</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeUnmatchedPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedPurchaseCostRatio">占总销售额 -</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeUnmatchedLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedLogisticsCostRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeUnmatchedPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeUnmatchedPurchaseEstimateRatio">估算占比 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeUnmatchedLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeUnmatchedLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeUnmatchedShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedShopifyFeeRatio">占总销售额 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeUnmatchedRoas">-</div><div class="oa-stat-sub" id="realtimeUnmatchedWindow">未匹配订单销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeUnmatchedMetaRoas">-</div><div class="oa-stat-sub" id="realtimeUnmatchedMetaRoasSub">Meta 后台成效口径</div></div>
@@ -4668,7 +4688,13 @@
     profitHasMore: true,
     campaignFilter: '',
     unallocatedAd: 0,
-    launchWindowDays: '7'
+    launchWindowDays: '7',
+    estimateAvailability: {
+      global: false,
+      new: false,
+      old: false,
+      unmatched: false
+    }
   };
   var realtimeProductSearchTimer = null;
   var realtimeLastCampaignRows = [];
@@ -4943,9 +4969,15 @@
   }
 
   function updateRealtimeUnmatchedDetailLinks() {
-    var links = [
+    var unmatchedLinks = [
       { id: 'realtimeUnmatchedOrdersLink', path: '/order-analytics/realtime-unmatched-orders' },
       { id: 'realtimeUnmatchedAdsLink', path: '/order-analytics/realtime-unmatched-ads' }
+    ];
+    var estimateLinks = [
+      { id: 'realtimeEstimateLink', scope: 'global' },
+      { id: 'realtimeNewEstimateLink', scope: 'new' },
+      { id: 'realtimeOldEstimateLink', scope: 'old' },
+      { id: 'realtimeUnmatchedEstimateLink', scope: 'unmatched' }
     ];
     var range;
     try {
@@ -4953,7 +4985,18 @@
     } catch (err) {
       range = null;
     }
-    links.forEach(function(item) {
+
+    function baseParams(includeProduct) {
+      var params = new URLSearchParams();
+      params.set('start_date', range.start);
+      params.set('end_date', range.end);
+      if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
+      if (includeProduct && realtimeState.productId) params.set('product_id', realtimeState.productId);
+      params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');
+      return params;
+    }
+
+    unmatchedLinks.forEach(function(item) {
       var link = document.getElementById(item.id);
       if (!link) return;
       if (!range) {
@@ -4961,13 +5004,28 @@
         link.setAttribute('aria-disabled', 'true');
         return;
       }
-      var params = new URLSearchParams();
-      params.set('start_date', range.start);
-      params.set('end_date', range.end);
-      if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
-      params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');
+      var params = baseParams(false);
       link.href = item.path + '?' + params.toString();
       link.setAttribute('aria-disabled', 'false');
+    });
+
+    estimateLinks.forEach(function(item) {
+      var link = document.getElementById(item.id);
+      if (!link) return;
+      if (!range) {
+        link.href = '#';
+        link.setAttribute('aria-disabled', 'true');
+        return;
+      }
+      var params = baseParams(true);
+      if (item.scope && item.scope !== 'global') {
+        params.set('product_launch_scope', item.scope);
+      }
+      link.href = '/order-analytics/realtime-estimates?' + params.toString();
+      link.setAttribute(
+        'aria-disabled',
+        realtimeState.estimateAvailability[item.scope] ? 'false' : 'true'
+      );
     });
   }
 
@@ -5481,6 +5539,7 @@
 
   function setRealtimeScopeCardsLoading() {
     ['global', 'new', 'old', 'unmatched'].forEach(function(scope) {
+      realtimeState.estimateAvailability[scope] = false;
       var prefix = realtimeScopePrefix(scope);
       [
         'Revenue', 'Shipping', 'RevenueWithShipping', 'Spend', 'Roas', 'MetaRoas',
@@ -5494,16 +5553,23 @@
       ].forEach(function(suffix) {
         setRealtimeProfitText(prefix + suffix, '占总销售额 -');
       });
+      ['PurchaseEstimateRatio', 'LogisticsEstimateRatio'].forEach(function(suffix) {
+        setRealtimeProfitText(prefix + suffix, '估算占比 -');
+        var estimateEl = document.getElementById(prefix + suffix);
+        if (estimateEl) estimateEl.classList.remove('is-active');
+      });
       setRealtimeProfitText(prefix + 'RevenueSub', '订单 ... 单');
       setRealtimeProfitText(prefix + 'ProfitSub', '加载利润数据');
       setRealtimeProfitText(prefix + 'ProfitMargin', '利润率 -');
       setRealtimeProfitText(prefix + 'Window', '总销售额 / 广告费');
     });
+    updateRealtimeUnmatchedDetailLinks();
     clearRealtimeSameTimeCompare();
   }
 
   function setRealtimeScopeCardsError(message) {
     ['global', 'new', 'old', 'unmatched'].forEach(function(scope) {
+      realtimeState.estimateAvailability[scope] = false;
       var prefix = realtimeScopePrefix(scope);
       [
         'Revenue', 'Shipping', 'RevenueWithShipping', 'Spend', 'Roas', 'MetaRoas',
@@ -5515,12 +5581,18 @@
       ].forEach(function(suffix) {
         setRealtimeProfitText(prefix + suffix, '占总销售额 -');
       });
+      ['PurchaseEstimateRatio', 'LogisticsEstimateRatio'].forEach(function(suffix) {
+        setRealtimeProfitText(prefix + suffix, '估算占比 -');
+        var estimateEl = document.getElementById(prefix + suffix);
+        if (estimateEl) estimateEl.classList.remove('is-active');
+      });
       setRealtimeProfitText(prefix + 'RevenueSub', '加载失败');
       setRealtimeProfitText(prefix + 'ProfitSub', message || '加载失败');
       setRealtimeProfitText(prefix + 'ProfitMargin', '利润率 -');
       setRealtimeProfitText(prefix + 'Window', '总销售额 / 广告费');
       setRealtimeProfitText(realtimeScopeSourceId(scope), '加载失败：' + (message || '查询失败'));
     });
+    updateRealtimeUnmatchedDetailLinks();
     clearRealtimeSameTimeCompare();
   }
 
@@ -5539,6 +5611,26 @@
   function renderRealtimeCostMetric(prefix, suffix, amount, ratioPct, denominator) {
     setRealtimeProfitText(prefix + suffix, fmtMoney(amount));
     setRealtimeProfitText(prefix + suffix + 'Ratio', formatRealtimeCostRatio(ratioPct, amount, denominator));
+  }
+
+  function formatRealtimeEstimateRatio(value, estimateAmount, denominator) {
+    var pct = Number(value);
+    var estimateValue = Number(estimateAmount || 0);
+    if (!Number.isFinite(pct)) {
+      var totalValue = Number(denominator);
+      if (Number.isFinite(totalValue) && totalValue > 0) {
+        pct = estimateValue / totalValue * 100;
+      } else if (estimateValue <= 0) {
+        pct = 0;
+      }
+    }
+    return Number.isFinite(pct) ? '估算占比 ' + pct.toFixed(1) + '%' : '估算占比 -';
+  }
+
+  function renderRealtimeEstimateRatio(id, ratioPct, estimateAmount, denominator) {
+    setRealtimeProfitText(id, formatRealtimeEstimateRatio(ratioPct, estimateAmount, denominator));
+    var el = document.getElementById(id);
+    if (el) el.classList.toggle('is-active', Number(estimateAmount || 0) > 0);
   }
 
   function realtimeSameTimePct(metric) {
@@ -5635,12 +5727,24 @@
       profitSummary.purchase_cost_ratio_pct,
       costRatioDenominator
     );
+    renderRealtimeEstimateRatio(
+      prefix + 'PurchaseEstimateRatio',
+      profitSummary.purchase_estimate_ratio_pct,
+      profitSummary.purchase_estimate_usd,
+      profitSummary.purchase_cost_with_estimate_usd
+    );
     renderRealtimeCostMetric(
       prefix,
       'LogisticsCost',
       profitSummary.logistics_cost_with_estimate_usd,
       profitSummary.logistics_cost_ratio_pct,
       costRatioDenominator
+    );
+    renderRealtimeEstimateRatio(
+      prefix + 'LogisticsEstimateRatio',
+      profitSummary.logistics_estimate_ratio_pct,
+      profitSummary.logistics_estimate_usd,
+      profitSummary.logistics_cost_with_estimate_usd
     );
     renderRealtimeCostMetric(
       prefix,
@@ -5656,6 +5760,10 @@
     );
     var profitValue = Number(profitSummary.profit_with_estimate_usd);
     var profitIsNumber = Number.isFinite(profitValue);
+    realtimeState.estimateAvailability[scope] = Boolean(
+      profitSummary.has_estimated_costs || Number(profitSummary.cost_estimate_total_usd || 0) > 0
+    );
+    updateRealtimeUnmatchedDetailLinks();
     var profitEl = scope === 'global' ? document.getElementById('realtimeProfit') : document.getElementById(prefix + 'Profit');
     if (profitEl) {
       profitEl.textContent = profitIsNumber ? fmtMoney(profitValue) : '-';
