@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 
 from appcore.order_analytics import weekly_ai_report as war
@@ -220,7 +221,180 @@ def test_generate_ai_report_success_upserts(monkeypatch):
     params = writes[0][0][1]
     assert params[0] == date(2026, 5, 31)
     assert params[4] == "success"
+    saved_report = json.loads(params[6])
+    assert saved_report["product_action_evaluations"] == []
+    assert saved_report["product_action_evaluation_summary"]["total"] == 0
     assert params[9] == 9
+
+
+def _minimal_product_candidate(product_id=101, product_code="P101"):
+    return {
+        "identity": {
+            "product_id": product_id,
+            "product_code": product_code,
+            "product_name": "示例产品",
+            "product_main_image_url": "/medias/cover/101?lang=en",
+            "product_cover_url": "/medias/cover/101?lang=en",
+            "media_search_url": f"/medias/?q={product_code}",
+        },
+        "eligibility": {"status": "stable", "label": "稳定品"},
+        "stability": {"last_7d_orders": 210, "overall_roas": 2.1},
+        "weekly_product": {"order_count": 28, "profit_usd": 120},
+        "campaigns": [],
+        "order_country_distribution": [{"country_code": "DE", "order_count": 12}],
+        "ad_country_distribution": [{"market_country": "DE", "spend_usd": 80}],
+        "material_summary_by_lang": {"de": {"pushed_video_count": 1}},
+        "local_material_candidates": [{"source": "local", "material_id": "10", "filename": "demo.mp4"}],
+        "mingkong_summary": {"video_count": 4, "total_90_spend": 1200},
+        "mingkong_material_candidates": [{"source": "mingkong", "material_key": "mk1", "video_path": "mk/demo.mp4"}],
+        "target_country_tiers": war._target_country_tiers(),
+        "data_quality_notes": [],
+    }
+
+
+def test_product_ai_candidates_only_stable_and_potential(monkeypatch):
+    monkeypatch.setattr(war, "_load_product_ad_summary", lambda product_ids, notes: {})
+    monkeypatch.setattr(war, "_load_material_summary_by_lang", lambda product_ids, notes: {})
+    monkeypatch.setattr(war, "_load_order_country_distribution", lambda product_ids, week_start, week_end, notes: {})
+    monkeypatch.setattr(war, "_load_ad_country_distribution", lambda product_ids, week_start, week_end, notes: {})
+    monkeypatch.setattr(war, "_load_local_material_candidates", lambda product_ids, notes: {})
+    monkeypatch.setattr(war, "_load_mingkong_product_summary", lambda product_codes, notes: {})
+    monkeypatch.setattr(war, "_load_mingkong_material_candidates", lambda product_codes, notes: {})
+
+    product_stability = {
+        "buckets": {
+            "stable": [{"product_id": 101, "product_code": "P101", "product_name": "稳定品"}],
+            "potential": [{"product_id": 202, "product_code": "P202", "product_name": "潜力品"}],
+            "test": [{"product_id": 303, "product_code": "P303", "product_name": "测试品"}],
+            "stopped": [{"product_id": 404, "product_code": "P404", "product_name": "已停投"}],
+        }
+    }
+
+    candidates = war._build_product_ai_evaluation_candidates(
+        product_stability=product_stability,
+        product_rows=[],
+        campaign_rows=[],
+        week_start=date(2026, 5, 31),
+        week_end=date(2026, 6, 6),
+        identity_by_id={
+            101: {"id": 101, "product_code": "P101", "name": "稳定品", "main_image": "https://cdn.example/p101.jpg"},
+            202: {"id": 202, "product_code": "P202", "name": "潜力品", "main_image": ""},
+        },
+        identity_by_code={},
+        global_notes=[],
+    )
+
+    assert [c["identity"]["product_code"] for c in candidates] == ["P101", "P202"]
+    assert candidates[0]["eligibility"]["status"] == "stable"
+    assert candidates[1]["eligibility"]["status"] == "potential"
+    assert candidates[0]["identity"]["product_main_image_url"] == "https://cdn.example/p101.jpg"
+    assert candidates[1]["identity"]["product_main_image_url"] == "/medias/cover/202?lang=en"
+    assert [tier["country_codes"] for tier in candidates[0]["target_country_tiers"]] == [
+        ["DE", "FR"],
+        ["ES", "IT", "JP"],
+        ["SE", "NL", "PT"],
+    ]
+
+
+def test_product_action_prompt_contains_country_tiers_and_material_sources():
+    prompt = war.build_product_action_evaluation_prompt(_minimal_product_candidate())
+
+    assert "第一阶梯 DE/FR" in prompt
+    assert "order_country_distribution" in prompt
+    assert "ad_country_distribution" in prompt
+    assert "local_material_candidates" in prompt
+    assert "mingkong_material_candidates" in prompt
+    assert "mk/demo.mp4" in prompt
+
+
+def test_invoke_product_action_evaluation_uses_openrouter_gemini_schema(monkeypatch):
+    captured = {}
+
+    def fake_invoke_generate(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        return {
+            "json": {
+                "product_id": 999,
+                "product_code": "WRONG",
+                "product_name": "WRONG",
+                "status": "success",
+                "primary_action": "supplement_material",
+                "action_label": "补素材",
+                "confidence": 88,
+                "stage": {"current_tier": "tier1", "next_tier": "tier1", "reason": "德法优先"},
+                "country_plan": [],
+                "material_plan": {
+                    "needs_material": True,
+                    "priority_country_codes": ["DE"],
+                    "recommended_source": "mingkong",
+                    "recommended_material": {"material_id": "mk1"},
+                    "localization_steps": ["翻译德语"],
+                },
+                "budget_plan": {"summary": "小预算测试", "increase": [], "reduce": [], "pause": []},
+                "evidence": ["有明空素材"],
+                "risk_flags": [],
+                "next_steps": ["先补 DE 素材"],
+            }
+        }
+
+    monkeypatch.setattr(war.llm_client, "invoke_generate", fake_invoke_generate)
+
+    result = war.invoke_product_action_evaluation(
+        _minimal_product_candidate(),
+        user_id=7,
+        week_start=date(2026, 5, 31),
+        week_end=date(2026, 6, 6),
+    )
+
+    assert captured["use_case_code"] == war.PRODUCT_EVALUATION_USE_CASE_CODE
+    assert captured["kwargs"]["provider_override"] == "openrouter"
+    assert captured["kwargs"]["model_override"] == "google/gemini-3.5-flash"
+    assert captured["kwargs"]["response_schema"] is war.PRODUCT_ACTION_RESPONSE_SCHEMA
+    assert "DE/FR" in captured["kwargs"]["prompt"]
+    assert result["product_id"] == 101
+    assert result["product_code"] == "P101"
+    assert result["status"] == "success"
+
+
+def test_product_action_evaluation_failure_is_per_product(monkeypatch):
+    candidates = [
+        _minimal_product_candidate(101, "P101"),
+        _minimal_product_candidate(202, "P202"),
+    ]
+
+    def fake_invoke(candidate, **kwargs):
+        if candidate["identity"]["product_code"] == "P202":
+            raise RuntimeError("boom")
+        return {
+            "product_id": 101,
+            "product_code": "P101",
+            "product_name": "示例产品",
+            "status": "success",
+            "primary_action": "hold",
+            "action_label": "观察",
+            "confidence": 70,
+            "stage": {"current_tier": "tier1", "next_tier": "tier1", "reason": ""},
+            "country_plan": [],
+            "material_plan": {},
+            "budget_plan": {},
+            "evidence": [],
+            "risk_flags": [],
+            "next_steps": [],
+        }
+
+    monkeypatch.setattr(war, "invoke_product_action_evaluation", fake_invoke)
+
+    evaluations = war._generate_product_action_evaluations(
+        {"product_ai_evaluation_candidates": candidates},
+        user_id=7,
+        week_start=date(2026, 5, 31),
+        week_end=date(2026, 6, 6),
+    )
+
+    assert [item["status"] for item in evaluations] == ["success", "failed"]
+    assert evaluations[1]["product_code"] == "P202"
+    assert evaluations[1]["primary_action"] == "investigate"
 
 
 def test_generate_ai_report_parse_failure_stores_failed(monkeypatch):

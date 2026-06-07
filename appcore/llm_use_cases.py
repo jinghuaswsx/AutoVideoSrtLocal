@@ -725,6 +725,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "order_analytics.weekly_product_action_evaluation": _uc(
+        "order_analytics.weekly_product_action_evaluation",
+        "order_analytics",
+        "每周稳定潜力品 AI 推进评估",
+        "针对每周 AI 分析中的稳定品和潜力品，结合投放、订单、素材和国家分布生成逐产品推进建议",
+        "openrouter",
+        "google/gemini-3.5-flash",
+        "openrouter",
+        "tokens",
+    ),
 }
 
 def get_use_case(code: str) -> UseCase:

@@ -126,9 +126,17 @@ def test_weekly_ai_analysis_tab_and_panel_present():
     assert 'id="weeklyAiDqBar"' in template
     assert 'id="weeklyAiStabilitySummary"' in template
     assert 'id="weeklyAiStabilityBody"' in template
+    assert 'id="weeklyAiProductEvaluationBody"' in template
     assert 'id="weeklyAiProductBody"' in template
     assert 'id="weeklyAiAdBody"' in template
+    assert "产品主图" in template
+    assert "AI 推进建议" in template
+    assert "weeklyAiProductImageCell" in template
+    assert "weeklyAiProductCell" in template
+    assert "data-weekly-ai-copy-text" in template
+    assert "/medias/?q=" in template
     assert "renderWeeklyAiProductStability" in template
+    assert "renderWeeklyAiProductEvaluations" in template
     assert "initWeeklyAiAnalysis" in template
 
 

@@ -196,6 +196,151 @@ AI 必须输出 JSON：
   - 明细表展示头部稳定品和潜力品的产品、7 天 / 30 天订单、日均、最低日单量、ROAS、投放状态。
   - 这部分进入 LLM prompt，辅助商品方向和素材补充建议。
 
+## 稳定 / 潜力品逐产品 AI 推进评估（2026-06-07 追加）
+
+用户追加要求：每周 AI 分析不应对 200+ 全量产品逐个调用模型，只针对 `稳定品` 和 `潜力品` 做逐产品推进评估。逐产品评估用于回答运营下一步应该怎么打：继续补素材、扩国家、收缩预算、迁移明空素材，或先保守观察。
+
+### 评估对象
+
+- 只读取 `product_stability.buckets.stable` 和 `product_stability.buckets.potential`。
+- `测试品`、`已停投`、`未投放` 不进入逐产品 Gemini 调用；它们仍可在稳定分级表展示，但不产生逐产品 AI 推进建议。
+- 候选产品由后端从稳定分级缓存生成，按稳定品优先、近 7 天订单和近 30 天订单降序排序；每条候选产品一次 LLM 调用。
+- 如果稳定分级缓存不可用或候选为空，周报整体 AI 仍可生成，逐产品建议区显示空态，不让周报失败。
+
+### 国家阶梯
+
+本功能固定面向 8 个目标国家，模型只能在以下国家内做推进建议：
+
+- 第一阶梯：`DE` 德国、`FR` 法国。
+- 第二阶梯：`ES` 西班牙、`IT` 意大利、`JP` 日本。
+- 第三阶梯：`SE` 瑞典、`NL` 荷兰、`PT` 葡萄牙。
+
+推进原则：
+
+- 第一阶梯未验证充分时，默认优先补德 / 法素材和广告承接，不直接跳到二、三阶梯。
+- 德 / 法已有稳定订单、ROAS 或素材证明后，再建议二阶梯扩张。
+- 前两阶梯都表现不错、且素材储备足够时，才建议三阶梯测试。
+- 如果订单国家分布和广告国家分布冲突，必须在 `risk_flags` 标明“订单国家”和“广告命名市场国家”口径不同，不得把两者混成同一事实。
+
+### 每产品数据包
+
+后端为每个候选产品构造压缩 JSON，不传全量订单明细。数据源包括：
+
+- `identity`：`product_id`、`product_code`、中文产品名、产品主图 URL、素材管理搜索 URL。
+- `stability`：稳定分级、7/30 天订单、日均、最低日单量、稳定标记、总体广告消耗、总体 ROAS、投放状态。
+- `weekly_product`：本周订单、收入、广告费、利润、利润率、ROAS、成本完整性、每日订单序列。
+- `campaigns`：本周匹配该产品的广告计划、账户、花费、购买价值、结果数、ROAS、每日花费。
+- `order_country_distribution`：本周订单按 `buyer_country` / `buyer_country_name` 的分布，含订单数、收入、利润。
+- `ad_country_distribution`：本周广告按 `meta_ad_daily_ad_metrics.market_country` 的分布，含花费、购买价值、结果数、ROAS。该字段是广告命名解析出的市场国家，不等同于真实买家国家。
+- `material_summary_by_lang`：本地素材库按语言的素材数、已推视频数、广告花费、购买价值、ROAS、近 7 天活跃花费。
+- `local_material_candidates`：本地已有素材候选，包含语言、文件名、展示名、推送次数、最近推送时间和明空绑定线索，用于判断是否已有可本地化素材。
+- `mingkong_summary`：明空侧产品素材总数、有路径视频数、90 天总花费、广告数。
+- `mingkong_material_candidates`：明空侧可搬运素材候选，按 90 天花费 / 广告数 / 昨日增量筛选，包含素材名、路径、封面、累计 90 天花费、广告数、昨日花费增量。
+- `target_country_tiers`：上述 8 国三阶梯配置。
+- `data_quality_notes`：数据缺失、缓存不可用、口径差异等说明。
+
+所有补充数据查询必须 best-effort：任一附加数据源失败时只写入 `data_quality_notes`，不得中断周报整体生成。
+
+### LLM use case
+
+新增 LLM use case：`order_analytics.weekly_product_action_evaluation`。
+
+- provider：`openrouter`
+- model：`google/gemini-3.5-flash`
+- usage service：`openrouter`
+- units：`tokens`
+- 调用入口：`appcore.llm_client.invoke_generate`
+- `response_schema`：强制 JSON schema；解析失败时该产品返回 failed 状态并保留错误摘要，不让其他产品和整体周报失败。
+
+### 提示词策略
+
+系统提示词要求模型扮演电商投放运营分析师，输出严格 JSON，禁止编造不存在的数据、国家、素材、广告计划或订单。用户提示词必须明确：
+
+- 只评估当前这一条产品，不要输出组合产品或全站建议。
+- 先依据本周投放、订单、利润、国家分布和历史素材判断当前阶段。
+- 按三阶梯国家策略决定动作：补素材、扩国家、保守观察、降预算 / 暂停、排查数据。
+- 如果建议补素材，必须从 `local_material_candidates` 或 `mingkong_material_candidates` 中选择具体素材；不能只说“补素材”。
+- 如果建议搬明空素材，必须说明搬哪个素材、为什么、优先本地化到哪个语言 / 国家。
+- 如果建议扩国家，必须说明先扩哪一阶梯、哪些国家、前置条件和止损线。
+- 如果数据不足，必须明确缺什么数据和临时动作。
+
+### AI 输出契约
+
+逐产品评估输出 JSON：
+
+```json
+{
+  "product_id": 0,
+  "product_code": "",
+  "product_name": "",
+  "status": "success|failed",
+  "primary_action": "supplement_material|expand_country|hold|reduce_budget|pause|investigate",
+  "action_label": "中文短标签",
+  "confidence": 0,
+  "stage": {
+    "current_tier": "tier1|tier2|tier3|none",
+    "next_tier": "tier1|tier2|tier3|none",
+    "reason": "中文说明"
+  },
+  "country_plan": [
+    {
+      "country_code": "DE",
+      "tier": "tier1",
+      "decision": "scale|test|hold|stop|localize_first",
+      "reason": "中文说明",
+      "budget_action": "keep|increase_small|test_small|reduce|pause",
+      "material_action": "reuse_existing|localize_mingkong|create_new|none"
+    }
+  ],
+  "material_plan": {
+    "needs_material": true,
+    "priority_country_codes": ["DE", "FR"],
+    "recommended_source": "local|mingkong|new|none",
+    "recommended_material": {
+      "source": "local|mingkong",
+      "material_id": "",
+      "filename": "",
+      "display_name": "",
+      "video_path": "",
+      "lang": "",
+      "evidence": "为什么选它"
+    },
+    "localization_steps": ["中文动作"]
+  },
+  "budget_plan": {
+    "summary": "中文说明",
+    "increase": [],
+    "reduce": [],
+    "pause": []
+  },
+  "evidence": ["中文证据"],
+  "risk_flags": [{"level": "info|warning|error", "message": "中文风险"}],
+  "next_steps": ["中文动作，按执行顺序"]
+}
+```
+
+`confidence` 必须为 0-100 整数。`primary_action` 和国家 `decision` 只能使用 schema 枚举值。模型输出的 `product_id` / `product_code` 必须与输入一致。
+
+### UI
+
+`每周 AI 分析` 页面调整：
+
+- 稳定产品分级表新增 `产品主图` 列，固定 200 × 200 框显示主图；无图显示空态。
+- 产品列拆为两行：第一行中文产品名，第二行产品 Code。每行末尾都有复制图标按钮。
+- 产品 Code 行额外增加放大镜按钮，点击打开 `/medias/?q=<product_code>`，让素材管理自动搜索该产品 Code。
+- 新增 `AI 推进建议` 表，只展示稳定品 / 潜力品逐产品评估结果。核心列包括产品主图、产品、分级、AI 动作、国家阶梯、推荐素材、下一步、置信度。
+- 图标按钮使用 inline SVG / Lucide 风格，不使用 emoji。按钮必须有 `title` / `aria-label`，复制失败时退回 textarea。
+
+### 验证补充
+
+新增或更新测试：
+
+- 后端：候选产品只包含 stable / potential；测试品 / 已停投不触发逐产品 LLM。
+- 后端：逐产品 prompt 包含 8 国三阶梯、订单国家分布、广告国家分布、本地素材和明空素材候选。
+- 后端：`generate_ai_report` 在整体周报 JSON 成功后附加 `product_action_evaluations`，单产品失败不影响整体成功。
+- use case：`order_analytics.weekly_product_action_evaluation` 注册为 OpenRouter `google/gemini-3.5-flash`。
+- 前端：稳定分级表包含产品主图列、复制按钮、素材管理搜索链接；AI 推进建议表存在并能渲染空态。
+
 ## 定时任务
 
 新增 `appcore/weekly_ai_analysis_report.py` 或放入 `appcore/order_analytics/weekly_ai_report.py` 的 `register(scheduler)`：

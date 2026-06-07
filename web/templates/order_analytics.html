@@ -617,6 +617,40 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.oar-weekly-product-image-cell {
+  width: 216px;
+  min-width: 216px;
+}
+.oar-weekly-product-image-frame {
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+}
+.oar-weekly-product-image-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.oar-weekly-product-eval-material {
+  min-width: 180px;
+  max-width: 300px;
+  white-space: normal;
+  word-break: break-word;
+}
+.oar-weekly-product-eval-next {
+  min-width: 240px;
+  max-width: 420px;
+  white-space: normal;
+}
 .oar-id-cell {
   font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);
 }
@@ -3120,6 +3154,7 @@
         <thead>
           <tr>
             <th>类型</th>
+            <th>产品主图</th>
             <th>产品</th>
             <th>标记</th>
             <th>7天单量</th>
@@ -3131,6 +3166,29 @@
           </tr>
         </thead>
         <tbody id="weeklyAiStabilityBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">AI 推进建议</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>产品主图</th>
+            <th>产品</th>
+            <th>分级</th>
+            <th>AI动作</th>
+            <th>国家阶梯</th>
+            <th>推荐素材</th>
+            <th>下一步</th>
+            <th>置信度</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiProductEvaluationBody"></tbody>
       </table>
     </div>
   </div>
@@ -6837,6 +6895,20 @@
       if (refresh) refresh.addEventListener('click', loadWeeklyAiReport);
       var generate = document.getElementById('weeklyAiGenerate');
       if (generate) generate.addEventListener('click', generateWeeklyAiReport);
+      var panel = document.getElementById('panelWeeklyAiAnalysis');
+      if (panel && panel.dataset.weeklyAiCopyBound !== '1') {
+        panel.dataset.weeklyAiCopyBound = '1';
+        panel.addEventListener('click', function(ev) {
+          var btn = ev.target.closest ? ev.target.closest('[data-weekly-ai-copy-text]') : null;
+          if (!btn || !panel.contains(btn)) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          var text = btn.getAttribute('data-weekly-ai-copy-text') || '';
+          copyTextToClipboard(text)
+            .then(function() { setRealtimeProductCopyState(btn, '已复制', 'is-copied'); })
+            .catch(function() { setRealtimeProductCopyState(btn, '复制失败', ''); });
+        });
+      }
       if (input) {
         input.addEventListener('change', function() {
           var base = input.value ? new Date(input.value + 'T00:00:00') : previousCompletedSundayWeekStart();
@@ -6869,7 +6941,8 @@
       ['weeklyAiSegmentBody', 8],
       ['weeklyAiDailyBody', 10],
       ['weeklyAiStoreBody', 7],
-      ['weeklyAiStabilityBody', 9],
+      ['weeklyAiStabilityBody', 10],
+      ['weeklyAiProductEvaluationBody', 8],
       ['weeklyAiProductBody', 7],
       ['weeklyAiAdBody', 8],
       ['weeklyAiLowOrderBody', 7]
@@ -6934,7 +7007,8 @@
       ['weeklyAiSegmentBody', 8],
       ['weeklyAiDailyBody', 10],
       ['weeklyAiStoreBody', 7],
-      ['weeklyAiStabilityBody', 9],
+      ['weeklyAiStabilityBody', 10],
+      ['weeklyAiProductEvaluationBody', 8],
       ['weeklyAiProductBody', 7],
       ['weeklyAiAdBody', 8],
       ['weeklyAiLowOrderBody', 7]
@@ -6976,6 +7050,7 @@
     renderWeeklyAiDaily(pkg.daily_global || []);
     renderWeeklyAiStores(pkg.daily_by_store || {});
     renderWeeklyAiProductStability(pkg.product_stability || {});
+    renderWeeklyAiProductEvaluations(data.report || null, pkg);
     renderWeeklyAiProductActions(data.report || null, pkg.rule_findings || {});
     renderWeeklyAiAdActions(data.report || null, pkg.rule_findings || {});
     renderWeeklyAiLowOrders(pkg.low_order_products || {});
@@ -7058,6 +7133,60 @@
       tr.appendChild(td);
     });
     body.appendChild(tr);
+  }
+
+  function weeklyAiSafeImageSrc(value) {
+    var src = String(value || '').trim();
+    if (!src) return '';
+    if (src.indexOf('/') === 0 || src.indexOf('http://') === 0 || src.indexOf('https://') === 0) return src;
+    return '';
+  }
+
+  function weeklyAiProductImageCell(item) {
+    item = item || {};
+    var src = weeklyAiSafeImageSrc(item.product_main_image_url || item.product_cover_url || '');
+    if (!src && item.product_id) src = '/medias/cover/' + encodeURIComponent(item.product_id) + '?lang=en';
+    var label = escapeHtml(item.product_name || item.name || item.product_code || '产品主图');
+    if (!src) {
+      return '<div class="oar-weekly-product-image-cell"><div class="oar-weekly-product-image-frame">无图</div></div>';
+    }
+    return '<div class="oar-weekly-product-image-cell"><div class="oar-weekly-product-image-frame">' +
+      '<img src="' + escapeHtml(src) + '" alt="' + label + '" loading="lazy" ' +
+      'onerror="this.remove();this.parentNode.textContent=&quot;无图&quot;;">' +
+      '</div></div>';
+  }
+
+  function weeklyAiProductCopyButton(text, title) {
+    var value = String(text || '').trim();
+    if (!value) return '';
+    return '<button type="button" class="oar-product-line-action" title="' + escapeHtml(title || '复制') + '" ' +
+      'aria-label="' + escapeHtml(title || '复制') + '" data-weekly-ai-copy-text="' + escapeHtml(value) + '">' +
+      realtimeProductCopyIconSvg() +
+      '</button>';
+  }
+
+  function weeklyAiProductLine(text, textClassName, copyTitle, withSearch) {
+    var value = String(text || '').trim();
+    var display = value || '-';
+    var html = '<div class="oar-product-copy-row">' +
+      '<span class="' + escapeHtml(textClassName || 'oar-product-line-text') + '">' + escapeHtml(display) + '</span>';
+    if (value) html += weeklyAiProductCopyButton(value, copyTitle);
+    if (withSearch && value) {
+      html += '<a class="oar-product-line-action oar-product-search-action" href="/medias/?q=' +
+        encodeURIComponent(value) + '" target="_blank" rel="noopener noreferrer" title="在素材管理中搜索" ' +
+        'aria-label="在素材管理中搜索 product code">' + realtimeProductSearchIconSvg() + '</a>';
+    }
+    return html + '</div>';
+  }
+
+  function weeklyAiProductCell(item) {
+    item = item || {};
+    var nameText = String(item.product_name || item.name || item.matched_product_name || '').trim();
+    var codeText = String(item.product_code || item.matched_product_code || '').trim();
+    return '<div class="oar-product-cell"><div class="oar-product-sales-stack">' +
+      weeklyAiProductLine(nameText || '未知商品', 'oar-product-line-text', '复制中文产品名', false) +
+      weeklyAiProductLine(codeText, 'oar-product-line-text oar-product-code-text', '复制 product code', true) +
+      '</div></div>';
   }
 
   function renderWeeklyAiSegments(segments) {
@@ -7173,7 +7302,8 @@
       (group[1] || []).slice(0, group[0] === '稳定品' ? 20 : 10).forEach(function(item) {
         weeklyAiAppendRow(body, [
           group[0],
-          escapeHtml((item.product_code || '') + (item.product_name ? ' · ' + item.product_name : '')),
+          weeklyAiProductImageCell(item),
+          weeklyAiProductCell(item),
           escapeHtml((item.stable_marks || []).join(' / ') || item.display_label || ''),
           item.last_7d_orders || 0,
           item.last_30d_orders || 0,
@@ -7184,7 +7314,73 @@
         ]);
       });
     });
-    if (!body.children.length) body.innerHTML = '<tr><td colspan="9">暂无稳定分级数据</td></tr>';
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="10">暂无稳定分级数据</td></tr>';
+  }
+
+  function weeklyAiActionLabel(action) {
+    var map = {
+      supplement_material: '补素材',
+      expand_country: '扩国家',
+      hold: '观察',
+      reduce_budget: '降预算',
+      pause: '暂停',
+      investigate: '排查'
+    };
+    return map[action] || action || '-';
+  }
+
+  function weeklyAiStageText(item) {
+    var stage = item.stage || {};
+    var parts = [];
+    if (stage.current_tier && stage.current_tier !== 'none') parts.push('当前 ' + stage.current_tier);
+    if (stage.next_tier && stage.next_tier !== 'none') parts.push('下一步 ' + stage.next_tier);
+    var countries = (item.country_plan || []).slice(0, 4).map(function(row) {
+      var code = String((row || {}).country_code || '').trim();
+      var decision = String((row || {}).decision || '').trim();
+      return code && decision ? (code + ':' + decision) : '';
+    }).filter(Boolean);
+    if (countries.length) parts.push(countries.join(' / '));
+    if (stage.reason) parts.push(stage.reason);
+    return escapeHtml(parts.join('；') || '-');
+  }
+
+  function weeklyAiMaterialPlanText(item) {
+    var plan = item.material_plan || {};
+    var mat = plan.recommended_material || {};
+    var parts = [];
+    if (plan.recommended_source) parts.push(plan.recommended_source);
+    if (mat.display_name || mat.filename || mat.video_name) parts.push(mat.display_name || mat.filename || mat.video_name);
+    if (mat.video_path) parts.push(mat.video_path);
+    if (mat.lang) parts.push(mat.lang);
+    if (mat.evidence) parts.push(mat.evidence);
+    if (!parts.length && plan.needs_material) parts.push('需要补素材');
+    return escapeHtml(parts.join(' · ') || '-');
+  }
+
+  function renderWeeklyAiProductEvaluations(report, pkg) {
+    var body = document.getElementById('weeklyAiProductEvaluationBody');
+    if (!body) return;
+    body.innerHTML = '';
+    var rows = ((report || {}).product_action_evaluations || []);
+    if (!rows.length) {
+      var candidateCount = ((pkg || {}).product_ai_evaluation_candidates || []).length;
+      body.innerHTML = '<tr><td colspan="8">' +
+        (candidateCount ? '生成 AI 报告后展示稳定品 / 潜力品逐产品推进建议' : '暂无稳定品 / 潜力品逐产品评估候选') +
+        '</td></tr>';
+      return;
+    }
+    rows.forEach(function(item) {
+      weeklyAiAppendRow(body, [
+        weeklyAiProductImageCell(item),
+        weeklyAiProductCell(item),
+        escapeHtml(item.eligibility_label || item.eligibility_status || ''),
+        escapeHtml(item.action_label || weeklyAiActionLabel(item.primary_action)),
+        weeklyAiStageText(item),
+        '<div class="oar-weekly-product-eval-material">' + weeklyAiMaterialPlanText(item) + '</div>',
+        '<div class="oar-weekly-product-eval-next">' + weeklyAiList(item.next_steps || []) + '</div>',
+        item.status === 'failed' ? '失败' : (Math.max(0, Math.min(100, Number(item.confidence || 0))).toFixed(0) + '%')
+      ]);
+    });
   }
 
   function weeklyAiProductRowsFrom(report, findings) {
@@ -7206,7 +7402,7 @@
       var item = row.item || {};
       weeklyAiAppendRow(body, [
         row.action,
-        escapeHtml((item.product_code || '') + (item.name ? ' · ' + item.name : '')),
+        weeklyAiProductCell(item),
         item.order_count || '-',
         item.ad_cost_usd !== undefined ? fmtMoney(item.ad_cost_usd) : '-',
         item.profit_usd !== undefined ? fmtMoney(item.profit_usd) : '-',
@@ -7238,7 +7434,7 @@
         row.action,
         escapeHtml(item.ad_account_name || ''),
         escapeHtml(item.campaign_name || item.campaign || item.normalized_campaign_code || ''),
-        escapeHtml(item.matched_product_code || item.product_code || item.matched_product_name || ''),
+        weeklyAiProductCell(item),
         item.spend_usd !== undefined ? fmtMoney(item.spend_usd) : '-',
         item.purchase_value_usd !== undefined ? fmtMoney(item.purchase_value_usd) : '-',
         fmtRoasValue(item.roas),
@@ -7256,7 +7452,7 @@
       (group[1] || []).forEach(function(item) {
         weeklyAiAppendRow(body, [
           group[0],
-          escapeHtml((item.product_code || '') + (item.name ? ' · ' + item.name : '')),
+          weeklyAiProductCell(item),
           item.order_count || 0,
           item.units || 0,
           fmtMoney(item.ad_cost_usd),

@@ -13,6 +13,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from appcore import llm_client, scheduled_tasks
@@ -26,6 +27,19 @@ log = logging.getLogger(__name__)
 
 TASK_CODE = "weekly_ai_analysis_report"
 USE_CASE_CODE = "order_analytics.weekly_ai_analysis"
+PRODUCT_EVALUATION_USE_CASE_CODE = "order_analytics.weekly_product_action_evaluation"
+PRODUCT_EVALUATION_MODEL = "google/gemini-3.5-flash"
+MAX_PRODUCT_ACTION_EVALUATIONS = 80
+_PRODUCT_EVALUATION_STATUSES = ("stable", "potential")
+_PRODUCT_EVALUATION_STATUS_LABELS = {
+    "stable": "稳定品",
+    "potential": "潜力品",
+}
+_TARGET_COUNTRY_TIER_CODES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("tier1", "第一阶梯", ("DE", "FR")),
+    ("tier2", "第二阶梯", ("ES", "IT", "JP")),
+    ("tier3", "第三阶梯", ("SE", "NL", "PT")),
+)
 _CST = ZoneInfo("Asia/Shanghai")
 _STORE_SCOPES: tuple[tuple[str, list[str] | None], ...] = (
     ("all", None),
@@ -38,6 +52,135 @@ _STATUS_RANK = {
     "stale": 2,
     "mismatch": 3,
     "error": 4,
+}
+
+PRODUCT_ACTION_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": True,
+    "required": [
+        "product_id",
+        "product_code",
+        "product_name",
+        "status",
+        "primary_action",
+        "action_label",
+        "confidence",
+        "stage",
+        "country_plan",
+        "material_plan",
+        "budget_plan",
+        "evidence",
+        "risk_flags",
+        "next_steps",
+    ],
+    "properties": {
+        "product_id": {"type": "integer"},
+        "product_code": {"type": "string"},
+        "product_name": {"type": "string"},
+        "status": {"type": "string", "enum": ["success", "failed"]},
+        "primary_action": {
+            "type": "string",
+            "enum": [
+                "supplement_material",
+                "expand_country",
+                "hold",
+                "reduce_budget",
+                "pause",
+                "investigate",
+            ],
+        },
+        "action_label": {"type": "string"},
+        "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+        "stage": {
+            "type": "object",
+            "additionalProperties": True,
+            "required": ["current_tier", "next_tier", "reason"],
+            "properties": {
+                "current_tier": {"type": "string", "enum": ["tier1", "tier2", "tier3", "none"]},
+                "next_tier": {"type": "string", "enum": ["tier1", "tier2", "tier3", "none"]},
+                "reason": {"type": "string"},
+            },
+        },
+        "country_plan": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": True,
+                "required": [
+                    "country_code",
+                    "tier",
+                    "decision",
+                    "reason",
+                    "budget_action",
+                    "material_action",
+                ],
+                "properties": {
+                    "country_code": {
+                        "type": "string",
+                        "enum": ["DE", "FR", "ES", "IT", "JP", "SE", "NL", "PT"],
+                    },
+                    "tier": {"type": "string", "enum": ["tier1", "tier2", "tier3"]},
+                    "decision": {
+                        "type": "string",
+                        "enum": ["scale", "test", "hold", "stop", "localize_first"],
+                    },
+                    "reason": {"type": "string"},
+                    "budget_action": {
+                        "type": "string",
+                        "enum": ["keep", "increase_small", "test_small", "reduce", "pause"],
+                    },
+                    "material_action": {
+                        "type": "string",
+                        "enum": ["reuse_existing", "localize_mingkong", "create_new", "none"],
+                    },
+                },
+            },
+        },
+        "material_plan": {
+            "type": "object",
+            "additionalProperties": True,
+            "required": [
+                "needs_material",
+                "priority_country_codes",
+                "recommended_source",
+                "recommended_material",
+                "localization_steps",
+            ],
+            "properties": {
+                "needs_material": {"type": "boolean"},
+                "priority_country_codes": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["DE", "FR", "ES", "IT", "JP", "SE", "NL", "PT"]},
+                },
+                "recommended_source": {"type": "string", "enum": ["local", "mingkong", "new", "none"]},
+                "recommended_material": {"type": "object", "additionalProperties": True},
+                "localization_steps": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "budget_plan": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "summary": {"type": "string"},
+                "increase": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                "reduce": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+                "pause": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+            },
+        },
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "risk_flags": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": True,
+                "properties": {
+                    "level": {"type": "string", "enum": ["info", "warning", "error"]},
+                    "message": {"type": "string"},
+                },
+            },
+        },
+        "next_steps": {"type": "array", "items": {"type": "string"}},
+    },
 }
 
 
@@ -174,6 +317,10 @@ def _json_dumps(payload: Any) -> str:
     return json.dumps(_serialize(payload), ensure_ascii=False, separators=(",", ":"))
 
 
+def _placeholders(values: list[Any]) -> str:
+    return ",".join(["%s"] * len(values))
+
+
 def _loads_json(value: Any, default: Any = None) -> Any:
     if value is None:
         return default
@@ -187,6 +334,75 @@ def _loads_json(value: Any, default: Any = None) -> Any:
         except json.JSONDecodeError:
             return default
     return default
+
+
+def _media_object_url(object_key: Any) -> str:
+    key = str(object_key or "").strip()
+    if not key:
+        return ""
+    return f"/medias/object?object_key={quote(key, safe='')}"
+
+
+def _media_search_url(product_code: Any) -> str:
+    code = str(product_code or "").strip()
+    if not code:
+        return ""
+    return f"/medias/?q={quote(code, safe='')}"
+
+
+def _media_cover_url(product_id: Any) -> str:
+    pid = _safe_int(product_id)
+    if pid <= 0:
+        return ""
+    return f"/medias/cover/{pid}?lang=en"
+
+
+def _product_image_url(main_image: Any, product_id: Any) -> str:
+    value = str(main_image or "").strip()
+    if value.startswith(("http://", "https://", "/")):
+        return value
+    if value:
+        return _media_object_url(value)
+    return _media_cover_url(product_id)
+
+
+def _split_langs(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        raw = [str(item or "") for item in value]
+    else:
+        text = str(value or "")
+        raw = re.split(r"[,，\s]+", text)
+    out: list[str] = []
+    for item in raw:
+        lang = item.strip().lower()
+        if lang and lang not in out:
+            out.append(lang)
+    return out
+
+
+def _target_country_tiers() -> list[dict[str, Any]]:
+    from appcore.product_research_config import get_country_config
+
+    tiers: list[dict[str, Any]] = []
+    for tier_code, tier_label, country_codes in _TARGET_COUNTRY_TIER_CODES:
+        countries: list[dict[str, Any]] = []
+        for code in country_codes:
+            cfg = get_country_config(code)
+            countries.append({
+                "country_code": cfg["country_code"],
+                "country_name": cfg["country_name"],
+                "country_name_zh": cfg["country_name_zh"],
+                "language": cfg["language"],
+                "language_zh": cfg["language_zh"],
+                "currency": cfg["currency"],
+            })
+        tiers.append({
+            "tier": tier_code,
+            "label": tier_label,
+            "country_codes": list(country_codes),
+            "countries": countries,
+        })
+    return tiers
 
 
 def _quality_from_overview(overview: dict[str, Any], business_day: date, store: str) -> dict[str, Any]:
@@ -710,6 +926,638 @@ def _rule_findings(
     return findings
 
 
+def _all_stability_items(product_stability: dict[str, Any]) -> list[dict[str, Any]]:
+    buckets = (product_stability or {}).get("buckets") or {}
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[int, str, str]] = set()
+    for status, rows in buckets.items():
+        for raw in rows or []:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            item_status = str(item.get("status") or status or "").strip().lower()
+            if item_status:
+                item["status"] = item_status
+            key = (
+                _safe_int(item.get("product_id")),
+                str(item.get("product_code") or "").strip().lower(),
+                item_status,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+    return out
+
+
+def _eligible_stability_items(product_stability: dict[str, Any]) -> list[dict[str, Any]]:
+    buckets = (product_stability or {}).get("buckets") or {}
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for status in _PRODUCT_EVALUATION_STATUSES:
+        for raw in buckets.get(status) or []:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            item["status"] = str(item.get("status") or status).strip().lower()
+            key = (
+                _safe_int(item.get("product_id")),
+                str(item.get("product_code") or "").strip().lower(),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+    out.sort(
+        key=lambda item: (
+            0 if item.get("status") == "stable" else 1,
+            -_safe_int(item.get("last_7d_orders")),
+            -_safe_int(item.get("last_30d_orders")),
+            str(item.get("product_code") or ""),
+        )
+    )
+    return out
+
+
+def _collect_product_refs(items: list[dict[str, Any]]) -> tuple[list[int], list[str]]:
+    ids = sorted({
+        _safe_int(item.get("product_id"))
+        for item in items
+        if _safe_int(item.get("product_id")) > 0
+    })
+    codes = sorted({
+        str(item.get("product_code") or "").strip()
+        for item in items
+        if str(item.get("product_code") or "").strip()
+    })
+    return ids, codes
+
+
+def _load_product_identity_maps(
+    product_ids: list[int],
+    product_codes: list[str],
+    notes: list[dict[str, Any]],
+) -> tuple[dict[int, dict[str, Any]], dict[str, dict[str, Any]]]:
+    ids = sorted({int(pid) for pid in product_ids if int(pid or 0) > 0})
+    codes = sorted({str(code or "").strip() for code in product_codes if str(code or "").strip()})
+    if not ids and not codes:
+        return {}, {}
+    where: list[str] = []
+    args: list[Any] = []
+    if ids:
+        where.append(f"id IN ({_placeholders(ids)})")
+        args.extend(ids)
+    if codes:
+        where.append(f"product_code IN ({_placeholders(codes)})")
+        args.extend(codes)
+    try:
+        rows = query(
+            "SELECT id, product_code, name, main_image, product_link, ad_supported_langs "
+            "FROM media_products "
+            f"WHERE deleted_at IS NULL AND ({' OR '.join(where)})",
+            tuple(args),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai product identity load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "product_identity_unavailable",
+            "message": f"产品基础信息加载失败：{str(exc)[:160]}",
+        })
+        return {}, {}
+
+    by_id: dict[int, dict[str, Any]] = {}
+    by_code: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        item = dict(row)
+        pid = _safe_int(item.get("id"))
+        code = str(item.get("product_code") or "").strip()
+        if pid > 0:
+            by_id[pid] = item
+        if code:
+            by_code[code.lower()] = item
+    return by_id, by_code
+
+
+def _product_identity(
+    stability_item: dict[str, Any],
+    identity_by_id: dict[int, dict[str, Any]],
+    identity_by_code: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    pid = _safe_int(stability_item.get("product_id"))
+    code = str(stability_item.get("product_code") or "").strip()
+    row = identity_by_id.get(pid) or identity_by_code.get(code.lower()) or {}
+    if not pid:
+        pid = _safe_int(row.get("id"))
+    if not code:
+        code = str(row.get("product_code") or "").strip()
+    name = str(
+        row.get("name")
+        or stability_item.get("product_name")
+        or stability_item.get("name")
+        or ""
+    ).strip()
+    main_image = _product_image_url(row.get("main_image"), pid)
+    return {
+        "product_id": pid,
+        "product_code": code,
+        "product_name": name,
+        "product_main_image_url": main_image,
+        "product_cover_url": _media_cover_url(pid),
+        "product_link": str(row.get("product_link") or "").strip(),
+        "ad_supported_langs": _split_langs(row.get("ad_supported_langs")),
+        "media_search_url": _media_search_url(code),
+    }
+
+
+def _enrich_product_stability_for_ui(
+    product_stability: dict[str, Any],
+    identity_by_id: dict[int, dict[str, Any]],
+    identity_by_code: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    if not isinstance(product_stability, dict):
+        return product_stability
+    enriched = dict(product_stability)
+    buckets = product_stability.get("buckets") or {}
+    out_buckets: dict[str, list[dict[str, Any]]] = {}
+    for status, rows in buckets.items():
+        out_rows: list[dict[str, Any]] = []
+        for raw in rows or []:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            identity = _product_identity(item, identity_by_id, identity_by_code)
+            item["product_id"] = identity["product_id"] or item.get("product_id")
+            item["product_code"] = identity["product_code"] or item.get("product_code")
+            item["product_name"] = identity["product_name"] or item.get("product_name")
+            item["product_main_image_url"] = identity["product_main_image_url"]
+            item["product_cover_url"] = identity["product_cover_url"]
+            item["media_search_url"] = identity["media_search_url"]
+            out_rows.append(item)
+        out_buckets[str(status)] = out_rows
+    enriched["buckets"] = out_buckets
+    return enriched
+
+
+def _load_product_ad_summary(
+    product_ids: list[int],
+    notes: list[dict[str, Any]],
+) -> dict[int, dict[str, Any]]:
+    ids = sorted({int(pid) for pid in product_ids if int(pid or 0) > 0})
+    if not ids:
+        return {}
+    try:
+        from appcore import media_product_ad_status_cache
+
+        return media_product_ad_status_cache.get_product_ad_summary_cache(ids)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai product ad summary load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "product_ad_summary_unavailable",
+            "message": f"产品广告汇总缓存加载失败：{str(exc)[:160]}",
+        })
+        return {}
+
+
+def _load_material_summary_by_lang(
+    product_ids: list[int],
+    notes: list[dict[str, Any]],
+) -> dict[int, dict[str, dict[str, Any]]]:
+    ids = sorted({int(pid) for pid in product_ids if int(pid or 0) > 0})
+    if not ids:
+        return {}
+    try:
+        from appcore import media_product_ad_status_cache
+
+        return media_product_ad_status_cache.get_product_lang_ad_summary_cache(ids)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai product lang summary load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "material_lang_summary_unavailable",
+            "message": f"本地素材语言汇总加载失败：{str(exc)[:160]}",
+        })
+        return {}
+
+
+def _load_order_country_distribution(
+    product_ids: list[int],
+    *,
+    week_start: date,
+    week_end: date,
+    notes: list[dict[str, Any]],
+) -> dict[int, list[dict[str, Any]]]:
+    ids = sorted({int(pid) for pid in product_ids if int(pid or 0) > 0})
+    if not ids:
+        return {}
+    country_expr = (
+        "UPPER(COALESCE(NULLIF(TRIM(opl.buyer_country), ''), "
+        "NULLIF(TRIM(dol.buyer_country), ''), 'UNKNOWN'))"
+    )
+    try:
+        rows = query(
+            "SELECT opl.product_id, "
+            f"       {country_expr} AS country_code, "
+            "       MAX(NULLIF(TRIM(dol.buyer_country_name), '')) AS country_name, "
+            "       COUNT(DISTINCT NULLIF(TRIM(dol.dxm_package_id), '')) AS order_count, "
+            "       SUM(COALESCE(opl.revenue_usd, 0)) AS revenue_usd, "
+            "       SUM(COALESCE(opl.profit_usd, 0)) AS profit_usd "
+            "FROM order_profit_lines opl "
+            "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
+            f"WHERE opl.product_id IN ({_placeholders(ids)}) "
+            "  AND dol.meta_business_date BETWEEN %s AND %s "
+            f"GROUP BY opl.product_id, {country_expr} "
+            "ORDER BY opl.product_id ASC, order_count DESC, revenue_usd DESC",
+            (*ids, week_start, week_end),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai order country distribution load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "order_country_distribution_unavailable",
+            "message": f"订单国家分布加载失败：{str(exc)[:160]}",
+        })
+        return {}
+
+    out: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows or []:
+        pid = _safe_int(row.get("product_id"))
+        if not pid:
+            continue
+        out[pid].append({
+            "country_code": str(row.get("country_code") or "UNKNOWN").strip().upper(),
+            "country_name": str(row.get("country_name") or "").strip(),
+            "order_count": _safe_int(row.get("order_count")),
+            "revenue_usd": _round_money(row.get("revenue_usd")),
+            "profit_usd": _round_money(row.get("profit_usd")),
+        })
+    return dict(out)
+
+
+def _load_ad_country_distribution(
+    product_ids: list[int],
+    *,
+    week_start: date,
+    week_end: date,
+    notes: list[dict[str, Any]],
+) -> dict[int, list[dict[str, Any]]]:
+    ids = sorted({int(pid) for pid in product_ids if int(pid or 0) > 0})
+    if not ids:
+        return {}
+    country_expr = "UPPER(COALESCE(NULLIF(TRIM(market_country), ''), 'UNKNOWN'))"
+    try:
+        rows = query(
+            "SELECT product_id, "
+            f"       {country_expr} AS market_country, "
+            "       SUM(COALESCE(spend_usd, 0)) AS spend_usd, "
+            "       SUM(COALESCE(purchase_value_usd, 0)) AS purchase_value_usd, "
+            "       SUM(COALESCE(result_count, 0)) AS result_count "
+            "FROM meta_ad_daily_ad_metrics "
+            f"WHERE product_id IN ({_placeholders(ids)}) "
+            "  AND COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            f"GROUP BY product_id, {country_expr} "
+            "ORDER BY product_id ASC, spend_usd DESC",
+            (*ids, week_start, week_end),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai ad country distribution load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "ad_country_distribution_unavailable",
+            "message": f"广告国家分布加载失败：{str(exc)[:160]}",
+        })
+        return {}
+
+    out: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows or []:
+        pid = _safe_int(row.get("product_id"))
+        spend = _round_money(row.get("spend_usd"))
+        purchase_value = _round_money(row.get("purchase_value_usd"))
+        if not pid:
+            continue
+        out[pid].append({
+            "market_country": str(row.get("market_country") or "UNKNOWN").strip().upper(),
+            "spend_usd": spend,
+            "purchase_value_usd": purchase_value,
+            "result_count": _safe_int(row.get("result_count")),
+            "roas": _roas(purchase_value, spend),
+            "country_source_note": "market_country 来自广告命名解析，不等同于 Meta geo breakdown。",
+        })
+    return dict(out)
+
+
+def _load_local_material_candidates(
+    product_ids: list[int],
+    notes: list[dict[str, Any]],
+    *,
+    per_product_limit: int = 8,
+) -> dict[int, list[dict[str, Any]]]:
+    ids = sorted({int(pid) for pid in product_ids if int(pid or 0) > 0})
+    if not ids:
+        return {}
+    try:
+        rows = query(
+            "SELECT i.id AS media_item_id, i.product_id, LOWER(i.lang) AS lang, "
+            "       i.filename, i.display_name, i.object_key, i.cover_object_key, "
+            "       i.pushed_at, i.created_at, "
+            "       b.mk_product_id, b.mk_product_name, b.mk_video_path, b.mk_video_name, "
+            "       (SELECT COUNT(*) FROM media_push_logs mpl "
+            "        WHERE mpl.item_id=i.id AND mpl.status='success') AS push_success_count "
+            "FROM media_items i "
+            "LEFT JOIN media_item_mk_bindings b ON b.media_item_id=i.id "
+            f"WHERE i.product_id IN ({_placeholders(ids)}) "
+            "  AND i.deleted_at IS NULL "
+            "ORDER BY i.product_id ASC, "
+            "         CASE WHEN i.pushed_at IS NULL THEN 1 ELSE 0 END ASC, "
+            "         i.pushed_at DESC, i.created_at DESC, i.id DESC",
+            tuple(ids),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai local material candidates load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "local_material_candidates_unavailable",
+            "message": f"本地素材候选加载失败：{str(exc)[:160]}",
+        })
+        return {}
+
+    out: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows or []:
+        pid = _safe_int(row.get("product_id"))
+        if not pid or len(out[pid]) >= per_product_limit:
+            continue
+        cover_key = str(row.get("cover_object_key") or "").strip()
+        out[pid].append({
+            "source": "local",
+            "material_id": str(row.get("media_item_id") or ""),
+            "lang": str(row.get("lang") or "").strip().lower(),
+            "filename": str(row.get("filename") or "").strip(),
+            "display_name": str(row.get("display_name") or row.get("filename") or "").strip(),
+            "preview_cover_url": _media_object_url(cover_key),
+            "video_object_key": str(row.get("object_key") or "").strip(),
+            "pushed_at": _serialize_value(row.get("pushed_at")),
+            "created_at": _serialize_value(row.get("created_at")),
+            "push_success_count": _safe_int(row.get("push_success_count")),
+            "mk_binding": {
+                "mk_product_id": row.get("mk_product_id"),
+                "mk_product_name": str(row.get("mk_product_name") or "").strip(),
+                "mk_video_path": str(row.get("mk_video_path") or "").strip(),
+                "mk_video_name": str(row.get("mk_video_name") or "").strip(),
+            } if row.get("mk_video_path") or row.get("mk_video_name") else None,
+        })
+    return dict(out)
+
+
+def _mingkong_search_code(product_code: Any) -> str:
+    try:
+        from appcore import mingkong_materials
+
+        return mingkong_materials.media_search_code_for(product_code)
+    except Exception:  # noqa: BLE001
+        text = str(product_code or "").strip().lower()
+        text = re.sub(r"[-_]?rjc$", "", text)
+        return f"{text}-rjc" if text else ""
+
+
+def _load_mingkong_product_summary(
+    product_codes: list[str],
+    notes: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    search_codes = sorted({_mingkong_search_code(code) for code in product_codes if _mingkong_search_code(code)})
+    if not search_codes:
+        return {}
+    try:
+        rows = query(
+            "SELECT id, product_code, product_name, mk_product_id, mk_product_name, status, "
+            "       material_count, video_count, path_video_count, total_90_spend, total_ads, "
+            "       snapshot_date, snapshot_at "
+            "FROM mingkong_material_products "
+            f"WHERE product_code IN ({_placeholders(search_codes)}) "
+            "ORDER BY product_code ASC, snapshot_at DESC, snapshot_date DESC, id DESC",
+            tuple(search_codes),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai mingkong product summary load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "mingkong_product_summary_unavailable",
+            "message": f"明空产品素材汇总加载失败：{str(exc)[:160]}",
+        })
+        return {}
+
+    by_search: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        search_code = str(row.get("product_code") or "").strip().lower()
+        if not search_code or search_code in by_search:
+            continue
+        by_search[search_code] = {
+            "product_code": row.get("product_code") or "",
+            "product_name": row.get("product_name") or "",
+            "mk_product_id": row.get("mk_product_id"),
+            "mk_product_name": row.get("mk_product_name") or "",
+            "status": row.get("status") or "",
+            "material_count": _safe_int(row.get("material_count")),
+            "video_count": _safe_int(row.get("video_count")),
+            "path_video_count": _safe_int(row.get("path_video_count")),
+            "total_90_spend": _round_money(row.get("total_90_spend")),
+            "total_ads": _safe_int(row.get("total_ads")),
+            "snapshot_date": _serialize_value(row.get("snapshot_date")),
+            "snapshot_at": _serialize_value(row.get("snapshot_at")),
+        }
+    out: dict[str, dict[str, Any]] = {}
+    for code in product_codes:
+        search_code = _mingkong_search_code(code)
+        if search_code:
+            out[str(code).strip().lower()] = by_search.get(search_code.lower(), {})
+    return out
+
+
+def _load_mingkong_material_candidates(
+    product_codes: list[str],
+    notes: list[dict[str, Any]],
+    *,
+    per_product_limit: int = 8,
+) -> dict[str, list[dict[str, Any]]]:
+    search_codes = sorted({_mingkong_search_code(code) for code in product_codes if _mingkong_search_code(code)})
+    if not search_codes:
+        return {}
+    try:
+        rows = query(
+            "SELECT s.material_key, s.product_code, s.mk_product_id, s.mk_product_name, "
+            "       s.video_name, s.video_path, s.video_image_path, s.local_cover_object_key, "
+            "       s.cumulative_90_spend, s.video_ads_count, s.snapshot_date, s.snapshot_at, "
+            "       COALESCE(t.current_cumulative_90_spend, s.cumulative_90_spend) AS current_cumulative_90_spend, "
+            "       COALESCE(t.yesterday_spend_delta, 0) AS yesterday_spend_delta "
+            "FROM mingkong_material_daily_snapshots s "
+            "JOIN ("
+            "  SELECT material_key, MAX(snapshot_at) AS latest_snapshot_at "
+            "  FROM mingkong_material_daily_snapshots "
+            f"  WHERE product_code IN ({_placeholders(search_codes)}) "
+            "  GROUP BY material_key"
+            ") latest ON latest.material_key=s.material_key AND latest.latest_snapshot_at=s.snapshot_at "
+            "LEFT JOIN mingkong_material_daily_top100 t "
+            "  ON t.material_key=s.material_key AND t.snapshot_at=s.snapshot_at "
+            "ORDER BY s.product_code ASC, s.cumulative_90_spend DESC, s.video_ads_count DESC, s.id DESC",
+            tuple(search_codes),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai mingkong material candidates load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "mingkong_material_candidates_unavailable",
+            "message": f"明空素材候选加载失败：{str(exc)[:160]}",
+        })
+        return {}
+
+    by_search: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows or []:
+        search_code = str(row.get("product_code") or "").strip().lower()
+        if not search_code or len(by_search[search_code]) >= per_product_limit:
+            continue
+        cover_key = str(row.get("local_cover_object_key") or "").strip()
+        by_search[search_code].append({
+            "source": "mingkong",
+            "material_id": str(row.get("material_key") or ""),
+            "material_key": str(row.get("material_key") or ""),
+            "product_code": row.get("product_code") or "",
+            "mk_product_id": row.get("mk_product_id"),
+            "mk_product_name": row.get("mk_product_name") or "",
+            "filename": str(row.get("video_name") or "").strip(),
+            "display_name": str(row.get("video_name") or "").strip(),
+            "video_name": str(row.get("video_name") or "").strip(),
+            "video_path": str(row.get("video_path") or "").strip(),
+            "preview_cover_url": _media_object_url(cover_key),
+            "cumulative_90_spend": _round_money(row.get("cumulative_90_spend")),
+            "current_cumulative_90_spend": _round_money(row.get("current_cumulative_90_spend")),
+            "yesterday_spend_delta": _round_money(row.get("yesterday_spend_delta")),
+            "video_ads_count": _safe_int(row.get("video_ads_count")),
+            "snapshot_date": _serialize_value(row.get("snapshot_date")),
+            "snapshot_at": _serialize_value(row.get("snapshot_at")),
+        })
+    out: dict[str, list[dict[str, Any]]] = {}
+    for code in product_codes:
+        search_code = _mingkong_search_code(code)
+        if search_code:
+            out[str(code).strip().lower()] = by_search.get(search_code.lower(), [])
+    return out
+
+
+def _index_product_rows(product_rows: list[dict[str, Any]]) -> tuple[dict[int, dict[str, Any]], dict[str, dict[str, Any]]]:
+    by_id: dict[int, dict[str, Any]] = {}
+    by_code: dict[str, dict[str, Any]] = {}
+    for row in product_rows or []:
+        pid = _safe_int(row.get("product_id"))
+        code = str(row.get("product_code") or "").strip().lower()
+        if pid > 0 and pid not in by_id:
+            by_id[pid] = row
+        if code and code not in by_code:
+            by_code[code] = row
+    return by_id, by_code
+
+
+def _campaigns_by_product(campaign_rows: list[dict[str, Any]]) -> tuple[dict[int, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+    by_id: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    by_code: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in campaign_rows or []:
+        pid = _safe_int(row.get("matched_product_id") or row.get("product_id"))
+        code = str(row.get("matched_product_code") or row.get("product_code") or "").strip().lower()
+        if pid > 0:
+            by_id[pid].append(row)
+        if code:
+            by_code[code].append(row)
+    for groups in (by_id, by_code):
+        for key, rows in groups.items():
+            groups[key] = sorted(rows, key=lambda item: -_safe_float(item.get("spend_usd")))[:12]
+    return dict(by_id), dict(by_code)
+
+
+def _compact_stability_for_candidate(item: dict[str, Any], ad_summary: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "status": item.get("status") or "",
+        "display_label": item.get("display_label") or _PRODUCT_EVALUATION_STATUS_LABELS.get(str(item.get("status") or ""), ""),
+        "stable_marks": item.get("stable_marks") or [],
+        "last_7d_orders": _safe_int(item.get("last_7d_orders")),
+        "last_30d_orders": _safe_int(item.get("last_30d_orders")),
+        "avg_7d_orders": _safe_float(item.get("avg_7d_orders")),
+        "avg_30d_orders": _safe_float(item.get("avg_30d_orders")),
+        "min_daily_orders_7d": _safe_int(item.get("min_daily_orders_7d")),
+        "min_daily_orders_30d": _safe_int(item.get("min_daily_orders_30d")),
+        "active_7d_ad_spend_usd": _round_money(item.get("active_7d_ad_spend_usd")),
+        "total_ad_spend_usd": _round_money(item.get("total_ad_spend_usd")),
+        "overall_roas": _round_ratio(item.get("overall_roas")),
+        "delivery_status": item.get("delivery_status") or "",
+        "delivery_start_time": item.get("delivery_start_time") or (ad_summary or {}).get("delivery_start_time"),
+        "delivery_end_time": item.get("delivery_end_time") or (ad_summary or {}).get("delivery_end_time"),
+        "ad_summary_cache": ad_summary or {},
+        "daily_orders_7d": ((item.get("details") or {}).get("daily_orders_7d") or [])[:7],
+    }
+
+
+def _build_product_ai_evaluation_candidates(
+    *,
+    product_stability: dict[str, Any],
+    product_rows: list[dict[str, Any]],
+    campaign_rows: list[dict[str, Any]],
+    week_start: date,
+    week_end: date,
+    identity_by_id: dict[int, dict[str, Any]],
+    identity_by_code: dict[str, dict[str, Any]],
+    global_notes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    eligible = _eligible_stability_items(product_stability)
+    if not eligible:
+        return []
+    product_ids, product_codes = _collect_product_refs(eligible)
+    notes = list(global_notes)
+    ad_summary_by_id = _load_product_ad_summary(product_ids, notes)
+    lang_summary_by_id = _load_material_summary_by_lang(product_ids, notes)
+    order_country_by_id = _load_order_country_distribution(
+        product_ids,
+        week_start=week_start,
+        week_end=week_end,
+        notes=notes,
+    )
+    ad_country_by_id = _load_ad_country_distribution(
+        product_ids,
+        week_start=week_start,
+        week_end=week_end,
+        notes=notes,
+    )
+    local_materials_by_id = _load_local_material_candidates(product_ids, notes)
+    mingkong_summary_by_code = _load_mingkong_product_summary(product_codes, notes)
+    mingkong_materials_by_code = _load_mingkong_material_candidates(product_codes, notes)
+    product_by_id, product_by_code = _index_product_rows(product_rows)
+    campaigns_by_id, campaigns_by_code = _campaigns_by_product(campaign_rows)
+    target_tiers = _target_country_tiers()
+
+    candidates: list[dict[str, Any]] = []
+    for item in eligible:
+        identity = _product_identity(item, identity_by_id, identity_by_code)
+        pid = _safe_int(identity.get("product_id"))
+        code = str(identity.get("product_code") or "").strip()
+        code_key = code.lower()
+        row_notes = list(notes)
+        if not pid:
+            row_notes.append({
+                "code": "missing_product_id",
+                "message": "稳定分级缓存缺少 product_id，部分订单、素材和广告明细无法补齐。",
+            })
+        weekly_product = product_by_id.get(pid) or product_by_code.get(code_key) or {}
+        candidate = {
+            "identity": identity,
+            "eligibility": {
+                "status": item.get("status"),
+                "label": _PRODUCT_EVALUATION_STATUS_LABELS.get(str(item.get("status") or ""), item.get("display_label") or ""),
+            },
+            "stability": _compact_stability_for_candidate(item, ad_summary_by_id.get(pid)),
+            "weekly_product": weekly_product,
+            "campaigns": campaigns_by_id.get(pid) or campaigns_by_code.get(code_key) or [],
+            "order_country_distribution": order_country_by_id.get(pid, []),
+            "ad_country_distribution": ad_country_by_id.get(pid, []),
+            "material_summary_by_lang": lang_summary_by_id.get(pid, {}),
+            "local_material_candidates": local_materials_by_id.get(pid, []),
+            "mingkong_summary": mingkong_summary_by_code.get(code_key, {}),
+            "mingkong_material_candidates": mingkong_materials_by_code.get(code_key, []),
+            "target_country_tiers": target_tiers,
+            "data_quality_notes": row_notes,
+        }
+        candidates.append(candidate)
+    return candidates[:MAX_PRODUCT_ACTION_EVALUATIONS]
+
+
 def build_weekly_data_package(
     week_start: date,
     week_end: date | None = None,
@@ -785,6 +1633,33 @@ def build_weekly_data_package(
         product_stability = media_product_stability.empty_stability_summary(
             warning=f"产品稳定分级缓存暂不可用：{str(exc)[:160]}"
         )
+    product_ai_notes: list[dict[str, Any]] = []
+    stability_product_ids, stability_product_codes = _collect_product_refs(
+        _all_stability_items(product_stability)
+    )
+    identity_by_id, identity_by_code = _load_product_identity_maps(
+        stability_product_ids,
+        stability_product_codes,
+        product_ai_notes,
+    )
+    product_stability = _enrich_product_stability_for_ui(
+        product_stability,
+        identity_by_id,
+        identity_by_code,
+    )
+    if product_ai_notes:
+        product_stability = dict(product_stability)
+        product_stability["warnings"] = (product_stability.get("warnings") or []) + product_ai_notes
+    product_ai_evaluation_candidates = _build_product_ai_evaluation_candidates(
+        product_stability=product_stability,
+        product_rows=product_rows,
+        campaign_rows=campaign_rows,
+        week_start=week_start,
+        week_end=week_end,
+        identity_by_id=identity_by_id,
+        identity_by_code=identity_by_code,
+        global_notes=product_ai_notes,
+    )
     return {
         "period": {
             "week_start": week_start,
@@ -803,6 +1678,7 @@ def build_weekly_data_package(
         "product_profit_summary": product_profit_summary,
         "campaign_rows": campaign_rows,
         "product_stability": product_stability,
+        "product_ai_evaluation_candidates": product_ai_evaluation_candidates,
         "low_order_products": low_order_products,
         "rule_findings": rule_findings,
     }
@@ -853,6 +1729,44 @@ def build_ai_prompt(package: dict[str, Any]) -> list[dict[str, str]]:
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
+def _compact_product_candidate_for_prompt(candidate: dict[str, Any]) -> dict[str, Any]:
+    compact = dict(candidate)
+    compact["campaigns"] = (candidate.get("campaigns") or [])[:12]
+    compact["local_material_candidates"] = (candidate.get("local_material_candidates") or [])[:8]
+    compact["mingkong_material_candidates"] = (candidate.get("mingkong_material_candidates") or [])[:8]
+    weekly_product = dict(candidate.get("weekly_product") or {})
+    if isinstance(weekly_product.get("daily"), list):
+        weekly_product["daily"] = weekly_product["daily"][:7]
+    compact["weekly_product"] = weekly_product
+    return compact
+
+
+def build_product_action_evaluation_system_prompt() -> str:
+    return (
+        "你是跨境电商 Meta 投放运营分析师。你只评估输入中的当前这一条产品，"
+        "输出严格 JSON，不输出 markdown。不要编造不存在的国家、素材、广告计划、订单或费用。"
+        "订单国家分布来自 buyer_country；广告国家分布来自广告命名解析 market_country，"
+        "两者口径不同，必须分开判断。"
+    )
+
+
+def build_product_action_evaluation_prompt(candidate: dict[str, Any]) -> str:
+    compact = _compact_product_candidate_for_prompt(candidate)
+    return (
+        "请基于这条稳定品/潜力品的数据，给出下一步 AI 推进建议。"
+        "目标国家只允许使用三阶梯里的 8 个国家：第一阶梯 DE/FR；"
+        "第二阶梯 ES/IT/JP；第三阶梯 SE/NL/PT。"
+        "德法未验证充分时，不要直接建议跳到第二或第三阶梯。"
+        "如果建议补素材，必须从 local_material_candidates 或 mingkong_material_candidates "
+        "中选一个具体素材；如果没有可用素材，recommended_source 才能为 new。"
+        "如果建议搬明空素材，说明搬哪个 video_path / material_key，先本地化到哪些国家。"
+        "如果建议扩国家，说明扩哪一阶梯、哪些国家、前置条件和止损线。"
+        "如果数据不足，明确缺什么数据和临时动作。"
+        "输出字段必须符合 response_schema。当前产品数据：\n"
+        + json.dumps(_serialize(compact), ensure_ascii=False)
+    )
+
+
 def _parse_ai_json(result: dict[str, Any]) -> dict[str, Any]:
     if isinstance(result.get("json"), dict):
         return result["json"]
@@ -871,6 +1785,179 @@ def _parse_ai_json(result: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("LLM 返回不是 JSON object")
     return parsed
+
+
+def _clamp_confidence(value: Any) -> int:
+    try:
+        num = int(round(float(value)))
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(100, num))
+
+
+def _normalize_product_action_payload(payload: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    identity = candidate.get("identity") or {}
+    primary_action = str(payload.get("primary_action") or "investigate").strip()
+    allowed_actions = {
+        "supplement_material",
+        "expand_country",
+        "hold",
+        "reduce_budget",
+        "pause",
+        "investigate",
+    }
+    if primary_action not in allowed_actions:
+        primary_action = "investigate"
+    out = dict(payload)
+    out["product_id"] = _safe_int(identity.get("product_id"))
+    out["product_code"] = str(identity.get("product_code") or "")
+    out["product_name"] = str(identity.get("product_name") or "")
+    out["product_main_image_url"] = identity.get("product_main_image_url") or ""
+    out["product_cover_url"] = identity.get("product_cover_url") or ""
+    out["media_search_url"] = identity.get("media_search_url") or ""
+    out["eligibility_status"] = (candidate.get("eligibility") or {}).get("status") or ""
+    out["eligibility_label"] = (candidate.get("eligibility") or {}).get("label") or ""
+    out["status"] = "success"
+    out["primary_action"] = primary_action
+    out["action_label"] = str(out.get("action_label") or "")
+    out["confidence"] = _clamp_confidence(out.get("confidence"))
+    for key in ("country_plan", "evidence", "risk_flags", "next_steps"):
+        if not isinstance(out.get(key), list):
+            out[key] = []
+    if not isinstance(out.get("stage"), dict):
+        out["stage"] = {"current_tier": "none", "next_tier": "none", "reason": ""}
+    if not isinstance(out.get("material_plan"), dict):
+        out["material_plan"] = {
+            "needs_material": False,
+            "priority_country_codes": [],
+            "recommended_source": "none",
+            "recommended_material": {},
+            "localization_steps": [],
+        }
+    if not isinstance(out.get("budget_plan"), dict):
+        out["budget_plan"] = {"summary": "", "increase": [], "reduce": [], "pause": []}
+    return out
+
+
+def _failed_product_action_payload(candidate: dict[str, Any], exc: Exception) -> dict[str, Any]:
+    identity = candidate.get("identity") or {}
+    message = str(exc)[:300]
+    return {
+        "product_id": _safe_int(identity.get("product_id")),
+        "product_code": str(identity.get("product_code") or ""),
+        "product_name": str(identity.get("product_name") or ""),
+        "product_main_image_url": identity.get("product_main_image_url") or "",
+        "product_cover_url": identity.get("product_cover_url") or "",
+        "media_search_url": identity.get("media_search_url") or "",
+        "eligibility_status": (candidate.get("eligibility") or {}).get("status") or "",
+        "eligibility_label": (candidate.get("eligibility") or {}).get("label") or "",
+        "status": "failed",
+        "primary_action": "investigate",
+        "action_label": "评估失败",
+        "confidence": 0,
+        "stage": {"current_tier": "none", "next_tier": "none", "reason": "AI 评估失败，需人工查看错误。"},
+        "country_plan": [],
+        "material_plan": {
+            "needs_material": False,
+            "priority_country_codes": [],
+            "recommended_source": "none",
+            "recommended_material": {},
+            "localization_steps": [],
+        },
+        "budget_plan": {"summary": "", "increase": [], "reduce": [], "pause": []},
+        "evidence": [],
+        "risk_flags": [{"level": "error", "message": f"逐产品 AI 评估失败：{message}"}],
+        "next_steps": ["检查该产品逐产品 AI 调用失败原因，再人工决定是否补素材或扩国家。"],
+        "error_message": message,
+    }
+
+
+def invoke_product_action_evaluation(
+    candidate: dict[str, Any],
+    *,
+    user_id: int | None,
+    week_start: date,
+    week_end: date,
+    index: int = 0,
+) -> dict[str, Any]:
+    identity = candidate.get("identity") or {}
+    prompt = build_product_action_evaluation_prompt(candidate)
+    result = llm_client.invoke_generate(
+        PRODUCT_EVALUATION_USE_CASE_CODE,
+        prompt=prompt,
+        system=build_product_action_evaluation_system_prompt(),
+        user_id=user_id,
+        project_id=f"weekly-product-action-{week_start.isoformat()}-{identity.get('product_id') or identity.get('product_code') or index}",
+        response_schema=PRODUCT_ACTION_RESPONSE_SCHEMA,
+        temperature=0.2,
+        max_output_tokens=4096,
+        provider_override="openrouter",
+        model_override=PRODUCT_EVALUATION_MODEL,
+        google_search=False,
+        timeout_seconds=120,
+        billing_extra={
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+            "product_id": identity.get("product_id"),
+            "product_code": identity.get("product_code"),
+            "candidate_index": index,
+        },
+    )
+    payload = _parse_ai_json(result)
+    return _normalize_product_action_payload(payload, candidate)
+
+
+def _product_action_evaluation_summary(evaluations: list[dict[str, Any]]) -> dict[str, Any]:
+    by_action: dict[str, int] = defaultdict(int)
+    success = 0
+    failed = 0
+    for item in evaluations:
+        if item.get("status") == "success":
+            success += 1
+        elif item.get("status") == "failed":
+            failed += 1
+        by_action[str(item.get("primary_action") or "unknown")] += 1
+    return {
+        "total": len(evaluations),
+        "success": success,
+        "failed": failed,
+        "by_action": dict(by_action),
+    }
+
+
+def _generate_product_action_evaluations(
+    package: dict[str, Any],
+    *,
+    user_id: int | None,
+    week_start: date,
+    week_end: date,
+) -> list[dict[str, Any]]:
+    candidates = package.get("product_ai_evaluation_candidates") or []
+    if not isinstance(candidates, list) or not candidates:
+        return []
+    evaluations: list[dict[str, Any]] = []
+    for index, candidate in enumerate(candidates[:MAX_PRODUCT_ACTION_EVALUATIONS], start=1):
+        if not isinstance(candidate, dict):
+            continue
+        try:
+            evaluations.append(
+                invoke_product_action_evaluation(
+                    candidate,
+                    user_id=user_id,
+                    week_start=week_start,
+                    week_end=week_end,
+                    index=index,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "weekly product action evaluation failed product=%s: %s",
+                (candidate.get("identity") or {}).get("product_code"),
+                exc,
+                exc_info=True,
+            )
+            evaluations.append(_failed_product_action_payload(candidate, exc))
+    return evaluations
 
 
 def _upsert_report(
@@ -1028,6 +2115,14 @@ def generate_ai_report(
         )
         raw_text = result.get("text")
         ai_report = _parse_ai_json(result)
+        product_evaluations = _generate_product_action_evaluations(
+            package,
+            user_id=user_id,
+            week_start=normalized,
+            week_end=week_end,
+        )
+        ai_report["product_action_evaluations"] = product_evaluations
+        ai_report["product_action_evaluation_summary"] = _product_action_evaluation_summary(product_evaluations)
         _upsert_report(
             week_start=normalized,
             week_end=week_end,
