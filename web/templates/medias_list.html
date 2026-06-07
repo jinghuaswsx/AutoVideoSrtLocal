@@ -173,6 +173,40 @@ html, body {
 .oc-toolbar select.oc-select:focus,
 .oc-vm-toolbar select.oc-select:focus { border-color:var(--oc-accent); box-shadow:0 0 0 2px var(--oc-accent-ring); }
 
+/* Docs-anchor: docs/superpowers/specs/2026-06-07-medias-mobile-filter-collapse-design.md */
+.oc-mobile-filter-toggle {
+  display:none;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--oc-sp-2);
+  width:100%;
+  height:34px;
+  padding:0 12px;
+  border:1px solid var(--oc-border-strong);
+  border-radius:var(--oc-r);
+  background:var(--oc-bg);
+  color:var(--oc-fg);
+  font-family:inherit;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease);
+}
+.oc-mobile-filter-toggle:hover { background:var(--oc-bg-muted); }
+.oc-mobile-filter-toggle:focus-visible { outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.oc-mobile-filter-toggle-main {
+  display:inline-flex;
+  align-items:center;
+  min-width:0;
+  gap:var(--oc-sp-2);
+}
+.oc-mobile-filter-toggle-state {
+  flex:0 0 auto;
+  color:var(--oc-fg-muted);
+  font-size:12px;
+  font-weight:500;
+}
+
 .oc-chip { display:inline-flex; align-items:center; gap:var(--oc-sp-2); height:32px; padding:0 12px; border:1px solid var(--oc-border-strong); border-radius:var(--oc-r-full,9999px); background:var(--oc-bg); color:var(--oc-fg-muted); font-size:12px; font-weight:500; cursor:pointer; user-select:none; transition:background var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease); }
 .oc-chip input { display:none; }
 .oc-chip:hover { color:var(--oc-fg); border-color:var(--oc-border-strong); background:var(--oc-bg-muted); }
@@ -3054,6 +3088,23 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   .oc-header .title { font-size: 18px; }
   .oc-toolbar { gap: var(--oc-sp-2); padding: var(--oc-sp-3); top: var(--sticky-toolbar-top, 110px); }
   .oc-toolbar-filter-row { grid-template-columns:repeat(2, minmax(0, 1fr)); gap: var(--oc-sp-2); }
+  .oc-mobile-filter-toggle { display:flex; }
+  .oc-toolbar .oc-toolbar-filter-row,
+  .oc-vm-toolbar .oc-vm-filter-row {
+    margin-top:var(--oc-sp-2);
+  }
+  .oc-vm-filter-row {
+    grid-template-columns:1fr;
+    gap:var(--oc-sp-2);
+  }
+  .oc-toolbar.is-filter-collapsed .oc-toolbar-filter-row,
+  .oc-vm-toolbar.is-filter-collapsed .oc-vm-filter-row {
+    display:none;
+  }
+  .oc-toolbar.is-filter-collapsed,
+  .oc-vm-toolbar.is-filter-collapsed {
+    padding:var(--oc-sp-2);
+  }
   .oc-tool-download-btn { padding: 0 12px; height: 32px; font-size: 12px; }
   /* 产品详情页：去掉桌面 220px 左 inset，移动端全屏化 */
   #edMask.oc-product-detail-mask {
@@ -3112,10 +3163,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-page-tab.active { color:var(--oc-accent); border-bottom-color:var(--oc-accent); }
 .oc-panel-page[hidden] { display:none; }
 .oc-vm-toolbar {
-  display:grid;
-  grid-template-columns:minmax(260px, 1fr) 180px 180px auto;
-  gap:var(--oc-sp-3);
-  align-items:center;
+  display:block;
   padding:var(--oc-sp-3) var(--oc-sp-4);
   background:var(--oc-bg);
   border:1px solid var(--oc-border);
@@ -3123,6 +3171,12 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   position:sticky;
   top:var(--sticky-toolbar-top, 176px);
   z-index:20;
+}
+.oc-vm-filter-row {
+  display:grid;
+  grid-template-columns:minmax(260px, 1fr) 180px 180px auto;
+  gap:var(--oc-sp-3);
+  align-items:center;
 }
 .oc-vm-top-pager {
   position:sticky;
@@ -3480,7 +3534,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-vm-mk-body { min-width:0; }
 .oc-vm-mk-stats { margin-top:4px; color:var(--oc-accent); font-size:12px; font-weight:600; }
 @media (max-width: 860px) {
-  .oc-vm-toolbar { grid-template-columns:1fr; }
+  .oc-vm-filter-row { grid-template-columns:1fr; }
   .oc-vm-total { justify-self:start; }
 }
 
@@ -3977,6 +4031,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
       <symbol id="ic-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><line x1="10" y1="12" x2="14" y2="12"/></symbol>
       <symbol id="ic-users"   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
       <symbol id="ic-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-15.5-6.4L3 8"/><path d="M3 4v4h4"/><path d="M3 12a9 9 0 0 0 15.5 6.4L21 16"/><path d="M21 20v-4h-4"/></symbol>
+      <symbol id="ic-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18"/><path d="M7 12h10"/><path d="M10 19h4"/></symbol>
       <symbol id="ic-external-link" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5H3.5A1.5 1.5 0 0 0 2 5v7.5A1.5 1.5 0 0 0 3.5 14H11a1.5 1.5 0 0 0 1.5-1.5V10"/><path d="M9 2h5v5"/><path d="M14 2L7 9"/></symbol>
     </defs>
   </svg>
@@ -4036,8 +4091,15 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 
   <section id="mediaProductsPanel" class="oc-panel-page" role="tabpanel"{% if medias_active_tab != 'products' %} hidden{% endif %}>
   <!-- Toolbar -->
-  <div class="oc-toolbar">
-    <div class="oc-toolbar-filter-row">
+  <div class="oc-toolbar" data-mobile-filter-toolbar data-mobile-filter-name="筛选">
+    <button type="button" class="oc-mobile-filter-toggle" data-mobile-filter-toggle aria-expanded="true" aria-controls="mediaProductFilters">
+      <span class="oc-mobile-filter-toggle-main">
+        <svg width="14" height="14"><use href="#ic-filter"/></svg>
+        <span data-mobile-filter-label>收起筛选</span>
+      </span>
+      <span class="oc-mobile-filter-toggle-state" data-mobile-filter-state>已展开</span>
+    </button>
+    <div id="mediaProductFilters" class="oc-toolbar-filter-row" data-mobile-filter-body>
       <div class="oc-search">
         <span class="leading"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
         <input id="kw" placeholder="搜索产品名称、产品 ID 或 mk_id">
@@ -4134,20 +4196,29 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   </section>
 
   <section id="videoMaterialsPanel" class="oc-panel-page" role="tabpanel"{% if medias_active_tab != 'videos' %} hidden{% endif %}>
-    <div class="oc-vm-toolbar">
-      <div class="oc-search">
-        <span class="leading"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
-        <input id="vmKeyword" placeholder="搜索产品 ID、产品编码、素材名">
+    <div class="oc-vm-toolbar" data-mobile-filter-toolbar data-mobile-filter-name="视频筛选">
+      <button type="button" class="oc-mobile-filter-toggle" data-mobile-filter-toggle aria-expanded="true" aria-controls="videoMaterialFilters">
+        <span class="oc-mobile-filter-toggle-main">
+          <svg width="14" height="14"><use href="#ic-filter"/></svg>
+          <span data-mobile-filter-label>收起筛选</span>
+        </span>
+        <span class="oc-mobile-filter-toggle-state" data-mobile-filter-state>已展开</span>
+      </button>
+      <div id="videoMaterialFilters" class="oc-vm-filter-row" data-mobile-filter-body>
+        <div class="oc-search">
+          <span class="leading"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
+          <input id="vmKeyword" placeholder="搜索产品 ID、产品编码、素材名">
+        </div>
+        <select id="vmLang" class="oc-select" title="按素材语种筛选">
+          <option value="">语种：全部</option>
+        </select>
+        <select id="vmAdPlan" class="oc-select" title="按广告计划状态筛选">
+          <option value="all">广告计划：全部</option>
+          <option value="has">有广告计划</option>
+          <option value="none">没有广告计划</option>
+        </select>
+        <span class="count oc-vm-total" id="vmTotalPill">共 0 条素材</span>
       </div>
-      <select id="vmLang" class="oc-select" title="按素材语种筛选">
-        <option value="">语种：全部</option>
-      </select>
-      <select id="vmAdPlan" class="oc-select" title="按广告计划状态筛选">
-        <option value="all">广告计划：全部</option>
-        <option value="has">有广告计划</option>
-        <option value="none">没有广告计划</option>
-      </select>
-      <span class="count oc-vm-total" id="vmTotalPill">共 0 条素材</span>
     </div>
     <div class="oc-pager oc-vm-top-pager" id="vmTopPager" aria-label="视频素材顶部分页" hidden></div>
     <!-- Floating Sticky Header for Video Materials Grid -->
@@ -4197,6 +4268,62 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   window.updateMediaStickyOffsets = updateStickyOffsets;
   updateStickyOffsets();
   window.addEventListener('resize', updateStickyOffsets);
+
+  // Docs-anchor: docs/superpowers/specs/2026-06-07-medias-mobile-filter-collapse-design.md
+  var mobileFilterMql = window.matchMedia ? window.matchMedia('(max-width: 768px)') : null;
+  function isMobileFilterViewport() {
+    return mobileFilterMql ? mobileFilterMql.matches : window.innerWidth <= 768;
+  }
+  function syncMobileFilterToggle(toolbar) {
+    if (!toolbar) return;
+    var collapsed = toolbar.classList.contains('is-filter-collapsed');
+    var toggle = toolbar.querySelector('[data-mobile-filter-toggle]');
+    var label = toolbar.querySelector('[data-mobile-filter-label]');
+    var state = toolbar.querySelector('[data-mobile-filter-state]');
+    if (toggle) toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    if (label) label.textContent = collapsed ? '展开筛选' : '收起筛选';
+    if (state) state.textContent = collapsed ? '已收起' : '已展开';
+  }
+  function setMobileFilterCollapsed(toolbar, collapsed) {
+    if (!toolbar) return;
+    toolbar.classList.toggle('is-filter-collapsed', Boolean(collapsed));
+    syncMobileFilterToggle(toolbar);
+  }
+  function activeMobileFilterToolbar() {
+    var activePanel = document.querySelector('.oc-panel-page:not([hidden])') || document.getElementById('mediaProductsPanel');
+    return activePanel ? activePanel.querySelector('[data-mobile-filter-toolbar]') : null;
+  }
+  function syncMobileFilterViewport() {
+    document.querySelectorAll('[data-mobile-filter-toolbar]').forEach(function(toolbar) {
+      if (!isMobileFilterViewport()) toolbar.classList.remove('is-filter-collapsed');
+      syncMobileFilterToggle(toolbar);
+    });
+  }
+  document.querySelectorAll('[data-mobile-filter-toggle]').forEach(function(toggle) {
+    toggle.addEventListener('click', function() {
+      var toolbar = toggle.closest('[data-mobile-filter-toolbar]');
+      if (!toolbar) return;
+      setMobileFilterCollapsed(toolbar, !toolbar.classList.contains('is-filter-collapsed'));
+    });
+  });
+  document.querySelectorAll('.oc-panel-page .oc-list').forEach(function(list) {
+    list.addEventListener('scroll', function() {
+      if (!isMobileFilterViewport()) return;
+      var activePanel = document.querySelector('.oc-panel-page:not([hidden])') || document.getElementById('mediaProductsPanel');
+      if (!activePanel || !activePanel.contains(list)) return;
+      var currentTop = list.scrollTop || 0;
+      var previousTop = Number(list.dataset.mobileFilterLastScroll || '0') || 0;
+      if (currentTop > 24 && currentTop > previousTop + 12) {
+        setMobileFilterCollapsed(activeMobileFilterToolbar(), true);
+      }
+      list.dataset.mobileFilterLastScroll = String(currentTop);
+    }, { passive: true });
+  });
+  syncMobileFilterViewport();
+  window.addEventListener('resize', syncMobileFilterViewport);
+  if (mobileFilterMql && mobileFilterMql.addEventListener) {
+    mobileFilterMql.addEventListener('change', syncMobileFilterViewport);
+  }
 
   // 浮动表头同步与横向滚动绑定
   function syncFloatingHeader(containerId, wrapperId, contentId) {
