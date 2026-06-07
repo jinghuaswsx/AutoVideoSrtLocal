@@ -1,0 +1,672 @@
+{% extends "layout.html" %}
+{% block title %}{{ page_title }} - AutoVideoSrt{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+
+{% block extra_style %}
+<style>
+  .red-page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .red-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .red-title {
+    margin: 0;
+    color: var(--fg);
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+  .red-subtitle {
+    margin-top: 6px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .red-back,
+  .red-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--fg);
+    background: var(--bg-card);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .red-refresh {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  .red-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .red-kpi,
+  .red-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+  }
+  .red-kpi {
+    padding: 14px 16px;
+    min-width: 0;
+  }
+  .red-kpi-label {
+    color: var(--fg-muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .red-kpi-value {
+    margin-top: 4px;
+    color: var(--fg);
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+  .red-kpi-sub {
+    margin-top: 4px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .red-bars {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .red-panel {
+    padding: 14px 16px;
+  }
+  .red-panel-title {
+    color: var(--fg);
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .red-panel-sub {
+    margin-top: 4px;
+    color: var(--fg-muted);
+    font-size: 12px;
+  }
+  .red-stack-bar {
+    display: flex;
+    height: 12px;
+    margin-top: 12px;
+    overflow: hidden;
+    border-radius: var(--radius-full);
+    background: var(--bg-muted);
+  }
+  .red-stack-known {
+    background: var(--success-bg);
+  }
+  .red-stack-estimate {
+    background: var(--warning-bg);
+  }
+  .red-legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    color: var(--fg-muted);
+    font-size: 12px;
+  }
+  .red-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 4px;
+    border-radius: 50%;
+    vertical-align: -1px;
+  }
+  .red-dot-known { background: var(--success-bg); }
+  .red-dot-estimate { background: var(--warning-bg); }
+  .red-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .red-status,
+  .red-muted {
+    color: var(--fg-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .red-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .red-page-btn {
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--fg);
+    background: var(--bg-card);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .red-page-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .red-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+  }
+  .red-table-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 800;
+  }
+  .red-table {
+    width: 100%;
+    min-width: 1160px;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .red-table th,
+  .red-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  .red-table th {
+    color: var(--fg-muted);
+    background: var(--bg-subtle);
+    font-weight: 800;
+  }
+  .red-table td.red-wrap {
+    min-width: 240px;
+    max-width: 420px;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .red-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .red-basis {
+    font-weight: 800;
+  }
+  .red-basis-estimate {
+    color: var(--warning-fg);
+  }
+  .red-basis-known {
+    color: var(--success-fg);
+  }
+  .red-rules {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .red-rule-list {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  @media (max-width: 768px) {
+    .red-title { font-size: 20px; }
+    .red-kpis,
+    .red-bars,
+    .red-rules {
+      grid-template-columns: 1fr;
+    }
+    .red-kpi-value { font-size: 20px; }
+    .red-back,
+    .red-refresh {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="red-page">
+  <header class="red-header">
+    <div>
+      <h1 class="red-title">{{ page_title }}</h1>
+      <div class="red-subtitle" id="redSubtitle">加载中...</div>
+    </div>
+    <a class="red-back" href="/order-analytics/realtime">返回实时大盘</a>
+  </header>
+
+  <section class="red-kpis" aria-label="总体统计">
+    <div class="red-kpi">
+      <div class="red-kpi-label">总估算金额</div>
+      <div class="red-kpi-value" id="redTotalEstimate">$0.00</div>
+      <div class="red-kpi-sub" id="redTotalEstimateSub">估算占比 -</div>
+    </div>
+    <div class="red-kpi">
+      <div class="red-kpi-label">估算订单</div>
+      <div class="red-kpi-value" id="redEstimateOrders">0</div>
+      <div class="red-kpi-sub" id="redEstimateOrdersSub">占全部订单 -</div>
+    </div>
+    <div class="red-kpi">
+      <div class="red-kpi-label">采购估算</div>
+      <div class="red-kpi-value" id="redPurchaseEstimate">$0.00</div>
+      <div class="red-kpi-sub" id="redPurchaseEstimateSub">估算占比 -</div>
+    </div>
+    <div class="red-kpi">
+      <div class="red-kpi-label">物流估算</div>
+      <div class="red-kpi-value" id="redLogisticsEstimate">$0.00</div>
+      <div class="red-kpi-sub" id="redLogisticsEstimateSub">估算占比 -</div>
+    </div>
+  </section>
+
+  <section class="red-bars" aria-label="成本依据分布">
+    <div class="red-panel">
+      <div class="red-panel-title">采购成本依据</div>
+      <div class="red-panel-sub" id="redPurchaseBasisText">-</div>
+      <div class="red-stack-bar" aria-hidden="true">
+        <div class="red-stack-known" id="redPurchaseKnownBar" style="width:0%;"></div>
+        <div class="red-stack-estimate" id="redPurchaseEstimateBar" style="width:0%;"></div>
+      </div>
+      <div class="red-legend">
+        <span><span class="red-dot red-dot-known"></span>有采购数据</span>
+        <span><span class="red-dot red-dot-estimate"></span>估算</span>
+      </div>
+    </div>
+    <div class="red-panel">
+      <div class="red-panel-title">物流成本依据</div>
+      <div class="red-panel-sub" id="redLogisticsBasisText">-</div>
+      <div class="red-stack-bar" aria-hidden="true">
+        <div class="red-stack-known" id="redLogisticsKnownBar" style="width:0%;"></div>
+        <div class="red-stack-estimate" id="redLogisticsEstimateBar" style="width:0%;"></div>
+      </div>
+      <div class="red-legend">
+        <span><span class="red-dot red-dot-known"></span>有物流数据</span>
+        <span><span class="red-dot red-dot-estimate"></span>估算</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="red-toolbar">
+    <div class="red-status" id="redStatus">加载中...</div>
+    <div class="red-pagination" id="redPagination"></div>
+    <button type="button" class="red-refresh" id="redRefresh">刷新</button>
+  </div>
+
+  <section class="red-table-wrap" aria-label="明细订单">
+    <div class="red-table-title">
+      <span>明细订单</span>
+      <span class="red-muted">只展示采购或物流使用估算的订单</span>
+    </div>
+    <table class="red-table">
+      <thead>
+        <tr>
+          <th>广告日</th>
+          <th>订单时间</th>
+          <th>店铺</th>
+          <th>订单号</th>
+          <th>国家</th>
+          <th>产品</th>
+          <th>SKU</th>
+          <th class="red-num">总销售额</th>
+          <th>采购依据</th>
+          <th>物流依据</th>
+          <th class="red-num">估算合计</th>
+          <th>利润状态</th>
+        </tr>
+      </thead>
+      <tbody id="redOrderBody">
+        <tr><td colspan="12">加载中...</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="red-table-wrap" aria-label="产品情况">
+    <div class="red-table-title">
+      <span>产品情况</span>
+      <span class="red-muted">按订单明细中的产品名称和 SKU 聚合</span>
+    </div>
+    <table class="red-table">
+      <thead>
+        <tr>
+          <th>产品</th>
+          <th>SKU</th>
+          <th>产品 ID</th>
+          <th class="red-num">订单数</th>
+          <th class="red-num">件数</th>
+          <th class="red-num">总销售额</th>
+          <th class="red-num">采购估算订单</th>
+          <th class="red-num">采购估算</th>
+          <th class="red-num">物流估算订单</th>
+          <th class="red-num">物流估算</th>
+          <th class="red-num">估算合计</th>
+        </tr>
+      </thead>
+      <tbody id="redProductBody">
+        <tr><td colspan="11">加载中...</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="red-rules" aria-label="数据依据说明">
+    <div class="red-panel">
+      <div class="red-panel-title">采购依据</div>
+      <ul class="red-rule-list" id="redPurchaseRules">
+        <li>有采购数据：可读取有效采购成本。</li>
+        <li>估算：采购缺失时按总销售额 10% 计算。</li>
+      </ul>
+    </div>
+    <div class="red-panel">
+      <div class="red-panel-title">物流依据</div>
+      <ul class="red-rule-list" id="redLogisticsRules">
+        <li>有物流数据：可读取有效物流成本。</li>
+        <li>估算：物流缺失时按总销售额 20% 计算。</li>
+      </ul>
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  'use strict';
+
+  var state = { page: 1, pageSize: 50 };
+  var endpoint = '/order-analytics/realtime-estimates/data';
+
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function fmtInt(value) {
+    var n = Number(value || 0);
+    return Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : '0';
+  }
+
+  function fmtMoney(value) {
+    var n = Number(value || 0);
+    return Number.isFinite(n)
+      ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '-';
+  }
+
+  function fmtPct(value) {
+    var n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(1) + '%' : '-';
+  }
+
+  function fmtDateTime(value) {
+    if (!value) return '-';
+    return String(value).replace('T', ' ').slice(0, 16);
+  }
+
+  function dateLabel(period) {
+    period = period || {};
+    if (period.start_date || period.end_date) {
+      return [period.start_date || '-', period.end_date || '-'].join(' 至 ');
+    }
+    return period.date || '-';
+  }
+
+  function scopeLabel(scope) {
+    scope = (scope || {}).product_launch_scope || '';
+    if (scope === 'new') return '新品数据';
+    if (scope === 'old') return '老品数据';
+    if (scope === 'unmatched') return '未匹配数据';
+    return '全局数据';
+  }
+
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function queryParams() {
+    var params = new URLSearchParams(window.location.search);
+    params.delete('product_id');
+    params.delete('order_page');
+    params.delete('order_page_size');
+    params.delete('page');
+    params.delete('page_size');
+    params.set('page', String(state.page));
+    params.set('page_size', String(state.pageSize));
+    return params;
+  }
+
+  function setBar(id, pct) {
+    var el = document.getElementById(id);
+    var value = Number(pct);
+    if (!el) return;
+    if (!Number.isFinite(value)) value = 0;
+    value = Math.max(0, Math.min(100, value));
+    el.style.width = value.toFixed(1) + '%';
+  }
+
+  function renderSubtitle(payload) {
+    var scope = payload.scope || {};
+    var stores = (scope.stores || []).join(', ') || '全部店铺';
+    setText('redSubtitle', scopeLabel(scope) + ' · ' + dateLabel(payload.period) + ' · ' + stores);
+  }
+
+  function renderKpis(payload) {
+    var summary = payload.summary || {};
+    setText('redTotalEstimate', fmtMoney(summary.cost_estimate_total_usd));
+    setText('redTotalEstimateSub', '估算占比 ' + fmtPct(summary.cost_estimate_ratio_pct));
+    setText('redEstimateOrders', fmtInt(summary.estimated_order_count));
+    setText(
+      'redEstimateOrdersSub',
+      '占全部订单 ' + fmtPct(summary.estimated_order_ratio_pct)
+        + ' · 全部 ' + fmtInt(summary.order_count) + ' 单'
+    );
+    setText('redPurchaseEstimate', fmtMoney(summary.purchase_estimate_usd));
+    setText(
+      'redPurchaseEstimateSub',
+      fmtInt(summary.purchase_estimated_order_count) + ' 单 · 估算占比 '
+        + fmtPct(summary.purchase_estimate_ratio_pct)
+    );
+    setText('redLogisticsEstimate', fmtMoney(summary.logistics_estimate_usd));
+    setText(
+      'redLogisticsEstimateSub',
+      fmtInt(summary.logistics_estimated_order_count) + ' 单 · 估算占比 '
+        + fmtPct(summary.logistics_estimate_ratio_pct)
+    );
+
+    var purchasePct = Number(summary.purchase_estimate_ratio_pct);
+    var logisticsPct = Number(summary.logistics_estimate_ratio_pct);
+    setBar('redPurchaseKnownBar', Number.isFinite(purchasePct) ? 100 - purchasePct : 0);
+    setBar('redPurchaseEstimateBar', purchasePct);
+    setBar('redLogisticsKnownBar', Number.isFinite(logisticsPct) ? 100 - logisticsPct : 0);
+    setBar('redLogisticsEstimateBar', logisticsPct);
+    setText(
+      'redPurchaseBasisText',
+      '有采购数据 ' + fmtMoney(summary.purchase_cost_usd)
+        + ' · 估算 ' + fmtMoney(summary.purchase_estimate_usd)
+    );
+    setText(
+      'redLogisticsBasisText',
+      '有物流数据 ' + fmtMoney(summary.logistics_cost_usd)
+        + ' · 估算 ' + fmtMoney(summary.logistics_estimate_usd)
+    );
+  }
+
+  function basisHtml(kind, row) {
+    var isPurchase = kind === 'purchase';
+    var basis = row[isPurchase ? 'purchase_basis' : 'logistics_basis'];
+    var label = row[isPurchase ? 'purchase_basis_label' : 'logistics_basis_label'] || '-';
+    var estimate = row[isPurchase ? 'purchase_estimate_usd' : 'logistics_estimate_usd'];
+    var actual = row[isPurchase ? 'purchase_cost_usd' : 'logistics_cost_usd'];
+    var formula = row[isPurchase ? 'purchase_estimate_formula' : 'logistics_estimate_formula'];
+    var cls = basis === 'estimated' ? 'red-basis-estimate' : 'red-basis-known';
+    var amount = basis === 'estimated' ? estimate : actual;
+    var html = '<div class="red-basis ' + cls + '">' + esc(label) + '</div>';
+    html += '<div class="red-muted">' + esc(fmtMoney(amount)) + '</div>';
+    if (formula) html += '<div class="red-muted">' + esc(formula) + '</div>';
+    return html;
+  }
+
+  function renderRows(rows) {
+    var body = document.getElementById('redOrderBody');
+    if (!body) return;
+    rows = rows || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="12">暂无估算订单</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(row) {
+      return '<tr>'
+        + '<td>' + esc(row.meta_business_date || '-') + '</td>'
+        + '<td>' + esc(fmtDateTime(row.order_time)) + '</td>'
+        + '<td>' + esc(row.site_code || '-') + '</td>'
+        + '<td>' + esc(row.dxm_order_id || row.dxm_package_id || '-') + '</td>'
+        + '<td>' + esc(row.buyer_country_name || row.buyer_country || '-') + '</td>'
+        + '<td class="red-wrap"><strong>' + esc(row.product_names || '未匹配产品') + '</strong>'
+          + '<div class="red-muted">' + esc(row.product_cn_names || '') + '</div></td>'
+        + '<td class="red-wrap">' + esc(row.skus || '-') + '</td>'
+        + '<td class="red-num">' + esc(fmtMoney(row.total_revenue)) + '</td>'
+        + '<td>' + basisHtml('purchase', row) + '</td>'
+        + '<td>' + basisHtml('logistics', row) + '</td>'
+        + '<td class="red-num">' + esc(fmtMoney(row.estimated_cost_total_usd)) + '</td>'
+        + '<td>' + esc(row.status_label || '-') + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  function renderProducts(rows) {
+    var body = document.getElementById('redProductBody');
+    if (!body) return;
+    rows = rows || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="11">暂无估算产品</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(row) {
+      return '<tr>'
+        + '<td class="red-wrap"><strong>' + esc(row.product_names || '未匹配产品') + '</strong>'
+          + '<div class="red-muted">' + esc(row.product_cn_names || '') + '</div></td>'
+        + '<td class="red-wrap">' + esc(row.skus || '-') + '</td>'
+        + '<td>' + esc(row.product_ids || '-') + '</td>'
+        + '<td class="red-num">' + esc(fmtInt(row.order_count)) + '</td>'
+        + '<td class="red-num">' + esc(fmtInt(row.units)) + '</td>'
+        + '<td class="red-num">' + esc(fmtMoney(row.total_revenue_usd)) + '</td>'
+        + '<td class="red-num">' + esc(fmtInt(row.purchase_estimated_order_count)) + '</td>'
+        + '<td class="red-num">' + esc(fmtMoney(row.purchase_estimate_usd)) + '</td>'
+        + '<td class="red-num">' + esc(fmtInt(row.logistics_estimated_order_count)) + '</td>'
+        + '<td class="red-num">' + esc(fmtMoney(row.logistics_estimate_usd)) + '</td>'
+        + '<td class="red-num">' + esc(fmtMoney(row.estimated_cost_total_usd)) + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  function renderRules(rules) {
+    rules = rules || {};
+    var purchase = rules.purchase || {};
+    var logistics = rules.logistics || {};
+    document.getElementById('redPurchaseRules').innerHTML =
+      '<li>有采购数据：' + esc(purchase.actual_basis || 'order_profit_lines.purchase_usd') + '</li>'
+      + '<li>估算触发：' + esc(purchase.estimated_when || '采购成本缺失') + '</li>'
+      + '<li>估算公式：' + esc(purchase.estimate_formula || '订单总销售额 × 10%') + '</li>';
+    document.getElementById('redLogisticsRules').innerHTML =
+      '<li>有物流数据：' + esc(logistics.actual_basis || 'order_profit_lines.shipping_cost_usd') + '</li>'
+      + '<li>估算触发：' + esc(logistics.estimated_when || '物流成本缺失') + '</li>'
+      + '<li>估算公式：' + esc(logistics.estimate_formula || '订单总销售额 × 20%') + '</li>';
+  }
+
+  function renderPagination(pageInfo) {
+    pageInfo = pageInfo || {};
+    var total = Number(pageInfo.total || 0);
+    var page = Number(pageInfo.page || state.page || 1);
+    var pages = Number(pageInfo.pages || 0);
+    var loaded = Math.min(total, page * Number(pageInfo.page_size || state.pageSize || 50));
+    setText('redStatus', total > 0
+      ? '已加载 ' + fmtInt(loaded) + ' / 共 ' + fmtInt(total) + ' 条'
+      : '共 0 条');
+    var box = document.getElementById('redPagination');
+    if (!box) return;
+    box.innerHTML = '<button type="button" class="red-page-btn" id="redPrev">上一页</button>'
+      + '<span class="red-status">第 ' + fmtInt(page) + ' / ' + fmtInt(pages || 1) + ' 页</span>'
+      + '<button type="button" class="red-page-btn" id="redNext">下一页</button>';
+    var prev = document.getElementById('redPrev');
+    var next = document.getElementById('redNext');
+    if (prev) {
+      prev.disabled = page <= 1;
+      prev.addEventListener('click', function() {
+        if (state.page <= 1) return;
+        state.page -= 1;
+        loadData();
+      });
+    }
+    if (next) {
+      next.disabled = !pages || page >= pages;
+      next.addEventListener('click', function() {
+        if (pages && state.page >= pages) return;
+        state.page += 1;
+        loadData();
+      });
+    }
+  }
+
+  function loadData() {
+    setText('redStatus', '加载中...');
+    fetch(endpoint + '?' + queryParams().toString(), { credentials: 'same-origin' })
+      .then(function(response) {
+        return response.json().then(function(payload) {
+          if (!response.ok) throw new Error(payload.detail || payload.error || '查询失败');
+          return payload;
+        });
+      })
+      .then(function(payload) {
+        renderSubtitle(payload);
+        renderKpis(payload);
+        renderRows(payload.rows || []);
+        renderProducts(payload.products || []);
+        renderRules(payload.rules || {});
+        renderPagination(payload.page || {});
+      })
+      .catch(function(err) {
+        setText('redStatus', '加载失败：' + (err.message || '查询失败'));
+        var orderBody = document.getElementById('redOrderBody');
+        var productBody = document.getElementById('redProductBody');
+        if (orderBody) orderBody.innerHTML = '<tr><td colspan="12">' + esc(err.message || '查询失败') + '</td></tr>';
+        if (productBody) productBody.innerHTML = '<tr><td colspan="11">' + esc(err.message || '查询失败') + '</td></tr>';
+      });
+  }
+
+  var refresh = document.getElementById('redRefresh');
+  if (refresh) {
+    refresh.addEventListener('click', function() {
+      state.page = 1;
+      loadData();
+    });
+  }
+  loadData();
+})();
+</script>
+{% endblock %}

@@ -2156,12 +2156,16 @@ def test_realtime_unmatched_detail_pages_render_and_require_login(authed_client_
     for path, title in (
         ("/order-analytics/realtime-unmatched-orders", "实时大盘未匹配订单"),
         ("/order-analytics/realtime-unmatched-ads", "实时大盘未匹配广告"),
+        ("/order-analytics/realtime-estimates", "实时大盘估算数据"),
     ):
         response = authed_client_no_db.get(path)
         assert response.status_code == 200
         body = response.get_data(as_text=True)
         assert title in body
-        assert "product_launch_scope=unmatched" in body
+        if "unmatched" in path:
+            assert "product_launch_scope=unmatched" in body
+        else:
+            assert "/order-analytics/realtime-estimates/data" in body
 
         anonymous = authed_client_no_db.application.test_client()
         anonymous_response = anonymous.get(path)
@@ -2326,6 +2330,65 @@ def test_realtime_unmatched_ads_data_filters_matched_no_units(authed_client_no_d
         }
     ]
     assert enrich_calls[0][1]["detail_type"] == "ads"
+
+
+def test_realtime_estimates_data_forwards_scope_and_returns_evidence(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_evidence(date_text=None, **kwargs):
+        captured["date_text"] = date_text
+        captured.update(kwargs)
+        return {
+            "period": {"start_date": kwargs.get("start_date"), "end_date": kwargs.get("end_date")},
+            "scope": {
+                "product_launch_scope": kwargs.get("product_launch_scope"),
+                "ad_source": "meta_ad_daily_campaign_metrics",
+                "ad_granularity": "daily",
+            },
+            "freshness": {},
+            "summary": {"meta_purchase_fallback_row_count": 0},
+            "order_profit_summary": {"order_count": 2},
+            "estimate_summary": {
+                "order_count": 2,
+                "estimated_order_count": 1,
+                "cost_estimate_total_usd": 60.0,
+                "cost_estimate_ratio_pct": 66.7,
+            },
+            "estimate_details": [{"dxm_package_id": "PKG-EST", "estimated_cost_total_usd": 60.0}],
+            "estimate_details_page": {"page": kwargs.get("page"), "page_size": kwargs.get("page_size"), "total": 1, "pages": 1},
+            "estimate_products": [{"product_names": "Estimated Product", "estimated_cost_total_usd": 60.0}],
+            "estimate_rules": {"purchase": {"estimate_formula": "订单总销售额 × 10%"}},
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_estimate_evidence", fake_evidence)
+    monkeypatch.setattr(
+        "web.routes.order_analytics.dq.build_for_realtime_overview",
+        lambda **kwargs: {"status": "ok", "source_mode": kwargs.get("source_mode")},
+    )
+
+    response = authed_client_no_db.get(
+        "/order-analytics/realtime-estimates/data"
+        "?start_date=2026-06-01&end_date=2026-06-07"
+        "&site_code=newjoy&product_id=42&product_launch_scope=new"
+        "&product_launch_window_days=15&page=2&page_size=80"
+    )
+
+    assert response.status_code == 200
+    assert captured["date_text"] is None
+    assert captured["start_date"] == "2026-06-01"
+    assert captured["end_date"] == "2026-06-07"
+    assert captured["site_codes"] == ["newjoy"]
+    assert captured["product_id"] == 42
+    assert captured["product_launch_scope"] == "new"
+    assert captured["product_launch_window_days"] == 15
+    assert captured["page"] == 2
+    assert captured["page_size"] == 80
+    payload = response.get_json()
+    assert payload["type"] == "estimates"
+    assert payload["summary"]["estimated_order_count"] == 1
+    assert payload["rows"][0]["dxm_package_id"] == "PKG-EST"
+    assert payload["products"][0]["product_names"] == "Estimated Product"
+    assert payload["rules"]["purchase"]["estimate_formula"] == "订单总销售额 × 10%"
 
 
 # ── 前端模板回归 ─────────────────────────────────────────
