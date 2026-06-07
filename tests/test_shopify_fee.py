@@ -69,6 +69,25 @@ def test_calculate_shopify_fee_returns_rate_breakdown_for_tier_d():
     assert breakdown["total_percentage_rate"] == pytest.approx(0.050)
 
 
+def test_calculate_shopify_fee_multiplier_scales_percentage_not_fixed_fee():
+    result = calculate_shopify_fee(
+        amount=100,
+        presentment_currency="EUR",
+        card_country="DE",
+        percentage_rate_multiplier="1.076",
+    )
+
+    breakdown = result["rate_breakdown"]
+    assert breakdown["base_rate"] == 0.025
+    assert breakdown["cross_border_rate"] == 0.010
+    assert breakdown["currency_conversion_rate"] == 0.015
+    assert breakdown["percentage_rate_multiplier"] == 1.076
+    assert breakdown["uncalibrated_total_percentage_rate"] == pytest.approx(0.050)
+    assert breakdown["total_percentage_rate"] == pytest.approx(0.0538)
+    # Fixed fee remains $0.30: 100 * (5.0% * 1.076) + 0.30 = 5.68
+    assert result["fee"] == pytest.approx(5.68)
+
+
 def test_calculate_shopify_fee_unknown_country_uses_estimated_tier():
     """card_country=None 按保守估算（视作国际卡），tier 后缀 _estimated。"""
     result = calculate_shopify_fee(
@@ -119,10 +138,10 @@ def test_split_shopify_fee_for_order_domestic_usd():
 
     assert result["presentment_currency"] == "USD"
     assert result["shopify_tier"] == "A"
-    assert result["shopify_platform_fee_usd"] == 2.80
+    assert result["shopify_platform_fee_usd"] == 2.99
     assert result["international_card_fee_usd"] == 0.0
     assert result["currency_conversion_fee_usd"] == 0.0
-    assert result["shopify_fee_total_usd"] == 2.80
+    assert result["shopify_fee_total_usd"] == 2.99
 
 
 def test_split_shopify_fee_for_order_us_buyer_has_no_card_fee_for_ca_store():
@@ -135,7 +154,7 @@ def test_split_shopify_fee_for_order_us_buyer_has_no_card_fee_for_ca_store():
     )
 
     assert result["international_card_fee_usd"] == 0.0
-    assert result["shopify_fee_total_usd"] == 2.80
+    assert result["shopify_fee_total_usd"] == 2.99
     assert result["shopify_tier"] == "A"
 
 
@@ -146,10 +165,10 @@ def test_split_shopify_fee_for_order_international_eur():
 
     assert result["presentment_currency"] == "EUR"
     assert result["shopify_tier"] == "D"
-    assert result["shopify_platform_fee_usd"] == 2.80
-    assert result["international_card_fee_usd"] == 1.00
-    assert result["currency_conversion_fee_usd"] == 1.50
-    assert result["shopify_fee_total_usd"] == 5.30
+    assert result["shopify_platform_fee_usd"] == 2.99
+    assert result["international_card_fee_usd"] == 1.08
+    assert result["currency_conversion_fee_usd"] == 1.61
+    assert result["shopify_fee_total_usd"] == 5.68
 
 
 def test_split_shopify_fee_for_order_total_matches_displayed_parts_after_rounding():
@@ -177,10 +196,10 @@ def test_split_shopify_fee_for_order_unknown_country_uses_estimated_cross_border
 
     assert result["presentment_currency"] == "USD"
     assert result["shopify_tier"] == "B_estimated"
-    assert result["shopify_platform_fee_usd"] == 2.80
-    assert result["international_card_fee_usd"] == 1.00
+    assert result["shopify_platform_fee_usd"] == 2.99
+    assert result["international_card_fee_usd"] == 1.08
     assert result["currency_conversion_fee_usd"] == 0.0
-    assert result["shopify_fee_total_usd"] == 3.80
+    assert result["shopify_fee_total_usd"] == 4.07
 
 
 def test_split_shopify_fee_for_order_blank_country_uses_estimated_cross_border_usd():
@@ -190,9 +209,9 @@ def test_split_shopify_fee_for_order_blank_country_uses_estimated_cross_border_u
 
     assert result["presentment_currency"] == "USD"
     assert result["shopify_tier"] == "B_estimated"
-    assert result["international_card_fee_usd"] == 1.00
+    assert result["international_card_fee_usd"] == 1.08
     assert result["currency_conversion_fee_usd"] == 0.0
-    assert result["shopify_fee_total_usd"] == 3.80
+    assert result["shopify_fee_total_usd"] == 4.07
 
 
 def test_verify_fee_recognizes_international_match():

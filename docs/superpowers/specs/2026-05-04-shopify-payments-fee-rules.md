@@ -239,6 +239,28 @@ TIER_D_EFFECTIVE_RATE = 0.0600   # 非美元国际卡
 PROFIT_MODEL_FEE_RATE = 0.05     # 跨境电商场景，按 5% 预留手续费成本
 ```
 
+### 7.1 2026-06-06 实测校准：百分比费率乘数
+
+2026-06-06 导入 `newjoyloo0606.csv` 与 `omurio0606.csv` 后，按 2026-05-01 至 2026-05-31 的订单维度对比：
+
+- 已匹配订单估算手续费：`$8,732.73`
+- 已匹配订单真实手续费：`$9,273.26`
+- 真实比估算高：`$540.53`，约 `+6.19%`
+
+差异拆分显示，`card` 与 `bancontact` 的现有估算基本贴合真实值；核心差异来自 `Payment Method Name = paypal`。PayPal 订单的百分比部分约为现有估算百分比部分的 `1.68` 到 `1.72` 倍。店小秘订单行当前没有支付方式字段，前向利润核算无法在订单生成时精确识别 PayPal，因此短期采用全局校准：
+
+```python
+PERCENTAGE_RATE_MULTIPLIER = 1.076
+```
+
+该乘数只作用于百分比费率部分，即：
+
+```text
+fee = amount * (base_rate + cross_border_rate + currency_conversion_rate) * PERCENTAGE_RATE_MULTIPLIER + 0.30
+```
+
+固定费 `$0.30` 保持不变，避免多 SKU 订单分摊和固定费口径被二次放大。后续如果店小秘订单能稳定拿到支付方式，可改为对 PayPal 单独使用更高百分比费率，普通 card / bancontact 继续使用四档标准费率。
+
 ## 8. 边界情况与注意事项
 
 1. **退款（refund）**：CSV 中 `Type = refund` 的记录，`amount` 为负值，`fee` 通常为 0（Shopify 不退手续费）。计算 GMV 净收入时需将 refund 行的 `net`（负值）累加进去。
