@@ -575,8 +575,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "weekly_ai_analysis_report": {
         "code": "weekly_ai_analysis_report",
         "name": "每周 AI 分析报告",
-        "description": "每周日 12:00 汇总上周日到本周六的实时大盘、广告、订单和产品盈亏数据，生成 weekly_ai_analysis_reports 周度 AI 业务分析。",
-        "schedule": "每周日 12:00",
+        "description": "每周日 20:00 汇总上周日到本周六的实时大盘、广告、订单和产品盈亏数据，生成 weekly_ai_analysis_reports 周度 AI 业务分析。",
+        "schedule": "每周日 20:00",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "weekly_ai_analysis_report",

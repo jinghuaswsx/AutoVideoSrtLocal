@@ -589,7 +589,7 @@ def test_task_definitions_include_weekly_ai_analysis_report():
     definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
 
     task = definitions["weekly_ai_analysis_report"]
-    assert task["schedule"] == "每周日 12:00"
+    assert task["schedule"] == "每周日 20:00"
     assert task["runner"] == "appcore.order_analytics.weekly_ai_report.run_scheduled_report"
     assert task["log_table"] == "scheduled_task_runs"
 

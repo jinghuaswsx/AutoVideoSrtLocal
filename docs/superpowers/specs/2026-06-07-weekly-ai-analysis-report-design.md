@@ -46,11 +46,11 @@
 
 ## 周期口径
 
-- 默认周期：上一完整业务周，周日到周六。每周日中午 12:00 运行时，统计当前周日前面的 7 个完整业务日，也就是上周日整天到本周六整天。
+- 默认周期：上一完整业务周，周日到周六。每周日北京时间 20:00 运行时，统计当前周日前面的 7 个完整业务日，也就是上周日整天到本周六整天。
 - 业务日口径：Meta 业务日，北京时间 16:00 切日。
 - 指定 `week_start` 时如果不是周日，后端会自动归一化到该日期所在业务周的周日。
 - 当前业务周未完整时，页面允许预览，但必须在 `data_quality` 和 UI 中标记为 `realtime_snapshot` 或 `mixed`，不得按最终周报展示。
-- 定时生成：每周日 12:00。
+- 定时生成：每周日 20:00。此前 12:00 会早于周六 Meta 广告业务日完整收盘，容易让周六广告数据不完整。
 
 ## 数据包
 
@@ -380,7 +380,7 @@ AI 必须输出 JSON：
 新增 `appcore/weekly_ai_analysis_report.py` 或放入 `appcore/order_analytics/weekly_ai_report.py` 的 `register(scheduler)`：
 
 - task code：`weekly_ai_analysis_report`
-- schedule：每周日 12:00
+- schedule：每周日 20:00
 - runner：`appcore.order_analytics.weekly_ai_report.run_scheduled_report`
 - log table：`scheduled_task_runs`
 - 必须登记到 `appcore/scheduled_tasks.py`，并在 `appcore/scheduler.py` 注册。

@@ -262,7 +262,7 @@ def normalize_week_start(value: date) -> date:
 def previous_complete_business_week(now: datetime | None = None) -> tuple[date, date]:
     """Return the latest complete Sunday-Saturday business week.
 
-    The user-facing schedule runs every Sunday at 12:00 Beijing time and
+    The user-facing schedule runs every Sunday at 20:00 Beijing time and
     covers the seven calendar days before that Sunday: previous Sunday through
     Saturday. This deliberately does not use the ISO Monday-Sunday helper from
     ``weekly_roas_report``.
@@ -2816,7 +2816,7 @@ def register(scheduler) -> None:
         run_scheduled_report,
         "cron",
         day_of_week="sun",
-        hour=12,
+        hour=20,
         minute=0,
         id=TASK_CODE,
         replace_existing=True,

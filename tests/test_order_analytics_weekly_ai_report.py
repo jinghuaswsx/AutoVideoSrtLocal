@@ -139,6 +139,27 @@ def test_previous_complete_business_week_uses_sunday_to_saturday():
     assert week_end == date(2026, 6, 6)
 
 
+def test_weekly_ai_report_registers_sunday_20_beijing(monkeypatch):
+    calls = []
+
+    def fake_add_controlled_job(scheduler, task_code, func, trigger, **kwargs):
+        calls.append((scheduler, task_code, func, trigger, kwargs))
+
+    monkeypatch.setattr(war.scheduled_tasks, "add_controlled_job", fake_add_controlled_job)
+    scheduler = object()
+
+    war.register(scheduler)
+
+    assert len(calls) == 1
+    assert calls[0][0] is scheduler
+    assert calls[0][1] == war.TASK_CODE
+    assert calls[0][2] is war.run_scheduled_report
+    assert calls[0][3] == "cron"
+    assert calls[0][4]["day_of_week"] == "sun"
+    assert calls[0][4]["hour"] == 20
+    assert calls[0][4]["minute"] == 0
+
+
 def test_normalize_week_start_snaps_to_sunday():
     assert war.normalize_week_start(date(2026, 6, 3)) == date(2026, 5, 31)
     assert war.normalize_week_start(date(2026, 5, 31)) == date(2026, 5, 31)
