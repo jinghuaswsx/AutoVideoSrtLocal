@@ -37,6 +37,10 @@ def _realtime_unmatched_detail_source() -> str:
     return (ROOT / "web" / "templates" / "realtime_unmatched_detail.html").read_text(encoding="utf-8")
 
 
+def _realtime_estimates_detail_source() -> str:
+    return (ROOT / "web" / "templates" / "realtime_estimates_detail.html").read_text(encoding="utf-8")
+
+
 def test_realtime_query_button_is_in_date_toolbar_target_area():
     """查询按钮应紧跟自定义日期范围，产品搜索不占用日期工具栏目标位。"""
     panel = _realtime_panel_source()
@@ -281,6 +285,11 @@ def test_realtime_unmatched_scope_card_links_to_detail_pages():
         template.index("function initNewProductLaunch", template.index("function updateRealtimeUnmatchedDetailLinks"))
     ]
 
+    assert 'id="realtimeEstimateLink"' in panel
+    assert 'id="realtimeNewEstimateLink"' in panel
+    assert 'id="realtimeOldEstimateLink"' in panel
+    assert 'id="realtimeUnmatchedEstimateLink"' in panel
+    assert 'href="/order-analytics/realtime-estimates"' in panel
     assert 'id="realtimeUnmatchedOrdersLink"' in panel
     assert 'id="realtimeUnmatchedAdsLink"' in panel
     assert 'href="/order-analytics/realtime-unmatched-orders"' in panel
@@ -292,7 +301,10 @@ def test_realtime_unmatched_scope_card_links_to_detail_pages():
     assert "end_date" in link_block
     assert "site_code" in link_block
     assert "product_launch_window_days" in link_block
-    assert "product_id" not in link_block
+    assert "baseParams(false)" in link_block
+    assert "baseParams(true)" in link_block
+    assert "params.set('product_id', realtimeState.productId)" in link_block
+    assert "product_launch_scope" in link_block
 
 
 def test_realtime_unmatched_detail_uses_mobile_cards_and_product_asset_columns():
@@ -321,8 +333,10 @@ def test_realtime_scope_cards_include_cost_breakdown_and_ratio_targets():
         assert f'id="{prefix}SpendRatio"' in panel
         assert f'id="{prefix}PurchaseCost"' in panel
         assert f'id="{prefix}PurchaseCostRatio"' in panel
+        assert f'id="{prefix}PurchaseEstimateRatio"' in panel
         assert f'id="{prefix}LogisticsCost"' in panel
         assert f'id="{prefix}LogisticsCostRatio"' in panel
+        assert f'id="{prefix}LogisticsEstimateRatio"' in panel
         assert f'id="{prefix}ShopifyFee"' in panel
         assert f'id="{prefix}ShopifyFeeRatio"' in panel
 
@@ -336,13 +350,36 @@ def test_realtime_scope_cards_js_renders_cost_breakdown_and_ratios():
 
     assert "function formatRealtimeCostRatio" in template
     assert "function renderRealtimeCostMetric" in template
+    assert "function formatRealtimeEstimateRatio" in template
+    assert "function renderRealtimeEstimateRatio" in template
     assert "purchase_cost_with_estimate_usd" in render_block
+    assert "purchase_estimate_ratio_pct" in render_block
+    assert "purchase_estimate_usd" in render_block
     assert "logistics_cost_with_estimate_usd" in render_block
+    assert "logistics_estimate_ratio_pct" in render_block
+    assert "logistics_estimate_usd" in render_block
     assert "shopify_fee_total_usd" in render_block
     assert "total_ad_spend_ratio_pct" in render_block
     assert "purchase_cost_ratio_pct" in render_block
     assert "logistics_cost_ratio_pct" in render_block
     assert "shopify_fee_ratio_pct" in render_block
+    assert "has_estimated_costs" in render_block
+    assert "cost_estimate_total_usd" in render_block
+    assert "toFixed(1)" in template
+
+
+def test_realtime_estimates_detail_template_contains_required_sections():
+    template = _realtime_estimates_detail_source()
+
+    assert "/order-analytics/realtime-estimates/data" in template
+    assert "总体统计" in template
+    assert "明细订单" in template
+    assert "产品情况" in template
+    assert "数据依据说明" in template
+    assert "采购依据" in template
+    assert "物流依据" in template
+    assert "订单总销售额 × 10%" in template
+    assert "订单总销售额 × 20%" in template
 
 
 def test_realtime_global_cards_render_yesterday_same_time_compare_inline():

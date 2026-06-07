@@ -541,6 +541,12 @@ def test_build_order_profit_summary_uses_estimates_for_missing_costs():
     assert summary["logistics_cost_with_estimate_usd"] == 60.0
     assert summary["logistics_missing_order_count"] == 1
     assert summary["logistics_missing_order_ratio"] == 0.5
+    assert summary["purchase_estimate_ratio_pct"] == 66.7
+    assert summary["logistics_estimate_ratio_pct"] == 66.7
+    assert summary["cost_estimate_total_usd"] == 60.0
+    assert summary["cost_with_estimate_total_usd"] == 90.0
+    assert summary["cost_estimate_ratio_pct"] == 66.7
+    assert summary["has_estimated_costs"] is True
     assert summary["shopify_fee_total_usd"] == 13.0
     assert summary["ad_cost_usd"] == 19.0
     # 没传 total_ad_spend_usd 时，未分摊 = 0、利润退化为旧公式。
@@ -612,8 +618,107 @@ def test_build_order_profit_summary_handles_empty_rows_with_total_ad_spend():
     assert summary["ad_cost_usd"] == 0.0
     assert summary["unallocated_ad_spend_usd"] == 42.0
     assert summary["total_ad_spend_usd"] == 42.0
+    assert summary["cost_estimate_total_usd"] == 0.0
+    assert summary["cost_estimate_ratio_pct"] is None
+    assert summary["has_estimated_costs"] is False
     # 没有订单 → 收入 0、成本 0，利润 = -未分摊广告费
     assert summary["profit_with_estimate_usd"] == -42.0
+
+
+def test_get_realtime_estimate_evidence_filters_and_groups_estimated_orders(monkeypatch):
+    from appcore.order_analytics import realtime as realtime_oa
+
+    summary = {
+        "order_count": 2,
+        "total_revenue_usd": 300.0,
+        "purchase_cost_usd": 10.0,
+        "purchase_estimate_usd": 20.0,
+        "purchase_cost_with_estimate_usd": 30.0,
+        "purchase_missing_order_count": 1,
+        "logistics_cost_usd": 20.0,
+        "logistics_estimate_usd": 40.0,
+        "logistics_cost_with_estimate_usd": 60.0,
+        "logistics_missing_order_count": 1,
+        "purchase_estimate_ratio_pct": 66.7,
+        "logistics_estimate_ratio_pct": 66.7,
+        "cost_estimate_total_usd": 60.0,
+        "cost_with_estimate_total_usd": 90.0,
+        "cost_estimate_ratio_pct": 66.7,
+        "has_estimated_costs": True,
+    }
+
+    def fake_overview(*args, **kwargs):
+        return {
+            "period": {"start_date": date(2026, 6, 1), "end_date": date(2026, 6, 2)},
+            "scope": {"ad_source": "meta_ad_daily_campaign_metrics"},
+            "freshness": {},
+            "summary": {"meta_purchase_fallback_row_count": 0},
+            "order_profit_summary": summary,
+        }
+
+    detail_rows = [
+        {
+            "meta_business_date": date(2026, 6, 1),
+            "dxm_package_id": "PKG-EST",
+            "dxm_order_id": "DXM-EST",
+            "product_ids": "101",
+            "product_names": "Estimated Product",
+            "product_cn_names": "估算产品",
+            "skus": "SKU-EST",
+            "units": 2,
+            "total_revenue": 200.0,
+            "purchase_cost_usd": 0.0,
+            "purchase_estimate_usd": 20.0,
+            "logistics_cost_usd": 0.0,
+            "logistics_estimate_usd": 40.0,
+            "status_label": "不完整",
+        },
+        {
+            "meta_business_date": date(2026, 6, 1),
+            "dxm_package_id": "PKG-OK",
+            "dxm_order_id": "DXM-OK",
+            "product_ids": "102",
+            "product_names": "Actual Product",
+            "skus": "SKU-OK",
+            "units": 1,
+            "total_revenue": 100.0,
+            "purchase_cost_usd": 10.0,
+            "purchase_estimate_usd": 0.0,
+            "logistics_cost_usd": 20.0,
+            "logistics_estimate_usd": 0.0,
+            "status_label": "完整",
+        },
+    ]
+
+    captured = {}
+
+    def fake_details(start, end, **kwargs):
+        captured["start"] = start
+        captured["end"] = end
+        captured.update(kwargs)
+        return detail_rows
+
+    monkeypatch.setattr(realtime_oa, "get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr(realtime_oa, "_get_realtime_order_profit_details_for_range", fake_details)
+
+    result = realtime_oa.get_realtime_estimate_evidence(
+        start_date="2026-06-01",
+        end_date="2026-06-02",
+        page=1,
+        page_size=50,
+    )
+
+    assert captured["start"] == date(2026, 6, 1)
+    assert captured["end"] == date(2026, 6, 2)
+    assert result["estimate_summary"]["estimated_order_count"] == 1
+    assert result["estimate_summary"]["cost_estimate_ratio_pct"] == 66.7
+    assert result["estimate_details_page"]["total"] == 1
+    assert [row["dxm_package_id"] for row in result["estimate_details"]] == ["PKG-EST"]
+    assert result["estimate_details"][0]["purchase_basis"] == "estimated"
+    assert result["estimate_details"][0]["logistics_estimate_formula"] == "总销售额 × 20%"
+    assert len(result["estimate_products"]) == 1
+    assert result["estimate_products"][0]["product_names"] == "Estimated Product"
+    assert result["estimate_products"][0]["estimated_cost_total_usd"] == 60.0
 
 
 def test_get_realtime_campaign_details_aggregates_per_account_latest_snapshot(monkeypatch):

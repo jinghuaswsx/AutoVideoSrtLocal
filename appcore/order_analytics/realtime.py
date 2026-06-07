@@ -271,6 +271,17 @@ def _ratio_pct(amount: Any, total_revenue: Any) -> float | None:
     return float((numerator / denominator * Decimal("100")).quantize(Decimal("0.01")))
 
 
+def _estimate_ratio_pct(amount: Any, total: Any) -> float | None:
+    try:
+        denominator = Decimal(str(total or 0))
+        numerator = Decimal(str(amount or 0))
+    except (InvalidOperation, ValueError):
+        return None
+    if denominator <= 0:
+        return None
+    return float((numerator / denominator * Decimal("100")).quantize(Decimal("0.1")))
+
+
 def _attach_order_profit_cost_ratios(summary: dict[str, Any]) -> None:
     revenue = summary.get("total_revenue_usd")
     summary["total_ad_spend_ratio_pct"] = _ratio_pct(summary.get("total_ad_spend_usd"), revenue)
@@ -283,6 +294,22 @@ def _attach_order_profit_cost_ratios(summary: dict[str, Any]) -> None:
         revenue,
     )
     summary["shopify_fee_ratio_pct"] = _ratio_pct(summary.get("shopify_fee_total_usd"), revenue)
+
+
+def _attach_order_profit_estimate_ratios(summary: dict[str, Any]) -> None:
+    purchase_total = _money(summary.get("purchase_cost_with_estimate_usd"))
+    logistics_total = _money(summary.get("logistics_cost_with_estimate_usd"))
+    purchase_estimate = _money(summary.get("purchase_estimate_usd"))
+    logistics_estimate = _money(summary.get("logistics_estimate_usd"))
+    estimate_total = _money(purchase_estimate + logistics_estimate)
+    cost_total = _money(purchase_total + logistics_total)
+
+    summary["purchase_estimate_ratio_pct"] = _estimate_ratio_pct(purchase_estimate, purchase_total)
+    summary["logistics_estimate_ratio_pct"] = _estimate_ratio_pct(logistics_estimate, logistics_total)
+    summary["cost_estimate_total_usd"] = estimate_total
+    summary["cost_with_estimate_total_usd"] = cost_total
+    summary["cost_estimate_ratio_pct"] = _estimate_ratio_pct(estimate_total, cost_total)
+    summary["has_estimated_costs"] = estimate_total > 0
 
 
 def _empty_order_profit_summary() -> dict[str, Any]:
@@ -310,6 +337,12 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "purchase_cost_ratio_pct": None,
         "logistics_cost_ratio_pct": None,
         "shopify_fee_ratio_pct": None,
+        "purchase_estimate_ratio_pct": None,
+        "logistics_estimate_ratio_pct": None,
+        "cost_estimate_total_usd": 0.0,
+        "cost_with_estimate_total_usd": 0.0,
+        "cost_estimate_ratio_pct": None,
+        "has_estimated_costs": False,
         "profit_with_estimate_usd": 0.0,
         "profit_with_estimate_margin_pct": None,
         "global_break_even_roas": None,
@@ -392,7 +425,9 @@ def _build_order_profit_summary(
     for key, value in list(summary.items()):
         if value is None:
             continue
-        if key.endswith("_count") or key == "order_count":
+        if isinstance(value, bool):
+            summary[key] = value
+        elif key.endswith("_count") or key == "order_count":
             summary[key] = int(value)
         elif key.endswith("_ratio"):
             summary[key] = round(float(value), 4)
@@ -407,6 +442,7 @@ def _build_order_profit_summary(
     else:
         summary["profit_with_estimate_margin_pct"] = None
     _attach_order_profit_cost_ratios(summary)
+    _attach_order_profit_estimate_ratios(summary)
     summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
@@ -457,7 +493,9 @@ def _build_order_profit_summary_from_status(
     for key, value in list(summary.items()):
         if value is None:
             continue
-        if key.endswith("_count") or key == "order_count":
+        if isinstance(value, bool):
+            summary[key] = value
+        elif key.endswith("_count") or key == "order_count":
             summary[key] = int(value)
         elif key.endswith("_ratio"):
             summary[key] = round(float(value), 4)
@@ -472,6 +510,7 @@ def _build_order_profit_summary_from_status(
     else:
         summary["profit_with_estimate_margin_pct"] = None
     _attach_order_profit_cost_ratios(summary)
+    _attach_order_profit_estimate_ratios(summary)
     summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
@@ -560,9 +599,12 @@ def _attach_profit_details_to_order_details(
         "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS purchase_missing_count, "
         "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
-        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names, "
+        "GROUP_CONCAT(DISTINCT NULLIF(mp.name, '') ORDER BY mp.name SEPARATOR ' / ') AS product_cn_names, "
+        "GROUP_CONCAT(DISTINCT d.product_id ORDER BY d.product_id SEPARATOR ' / ') AS product_ids "
         "FROM dianxiaomi_order_lines d "
         "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "LEFT JOIN media_products mp ON mp.id = d.product_id "
         f"WHERE d.dxm_package_id IN ({placeholders}) "
         "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " ",
@@ -948,9 +990,12 @@ def _get_realtime_order_profit_details(
         "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS purchase_missing_count, "
         "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
-        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names, "
+        "GROUP_CONCAT(DISTINCT NULLIF(mp.name, '') ORDER BY mp.name SEPARATOR ' / ') AS product_cn_names, "
+        "GROUP_CONCAT(DISTINCT d.product_id ORDER BY d.product_id SEPARATOR ' / ') AS product_ids "
         "FROM dianxiaomi_order_lines d "
         "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "LEFT JOIN media_products mp ON mp.id = d.product_id "
         "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
         "AND d.meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
@@ -1176,9 +1221,12 @@ def _get_realtime_order_profit_details_for_range(
         "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS purchase_missing_count, "
         "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
-        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names "
+        "GROUP_CONCAT(DISTINCT NULLIF(d.product_name, '') ORDER BY d.product_name SEPARATOR ' / ') AS product_names, "
+        "GROUP_CONCAT(DISTINCT NULLIF(mp.name, '') ORDER BY mp.name SEPARATOR ' / ') AS product_cn_names, "
+        "GROUP_CONCAT(DISTINCT d.product_id ORDER BY d.product_id SEPARATOR ' / ') AS product_ids "
         "FROM dianxiaomi_order_lines d "
         "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
+        "LEFT JOIN media_products mp ON mp.id = d.product_id "
         "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
         "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
         + product_sql +
@@ -1695,8 +1743,151 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             "status_label": _build_order_profit_status_label(profit_status, refund_status),
             "skus": row.get("skus"),
             "product_names": row.get("product_names"),
+            "product_cn_names": row.get("product_cn_names"),
+            "product_ids": row.get("product_ids"),
         })
     return details
+
+
+def _realtime_estimate_rules() -> dict[str, Any]:
+    return {
+        "purchase": {
+            "estimated_when": "采购成本缺失或利润行未完整核算",
+            "actual_basis": "order_profit_lines.purchase_usd",
+            "estimate_formula": "订单总销售额 × 10%",
+            "estimate_rate": PURCHASE_MISSING_ESTIMATE_RATE,
+        },
+        "logistics": {
+            "estimated_when": "物流成本缺失或利润行未完整核算",
+            "actual_basis": "order_profit_lines.shipping_cost_usd",
+            "estimate_formula": "订单总销售额 × 20%",
+            "estimate_rate": LOGISTICS_MISSING_ESTIMATE_RATE,
+        },
+    }
+
+
+def _realtime_estimated_total(row: dict[str, Any]) -> float:
+    return _money(row.get("purchase_estimate_usd")) + _money(row.get("logistics_estimate_usd"))
+
+
+def _has_realtime_estimate(row: dict[str, Any]) -> bool:
+    return _realtime_estimated_total(row) > 0
+
+
+def _attach_realtime_estimate_basis(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    purchase_estimate = _money(item.get("purchase_estimate_usd"))
+    logistics_estimate = _money(item.get("logistics_estimate_usd"))
+    total_estimate = _money(purchase_estimate + logistics_estimate)
+    item["purchase_basis"] = "estimated" if purchase_estimate > 0 else "actual"
+    item["purchase_basis_label"] = "估算" if purchase_estimate > 0 else "有采购数据"
+    item["purchase_estimate_formula"] = (
+        "总销售额 × 10%" if purchase_estimate > 0 else ""
+    )
+    item["logistics_basis"] = "estimated" if logistics_estimate > 0 else "actual"
+    item["logistics_basis_label"] = "估算" if logistics_estimate > 0 else "有物流数据"
+    item["logistics_estimate_formula"] = (
+        "总销售额 × 20%" if logistics_estimate > 0 else ""
+    )
+    item["estimated_cost_total_usd"] = total_estimate
+    item["has_estimated_cost"] = total_estimate > 0
+    return item
+
+
+def _build_realtime_estimate_product_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    products: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            str(row.get("product_ids") or ""),
+            str(row.get("product_names") or ""),
+            str(row.get("skus") or ""),
+        )
+        item = products.setdefault(
+            key,
+            {
+                "product_ids": row.get("product_ids"),
+                "product_names": row.get("product_names") or "未匹配产品",
+                "product_cn_names": row.get("product_cn_names"),
+                "skus": row.get("skus"),
+                "order_count": 0,
+                "units": 0,
+                "total_revenue_usd": 0.0,
+                "purchase_estimated_order_count": 0,
+                "purchase_estimate_usd": 0.0,
+                "logistics_estimated_order_count": 0,
+                "logistics_estimate_usd": 0.0,
+                "estimated_cost_total_usd": 0.0,
+            },
+        )
+        item["order_count"] += 1
+        item["units"] += int(row.get("units") or 0)
+        item["total_revenue_usd"] += _money(row.get("total_revenue"))
+        purchase_estimate = _money(row.get("purchase_estimate_usd"))
+        logistics_estimate = _money(row.get("logistics_estimate_usd"))
+        if purchase_estimate > 0:
+            item["purchase_estimated_order_count"] += 1
+            item["purchase_estimate_usd"] += purchase_estimate
+        if logistics_estimate > 0:
+            item["logistics_estimated_order_count"] += 1
+            item["logistics_estimate_usd"] += logistics_estimate
+        item["estimated_cost_total_usd"] += purchase_estimate + logistics_estimate
+
+    result = []
+    for item in products.values():
+        for key in (
+            "total_revenue_usd",
+            "purchase_estimate_usd",
+            "logistics_estimate_usd",
+            "estimated_cost_total_usd",
+        ):
+            item[key] = _money(item.get(key))
+        result.append(item)
+    result.sort(
+        key=lambda row: (
+            float(row.get("estimated_cost_total_usd") or 0),
+            int(row.get("order_count") or 0),
+        ),
+        reverse=True,
+    )
+    return result
+
+
+def _build_realtime_estimate_summary(
+    order_profit_summary: dict[str, Any],
+    estimated_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    order_count = int(order_profit_summary.get("order_count") or 0)
+    estimated_order_count = len(estimated_rows)
+    return {
+        "order_count": order_count,
+        "estimated_order_count": estimated_order_count,
+        "estimated_order_ratio_pct": _estimate_ratio_pct(estimated_order_count, order_count),
+        "total_revenue_usd": _money(order_profit_summary.get("total_revenue_usd")),
+        "purchase_cost_usd": _money(order_profit_summary.get("purchase_cost_usd")),
+        "purchase_estimate_usd": _money(order_profit_summary.get("purchase_estimate_usd")),
+        "purchase_cost_with_estimate_usd": _money(
+            order_profit_summary.get("purchase_cost_with_estimate_usd")
+        ),
+        "purchase_estimate_ratio_pct": order_profit_summary.get("purchase_estimate_ratio_pct"),
+        "purchase_estimated_order_count": int(
+            order_profit_summary.get("purchase_missing_order_count") or 0
+        ),
+        "logistics_cost_usd": _money(order_profit_summary.get("logistics_cost_usd")),
+        "logistics_estimate_usd": _money(order_profit_summary.get("logistics_estimate_usd")),
+        "logistics_cost_with_estimate_usd": _money(
+            order_profit_summary.get("logistics_cost_with_estimate_usd")
+        ),
+        "logistics_estimate_ratio_pct": order_profit_summary.get("logistics_estimate_ratio_pct"),
+        "logistics_estimated_order_count": int(
+            order_profit_summary.get("logistics_missing_order_count") or 0
+        ),
+        "cost_estimate_total_usd": _money(order_profit_summary.get("cost_estimate_total_usd")),
+        "cost_with_estimate_total_usd": _money(
+            order_profit_summary.get("cost_with_estimate_total_usd")
+        ),
+        "cost_estimate_ratio_pct": order_profit_summary.get("cost_estimate_ratio_pct"),
+        "has_estimated_costs": bool(order_profit_summary.get("has_estimated_costs")),
+    }
 
 
 def _filter_realtime_campaign_rows_for_product(
@@ -4265,6 +4456,118 @@ def get_realtime_roas_overview(
         product_launch_scope=normalized_launch_scope,
         site_codes=normalized_site_codes,
     )
+
+
+def get_realtime_estimate_evidence(
+    date_text: str | None = None,
+    now: datetime | None = None,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    product_id: int | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    site_codes: list[str] | tuple[str, ...] | None = None,
+    product_launch_scope: str | None = None,
+    product_launch_window_days: int | str | None = None,
+) -> dict[str, Any]:
+    """Build realtime estimate evidence for the visual detail page.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-06-07-realtime-dashboard-estimate-evidence-design.md
+    """
+    now = (now or _beijing_now()).replace(microsecond=0)
+    normalized_product_id = int(product_id) if product_id else None
+    normalized_site_codes = _normalize_site_codes(site_codes)
+    normalized_launch_scope = normalize_product_launch_scope(product_launch_scope)
+    normalized_launch_window_days = normalize_product_launch_window_days(product_launch_window_days)
+    launch_product_ids: tuple[int, ...] | None = None
+    launch_scope_unmatched = normalized_launch_scope == "unmatched"
+    if normalized_launch_scope in {"new", "old"}:
+        launch_product_ids = _facade().get_product_ids_for_launch_scope(
+            normalized_launch_scope,
+            window_days=normalized_launch_window_days,
+        )
+
+    parsed_start: date | None = None
+    parsed_end: date | None = None
+    if bool(start_date) != bool(end_date):
+        raise ValueError("start_date and end_date are both required when filtering by range")
+    if start_date and end_date:
+        parsed_start = _parse_iso_date_param(start_date, "start_date")
+        parsed_end = _parse_iso_date_param(end_date, "end_date")
+        if parsed_end < parsed_start:
+            raise ValueError("end_date must be >= start_date")
+        if parsed_start == parsed_end:
+            date_text = start_date
+
+    overview = get_realtime_roas_overview(
+        date_text,
+        now=now,
+        start_date=start_date,
+        end_date=end_date,
+        include_details=False,
+        include_profit_summary=True,
+        product_id=normalized_product_id,
+        site_codes=normalized_site_codes,
+        product_launch_scope=normalized_launch_scope,
+        product_launch_window_days=normalized_launch_window_days,
+    )
+    period = overview.get("period") or {}
+    if parsed_start and parsed_end and parsed_start != parsed_end:
+        all_details = _get_realtime_order_profit_details_for_range(
+            parsed_start,
+            parsed_end,
+            product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
+            site_codes=normalized_site_codes,
+        )
+    else:
+        target = parsed_start or (
+            _parse_iso_date_param(date_text, "date") if date_text else current_meta_business_date(now)
+        )
+        day_start, day_end = compute_meta_business_window_bj(target)
+        data_until = period.get("data_until_at")
+        if not isinstance(data_until, datetime):
+            data_until = min(now, day_end) if target == current_meta_business_date(now) else day_end
+        all_details = _get_realtime_order_profit_details(
+            target,
+            day_start,
+            data_until,
+            product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
+            site_codes=normalized_site_codes,
+        )
+
+    estimated_rows = [
+        _attach_realtime_estimate_basis(row)
+        for row in all_details
+        if _has_realtime_estimate(row)
+    ]
+    page_info = _page_info(
+        len(estimated_rows),
+        page,
+        page_size,
+        default_size=50,
+        max_size=ORDER_PROFIT_MAX_PAGE_SIZE,
+    )
+    offset = (page_info["page"] - 1) * page_info["page_size"]
+    rows = estimated_rows[offset:offset + page_info["page_size"]]
+    products = _build_realtime_estimate_product_rows(estimated_rows)
+    order_profit_summary = overview.get("order_profit_summary") or _empty_order_profit_summary()
+
+    result = dict(overview)
+    result["estimate_summary"] = _build_realtime_estimate_summary(
+        order_profit_summary,
+        estimated_rows,
+    )
+    result["estimate_details"] = rows
+    result["estimate_details_page"] = page_info
+    result["estimate_products"] = products
+    result["estimate_rules"] = _realtime_estimate_rules()
+    return result
 
 
 def get_true_roas_summary(start_date: str, end_date: str) -> dict:

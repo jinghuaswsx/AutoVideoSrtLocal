@@ -117,6 +117,49 @@ def _realtime_unmatched_detail_base_kwargs() -> dict:
     return kwargs
 
 
+def _realtime_estimate_detail_base_kwargs() -> dict:
+    """Docs-anchor: docs/superpowers/specs/2026-06-07-realtime-dashboard-estimate-evidence-design.md"""
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
+    if bool(start_date) != bool(end_date):
+        raise ValueError("start_date and end_date are both required when filtering by range")
+
+    kwargs = {
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    site_code_text = (request.args.get("site_code") or "").strip().lower()
+    if site_code_text:
+        if site_code_text not in meta_ad_accounts.AVAILABLE_STORE_CODES:
+            raise ValueError(
+                "site_code must be one of " + ", ".join(meta_ad_accounts.AVAILABLE_STORE_CODES)
+            )
+        kwargs["site_codes"] = [site_code_text]
+
+    product_id_text = (request.args.get("product_id") or "").strip()
+    if product_id_text:
+        try:
+            product_id = int(product_id_text)
+        except (TypeError, ValueError):
+            raise ValueError("product_id must be a positive integer") from None
+        if product_id <= 0:
+            raise ValueError("product_id must be a positive integer")
+        kwargs["product_id"] = product_id
+
+    product_launch_scope = (request.args.get("product_launch_scope") or "").strip().lower()
+    if product_launch_scope:
+        if product_launch_scope not in ("new", "old", "unmatched"):
+            raise ValueError("product_launch_scope must be one of new, old, unmatched")
+        kwargs["product_launch_scope"] = product_launch_scope
+
+    product_launch_window_days = (request.args.get("product_launch_window_days") or "").strip()
+    if product_launch_window_days:
+        kwargs["product_launch_window_days"] = oa.normalize_product_launch_window_days(
+            product_launch_window_days
+        )
+    return kwargs
+
+
 def _slice_page(rows: list[dict], page: int, page_size: int) -> tuple[list[dict], dict]:
     total = len(rows)
     pages = (total + page_size - 1) // page_size if total else 0
@@ -358,6 +401,17 @@ def realtime_unmatched_ads_page():
     )
 
 
+@bp.route("/order-analytics/realtime-estimates")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def realtime_estimates_page():
+    return render_template(
+        "realtime_estimates_detail.html",
+        page_title="实时大盘估算数据",
+    )
+
+
 # ── API ───────────────────────────────────────────────
 
 @bp.route("/order-analytics/realtime-unmatched-orders/data")
@@ -458,6 +512,46 @@ def realtime_unmatched_ads_data():
         "data_quality": result.get("data_quality"),
         "rows": rows,
         "page": page_info,
+    }))
+
+
+@bp.route("/order-analytics/realtime-estimates/data")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def realtime_estimates_data():
+    try:
+        page = _parse_positive_int_arg("page", 1)
+        page_size = _parse_positive_int_arg(
+            "page_size",
+            _REALTIME_UNMATCHED_DETAIL_PAGE_SIZE,
+            max_value=_REALTIME_UNMATCHED_DETAIL_MAX_PAGE_SIZE,
+        )
+        kwargs = _realtime_estimate_detail_base_kwargs()
+        kwargs["page"] = page
+        kwargs["page_size"] = page_size
+        result = oa.get_realtime_estimate_evidence(None, **kwargs)
+        result = _attach_realtime_data_quality(result)
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("realtime estimates query failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+    return _json_response(_json_safe({
+        "ok": True,
+        "type": "estimates",
+        "period": result.get("period") or {},
+        "scope": result.get("scope") or {},
+        "freshness": result.get("freshness") or {},
+        "summary": result.get("estimate_summary") or {},
+        "order_profit_summary": result.get("order_profit_summary") or {},
+        "realtime_summary": result.get("summary") or {},
+        "data_quality": result.get("data_quality"),
+        "rows": result.get("estimate_details") or [],
+        "page": result.get("estimate_details_page") or {},
+        "products": result.get("estimate_products") or [],
+        "rules": result.get("estimate_rules") or {},
     }))
 
 
