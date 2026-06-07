@@ -112,6 +112,9 @@ def build_products_list_response(
     delivery_status = media_product_ad_status_cache.normalize_delivery_status_filter(
         str(_request_arg(args, "delivery_status", "all") or "all").strip().lower()
     )
+    stability_status = media_product_stability.normalize_stability_status_filter(
+        str(_request_arg(args, "stability_status", "all") or "all").strip().lower()
+    )
     product_source = str(_request_arg(args, "product_source", "all") or "all").strip()
     created_from = str(_request_arg(args, "created_from", "") or "").strip()
     created_to = str(_request_arg(args, "created_to", "") or "").strip()
@@ -124,6 +127,7 @@ def build_products_list_response(
         limit=limit,
         roas_status=roas_status,
         delivery_status=delivery_status,
+        stability_status=stability_status,
         product_source=product_source,
         created_from=created_from or None,
         created_to=created_to or None,

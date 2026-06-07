@@ -94,6 +94,31 @@ def test_list_products_filters_delivery_status(monkeypatch):
     assert captured[-1][1][-3] == "active"
 
 
+def test_list_products_filters_stability_status(monkeypatch):
+    captured = _capture_sql(monkeypatch)
+    medias.list_products(None, stability_status="secondary_stable")
+    text = _joined(captured)
+    assert "media_product_stability_snapshots" in text
+    assert "stab.status=%s" in text
+    assert "secondary_stable" in captured[-1][1]
+
+
+def test_list_products_filters_stable_marks(monkeypatch):
+    captured = _capture_sql(monkeypatch)
+    medias.list_products(None, stability_status="stable_7d")
+    text = _joined(captured)
+    assert "media_product_stability_snapshots" in text
+    assert "stab.status=%s AND stab.stable_7d=1" in text
+    assert "stable" in captured[-1][1]
+
+
+def test_list_products_stability_status_invalid_falls_back(monkeypatch):
+    captured = _capture_sql(monkeypatch)
+    medias.list_products(None, stability_status="junk")
+    text = _joined(captured)
+    assert "media_product_stability_snapshots" not in text
+
+
 def test_list_products_delivery_status_invalid_falls_back(monkeypatch):
     captured = _capture_sql(monkeypatch)
     medias.list_products(None, delivery_status="paused")
@@ -119,6 +144,7 @@ def test_api_list_products_passes_filters(authed_client_no_db, monkeypatch):
                            roas_status="all", delivery_status="all", **kwargs):
         captured["roas_status"] = roas_status
         captured["delivery_status"] = delivery_status
+        captured["stability_status"] = kwargs.get("stability_status")
         captured["keyword"] = keyword
         captured["created_from"] = kwargs.get("created_from")
         captured["created_to"] = kwargs.get("created_to")
@@ -133,11 +159,12 @@ def test_api_list_products_passes_filters(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(medias, "get_product_covers_batch", lambda pids: {})
 
     resp = authed_client_no_db.get(
-        "/medias/api/products?roas_status=missing_actual&delivery_status=stopped&keyword=foo&created_from=2026-06-01&created_to=2026-06-03"
+        "/medias/api/products?roas_status=missing_actual&delivery_status=stopped&stability_status=stable_30d&keyword=foo&created_from=2026-06-01&created_to=2026-06-03"
     )
     assert resp.status_code == 200
     assert captured["roas_status"] == "missing_actual"
     assert captured["delivery_status"] == "stopped"
+    assert captured["stability_status"] == "stable_30d"
     assert captured["keyword"] == "foo"
     assert captured["created_from"] == "2026-06-01"
     assert captured["created_to"] == "2026-06-03"
@@ -150,6 +177,7 @@ def test_api_list_products_normalizes_invalid_filter_values(authed_client_no_db,
                            roas_status="all", delivery_status="all", **kwargs):
         captured["roas_status"] = roas_status
         captured["delivery_status"] = delivery_status
+        captured["stability_status"] = kwargs.get("stability_status")
         return [], 0
 
     monkeypatch.setattr(medias, "list_products", fake_list_products)
@@ -160,10 +188,11 @@ def test_api_list_products_normalizes_invalid_filter_values(authed_client_no_db,
     monkeypatch.setattr(medias, "lang_coverage_by_product", lambda pids: {})
     monkeypatch.setattr(medias, "get_product_covers_batch", lambda pids: {})
 
-    resp = authed_client_no_db.get("/medias/api/products?roas_status=junk&delivery_status=paused")
+    resp = authed_client_no_db.get("/medias/api/products?roas_status=junk&delivery_status=paused&stability_status=bad")
     assert resp.status_code == 200
     assert captured["roas_status"] == "all"
     assert captured["delivery_status"] == "all"
+    assert captured["stability_status"] == "all"
 
 
 def test_products_list_response_includes_product_stability_cache():
@@ -215,9 +244,13 @@ def test_medias_list_html_has_filter_dropdowns():
     assert 'id="filterXmycMatch"' not in html
     assert 'id="filterRoasStatus"' in html
     assert 'id="filterDeliveryStatus"' in html
+    assert 'id="filterStabilityStatus"' in html
     assert "投放中" in html
     assert "终止投放" in html
     assert "未投" in html
+    assert "稳定分级：全部" in html
+    assert "二级稳定品" in html
+    assert "投放未满7天" in html
     assert "数据已完成" in html
     assert "缺失（预估）" in html
     assert "缺失（实际）" in html
@@ -225,9 +258,11 @@ def test_medias_list_html_has_filter_dropdowns():
     assert "filterXmycMatch" not in js
     assert "filterRoasStatus" in js
     assert "filterDeliveryStatus" in js
+    assert "filterStabilityStatus" in js
     assert "xmyc_match" not in js
     assert "roas_status" in js
     assert "delivery_status" in js
+    assert "stability_status" in js
     assert "oc-delivery-pill" in js
     assert "oc-lang-push-zero" in js
     assert "订单ROAS" in js
@@ -248,7 +283,7 @@ def test_medias_toolbar_compacts_actions_and_filters():
     assert 'id="createBtn"' in action_block
     assert "oc-tool-download-btn" in action_block
 
-    assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr 1fr 1.4fr;" in html
+    assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:minmax(180px,1.45fr) repeat(4,minmax(132px,1fr)) minmax(160px,1.15fr) minmax(150px,1.15fr);" in html
     mobile_start = html.index("@media (max-width: 760px)")
     mobile_end = html.index("/* ────────── Buttons", mobile_start)
     mobile_block = html[mobile_start:mobile_end]
@@ -278,7 +313,7 @@ def test_medias_mobile_adaptation_keeps_tables_scrollable_and_aligned():
     mobile_block = html[mobile_start:html.index(".oc-page-tabs {", mobile_start)]
 
     assert "overflow-x:auto !important;" in mobile_block
-    assert "width:2138px !important;" in mobile_block
+    assert "width:2176px !important;" in mobile_block
     assert "width:2120px !important;" in mobile_block
     assert ".oc-table-medias thead,\n  .oc-vm-table thead {\n    display:table-header-group;" in mobile_block
     assert ".oc-table-medias tbody,\n  .oc-vm-table tbody {\n    display:table-row-group;" in mobile_block
