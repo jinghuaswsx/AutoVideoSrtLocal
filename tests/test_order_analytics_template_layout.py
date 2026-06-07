@@ -33,6 +33,10 @@ def _new_product_launch_panel_source() -> str:
     return template[panel_start:panel_end]
 
 
+def _realtime_unmatched_detail_source() -> str:
+    return (ROOT / "web" / "templates" / "realtime_unmatched_detail.html").read_text(encoding="utf-8")
+
+
 def test_realtime_query_button_is_in_date_toolbar_target_area():
     """查询按钮应紧跟自定义日期范围，产品搜索不占用日期工具栏目标位。"""
     panel = _realtime_panel_source()
@@ -280,6 +284,22 @@ def test_realtime_unmatched_scope_card_links_to_detail_pages():
     assert "site_code" in link_block
     assert "product_launch_window_days" in link_block
     assert "product_id" not in link_block
+
+
+def test_realtime_unmatched_detail_uses_mobile_cards_and_product_asset_columns():
+    template = _realtime_unmatched_detail_source()
+
+    assert 'id="rudMobileList"' in template
+    assert ".rud-table-wrap { display: none; }" in template
+    assert ".rud-mobile-fields" in template
+    assert "function productBlock(row)" in template
+    assert "row.product_image_local_url || row.product_image_url" in template
+    assert "row.product_cn_name || row.product_cn_names" in template
+    assert "Gemini 3.1 Flash-Lite" in template
+    assert "+ '<th>商品</th><th>广告账户</th>" in template
+    assert "+ '<th>商品</th><th>广告日</th>" in template
+    assert "function columnCount()" in template
+    assert "return detailType === 'ads' ? 12 : 13;" in template
 
 
 def test_realtime_scope_cards_include_cost_breakdown_and_ratio_targets():

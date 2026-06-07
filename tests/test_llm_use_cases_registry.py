@@ -122,7 +122,7 @@ def test_order_analytics_weekly_ai_analysis_use_case_registered():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 65
+    assert len(USE_CASES) == 66
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -204,6 +204,17 @@ def test_meta_hot_posts_translate_product_title_use_case_is_registered_for_billi
     assert uc["default_model"] == "google/gemini-3.1-flash-lite"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
+
+
+def test_order_analytics_unmatched_title_translate_uses_openrouter_flash_lite():
+    uc = USE_CASES["order_analytics.unmatched_title_translate"]
+
+    assert uc["module"] == "order_analytics"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+    assert MODULE_LABELS["order_analytics"] == "数据分析"
 
 
 def test_shared_copy_translation_use_cases_default_to_openrouter_flash_lite():
