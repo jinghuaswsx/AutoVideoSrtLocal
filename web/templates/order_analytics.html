@@ -3195,6 +3195,49 @@
 
   <div class="oa-table-wrap">
     <div class="oa-table-header">
+      <div class="oa-table-title">补素材建议 · 扩国家</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>产品</th>
+            <th>当前跑得好的国家</th>
+            <th>建议扩展国家</th>
+            <th>阶段</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiSupplementCountryBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">补素材建议 · 优质素材补位</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>产品</th>
+            <th>目标国家</th>
+            <th>素材</th>
+            <th>90天消耗</th>
+            <th>广告数</th>
+            <th>国家 ROAS</th>
+            <th>素材路径</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiSupplementMaterialBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
       <div class="oa-table-title">商品方向</div>
     </div>
     <div class="oa-table-scroll">
@@ -6943,6 +6986,8 @@
       ['weeklyAiStoreBody', 7],
       ['weeklyAiStabilityBody', 10],
       ['weeklyAiProductEvaluationBody', 8],
+      ['weeklyAiSupplementCountryBody', 5],
+      ['weeklyAiSupplementMaterialBody', 8],
       ['weeklyAiProductBody', 7],
       ['weeklyAiAdBody', 8],
       ['weeklyAiLowOrderBody', 7]
@@ -7009,6 +7054,8 @@
       ['weeklyAiStoreBody', 7],
       ['weeklyAiStabilityBody', 10],
       ['weeklyAiProductEvaluationBody', 8],
+      ['weeklyAiSupplementCountryBody', 5],
+      ['weeklyAiSupplementMaterialBody', 8],
       ['weeklyAiProductBody', 7],
       ['weeklyAiAdBody', 8],
       ['weeklyAiLowOrderBody', 7]
@@ -7051,6 +7098,7 @@
     renderWeeklyAiStores(pkg.daily_by_store || {});
     renderWeeklyAiProductStability(pkg.product_stability || {});
     renderWeeklyAiProductEvaluations(data.report || null, pkg);
+    renderWeeklyAiSupplementRecommendations(pkg.product_supplement_recommendations || {}, data.report || null);
     renderWeeklyAiProductActions(data.report || null, pkg.rule_findings || {});
     renderWeeklyAiAdActions(data.report || null, pkg.rule_findings || {});
     renderWeeklyAiLowOrders(pkg.low_order_products || {});
@@ -7279,13 +7327,15 @@
     var counts = (stability || {}).counts || {};
     var buckets = (stability || {}).buckets || {};
     if (summary) {
+      var secondaryCount = Number(counts.secondary_stable || 0) + Number(counts.potential || 0);
       summary.innerHTML =
         statCard('稳定品', counts.stable_total || 0) +
         statCard('7天稳定', counts.stable_7d || 0) +
         statCard('30天稳定', counts.stable_30d || 0) +
-        statCard('潜力品', counts.potential || 0) +
+        statCard('二级稳定品', secondaryCount) +
         statCard('测试品', counts.test || 0) +
-        statCard('已停投', counts.stopped || 0);
+        statCard('已停投', counts.stopped || 0) +
+        statCard('未满7天', counts.insufficient_history || 0);
     }
     if (computed) {
       computed.textContent = stability.computed_at ? ('分级刷新 · ' + formatShortDateTime(stability.computed_at)) : '';
@@ -7294,9 +7344,10 @@
     body.innerHTML = '';
     var bucketDefs = [
       ['稳定品', buckets.stable || []],
-      ['潜力品', buckets.potential || []],
+      ['二级稳定品', (buckets.secondary_stable || []).concat(buckets.potential || [])],
       ['测试品', buckets.test || []],
-      ['已停投', buckets.stopped || []]
+      ['已停投', buckets.stopped || []],
+      ['未满7天', buckets.insufficient_history || []]
     ];
     bucketDefs.forEach(function(group) {
       (group[1] || []).slice(0, group[0] === '稳定品' ? 20 : 10).forEach(function(item) {
@@ -7381,6 +7432,48 @@
         item.status === 'failed' ? '失败' : (Math.max(0, Math.min(100, Number(item.confidence || 0))).toFixed(0) + '%')
       ]);
     });
+  }
+
+  function weeklyAiCountryText(names, codes) {
+    var values = Array.isArray(names) && names.length ? names : (Array.isArray(codes) ? codes : []);
+    return values.length ? values.map(function(value) { return escapeHtml(value); }).join(' / ') : '-';
+  }
+
+  function renderWeeklyAiSupplementRecommendations(supplement, report) {
+    var countryBody = document.getElementById('weeklyAiSupplementCountryBody');
+    var materialBody = document.getElementById('weeklyAiSupplementMaterialBody');
+    var aiSupplement = (report || {}).material_supplement || {};
+    var countryRows = (supplement.country_expansion || aiSupplement.country_expansion || []);
+    var materialRows = (supplement.material_fill || aiSupplement.material_fill || []);
+    if (countryBody) {
+      countryBody.innerHTML = '';
+      countryRows.forEach(function(item) {
+        weeklyAiAppendRow(countryBody, [
+          escapeHtml((item.product_code || '') + (item.product_name ? ' · ' + item.product_name : '')),
+          weeklyAiCountryText(item.current_good_country_names, item.current_good_countries),
+          weeklyAiCountryText(item.recommended_country_names, item.recommended_countries),
+          escapeHtml(item.stage_label || item.stage || ''),
+          escapeHtml(item.reason || '')
+        ]);
+      });
+      if (!countryBody.children.length) countryBody.innerHTML = '<tr><td colspan="5">暂无扩国家建议</td></tr>';
+    }
+    if (materialBody) {
+      materialBody.innerHTML = '';
+      materialRows.forEach(function(item) {
+        weeklyAiAppendRow(materialBody, [
+          escapeHtml((item.product_code || '') + (item.product_name ? ' · ' + item.product_name : '')),
+          escapeHtml(item.target_country_name || item.target_country || ''),
+          escapeHtml(item.material_name || item.material_key || ''),
+          item.spend_90_usd !== undefined ? fmtMoney(item.spend_90_usd) : '-',
+          item.ads_count || 0,
+          fmtRoasValue(item.country_roas),
+          escapeHtml(item.video_path || ''),
+          escapeHtml(item.reason || '')
+        ]);
+      });
+      if (!materialBody.children.length) materialBody.innerHTML = '<tr><td colspan="8">暂无优质素材补位建议</td></tr>';
+    }
   }
 
   function weeklyAiProductRowsFrom(report, findings) {

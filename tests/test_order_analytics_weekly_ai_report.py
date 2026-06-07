@@ -156,15 +156,72 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
                 "stable_total": 1,
                 "stable_7d": 1,
                 "stable_30d": 0,
-                "potential": 1,
+                "secondary_stable": 0,
+                "potential": 0,
                 "test": 1,
                 "stopped": 0,
                 "never": 0,
+                "insufficient_history": 1,
             },
-            "buckets": {"stable": [{"product_code": "P101", "stable_marks": ["7天稳定"]}]},
+            "buckets": {
+                "stable": [{
+                    "product_id": 101,
+                    "product_code": "P101",
+                    "product_name": "Scale Product",
+                    "status": "stable",
+                    "stable_7d": True,
+                    "stable_marks": ["7天稳定"],
+                    "last_7d_orders": 140,
+                    "details": {"delivery_start_date": "2026-05-20"},
+                }],
+                "test": [{
+                    "product_id": 202,
+                    "product_code": "P202",
+                    "product_name": "Low Order Product",
+                    "status": "test",
+                    "last_7d_orders": 1,
+                    "details": {"delivery_start_date": "2026-05-20"},
+                }],
+                "insufficient_history": [{
+                    "product_id": 303,
+                    "product_code": "P303",
+                    "product_name": "New Product",
+                    "status": "insufficient_history",
+                    "last_7d_orders": 20,
+                    "details": {"delivery_start_date": "2026-06-03"},
+                }],
+            },
             "warnings": [],
             "computed_at": "2026-06-07T12:00:00",
         },
+    )
+    monkeypatch.setattr(
+        war,
+        "load_product_lang_ad_summary_cache",
+        lambda pids: {
+            101: {
+                "de": {
+                    "lang": "de",
+                    "active_7d_ad_spend_usd": 20,
+                    "ad_spend_usd": 120,
+                    "ad_roas": 1.8,
+                    "pushed_video_count": 2,
+                    "item_count": 3,
+                    "delivery_status": "active",
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        war,
+        "_load_quality_materials",
+        lambda product_code, limit=5: [{
+            "material_key": "mk-1",
+            "material_name": "Winning English Video",
+            "video_path": "/videos/winning.mp4",
+            "spend_90_usd": 180.0,
+            "ads_count": 6,
+        }],
     )
 
     package = war.build_weekly_data_package(
@@ -183,7 +240,12 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert any(row["product_code"] == "P202" for row in package["low_order_products"]["one_to_two"])
     assert any(row["normalized_campaign_code"] == "P202" for row in package["campaign_rows"])
     assert package["product_stability"]["counts"]["stable_total"] == 1
+    assert package["product_stability"]["counts"]["insufficient_history"] == 1
     assert package["product_stability"]["buckets"]["stable"][0]["product_code"] == "P101"
+    assert package["product_scope"]["evaluated_product_count"] == 2
+    assert package["product_scope"]["excluded_under_7d_count"] == 1
+    assert package["product_supplement_recommendations"]["country_expansion"][0]["product_code"] == "P101"
+    assert package["product_supplement_recommendations"]["material_fill"][0]["material_key"] == "mk-1"
     assert package["rule_findings"]["ads_pause"]
 
 
@@ -252,7 +314,7 @@ def _minimal_product_candidate(product_id=101, product_code="P101"):
     }
 
 
-def test_product_ai_candidates_only_stable_and_potential(monkeypatch):
+def test_product_ai_candidates_only_stable_secondary_stable_and_potential(monkeypatch):
     monkeypatch.setattr(war, "_load_product_ad_summary", lambda product_ids, notes: {})
     monkeypatch.setattr(war, "_load_material_summary_by_lang", lambda product_ids, notes: {})
     monkeypatch.setattr(war, "_load_order_country_distribution", lambda product_ids, week_start, week_end, notes: {})
@@ -264,6 +326,7 @@ def test_product_ai_candidates_only_stable_and_potential(monkeypatch):
     product_stability = {
         "buckets": {
             "stable": [{"product_id": 101, "product_code": "P101", "product_name": "稳定品"}],
+            "secondary_stable": [{"product_id": 151, "product_code": "P151", "product_name": "二级稳定品"}],
             "potential": [{"product_id": 202, "product_code": "P202", "product_name": "潜力品"}],
             "test": [{"product_id": 303, "product_code": "P303", "product_name": "测试品"}],
             "stopped": [{"product_id": 404, "product_code": "P404", "product_name": "已停投"}],
@@ -278,17 +341,19 @@ def test_product_ai_candidates_only_stable_and_potential(monkeypatch):
         week_end=date(2026, 6, 6),
         identity_by_id={
             101: {"id": 101, "product_code": "P101", "name": "稳定品", "main_image": "https://cdn.example/p101.jpg"},
+            151: {"id": 151, "product_code": "P151", "name": "二级稳定品", "main_image": ""},
             202: {"id": 202, "product_code": "P202", "name": "潜力品", "main_image": ""},
         },
         identity_by_code={},
         global_notes=[],
     )
 
-    assert [c["identity"]["product_code"] for c in candidates] == ["P101", "P202"]
+    assert [c["identity"]["product_code"] for c in candidates] == ["P101", "P151", "P202"]
     assert candidates[0]["eligibility"]["status"] == "stable"
-    assert candidates[1]["eligibility"]["status"] == "potential"
+    assert candidates[1]["eligibility"]["status"] == "secondary_stable"
+    assert candidates[2]["eligibility"]["status"] == "potential"
     assert candidates[0]["identity"]["product_main_image_url"] == "https://cdn.example/p101.jpg"
-    assert candidates[1]["identity"]["product_main_image_url"] == "/medias/cover/202?lang=en"
+    assert candidates[2]["identity"]["product_main_image_url"] == "/medias/cover/202?lang=en"
     assert [tier["country_codes"] for tier in candidates[0]["target_country_tiers"]] == [
         ["DE", "FR"],
         ["ES", "IT", "JP"],

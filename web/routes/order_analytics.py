@@ -26,6 +26,7 @@ from appcore import system_audit
 from appcore import weekly_roas_report as wrr
 from appcore.order_analytics import data_quality as dq
 from appcore.order_analytics import manual_ad_spend, order_profit_aggregation
+from appcore.order_analytics import unmatched_details
 from appcore.order_analytics import weekly_ai_report as wai
 
 log = logging.getLogger(__name__)
@@ -384,6 +385,12 @@ def realtime_unmatched_orders_data():
         log.exception("realtime unmatched orders query failed: %s", exc)
         return _json_response(error="internal_error", detail=str(exc)), 500
 
+    rows = unmatched_details.enrich_rows(
+        result.get("order_details") or [],
+        detail_type="orders",
+        user_id=getattr(current_user, "id", None),
+    )
+
     return _json_response(_json_safe({
         "ok": True,
         "type": "orders",
@@ -393,7 +400,7 @@ def realtime_unmatched_orders_data():
         "summary": result.get("summary") or {},
         "order_profit_summary": result.get("order_profit_summary") or {},
         "data_quality": result.get("data_quality"),
-        "rows": result.get("order_details") or [],
+        "rows": rows,
         "page": result.get("order_details_page") or {},
     }))
 
@@ -429,6 +436,11 @@ def realtime_unmatched_ads_data():
         if row.get("allocation_reason") == "unmatched_product"
     ]
     rows, page_info = _slice_page(all_rows, page, page_size)
+    rows = unmatched_details.enrich_rows(
+        rows,
+        detail_type="ads",
+        user_id=getattr(current_user, "id", None),
+    )
     spend_usd = round(sum(float(row.get("spend_usd") or 0) for row in all_rows), 2)
     purchase_value_usd = round(sum(float(row.get("purchase_value_usd") or 0) for row in all_rows), 2)
 

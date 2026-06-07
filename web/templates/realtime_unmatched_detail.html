@@ -139,6 +139,84 @@
     font-size: 12px;
     line-height: 1.35;
   }
+  .rud-product {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    min-width: 260px;
+  }
+  .rud-product-thumb {
+    width: 56px;
+    height: 56px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-muted);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-muted);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .rud-product-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .rud-product-name {
+    color: var(--fg);
+    font-weight: 800;
+    line-height: 1.35;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .rud-product-title {
+    margin-top: 3px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .rud-product-code {
+    margin-top: 4px;
+    color: var(--fg-muted);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .rud-mobile-list {
+    display: none;
+  }
+  .rud-mobile-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+    padding: 12px;
+  }
+  .rud-mobile-fields {
+    display: grid;
+    grid-template-columns: minmax(92px, 35%) minmax(0, 1fr);
+    gap: 8px 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .rud-mobile-label {
+    color: var(--fg-muted);
+    font-weight: 700;
+  }
+  .rud-mobile-value {
+    color: var(--fg);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .rud-mobile-value.rud-num {
+    text-align: left;
+  }
   .rud-pagination {
     display: flex;
     align-items: center;
@@ -165,7 +243,20 @@
     .rud-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .rud-kpi { padding: 12px; }
     .rud-kpi-value { font-size: 20px; }
-    .rud-back, .rud-refresh { width: 100%; }
+    .rud-toolbar {
+      align-items: stretch;
+    }
+    .rud-pagination {
+      width: 100%;
+      justify-content: space-between;
+    }
+    .rud-refresh { width: 100%; }
+    .rud-table-wrap { display: none; }
+    .rud-mobile-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
   }
 </style>
 {% endblock %}
@@ -213,6 +304,7 @@
       </tbody>
     </table>
   </div>
+  <div class="rud-mobile-list" id="rudMobileList" aria-live="polite"></div>
 </section>
 {% endblock %}
 
@@ -261,6 +353,61 @@
   function fmtDateTime(value) {
     if (!value) return '-';
     return String(value).replace('T', ' ').slice(0, 16);
+  }
+
+  function columnCount() {
+    return detailType === 'ads' ? 12 : 13;
+  }
+
+  function mediaSrc(value) {
+    var text = String(value || '').trim();
+    if (!text) return '';
+    if (text.indexOf('/medias/object?') === 0) return text;
+    if (/^https?:\/\//i.test(text)) return text;
+    return '';
+  }
+
+  function sourceLabel(value) {
+    if (value === 'gemini_3_1_flash_lite') return 'Gemini 3.1 Flash-Lite';
+    if (value === 'dianxiaomi_product_assets') return '店小秘资产';
+    if (value === 'product_name_dictionary') return '名称字典';
+    if (value === 'media_products') return '素材库';
+    if (value === 'source_title') return '原始标题';
+    return '';
+  }
+
+  function productName(row) {
+    return row.product_cn_name || row.product_cn_names || '';
+  }
+
+  function productTitle(row) {
+    return row.product_title || row.product_names || row.campaign_name || row.normalized_campaign_code || '';
+  }
+
+  function productCode(row) {
+    return row.product_code_hint || row.normalized_campaign_code || row.skus || row.product_ids || '';
+  }
+
+  function productBlock(row) {
+    var image = mediaSrc(row.product_image_local_url || row.product_image_url || '');
+    var name = productName(row);
+    var title = productTitle(row);
+    var code = productCode(row);
+    var source = sourceLabel(row.product_title_zh_source);
+    var primary = name || title || code || '-';
+    var titleLine = title && title !== primary
+      ? '<div class="rud-product-title">' + esc(title) + '</div>'
+      : '';
+    var codeLine = code
+      ? '<div class="rud-product-code">' + esc(code) + (source ? ' · ' + esc(source) : '') + '</div>'
+      : (source ? '<div class="rud-product-code">' + esc(source) + '</div>' : '');
+    var thumb = image
+      ? '<img src="' + esc(image) + '" alt="">'
+      : '无图';
+    return '<div class="rud-product">'
+      + '<div class="rud-product-thumb">' + thumb + '</div>'
+      + '<div><div class="rud-product-name">' + esc(primary) + '</div>' + titleLine + codeLine + '</div>'
+      + '</div>';
   }
 
   function dateLabel(period) {
@@ -326,7 +473,7 @@
     if (!thead) return;
     if (detailType === 'ads') {
       thead.innerHTML = '<tr>'
-        + '<th>广告账户</th><th>Campaign</th><th>匹配状态</th>'
+        + '<th>商品</th><th>广告账户</th><th>Campaign</th><th>匹配状态</th>'
         + '<th class="rud-num">消耗</th><th class="rud-num">购买价值</th><th class="rud-num">Meta ROAS</th>'
         + '<th class="rud-num">成效数</th><th class="rud-num">展示</th><th class="rud-num">点击</th>'
         + '<th>Campaign ID</th><th>标准化代码</th>'
@@ -334,23 +481,78 @@
       return;
     }
     thead.innerHTML = '<tr>'
-      + '<th>广告日</th><th>订单时间</th><th>店铺</th><th>包裹号</th><th>订单号</th><th>国家</th>'
-      + '<th>商品</th><th>SKU</th><th>产品 ID</th>'
+      + '<th>商品</th><th>广告日</th><th>订单时间</th><th>店铺</th><th>包裹号</th><th>订单号</th><th>国家</th>'
+      + '<th>SKU</th><th>产品 ID</th>'
       + '<th class="rud-num">件数</th><th class="rud-num">商品销售额</th><th class="rud-num">运费</th><th class="rud-num">总销售额</th>'
       + '</tr>';
   }
 
-  function renderRows(rows) {
-    var tbody = document.getElementById('rudTbody');
-    if (!tbody) return;
+  function mobileField(label, value, className) {
+    return '<div class="rud-mobile-label">' + esc(label) + '</div>'
+      + '<div class="rud-mobile-value ' + esc(className || '') + '">' + esc(value || '-') + '</div>';
+  }
+
+  function renderMobileRows(rows) {
+    var list = document.getElementById('rudMobileList');
+    if (!list) return;
     rows = rows || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="' + (detailType === 'ads' ? '11' : '13') + '">暂无数据</td></tr>';
+      list.innerHTML = '<div class="rud-mobile-card">暂无数据</div>';
+      return;
+    }
+    list.innerHTML = rows.map(function(row) {
+      var fields;
+      if (detailType === 'ads') {
+        fields = [
+          ['广告账户', row.ad_account_name || row.ad_account_id || '-'],
+          ['Campaign', row.campaign_name || row.normalized_campaign_code || '-'],
+          ['匹配状态', '未匹配产品'],
+          ['消耗', fmtMoney(row.spend_usd), 'rud-num'],
+          ['购买价值', fmtMoney(row.purchase_value_usd), 'rud-num'],
+          ['Meta ROAS', fmtRoas(campaignRoas(row)), 'rud-num'],
+          ['成效数', fmtInt(row.result_count), 'rud-num'],
+          ['展示', fmtInt(row.impressions), 'rud-num'],
+          ['点击', fmtInt(row.clicks), 'rud-num'],
+          ['Campaign ID', row.campaign_id || '-'],
+          ['标准化代码', row.normalized_campaign_code || '-']
+        ];
+      } else {
+        fields = [
+          ['广告日', row.meta_business_date || state.periodDate || '-'],
+          ['订单时间', fmtDateTime(row.order_time)],
+          ['店铺', row.site_code || '-'],
+          ['包裹号', row.package_number || row.dxm_package_id || '-'],
+          ['订单号', row.dxm_order_id || '-'],
+          ['国家', row.buyer_country_name || row.buyer_country || '-'],
+          ['SKU', row.skus || '-'],
+          ['产品 ID', row.product_ids || '-'],
+          ['件数', fmtInt(row.units), 'rud-num'],
+          ['商品销售额', fmtMoney(row.product_revenue), 'rud-num'],
+          ['运费', fmtMoney(row.shipping_revenue), 'rud-num'],
+          ['总销售额', fmtMoney(row.total_revenue), 'rud-num']
+        ];
+      }
+      return '<article class="rud-mobile-card">'
+        + productBlock(row)
+        + '<div class="rud-mobile-fields">'
+        + fields.map(function(field) { return mobileField(field[0], field[1], field[2]); }).join('')
+        + '</div></article>';
+    }).join('');
+  }
+
+  function renderRows(rows) {
+    var tbody = document.getElementById('rudTbody');
+    rows = rows || [];
+    renderMobileRows(rows);
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="' + columnCount() + '">暂无数据</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(function(row) {
       if (detailType === 'ads') {
         return '<tr>'
+          + '<td class="rud-wrap">' + productBlock(row) + '</td>'
           + '<td>' + esc(row.ad_account_name || row.ad_account_id || '-') + '</td>'
           + '<td class="rud-wrap"><strong>' + esc(row.campaign_name || row.normalized_campaign_code || '-') + '</strong></td>'
           + '<td>未匹配产品</td>'
@@ -365,13 +567,13 @@
           + '</tr>';
       }
       return '<tr>'
+        + '<td class="rud-wrap">' + productBlock(row) + '</td>'
         + '<td>' + esc(row.meta_business_date || state.periodDate || '-') + '</td>'
         + '<td>' + esc(fmtDateTime(row.order_time)) + '</td>'
         + '<td>' + esc(row.site_code || '-') + '</td>'
         + '<td>' + esc(row.package_number || row.dxm_package_id || '-') + '</td>'
         + '<td>' + esc(row.dxm_order_id || '-') + '</td>'
         + '<td>' + esc(row.buyer_country_name || row.buyer_country || '-') + '</td>'
-        + '<td class="rud-wrap"><strong>' + esc(row.product_names || '-') + '</strong><div class="rud-muted">' + esc(row.product_cn_names || '') + '</div></td>'
         + '<td class="rud-wrap">' + esc(row.skus || '-') + '</td>'
         + '<td>' + esc(row.product_ids || '-') + '</td>'
         + '<td class="rud-num">' + esc(fmtInt(row.units)) + '</td>'
@@ -419,7 +621,9 @@
   function loadData() {
     setText('rudStatus', '加载中...');
     var tbody = document.getElementById('rudTbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="' + (detailType === 'ads' ? '11' : '13') + '">加载中...</td></tr>';
+    var mobileList = document.getElementById('rudMobileList');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="' + columnCount() + '">加载中...</td></tr>';
+    if (mobileList) mobileList.innerHTML = '<div class="rud-mobile-card">加载中...</div>';
     fetch(endpoint + '?' + queryParams().toString(), { credentials: 'same-origin' })
       .then(function(response) {
         return response.json().then(function(payload) {
@@ -436,7 +640,8 @@
       })
       .catch(function(err) {
         setText('rudStatus', '加载失败：' + (err.message || '查询失败'));
-        if (tbody) tbody.innerHTML = '<tr><td colspan="' + (detailType === 'ads' ? '11' : '13') + '">' + esc(err.message || '查询失败') + '</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="' + columnCount() + '">' + esc(err.message || '查询失败') + '</td></tr>';
+        if (mobileList) mobileList.innerHTML = '<div class="rud-mobile-card">' + esc(err.message || '查询失败') + '</div>';
       });
   }
 

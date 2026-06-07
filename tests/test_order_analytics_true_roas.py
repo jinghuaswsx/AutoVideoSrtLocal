@@ -2170,6 +2170,7 @@ def test_realtime_unmatched_detail_pages_render_and_require_login(authed_client_
 
 def test_realtime_unmatched_orders_data_forwards_unmatched_scope(authed_client_no_db, monkeypatch):
     captured = {}
+    enrich_calls = []
 
     def fake_overview(date_text=None, **kwargs):
         captured["date_text"] = date_text
@@ -2195,7 +2196,19 @@ def test_realtime_unmatched_orders_data_forwards_unmatched_scope(authed_client_n
             "campaigns": [],
         }
 
+    def fake_enrich_rows(rows, **kwargs):
+        enrich_calls.append((rows, kwargs))
+        return [
+            {
+                **rows[0],
+                "product_cn_name": "便携灯",
+                "product_image_url": "https://cdn.example.com/lamp.jpg",
+                "product_title_zh_source": "gemini_3_1_flash_lite",
+            }
+        ]
+
     monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr("web.routes.order_analytics.unmatched_details.enrich_rows", fake_enrich_rows)
     monkeypatch.setattr(
         "web.routes.order_analytics.dq.build_for_realtime_overview",
         lambda **kwargs: {"status": "ok", "source_mode": kwargs.get("source_mode")},
@@ -2221,12 +2234,24 @@ def test_realtime_unmatched_orders_data_forwards_unmatched_scope(authed_client_n
     assert captured["page_size"] == 1
     payload = response.get_json()
     assert payload["type"] == "orders"
-    assert payload["rows"] == [{"dxm_package_id": "PKG-1", "product_ids": None}]
+    assert payload["rows"] == [
+        {
+            "dxm_package_id": "PKG-1",
+            "product_ids": None,
+            "product_cn_name": "便携灯",
+            "product_image_url": "https://cdn.example.com/lamp.jpg",
+            "product_title_zh_source": "gemini_3_1_flash_lite",
+        }
+    ]
+    assert enrich_calls[0][0] == [{"dxm_package_id": "PKG-1", "product_ids": None}]
+    assert enrich_calls[0][1]["detail_type"] == "orders"
+    assert "user_id" in enrich_calls[0][1]
     assert payload["page"]["total"] == 1
 
 
 def test_realtime_unmatched_ads_data_filters_matched_no_units(authed_client_no_db, monkeypatch):
     captured = {}
+    enrich_calls = []
 
     def fake_overview(date_text=None, **kwargs):
         captured["date_text"] = date_text
@@ -2258,7 +2283,19 @@ def test_realtime_unmatched_ads_data_filters_matched_no_units(authed_client_no_d
             ],
         }
 
+    def fake_enrich_rows(rows, **kwargs):
+        enrich_calls.append((rows, kwargs))
+        return [
+            {
+                **row,
+                "product_cn_name": "未知商品",
+                "product_image_url": "https://cdn.example.com/unknown.jpg",
+            }
+            for row in rows
+        ]
+
     monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr("web.routes.order_analytics.unmatched_details.enrich_rows", fake_enrich_rows)
     monkeypatch.setattr(
         "web.routes.order_analytics.dq.build_for_realtime_overview",
         lambda **kwargs: {"status": "ok", "source_mode": kwargs.get("source_mode")},
@@ -2279,6 +2316,16 @@ def test_realtime_unmatched_ads_data_filters_matched_no_units(authed_client_no_d
     assert payload["summary"]["count"] == 1
     assert payload["summary"]["spend_usd"] == 12.34
     assert [row["campaign_name"] for row in payload["rows"]] == ["unknown-product"]
+    assert payload["rows"][0]["product_cn_name"] == "未知商品"
+    assert enrich_calls[0][0] == [
+        {
+            "campaign_name": "unknown-product",
+            "allocation_reason": "unmatched_product",
+            "spend_usd": 12.34,
+            "purchase_value_usd": 56.78,
+        }
+    ]
+    assert enrich_calls[0][1]["detail_type"] == "ads"
 
 
 # ── 前端模板回归 ─────────────────────────────────────────

@@ -82,7 +82,7 @@ list_recent_reports(limit: int = 12) -> list[dict]
 默认模型：
 
 - provider：`openrouter`
-- model：`google/gemini-3-flash-preview`
+- model：`google/gemini-flash-1.5`（OpenRouter Gemini 1.5 Flash，2026-06-07 核对 model slug）
 - usage service：`openrouter`
 - units：`tokens`
 
@@ -104,6 +104,10 @@ AI 必须输出 JSON：
     "increase": [{"campaign": "...", "reason": "...", "action": "..."}],
     "reduce": [{"campaign": "...", "reason": "...", "action": "..."}],
     "pause": [{"campaign": "...", "reason": "...", "action": "..."}]
+  },
+  "material_supplement": {
+    "country_expansion": [{"product_code": "...", "current_good_countries": ["DE"], "recommended_countries": ["FR"], "reason": "..."}],
+    "material_fill": [{"product_code": "...", "target_country": "DE", "material_name": "...", "reason": "..."}]
   },
   "risk_flags": [{"level": "info|warning|error", "message": "..."}],
   "executive_summary": ["中文要点"]
@@ -177,14 +181,19 @@ AI 必须输出 JSON：
 
 ### 分级规则
 
+- 产品评估范围：
+  - 只评估投放数据满 7 天的产品。投放起始时间从 `media_product_ad_summary_cache.delivery_start_time` 取值，判断时统一截断到自然日，不考虑小时和分钟。
+  - 起始日按第 1 天计入。例如 2026-06-01 14:00 开始投放，视为 2026-06-01 00:00 开始；到 2026-06-07 这天算满 7 天。
+  - 未满 7 天但已有广告数据的产品进入 `投放未满7天` 缓存状态；周报的商品方向、广告动作、稳定分级和补素材建议均不把它作为经营评估样本。
 - 稳定品：
   - `7天稳定`：仍在投放，并满足以下任一条件：
     - 最近 7 个业务日每天至少 10 单，且 7 天累计不少于 140 单。
     - 最近 7 个业务日累计不少于 210 单。
   - `30天稳定`：仍在投放，最近 30 个业务日每天至少 10 单，且累计不少于 600 单。
   - 同时满足 7 天和 30 天时两个细分标记都保留。
-- 潜力品：仍在投放或有广告数据，未达到稳定品，但最近 7 天日均不少于 5 单；其中日均超过 10 单但波动未达稳定条件的产品仍归入潜力品，并在明细中显示最低日单量。
-- 测试品：仍在投放或有广告数据，未达到稳定品 / 潜力品，最近 7 天日均低于 5 单。
+- 二级稳定品（潜力稳定品）：先判断稳定品；如果未达到稳定品，但仍在投放、已满 7 天、最近 7 个业务日每天至少 5 单，且最近 7 天日均超过 10 单，则归入二级稳定品，并在明细中显示最低日单量。
+- 潜力品：历史兼容口径，报告展示和统计以 `二级稳定品` 为准，不再把普通日均 5 单以上产品单独标为潜力品。
+- 测试品：仍在投放或有广告数据，已满 7 天但未达到稳定品 / 二级稳定品。
 - 已停投：历史有广告消耗，但 `media_product_ad_summary_cache.delivery_status = stopped`。
 - 未投放：无广告消耗且 `delivery_status = never`，只进入后台统计，不作为重点经营表默认展示。
 
@@ -192,8 +201,8 @@ AI 必须输出 JSON：
 
 - `素材管理` 增加 `稳定分级` 列；当前只对稳定品展示标签：`稳定品` + `7天稳定` / `30天稳定`。潜力品、测试品和已停投暂不打前端标签，避免列表噪声。
 - `每周 AI 分析` 增加 `稳定产品分级` 可视化区：
-  - 汇总稳定品总数、7 天稳定数、30 天稳定数、潜力品数、测试品数、已停投数。
-  - 明细表展示头部稳定品和潜力品的产品、7 天 / 30 天订单、日均、最低日单量、ROAS、投放状态。
+  - 汇总稳定品总数、7 天稳定数、30 天稳定数、二级稳定品数、测试品数、已停投数、投放未满 7 天数。
+  - 明细表展示头部稳定品和二级稳定品的产品、7 天 / 30 天订单、日均、最低日单量、ROAS、投放状态。
   - 这部分进入 LLM prompt，辅助商品方向和素材补充建议。
 
 ## 稳定 / 潜力品逐产品 AI 推进评估（2026-06-07 追加）
@@ -202,7 +211,7 @@ AI 必须输出 JSON：
 
 ### 评估对象
 
-- 只读取 `product_stability.buckets.stable` 和 `product_stability.buckets.potential`。
+- 只读取 `product_stability.buckets.stable`、`product_stability.buckets.secondary_stable` 和历史兼容的 `product_stability.buckets.potential`。
 - `测试品`、`已停投`、`未投放` 不进入逐产品 Gemini 调用；它们仍可在稳定分级表展示，但不产生逐产品 AI 推进建议。
 - 候选产品由后端从稳定分级缓存生成，按稳定品优先、近 7 天订单和近 30 天订单降序排序；每条候选产品一次 LLM 调用。
 - 如果稳定分级缓存不可用或候选为空，周报整体 AI 仍可生成，逐产品建议区显示空态，不让周报失败。
@@ -340,6 +349,31 @@ AI 必须输出 JSON：
 - 后端：`generate_ai_report` 在整体周报 JSON 成功后附加 `product_action_evaluations`，单产品失败不影响整体成功。
 - use case：`order_analytics.weekly_product_action_evaluation` 注册为 OpenRouter `google/gemini-3.5-flash`。
 - 前端：稳定分级表包含产品主图列、复制按钮、素材管理搜索链接；AI 推进建议表存在并能渲染空态。
+
+## 补素材建议（2026-06-07 追加）
+
+用户追加要求：周报里的商品方向需要明确告诉运营“哪些产品、哪些国家、补哪个英语素材”。补素材只针对跑得还可以、且已满足投放满 7 天评估范围的产品。
+
+### 国家扩展
+
+- 候选产品：稳定品和二级稳定品优先；测试品默认不进入国家扩展建议。
+- 当前表现好的国家 / 语种：读取 `media_product_lang_ad_summary_cache`，优先看近 7 天仍有消耗、ROAS 不差、推送视频数或素材数已形成投放记录的语种。
+- 扩国家阶梯：
+  - 第一阶段：德国 `DE`、法国 `FR`。
+  - 第二阶段：西班牙 `ES`、意大利 `IT`、日本 `JP`。
+  - 第三阶段：葡萄牙 `PT`、荷兰 `NL`、瑞典 `SE`。
+- 规则：如果当前只有少量国家在跑且产品表现不错，先补齐第一阶段；第一阶段都跑得不错后，再补第二阶段；第一阶段和第二阶段都跑得不错后，再补第三阶段。周报必须展示当前已跑好的国家和下一步建议国家。
+
+### 优质素材补位
+
+- 只考虑英语版素材源，运营后续自行本土化翻译。
+- 素材源：优先使用本地明控快照 `mingkong_material_daily_snapshots` 中该产品最新成功同步的素材；按 `cumulative_90_spend` 和 `video_ads_count` 判断素材质量。
+- 建议对象：当产品在某国家 / 语种跑得好，同时明控素材存在高 90 天消耗或广告数足够多的视频时，报告输出：
+  - 产品。
+  - 目标国家 / 语种。
+  - 建议补投的英语素材名称 / 路径 / material key。
+  - 素材 90 天消耗、广告数、建议原因。
+- 页面新增 `补素材建议` 可视化区，分成 `扩国家` 和 `补素材` 两张表。AI prompt 同步携带这部分确定性建议，AI 可以补充解释，但不能编造不存在的素材。
 
 ## 定时任务
 

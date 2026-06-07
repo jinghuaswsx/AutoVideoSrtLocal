@@ -3073,7 +3073,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   min-height:calc(100vh - 112px);
 }
 
-/* ── 移动端适配（素材管理列表卡片化） ── */
+/* ── 移动端适配（保留表格结构，横向滑动查看） ── */
 /* Docs-anchor: docs/superpowers/specs/2026-06-07-medias-mobile-adaptation-design.md */
 @media (max-width: 768px) {
   .main-wrap {
@@ -3180,284 +3180,42 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
     min-height:38px;
   }
   .oc-list {
-    overflow-x:hidden !important;
+    overflow:auto !important;
+    overflow-x:auto !important;
+    overflow-y:auto !important;
   }
   #grid,
   #vmList {
     width:100% !important;
+    min-width:0;
   }
-  .oc-table-medias,
+  .oc-table-medias {
+    width:2138px !important;
+    min-width:2138px !important;
+    table-layout:fixed;
+  }
   .oc-vm-table {
-    display:block;
-    width:100% !important;
-    min-width:0 !important;
-    border:0;
-    border-radius:0;
-    background:transparent;
-    overflow:visible;
+    width:2120px !important;
+    min-width:2120px !important;
+    table-layout:fixed;
   }
-  .oc-table-medias colgroup,
   .oc-table-medias thead,
-  .oc-vm-table colgroup,
   .oc-vm-table thead {
-    display:none;
+    display:table-header-group;
   }
   .oc-table-medias tbody,
   .oc-vm-table tbody {
-    display:grid;
-    gap:var(--oc-sp-3);
+    display:table-row-group;
   }
-  .oc-table-medias tbody tr,
-  .oc-vm-table tbody tr {
-    display:grid;
-    position:relative;
-    gap:var(--oc-sp-2);
-    width:100%;
-    padding:var(--oc-sp-3);
-    border:1px solid var(--oc-border);
-    border-radius:var(--oc-r-lg);
-    background:var(--oc-bg);
+  .oc-table-medias tr,
+  .oc-vm-table tr {
+    display:table-row;
   }
-  .oc-table-medias tbody td,
-  .oc-vm-table tbody td {
-    min-width:0;
-    width:auto;
-    padding:0 !important;
-    border-bottom:0 !important;
-    text-align:left !important;
-    vertical-align:top !important;
-  }
-  .oc-table-medias tbody td::before,
-  .oc-vm-table tbody td::before {
-    color:var(--oc-fg-subtle);
-    font-size:11px;
-    font-weight:600;
-    line-height:1.25;
-    white-space:nowrap;
-  }
-  .oc-table-medias tbody tr {
-    grid-template-columns:86px minmax(0, 1fr);
-    grid-template-areas:
-      "cover info"
-      "id info"
-      "source sku"
-      "listing owner"
-      "count ai"
-      "lang lang"
-      "orders orders"
-      "delivery delivery"
-      "time time"
-      "push push"
-      "actions actions";
-  }
-  .oc-table-medias tbody td:nth-child(1) { grid-area:id; }
-  .oc-table-medias tbody td:nth-child(2) { grid-area:cover; }
-  .oc-table-medias tbody td:nth-child(3) { grid-area:info; }
-  .oc-table-medias tbody td:nth-child(4) { grid-area:source; }
-  .oc-table-medias tbody td:nth-child(5) { grid-area:sku; }
-  .oc-table-medias tbody td:nth-child(6) { grid-area:ai; }
-  .oc-table-medias tbody td:nth-child(7) { grid-area:listing; }
-  .oc-table-medias tbody td:nth-child(8) { grid-area:owner; }
-  .oc-table-medias tbody td:nth-child(9) { grid-area:count; }
-  .oc-table-medias tbody td:nth-child(10) { grid-area:lang; }
-  .oc-table-medias tbody td:nth-child(11) { grid-area:orders; }
-  .oc-table-medias tbody td:nth-child(12) { grid-area:delivery; }
-  .oc-table-medias tbody td:nth-child(13) { grid-area:time; }
-  .oc-table-medias tbody td:nth-child(14) { grid-area:push; }
-  .oc-table-medias tbody td:nth-child(15) { grid-area:actions; }
-  .oc-table-medias tbody td:nth-child(1),
-  .oc-table-medias tbody td:nth-child(4),
-  .oc-table-medias tbody td:nth-child(5),
-  .oc-table-medias tbody td:nth-child(7),
-  .oc-table-medias tbody td:nth-child(8),
-  .oc-table-medias tbody td:nth-child(9),
-  .oc-table-medias tbody td:nth-child(12),
-  .oc-table-medias tbody td:nth-child(13) {
-    display:grid !important;
-    grid-template-columns:58px minmax(0, 1fr);
-    align-items:center;
-    gap:var(--oc-sp-2);
-    min-height:28px;
-  }
-  .oc-table-medias tbody td:nth-child(6),
-  .oc-table-medias tbody td:nth-child(10),
-  .oc-table-medias tbody td:nth-child(11),
-  .oc-table-medias tbody td:nth-child(14),
-  .oc-table-medias tbody td:nth-child(15) {
-    display:block !important;
-  }
-  .oc-table-medias tbody td:nth-child(1)::before { content:"ID"; }
-  .oc-table-medias tbody td:nth-child(4)::before { content:"来源"; }
-  .oc-table-medias tbody td:nth-child(5)::before { content:"SKU"; }
-  .oc-table-medias tbody td:nth-child(6)::before { content:"AI评估"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-table-medias tbody td:nth-child(7)::before { content:"上架"; }
-  .oc-table-medias tbody td:nth-child(8)::before { content:"负责人"; }
-  .oc-table-medias tbody td:nth-child(9)::before { content:"素材数"; }
-  .oc-table-medias tbody td:nth-child(10)::before { content:"语种和投放情况"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-table-medias tbody td:nth-child(11)::before { content:"单量情况"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-table-medias tbody td:nth-child(12)::before { content:"投放"; }
-  .oc-table-medias tbody td:nth-child(13)::before { content:"时间"; }
-  .oc-table-medias tbody td:nth-child(14)::before { content:"投放推送"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-table-medias .oc-thumb-sm {
-    width:86px;
-    height:86px;
-  }
-  .oc-table-medias .product-info-cell {
-    gap:2px;
-  }
-  .oc-table-medias .prod-info-line {
-    align-items:flex-start !important;
-    margin-bottom:3px !important;
-  }
-  .oc-table-medias .prod-info-val,
-  .oc-table-medias .shopify-title-main,
-  .oc-table-medias .oc-product-id-main {
-    max-width:100% !important;
-    white-space:normal !important;
-    overflow-wrap:anywhere;
-    word-break:break-word;
-  }
-  .oc-table-medias .ai-eval-cell {
-    align-items:flex-start !important;
-    text-align:left !important;
-  }
-  .oc-table-medias .ai-result-text {
-    white-space:normal !important;
-  }
-  .oc-lang-summary,
-  .oc-lang-line {
-    grid-template-columns:minmax(54px, 1fr) minmax(42px, auto) minmax(112px, 140px);
-    gap:4px;
-  }
-  .oc-order-stats-summary,
-  .oc-order-stats-line {
-    grid-template-columns:minmax(48px, 58px) minmax(0, 1fr);
-  }
-  .oc-order-stats-values {
-    grid-template-columns:repeat(2, max-content);
-    gap:6px 12px;
-  }
-  .product-push-actions {
-    display:grid;
-    grid-template-columns:repeat(2, minmax(0, 1fr));
-    align-items:stretch;
-  }
-  .product-push-actions .oc-btn {
-    width:100%;
-  }
-  .oc-table-medias td.actions {
-    min-width:0;
-  }
-  .oc-row-actions {
-    grid-template-columns:repeat(2, minmax(0, 1fr));
-    justify-content:stretch;
-  }
-  .oc-row-actions > .oc-btn,
-  .oc-row-actions > .bt-row-btn {
-    width:100%;
-    min-width:0;
-    min-height:34px;
-  }
-  .oc-vm-table tbody tr {
-    grid-template-columns:106px minmax(0, 1fr);
-    grid-template-areas:
-      "preview product"
-      "preview material"
-      "pid lang"
-      "plan plan"
-      "spend spend"
-      "roas country"
-      "binding binding"
-      "size created"
-      "actions actions";
-  }
-  .oc-vm-table tbody td:nth-child(1) { grid-area:preview; }
-  .oc-vm-table tbody td:nth-child(2) { grid-area:pid; }
-  .oc-vm-table tbody td:nth-child(3) { grid-area:product; }
-  .oc-vm-table tbody td:nth-child(4) { grid-area:material; }
-  .oc-vm-table tbody td:nth-child(5) { grid-area:lang; }
-  .oc-vm-table tbody td:nth-child(6) { grid-area:plan; }
-  .oc-vm-table tbody td:nth-child(7) { grid-area:spend; }
-  .oc-vm-table tbody td:nth-child(8) { grid-area:roas; }
-  .oc-vm-table tbody td:nth-child(9) { grid-area:country; }
-  .oc-vm-table tbody td:nth-child(10) { grid-area:binding; }
-  .oc-vm-table tbody td:nth-child(11) { grid-area:size; }
-  .oc-vm-table tbody td:nth-child(12) { grid-area:created; }
-  .oc-vm-table tbody td:nth-child(13) { grid-area:actions; }
-  .oc-vm-table tbody td:nth-child(2),
-  .oc-vm-table tbody td:nth-child(5),
-  .oc-vm-table tbody td:nth-child(8),
-  .oc-vm-table tbody td:nth-child(9),
-  .oc-vm-table tbody td:nth-child(11),
-  .oc-vm-table tbody td:nth-child(12) {
-    display:grid !important;
-    grid-template-columns:52px minmax(0, 1fr);
-    align-items:center;
-    gap:var(--oc-sp-2);
-    min-height:28px;
-  }
-  .oc-vm-table tbody td:nth-child(3),
-  .oc-vm-table tbody td:nth-child(4),
-  .oc-vm-table tbody td:nth-child(6),
-  .oc-vm-table tbody td:nth-child(7),
-  .oc-vm-table tbody td:nth-child(10),
-  .oc-vm-table tbody td:nth-child(13) {
-    display:block !important;
-  }
-  .oc-vm-table tbody td:nth-child(2)::before { content:"产品ID"; }
-  .oc-vm-table tbody td:nth-child(3)::before { content:"产品"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-vm-table tbody td:nth-child(4)::before { content:"素材"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-vm-table tbody td:nth-child(5)::before { content:"语种"; }
-  .oc-vm-table tbody td:nth-child(6)::before { content:"广告计划"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-vm-table tbody td:nth-child(7)::before { content:"广告表现"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-vm-table tbody td:nth-child(8)::before { content:"ROAS"; }
-  .oc-vm-table tbody td:nth-child(9)::before { content:"国家"; }
-  .oc-vm-table tbody td:nth-child(10)::before { content:"明空绑定"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-vm-table tbody td:nth-child(11)::before { content:"大小"; }
-  .oc-vm-table tbody td:nth-child(12)::before { content:"创建"; }
-  .oc-vm-table tbody td:nth-child(13)::before { content:"操作"; display:block; margin-bottom:var(--oc-sp-1); }
-  .oc-vm-preview,
-  .oc-vm-preview > img,
-  .oc-vm-preview > span,
-  .oc-vm-preview-btn {
-    width:106px !important;
-    height:188px !important;
-  }
-  .oc-vm-play {
-    width:42px;
-    height:42px;
-  }
-  .oc-vm-play::before {
-    left:17px;
-    top:13px;
-    border-top-width:8px;
-    border-bottom-width:8px;
-    border-left-width:13px;
-  }
-  .oc-vm-spend-table {
-    grid-template-columns:50px repeat(5, minmax(38px, 1fr));
-    column-gap:4px;
-    row-gap:3px;
-  }
-  .oc-vm-spend-corner,
-  .oc-vm-spend-label,
-  .oc-vm-spend-head {
-    font-size:10px;
-  }
-  .oc-vm-spend-value {
-    font-size:11px;
-  }
-  .oc-vm-country-row {
-    grid-template-columns:minmax(44px, 60px) minmax(0, 1fr);
-  }
-  .oc-vm-country-values {
-    grid-template-columns:1fr;
-    gap:2px;
-  }
-  .oc-vm-table td.actions .oc-btn {
-    width:100%;
-    justify-content:center;
-    min-height:34px;
+  .oc-table-medias th,
+  .oc-table-medias td,
+  .oc-vm-table th,
+  .oc-vm-table td {
+    display:table-cell;
   }
 }
 
