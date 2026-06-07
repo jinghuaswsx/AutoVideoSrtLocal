@@ -11,6 +11,7 @@ from appcore import (
     medias,
     media_product_ad_status_cache,
     media_product_order_stats,
+    media_product_stability,
     product_roas,
     sku_actual_roas,
 )
@@ -56,6 +57,7 @@ def build_products_list_response(
     get_product_ad_summary_cache_fn=None,
     get_product_lang_ad_summary_cache_fn=None,
     get_product_order_stats_fn=None,
+    get_product_stability_cache_fn=None,
     serialize_product_fn: SerializeProductFn | None = None,
 ) -> dict:
     list_products_fn = list_products_fn or medias.list_products
@@ -92,6 +94,10 @@ def build_products_list_response(
     get_product_order_stats_fn = (
         get_product_order_stats_fn
         or media_product_order_stats.get_product_order_stats
+    )
+    get_product_stability_cache_fn = (
+        get_product_stability_cache_fn
+        or media_product_stability.get_product_stability_cache
     )
 
     keyword = str(_request_arg(args, "keyword", "") or "").strip()
@@ -132,6 +138,7 @@ def build_products_list_response(
     ad_summary_map = get_product_ad_summary_cache_fn(pids)
     lang_ad_summary_map = get_product_lang_ad_summary_cache_fn(pids)
     order_stats_map = get_product_order_stats_fn(pids)
+    stability_map = get_product_stability_cache_fn(pids)
     skus_map = list_product_skus_batch_fn(pids)
     all_dxm_skus = sorted({
         (sku.get("dianxiaomi_sku") or "").strip()
@@ -154,6 +161,7 @@ def build_products_list_response(
             ad_summary=ad_summary_map.get(row["id"], {}),
             lang_ad_summary=lang_ad_summary_map.get(row["id"], {}),
             order_stats=order_stats_map.get(row["id"], {}),
+            stability=stability_map.get(row["id"], {}),
             covers=covers_map.get(row["id"], {}),
             raw_sources_count=raw_counts.get(row["id"], 0),
             roas_rmb_per_usd=roas_rmb_per_usd,

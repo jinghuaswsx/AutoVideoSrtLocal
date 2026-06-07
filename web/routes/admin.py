@@ -1,7 +1,14 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from web.auth import admin_required, superadmin_required
-from appcore import medias, product_link_domains, product_roas, shopifyid_sync_trigger, system_audit
+from appcore import (
+    exchange_rates,
+    medias,
+    product_link_domains,
+    product_roas,
+    shopifyid_sync_trigger,
+    system_audit,
+)
 from appcore import voice_library_sync_task as vlst
 from web.services.admin import (
     admin_flask_response,
@@ -416,6 +423,35 @@ def _handle_product_link_domains_post() -> None:
     flash("域名启用状态已保存")
 
 
+def _load_exchange_rate_settings_view() -> dict:
+    """Read-only USD/CNY fallback data for /admin/settings.
+
+    Docs-anchor: docs/superpowers/specs/2026-06-06-usd-cny-daily-exchange-rate-design.md
+    """
+    try:
+        payload = exchange_rates.exchange_rate_admin_payload(limit=8)
+    except Exception as exc:  # noqa: BLE001 - settings page should remain available
+        return {
+            "limit": 8,
+            "rows": [],
+            "current_fallback": None,
+            "fallback_history": [],
+            "fallback_logic": {
+                "calculation_method": exchange_rates.FALLBACK_CALCULATION_METHOD,
+                "window_days": exchange_rates.FALLBACK_WINDOW_DAYS,
+                "description": exchange_rates.FALLBACK_LOGIC_DESCRIPTION,
+                "fallback_order": [
+                    "daily_archive",
+                    "fallback_30d_average",
+                    "configured_fallback",
+                ],
+            },
+            "error": str(exc),
+        }
+    payload.setdefault("error", None)
+    return payload
+
+
 @bp.route("/settings", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -516,6 +552,7 @@ def settings():
         media_languages=medias.list_languages_for_admin(),
         tts_max_concurrency=tts_concurrency,
         product_link_domains=product_link_domains.list_domains(include_disabled=True),
+        exchange_rate_view=_load_exchange_rate_settings_view(),
         active_tab=active_tab,
     )
 

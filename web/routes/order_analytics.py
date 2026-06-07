@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Blueprint, render_template, request, make_response
 from flask_login import current_user, login_required
-from web.auth import permission_required
+from web.auth import admin_required, permission_required
 from web.background import start_background_task
 from web.services.order_analytics_responses import (
     build_order_analytics_payload_response,
@@ -26,10 +26,13 @@ from appcore import system_audit
 from appcore import weekly_roas_report as wrr
 from appcore.order_analytics import data_quality as dq
 from appcore.order_analytics import manual_ad_spend, order_profit_aggregation
+from appcore.order_analytics import weekly_ai_report as wai
 
 log = logging.getLogger(__name__)
 
 _CST = ZoneInfo("Asia/Shanghai")
+_REALTIME_UNMATCHED_DETAIL_PAGE_SIZE = 50
+_REALTIME_UNMATCHED_DETAIL_MAX_PAGE_SIZE = 100
 
 
 def _today_in_cst() -> date:
@@ -66,6 +69,63 @@ def _json_safe(value):
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
     return value
+
+
+def _parse_positive_int_arg(name: str, default: int, *, max_value: int | None = None) -> int:
+    raw = (request.args.get(name) or "").strip()
+    if not raw:
+        value = default
+    else:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} must be a positive integer")
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    if max_value is not None:
+        value = min(value, max_value)
+    return value
+
+
+def _realtime_unmatched_detail_base_kwargs() -> dict:
+    """Docs-anchor: docs/superpowers/specs/2026-06-07-realtime-unmatched-detail-pages-design.md"""
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
+    if bool(start_date) != bool(end_date):
+        raise ValueError("start_date and end_date are both required when filtering by range")
+
+    kwargs = {
+        "start_date": start_date,
+        "end_date": end_date,
+        "include_details": True,
+        "product_launch_scope": "unmatched",
+    }
+    site_code_text = (request.args.get("site_code") or "").strip().lower()
+    if site_code_text:
+        if site_code_text not in meta_ad_accounts.AVAILABLE_STORE_CODES:
+            raise ValueError(
+                "site_code must be one of " + ", ".join(meta_ad_accounts.AVAILABLE_STORE_CODES)
+            )
+        kwargs["site_codes"] = [site_code_text]
+
+    product_launch_window_days = (request.args.get("product_launch_window_days") or "").strip()
+    if product_launch_window_days:
+        kwargs["product_launch_window_days"] = oa.normalize_product_launch_window_days(
+            product_launch_window_days
+        )
+    return kwargs
+
+
+def _slice_page(rows: list[dict], page: int, page_size: int) -> tuple[list[dict], dict]:
+    total = len(rows)
+    pages = (total + page_size - 1) // page_size if total else 0
+    start = (page - 1) * page_size
+    return rows[start:start + page_size], {
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": pages,
+    }
 
 
 def _coerce_business_date(value):
@@ -238,6 +298,7 @@ def _realtime_store_options() -> list[dict[str, str]]:
 @bp.route("/order-analytics/country-dashboard-view")
 @bp.route("/order-analytics/true-roas-view")
 @bp.route("/order-analytics/weekly-roas-view")
+@bp.route("/order-analytics/weekly-ai-analysis-view")
 @bp.route("/order-analytics/import-view")
 @bp.route("/order-analytics/shopify-analytics-view")
 @login_required
@@ -257,6 +318,7 @@ def page():
             "/order-analytics/country-dashboard-view": "countryDashboard",
             "/order-analytics/true-roas-view": "trueRoas",
             "/order-analytics/weekly-roas-view": "weeklyRoas",
+            "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
             "/order-analytics/import-view": "import",
             "/order-analytics/shopify-analytics-view": "analytics",
         }
@@ -271,7 +333,121 @@ def page():
     return resp
 
 
+@bp.route("/order-analytics/realtime-unmatched-orders")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def realtime_unmatched_orders_page():
+    return render_template(
+        "realtime_unmatched_detail.html",
+        detail_type="orders",
+        page_title="实时大盘未匹配订单",
+    )
+
+
+@bp.route("/order-analytics/realtime-unmatched-ads")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def realtime_unmatched_ads_page():
+    return render_template(
+        "realtime_unmatched_detail.html",
+        detail_type="ads",
+        page_title="实时大盘未匹配广告",
+    )
+
+
 # ── API ───────────────────────────────────────────────
+
+@bp.route("/order-analytics/realtime-unmatched-orders/data")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def realtime_unmatched_orders_data():
+    try:
+        page = _parse_positive_int_arg("page", 1)
+        page_size = _parse_positive_int_arg(
+            "page_size",
+            _REALTIME_UNMATCHED_DETAIL_PAGE_SIZE,
+            max_value=_REALTIME_UNMATCHED_DETAIL_MAX_PAGE_SIZE,
+        )
+        kwargs = _realtime_unmatched_detail_base_kwargs()
+        kwargs["order_page"] = page
+        kwargs["order_page_size"] = page_size
+        kwargs["page"] = 1
+        kwargs["page_size"] = 1
+        result = oa.get_realtime_roas_overview(None, **kwargs)
+        result = _attach_realtime_data_quality(result)
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("realtime unmatched orders query failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+    return _json_response(_json_safe({
+        "ok": True,
+        "type": "orders",
+        "period": result.get("period") or {},
+        "scope": result.get("scope") or {},
+        "freshness": result.get("freshness") or {},
+        "summary": result.get("summary") or {},
+        "order_profit_summary": result.get("order_profit_summary") or {},
+        "data_quality": result.get("data_quality"),
+        "rows": result.get("order_details") or [],
+        "page": result.get("order_details_page") or {},
+    }))
+
+
+@bp.route("/order-analytics/realtime-unmatched-ads/data")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def realtime_unmatched_ads_data():
+    try:
+        page = _parse_positive_int_arg("page", 1)
+        page_size = _parse_positive_int_arg(
+            "page_size",
+            _REALTIME_UNMATCHED_DETAIL_PAGE_SIZE,
+            max_value=_REALTIME_UNMATCHED_DETAIL_MAX_PAGE_SIZE,
+        )
+        kwargs = _realtime_unmatched_detail_base_kwargs()
+        kwargs["order_page"] = 1
+        kwargs["order_page_size"] = 1
+        kwargs["page"] = 1
+        kwargs["page_size"] = 1
+        result = oa.get_realtime_roas_overview(None, **kwargs)
+        result = _attach_realtime_data_quality(result)
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("realtime unmatched ads query failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+    all_rows = [
+        row
+        for row in (result.get("campaigns") or [])
+        if row.get("allocation_reason") == "unmatched_product"
+    ]
+    rows, page_info = _slice_page(all_rows, page, page_size)
+    spend_usd = round(sum(float(row.get("spend_usd") or 0) for row in all_rows), 2)
+    purchase_value_usd = round(sum(float(row.get("purchase_value_usd") or 0) for row in all_rows), 2)
+
+    return _json_response(_json_safe({
+        "ok": True,
+        "type": "ads",
+        "period": result.get("period") or {},
+        "scope": result.get("scope") or {},
+        "freshness": result.get("freshness") or {},
+        "summary": {
+            "count": len(all_rows),
+            "spend_usd": spend_usd,
+            "purchase_value_usd": purchase_value_usd,
+        },
+        "data_quality": result.get("data_quality"),
+        "rows": rows,
+        "page": page_info,
+    }))
+
 
 @bp.route("/order-analytics/upload", methods=["POST"])
 @login_required
@@ -789,6 +965,94 @@ def weekly_roas_report():
         return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
         log.exception("weekly roas report query failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+
+def _parse_weekly_ai_week_start(value: str | None) -> tuple[date, date]:
+    text = (value or "").strip()
+    if text:
+        week_start = datetime.strptime(text, "%Y-%m-%d").date()
+        week_start = wai.normalize_week_start(week_start)
+        return week_start, week_start + timedelta(days=6)
+    return wai.previous_complete_business_week()
+
+
+@bp.route("/order-analytics/weekly-ai-analysis/report")
+@login_required
+@permission_required("data_analytics")
+def weekly_ai_analysis_report():
+    try:
+        week_start, week_end = _parse_weekly_ai_week_start(request.args.get("week_start"))
+        report = wai.get_or_build_report_payload(week_start, week_end)
+        return _json_response(_json_safe(report))
+    except ValueError as exc:
+        return _json_response(error="invalid_date", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("weekly ai analysis report query failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+
+@bp.route("/order-analytics/weekly-ai-analysis/generate", methods=["POST"])
+@login_required
+@permission_required("data_analytics")
+def weekly_ai_analysis_generate():
+    payload = request.get_json(silent=True) or {}
+    try:
+        week_start, week_end = _parse_weekly_ai_week_start(payload.get("week_start"))
+        report = wai.generate_ai_report(
+            week_start,
+            week_end,
+            user_id=getattr(current_user, "id", None),
+            force=bool(payload.get("force")),
+            generated_by="manual",
+        )
+        _audit_order_analytics_action(
+            "order_analytics_weekly_ai_analysis_generated",
+            target_type="weekly_ai_analysis_report",
+            target_label=f"{week_start.isoformat()}~{week_end.isoformat()}",
+            status="success" if report.get("status") == "success" else "failure",
+            detail={
+                "week_start": week_start.isoformat(),
+                "week_end": week_end.isoformat(),
+                "status": report.get("status"),
+                "data_quality_status": (report.get("data_quality") or {}).get("status"),
+            },
+        )
+        return _json_response(_json_safe(report))
+    except ValueError as exc:
+        return _json_response(error="invalid_date", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("weekly ai analysis generation failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+
+@bp.route("/order-analytics/weekly-ai-analysis/weeks")
+@login_required
+@permission_required("data_analytics")
+def weekly_ai_analysis_weeks():
+    try:
+        week_start, week_end = wai.previous_complete_business_week()
+        return _json_response(_json_safe({
+            "default_week": {
+                "week_start": week_start,
+                "week_end": week_end,
+                "week_definition": "sunday_to_saturday",
+            },
+            "recent_weeks": wai.list_recent_reports(limit=12),
+            "data_quality": {
+                "status": "ok",
+                "source_mode": "report_index",
+                "business_date_from": week_start.isoformat(),
+                "business_date_to": week_end.isoformat(),
+                "warnings": [],
+                "errors": [],
+                "checks": [],
+                "watermarks": {},
+                "generated_at": datetime.now(_CST).replace(microsecond=0).isoformat(sep=" "),
+            },
+        }))
+    except Exception as exc:
+        log.exception("weekly ai analysis weeks query failed: %s", exc)
         return _json_response(error="internal_error", detail=str(exc)), 500
 
 

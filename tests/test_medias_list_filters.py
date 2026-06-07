@@ -166,6 +166,45 @@ def test_api_list_products_normalizes_invalid_filter_values(authed_client_no_db,
     assert captured["delivery_status"] == "all"
 
 
+def test_products_list_response_includes_product_stability_cache():
+    from web.services.media_products_listing import build_products_list_response
+
+    row = {
+        "id": 9,
+        "name": "Stable Product",
+        "product_code": "stable-product-rjc",
+        "created_at": None,
+        "updated_at": None,
+    }
+
+    payload = build_products_list_response(
+        {"page": "1"},
+        list_products_fn=lambda *a, **k: ([row], 1),
+        count_items_by_product_fn=lambda pids: {9: 3},
+        count_raw_sources_by_product_fn=lambda pids: {},
+        first_thumb_item_by_product_fn=lambda pids: {},
+        list_item_filenames_by_product_fn=lambda pids, limit_per=5: {},
+        lang_coverage_by_product_fn=lambda pids: {},
+        get_product_covers_batch_fn=lambda pids: {},
+        list_product_skus_batch_fn=lambda pids: {},
+        list_yuncang_unit_prices_fn=lambda skus: {},
+        get_latest_sku_actual_roas_fn=lambda skus: {},
+        get_configured_rmb_per_usd_fn=lambda: 7.2,
+        get_product_ad_summary_cache_fn=lambda pids: {},
+        get_product_lang_ad_summary_cache_fn=lambda pids: {},
+        get_product_order_stats_fn=lambda pids: {},
+        get_product_stability_cache_fn=lambda pids: {
+            9: {"status": "stable", "stable_marks": ["7天稳定"]}
+        },
+        serialize_product_fn=lambda p, *args, **kwargs: {
+            "id": p["id"],
+            "stability": kwargs.get("stability"),
+        },
+    )
+
+    assert payload["items"][0]["stability"] == {"status": "stable", "stable_marks": ["7天稳定"]}
+
+
 
 def test_medias_list_html_has_filter_dropdowns():
     from pathlib import Path

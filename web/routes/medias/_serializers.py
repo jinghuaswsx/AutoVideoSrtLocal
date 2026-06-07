@@ -159,7 +159,8 @@ def _serialize_product(p: dict, items_count: int | None = None,
                        skus: list[dict] | None = None,
                        yuncang_index: dict[str, dict] | None = None,
                        sku_actual_roas_index: dict[str, dict] | None = None,
-                       include_product_link_domains: bool = False) -> dict:
+                       include_product_link_domains: bool = False,
+                       stability: dict | None = None) -> dict:
     if covers is None:
         covers = medias.get_product_covers(p["id"])
     if roas_rmb_per_usd is None:
@@ -261,6 +262,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "ad_summary": ad_summary or {},
         "lang_ad_summary": lang_ad_summary or {},
         "order_stats": order_stats or {"total": {}, "by_lang": {}},
+        "stability": stability or {},
         "localized_links": localized_links,
         "default_link_domain": default_link_domain,
         "product_link_domains": _serialize_product_link_domains(p) if include_product_link_domains else [],

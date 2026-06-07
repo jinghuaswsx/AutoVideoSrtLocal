@@ -22,6 +22,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyRoas' %}active{% endif %}" data-tab="weeklyRoas" role="tab" aria-selected="{% if active_tab == 'weeklyRoas' %}true{% else %}false{% endif %}">ROAS 周报</button>
+  <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'import' %}active{% endif %}" data-tab="import" role="tab" aria-selected="{% if active_tab == 'import' %}true{% else %}false{% endif %}">Shopify 订单导入</button>
   <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </span>
@@ -226,6 +227,38 @@
 }
 .oa-stat-label { font-size: 12px; color: var(--fg-subtle); font-weight: 500; }
 .oa-stat-value { font-size: 24px; font-weight: 700; color: var(--fg); margin-top: 4px; }
+.oa-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 16px 20px;
+}
+.oa-insight-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  padding: 14px 16px;
+  min-width: 0;
+}
+.oa-insight-title {
+  color: var(--fg-subtle);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.oa-insight-body {
+  color: var(--fg);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+.oa-insight-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.oa-insight-body li { margin: 2px 0; }
+@media (max-width: 1180px) {
+  .oa-insight-grid { grid-template-columns: 1fr; }
+}
 .oar-summary-stats {
   display: flex;
   flex-direction: column;
@@ -257,12 +290,47 @@
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border);
 }
+.oar-scope-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
 .oar-scope-title {
   margin: 0;
   color: var(--fg);
   font-size: var(--text-base);
   font-weight: 700;
   line-height: 1.25;
+}
+.oar-scope-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.oar-scope-detail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.oar-scope-detail-link:hover {
+  background: var(--bg-muted);
+}
+.oar-scope-detail-link[aria-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
 }
 .oar-scope-source {
   margin-top: var(--space-1);
@@ -1710,6 +1778,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyRoas' %}active{% endif %}" data-tab="weeklyRoas" role="tab" aria-selected="{% if active_tab == 'weeklyRoas' %}true{% else %}false{% endif %}">ROAS 周报</button>
+  <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'import' %}active{% endif %}" data-tab="import" role="tab" aria-selected="{% if active_tab == 'import' %}true{% else %}false{% endif %}">Shopify 订单导入</button>
   <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </nav>
@@ -1863,7 +1932,13 @@
       <section class="oar-scope-card oar-scope-card--unmatched" data-realtime-scope-card="unmatched" aria-labelledby="realtimeUnmatchedScopeTitle">
         <div class="oar-scope-card-head">
           <div>
-            <h3 class="oar-scope-title" id="realtimeUnmatchedScopeTitle">未匹配广告和订单</h3>
+            <div class="oar-scope-title-row">
+              <h3 class="oar-scope-title" id="realtimeUnmatchedScopeTitle">未匹配广告和订单</h3>
+              <span class="oar-scope-detail-actions" aria-label="未匹配明细">
+                <a class="oar-scope-detail-link" id="realtimeUnmatchedOrdersLink" href="/order-analytics/realtime-unmatched-orders" target="_blank" rel="noopener noreferrer">未匹配订单</a>
+                <a class="oar-scope-detail-link" id="realtimeUnmatchedAdsLink" href="/order-analytics/realtime-unmatched-ads" target="_blank" rel="noopener noreferrer">未匹配广告</a>
+              </span>
+            </div>
             <div class="oar-scope-source" id="realtimeUnmatchedSource">product_launch_scope=unmatched · 未匹配广告和订单同口径核算</div>
           </div>
           <span class="oar-scope-chip">未匹配</span>
@@ -2912,6 +2987,222 @@
   </div>
 </div>
 
+<!-- Tab: 每周 AI 分析 -->
+<div class="oa-panel {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" id="panelWeeklyAiAnalysis">
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row">
+      <button type="button" class="oad-btn-secondary" id="weeklyAiPrev" aria-label="上一周">←</button>
+      <input type="date" id="weeklyAiWeekStart" aria-label="周日日期">
+      <button type="button" class="oad-btn-secondary" id="weeklyAiNext" aria-label="下一周">→</button>
+      <span class="oar-note" id="weeklyAiRangeLabel">周日 ~ 周六</span>
+      <button type="button" class="oad-btn-primary" id="weeklyAiRefresh">刷新</button>
+      <button type="button" class="oad-btn-primary" id="weeklyAiGenerate">生成 AI 报告</button>
+      <span class="oar-note" id="weeklyAiSnapshotInfo"></span>
+    </div>
+    <div class="oar-note">每周日 12:00 自动分析上周日到本周六的 7 天业务数据；手动选择日期会自动归一到所在周的周日。</div>
+  </div>
+
+  <section class="dq-bar" id="weeklyAiDqBar" hidden aria-live="polite">
+    <div class="dq-bar__shell is-unknown" id="weeklyAiDqShell">
+      <span class="dq-bar__icon" aria-hidden="true">●</span>
+      <div class="dq-bar__body">
+        <div class="dq-bar__title">
+          <span id="weeklyAiDqStatus">数据质量</span>
+          <span class="dq-bar__chip" id="weeklyAiDqSource">—</span>
+          <span class="dq-bar__chip" id="weeklyAiDqRange">—</span>
+        </div>
+        <div class="dq-bar__sub" id="weeklyAiDqSub"></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="weeklyAiSummary" class="oa-stats"></div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">AI 总结</div>
+      <div class="oar-note" id="weeklyAiReportStatus">加载中...</div>
+    </div>
+    <div class="oa-insight-grid">
+      <div class="oa-insight-card">
+        <div class="oa-insight-title">业务健康</div>
+        <div id="weeklyAiBusinessHealth" class="oa-insight-body">—</div>
+      </div>
+      <div class="oa-insight-card">
+        <div class="oa-insight-title">本周要点</div>
+        <div id="weeklyAiExecutiveSummary" class="oa-insight-body">—</div>
+      </div>
+      <div class="oa-insight-card">
+        <div class="oa-insight-title">风险标记</div>
+        <div id="weeklyAiRiskFlags" class="oa-insight-body">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">分段对比</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>分段</th>
+            <th>订单</th>
+            <th>销售额</th>
+            <th>广告费</th>
+            <th>利润</th>
+            <th>利润率</th>
+            <th>真实 ROAS</th>
+            <th>Meta ROAS</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiSegmentBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">每日全局数据</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>业务日</th>
+            <th>周几</th>
+            <th>订单</th>
+            <th>销售额</th>
+            <th>手续费</th>
+            <th>成本</th>
+            <th>广告费</th>
+            <th>利润</th>
+            <th>真实 ROAS</th>
+            <th>Meta ROAS</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiDailyBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">店铺拆分</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>店铺</th>
+            <th>订单</th>
+            <th>销售额</th>
+            <th>广告费</th>
+            <th>利润</th>
+            <th>利润率</th>
+            <th>真实 ROAS</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiStoreBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">稳定产品分级</div>
+      <div class="oar-note" id="weeklyAiStabilityComputedAt"></div>
+    </div>
+    <div id="weeklyAiStabilitySummary" class="oa-stats"></div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>类型</th>
+            <th>产品</th>
+            <th>标记</th>
+            <th>7天单量</th>
+            <th>30天单量</th>
+            <th>7天日均</th>
+            <th>30天日均</th>
+            <th>ROAS</th>
+            <th>投放</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiStabilityBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">商品方向</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>动作</th>
+            <th>产品</th>
+            <th>订单</th>
+            <th>广告费</th>
+            <th>利润</th>
+            <th>ROAS</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiProductBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">广告动作</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>动作</th>
+            <th>账户</th>
+            <th>Campaign</th>
+            <th>产品</th>
+            <th>花费</th>
+            <th>购买价值</th>
+            <th>ROAS</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiAdBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">低单量产品</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>分组</th>
+            <th>产品</th>
+            <th>订单</th>
+            <th>销量</th>
+            <th>广告费</th>
+            <th>利润</th>
+            <th>ROAS</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiLowOrderBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════ Tab 1: 导入文件 ═══════ -->
 <div class="oa-panel {% if active_tab == 'import' %}active{% endif %}" id="panelImport">
   <div class="oa-upload-zone" id="uploadZone">
@@ -3775,6 +4066,7 @@
     'countryDashboard': '/order-analytics/country-dashboard-view',
     'trueRoas': '/order-analytics/true-roas-view',
     'weeklyRoas': '/order-analytics/weekly-roas-view',
+    'weeklyAiAnalysis': '/order-analytics/weekly-ai-analysis-view',
     'import': '/order-analytics/import-view',
     'analytics': '/order-analytics/shopify-analytics-view'
   };
@@ -4545,6 +4837,8 @@
       initTrueRoas();
     } else if (initialTab === 'weeklyRoas') {
       initWeeklyRoas();
+    } else if (initialTab === 'weeklyAiAnalysis') {
+      initWeeklyAiAnalysis();
     } else if (initialTab === 'realtime') {
       loadRealtimeOverview();
     } else if (initialTab === 'newProductLaunch') {
@@ -4646,6 +4940,35 @@
     if (!s || !e) return null;
     if (e < s) throw new Error('结束日期不能早于开始日期');
     return { start: s, end: e };
+  }
+
+  function updateRealtimeUnmatchedDetailLinks() {
+    var links = [
+      { id: 'realtimeUnmatchedOrdersLink', path: '/order-analytics/realtime-unmatched-orders' },
+      { id: 'realtimeUnmatchedAdsLink', path: '/order-analytics/realtime-unmatched-ads' }
+    ];
+    var range;
+    try {
+      range = getRealtimeDateRange();
+    } catch (err) {
+      range = null;
+    }
+    links.forEach(function(item) {
+      var link = document.getElementById(item.id);
+      if (!link) return;
+      if (!range) {
+        link.href = '#';
+        link.setAttribute('aria-disabled', 'true');
+        return;
+      }
+      var params = new URLSearchParams();
+      params.set('start_date', range.start);
+      params.set('end_date', range.end);
+      if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
+      params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');
+      link.href = item.path + '?' + params.toString();
+      link.setAttribute('aria-disabled', 'false');
+    });
   }
 
   function initNewProductLaunch() {
@@ -5041,6 +5364,7 @@
 
   // ── 入口：同步刷新顶部卡片 + 子 tab ─────────────────
   function loadRealtimeOverview() {
+    updateRealtimeUnmatchedDetailLinks();
     loadRealtimeTopCards();
     loadRealtimeSubTabs();
   }
@@ -6486,8 +6810,468 @@
       });
   }
 
+  var weeklyAiInited = false;
+
+  function startOfSundayWeek(date) {
+    var d = new Date(date);
+    d.setDate(d.getDate() - d.getDay());
+    return d;
+  }
+
+  function previousCompletedSundayWeekStart() {
+    var end = addDays(window.orderAnalyticsMetaCalendar.today(), -1);
+    while (end.getDay() !== 6) end = addDays(end, -1);
+    return addDays(end, -6);
+  }
+
+  function initWeeklyAiAnalysis() {
+    if (!weeklyAiInited) {
+      weeklyAiInited = true;
+      var input = document.getElementById('weeklyAiWeekStart');
+      if (input && !input.value) input.value = formatDateInput(previousCompletedSundayWeekStart());
+      var prev = document.getElementById('weeklyAiPrev');
+      if (prev) prev.addEventListener('click', function() { shiftWeeklyAiWeek(-7); });
+      var next = document.getElementById('weeklyAiNext');
+      if (next) next.addEventListener('click', function() { shiftWeeklyAiWeek(7); });
+      var refresh = document.getElementById('weeklyAiRefresh');
+      if (refresh) refresh.addEventListener('click', loadWeeklyAiReport);
+      var generate = document.getElementById('weeklyAiGenerate');
+      if (generate) generate.addEventListener('click', generateWeeklyAiReport);
+      if (input) {
+        input.addEventListener('change', function() {
+          var base = input.value ? new Date(input.value + 'T00:00:00') : previousCompletedSundayWeekStart();
+          input.value = formatDateInput(startOfSundayWeek(base));
+          loadWeeklyAiReport();
+        });
+      }
+    }
+    loadWeeklyAiReport();
+  }
+
+  function shiftWeeklyAiWeek(days) {
+    var input = document.getElementById('weeklyAiWeekStart');
+    if (!input) return;
+    var base = input.value ? new Date(input.value + 'T00:00:00') : previousCompletedSundayWeekStart();
+    input.value = formatDateInput(addDays(base, days));
+    loadWeeklyAiReport();
+  }
+
+  function weeklyAiSetLoading(message) {
+    var status = document.getElementById('weeklyAiReportStatus');
+    if (status) status.textContent = message || '加载中...';
+    var summary = document.getElementById('weeklyAiSummary');
+    if (summary) summary.innerHTML = '';
+    var stabilitySummary = document.getElementById('weeklyAiStabilitySummary');
+    if (stabilitySummary) stabilitySummary.innerHTML = '';
+    var stabilityComputed = document.getElementById('weeklyAiStabilityComputedAt');
+    if (stabilityComputed) stabilityComputed.textContent = '';
+    [
+      ['weeklyAiSegmentBody', 8],
+      ['weeklyAiDailyBody', 10],
+      ['weeklyAiStoreBody', 7],
+      ['weeklyAiStabilityBody', 9],
+      ['weeklyAiProductBody', 7],
+      ['weeklyAiAdBody', 8],
+      ['weeklyAiLowOrderBody', 7]
+    ].forEach(function(item) {
+      var body = document.getElementById(item[0]);
+      if (body) body.innerHTML = '<tr><td colspan="' + item[1] + '">加载中...</td></tr>';
+    });
+  }
+
+  function loadWeeklyAiReport() {
+    var weekStart = (document.getElementById('weeklyAiWeekStart') || {}).value || '';
+    weeklyAiSetLoading('加载中...');
+    var url = '/order-analytics/weekly-ai-analysis/report' + (weekStart ? '?week_start=' + encodeURIComponent(weekStart) : '');
+    fetch(url)
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(renderWeeklyAiReport)
+      .catch(function(err) {
+        weeklyAiRenderError(err.message);
+      });
+  }
+
+  function generateWeeklyAiReport() {
+    var input = document.getElementById('weeklyAiWeekStart');
+    var btn = document.getElementById('weeklyAiGenerate');
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+    }
+    weeklyAiSetLoading('AI 生成中...');
+    fetch('/order-analytics/weekly-ai-analysis/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfMeta ? csrfMeta.content : ''
+      },
+      body: JSON.stringify({week_start: input ? input.value : '', force: true})
+    })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '生成失败'); });
+        return r.json();
+      })
+      .then(renderWeeklyAiReport)
+      .catch(function(err) {
+        weeklyAiRenderError(err.message);
+      })
+      .finally(function() {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '生成 AI 报告';
+        }
+      });
+  }
+
+  function weeklyAiRenderError(message) {
+    var status = document.getElementById('weeklyAiReportStatus');
+    if (status) status.textContent = message || '加载失败';
+    [
+      ['weeklyAiSegmentBody', 8],
+      ['weeklyAiDailyBody', 10],
+      ['weeklyAiStoreBody', 7],
+      ['weeklyAiStabilityBody', 9],
+      ['weeklyAiProductBody', 7],
+      ['weeklyAiAdBody', 8],
+      ['weeklyAiLowOrderBody', 7]
+    ].forEach(function(item) {
+      var body = document.getElementById(item[0]);
+      if (body) body.innerHTML = '<tr><td colspan="' + item[1] + '">' + escapeHtml(message || '加载失败') + '</td></tr>';
+    });
+  }
+
+  function renderWeeklyAiReport(data) {
+    var pkg = data.data_package || {};
+    var period = data.period || pkg.period || {};
+    var ws = period.week_start ? String(period.week_start).slice(0, 10) : '';
+    var we = period.week_end ? String(period.week_end).slice(0, 10) : '';
+    var input = document.getElementById('weeklyAiWeekStart');
+    if (input && ws) input.value = ws;
+    var range = document.getElementById('weeklyAiRangeLabel');
+    if (range) range.textContent = ws && we ? (ws + ' ~ ' + we) : '周日 ~ 周六';
+    var snap = document.getElementById('weeklyAiSnapshotInfo');
+    if (snap) {
+      snap.textContent = data.snapshot && data.snapshot.generated_at
+        ? '报告 · ' + formatShortDateTime(data.snapshot.generated_at) + ' (' + (data.snapshot.generated_by || '') + ')'
+        : '数据预览';
+    }
+    var status = document.getElementById('weeklyAiReportStatus');
+    if (status) {
+      if (data.status === 'failed') {
+        status.textContent = '生成失败：' + (data.error_message || 'AI 返回异常');
+      } else if (data.report) {
+        status.textContent = 'AI 报告已生成';
+      } else {
+        status.textContent = '尚未生成 AI 报告';
+      }
+    }
+    renderWeeklyAiDataQuality(data.data_quality || pkg.data_quality || {});
+    renderWeeklyAiSummary(pkg.summary || {});
+    renderWeeklyAiInsights(data.report || null, pkg);
+    renderWeeklyAiSegments(pkg.segments || {});
+    renderWeeklyAiDaily(pkg.daily_global || []);
+    renderWeeklyAiStores(pkg.daily_by_store || {});
+    renderWeeklyAiProductStability(pkg.product_stability || {});
+    renderWeeklyAiProductActions(data.report || null, pkg.rule_findings || {});
+    renderWeeklyAiAdActions(data.report || null, pkg.rule_findings || {});
+    renderWeeklyAiLowOrders(pkg.low_order_products || {});
+  }
+
+  function renderWeeklyAiDataQuality(dq) {
+    var root = document.getElementById('weeklyAiDqBar');
+    if (!root) return;
+    root.hidden = false;
+    var shell = document.getElementById('weeklyAiDqShell');
+    var status = String(dq.status || 'unknown');
+    if (shell) shell.className = 'dq-bar__shell is-' + status;
+    var labels = {ok: '数据质量正常', warning: '数据质量提醒', stale: '数据可能滞后', mismatch: '数据口径不一致', error: '数据异常', unknown: '数据质量未知'};
+    var statusEl = document.getElementById('weeklyAiDqStatus');
+    if (statusEl) statusEl.textContent = labels[status] || labels.unknown;
+    var source = document.getElementById('weeklyAiDqSource');
+    if (source) source.textContent = dq.source_mode || 'unknown';
+    var range = document.getElementById('weeklyAiDqRange');
+    if (range) range.textContent = (dq.business_date_from || '-') + ' ~ ' + (dq.business_date_to || '-');
+    var sub = document.getElementById('weeklyAiDqSub');
+    if (sub) {
+      var parts = [];
+      (dq.errors || []).slice(0, 2).forEach(function(item) { if (item && item.message) parts.push(item.message); });
+      (dq.warnings || []).slice(0, 2).forEach(function(item) { if (item && item.message) parts.push(item.message); });
+      sub.textContent = parts.length ? parts.join(' / ') : ('检验完成于 ' + (dq.generated_at ? formatShortDateTime(dq.generated_at) : '—'));
+    }
+  }
+
+  function renderWeeklyAiSummary(summary) {
+    var el = document.getElementById('weeklyAiSummary');
+    if (!el) return;
+    el.innerHTML =
+      statCard('销售额', fmtMoney(summary.sales_amount_usd)) +
+      statCard('订单数', summary.order_count || 0) +
+      statCard('广告费', fmtMoney(summary.ad_spend_usd)) +
+      statCard('利润', fmtMoney(summary.profit_usd)) +
+      statCard('利润率', fmtPercentValue(summary.profit_margin_pct)) +
+      statCard('真实 ROAS', fmtRoasValue(summary.true_roas)) +
+      statCard('Meta ROAS', fmtRoasValue(summary.meta_roas));
+  }
+
+  function weeklyAiList(values) {
+    if (!Array.isArray(values) || !values.length) return '—';
+    return '<ul>' + values.map(function(value) {
+      return '<li>' + escapeHtml(typeof value === 'string' ? value : (value.message || value.summary || value.reason || '')) + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function renderWeeklyAiInsights(report, pkg) {
+    var health = document.getElementById('weeklyAiBusinessHealth');
+    var exec = document.getElementById('weeklyAiExecutiveSummary');
+    var risks = document.getElementById('weeklyAiRiskFlags');
+    if (!report) {
+      if (health) health.textContent = '尚未生成 AI 报告';
+      if (exec) exec.innerHTML = weeklyAiList(((pkg.rule_findings || {}).business || []).map(function(item) { return item.message; }));
+      if (risks) risks.innerHTML = weeklyAiList(((pkg.data_quality || {}).warnings || []));
+      return;
+    }
+    var business = report.business_health || {};
+    if (health) {
+      health.innerHTML = '<strong>' + escapeHtml(business.status || '-') + '</strong><br>' +
+        escapeHtml(business.summary || '') + weeklyAiList(business.evidence || []);
+    }
+    if (exec) exec.innerHTML = weeklyAiList(report.executive_summary || []);
+    if (risks) risks.innerHTML = weeklyAiList(report.risk_flags || []);
+  }
+
+  function fmtPercentValue(value) {
+    if (value === null || value === undefined || value === '') return '-';
+    var num = Number(value);
+    if (isNaN(num)) return '-';
+    return num.toFixed(2) + '%';
+  }
+
+  function weeklyAiAppendRow(body, values) {
+    var tr = document.createElement('tr');
+    values.forEach(function(value) {
+      var td = document.createElement('td');
+      td.innerHTML = value === null || value === undefined || value === '' ? '-' : String(value);
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  }
+
+  function renderWeeklyAiSegments(segments) {
+    var body = document.getElementById('weeklyAiSegmentBody');
+    if (!body) return;
+    body.innerHTML = '';
+    var names = [
+      ['full_week', '全周'],
+      ['sunday', '周日'],
+      ['monday_to_wednesday', '周一到周三'],
+      ['thursday_to_saturday', '周四到周六'],
+      ['friday_to_saturday', '周五到周六']
+    ];
+    names.forEach(function(pair) {
+      var row = segments[pair[0]] || {};
+      weeklyAiAppendRow(body, [
+        pair[1],
+        row.order_count || 0,
+        fmtMoney(row.sales_amount_usd),
+        fmtMoney(row.ad_spend_usd),
+        fmtMoney(row.profit_usd),
+        fmtPercentValue(row.profit_margin_pct),
+        fmtRoasValue(row.true_roas),
+        fmtRoasValue(row.meta_roas)
+      ]);
+    });
+  }
+
+  function renderWeeklyAiDaily(rows) {
+    var body = document.getElementById('weeklyAiDailyBody');
+    if (!body) return;
+    body.innerHTML = '';
+    var weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    (rows || []).forEach(function(row) {
+      weeklyAiAppendRow(body, [
+        String(row.date || '').slice(0, 10),
+        weekdays[row.weekday] || '-',
+        row.order_count || 0,
+        fmtMoney(row.sales_amount_usd),
+        fmtMoney(row.shopify_fee_usd),
+        fmtMoney(row.cost_usd),
+        fmtMoney(row.ad_spend_usd),
+        fmtMoney(row.profit_usd),
+        fmtRoasValue(row.true_roas),
+        fmtRoasValue(row.meta_roas)
+      ]);
+    });
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="10">暂无数据</td></tr>';
+  }
+
+  function weeklyAiSumRows(rows) {
+    var revenue = 0, spend = 0, profit = 0;
+    var out = {order_count: 0, sales_amount_usd: 0, ad_spend_usd: 0, profit_usd: 0};
+    (rows || []).forEach(function(row) {
+      out.order_count += Number(row.order_count || 0);
+      revenue += Number(row.sales_amount_usd || 0);
+      spend += Number(row.ad_spend_usd || 0);
+      profit += Number(row.profit_usd || 0);
+    });
+    out.sales_amount_usd = revenue;
+    out.ad_spend_usd = spend;
+    out.profit_usd = profit;
+    out.profit_margin_pct = revenue > 0 ? (profit / revenue * 100) : null;
+    out.true_roas = spend > 0 ? (revenue / spend) : null;
+    return out;
+  }
+
+  function renderWeeklyAiStores(stores) {
+    var body = document.getElementById('weeklyAiStoreBody');
+    if (!body) return;
+    body.innerHTML = '';
+    [['all', '全局'], ['newjoy', 'Newjoy'], ['omurio', 'Omurio']].forEach(function(pair) {
+      var row = weeklyAiSumRows(stores[pair[0]] || []);
+      weeklyAiAppendRow(body, [
+        pair[1],
+        row.order_count || 0,
+        fmtMoney(row.sales_amount_usd),
+        fmtMoney(row.ad_spend_usd),
+        fmtMoney(row.profit_usd),
+        fmtPercentValue(row.profit_margin_pct),
+        fmtRoasValue(row.true_roas)
+      ]);
+    });
+  }
+
+  function renderWeeklyAiProductStability(stability) {
+    var summary = document.getElementById('weeklyAiStabilitySummary');
+    var body = document.getElementById('weeklyAiStabilityBody');
+    var computed = document.getElementById('weeklyAiStabilityComputedAt');
+    var counts = (stability || {}).counts || {};
+    var buckets = (stability || {}).buckets || {};
+    if (summary) {
+      summary.innerHTML =
+        statCard('稳定品', counts.stable_total || 0) +
+        statCard('7天稳定', counts.stable_7d || 0) +
+        statCard('30天稳定', counts.stable_30d || 0) +
+        statCard('潜力品', counts.potential || 0) +
+        statCard('测试品', counts.test || 0) +
+        statCard('已停投', counts.stopped || 0);
+    }
+    if (computed) {
+      computed.textContent = stability.computed_at ? ('分级刷新 · ' + formatShortDateTime(stability.computed_at)) : '';
+    }
+    if (!body) return;
+    body.innerHTML = '';
+    var bucketDefs = [
+      ['稳定品', buckets.stable || []],
+      ['潜力品', buckets.potential || []],
+      ['测试品', buckets.test || []],
+      ['已停投', buckets.stopped || []]
+    ];
+    bucketDefs.forEach(function(group) {
+      (group[1] || []).slice(0, group[0] === '稳定品' ? 20 : 10).forEach(function(item) {
+        weeklyAiAppendRow(body, [
+          group[0],
+          escapeHtml((item.product_code || '') + (item.product_name ? ' · ' + item.product_name : '')),
+          escapeHtml((item.stable_marks || []).join(' / ') || item.display_label || ''),
+          item.last_7d_orders || 0,
+          item.last_30d_orders || 0,
+          Number(item.avg_7d_orders || 0).toFixed(2),
+          Number(item.avg_30d_orders || 0).toFixed(2),
+          fmtRoasValue(item.overall_roas),
+          escapeHtml(item.delivery_status || '')
+        ]);
+      });
+    });
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="9">暂无稳定分级数据</td></tr>';
+  }
+
+  function weeklyAiProductRowsFrom(report, findings) {
+    var dir = (report || {}).product_direction || {};
+    var rows = [];
+    [['加码', dir.scale || findings.products_scale || []], ['观察', dir.watch || findings.products_watch || []], ['收缩', dir.cut || findings.products_cut || []]].forEach(function(group) {
+      (group[1] || []).forEach(function(item) {
+        rows.push({action: group[0], item: item});
+      });
+    });
+    return rows;
+  }
+
+  function renderWeeklyAiProductActions(report, findings) {
+    var body = document.getElementById('weeklyAiProductBody');
+    if (!body) return;
+    body.innerHTML = '';
+    weeklyAiProductRowsFrom(report, findings).forEach(function(row) {
+      var item = row.item || {};
+      weeklyAiAppendRow(body, [
+        row.action,
+        escapeHtml((item.product_code || '') + (item.name ? ' · ' + item.name : '')),
+        item.order_count || '-',
+        item.ad_cost_usd !== undefined ? fmtMoney(item.ad_cost_usd) : '-',
+        item.profit_usd !== undefined ? fmtMoney(item.profit_usd) : '-',
+        fmtRoasValue(item.roas),
+        escapeHtml(item.reason || item.action || '')
+      ]);
+    });
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="7">暂无建议</td></tr>';
+  }
+
+  function weeklyAiAdRowsFrom(report, findings) {
+    var acts = (report || {}).ad_actions || {};
+    var rows = [];
+    [['加预算', acts.increase || findings.ads_increase || []], ['降预算', acts.reduce || findings.ads_reduce || []], ['暂停', acts.pause || findings.ads_pause || []]].forEach(function(group) {
+      (group[1] || []).forEach(function(item) {
+        rows.push({action: group[0], item: item});
+      });
+    });
+    return rows;
+  }
+
+  function renderWeeklyAiAdActions(report, findings) {
+    var body = document.getElementById('weeklyAiAdBody');
+    if (!body) return;
+    body.innerHTML = '';
+    weeklyAiAdRowsFrom(report, findings).forEach(function(row) {
+      var item = row.item || {};
+      weeklyAiAppendRow(body, [
+        row.action,
+        escapeHtml(item.ad_account_name || ''),
+        escapeHtml(item.campaign_name || item.campaign || item.normalized_campaign_code || ''),
+        escapeHtml(item.matched_product_code || item.product_code || item.matched_product_name || ''),
+        item.spend_usd !== undefined ? fmtMoney(item.spend_usd) : '-',
+        item.purchase_value_usd !== undefined ? fmtMoney(item.purchase_value_usd) : '-',
+        fmtRoasValue(item.roas),
+        escapeHtml(item.reason || item.action || '')
+      ]);
+    });
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="8">暂无建议</td></tr>';
+  }
+
+  function renderWeeklyAiLowOrders(groups) {
+    var body = document.getElementById('weeklyAiLowOrderBody');
+    if (!body) return;
+    body.innerHTML = '';
+    [['1-2 单', groups.one_to_two || []], ['3-5 单', groups.three_to_five || []]].forEach(function(group) {
+      (group[1] || []).forEach(function(item) {
+        weeklyAiAppendRow(body, [
+          group[0],
+          escapeHtml((item.product_code || '') + (item.name ? ' · ' + item.name : '')),
+          item.order_count || 0,
+          item.units || 0,
+          fmtMoney(item.ad_cost_usd),
+          fmtMoney(item.profit_usd),
+          fmtRoasValue(item.roas)
+        ]);
+      });
+    });
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="7">暂无低单量产品</td></tr>';
+  }
+
   function fmtRoasValue(value) {
-    return value === null || value === undefined ? '-' : Number(value).toFixed(2);
+    if (value === null || value === undefined || value === '') return '-';
+    var num = Number(value);
+    return isNaN(num) ? '-' : num.toFixed(2);
   }
 
   function fmtRealtimeRoasWithPrecision(value) {

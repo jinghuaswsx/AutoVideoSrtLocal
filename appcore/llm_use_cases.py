@@ -714,6 +714,17 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    # 数据分析
+    "order_analytics.weekly_ai_analysis": _uc(
+        "order_analytics.weekly_ai_analysis",
+        "order_analytics",
+        "每周 AI 分析",
+        "基于实时大盘、广告计划、产品销量和产品盈亏数据生成每周业务分析报告",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
+        "tokens",
+    ),
 }
 
 def get_use_case(code: str) -> UseCase:
@@ -742,6 +753,7 @@ MODULE_LABELS: dict[str, str] = {
     "prompt_library": "提示词库",
     "video_creation": "视频创作",
     "video_cover": "文案封面生成",
+    "order_analytics": "数据分析",
     "asr_clean": "ASR 同语言纯净化",
     "translation_quality": "翻译质量评估",
     "video_ai_review": "AI 视频分析",

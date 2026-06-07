@@ -109,6 +109,29 @@ def test_new_product_launch_analysis_tab_is_next_to_realtime():
     assert "新品投放分析" in mobile
 
 
+def test_weekly_ai_analysis_tab_and_panel_present():
+    template = _template_source()
+    topbar_start = template.index('<span class="oa-tabs oa-tabs-topbar"')
+    topbar_end = template.index("</span>", topbar_start)
+    topbar = template[topbar_start:topbar_end]
+    mobile_start = template.index('<nav class="oa-mobile-tabs"')
+    mobile_end = template.index("</nav>", mobile_start)
+    mobile = template[mobile_start:mobile_end]
+
+    assert 'data-tab="weeklyAiAnalysis"' in topbar
+    assert 'data-tab="weeklyAiAnalysis"' in mobile
+    assert "每周 AI 分析" in topbar
+    assert "每周 AI 分析" in mobile
+    assert 'id="panelWeeklyAiAnalysis"' in template
+    assert 'id="weeklyAiDqBar"' in template
+    assert 'id="weeklyAiStabilitySummary"' in template
+    assert 'id="weeklyAiStabilityBody"' in template
+    assert 'id="weeklyAiProductBody"' in template
+    assert 'id="weeklyAiAdBody"' in template
+    assert "renderWeeklyAiProductStability" in template
+    assert "initWeeklyAiAnalysis" in template
+
+
 def test_new_product_launch_panel_has_three_scope_tabs_and_request_param():
     template = _template_source()
     panel = _new_product_launch_panel_source()
@@ -232,6 +255,28 @@ def test_realtime_summary_splits_global_new_old_and_unmatched_scope_cards():
     assert 'id="realtimeNewRevenue"' in panel
     assert 'id="realtimeOldRevenue"' in panel
     assert 'id="realtimeUnmatchedSpend"' in panel
+
+
+def test_realtime_unmatched_scope_card_links_to_detail_pages():
+    panel = _realtime_panel_source()
+    template = _template_source()
+    link_block = template[
+        template.index("function updateRealtimeUnmatchedDetailLinks"):
+        template.index("function initNewProductLaunch", template.index("function updateRealtimeUnmatchedDetailLinks"))
+    ]
+
+    assert 'id="realtimeUnmatchedOrdersLink"' in panel
+    assert 'id="realtimeUnmatchedAdsLink"' in panel
+    assert 'href="/order-analytics/realtime-unmatched-orders"' in panel
+    assert 'href="/order-analytics/realtime-unmatched-ads"' in panel
+    assert 'target="_blank" rel="noopener noreferrer"' in panel
+    assert "function updateRealtimeUnmatchedDetailLinks()" in template
+    assert "updateRealtimeUnmatchedDetailLinks();" in template
+    assert "start_date" in link_block
+    assert "end_date" in link_block
+    assert "site_code" in link_block
+    assert "product_launch_window_days" in link_block
+    assert "product_id" not in link_block
 
 
 def test_realtime_scope_cards_include_cost_breakdown_and_ratio_targets():

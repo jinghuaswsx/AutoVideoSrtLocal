@@ -92,12 +92,28 @@
 .settings-domain-default-badge { display:inline-flex; align-items:center; height:24px; padding:0 10px; border-radius:9999px; background:var(--primary-color,#3b82f6); color:#fff; font-size:12px; font-weight:600; letter-spacing:0.02em; }
 .settings-domain-default-badge.is-disabled { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
 .settings-domain-empty { padding:14px; border:1px dashed var(--border-main,#e5e7eb); border-radius:12px; color:#64748b; background:#f8fbff; font-size:13px; }
+.exchange-rate-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.exchange-rate-link { display:inline-flex; align-items:center; min-height:32px; padding:0 12px; border-radius:8px; border:1px solid var(--border-main,#e5e7eb); background:var(--bg-card,#fff); color:#175bc6; font-size:12px; font-weight:700; text-decoration:none; }
+.exchange-rate-link:hover { background:#eef6ff; }
+.exchange-rate-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:16px 0; }
+.exchange-rate-metric { border:1px solid var(--border-main,#e5e7eb); border-radius:10px; background:#f8fbff; padding:12px 14px; min-height:82px; }
+.exchange-rate-metric-label { color:#64748b; font-size:12px; font-weight:700; margin-bottom:8px; }
+.exchange-rate-metric-value { color:var(--text-main,#111827); font-size:20px; font-weight:800; font-family:var(--font-mono,ui-monospace,Consolas,monospace); line-height:1.2; overflow-wrap:anywhere; }
+.exchange-rate-metric-sub { color:#64748b; font-size:12px; margin-top:6px; line-height:1.4; }
+.exchange-rate-logic { border:1px solid #dbeafe; border-radius:10px; background:#eef6ff; color:#1e3a8a; font-size:13px; line-height:1.6; padding:12px 14px; margin-bottom:16px; }
+.exchange-rate-table-wrap { border:1px solid var(--border-main,#e5e7eb); border-radius:12px; overflow:auto; background:#fbfdff; }
+.exchange-rate-table { width:100%; min-width:760px; border-collapse:collapse; }
+.exchange-rate-table th { background:#f4f8fc; color:#475569; font-size:12px; font-weight:700; padding:12px 14px; text-align:left; border-bottom:1px solid var(--border-main,#e5e7eb); }
+.exchange-rate-table td { padding:12px 14px; border-bottom:1px solid #edf2f7; font-size:13px; color:var(--text-main,#111827); vertical-align:middle; }
+.exchange-rate-table tr:last-child td { border-bottom:none; }
+.exchange-rate-empty { padding:14px; border:1px dashed var(--border-main,#e5e7eb); border-radius:12px; color:#64748b; background:#f8fbff; font-size:13px; }
 @media (max-width: 768px) {
   .settings-card { padding:20px; }
   .settings-card-head { flex-direction:column; align-items:stretch; }
   .settings-domain-add { grid-template-columns:1fr; }
   .settings-domain-add-field { flex-wrap:wrap; white-space:normal; }
   .settings-domain-input { width:100%; }
+  .exchange-rate-grid { grid-template-columns:1fr; }
 }
 {% endblock %}
 {% block content %}
@@ -263,6 +279,82 @@
 
       <button type="submit" class="settings-save-btn">保存</button>
     </form>
+  </div>
+
+  {% set fx = exchange_rate_view or {} %}
+  {% set current_fx = fx.get('current_fallback') %}
+  {% set fallback_logic = fx.get('fallback_logic') or {} %}
+  <div class="settings-card" id="exchangeRateFallbackCard">
+    <div class="settings-card-head">
+      <div>
+        <h2>USD/CNY 动态兜底汇率</h2>
+        <p class="field-hint">订单利润和 SKU 实际 ROAS 缺当天基准汇率时，优先使用这里的动态兜底。</p>
+      </div>
+      <div class="exchange-rate-actions">
+        <a class="exchange-rate-link"
+           href="{{ url_for('order_analytics.exchange_rate_archive', limit=30) }}">打开汇率归档</a>
+      </div>
+    </div>
+
+    {% if fx.get('error') %}
+      <div class="exchange-rate-empty">动态兜底汇率暂时不可读：{{ fx.get('error') }}</div>
+    {% elif current_fx %}
+      <div class="exchange-rate-grid">
+        <div class="exchange-rate-metric">
+          <div class="exchange-rate-metric-label">当前动态兜底</div>
+          <div class="exchange-rate-metric-value">{{ "%.6f"|format(current_fx.get('usd_to_cny') or 0) }}</div>
+          <div class="exchange-rate-metric-sub">CNY / USD</div>
+        </div>
+        <div class="exchange-rate-metric">
+          <div class="exchange-rate-metric-label">更新日期</div>
+          <div class="exchange-rate-metric-value">{{ current_fx.get('fallback_date') or '—' }}</div>
+          <div class="exchange-rate-metric-sub">{{ current_fx.get('updated_at') or current_fx.get('synced_at') or '' }}</div>
+        </div>
+        <div class="exchange-rate-metric">
+          <div class="exchange-rate-metric-label">计算窗口</div>
+          <div class="exchange-rate-metric-value">{{ current_fx.get('sample_count') or 0 }}</div>
+          <div class="exchange-rate-metric-sub">{{ current_fx.get('window_start') or '—' }} 至 {{ current_fx.get('window_end') or '—' }}</div>
+        </div>
+        <div class="exchange-rate-metric">
+          <div class="exchange-rate-metric-label">最终旧配置兜底</div>
+          <div class="exchange-rate-metric-value">{{ roas_rmb_per_usd or '6.83' }}</div>
+          <div class="exchange-rate-metric-sub">仅在动态兜底无样本时使用</div>
+        </div>
+      </div>
+    {% else %}
+      <div class="exchange-rate-empty">暂无动态兜底历史；缺当天基准汇率时会继续使用旧配置 {{ roas_rmb_per_usd or '6.83' }}。</div>
+    {% endif %}
+
+    <div class="exchange-rate-logic">
+      {{ fallback_logic.get('description') or '最近 30 天已归档 USD/CNY 基准汇率的算术平均值；缺当天基准时优先使用该值；无样本时退回系统配置汇率' }}
+    </div>
+
+    {% if fx.get('fallback_history') %}
+    <div class="exchange-rate-table-wrap">
+      <table class="exchange-rate-table">
+        <thead>
+          <tr>
+            <th>更新日期</th>
+            <th>兜底汇率</th>
+            <th>计算窗口</th>
+            <th>样本数</th>
+            <th>更新时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in fx.get('fallback_history') %}
+          <tr>
+            <td>{{ row.get('fallback_date') or '—' }}</td>
+            <td>{{ "%.6f"|format(row.get('usd_to_cny') or 0) }}</td>
+            <td>{{ row.get('window_start') or '—' }} 至 {{ row.get('window_end') or '—' }}</td>
+            <td>{{ row.get('sample_count') or 0 }}</td>
+            <td>{{ row.get('updated_at') or row.get('synced_at') or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
 
   <div class="settings-card" id="mediaLanguagesCard">

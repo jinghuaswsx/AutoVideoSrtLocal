@@ -36,6 +36,8 @@ def get_scheduler() -> BackgroundScheduler:
         push_status_cache_scheduler.register(_scheduler)
         from appcore import media_product_ad_status_cache_scheduler
         media_product_ad_status_cache_scheduler.register(_scheduler)
+        from appcore import media_product_stability_scheduler
+        media_product_stability_scheduler.register(_scheduler)
         from appcore import apimart_balance_watchdog
         apimart_balance_watchdog.register(_scheduler)
         from appcore import product_cover_backfill_scheduler
@@ -46,6 +48,8 @@ def get_scheduler() -> BackgroundScheduler:
         tos_backup_job.register(_scheduler)
         from appcore import weekly_roas_report
         weekly_roas_report.register(_scheduler)
+        from appcore.order_analytics import weekly_ai_report
+        weekly_ai_report.register(_scheduler)
         from appcore.meta_hot_posts import scheduler as meta_hot_posts_scheduler
         meta_hot_posts_scheduler.register(_scheduler)
         from appcore import tos_file_management

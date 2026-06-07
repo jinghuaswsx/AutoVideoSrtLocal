@@ -106,7 +106,6 @@
   - `exchange_rate_source = "daily_archive"`
   - `exchange_rate_date = "YYYY-MM-DD"`
   - `exchange_rate_source_id`
-- 若缺少当天归档，历史兼容兜底到 `system_settings.material_roas_rmb_per_usd`，并写：
 - 若缺少当天归档，优先兜底到 `usd_cny_fallback_exchange_rates` 最新记录，并写：
   - `exchange_rate_source = "fallback_30d_average"`
   - `exchange_rate_date = fallback_date`
@@ -182,6 +181,12 @@ GET /order-analytics/exchange-rates?limit=30
 - `fallback_history`：最近 `limit` 条兜底汇率历史。
 - `fallback_logic`：面向后台查看的固定说明，内容为“最近 30 天已归档 USD/CNY 基准汇率的算术平均值；缺当天基准时优先使用该值；无样本时退回系统配置汇率”。
 
+超级管理员设置入口：
+
+- `/admin/settings?tab=general` 的“素材 ROAS 汇率”设置旁增加“USD/CNY 动态兜底汇率”卡片。
+- 卡片展示当前兜底汇率、更新日期、计算窗口、样本数、计算逻辑和最近兜底历史。
+- 该卡片只读，不保存任何新字段；原 `material_roas_rmb_per_usd` 输入框继续保留，作为动态兜底无样本时的最后兜底。
+
 ## 测试计划
 
 - 汇率服务单测：
@@ -192,6 +197,7 @@ GET /order-analytics/exchange-rates?limit=30
   - 缺当天归档时优先使用动态兜底汇率；动态兜底缺失时再用旧配置值。
   - 最近归档列表返回主源、两个校验源、最大相对误差和同步时间。
   - 兜底历史列表返回当前兜底、计算逻辑、窗口、样本数和更新时间。
+  - `/admin/settings` 展示当前动态兜底、计算逻辑和历史表。
 - 订单利润回填测试：
   - 同一窗口不同 `meta_business_date` 使用不同汇率。
   - `cost_basis` 写入 `exchange_rate_source` 与 `exchange_rate_date`。

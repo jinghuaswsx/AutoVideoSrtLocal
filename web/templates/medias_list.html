@@ -1085,6 +1085,48 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-delivery-pill.active { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
 .oc-delivery-pill.stopped { background:#f3f4f6; color:#111827; border:1px solid #d1d5db; }
 .oc-delivery-pill.never { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
+.product-stability-cell { text-align:center; vertical-align:middle; }
+.oc-stability-cell {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  min-height:44px;
+}
+.oc-stability-pill {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:24px;
+  padding:0 9px;
+  border-radius:9999px;
+  border:1px solid #67e8f9;
+  background:#ecfeff;
+  color:#0e7490;
+  font-size:12px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.oc-stability-subpills {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:center;
+  gap:3px;
+}
+.oc-stability-subpill {
+  display:inline-flex;
+  align-items:center;
+  height:18px;
+  padding:0 5px;
+  border-radius:4px;
+  border:1px solid var(--oc-border);
+  background:var(--oc-bg-subtle);
+  color:var(--oc-fg);
+  font-size:10px;
+  font-weight:700;
+  white-space:nowrap;
+}
 .oc-lang-status-pill {
   display:inline-flex;
   align-items:center;
