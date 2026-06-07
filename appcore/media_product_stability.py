@@ -11,17 +11,21 @@ from appcore.db import execute, query
 from appcore.order_analytics import current_meta_business_date
 
 STATUS_STABLE = "stable"
+STATUS_SECONDARY_STABLE = "secondary_stable"
 STATUS_POTENTIAL = "potential"
 STATUS_TEST = "test"
 STATUS_STOPPED = "stopped"
 STATUS_NEVER = "never"
+STATUS_INSUFFICIENT_HISTORY = "insufficient_history"
 
 STATUS_LABELS = {
     STATUS_STABLE: "稳定品",
+    STATUS_SECONDARY_STABLE: "二级稳定品",
     STATUS_POTENTIAL: "潜力品",
     STATUS_TEST: "测试品",
     STATUS_STOPPED: "已停投",
     STATUS_NEVER: "未投放",
+    STATUS_INSUFFICIENT_HISTORY: "投放未满7天",
 }
 
 
@@ -112,17 +116,21 @@ def empty_stability_summary(*, warning: str | None = None) -> dict[str, Any]:
             "stable_total": 0,
             "stable_7d": 0,
             "stable_30d": 0,
+            "secondary_stable": 0,
             "potential": 0,
             "test": 0,
             "stopped": 0,
             "never": 0,
+            "insufficient_history": 0,
         },
         "buckets": {
             STATUS_STABLE: [],
+            STATUS_SECONDARY_STABLE: [],
             STATUS_POTENTIAL: [],
             STATUS_TEST: [],
             STATUS_STOPPED: [],
             STATUS_NEVER: [],
+            STATUS_INSUFFICIENT_HISTORY: [],
         },
         "warnings": warnings,
         "computed_at": None,
@@ -162,6 +170,12 @@ def classify_product(
         delivery_status = media_product_ad_status_cache.STATUS_NEVER
     total_ad_spend = _safe_float(ad_summary.get("ad_spend_usd"))
     active_7d_spend = _safe_float(ad_summary.get("active_7d_ad_spend_usd"))
+    delivery_start_date = _date_value(ad_summary.get("delivery_start_time"))
+    delivery_age_days = (
+        (business_today - delivery_start_date).days + 1
+        if delivery_start_date and delivery_start_date <= business_today
+        else 0
+    )
     has_ad_data = (
         total_ad_spend > 0
         or active_7d_spend > 0
@@ -174,24 +188,40 @@ def classify_product(
         delivery_status == media_product_ad_status_cache.STATUS_ACTIVE
         or active_7d_spend > 0
     )
+    eligible_for_weekly_analysis = bool(has_ad_data and delivery_age_days >= 7)
 
     stable_7d = bool(
-        is_active
+        eligible_for_weekly_analysis
+        and is_active
         and (
             last_7d_orders >= 210
             or (last_7d_orders >= 140 and min_7d >= 10)
         )
     )
-    stable_30d = bool(is_active and last_30d_orders >= 600 and min_30d >= 10)
+    stable_30d = bool(
+        eligible_for_weekly_analysis
+        and is_active
+        and last_30d_orders >= 600
+        and min_30d >= 10
+    )
+    secondary_stable = bool(
+        eligible_for_weekly_analysis
+        and is_active
+        and not (stable_7d or stable_30d)
+        and min_7d >= 5
+        and avg_7d > 10
+    )
 
-    if stable_7d or stable_30d:
-        status = STATUS_STABLE
-    elif delivery_status == media_product_ad_status_cache.STATUS_STOPPED and has_ad_data:
-        status = STATUS_STOPPED
-    elif not has_ad_data:
+    if not has_ad_data:
         status = STATUS_NEVER
-    elif avg_7d >= 5:
-        status = STATUS_POTENTIAL
+    elif delivery_status == media_product_ad_status_cache.STATUS_STOPPED:
+        status = STATUS_STOPPED
+    elif not eligible_for_weekly_analysis:
+        status = STATUS_INSUFFICIENT_HISTORY
+    elif stable_7d or stable_30d:
+        status = STATUS_STABLE
+    elif secondary_stable:
+        status = STATUS_SECONDARY_STABLE
     else:
         status = STATUS_TEST
 
@@ -200,22 +230,24 @@ def classify_product(
         stable_marks.append("7天稳定")
     if stable_30d:
         stable_marks.append("30天稳定")
+    if status == STATUS_SECONDARY_STABLE:
+        stable_marks.append("二级稳定")
 
     reasons: list[str] = []
     if stable_7d:
         reasons.append("最近 7 天达到稳定品阈值")
     if stable_30d:
         reasons.append("最近 30 天达到稳定品阈值")
-    if status == STATUS_POTENTIAL and avg_7d >= 10:
-        reasons.append("日均较高但每日稳定性未达稳定品阈值")
-    elif status == STATUS_POTENTIAL:
-        reasons.append("最近 7 天日均不少于 5 单")
+    if status == STATUS_SECONDARY_STABLE:
+        reasons.append("最近 7 天每日不少于 5 单且日均超过 10 单，未达稳定品阈值")
     elif status == STATUS_TEST:
-        reasons.append("最近 7 天日均低于 5 单")
+        reasons.append("已满 7 天但未达到稳定品或二级稳定品阈值")
     elif status == STATUS_STOPPED:
         reasons.append("历史有广告消耗但当前已停投")
     elif status == STATUS_NEVER:
         reasons.append("暂无广告消耗")
+    elif status == STATUS_INSUFFICIENT_HISTORY:
+        reasons.append("投放未满 7 天，暂不进入周报经营评估")
 
     return {
         "product_id": int(product_id),
@@ -237,12 +269,18 @@ def classify_product(
         "overall_roas": _nullable_float(ad_summary.get("overall_roas")),
         "delivery_status": delivery_status,
         "delivery_start_time": ad_summary.get("delivery_start_time"),
+        "delivery_start_date": delivery_start_date,
+        "delivery_age_days": delivery_age_days,
+        "eligible_for_weekly_analysis": eligible_for_weekly_analysis,
         "delivery_end_time": ad_summary.get("delivery_end_time"),
         "active_days": _safe_int(ad_summary.get("active_days")),
         "computed_for_date": business_today,
         "computed_at": datetime.now().replace(microsecond=0),
         "details": {
             "reasons": reasons,
+            "delivery_start_date": _iso(delivery_start_date),
+            "delivery_age_days": delivery_age_days,
+            "eligible_for_weekly_analysis": eligible_for_weekly_analysis,
             "daily_orders_7d": [
                 {"date": day.isoformat(), "orders": _safe_int(daily_orders.get(day))}
                 for day in last_7d_dates
@@ -387,6 +425,8 @@ def _stable_marks_from_row(row: dict[str, Any]) -> list[str]:
         marks.append("7天稳定")
     if bool(row.get("stable_30d")):
         marks.append("30天稳定")
+    if str(row.get("status") or "").strip().lower() == STATUS_SECONDARY_STABLE:
+        marks.append("二级稳定")
     return marks
 
 
@@ -426,6 +466,9 @@ def _serialize_snapshot_row(row: dict[str, Any]) -> dict[str, Any]:
         "total_ad_spend_usd": _safe_float(row.get("total_ad_spend_usd")),
         "overall_roas": _nullable_float(row.get("overall_roas")),
         "delivery_status": str(row.get("delivery_status") or media_product_ad_status_cache.STATUS_NEVER),
+        "delivery_start_date": details.get("delivery_start_date"),
+        "delivery_age_days": _safe_int(details.get("delivery_age_days")),
+        "eligible_for_weekly_analysis": bool(details.get("eligible_for_weekly_analysis")),
         "computed_for_date": _iso(row.get("computed_for_date")),
         "computed_at": _iso(row.get("computed_at")),
         "details": details or {},
@@ -459,25 +502,33 @@ def stability_summary_from_rows(rows: Iterable[dict[str, Any]], *, limit: int = 
         "stable_total": 0,
         "stable_7d": 0,
         "stable_30d": 0,
+        "secondary_stable": 0,
         "potential": 0,
         "test": 0,
         "stopped": 0,
         "never": 0,
+        "insufficient_history": 0,
     }
     buckets: dict[str, list[dict[str, Any]]] = {
         STATUS_STABLE: [],
+        STATUS_SECONDARY_STABLE: [],
         STATUS_POTENTIAL: [],
         STATUS_TEST: [],
         STATUS_STOPPED: [],
         STATUS_NEVER: [],
+        STATUS_INSUFFICIENT_HISTORY: [],
     }
     computed_at_values: list[str] = []
     for item in items:
         status = item["status"]
         if status == STATUS_STABLE:
             counts["stable_total"] += 1
+        elif status == STATUS_SECONDARY_STABLE:
+            counts["secondary_stable"] += 1
         elif status in (STATUS_POTENTIAL, STATUS_TEST, STATUS_STOPPED, STATUS_NEVER):
             counts[status] += 1
+        elif status == STATUS_INSUFFICIENT_HISTORY:
+            counts["insufficient_history"] += 1
         if item.get("stable_7d"):
             counts["stable_7d"] += 1
         if item.get("stable_30d"):
@@ -513,7 +564,8 @@ def load_stability_summary(*, limit: int = 50) -> dict[str, Any]:
         "overall_roas, delivery_status, computed_for_date, computed_at, details_json "
         "FROM media_product_stability_snapshots "
         "ORDER BY CASE status "
-        "  WHEN 'stable' THEN 1 WHEN 'potential' THEN 2 WHEN 'test' THEN 3 "
-        "  WHEN 'stopped' THEN 4 ELSE 5 END, last_7d_orders DESC, last_30d_orders DESC"
+        "  WHEN 'stable' THEN 1 WHEN 'secondary_stable' THEN 2 WHEN 'potential' THEN 3 "
+        "  WHEN 'test' THEN 4 WHEN 'stopped' THEN 5 WHEN 'insufficient_history' THEN 6 ELSE 7 END, "
+        "last_7d_orders DESC, last_30d_orders DESC"
     )
     return stability_summary_from_rows(rows, limit=limit)
