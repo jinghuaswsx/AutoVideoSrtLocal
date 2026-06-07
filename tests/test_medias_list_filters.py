@@ -262,7 +262,7 @@ def test_medias_toolbar_compacts_actions_and_filters():
     assert "if (searchBtn && kwInput)" not in events_block
 
 
-def test_medias_mobile_adaptation_cardifies_product_and_video_tables():
+def test_medias_mobile_adaptation_keeps_tables_scrollable_and_aligned():
     from pathlib import Path
 
     html = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
@@ -275,17 +275,17 @@ def test_medias_mobile_adaptation_cardifies_product_and_video_tables():
     mobile_start = html.index("@media (max-width: 640px)", anchor)
     mobile_block = html[mobile_start:html.index(".oc-page-tabs {", mobile_start)]
 
-    assert ".oc-table-medias tbody tr" in mobile_block
-    assert 'grid-template-areas:' in mobile_block
-    assert '"cover info"' in mobile_block
-    assert '"actions actions"' in mobile_block
-    assert '.oc-table-medias tbody td:nth-child(10)::before { content:"语种和投放情况";' in mobile_block
+    assert "overflow-x:auto !important;" in mobile_block
+    assert "width:2138px !important;" in mobile_block
+    assert "width:2120px !important;" in mobile_block
+    assert ".oc-table-medias thead,\n  .oc-vm-table thead {\n    display:table-header-group;" in mobile_block
+    assert ".oc-table-medias tbody,\n  .oc-vm-table tbody {\n    display:table-row-group;" in mobile_block
+    assert ".oc-table-medias tr,\n  .oc-vm-table tr {\n    display:table-row;" in mobile_block
+    assert ".oc-table-medias th,\n  .oc-table-medias td,\n  .oc-vm-table th,\n  .oc-vm-table td {\n    display:table-cell;" in mobile_block
 
-    assert ".oc-vm-table tbody tr" in mobile_block
-    assert '"preview product"' in mobile_block
-    assert '"spend spend"' in mobile_block
-    assert '.oc-vm-table tbody td:nth-child(7)::before { content:"广告表现";' in mobile_block
-    assert "grid-template-columns:50px repeat(5, minmax(38px, 1fr));" in mobile_block
+    assert "grid-template-areas:" not in mobile_block
+    assert "display:none;" not in mobile_block[mobile_block.index(".oc-table-medias thead,"):]
+    assert "::before { content:" not in mobile_block
 
 
 def test_medias_mobile_filter_collapse_controls_cover_both_tabs():
