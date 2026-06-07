@@ -1024,12 +1024,98 @@ def test_new_product_task_page_renders_form(authed_client_no_db):
 
     assert rsp.status_code == 200
     body = rsp.get_data(as_text=True)
-    assert "创建新产品和任务" in body
+    assert "新素材任务" in body
+    assert "新品任务" in body
+    assert "补充素材" in body
     assert "/tasks/api/new-product" in body
+    assert "/tasks/api/material-products" in body
     assert "nptVideoFile" in body
     assert "nptRawProcessor" in body
     assert "language_assignments" in body
+    assert "task_kind" in body
+    assert "target_product_id" in body
     assert "product_detail_url" in body
+
+
+def test_material_products_search_route_returns_minimal_products(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_products(user_id, keyword="", archived=False, offset=0, limit=20):
+        captured.update({
+            "user_id": user_id,
+            "keyword": keyword,
+            "archived": archived,
+            "offset": offset,
+            "limit": limit,
+        })
+        return (
+            [
+                {
+                    "id": 88,
+                    "name": "Existing Product",
+                    "product_code": "existing-rjc",
+                    "user_id": 9,
+                    "owner_name": "Alice",
+                    "source": "manual",
+                    "product_link": "https://example.test/products/existing",
+                    "main_image": "https://cdn.example.test/existing.jpg",
+                }
+            ],
+            1,
+        )
+
+    monkeypatch.setattr(
+        "web.routes.tasks.medias.list_products",
+        fake_list_products,
+    )
+
+    rsp = authed_client_no_db.get("/tasks/api/material-products?q=existing&page_size=80")
+
+    assert rsp.status_code == 200
+    assert captured == {
+        "user_id": None,
+        "keyword": "existing",
+        "archived": False,
+        "offset": 0,
+        "limit": 50,
+    }
+    data = rsp.get_json()
+    assert data["total"] == 1
+    assert data["items"] == [
+        {
+            "id": 88,
+            "name": "Existing Product",
+            "product_code": "existing-rjc",
+            "owner_id": 9,
+            "owner_name": "Alice",
+            "source": "manual",
+            "product_link": "https://example.test/products/existing",
+            "main_image": "https://cdn.example.test/existing.jpg",
+        }
+    ]
+
+
+def test_material_products_route_supports_exact_product_lookup(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_get_product(product_id):
+        captured["product_id"] = product_id
+        return {
+            "id": product_id,
+            "name": "Exact Product",
+            "product_code": "exact-rjc",
+            "user_id": 7,
+            "owner_name": "Bob",
+        }
+
+    monkeypatch.setattr("web.routes.tasks.medias.get_product", fake_get_product)
+
+    rsp = authed_client_no_db.get("/tasks/api/material-products?product_id=66")
+
+    assert rsp.status_code == 200
+    assert captured["product_id"] == 66
+    assert rsp.get_json()["items"][0]["id"] == 66
+    assert rsp.get_json()["items"][0]["owner_id"] == 7
 
 
 def test_create_new_product_task_from_upload_calls_service(authed_client_no_db, monkeypatch):
@@ -1042,6 +1128,7 @@ def test_create_new_product_task_from_upload_calls_service(authed_client_no_db, 
         return {
             "ok": True,
             "source": "upload",
+            "task_kind": "new_product",
             "media_product_id": 12,
             "media_item_id": 34,
             "parent_task_id": 56,
@@ -1088,9 +1175,12 @@ def test_create_new_product_task_from_upload_calls_service(authed_client_no_db, 
     assert captured["language_assignments"] == {"DE": 9, "FR": 10}
     assert captured["is_urgent"] is True
     assert captured["force"] is False
+    assert captured["task_kind"] == "new_product"
+    assert captured["target_product_id"] is None
     assert captured["created_by"] == 1
     assert captured["video_file"].filename == "demo.mp4"
     assert audit_calls[0][0:2] == (56, "task_new_product_created")
+    assert audit_calls[0][2]["task_kind"] == "new_product"
     assert evaluation_calls == [
         {
             "product_id": 12,
@@ -1102,6 +1192,52 @@ def test_create_new_product_task_from_upload_calls_service(authed_client_no_db, 
     ]
 
 
+def test_create_new_product_task_from_upload_supplement_calls_service(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_create_from_upload(**kwargs):
+        captured.update(kwargs)
+        return {
+            "ok": True,
+            "source": "upload",
+            "task_kind": "supplement",
+            "media_product_id": 88,
+            "media_item_id": 89,
+            "parent_task_id": 90,
+            "countries": ["DE"],
+            "language_assignments": {"DE": 9},
+            "raw_processor_id": 8,
+            "is_urgent": False,
+            "product_detail_url": "/medias/existing",
+        }
+
+    monkeypatch.setattr("web.routes.tasks.new_product_tasks.create_from_upload", fake_create_from_upload)
+    monkeypatch.setattr("web.routes.tasks._audit_task_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.tasks._trigger_material_evaluation", lambda **kwargs: True)
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/new-product",
+        data={
+            "source": "upload",
+            "task_kind": "supplement",
+            "target_product_id": "88",
+            "owner_id": "",
+            "raw_processor_id": "8",
+            "countries": json.dumps(["DE"]),
+            "language_assignments": json.dumps({"DE": 9}),
+            "video_file": (io.BytesIO(b"fake video"), "supplement.mp4"),
+        },
+    )
+
+    assert rsp.status_code == 201
+    assert rsp.get_json()["task_kind"] == "supplement"
+    assert captured["task_kind"] == "supplement"
+    assert captured["target_product_id"] == 88
+    assert captured["owner_id"] == 0
+    assert captured["product_name"] == ""
+    assert captured["video_file"].filename == "supplement.mp4"
+
+
 def test_create_new_product_task_from_meta_hot_post_calls_service(authed_client_no_db, monkeypatch):
     captured = {}
     audit_calls = []
@@ -1111,6 +1247,7 @@ def test_create_new_product_task_from_meta_hot_post_calls_service(authed_client_
         return {
             "ok": True,
             "source": "meta_hot_post",
+            "task_kind": "new_product",
             "meta_hot_post_id": 77,
             "media_product_id": 12,
             "media_item_id": 34,
@@ -1151,6 +1288,8 @@ def test_create_new_product_task_from_meta_hot_post_calls_service(authed_client_
     assert captured == {
         "post_id": 77,
         "owner_id": 9,
+        "target_product_id": None,
+        "task_kind": "new_product",
         "countries": ["DE"],
         "language_assignments": {"DE": 9},
         "raw_processor_id": 8,
@@ -1159,6 +1298,55 @@ def test_create_new_product_task_from_meta_hot_post_calls_service(authed_client_
         "force": True,
     }
     assert audit_calls[0][2]["meta_hot_post_id"] == 77
+    assert audit_calls[0][2]["task_kind"] == "new_product"
+
+
+def test_create_new_product_task_from_meta_hot_post_supplement_calls_service(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_create_from_meta_hot_post(**kwargs):
+        captured.update(kwargs)
+        return {
+            "ok": True,
+            "source": "meta_hot_post",
+            "task_kind": "supplement",
+            "meta_hot_post_id": 77,
+            "media_product_id": 88,
+            "media_item_id": 89,
+            "parent_task_id": 90,
+            "countries": ["FR"],
+            "language_assignments": {"FR": 10},
+            "raw_processor_id": 8,
+            "is_urgent": False,
+            "product_detail_url": "/medias/existing",
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.new_product_tasks.create_from_meta_hot_post",
+        fake_create_from_meta_hot_post,
+    )
+    monkeypatch.setattr("web.routes.tasks._audit_task_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.tasks._trigger_material_evaluation", lambda **kwargs: True)
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/new-product",
+        json={
+            "source": "meta_hot_post",
+            "task_kind": "supplement",
+            "target_product_id": 88,
+            "post_id": 77,
+            "owner_id": 9,
+            "raw_processor_id": 8,
+            "countries": ["FR"],
+            "language_assignments": {"FR": 10},
+        },
+    )
+
+    assert rsp.status_code == 201
+    assert rsp.get_json()["task_kind"] == "supplement"
+    assert captured["task_kind"] == "supplement"
+    assert captured["target_product_id"] == 88
+    assert captured["post_id"] == 77
 
 
 def test_translation_work_users_route_returns_users(authed_client_no_db, monkeypatch):

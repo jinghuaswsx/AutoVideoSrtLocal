@@ -1,6 +1,7 @@
-"""New-product task orchestration.
+"""New-material task orchestration.
 
 Docs-anchor: docs/superpowers/specs/2026-06-06-task-center-new-product-task-video-flow-design.md
+Docs-anchor: docs/superpowers/specs/2026-06-07-task-center-new-material-task-existing-product-design.md
 """
 
 from __future__ import annotations
@@ -19,6 +20,9 @@ from pipeline.ffutil import get_media_duration
 
 
 _ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+TASK_KIND_NEW_PRODUCT = "new_product"
+TASK_KIND_SUPPLEMENT = "supplement"
+_TASK_KINDS = {TASK_KIND_NEW_PRODUCT, TASK_KIND_SUPPLEMENT}
 
 
 class NewProductTaskError(ValueError):
@@ -32,6 +36,8 @@ def create_from_upload(
     product_main_image_url: str = "",
     product_code: str = "",
     owner_id: int,
+    target_product_id: int | None = None,
+    task_kind: str = TASK_KIND_NEW_PRODUCT,
     video_file,
     countries: list[str],
     language_assignments: dict[str, int] | None,
@@ -40,11 +46,7 @@ def create_from_upload(
     is_urgent: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
-    name = str(product_name or "").strip()
-    if not name:
-        raise NewProductTaskError("product_name required")
-    if int(owner_id or 0) <= 0:
-        raise NewProductTaskError("owner_id required")
+    kind = _normalize_task_kind(task_kind)
     if not video_file or not str(getattr(video_file, "filename", "") or "").strip():
         raise NewProductTaskError("video_file required")
 
@@ -57,15 +59,28 @@ def create_from_upload(
         language_assignments=language_assignments,
         raw_processor_id=raw_processor_id,
     )
-    code = _normalize_product_code(product_code) or _product_code_from_url(product_link)
-    product_id, product_owner_id, is_new_product = _create_or_reuse_product(
-        owner_id=int(owner_id),
-        name=name,
-        source="新品任务",
-        product_code=code,
-        product_link=product_link,
-        product_main_image_url=product_main_image_url,
-    )
+    if kind == TASK_KIND_SUPPLEMENT:
+        product_id, product_owner_id, name = _resolve_existing_product_for_supplement(
+            target_product_id=target_product_id,
+            product_link=product_link,
+            product_main_image_url=product_main_image_url,
+        )
+        is_new_product = False
+    else:
+        name = str(product_name or "").strip()
+        if not name:
+            raise NewProductTaskError("product_name required")
+        if int(owner_id or 0) <= 0:
+            raise NewProductTaskError("owner_id required")
+        code = _normalize_product_code(product_code) or _product_code_from_url(product_link)
+        product_id, product_owner_id, is_new_product = _create_or_reuse_product(
+            owner_id=int(owner_id),
+            name=name,
+            source="新品任务",
+            product_code=code,
+            product_link=product_link,
+            product_main_image_url=product_main_image_url,
+        )
     item_id = _create_english_item_from_upload(
         product_id=product_id,
         owner_id=product_owner_id,
@@ -84,6 +99,7 @@ def create_from_upload(
         force=bool(force),
         is_new_product=is_new_product,
         source="upload",
+        task_kind=kind,
         product_link=str(product_link or "").strip(),
     )
 
@@ -92,6 +108,8 @@ def create_from_meta_hot_post(
     *,
     post_id: int,
     owner_id: int,
+    target_product_id: int | None = None,
+    task_kind: str = TASK_KIND_NEW_PRODUCT,
     countries: list[str],
     language_assignments: dict[str, int] | None,
     raw_processor_id: int,
@@ -103,6 +121,7 @@ def create_from_meta_hot_post(
         raise NewProductTaskError("post_id required")
     if int(owner_id or 0) <= 0:
         raise NewProductTaskError("owner_id required")
+    kind = _normalize_task_kind(task_kind)
 
     norm_countries, assignment_map = _validate_task_assignment(
         countries=countries,
@@ -116,6 +135,7 @@ def create_from_meta_hot_post(
         post_id=int(post_id),
         translator_id=int(owner_id),
         actor_user_id=int(created_by),
+        target_product_id=int(target_product_id or 0) if kind == TASK_KIND_SUPPLEMENT else None,
     )
     product_id = int(imported.get("media_product_id") or 0)
     item_id = int(imported.get("media_item_id") or 0)
@@ -123,15 +143,16 @@ def create_from_meta_hot_post(
         raise NewProductTaskError("meta hot post import did not return media ids")
 
     meta_context = _meta_hot_post_context(int(post_id))
-    _sync_product_link_fields(
-        product_id,
-        product_link=str(meta_context.get("product_url") or ""),
-        product_main_image_url=str(
-            meta_context.get("product_main_image_url")
-            or meta_context.get("image_url")
-            or ""
-        ),
-    )
+    if kind != TASK_KIND_SUPPLEMENT:
+        _sync_product_link_fields(
+            product_id,
+            product_link=str(meta_context.get("product_url") or ""),
+            product_main_image_url=str(
+                meta_context.get("product_main_image_url")
+                or meta_context.get("image_url")
+                or ""
+            ),
+        )
 
     return _create_task_for_item(
         product_id=product_id,
@@ -144,6 +165,7 @@ def create_from_meta_hot_post(
         force=bool(force),
         is_new_product=bool(imported.get("is_new_product")),
         source="meta_hot_post",
+        task_kind=kind,
         product_link=str(meta_context.get("product_url") or ""),
         meta_hot_post_id=int(post_id),
     )
@@ -161,6 +183,7 @@ def _create_task_for_item(
     force: bool,
     is_new_product: bool,
     source: str,
+    task_kind: str,
     product_link: str = "",
     meta_hot_post_id: int | None = None,
 ) -> dict[str, Any]:
@@ -208,6 +231,7 @@ def _create_task_for_item(
     return {
         "ok": True,
         "source": source,
+        "task_kind": _normalize_task_kind(task_kind),
         "media_product_id": int(product_id),
         "media_item_id": int(item_id),
         "parent_task_id": int(parent_id),
@@ -260,6 +284,40 @@ def _validate_task_assignment(
     for user_id in sorted(set(assignment_map.values())):
         ensure_translation_work_user(user_id)
     return norm_countries, assignment_map
+
+
+def _normalize_task_kind(value: str | None) -> str:
+    kind = str(value or TASK_KIND_NEW_PRODUCT).strip().lower()
+    if kind not in _TASK_KINDS:
+        raise NewProductTaskError("task_kind must be new_product or supplement")
+    return kind
+
+
+def _resolve_existing_product_for_supplement(
+    *,
+    target_product_id: int | None,
+    product_link: str = "",
+    product_main_image_url: str = "",
+) -> tuple[int, int, str]:
+    try:
+        product_id = int(target_product_id or 0)
+    except (TypeError, ValueError) as exc:
+        raise NewProductTaskError("target_product_id required") from exc
+    if product_id <= 0:
+        raise NewProductTaskError("target_product_id required")
+    product = medias.get_product(product_id)
+    if not product:
+        raise NewProductTaskError("target product not found")
+    _sync_product_link_fields(
+        product_id,
+        product_link=product_link,
+        product_main_image_url=product_main_image_url,
+    )
+    name = str(product.get("name") or f"product-{product_id}").strip()
+    owner_id = int(product.get("user_id") or 0)
+    if owner_id <= 0:
+        raise NewProductTaskError("target product owner missing")
+    return int(product_id), owner_id, name
 
 
 def _create_or_reuse_product(

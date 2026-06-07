@@ -223,12 +223,19 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "request-payload" in body
     assert "/xuanpin/api/meta-hot-posts/category-prompt" in body
     assert "/xuanpin/api/meta-hot-posts/failures" in body
+    assert "新素材任务" in body
     assert "新品任务" in body
+    assert "补充素材" in body
     assert "mkiCreateNewProductTaskFromMetaHot" in body
     assert "/tasks/api/new-product" in body
+    assert "/tasks/api/material-products" in body
     assert "source: 'meta_hot_post'" in body
+    assert "task_kind: selection.taskKind || 'new_product'" in body
+    assert "target_product_id: selection.taskKind === 'supplement' ? selection.targetProductId : null" in body
     assert "owner_id: selection.translatorId" in body
     assert "new_product_parent_task_id" in body
+    assert 'name="mkiXiaoTaskKind"' in body
+    assert 'id="mkiXiaoProductSearch"' in body
     assert "data-mki-lang-owner" in body
     assert "languageAssignments" in body
     assert 'id="mkiXiaoUrgent"' in body

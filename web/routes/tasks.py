@@ -11,7 +11,7 @@ from flask import Blueprint, current_app, render_template, request
 from flask_login import current_user, login_required
 
 from web.auth import permission_required
-from appcore import local_media_storage, new_product_tasks, object_keys
+from appcore import local_media_storage, medias, new_product_tasks, object_keys
 from appcore import raw_video_pool as rvp_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
@@ -221,6 +221,16 @@ def _parse_new_product_language_assignments(raw_value):
     if not isinstance(parsed, dict):
         raise ValueError("language_assignments must be an object")
     return parsed
+
+
+def _parse_optional_positive_int(value):
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _truthy_form_value(value) -> bool:
@@ -568,6 +578,8 @@ def api_create_new_product_task():
                 product_main_image_url=form.get("product_main_image_url") or "",
                 product_code=form.get("product_code") or "",
                 owner_id=int(form.get("owner_id") or 0),
+                target_product_id=_parse_optional_positive_int(form.get("target_product_id")),
+                task_kind=form.get("task_kind") or new_product_tasks.TASK_KIND_NEW_PRODUCT,
                 video_file=request.files.get("video_file"),
                 countries=countries,
                 language_assignments=language_assignments,
@@ -588,6 +600,8 @@ def api_create_new_product_task():
             result = new_product_tasks.create_from_meta_hot_post(
                 post_id=int(payload.get("post_id") or 0),
                 owner_id=int(payload.get("owner_id") or 0),
+                target_product_id=_parse_optional_positive_int(payload.get("target_product_id")),
+                task_kind=payload.get("task_kind") or new_product_tasks.TASK_KIND_NEW_PRODUCT,
                 countries=countries,
                 language_assignments=language_assignments,
                 raw_processor_id=int(payload.get("raw_processor_id") or 0),
@@ -606,6 +620,7 @@ def api_create_new_product_task():
         "task_new_product_created",
         {
             "source": result.get("source"),
+            "task_kind": result.get("task_kind"),
             "media_product_id": result.get("media_product_id"),
             "media_item_id": result.get("media_item_id"),
             "countries": result.get("countries"),
@@ -943,6 +958,48 @@ def api_raw_processors():
 @login_required
 def api_translation_work_users():
     return _json_response({"users": list_translation_work_users()})
+
+
+def _serialize_material_product(row: dict) -> dict:
+    return {
+        "id": int(row.get("id") or 0),
+        "name": row.get("name") or "",
+        "product_code": row.get("product_code") or "",
+        "owner_id": int(row.get("user_id") or 0) if row.get("user_id") is not None else None,
+        "owner_name": row.get("owner_name") or "",
+        "source": row.get("source") or "",
+        "product_link": row.get("product_link") or "",
+        "main_image": row.get("main_image") or "",
+    }
+
+
+@bp.route("/api/material-products", methods=["GET"])
+@login_required
+@permission_required("task_center")
+@admin_required
+def api_material_products():
+    product_id = _parse_optional_positive_int(request.args.get("product_id"))
+    if product_id:
+        product = medias.get_product(product_id)
+        items = [_serialize_material_product(product)] if product else []
+        return _json_response({"items": items, "total": len(items)})
+
+    keyword = (request.args.get("q") or request.args.get("keyword") or "").strip()
+    try:
+        page_size = min(50, max(1, int(request.args.get("page_size") or 20)))
+    except (TypeError, ValueError):
+        page_size = 20
+    rows, total = medias.list_products(
+        None,
+        keyword=keyword,
+        archived=False,
+        offset=0,
+        limit=page_size,
+    )
+    return _json_response({
+        "items": [_serialize_material_product(row) for row in rows],
+        "total": total,
+    })
 
 
 @bp.route("/api/languages", methods=["GET"])

@@ -353,6 +353,7 @@
          <a class="vw-btn" href="/medias/video?keyword=${encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
          <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`
       : `<button type="button" class="vw-btn vw-btn-primary" data-action="import" data-card-id="${esc(card.card_id)}">加入素材库</button>
+         <button type="button" class="vw-btn" data-action="supplement-task" data-card-id="${esc(card.card_id)}">补素材任务</button>
          <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>
          <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`;
     return `
@@ -385,28 +386,33 @@
     if (el) el.textContent = text || '';
   }
 
-  async function importMaterial(card) {
+  async function importMaterialPayload(card) {
     const mk = card.mk_video || {};
+    return fetchJson('/mk-import/video', {
+      method: 'POST',
+      headers: csrfHeaders(),
+      body: JSON.stringify({
+        mk_video_metadata: {
+          media_product_id: productId,
+          mk_id: card.mk_product_id || null,
+          mk_product_id: card.mk_product_id || null,
+          mk_product_name: card.mk_product_name || '',
+          product_name: card.mk_product_name || productName || '',
+          product_code: (currentData.product && currentData.product.mk_search_handle) || productCode || '',
+          product_link: card.mk_product_link || null,
+          video_path: mk.path || null,
+          cover_path: mk.image_path || null,
+          filename: mk.name || '',
+          main_image: card.main_image || null
+        }
+      })
+    });
+  }
+
+  async function importMaterial(card) {
     setCardState(card, '入库中...');
     try {
-      const result = await fetchJson('/mk-import/video', {
-        method: 'POST',
-        headers: csrfHeaders(),
-        body: JSON.stringify({
-          mk_video_metadata: {
-            mk_id: card.mk_product_id || null,
-            mk_product_id: card.mk_product_id || null,
-            mk_product_name: card.mk_product_name || '',
-            product_name: card.mk_product_name || productName || '',
-            product_code: (currentData.product && currentData.product.mk_search_handle) || productCode || '',
-            product_link: card.mk_product_link || null,
-            video_path: mk.path || null,
-            cover_path: mk.image_path || null,
-            filename: mk.name || '',
-            main_image: card.main_image || null
-          }
-        })
-      });
+      const result = await importMaterialPayload(card);
       setCardState(card, `已入库，素材 #${result.media_item_id || ''}`);
       await loadWorkbench(document.getElementById('vwSort').value);
     } catch (err) {
@@ -469,19 +475,24 @@
   }
 
   async function openTaskModal(card) {
-    if (!card.media_item_id) return;
     currentTaskCard = card;
     const bound = card.bound_item || {};
-    document.getElementById('vwTaskTitle').textContent = '创建小语种任务';
+    const isSupplement = !card.media_item_id;
+    document.getElementById('vwTaskTitle').textContent = isSupplement ? '补充素材任务' : '创建小语种任务';
     document.getElementById('vwTaskSub').textContent = bound.filename || (card.mk_video && card.mk_video.name) || '';
-    document.getElementById('vwTaskItem').value = `#${card.media_item_id} ${bound.filename || ''}`;
+    document.getElementById('vwTaskItem').value = isSupplement
+      ? `导入到产品 #${productId} ${productName || ''}`
+      : `#${card.media_item_id} ${bound.filename || ''}`;
     document.getElementById('vwTaskState').textContent = '加载中...';
     document.getElementById('vwTaskModal').style.display = 'flex';
     try {
+      const langUrl = card.media_item_id
+        ? '/tasks/api/languages?media_item_id=' + encodeURIComponent(card.media_item_id)
+        : '/tasks/api/languages';
       const [users, raw, langs] = await Promise.all([
         fetchJson('/tasks/api/translation-work-users'),
         fetchJson('/tasks/api/raw-processors'),
-        fetchJson('/tasks/api/languages?media_item_id=' + encodeURIComponent(card.media_item_id))
+        fetchJson(langUrl)
       ]);
       const translators = users.users || users.translators || [];
       const rawProcessors = raw.users || [];
@@ -525,12 +536,26 @@
     }
     document.getElementById('vwTaskState').textContent = '创建中...';
     try {
+      let mediaItemId = Number(currentTaskCard.media_item_id || 0);
+      if (!mediaItemId) {
+        document.getElementById('vwTaskState').textContent = '正在加入素材库...';
+        const imported = await importMaterialPayload(currentTaskCard);
+        mediaItemId = Number(imported.media_item_id || 0);
+        if (!mediaItemId) throw new Error('入库成功但缺少 media_item_id');
+        currentTaskCard.media_item_id = mediaItemId;
+        currentTaskCard.bound_item = {
+          id: mediaItemId,
+          filename: (currentTaskCard.mk_video && currentTaskCard.mk_video.name) || ''
+        };
+        document.getElementById('vwTaskItem').value = `#${mediaItemId} ${currentTaskCard.bound_item.filename || ''}`;
+        document.getElementById('vwTaskState').textContent = '素材已入库，正在创建任务...';
+      }
       const result = await fetchJson('/tasks/api/parent', {
         method: 'POST',
         headers: csrfHeaders(),
         body: JSON.stringify({
           media_product_id: productId,
-          media_item_id: currentTaskCard.media_item_id,
+          media_item_id: mediaItemId,
           countries,
           raw_processor_id: rawProcessorId,
           language_assignments: languageAssignments
@@ -560,7 +585,7 @@
     if (!card) return;
     if (action === 'import') importMaterial(card);
     if (action === 'ad') openAdModal(card);
-    if (action === 'task') openTaskModal(card);
+    if (action === 'task' || action === 'supplement-task') openTaskModal(card);
   });
   document.getElementById('vwSort').addEventListener('change', event => loadWorkbench(event.target.value));
   document.getElementById('vwAdLoadBtn').addEventListener('click', loadAdDetail);

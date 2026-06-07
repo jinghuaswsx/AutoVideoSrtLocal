@@ -1451,7 +1451,13 @@ def resolve_local_video_cover_response(post_id: int) -> LocalVideoResponse:
     return LocalVideoResponse(path, 200, None)
 
 
-def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dict[str, Any]:
+def import_hot_post(
+    post_id: int,
+    translator_id: int,
+    actor_user_id: int,
+    *,
+    target_product_id: int | None = None,
+) -> dict[str, Any]:
     from appcore.db import execute, query_one
     from appcore import object_keys, local_media_storage
     from appcore.medias import create_item
@@ -1469,9 +1475,10 @@ def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dic
     if not row:
         raise ValueError(f"Meta hot post not found: {post_id}")
 
+    target_pid = int(target_product_id or 0)
     local_product_id = row.get("local_product_id")
     local_media_item_id = row.get("local_media_item_id")
-    if local_product_id and local_media_item_id:
+    if target_pid <= 0 and local_product_id and local_media_item_id:
         return {
             "media_product_id": int(local_product_id),
             "media_item_id": int(local_media_item_id),
@@ -1493,12 +1500,21 @@ def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dic
         if cover_res and cover_res.exists():
             local_cover_path = cover_res
 
-    # 3. Create or reuse media product
+    # 3. Create or reuse media product. Supplement mode always targets the
+    # selected product and creates a fresh English item for this hot-post video.
     product_code = f"meta-hot-{post_id}"
-    existing_product = query_one(
-        "SELECT id, user_id FROM media_products WHERE product_code = %s AND deleted_at IS NULL LIMIT 1",
-        (product_code,)
-    )
+    if target_pid > 0:
+        existing_product = query_one(
+            "SELECT id, user_id FROM media_products WHERE id = %s AND deleted_at IS NULL LIMIT 1",
+            (target_pid,),
+        )
+        if not existing_product:
+            raise ValueError("target product not found")
+    else:
+        existing_product = query_one(
+            "SELECT id, user_id FROM media_products WHERE product_code = %s AND deleted_at IS NULL LIMIT 1",
+            (product_code,)
+        )
 
     is_new = existing_product is None
     if is_new:
@@ -1522,7 +1538,7 @@ def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dic
         owner_uid = int(existing_product["user_id"])
 
     # 4. Copy video to local media store
-    filename = f"meta_hot_{post_id}.mp4"
+    filename = _next_meta_hot_material_filename(product_id, f"meta_hot_{post_id}.mp4")
     dest_key = object_keys.build_media_object_key(owner_uid, product_id, filename)
     with open(local_path, "rb") as handle:
         local_media_storage.write_stream(dest_key, handle)
@@ -1531,7 +1547,7 @@ def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dic
     # Copy cover to local media store if exists
     cover_key = None
     if local_cover_path:
-        cover_filename = f"meta_hot_{post_id}_cover.jpg"
+        cover_filename = f"{Path(filename).stem}_cover.jpg"
         cover_key = object_keys.build_media_object_key(owner_uid, product_id, cover_filename)
         with open(local_cover_path, "rb") as handle:
             local_media_storage.write_stream(cover_key, handle)
@@ -1566,3 +1582,26 @@ def import_hot_post(post_id: int, translator_id: int, actor_user_id: int) -> dic
         "media_item_id": item_id,
         "is_new_product": is_new,
     }
+
+
+def _next_meta_hot_material_filename(product_id: int, base_filename: str) -> str:
+    from appcore.db import query_one
+
+    base = str(base_filename or "meta_hot_video.mp4").strip() or "meta_hot_video.mp4"
+    if "." in base:
+        stem, ext = base.rsplit(".", 1)
+        ext = f".{ext}"
+    else:
+        stem, ext = base, ""
+    candidate = base
+    suffix = 2
+    while True:
+        row = query_one(
+            "SELECT COUNT(*) AS cnt FROM media_items "
+            "WHERE product_id=%s AND filename=%s AND deleted_at IS NULL",
+            (int(product_id), candidate),
+        )
+        if int((row or {}).get("cnt") or 0) <= 0:
+            return candidate
+        candidate = f"{stem}_{suffix}{ext}"
+        suffix += 1

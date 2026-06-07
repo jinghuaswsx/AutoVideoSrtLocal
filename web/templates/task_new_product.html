@@ -1,13 +1,16 @@
 {% extends "layout.html" %}
 
-{% block title %}创建新产品和任务 - AutoVideoSrt{% endblock %}
-{% block page_title %}创建新产品和任务{% endblock %}
+{% block title %}新素材任务 - AutoVideoSrt{% endblock %}
+{% block page_title %}新素材任务{% endblock %}
 
 {% block extra_style %}
 .npt { display:grid; gap:16px; max-width:1180px; margin:0 auto; }
 .npt-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .npt-title { margin:0; font-size:22px; font-weight:800; color:var(--text-main); }
 .npt-subtitle { margin:4px 0 0; font-size:13px; color:#64748b; }
+.npt-mode { display:inline-grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; }
+.npt-mode button { min-height:34px; border:0; border-radius:6px; padding:0 14px; background:transparent; color:#475569; font-weight:800; cursor:pointer; }
+.npt-mode button.active { background:#0ea5e9; color:#fff; }
 .npt-grid { display:grid; grid-template-columns:minmax(0, 1.1fr) minmax(320px, .9fr); gap:16px; align-items:start; }
 .npt-section { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; }
 .npt-section-title { margin:0 0 12px; font-size:15px; font-weight:800; color:var(--text-main); }
@@ -16,6 +19,12 @@
 .npt-label { font-size:12px; font-weight:800; color:#475569; }
 .npt-input, .npt-select { width:100%; min-height:38px; border:1px solid var(--border-main); border-radius:8px; padding:8px 10px; background:var(--bg-card); color:var(--text-main); font:inherit; }
 .npt-input:focus, .npt-select:focus { outline:2px solid rgba(14,165,233,.18); border-color:#0ea5e9; }
+.npt-search-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; }
+.npt-product-results { display:grid; gap:8px; max-height:280px; overflow:auto; }
+.npt-product-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:10px; align-items:center; border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc; }
+.npt-product-name { font-size:13px; font-weight:800; color:var(--text-main); overflow-wrap:anywhere; }
+.npt-product-meta { margin-top:2px; font-size:12px; color:#64748b; overflow-wrap:anywhere; }
+.npt-selected { border:1px solid #bae6fd; background:#f0f9ff; border-radius:8px; padding:10px; font-size:13px; color:#0f172a; }
 .npt-drop { position:relative; min-height:260px; border:1.5px dashed var(--border-main); border-radius:8px; background:#f8fafc; display:grid; place-items:center; padding:16px; cursor:pointer; overflow:hidden; }
 .npt-drop.is-active { border-color:#0ea5e9; background:rgba(14,165,233,.08); }
 .npt-drop.has-file { border-style:solid; background:#0f172a; }
@@ -46,7 +55,7 @@
   .npt-head { flex-direction:column; }
 }
 @media (max-width:560px) {
-  .npt-lang-row { grid-template-columns:1fr; }
+  .npt-lang-row, .npt-search-row, .npt-product-row { grid-template-columns:1fr; }
 }
 {% endblock %}
 
@@ -54,15 +63,20 @@
 <div class="npt">
   <div class="npt-head">
     <div>
-      <h1 class="npt-title">创建新产品和任务</h1>
-      <p class="npt-subtitle">上传本地英语带货短视频，创建素材管理产品，并直接分配去字幕和小语种翻译任务。</p>
+      <h1 class="npt-title">新素材任务</h1>
+      <p class="npt-subtitle">新建产品或给现有产品补充英文视频素材，并直接分配去字幕和小语种翻译任务。</p>
+    </div>
+    <div class="npt-mode" role="tablist" aria-label="任务类型">
+      <button type="button" class="active" data-npt-mode="new_product">新品任务</button>
+      <button type="button" data-npt-mode="supplement">补充素材</button>
     </div>
   </div>
 
   <form id="nptForm" class="npt-form" enctype="multipart/form-data">
+    <input id="nptTargetProductId" name="target_product_id" type="hidden">
     <div class="npt-grid">
-      <section class="npt-section">
-        <h2 class="npt-section-title">产品信息</h2>
+      <section class="npt-section" id="nptNewProductPanel">
+        <h2 class="npt-section-title">新品任务</h2>
         <div class="npt-form">
           <label class="npt-field">
             <span class="npt-label">产品中文名</span>
@@ -84,6 +98,21 @@
             <span class="npt-label">产品负责人</span>
             <select class="npt-select" id="nptOwner" name="owner_id" required></select>
           </label>
+        </div>
+      </section>
+
+      <section class="npt-section npt-hidden" id="nptSupplementPanel">
+        <h2 class="npt-section-title">补充素材</h2>
+        <div class="npt-form">
+          <label class="npt-field">
+            <span class="npt-label">搜索现有产品</span>
+            <span class="npt-search-row">
+              <input class="npt-input" id="nptProductSearch" type="search" autocomplete="off" placeholder="产品名 / Product Code / 产品 ID">
+              <button class="npt-btn" id="nptProductSearchBtn" type="button">搜索</button>
+            </span>
+          </label>
+          <div id="nptSelectedProduct" class="npt-selected npt-hidden"></div>
+          <div id="nptProductResults" class="npt-product-results"></div>
         </div>
       </section>
 
@@ -127,7 +156,7 @@
 
     <div class="npt-actions">
       <button class="npt-btn" id="nptReset" type="button">清空</button>
-      <button class="npt-btn primary" id="nptSubmit" type="submit">创建产品和任务</button>
+      <button class="npt-btn primary" id="nptSubmit" type="submit">创建新素材任务</button>
     </div>
   </form>
 </div>
@@ -149,8 +178,18 @@
   const videoWrap = document.getElementById('nptVideoWrap');
   const videoPreview = document.getElementById('nptVideoPreview');
   const videoName = document.getElementById('nptVideoName');
+  const targetProductInput = document.getElementById('nptTargetProductId');
+  const searchInput = document.getElementById('nptProductSearch');
+  const searchBtn = document.getElementById('nptProductSearchBtn');
+  const productResults = document.getElementById('nptProductResults');
+  const selectedProductBox = document.getElementById('nptSelectedProduct');
+  const newProductPanel = document.getElementById('nptNewProductPanel');
+  const supplementPanel = document.getElementById('nptSupplementPanel');
+  const productNameInput = document.getElementById('nptProductName');
   let users = [];
   let previewUrl = '';
+  let taskKind = 'new_product';
+  let selectedProduct = null;
 
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -189,7 +228,7 @@
   function setBusy(busy) {
     submitBtn.disabled = !!busy;
     resetBtn.disabled = !!busy;
-    submitBtn.textContent = busy ? '创建中...' : '创建产品和任务';
+    submitBtn.textContent = busy ? '创建中...' : '创建新素材任务';
   }
 
   function renderLanguages(languages) {
@@ -217,6 +256,78 @@
     rawSelect.innerHTML = userOptions(true);
     renderLanguages(langsData.languages || []);
     clearStatus();
+  }
+
+  function setMode(next) {
+    taskKind = next === 'supplement' ? 'supplement' : 'new_product';
+    document.querySelectorAll('[data-npt-mode]').forEach(function(btn) {
+      btn.classList.toggle('active', btn.dataset.nptMode === taskKind);
+    });
+    newProductPanel.classList.toggle('npt-hidden', taskKind !== 'new_product');
+    supplementPanel.classList.toggle('npt-hidden', taskKind !== 'supplement');
+    productNameInput.required = taskKind === 'new_product';
+    ownerSelect.required = taskKind === 'new_product';
+    clearStatus();
+  }
+
+  function renderSelectedProduct(product) {
+    if (!product) {
+      selectedProductBox.classList.add('npt-hidden');
+      selectedProductBox.innerHTML = '';
+      targetProductInput.value = '';
+      return;
+    }
+    targetProductInput.value = String(product.id || '');
+    selectedProductBox.classList.remove('npt-hidden');
+    selectedProductBox.innerHTML = '<strong>已选择产品 #' + esc(product.id) + '</strong>'
+      + '<div>' + esc(product.name || '') + '</div>'
+      + '<div class="npt-product-meta">Product Code: ' + esc(product.product_code || '-')
+      + ' · 负责人: ' + esc(product.owner_name || product.owner_id || '-') + '</div>';
+  }
+
+  function selectProduct(product) {
+    selectedProduct = product || null;
+    renderSelectedProduct(selectedProduct);
+    if (selectedProduct) {
+      productResults.innerHTML = '';
+      searchInput.value = selectedProduct.name || selectedProduct.product_code || selectedProduct.id || '';
+    }
+  }
+
+  function renderProductResults(items) {
+    if (!items.length) {
+      productResults.innerHTML = '<div class="npt-status">没有匹配产品。</div>';
+      return;
+    }
+    productResults.innerHTML = items.map(function(product) {
+      return '<div class="npt-product-row">'
+        + '<div><div class="npt-product-name">#' + esc(product.id) + ' ' + esc(product.name || '') + '</div>'
+        + '<div class="npt-product-meta">Product Code: ' + esc(product.product_code || '-')
+        + ' · 负责人: ' + esc(product.owner_name || product.owner_id || '-') + '</div></div>'
+        + '<button class="npt-btn" type="button" data-npt-select-product="' + esc(product.id) + '">选择</button>'
+        + '</div>';
+    }).join('');
+    productResults.querySelectorAll('[data-npt-select-product]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const id = Number(btn.dataset.nptSelectProduct || 0);
+        selectProduct(items.find(function(item) { return Number(item.id) === id; }) || null);
+      });
+    });
+  }
+
+  async function searchProducts(options) {
+    const productId = options && options.productId ? Number(options.productId) : 0;
+    const q = productId ? '' : String(searchInput.value || '').trim();
+    const url = productId
+      ? '/tasks/api/material-products?product_id=' + encodeURIComponent(productId)
+      : '/tasks/api/material-products?q=' + encodeURIComponent(q);
+    productResults.innerHTML = '<div class="npt-status">搜索中...</div>';
+    const resp = await fetch(url);
+    const data = await resp.json().catch(function() { return {}; });
+    if (!resp.ok) throw new Error(data.error || '产品搜索失败');
+    const items = data.items || [];
+    if (productId && items.length) selectProduct(items[0]);
+    else renderProductResults(items);
   }
 
   function setFile(file) {
@@ -267,9 +378,23 @@
     }
   }
 
+  document.querySelectorAll('[data-npt-mode]').forEach(function(btn) {
+    btn.addEventListener('click', function() { setMode(btn.dataset.nptMode); });
+  });
   document.getElementById('nptProductLink').addEventListener('blur', function() {
     const codeInput = document.getElementById('nptProductCode');
     if (!codeInput.value.trim()) codeInput.value = productCodeFromLink(this.value.trim());
+  });
+  searchBtn.addEventListener('click', function() {
+    searchProducts().catch(function(error) {
+      productResults.innerHTML = '<div class="npt-status error">搜索失败：' + esc(error.message || error) + '</div>';
+    });
+  });
+  searchInput.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      searchBtn.click();
+    }
   });
 
   drop.addEventListener('click', function(event) {
@@ -310,12 +435,19 @@
 
   resetBtn.addEventListener('click', function() {
     form.reset();
+    selectedProduct = null;
+    renderSelectedProduct(null);
+    productResults.innerHTML = '';
     clearFile();
     clearStatus();
   });
 
   form.addEventListener('submit', async function(event) {
     event.preventDefault();
+    if (taskKind === 'supplement' && (!selectedProduct || !targetProductInput.value)) {
+      setStatus('error', '请先搜索并选择要补充素材的目标产品。');
+      return;
+    }
     const assignment = selectedAssignment();
     if (!assignment.countries.length) {
       setStatus('error', '请至少选择一个目标语种。');
@@ -329,12 +461,21 @@
     }
     const body = new FormData(form);
     body.set('source', 'upload');
+    body.set('task_kind', taskKind);
     body.set('countries', JSON.stringify(assignment.countries));
     body.set('language_assignments', JSON.stringify(assignment.assignments));
     body.set('is_urgent', document.getElementById('nptUrgent').checked ? '1' : '0');
+    if (taskKind === 'supplement') {
+      body.set('target_product_id', targetProductInput.value);
+      body.set('product_name', '');
+      body.set('owner_id', '');
+    }
 
     setBusy(true);
-    setStatus('', '正在创建素材管理产品、英文视频素材和任务中心任务...');
+    const runningText = taskKind === 'supplement'
+      ? '正在为现有产品新增英文视频素材并创建任务...'
+      : '正在创建素材管理产品、英文视频素材和任务中心任务...';
+    setStatus('', runningText);
     try {
       const resp = await fetch('/tasks/api/new-product', {
         method: 'POST',
@@ -345,8 +486,9 @@
       if (!resp.ok || !data.ok) throw new Error(data.error || '创建失败');
       const taskHref = '/tasks/?task_id=' + encodeURIComponent(data.parent_task_id);
       const productHref = data.product_detail_url || '/medias/product';
+      const successTitle = data.task_kind === 'supplement' ? '补充素材任务已创建' : '新品任务已创建';
       setStatus('success',
-        '<strong>新品任务已创建，父任务 #' + esc(data.parent_task_id) + '</strong>'
+        '<strong>' + esc(successTitle) + '，父任务 #' + esc(data.parent_task_id) + '</strong>'
         + '<div>去字幕状态：' + esc((data.raw_processing && data.raw_processing.status) || '') + '</div>'
         + '<div class="npt-result-links"><a href="' + esc(taskHref) + '">打开任务</a><a href="' + esc(productHref) + '">查看素材产品</a></div>'
       );
@@ -357,7 +499,18 @@
     }
   });
 
-  loadOptions().catch(function(error) {
+  loadOptions().then(function() {
+    const params = new URLSearchParams(window.location.search);
+    const initialKind = params.get('task_kind') || params.get('kind') || params.get('mode');
+    setMode(initialKind === 'supplement' ? 'supplement' : 'new_product');
+    const initialProductId = Number(params.get('target_product_id') || params.get('product_id') || 0);
+    if (initialProductId > 0) {
+      setMode('supplement');
+      searchProducts({productId: initialProductId}).catch(function(error) {
+        setStatus('error', '预选产品加载失败：' + esc(error && error.message ? error.message : error));
+      });
+    }
+  }).catch(function(error) {
     setStatus('error', '初始化失败：' + esc(error && error.message ? error.message : error));
   });
 })();
