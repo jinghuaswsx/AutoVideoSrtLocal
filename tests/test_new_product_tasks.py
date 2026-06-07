@@ -7,6 +7,15 @@ import pytest
 from appcore import new_product_tasks
 
 
+@pytest.fixture(autouse=True)
+def _mock_translation_work_users(monkeypatch):
+    monkeypatch.setattr(
+        new_product_tasks,
+        "ensure_translation_work_user",
+        lambda user_id: {"id": int(user_id), "display_name": f"user-{int(user_id)}"},
+    )
+
+
 def test_create_from_upload_supplement_uses_target_product_owner(monkeypatch):
     captured_item = {}
     captured_task = {}
