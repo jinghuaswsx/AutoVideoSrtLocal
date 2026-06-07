@@ -67,3 +67,8 @@ Final acceptance on 2026-06-07:
 - Focused changed-area regressions: `794 passed`.
 - `tests/test_web_routes.py`: `157 passed, 3 skipped`.
 - Full default suite: `7572 passed, 8 skipped, 10 warnings in 576.79s`.
+
+Post-merge acceptance notes:
+
+- After merging `origin/master`, realtime order-profit tests follow the calibrated Shopify fee forward-estimate multiplier from `docs/superpowers/specs/2026-05-04-shopify-payments-fee-rules.md`.
+- Stored Shopify fee totals remain authoritative; component display values are ratio-allocated from the calibrated computed split, so rounding may move one cent between platform and currency-conversion components while total fee and profit stay unchanged.
