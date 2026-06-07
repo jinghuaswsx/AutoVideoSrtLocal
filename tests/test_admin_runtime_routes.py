@@ -60,24 +60,27 @@ def test_anonymous_redirects_to_login(monkeypatch):
 def test_admin_role_is_forbidden(monkeypatch):
     fake = {"id": 5, "username": "alice", "role": "admin", "is_active": 1}
     client = _build_fake_app(monkeypatch, fake_user=fake)
-    resp = client.get("/admin/runtime/active-tasks")
-    # superadmin_required must reject role=admin.
-    assert resp.status_code == 403
+    resp = client.get("/admin/runtime/active-tasks", follow_redirects=False)
+    # The global 403 handler redirects authenticated users to the root page.
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
 
 
 def test_role_user_is_forbidden(monkeypatch):
     fake = {"id": 6, "username": "bob", "role": "user", "is_active": 1}
     client = _build_fake_app(monkeypatch, fake_user=fake)
-    resp = client.get("/admin/runtime/active-tasks")
-    assert resp.status_code == 403
+    resp = client.get("/admin/runtime/active-tasks", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
 
 
 def test_superadmin_with_other_username_is_forbidden(monkeypatch):
     # is_superadmin requires both role=superadmin AND username=='admin'.
     fake = {"id": 7, "username": "rooty", "role": "superadmin", "is_active": 1}
     client = _build_fake_app(monkeypatch, fake_user=fake)
-    resp = client.get("/admin/runtime/active-tasks")
-    assert resp.status_code == 403
+    resp = client.get("/admin/runtime/active-tasks", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
 
 
 def test_superadmin_admin_username_returns_snapshot(monkeypatch):

@@ -1,0 +1,454 @@
+{% extends "layout.html" %}
+{% block title %}{{ page_title }} — AutoVideoSrt{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+
+{% block extra_style %}
+<style>
+  .rud-page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .rud-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .rud-title {
+    margin: 0;
+    color: var(--fg);
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+  .rud-subtitle {
+    margin-top: 6px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .rud-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--fg);
+    background: var(--bg-card);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .rud-back:hover {
+    background: var(--bg-muted);
+  }
+  .rud-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .rud-kpi {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+    padding: 14px 16px;
+    min-width: 0;
+  }
+  .rud-kpi-label {
+    color: var(--fg-muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .rud-kpi-value {
+    margin-top: 4px;
+    color: var(--fg);
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+  .rud-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .rud-status {
+    color: var(--fg-muted);
+    font-size: 13px;
+  }
+  .rud-refresh {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--accent);
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .rud-refresh:hover {
+    filter: brightness(0.96);
+  }
+  .rud-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+  }
+  .rud-table {
+    width: 100%;
+    min-width: 1080px;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .rud-table th,
+  .rud-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  .rud-table th {
+    color: var(--fg-muted);
+    background: var(--bg-subtle);
+    font-weight: 800;
+  }
+  .rud-table tbody tr:hover td {
+    background: var(--bg-subtle);
+  }
+  .rud-table td.rud-wrap {
+    white-space: normal;
+    word-break: break-word;
+    min-width: 260px;
+    max-width: 420px;
+  }
+  .rud-table td.rud-num,
+  .rud-table th.rud-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .rud-muted {
+    color: var(--fg-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .rud-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .rud-page-btn {
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--fg);
+    background: var(--bg-card);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .rud-page-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  @media (max-width: 768px) {
+    .rud-title { font-size: 20px; }
+    .rud-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rud-kpi { padding: 12px; }
+    .rud-kpi-value { font-size: 20px; }
+    .rud-back, .rud-refresh { width: 100%; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="rud-page" data-detail-type="{{ detail_type }}">
+  <header class="rud-header">
+    <div>
+      <h1 class="rud-title">{{ page_title }}</h1>
+      <div class="rud-subtitle" id="rudSubtitle">product_launch_scope=unmatched</div>
+    </div>
+    <a class="rud-back" href="/order-analytics/realtime">返回实时大盘</a>
+  </header>
+
+  <section class="rud-kpis" aria-label="汇总">
+    <div class="rud-kpi">
+      <div class="rud-kpi-label" id="rudKpi1Label">数量</div>
+      <div class="rud-kpi-value" id="rudKpi1">-</div>
+    </div>
+    <div class="rud-kpi">
+      <div class="rud-kpi-label" id="rudKpi2Label">金额</div>
+      <div class="rud-kpi-value" id="rudKpi2">-</div>
+    </div>
+    <div class="rud-kpi">
+      <div class="rud-kpi-label" id="rudKpi3Label">补充金额</div>
+      <div class="rud-kpi-value" id="rudKpi3">-</div>
+    </div>
+    <div class="rud-kpi">
+      <div class="rud-kpi-label" id="rudKpi4Label">ROAS</div>
+      <div class="rud-kpi-value" id="rudKpi4">-</div>
+    </div>
+  </section>
+
+  <div class="rud-toolbar">
+    <div class="rud-status" id="rudStatus">加载中...</div>
+    <div class="rud-pagination" id="rudPagination"></div>
+    <button type="button" class="rud-refresh" id="rudRefresh">刷新</button>
+  </div>
+
+  <div class="rud-table-wrap">
+    <table class="rud-table" id="rudTable">
+      <thead id="rudThead"></thead>
+      <tbody id="rudTbody">
+        <tr><td>加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  'use strict';
+
+  var detailType = "{{ detail_type }}";
+  var endpoint = detailType === 'ads'
+    ? '/order-analytics/realtime-unmatched-ads/data'
+    : '/order-analytics/realtime-unmatched-orders/data';
+  var state = { page: 1, pageSize: 50, periodDate: null };
+
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function fmtInt(value) {
+    var n = Number(value || 0);
+    return Number.isFinite(n) ? Math.round(n).toLocaleString('en-US') : '0';
+  }
+
+  function fmtMoney(value) {
+    var n = Number(value || 0);
+    return Number.isFinite(n)
+      ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : '-';
+  }
+
+  function fmtRoas(value) {
+    var n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(2) : '-';
+  }
+
+  function campaignRoas(row) {
+    if (row.platform_roas != null) return row.platform_roas;
+    return Number(row.purchase_value_usd || 0) / Number(row.spend_usd || 0);
+  }
+
+  function fmtDateTime(value) {
+    if (!value) return '-';
+    return String(value).replace('T', ' ').slice(0, 16);
+  }
+
+  function dateLabel(period) {
+    period = period || {};
+    if (period.start_date || period.end_date) {
+      return [period.start_date || '-', period.end_date || '-'].join(' 至 ');
+    }
+    return period.date || '-';
+  }
+
+  function queryParams() {
+    var params = new URLSearchParams(window.location.search);
+    params.delete('product_id');
+    params.delete('order_page');
+    params.delete('order_page_size');
+    params.delete('page');
+    params.delete('page_size');
+    params.set('page', String(state.page));
+    params.set('page_size', String(state.pageSize));
+    return params;
+  }
+
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function renderSubtitle(payload) {
+    var scope = payload.scope || {};
+    var stores = (scope.stores || []).join(', ') || '全部店铺';
+    var periodText = dateLabel(payload.period);
+    var source = detailType === 'ads'
+      ? 'Meta 广告计划 allocation_reason=unmatched_product'
+      : '店小秘订单 product_id IS NULL';
+    setText('rudSubtitle', source + ' · ' + periodText + ' · ' + stores);
+  }
+
+  function renderKpis(payload) {
+    var summary = payload.summary || {};
+    if (detailType === 'ads') {
+      setText('rudKpi1Label', '广告计划数');
+      setText('rudKpi1', fmtInt(summary.count));
+      setText('rudKpi2Label', '广告消耗');
+      setText('rudKpi2', fmtMoney(summary.spend_usd));
+      setText('rudKpi3Label', 'Meta 购买价值');
+      setText('rudKpi3', fmtMoney(summary.purchase_value_usd));
+      setText('rudKpi4Label', 'Meta ROAS');
+      setText('rudKpi4', fmtRoas(Number(summary.purchase_value_usd || 0) / Number(summary.spend_usd || 0)));
+      return;
+    }
+    setText('rudKpi1Label', '订单数');
+    setText('rudKpi1', fmtInt(summary.order_count));
+    setText('rudKpi2Label', '商品销售额');
+    setText('rudKpi2', fmtMoney(summary.order_revenue));
+    setText('rudKpi3Label', '运费');
+    setText('rudKpi3', fmtMoney(summary.shipping_revenue));
+    setText('rudKpi4Label', '总销售额');
+    setText('rudKpi4', fmtMoney(summary.revenue_with_shipping));
+  }
+
+  function setHeaders() {
+    var thead = document.getElementById('rudThead');
+    if (!thead) return;
+    if (detailType === 'ads') {
+      thead.innerHTML = '<tr>'
+        + '<th>广告账户</th><th>Campaign</th><th>匹配状态</th>'
+        + '<th class="rud-num">消耗</th><th class="rud-num">购买价值</th><th class="rud-num">Meta ROAS</th>'
+        + '<th class="rud-num">成效数</th><th class="rud-num">展示</th><th class="rud-num">点击</th>'
+        + '<th>Campaign ID</th><th>标准化代码</th>'
+        + '</tr>';
+      return;
+    }
+    thead.innerHTML = '<tr>'
+      + '<th>广告日</th><th>订单时间</th><th>店铺</th><th>包裹号</th><th>订单号</th><th>国家</th>'
+      + '<th>商品</th><th>SKU</th><th>产品 ID</th>'
+      + '<th class="rud-num">件数</th><th class="rud-num">商品销售额</th><th class="rud-num">运费</th><th class="rud-num">总销售额</th>'
+      + '</tr>';
+  }
+
+  function renderRows(rows) {
+    var tbody = document.getElementById('rudTbody');
+    if (!tbody) return;
+    rows = rows || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="' + (detailType === 'ads' ? '11' : '13') + '">暂无数据</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(function(row) {
+      if (detailType === 'ads') {
+        return '<tr>'
+          + '<td>' + esc(row.ad_account_name || row.ad_account_id || '-') + '</td>'
+          + '<td class="rud-wrap"><strong>' + esc(row.campaign_name || row.normalized_campaign_code || '-') + '</strong></td>'
+          + '<td>未匹配产品</td>'
+          + '<td class="rud-num">' + esc(fmtMoney(row.spend_usd)) + '</td>'
+          + '<td class="rud-num">' + esc(fmtMoney(row.purchase_value_usd)) + '</td>'
+          + '<td class="rud-num">' + esc(fmtRoas(campaignRoas(row))) + '</td>'
+          + '<td class="rud-num">' + esc(fmtInt(row.result_count)) + '</td>'
+          + '<td class="rud-num">' + esc(fmtInt(row.impressions)) + '</td>'
+          + '<td class="rud-num">' + esc(fmtInt(row.clicks)) + '</td>'
+          + '<td>' + esc(row.campaign_id || '-') + '</td>'
+          + '<td class="rud-wrap">' + esc(row.normalized_campaign_code || '-') + '</td>'
+          + '</tr>';
+      }
+      return '<tr>'
+        + '<td>' + esc(row.meta_business_date || state.periodDate || '-') + '</td>'
+        + '<td>' + esc(fmtDateTime(row.order_time)) + '</td>'
+        + '<td>' + esc(row.site_code || '-') + '</td>'
+        + '<td>' + esc(row.package_number || row.dxm_package_id || '-') + '</td>'
+        + '<td>' + esc(row.dxm_order_id || '-') + '</td>'
+        + '<td>' + esc(row.buyer_country_name || row.buyer_country || '-') + '</td>'
+        + '<td class="rud-wrap"><strong>' + esc(row.product_names || '-') + '</strong><div class="rud-muted">' + esc(row.product_cn_names || '') + '</div></td>'
+        + '<td class="rud-wrap">' + esc(row.skus || '-') + '</td>'
+        + '<td>' + esc(row.product_ids || '-') + '</td>'
+        + '<td class="rud-num">' + esc(fmtInt(row.units)) + '</td>'
+        + '<td class="rud-num">' + esc(fmtMoney(row.product_revenue)) + '</td>'
+        + '<td class="rud-num">' + esc(fmtMoney(row.shipping_revenue)) + '</td>'
+        + '<td class="rud-num">' + esc(fmtMoney(row.total_revenue)) + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  function renderPagination(pageInfo) {
+    pageInfo = pageInfo || {};
+    var total = Number(pageInfo.total || 0);
+    var page = Number(pageInfo.page || state.page || 1);
+    var pages = Number(pageInfo.pages || 0);
+    var loaded = Math.min(total, page * Number(pageInfo.page_size || state.pageSize || 50));
+    setText('rudStatus', total > 0
+      ? '已加载 ' + fmtInt(loaded) + ' / 共 ' + fmtInt(total) + ' 条'
+      : '共 0 条');
+    var box = document.getElementById('rudPagination');
+    if (!box) return;
+    box.innerHTML = '<button type="button" class="rud-page-btn" id="rudPrev">上一页</button>'
+      + '<span class="rud-status">第 ' + fmtInt(page) + ' / ' + fmtInt(pages || 1) + ' 页</span>'
+      + '<button type="button" class="rud-page-btn" id="rudNext">下一页</button>';
+    var prev = document.getElementById('rudPrev');
+    var next = document.getElementById('rudNext');
+    if (prev) {
+      prev.disabled = page <= 1;
+      prev.addEventListener('click', function() {
+        if (state.page <= 1) return;
+        state.page -= 1;
+        loadData();
+      });
+    }
+    if (next) {
+      next.disabled = !pages || page >= pages;
+      next.addEventListener('click', function() {
+        if (pages && state.page >= pages) return;
+        state.page += 1;
+        loadData();
+      });
+    }
+  }
+
+  function loadData() {
+    setText('rudStatus', '加载中...');
+    var tbody = document.getElementById('rudTbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="' + (detailType === 'ads' ? '11' : '13') + '">加载中...</td></tr>';
+    fetch(endpoint + '?' + queryParams().toString(), { credentials: 'same-origin' })
+      .then(function(response) {
+        return response.json().then(function(payload) {
+          if (!response.ok) throw new Error(payload.detail || payload.error || '查询失败');
+          return payload;
+        });
+      })
+      .then(function(payload) {
+        state.periodDate = (payload.period || {}).date || null;
+        renderSubtitle(payload);
+        renderKpis(payload);
+        renderRows(payload.rows || []);
+        renderPagination(payload.page || {});
+      })
+      .catch(function(err) {
+        setText('rudStatus', '加载失败：' + (err.message || '查询失败'));
+        if (tbody) tbody.innerHTML = '<tr><td colspan="' + (detailType === 'ads' ? '11' : '13') + '">' + esc(err.message || '查询失败') + '</td></tr>';
+      });
+  }
+
+  setHeaders();
+  var refresh = document.getElementById('rudRefresh');
+  if (refresh) {
+    refresh.addEventListener('click', function() {
+      state.page = 1;
+      loadData();
+    });
+  }
+  loadData();
+})();
+</script>
+{% endblock %}

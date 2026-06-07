@@ -88,6 +88,7 @@ def test_create_parent_task_emits_pending_and_child_notifications(monkeypatch):
     )
 
     monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "get_existing_task_languages_for_item", lambda media_item_id: set())
     monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
     monkeypatch.setattr(tasks, "notifications_svc", fake_notifications, raising=False)
 
@@ -104,7 +105,7 @@ def test_create_parent_task_emits_pending_and_child_notifications(monkeypatch):
     parent_insert_sql, parent_insert_args = cursor.executed[0]
     assert "assignee_id" in parent_insert_sql
     assert "claimed_at" in parent_insert_sql
-    assert parent_insert_args == (7, 8, 6, tasks.PARENT_RAW_IN_PROGRESS, 1)
+    assert parent_insert_args == (7, 8, 6, tasks.PARENT_RAW_IN_PROGRESS, 0, 1)
     assert calls == [
         ("parent_assigned", 100, 6, "保温杯"),
         ("child_blocked", 101, 9, "保温杯", "DE"),
@@ -135,6 +136,7 @@ def test_create_parent_task_emits_child_notifications_per_language_assignee(monk
     )
 
     monkeypatch.setattr(tasks, "get_conn", lambda: conn)
+    monkeypatch.setattr(tasks, "get_existing_task_languages_for_item", lambda media_item_id: set())
     monkeypatch.setattr(tasks, "_product_name_for_notification", lambda cur, product_id: "保温杯")
     monkeypatch.setattr(tasks, "notifications_svc", fake_notifications, raising=False)
 

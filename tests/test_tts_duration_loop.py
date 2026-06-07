@@ -1439,7 +1439,7 @@ class TestStepTtsIntegration:
         # Prime with script_segments + localized_translation (what translate step would have set)
         task_state.update(
             task_id,
-            script_segments=[{"index": 0, "text": "x", "start_time": 0.0, "end_time": 3.0}],
+            script_segments=[{"index": 0, "text": "x", "start_time": 0.0, "end_time": 30.0}],
             source_full_text_zh="中文原文",
             source_language="zh",
             localized_translation={
@@ -1525,9 +1525,9 @@ class TestStepTtsIntegration:
         task_state.update(
             task_id,
             script_segments=[
-                {"index": 0, "text": "a", "start_time": 0.0, "end_time": 1.0},
-                {"index": 1, "text": "b", "start_time": 1.0, "end_time": 2.0},
-                {"index": 2, "text": "c", "start_time": 2.0, "end_time": 3.0},
+                {"index": 0, "text": "a", "start_time": 0.0, "end_time": 10.0},
+                {"index": 1, "text": "b", "start_time": 10.0, "end_time": 20.0},
+                {"index": 2, "text": "c", "start_time": 20.0, "end_time": 30.0},
             ],
             source_full_text_zh="source",
             source_language="zh",
@@ -1655,7 +1655,7 @@ class TestStepTtsIntegration:
         )
         task_state.update(
             task_id,
-            script_segments=[{"index": 0, "text": "a", "start_time": 0.0, "end_time": 1.0}],
+            script_segments=[{"index": 0, "text": "a", "start_time": 0.0, "end_time": 30.0}],
             source_full_text_zh="source",
             source_language="zh",
             localized_translation={

@@ -107,13 +107,13 @@ class TestVideoReviewJsonParse:
         assert result.get("_parse_error") is True
 
 
-# ── 4. 字幕截断日志 ──
+# ── 4. 字幕超长日志 ──
 
 class TestSubtitleTruncationWarning:
-    """当文本超出两行容量被截断时，应记录 warning 日志。"""
+    """当文本超出两行容量时，应记录 warning 日志。"""
 
     def test_long_text_logs_warning(self, caplog):
-        """超长文本应在日志中记录截断警告。"""
+        """超长文本应在日志中记录显示容量警告。"""
         from pipeline.subtitle import wrap_text
         # 构造一段超长文本（远超 2 行 × 42 字符 = 84 字符）
         long_text = " ".join(["superlongword"] * 20)  # ~260 字符
@@ -121,8 +121,8 @@ class TestSubtitleTruncationWarning:
         with caplog.at_level(logging.WARNING, logger="pipeline.subtitle"):
             wrap_text(long_text)
 
-        assert any("truncat" in r.message.lower() or "截断" in r.message for r in caplog.records), \
-            "超长文本截断时应记录 warning 日志"
+        assert any("字幕文本超过显示容量" in r.message for r in caplog.records), \
+            "超长文本超过显示容量时应记录 warning 日志"
 
     def test_normal_text_no_warning(self, caplog):
         """正常长度文本不应记录截断警告。"""

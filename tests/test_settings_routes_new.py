@@ -290,9 +290,16 @@ def test_settings_post_infrastructure_updates_active_tos_channel(admin_no_db_cli
 
 def test_settings_requires_exact_admin_username(non_owner_clients):
     manager_client, normal_client = non_owner_clients
-    assert manager_client.get("/settings").status_code == 403
-    assert normal_client.get("/settings").status_code == 403
-    assert manager_client.get("/admin/settings/ai-pricing/list").status_code == 403
+    manager_settings = manager_client.get("/settings", follow_redirects=False)
+    normal_settings = normal_client.get("/settings", follow_redirects=False)
+    manager_pricing = manager_client.get("/admin/settings/ai-pricing/list", follow_redirects=False)
+
+    assert [manager_settings.status_code, normal_settings.status_code, manager_pricing.status_code] == [302, 302, 302]
+    assert [
+        manager_settings.headers["Location"],
+        normal_settings.headers["Location"],
+        manager_pricing.headers["Location"],
+    ] == ["/", "/", "/"]
 
 
 # ---------------------------------------------------------------------------
@@ -548,7 +555,7 @@ def test_settings_get_renders_global_image_translate_model_select(admin_no_db_cl
     assert 'name="image_translate_default_model"' in body
     assert 'value="gemini-3-pro-image-preview" selected' in body
     assert '"openrouter"' in body
-    assert "Google Vertex AI (ADC)" in body
+    assert "Google Cloud (Vertex AI)" in body
     assert "Nano Banana Pro（高保真）" in body
 
 
@@ -578,7 +585,7 @@ def test_settings_get_renders_meta_hot_posts_translate_model_controls(admin_no_d
                    "module": "xuanpin",
                    "label": "Meta hot posts message translation",
                    "description": "...",
-                   "provider": "gemini_vertex_adc",
+                   "provider": "gemini_vertex",
                    "model": "gemini-3.1-flash-lite",
                    "extra": {},
                    "enabled": True,
@@ -595,7 +602,7 @@ def test_settings_get_renders_meta_hot_posts_translate_model_controls(admin_no_d
     body = resp.get_data(as_text=True)
     assert 'name="meta_hot_posts_translate_provider"' in body
     assert 'name="meta_hot_posts_translate_model_key"' in body
-    assert 'value="gemini_vertex_adc" selected' in body
+    assert 'value="gemini_vertex" selected' in body
     assert 'value="openrouter"' in body
     assert 'value="gemini_3_flash"' in body
     assert 'value="gemini_31_flash_lite" selected' in body
@@ -613,16 +620,15 @@ def test_settings_get_renders_fine_ai_provider_profile_controls(admin_no_db_clie
         },
         "scheduled": {
             "profile": "scheduled",
-            "provider": "gemini_vertex_adc",
+            "provider": "gemini_vertex",
             "model": "gemini-3.5-flash",
-            "label": "GOOGLE VERTEX AI ADC",
+            "label": "GOOGLE VERTEX AI",
         },
     }
     provider_options = [
         {"provider": "openrouter", "label": "OPENROUTER", "model": "google/gemini-3.5-flash"},
         {"provider": "gemini_aistudio", "label": "GOOGLE AI STUDIO", "model": "gemini-3.5-flash"},
         {"provider": "gemini_vertex", "label": "GOOGLE VERTEX AI", "model": "gemini-3.5-flash"},
-        {"provider": "gemini_vertex_adc", "label": "GOOGLE VERTEX AI ADC", "model": "gemini-3.5-flash"},
     ]
 
     with patch("web.routes.settings.get_all", return_value={}), \
@@ -653,9 +659,9 @@ def test_settings_get_renders_fine_ai_provider_profile_controls(admin_no_db_clie
     assert "AI 精细评估模型配置" in body
     assert "Gemini 3.5 Flash" in body
     assert 'value="gemini_aistudio" selected' in body
-    assert 'value="gemini_vertex_adc" selected' in body
+    assert 'value="gemini_vertex" selected' in body
     assert "OPENROUTER" in body
-    assert "GOOGLE VERTEX AI ADC" in body
+    assert "GOOGLE VERTEX AI" in body
 
 
 def test_settings_post_providers_saves_meta_hot_posts_translate_binding(admin_no_db_client):
@@ -693,7 +699,7 @@ def test_settings_post_providers_saves_fine_ai_provider_profiles(admin_no_db_cli
         resp = admin_no_db_client.post("/settings", data={
             "tab": "providers",
             "fine_ai_manual_provider": "openrouter",
-            "fine_ai_scheduled_provider": "gemini_vertex_adc",
+            "fine_ai_scheduled_provider": "gemini_vertex",
             "fine_ai_parallel_mode": "parallel",
             "fine_ai_country_concurrency": "2",
         })
@@ -701,13 +707,13 @@ def test_settings_post_providers_saves_fine_ai_provider_profiles(admin_no_db_cli
     assert resp.status_code in (302, 303)
     assert [call.args for call in m_set.call_args_list] == [
         ("manual", "openrouter"),
-        ("scheduled", "gemini_vertex_adc"),
+        ("scheduled", "gemini_vertex"),
     ]
     m_mode.assert_called_once_with("parallel")
     m_concurrency.assert_called_once_with("2")
 
 
-def test_settings_post_providers_saves_meta_hot_posts_vertex_adc_flash_lite(admin_no_db_client):
+def test_settings_post_providers_saves_meta_hot_posts_vertex_flash_lite(admin_no_db_client):
     with patch("web.routes.settings.set_image_translate_channel"), \
          patch("web.routes.settings.set_image_translate_default_model"), \
          patch("web.routes.settings.set_openrouter_openai_image2_enabled"), \
@@ -716,14 +722,14 @@ def test_settings_post_providers_saves_meta_hot_posts_vertex_adc_flash_lite(admi
          patch("web.routes.settings.llm_bindings.upsert") as m_upsert:
         resp = admin_no_db_client.post("/settings", data={
             "tab": "providers",
-            "meta_hot_posts_translate_provider": "gemini_vertex_adc",
+            "meta_hot_posts_translate_provider": "gemini_vertex",
             "meta_hot_posts_translate_model_key": "gemini_31_flash_lite",
         })
 
     assert resp.status_code in (302, 303)
     m_upsert.assert_any_call(
         "meta_hot_posts.translate_message",
-        provider="gemini_vertex_adc",
+        provider="gemini_vertex",
         model="gemini-3.1-flash-lite",
         updated_by=1,
     )
@@ -1042,10 +1048,9 @@ def test_settings_bindings_voice_selection_shows_three_provider_channels(admin_n
     body = resp.get_data(as_text=True)
     row_html = body.split('data-code="voice_selection.assess"', 1)[1].split("</select>", 1)[0]
     assert 'value="openrouter" selected' in row_html
-    assert 'value="gemini_vertex_adc"' in row_html
+    assert 'value="gemini_vertex"' in row_html
     assert 'value="gemini_aistudio"' in row_html
     assert 'value="doubao"' not in row_html
-    assert 'value="gemini_vertex"' not in row_html
 
 
 def test_settings_omni_preset_renders_voice_ai_auto_select_checkbox_checked_by_default(admin_no_db_client):
@@ -1068,18 +1073,18 @@ def test_settings_omni_preset_renders_voice_ai_auto_select_checkbox_checked_by_d
     assert 'checked' in body.split('name="voice_ai_auto_select_enabled"', 1)[1].split(">", 1)[0]
 
 
-def test_settings_post_bindings_accepts_voice_selection_vertex_adc(admin_no_db_client):
+def test_settings_post_bindings_accepts_voice_selection_vertex(admin_no_db_client):
     with patch("web.routes.settings.llm_bindings.upsert") as m_upsert:
         resp = admin_no_db_client.post("/settings", data={
             "tab": "bindings",
-            "binding_voice_selection.assess_provider": "gemini_vertex_adc",
+            "binding_voice_selection.assess_provider": "gemini_vertex",
             "binding_voice_selection.assess_model": "gemini-3.5-flash",
         })
 
     assert resp.status_code in (302, 303)
     m_upsert.assert_any_call(
         "voice_selection.assess",
-        provider="gemini_vertex_adc",
+        provider="gemini_vertex",
         model="gemini-3.5-flash",
         updated_by=1,
     )

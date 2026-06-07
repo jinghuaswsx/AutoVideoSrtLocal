@@ -86,9 +86,9 @@ def test_get_product_detail_includes_enabled_product_link_domains(authed_user_cl
     payload = response.get_json()
 
     assert response.status_code == 200
-    assert payload["product"]["product_link_domains"] == [
-        {"domain": "newjoyloo.com"},
-        {"domain": "omurio.com"},
+    assert [row["domain"] for row in payload["product"]["product_link_domains"]] == [
+        "newjoyloo.com",
+        "omurio.com",
     ]
 
 

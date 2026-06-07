@@ -8,7 +8,7 @@ def _assert_unified_selection_tabs(body: str, active_href: str, active_label: st
     assert f'<a class="xuanpin-tab active" href="{active_href}" role="tab" aria-selected="true">{active_label}</a>' in body
     assert '<a class="xuanpin-tab" href="/xuanpin/mk" role="tab" aria-selected="false">明空选品</a>' in body or active_href == "/xuanpin/mk"
     assert '<a class="xuanpin-tab" href="/xuanpin/meta-hot-posts" role="tab" aria-selected="false">Meta热帖</a>' in body or active_href == "/xuanpin/meta-hot-posts"
-    assert '<a class="xuanpin-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT</a>' in body or active_href == "/xuanpin/tabcut"
+    assert '<a class="xuanpin-tab" href="/xuanpin/tabcut" role="tab" aria-selected="false">TABCUT选品</a>' in body or active_href == "/xuanpin/tabcut"
     assert '<a class="xuanpin-tab" href="/xuanpin/today-recommendations" role="tab" aria-selected="false">今日推荐</a>' in body or active_href == "/xuanpin/today-recommendations"
     assert '<a class="xuanpin-tab" href="/xuanpin/new-products" role="tab" aria-selected="false">新品选择</a>' in body or active_href == "/xuanpin/new-products"
 

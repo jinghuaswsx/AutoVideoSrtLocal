@@ -514,6 +514,7 @@ def test_run_av_localize_falls_back_when_shot_notes_fail(tmp_path, monkeypatch):
 
     monkeypatch.setattr("config.AV_LOCALIZE_FALLBACK", False)
     monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr("appcore.quality_assessment.trigger_assessment", lambda **kwargs: None)
     monkeypatch.setattr(
         "pipeline.shot_notes.generate_shot_notes",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("openrouter timeout")),
@@ -613,7 +614,7 @@ def test_run_av_localize_falls_back_when_shot_notes_fail(tmp_path, monkeypatch):
     monkeypatch.setattr(
         runtime,
         "_rebuild_tts_full_audio_from_segments",
-        lambda task_dir, segments, variant="av": str(tmp_path / "tts_full.rebuilt.av.mp3"),
+        lambda task_dir, segments, variant="av", **kwargs: str(tmp_path / "tts_full.rebuilt.av.mp3"),
         raising=False,
     )
     monkeypatch.setattr("pipeline.subtitle.build_srt_from_chunks", lambda chunks: "srt")
@@ -787,6 +788,7 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
 
     monkeypatch.setattr("config.AV_LOCALIZE_FALLBACK", False)
     monkeypatch.setattr("appcore.source_video.ensure_local_source_video", lambda task_id: None)
+    monkeypatch.setattr("appcore.quality_assessment.trigger_assessment", lambda **kwargs: None)
     monkeypatch.setattr(
         "pipeline.shot_notes.generate_shot_notes",
         lambda **kwargs: call_order.append("shot_notes") or shot_notes,
@@ -832,7 +834,7 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
     monkeypatch.setattr(
         runtime,
         "_rebuild_tts_full_audio_from_segments",
-        lambda task_dir, segments, variant="av": rebuild_calls.append(
+        lambda task_dir, segments, variant="av", **kwargs: rebuild_calls.append(
             {"task_dir": task_dir, "segments": segments, "variant": variant}
         ) or rebuilt_audio_path,
         raising=False,
@@ -846,7 +848,7 @@ def test_run_av_localize_happy_flow(tmp_path, monkeypatch):
 
     saved = task_state.get(task_id)
     assert call_order == ["source_normalize", "shot_notes", "av_translate", "tts", "reconcile", "subtitle"]
-    final_tts_segments = saved["variants"]["av"]["tts_result"]["segments"]
+    final_tts_segments = saved["segments"]
     assert rebuild_calls == [
         {"task_dir": str(tmp_path), "segments": final_tts_segments, "variant": "av"}
     ]

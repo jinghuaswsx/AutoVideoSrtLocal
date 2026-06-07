@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AutoVideoSrtLocal Agent README</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f8fb;
+      --paper: #ffffff;
+      --paper-soft: #f8fbfd;
+      --fg: #132536;
+      --muted: #5f7285;
+      --border: #dce7ef;
+      --border-strong: #bfd1df;
+      --accent: #0b74b8;
+      --accent-soft: #e8f4fb;
+      --code-bg: #edf4f8;
+      --shadow: 0 16px 48px rgba(21, 58, 84, 0.10);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--sans);
+      line-height: 1.65;
+    }
+
+    .shell {
+      min-height: 100vh;
+      padding: 28px 18px 56px;
+    }
+
+    .reader {
+      max-width: 1120px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .reader-header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(10px);
+    }
+
+    .reader-title {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.35;
+      font-weight: 700;
+      color: var(--fg);
+    }
+
+    .reader-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .reader-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 6px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+      background: var(--paper);
+    }
+
+    .reader-link:hover {
+      background: var(--accent-soft);
+    }
+
+    .content {
+      padding: 22px 34px 48px;
+    }
+
+    .loading,
+    .error {
+      padding: 40px 34px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .error {
+      color: #9b2d20;
+      background: #fff4f0;
+      border-top: 1px solid #ffd0c2;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+      line-height: 1.28;
+      color: #0f2f47;
+      scroll-margin-top: 84px;
+    }
+
+    h1 {
+      margin: 12px 0 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 32px;
+    }
+
+    h2 {
+      margin: 36px 0 14px;
+      padding-top: 6px;
+      font-size: 24px;
+    }
+
+    h3 {
+      margin: 28px 0 12px;
+      font-size: 19px;
+    }
+
+    h4,
+    h5,
+    h6 {
+      margin: 20px 0 10px;
+      font-size: 16px;
+    }
+
+    p {
+      margin: 12px 0;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(11, 116, 184, 0.28);
+    }
+
+    a:hover {
+      border-bottom-color: currentColor;
+    }
+
+    ul,
+    ol {
+      margin: 12px 0 16px;
+      padding-left: 24px;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    blockquote {
+      margin: 16px 0;
+      padding: 10px 16px;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-soft);
+      color: #23475f;
+    }
+
+    code {
+      font-family: var(--mono);
+      font-size: 0.92em;
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: var(--code-bg);
+      color: #0e425f;
+    }
+
+    pre {
+      margin: 16px 0;
+      padding: 16px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #0f2433;
+      color: #e7f2f8;
+      line-height: 1.55;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font-size: 13px;
+    }
+
+    .table-wrap {
+      margin: 16px 0 20px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    table {
+      width: 100%;
+      min-width: 640px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--paper-soft);
+      color: #18374c;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    hr {
+      height: 1px;
+      margin: 28px 0;
+      border: 0;
+      background: var(--border);
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        padding: 0;
+      }
+
+      .reader {
+        min-height: 100vh;
+        border: 0;
+        border-radius: 0;
+      }
+
+      .reader-header {
+        position: static;
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 14px 16px;
+      }
+
+      .content {
+        padding: 18px 18px 36px;
+      }
+
+      h1 {
+        font-size: 27px;
+      }
+
+      h2 {
+        font-size: 21px;
+      }
+
+      table {
+        min-width: 560px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <article class="reader">
+      <header class="reader-header">
+        <h1 class="reader-title">AutoVideoSrtLocal Agent README</h1>
+        <nav class="reader-actions" aria-label="文档操作">
+          <a class="reader-link" href="./agent-readme.md">查看 Markdown 源文档</a>
+          <a class="reader-link" href="/">返回系统首页</a>
+        </nav>
+      </header>
+      <section id="content" class="content">
+        <div class="loading">正在加载文档...</div>
+      </section>
+    </article>
+  </main>
+
+  <script>
+    const content = document.getElementById("content");
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#096;");
+    }
+
+    function normalizeHref(href) {
+      const value = String(href || "").trim();
+      if (!value || value.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(value)) {
+        return value;
+      }
+      return "https://github.com/jinghuaswsx/AutoVideoSrtLocal/blob/master/" + value.replace(/^\.\//, "");
+    }
+
+    function slugify(text) {
+      return String(text)
+        .trim()
+        .toLowerCase()
+        .replace(/[`*_\[\]().:：\/\\]+/g, "")
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-") || "section";
+    }
+
+    function inline(raw) {
+      const codeParts = [];
+      let text = String(raw).replace(/`([^`]+)`/g, (_, code) => {
+        const token = "\\u0000CODE" + codeParts.length + "\\u0000";
+        codeParts.push("<code>" + escapeHtml(code) + "</code>");
+        return token;
+      });
+
+      text = escapeHtml(text);
+      text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
+        const url = normalizeHref(href);
+        return '<a href="' + escapeAttr(url) + '" target="_blank" rel="noopener noreferrer">' + label + "</a>";
+      });
+      text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      text = text.replace(/\b(HTTP\s+[0-9]{3}|[0-9]{3})\b/g, "<strong>$1</strong>");
+      codeParts.forEach((html, index) => {
+        text = text.replace("\\u0000CODE" + index + "\\u0000", html);
+      });
+      return text;
+    }
+
+    function isTableSeparator(line) {
+      return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+    }
+
+    function splitTableRow(line) {
+      return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+    }
+
+    function renderTable(lines, start) {
+      const rows = [];
+      let index = start;
+      while (index < lines.length && /^\s*\|/.test(lines[index])) {
+        rows.push(lines[index]);
+        index += 1;
+      }
+
+      const headers = splitTableRow(rows[0]);
+      const bodyRows = rows.slice(2).map(splitTableRow);
+      const head = headers.map((cell) => "<th>" + inline(cell) + "</th>").join("");
+      const body = bodyRows.map((cells) => {
+        return "<tr>" + headers.map((_, cellIndex) => {
+          return "<td>" + inline(cells[cellIndex] || "") + "</td>";
+        }).join("") + "</tr>";
+      }).join("");
+
+      return {
+        html: '<div class="table-wrap"><table><thead><tr>' + head + '</tr></thead><tbody>' + body + "</tbody></table></div>",
+        next: index
+      };
+    }
+
+    function flushParagraph(paragraph, output) {
+      if (!paragraph.length) {
+        return;
+      }
+      output.push("<p>" + inline(paragraph.join(" ")) + "</p>");
+      paragraph.length = 0;
+    }
+
+    function renderMarkdown(markdown) {
+      const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+      const output = [];
+      const paragraph = [];
+      const headingCounts = {};
+      let i = 0;
+
+      while (i < lines.length) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        if (!trimmed) {
+          flushParagraph(paragraph, output);
+          i += 1;
+          continue;
+        }
+
+        if (/^```/.test(trimmed)) {
+          flushParagraph(paragraph, output);
+          const language = trimmed.replace(/^```/, "").trim();
+          const code = [];
+          i += 1;
+          while (i < lines.length && !/^```/.test(lines[i].trim())) {
+            code.push(lines[i]);
+            i += 1;
+          }
+          if (i < lines.length) {
+            i += 1;
+          }
+          output.push("<pre><code" + (language ? ' data-language="' + escapeAttr(language) + '"' : "") + ">" + escapeHtml(code.join("\\n")) + "</code></pre>");
+          continue;
+        }
+
+        const heading = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+        if (heading) {
+          flushParagraph(paragraph, output);
+          const level = heading[1].length;
+          const title = heading[2].trim();
+          const baseId = slugify(title);
+          headingCounts[baseId] = (headingCounts[baseId] || 0) + 1;
+          const id = headingCounts[baseId] > 1 ? baseId + "-" + headingCounts[baseId] : baseId;
+          output.push("<h" + level + ' id="' + escapeAttr(id) + '">' + inline(title) + "</h" + level + ">");
+          i += 1;
+          continue;
+        }
+
+        if (/^---+$/.test(trimmed)) {
+          flushParagraph(paragraph, output);
+          output.push("<hr>");
+          i += 1;
+          continue;
+        }
+
+        if (/^>\s?/.test(trimmed)) {
+          flushParagraph(paragraph, output);
+          const quote = [];
+          while (i < lines.length && /^>\s?/.test(lines[i].trim())) {
+            quote.push(lines[i].trim().replace(/^>\s?/, ""));
+            i += 1;
+          }
+          output.push("<blockquote>" + inline(quote.join(" ")) + "</blockquote>");
+          continue;
+        }
+
+        if (i + 1 < lines.length && /^\s*\|/.test(line) && isTableSeparator(lines[i + 1])) {
+          flushParagraph(paragraph, output);
+          const table = renderTable(lines, i);
+          output.push(table.html);
+          i = table.next;
+          continue;
+        }
+
+        if (/^[-*]\s+/.test(trimmed)) {
+          flushParagraph(paragraph, output);
+          const items = [];
+          while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+            items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
+            i += 1;
+          }
+          output.push("<ul>" + items.map((item) => "<li>" + inline(item) + "</li>").join("") + "</ul>");
+          continue;
+        }
+
+        if (/^\d+\.\s+/.test(trimmed)) {
+          flushParagraph(paragraph, output);
+          const items = [];
+          while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+            items.push(lines[i].trim().replace(/^\d+\.\s+/, ""));
+            i += 1;
+          }
+          output.push("<ol>" + items.map((item) => "<li>" + inline(item) + "</li>").join("") + "</ol>");
+          continue;
+        }
+
+        paragraph.push(trimmed);
+        i += 1;
+      }
+
+      flushParagraph(paragraph, output);
+      return output.join("\\n");
+    }
+
+    fetch("./agent-readme.md", { cache: "no-cache" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("HTTP " + response.status);
+        }
+        return response.text();
+      })
+      .then((markdown) => {
+        content.innerHTML = renderMarkdown(markdown);
+      })
+      .catch((error) => {
+        content.innerHTML = '<div class="error">文档加载失败：' + escapeHtml(error.message) + '</div>';
+      });
+  </script>
+</body>
+</html>

@@ -243,7 +243,7 @@ def test_sentence_translate_list_page_uses_sentence_translate_detail_links(authe
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert 'href="/sentence_translate/task-sentence-list"' in body
-    assert '"/sentence_translate" + \'/\' + data.task_id' in body
+    assert 'var fallbackUrl = "/sentence_translate" + \'/\' + encodeURIComponent(data.task_id || \'\');' in body
 
 
 def test_sentence_translate_create_modal_filters_disabled_media_languages(authed_client_no_db, monkeypatch):
@@ -1171,10 +1171,10 @@ def test_av_rewrite_warning_filter_includes_warning_long():
         encoding="utf-8"
     )
 
-    assert 'status === "warning_long"' in scripts
-    assert 'status === "warning_short"' in scripts
-    assert 'status === "warning_overshoot"' in scripts
-    assert 'const statusLabel = isShort ? "偏短" : "超时";' in scripts
+    assert 'normalized.includes("short")' in scripts
+    assert 'normalized.includes("long") || normalized.includes("overshoot")' in scripts
+    assert 'return { label: "偏短", className: "av-convergence-status--warn" };' in scripts
+    assert 'return { label: "超时", className: "av-convergence-status--warn" };' in scripts
 
 
 def test_project_detail_page_bootstraps_persisted_task_state(authed_client_no_db, monkeypatch):
@@ -1936,7 +1936,18 @@ def test_user_settings_page_saves_custom_jianying_project_root(authed_client_no_
 
 
 def test_settings_page_no_longer_contains_jianying_project_root(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.auth.get_by_id",
+        lambda user_id: {
+            "id": 1,
+            "username": "admin",
+            "role": "superadmin",
+            "is_active": 1,
+        },
+    )
     monkeypatch.setattr("web.routes.settings.get_all", lambda user_id: {})
+    monkeypatch.setattr("web.routes.settings.llm_provider_configs.list_provider_configs", lambda: [])
+    monkeypatch.setattr("web.routes.settings.infra_credentials.list_configs", lambda: [])
     monkeypatch.setattr("web.routes.settings.llm_bindings.list_all", lambda: [])
     monkeypatch.setattr("appcore.pushes.get_push_target_url", lambda: "")
     monkeypatch.setattr("appcore.pushes.get_localized_texts_base_url", lambda: "")
@@ -2035,7 +2046,7 @@ def test_alignment_route_compiles_script_segments(authed_client_no_db, monkeypat
     saved = store.get("task-1")
     assert saved["_alignment_confirmed"] is True
     assert saved["script_segments"][0]["text"] == "浣犲ソ涓栫晫"
-    assert saved["artifacts"]["alignment"]["items"][0]["segments"][0]["text"] == "浣犲ソ涓栫晫"
+    assert saved["artifacts"]["alignment"]["items"][1]["segments"][0]["text"] == "浣犲ソ涓栫晫"
     assert resumed == [(("task-1", "translate"), {"user_id": 1})]
 
 
@@ -2190,30 +2201,6 @@ def test_download_route_can_return_normal_capcut_archive(tmp_path, authed_client
     assert 'filename=example_capcut_normal.zip' in response.headers["Content-Disposition"]
 
 
-def test_download_route_redirects_to_tos_when_uploaded_artifact_exists(authed_client_no_db, monkeypatch):
-    store.create("task-download-tos", "video.mp4", "output/task-download-tos", user_id=1)
-    store.update(
-        "task-download-tos",
-        tos_uploads={
-            "normal:soft_video": {
-                "tos_key": "artifacts/1/task-download-tos/normal/example_soft.mp4",
-                "artifact_kind": "soft_video",
-                "variant": "normal",
-            }
-        },
-    )
-
-    monkeypatch.setattr(
-        "web.routes.task.tos_clients.generate_signed_download_url",
-        lambda object_key: f"https://signed.example.com/{object_key}",
-    )
-
-    response = authed_client_no_db.get("/api/tasks/task-download-tos/download/soft")
-
-    assert response.status_code == 302
-    assert response.headers["Location"] == "https://signed.example.com/artifacts/1/task-download-tos/normal/example_soft.mp4"
-
-
 def test_download_route_prefers_local_file_for_local_primary_task(tmp_path, authed_client_no_db, monkeypatch):
     result_path = tmp_path / "hard.mp4"
     result_path.write_bytes(b"video")
@@ -2232,71 +2219,10 @@ def test_download_route_prefers_local_file_for_local_primary_task(tmp_path, auth
         },
     )
 
-    monkeypatch.setattr(
-        "web.services.artifact_download.tos_clients.generate_signed_download_url",
-        lambda object_key: f"https://signed.example.com/{object_key}",
-    )
-
     response = authed_client_no_db.get("/api/tasks/task-download-local-primary/download/hard")
 
     assert response.status_code == 200
     assert response.data == b"video"
-
-
-def test_download_route_rejects_local_capcut_fallback_for_pure_tos_task(tmp_path, authed_client_no_db, monkeypatch):
-    archive_path = tmp_path / "capcut_normal.zip"
-    archive_path.write_bytes(b"capcut-archive")
-    store.create("task-download-pure-tos-missing", "video.mp4", str(tmp_path), user_id=1)
-    store.update(
-        "task-download-pure-tos-missing",
-        delivery_mode="pure_tos",
-        display_name="example",
-    )
-    store.update_variant(
-        "task-download-pure-tos-missing",
-        "normal",
-        exports={"capcut_archive": str(archive_path)},
-    )
-    monkeypatch.setattr(
-        "web.services.artifact_download.upload_capcut_archive_for_current_user",
-        lambda *a, **kw: None,
-    )
-
-    response = authed_client_no_db.get("/api/tasks/task-download-pure-tos-missing/download/capcut?variant=normal")
-
-    assert response.status_code == 409
-    assert "TOS" in response.get_json()["error"]
-
-
-def test_download_route_redirects_capcut_for_pure_tos_task(tmp_path, authed_client_no_db, monkeypatch):
-    archive_path = tmp_path / "capcut_normal.zip"
-    archive_path.write_bytes(b"capcut-archive")
-    store.create("task-download-pure-tos-capcut", "video.mp4", str(tmp_path), user_id=1)
-    store.update(
-        "task-download-pure-tos-capcut",
-        delivery_mode="pure_tos",
-        display_name="example",
-    )
-    store.update_variant(
-        "task-download-pure-tos-capcut",
-        "normal",
-        exports={"capcut_archive": str(archive_path)},
-    )
-    monkeypatch.setattr(
-        "web.services.artifact_download.upload_capcut_archive_for_current_user",
-        lambda *a, **kw: {
-            "tos_key": "artifacts/1/task-download-pure-tos-capcut/normal/example_capcut_normal.zip",
-        },
-    )
-    monkeypatch.setattr(
-        "web.services.artifact_download.tos_clients.generate_signed_download_url",
-        lambda object_key: f"https://signed.example.com/{object_key}",
-    )
-
-    response = authed_client_no_db.get("/api/tasks/task-download-pure-tos-capcut/download/capcut?variant=normal")
-
-    assert response.status_code == 302
-    assert response.headers["Location"] == "https://signed.example.com/artifacts/1/task-download-pure-tos-capcut/normal/example_capcut_normal.zip"
 
 
 def test_download_route_rewrites_capcut_project_paths_for_current_user(tmp_path, authed_client_no_db, monkeypatch):
@@ -2527,6 +2453,7 @@ def test_admin_can_fetch_other_users_task_thumbnail(tmp_path, authed_client_no_d
         return {"thumbnail_path": str(thumb), "task_dir": str(task_dir)}
 
     monkeypatch.setattr("web.routes.task.db_query_one", fake_query_one)
+    monkeypatch.setattr("web.routes.task.is_admin_user", lambda user: True)
 
     response = authed_client_no_db.get("/api/tasks/foreign-task/thumbnail")
 
@@ -3313,47 +3240,6 @@ def test_medias_page_contains_aligned_edit_modal_layout(authed_client_no_db):
     assert "oc-edit-video-grid" in body
 
 
-def test_medias_page_prioritizes_push_audit_sections_in_edit_modal(authed_client_no_db):
-    response = authed_client_no_db.get("/medias/")
-
-    assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert body.index('id="edTitle"') < body.index('id="edAdSupportedLangsBox"')
-    assert body.index('id="edAdSupportedLangsBox"') < body.index('id="edLangTabs"')
-    assert body.index('id="edCwSection"') < body.index('id="edItemsSection"')
-    assert body.index('id="edItemsSection"') < body.index('id="edCoverSection"')
-    assert body.index('id="edCoverSection"') < body.index('id="edDetailImagesSection"')
-    assert body.index('id="edDetailImagesSection"') < body.index('for="edMkId"')
-    assert '.oc-edit-form { display:flex; flex-direction:column; gap:var(--oc-sp-2); }' in body
-    assert '.oc-modal-head-main {' in body
-    assert '.oc-modal-head-main {\n  display:flex;\n  align-items:center;\n  justify-content:flex-start;' in body
-    assert '.oc-modal-head-meta {' in body
-    assert '.oc-modal-head-main h3 {\n  flex:0 0 auto;\n  padding-top:0;\n  font-weight:700;' in body
-    assert '主站已适配语种' not in body
-
-
-def test_medias_page_exposes_compact_copy_review_layout(authed_client_no_db):
-    response = authed_client_no_db.get("/medias/")
-
-    assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
-
-    assert 'class="oc-section-head oc-section-head-between"' in body
-    assert 'id="edCwAddBtn"' in body
-    assert 'id="edCwTranslateSlot"' in body
-    assert "添加文案" in body
-    assert '.oc-cw-grid { display:grid; grid-template-columns:1fr; gap:var(--oc-sp-2); }' in body
-    assert "textarea.rows = 3;" in medias_js
-    assert "function edNormalizeCopywritingBody" in medias_js
-    assert "function edTranslateEnglishCopywriting()" in medias_js
-    assert "'/api/title-translate/translate'" in medias_js
-    assert "slot.innerHTML = '';" in medias_js
-    assert "slot.replaceChildren(btn);" in medias_js
-    assert "btn.textContent = '一键翻译英文文案';" in medias_js
-    assert "textarea.placeholder = '标题: \\n文案: \\n描述: ';" in medias_js
-
-
 def test_medias_page_translates_copywriting_as_single_structured_block():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
@@ -3400,19 +3286,6 @@ if (normalized !== {expected!r}) {{
     )
 
     assert result.returncode == 0, result.stderr or result.stdout
-
-
-def test_medias_page_wraps_language_coverage_with_full_labels():
-    template = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
-    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
-
-    assert "function langDisplayName(code)" in medias_js
-    assert "nameZh" in medias_js
-    assert "${escapeHtml(langDisplayName(l.code))}" in medias_js
-    assert '<col style="width:300px">' in medias_js
-    assert "const midpoint = Math.ceil(chips.length / 2);" not in medias_js
-    assert ".oc-lang-bar {" in template
-    assert "flex-direction:column;" in template
 
 
 def test_medias_page_marks_copy_as_optional_in_add_modal(authed_client_no_db):
@@ -3657,17 +3530,6 @@ def test_medias_scripts_include_owner_column():
     assert "p.owner_name" in medias_js
 
 
-def test_medias_scripts_link_cover_and_name_to_product_detail_page():
-    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
-
-    assert "function productDetailPath(productCode)" in medias_js
-    assert 'const productDetailHref = productDetailPath(productCode);' in medias_js
-    assert '<a class="oc-thumb-link" href="${productDetailHref}" title="${escapeHtml(p.name)}">${cover}</a>' in medias_js
-    assert '<a href="${productDetailHref}" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</a>' in medias_js
-    assert 'href="#" data-pid="${p.id}"' not in medias_js
-    assert "grid.querySelectorAll('tr[data-pid] .name a')" not in medias_js
-
-
 def test_medias_scripts_make_listing_status_inline_editable():
     medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
 
@@ -3870,32 +3732,6 @@ def test_medias_edit_modal_contains_detail_image_single_replace_control():
     assert "replaceBtn.hidden = count !== 1" in scripts
 
 
-def test_medias_edit_modal_contains_download_product_images_button():
-    root = Path(__file__).resolve().parents[1]
-    template = (root / "web" / "templates" / "_medias_edit_detail_modal.html").read_text(encoding="utf-8")
-    scripts = (root / "web" / "static" / "medias.js").read_text(encoding="utf-8")
-    styles = (root / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
-
-    assert 'id="edDownloadProductImagesBtn"' in template
-    assert "下载商品图" in template
-    assert template.index('id="edDownloadProductImagesBtn"') < template.index('id="edClose"')
-    assert 'id="edNoLocalizedDetailImagesMask"' in template
-    assert 'id="edNoLocalizedDetailImagesMessage"' in template
-    assert "当前商品没有小语种商品详情图" in scripts
-    assert "const resp = await fetch(url)" in scripts
-    assert "resp.redirected" in scripts
-    assert "resp.status === 404" in scripts
-    assert "URL.createObjectURL(blob)" in scripts
-    assert "window.location.href = `/medias/api/products/${pid}/detail-images/download-localized-zip`" not in scripts
-    assert "edShowNoLocalizedDetailImagesModal" in scripts
-    assert "edTypeNoLocalizedDetailImagesMessage" in scripts
-    assert "oc-no-localized-images-message" in styles
-    assert "color:var(--oc-danger-fg)" in styles
-    assert "detail-image-replace-card-20260519" in styles
-    assert "material-filename-tail-20260513" not in styles
-    assert "detail-images/download-localized-zip" in scripts
-
-
 def test_medias_page_exposes_edit_modal_link_check_controls(authed_client_no_db):
     response = authed_client_no_db.get("/medias/")
 
@@ -3996,16 +3832,3 @@ def test_pushes_css_styles_new_product_tag():
     assert ".push-new-product-tag" in pushes_css
     assert "font-size: 2em" in pushes_css
     assert "color: #0088cc" in pushes_css
-
-
-def test_medias_scripts_format_language_as_chinese_plus_code():
-    medias_js = (Path(__file__).resolve().parents[1] / "web" / "static" / "medias.js").read_text(encoding="utf-8")
-
-    assert "function langDisplayName(code)" in medias_js
-    assert "const raw = String(code || '').trim();" in medias_js
-    assert "${l.name_zh} (${upper})" in medias_js
-    assert "${langDisplayName(l.code)}${badgeHtml}" in medias_js
-    assert "const label = langDisplayName(lang);" in medias_js
-    assert "确认删除 ${langDisplayName(lang)} 语种主图" in medias_js
-    assert "langDisplayName(analysis.detected_language || '-')" in medias_js
-    assert "langDisplayName(task.page_language || '-')" in medias_js

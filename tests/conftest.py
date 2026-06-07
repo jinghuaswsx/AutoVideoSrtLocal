@@ -11,6 +11,54 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("AUTOVIDEOSRT_DISABLE_BACKGROUND_THREADS", "1")
 
+_EXTERNAL_TEST_DIRS = {"audio", "e2e", "manual"}
+_EXTERNAL_TEST_FILES = {
+    "tests/test_multi_translate_e2e_smoke.py",
+    "tests/test_translate_lab_e2e.py",
+}
+_LIVE_DB_TEST_FILES = {
+    "tests/test_appcore_db.py",
+    "tests/test_appcore_medias.py",
+    "tests/test_appcore_medias_multi_lang.py",
+    "tests/test_appcore_medias_raw_sources.py",
+    "tests/test_appcore_mk_import.py",
+    "tests/test_appcore_productivity_stats.py",
+    "tests/test_appcore_pushes.py",
+    "tests/test_appcore_raw_video_pool.py",
+    "tests/test_appcore_task_state_db.py",
+    "tests/test_appcore_tasks.py",
+    "tests/test_appcore_users.py",
+    "tests/test_bulk_translate_associations.py",
+    "tests/test_bulk_translate_migration.py",
+    "tests/test_manual_ad_spend.py",
+    "tests/test_order_profit_aggregation.py",
+    "tests/test_pushes_routes.py",
+    "tests/test_quality_assessment_service.py",
+    "tests/test_video_translate_profile_dao.py",
+}
+
+
+def _truthy_env(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def pytest_ignore_collect(collection_path, config):
+    path = Path(str(collection_path))
+    try:
+        rel = path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return False
+
+    parts = rel.split("/")
+    if len(parts) >= 2 and parts[0] == "tests":
+        if parts[1] in _EXTERNAL_TEST_DIRS and not _truthy_env("AUTOVIDEOSRT_RUN_EXTERNAL_TESTS"):
+            return True
+        if rel in _EXTERNAL_TEST_FILES and not _truthy_env("AUTOVIDEOSRT_RUN_EXTERNAL_TESTS"):
+            return True
+        if rel in _LIVE_DB_TEST_FILES and not _truthy_env("AUTOVIDEOSRT_RUN_LIVE_DB_TESTS"):
+            return True
+    return False
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -70,6 +118,9 @@ def _disable_shopify_browser_automation(monkeypatch, request):
 @pytest.fixture
 def logged_in_client():
     """Returns a Flask test client authenticated as a test user (uses live DB)."""
+    if not _truthy_env("AUTOVIDEOSRT_RUN_LIVE_DB_TESTS"):
+        pytest.skip("requires AUTOVIDEOSRT_RUN_LIVE_DB_TESTS=1 and a configured MySQL database")
+
     from web.app import create_app
     from appcore.users import create_user, get_by_username
     from appcore.db import execute
@@ -100,6 +151,17 @@ def authed_client_no_db(monkeypatch):
     monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
     monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
     monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.medias.count_item_versions", lambda item_ids: {})
+    monkeypatch.setattr("appcore.medias.list_product_skus", lambda product_id: [])
+    monkeypatch.setattr("appcore.medias.list_product_skus_batch", lambda product_ids: {})
+    monkeypatch.setattr("appcore.medias.list_yuncang_unit_prices", lambda skus: {})
+    monkeypatch.setattr("appcore.sku_actual_roas.get_latest_sku_actual_roas", lambda skus: {})
+    monkeypatch.setattr("appcore.media_video_materials.list_mk_bindings_for_items", lambda item_ids: {})
+    monkeypatch.setattr("appcore.media_product_ad_status_cache.get_product_ad_summary_cache", lambda pids: {})
+    monkeypatch.setattr("appcore.media_product_ad_status_cache.get_product_lang_ad_summary_cache", lambda pids: {})
+    monkeypatch.setattr("appcore.media_product_order_stats.get_product_order_stats", lambda pids: {})
+    monkeypatch.setattr("appcore.product_roas.get_configured_rmb_per_usd", lambda: 7.2)
+    monkeypatch.setattr("appcore.meta_hot_posts.store.list_category_options", lambda: [])
     monkeypatch.setattr(
         "appcore.medias.list_enabled_language_codes",
         lambda: ["de", "fr", "es", "it", "pt", "ja", "nl", "sv", "fi", "en"],
@@ -131,6 +193,9 @@ def db_clean():
     Imports happen lazily inside the fixture to avoid module-level side effects
     on test collection.
     """
+    if not _truthy_env("AUTOVIDEOSRT_RUN_LIVE_DB_TESTS"):
+        pytest.skip("requires AUTOVIDEOSRT_RUN_LIVE_DB_TESTS=1 and a configured MySQL database")
+
     from appcore import db as _db
 
     class _DBHelper:
@@ -155,6 +220,17 @@ def authed_user_client_no_db(monkeypatch):
     monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
     monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
     monkeypatch.setattr("appcore.scheduled_tasks.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.medias.count_item_versions", lambda item_ids: {})
+    monkeypatch.setattr("appcore.medias.list_product_skus", lambda product_id: [])
+    monkeypatch.setattr("appcore.medias.list_product_skus_batch", lambda product_ids: {})
+    monkeypatch.setattr("appcore.medias.list_yuncang_unit_prices", lambda skus: {})
+    monkeypatch.setattr("appcore.sku_actual_roas.get_latest_sku_actual_roas", lambda skus: {})
+    monkeypatch.setattr("appcore.media_video_materials.list_mk_bindings_for_items", lambda item_ids: {})
+    monkeypatch.setattr("appcore.media_product_ad_status_cache.get_product_ad_summary_cache", lambda pids: {})
+    monkeypatch.setattr("appcore.media_product_ad_status_cache.get_product_lang_ad_summary_cache", lambda pids: {})
+    monkeypatch.setattr("appcore.media_product_order_stats.get_product_order_stats", lambda pids: {})
+    monkeypatch.setattr("appcore.product_roas.get_configured_rmb_per_usd", lambda: 7.2)
+    monkeypatch.setattr("appcore.meta_hot_posts.store.list_category_options", lambda: [])
     from web.app import create_app
 
     fake_user = {

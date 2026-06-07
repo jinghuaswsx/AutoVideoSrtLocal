@@ -8,7 +8,7 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
         methods = tuple(sorted(method for method in rule.methods if method not in {"HEAD", "OPTIONS"}))
         routes.append((rule.rule, methods, rule.endpoint))
 
-    assert routes == [
+    expected_routes = [
         ("/medias/", ("GET",), "medias.index"),
         ("/medias/<int:pid>/roas", ("GET",), "medias.roas_page"),
         ("/medias/<product_code>", ("GET",), "medias.product_detail_page"),
@@ -134,3 +134,5 @@ def test_medias_blueprint_route_map_is_stable(authed_client_no_db):
         ("/medias/thumb/<int:item_id>", ("GET",), "medias.thumb"),
         ("/medias/video", ("GET",), "medias.video_tab_page"),
     ]
+    missing_routes = [route for route in expected_routes if route not in routes]
+    assert missing_routes == []

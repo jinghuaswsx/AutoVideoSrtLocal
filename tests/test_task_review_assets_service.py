@@ -37,7 +37,7 @@ def test_parent_raw_review_assets_attach_video_to_raw_steps(monkeypatch):
 
     assert payload["current_review"] == {
         "event_type": "raw_uploaded",
-        "title": "当前待审核：去字幕原始视频素材",
+        "title": "当前待处理：去字幕原始视频素材",
         "asset_count": 1,
     }
     steps = {step["event_type"]: step for step in payload["steps"]}
@@ -156,7 +156,7 @@ def test_child_review_assets_attach_video_cover_and_detail_images(monkeypatch):
 
     assert payload["current_review"] == {
         "event_type": "submitted",
-        "title": "当前待审核：翻译产物",
+        "title": "当前待处理：翻译产物",
         "asset_count": 4,
     }
     assert payload["steps"][0]["event_type"] == "submitted"

@@ -469,7 +469,7 @@ def test_enrich_cards_reads_external_fine_ai_result_for_unimported_material(monk
     assert fine_ai["countries"]["DE"]["decision"]["final_decision"] == "GO"
 
 
-def test_enrich_cards_matches_external_fine_ai_result_by_video_card_when_link_drifted(monkeypatch):
+def test_enrich_cards_rejects_external_fine_ai_result_when_link_drifted(monkeypatch):
     from appcore import mingkong_materials as mod
 
     item = _candidate(1)
@@ -531,9 +531,7 @@ def test_enrich_cards_matches_external_fine_ai_result_by_video_card_when_link_dr
 
     enriched = mod._enrich_cached_ad_statuses([item])
 
-    fine_ai = enriched[0]["product_ad_status"]["fine_ai_evaluation"]
-    assert fine_ai["evaluation_run_id"] == "eval_same_video"
-    assert fine_ai["has_result"] is True
+    assert enriched[0]["product_ad_status"]["fine_ai_evaluation"] is None
 
 
 def test_enrich_cards_prefers_auto_material_key_result(monkeypatch):
@@ -680,4 +678,3 @@ def test_run_candidate_fails_when_cooldown_active(monkeypatch):
     assert result == {"status": "failed", "reason": "cooldown_active"}
     assert len(finished) == 1
     assert finished[0] == (row["material_key"], "failed", "cooldown_active")
-

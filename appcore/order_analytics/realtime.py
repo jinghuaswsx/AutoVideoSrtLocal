@@ -2470,6 +2470,141 @@ def _build_scoped_roas_points(
     return points
 
 
+def _realtime_filter_product_ids(
+    *,
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+) -> tuple[int, ...] | None:
+    filter_product_ids = product_ids
+    if product_id and not unmatched_ads:
+        pid = int(product_id)
+        if filter_product_ids is None:
+            filter_product_ids = (pid,)
+        elif pid not in set(filter_product_ids):
+            filter_product_ids = ()
+    return filter_product_ids
+
+
+def _as_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _latest_realtime_campaign_rows_at(
+    campaign_rows: list[dict[str, Any]],
+    cutoff: datetime,
+) -> list[dict[str, Any]]:
+    latest_by_account: dict[str, datetime] = {}
+    for row in campaign_rows:
+        snapshot_at = _as_datetime(row.get("snapshot_at"))
+        if not snapshot_at or snapshot_at > cutoff:
+            continue
+        account_key = str(row.get("ad_account_id") or "")
+        if account_key not in latest_by_account or snapshot_at > latest_by_account[account_key]:
+            latest_by_account[account_key] = snapshot_at
+    if not latest_by_account:
+        return []
+    return [
+        row
+        for row in campaign_rows
+        if (snapshot_at := _as_datetime(row.get("snapshot_at")))
+        and latest_by_account.get(str(row.get("ad_account_id") or "")) == snapshot_at
+    ]
+
+
+def _sum_realtime_campaign_spend_at(
+    campaign_rows: list[dict[str, Any]],
+    cutoff: datetime,
+    *,
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+    match_cache: dict[str, int | None] | None = None,
+) -> tuple[float, bool]:
+    node_rows = _latest_realtime_campaign_rows_at(campaign_rows, cutoff)
+    if not node_rows:
+        return 0.0, False
+    scoped_rows = _filter_realtime_campaign_rows_for_launch_scope(
+        node_rows,
+        product_ids=_realtime_filter_product_ids(
+            product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
+        ),
+        unmatched_ads=unmatched_ads,
+        match_cache=match_cache,
+    )
+    return round(sum(float(row.get("spend_usd") or 0) for row in scoped_rows), 4), True
+
+
+def _attach_realtime_hourly_ad_metrics(
+    *,
+    target: date,
+    data_until: datetime,
+    hourly: list[dict[str, Any]],
+    product_id: int | None = None,
+    product_ids: tuple[int, ...] | None = None,
+    unmatched_ads: bool = False,
+    site_codes: tuple[str, ...] | None = None,
+) -> bool:
+    """Fill hourly ad spend from cumulative realtime campaign snapshots.
+
+    Docs-anchor: docs/superpowers/specs/2026-06-07-realtime-roas-trend-hourly-ad-spend-design.md
+    """
+    if not hourly or not isinstance(data_until, datetime):
+        return False
+    sites = _normalize_site_codes(site_codes)
+    campaign_rows = _get_realtime_campaign_rows_until(
+        target,
+        data_until,
+        site_codes=sites,
+    )
+    if not campaign_rows:
+        return False
+    match_cache: dict[str, int | None] = {}
+    ready = False
+    for item in hourly:
+        window_start = _as_datetime(item.get("window_start_at"))
+        window_end = _as_datetime(item.get("window_end_at"))
+        if not window_start or not window_end or window_start >= data_until:
+            continue
+        end_cutoff = min(window_end, data_until)
+        end_spend, end_ready = _sum_realtime_campaign_spend_at(
+            campaign_rows,
+            end_cutoff,
+            product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
+            match_cache=match_cache,
+        )
+        if not end_ready:
+            continue
+        start_spend, _ = _sum_realtime_campaign_spend_at(
+            campaign_rows,
+            window_start,
+            product_id=product_id,
+            product_ids=product_ids,
+            unmatched_ads=unmatched_ads,
+            match_cache=match_cache,
+        )
+        ad_spend = _money(max(0.0, end_spend - start_spend))
+        revenue_with_shipping = _revenue_with_shipping(
+            item.get("order_revenue"),
+            item.get("shipping_revenue"),
+        )
+        item["ad_spend"] = ad_spend
+        item["true_roas"] = _roas(revenue_with_shipping, ad_spend)
+        ready = True
+    return ready
+
+
 def _load_realtime_order_hourly(
     day_start: datetime,
     day_end: datetime,
@@ -3491,6 +3626,14 @@ def get_realtime_roas_overview(
                 product_id=normalized_product_id,
                 site_codes=normalized_site_codes,
             )
+            hourly = hourly_order_stats["hourly"]
+            hourly_ad_ready = _attach_realtime_hourly_ad_metrics(
+                target=target,
+                data_until=snapshot_at,
+                hourly=hourly,
+                product_id=normalized_product_id,
+                site_codes=normalized_site_codes,
+            )
             campaign_details = _get_realtime_campaign_details(
                 target,
                 snapshot_at,
@@ -3597,7 +3740,7 @@ def get_realtime_roas_overview(
                     "order_source": "dianxiaomi",
                     "ad_source": "meta_ad_realtime_daily_campaign_metrics",
                     "ad_granularity": "campaign_realtime_snapshot",
-                    "hourly_ad_ready": False,
+                    "hourly_ad_ready": hourly_ad_ready,
                 },
                 "freshness": {
                     "first_order_at": order_summary.get("first_order_at"),
@@ -3621,7 +3764,7 @@ def get_realtime_roas_overview(
                     "order_data_status": snap.get("order_data_status") or "ok",
                     "ad_data_status": snap.get("ad_data_status") or "pending_source",
                 },
-                "hourly": hourly_order_stats["hourly"],
+                "hourly": hourly,
                 "roas_points": roas_points,
                 "snapshots": [snap],
                 "order_details": order_details,
@@ -3662,6 +3805,13 @@ def get_realtime_roas_overview(
         hourly_order_stats = _load_realtime_order_hourly(
             day_start,
             snapshot_at,
+            site_codes=normalized_site_codes,
+        )
+        hourly = hourly_order_stats["hourly"]
+        hourly_ad_ready = _attach_realtime_hourly_ad_metrics(
+            target=target,
+            data_until=snapshot_at,
+            hourly=hourly,
             site_codes=normalized_site_codes,
         )
         order_detail_total = (
@@ -3770,7 +3920,7 @@ def get_realtime_roas_overview(
                 "order_source": "dianxiaomi",
                 "ad_source": "roi_realtime_daily_snapshots",
                 "ad_granularity": "day_realtime_snapshot",
-                "hourly_ad_ready": False,
+                "hourly_ad_ready": hourly_ad_ready,
             },
             "freshness": {
                 "first_order_at": None,
@@ -3794,7 +3944,7 @@ def get_realtime_roas_overview(
                 "order_data_status": snap.get("order_data_status") or "ok",
                 "ad_data_status": snap.get("ad_data_status") or "pending_source",
             },
-            "hourly": hourly_order_stats["hourly"],
+            "hourly": hourly,
             "roas_points": roas_points,
             "snapshots": [snap],
             "order_details": order_details,
@@ -3951,6 +4101,17 @@ def get_realtime_roas_overview(
     last_order_at = hourly_order_stats["last_order_at"]
     last_order_updated_at = hourly_order_stats["last_order_updated_at"]
     hourly = hourly_order_stats["hourly"]
+    hourly_ad_ready = False
+    if realtime_ad_summary is not None:
+        hourly_ad_ready = _attach_realtime_hourly_ad_metrics(
+            target=target,
+            data_until=data_until,
+            hourly=hourly,
+            product_id=normalized_product_id,
+            product_ids=launch_product_ids,
+            unmatched_ads=launch_scope_unmatched,
+            site_codes=normalized_site_codes,
+        )
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
@@ -4036,7 +4197,7 @@ def get_realtime_roas_overview(
             "order_source": "dianxiaomi",
             "ad_source": ad_source,
             "ad_granularity": ad_granularity,
-            "hourly_ad_ready": False,
+            "hourly_ad_ready": hourly_ad_ready,
         },
         "freshness": {
             "first_order_at": first_order_at,

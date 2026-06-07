@@ -10,16 +10,17 @@ from __future__ import annotations
 import pytest
 
 from appcore.order_analytics.shopify_fee import (
+    FORWARD_ESTIMATE_PERCENTAGE_RATE_MULTIPLIER,
     calculate_shopify_fee,
     estimate_fee_for_buyer_country,
 )
 
 
 def test_eu_buyer_assumed_local_card_returns_tier_d():
-    """德国 buyer (DE) → presentment EUR + card_country DE → Tier D。"""
+    """德国 buyer (DE) → presentment EUR + card_country DE → Tier D + 实测乘数。"""
     result = estimate_fee_for_buyer_country(amount=22.13, buyer_country="DE")
     assert result["tier"] == "D"
-    assert abs(result["fee"] - 1.41) <= 0.02
+    assert abs(result["fee"] - 1.49) <= 0.02
 
 
 def test_uk_buyer_returns_tier_b():
@@ -27,16 +28,16 @@ def test_uk_buyer_returns_tier_b():
     result = estimate_fee_for_buyer_country(amount=30.94, buyer_country="GB")
     # 注：buyer GB 推断 presentment=GBP，与 settlement USD 不同 → 需要换汇
     # card_country=GB 跟 store=US 不同 → 跨境
-    # 所以是 Tier D（不是 B），fee 应是 5.0% × 30.94 + 0.30 = 1.85
+    # 所以是 Tier D（不是 B），fee 应是 5.0% × 1.076 × 30.94 + 0.30 = 1.96
     assert result["tier"] == "D"
-    assert abs(result["fee"] - 1.85) <= 0.02
+    assert abs(result["fee"] - 1.96) <= 0.02
 
 
 def test_us_buyer_returns_tier_a():
-    """美国 buyer → 本土卡 + USD 结账 → Tier A。"""
+    """美国 buyer → 本土卡 + USD 结账 → Tier A + 实测乘数。"""
     result = estimate_fee_for_buyer_country(amount=19.94, buyer_country="US")
     assert result["tier"] == "A"
-    assert abs(result["fee"] - 0.80) <= 0.02
+    assert abs(result["fee"] - 0.84) <= 0.02
 
 
 def test_unknown_country_returns_estimated_tier():
@@ -60,17 +61,20 @@ def test_dxm_order_line_dict_integration():
     result = estimate_fee_for_buyer_country(
         amount=revenue, buyer_country=line["buyer_country"]
     )
-    # GB buyer → presentment=GBP, card=GB → Tier D
-    expected_fee = revenue * 0.05 + 0.30
+    # GB buyer → presentment=GBP, card=GB → Tier D，百分比部分应用实测乘数。
+    expected_fee = revenue * 0.05 * 1.076 + 0.30
     assert abs(result["fee"] - expected_fee) <= 0.02
     assert result["tier"] == "D"
 
 
 def test_estimate_fee_consistent_with_explicit_call():
-    """便利函数的结果应与显式调用 calculate_shopify_fee 等价。"""
+    """便利函数的结果应与显式调用同一校准乘数的 calculate_shopify_fee 等价。"""
     via_helper = estimate_fee_for_buyer_country(amount=22.13, buyer_country="DE")
     via_direct = calculate_shopify_fee(
-        amount=22.13, presentment_currency="EUR", card_country="DE"
+        amount=22.13,
+        presentment_currency="EUR",
+        card_country="DE",
+        percentage_rate_multiplier=FORWARD_ESTIMATE_PERCENTAGE_RATE_MULTIPLIER,
     )
     assert via_helper["fee"] == via_direct["fee"]
     assert via_helper["tier"] == via_direct["tier"]

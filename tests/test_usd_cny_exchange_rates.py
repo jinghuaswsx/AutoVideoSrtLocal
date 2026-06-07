@@ -35,6 +35,18 @@ def test_exchange_rate_migration_declares_three_source_archive_fields():
     assert "Docs-anchor: docs/superpowers/specs/2026-06-06-usd-cny-daily-exchange-rate-design.md" in sql
 
 
+def test_exchange_rate_fallback_migration_declares_history_fields():
+    sql = (ROOT / "db" / "migrations" / "2026_06_07_usd_cny_fallback_exchange_rates.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CREATE TABLE IF NOT EXISTS usd_cny_fallback_exchange_rates" in sql
+    assert "UNIQUE KEY uk_usd_cny_fallback_date (fallback_date)" in sql
+    assert "source_rate_ids_json JSON NOT NULL" in sql
+    assert "calculation_method VARCHAR(64) NOT NULL DEFAULT 'daily_archive_30d_average'" in sql
+    assert "Docs-anchor: docs/superpowers/specs/2026-06-06-usd-cny-daily-exchange-rate-design.md" in sql
+
+
 def test_fetch_floatrates_usd_cny_parses_cny_quote():
     from appcore import exchange_rates
 
@@ -137,6 +149,88 @@ def test_get_usd_to_cny_for_date_uses_archive_and_fallback(monkeypatch):
     assert fallback.source == "configured_fallback"
 
 
+def test_get_usd_to_cny_for_date_uses_dynamic_fallback_before_config(monkeypatch):
+    from appcore import exchange_rates
+
+    def fake_query_one(sql, params=()):
+        if "FROM usd_cny_daily_exchange_rates" in sql:
+            return None
+        if "FROM usd_cny_fallback_exchange_rates" in sql:
+            return {
+                "id": 21,
+                "fallback_date": date(2026, 6, 7),
+                "usd_to_cny": Decimal("6.800000"),
+            }
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(exchange_rates, "query_one", fake_query_one)
+
+    fallback = exchange_rates.get_usd_to_cny_for_date(date(2026, 6, 8))
+
+    assert fallback.rate == Decimal("6.800000")
+    assert fallback.source == "fallback_30d_average"
+    assert fallback.cost_basis() == {
+        "exchange_rate_source": "fallback_30d_average",
+        "exchange_rate_date": "2026-06-07",
+        "exchange_rate_source_id": 21,
+    }
+
+
+def test_refresh_usd_cny_fallback_rate_averages_recent_daily_archives(monkeypatch):
+    from appcore import exchange_rates
+
+    captured = {}
+
+    def fake_query(sql, params=()):
+        assert "FROM usd_cny_daily_exchange_rates" in sql
+        assert params == (date(2026, 5, 9), date(2026, 6, 7))
+        return [
+            {"id": 1, "rate_date": date(2026, 6, 5), "usd_to_cny": Decimal("6.700000")},
+            {"id": 2, "rate_date": date(2026, 6, 6), "usd_to_cny": Decimal("6.800000")},
+            {"id": 3, "rate_date": date(2026, 6, 7), "usd_to_cny": Decimal("6.900000")},
+        ]
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    def fake_query_one(sql, params=()):
+        assert "FROM usd_cny_fallback_exchange_rates" in sql
+        assert params == (date(2026, 6, 7),)
+        return {
+            "id": 9,
+            "fallback_date": date(2026, 6, 7),
+            "usd_to_cny": Decimal("6.800000"),
+            "window_start": date(2026, 5, 9),
+            "window_end": date(2026, 6, 7),
+            "sample_count": 3,
+            "source_rate_ids_json": "[1, 2, 3]",
+            "calculation_method": "daily_archive_30d_average",
+            "synced_at": datetime(2026, 6, 7, 6, 0, 19),
+            "updated_at": datetime(2026, 6, 7, 6, 0, 19),
+            "source_run_id": 88,
+        }
+
+    monkeypatch.setattr(exchange_rates, "query", fake_query)
+    monkeypatch.setattr(exchange_rates, "execute", fake_execute)
+    monkeypatch.setattr(exchange_rates, "query_one", fake_query_one)
+
+    summary = exchange_rates.refresh_usd_cny_fallback_rate(
+        fallback_date=date(2026, 6, 7),
+        source_run_id=88,
+    )
+
+    assert "usd_cny_fallback_exchange_rates" in captured["sql"]
+    assert captured["args"][1] == Decimal("6.800000")
+    assert captured["args"][4] == 3
+    assert captured["args"][5] == "[1, 2, 3]"
+    assert summary["usd_to_cny"] == 6.8
+    assert summary["sample_count"] == 3
+    assert summary["source_rate_ids"] == [1, 2, 3]
+    assert "最近 30 天" in summary["logic"]
+
+
 def test_list_usd_cny_daily_rates_serializes_archive_rows(monkeypatch):
     from appcore import exchange_rates
 
@@ -182,13 +276,63 @@ def test_list_usd_cny_daily_rates_serializes_archive_rows(monkeypatch):
     ]
 
 
+def test_list_usd_cny_fallback_rates_serializes_history(monkeypatch):
+    from appcore import exchange_rates
+
+    def fake_query(sql, params=()):
+        assert "FROM usd_cny_fallback_exchange_rates" in sql
+        assert params == (7,)
+        return [
+            {
+                "id": 9,
+                "fallback_date": date(2026, 6, 7),
+                "usd_to_cny": Decimal("6.800000"),
+                "window_start": date(2026, 5, 9),
+                "window_end": date(2026, 6, 7),
+                "sample_count": 3,
+                "source_rate_ids_json": "[1, 2, 3]",
+                "calculation_method": "daily_archive_30d_average",
+                "synced_at": datetime(2026, 6, 7, 6, 0, 19),
+                "updated_at": datetime(2026, 6, 7, 6, 0, 19),
+                "source_run_id": 88,
+            }
+        ]
+
+    monkeypatch.setattr(exchange_rates, "query", fake_query)
+
+    rows = exchange_rates.list_usd_cny_fallback_rates(limit=7)
+
+    assert rows == [
+        {
+            "id": 9,
+            "fallback_date": "2026-06-07",
+            "usd_to_cny": 6.8,
+            "window_start": "2026-05-09",
+            "window_end": "2026-06-07",
+            "sample_count": 3,
+            "source_rate_ids": [1, 2, 3],
+            "calculation_method": "daily_archive_30d_average",
+            "logic": exchange_rates.FALLBACK_LOGIC_DESCRIPTION,
+            "synced_at": "2026-06-07T06:00:19",
+            "updated_at": "2026-06-07T06:00:19",
+            "source_run_id": 88,
+        }
+    ]
+
+
 def test_order_analytics_exchange_rates_route_returns_archive_json(
     authed_client_no_db,
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "web.routes.order_analytics.exchange_rates.list_usd_cny_daily_rates",
-        lambda *, limit: [{"rate_date": "2026-06-06", "usd_to_cny": 6.7656}],
+        "web.routes.order_analytics.exchange_rates.exchange_rate_admin_payload",
+        lambda *, limit: {
+            "limit": limit,
+            "rows": [{"rate_date": "2026-06-06", "usd_to_cny": 6.7656}],
+            "current_fallback": {"fallback_date": "2026-06-07", "usd_to_cny": 6.8},
+            "fallback_history": [{"fallback_date": "2026-06-07", "usd_to_cny": 6.8}],
+            "fallback_logic": {"calculation_method": "daily_archive_30d_average"},
+        },
     )
 
     response = authed_client_no_db.get("/order-analytics/exchange-rates?limit=7")
@@ -197,4 +341,7 @@ def test_order_analytics_exchange_rates_route_returns_archive_json(
     assert response.get_json() == {
         "limit": 7,
         "rows": [{"rate_date": "2026-06-06", "usd_to_cny": 6.7656}],
+        "current_fallback": {"fallback_date": "2026-06-07", "usd_to_cny": 6.8},
+        "fallback_history": [{"fallback_date": "2026-06-07", "usd_to_cny": 6.8}],
+        "fallback_logic": {"calculation_method": "daily_archive_30d_average"},
     }

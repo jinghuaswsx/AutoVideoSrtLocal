@@ -30,7 +30,7 @@ def test_drawing_studio_menu_entry_is_visible_to_normal_users(authed_user_client
     assert '<span class="nav-icon">🎨</span> 画图工作室' in body
 
 
-def test_drawing_studio_menu_entry_ignores_legacy_false_permission(monkeypatch):
+def test_drawing_studio_menu_entry_honors_disabled_permission(monkeypatch):
     monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
@@ -58,8 +58,8 @@ def test_drawing_studio_menu_entry_ignores_legacy_false_permission(monkeypatch):
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "画图工作室" in body
-    assert 'href="/drawing-studio/sso"' in body
+    assert "画图工作室" not in body
+    assert 'href="/drawing-studio/sso"' not in body
 
 
 def test_sidebar_nav_icons_use_fixed_alignment_column(authed_user_client_no_db):

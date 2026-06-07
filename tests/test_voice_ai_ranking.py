@@ -244,7 +244,7 @@ def test_rank_voice_candidates_uses_configured_voice_ai_binding(tmp_path):
     with patch(
         "appcore.voice_ai_ranking.llm_bindings.resolve",
         return_value={
-            "provider": "gemini_vertex_adc",
+            "provider": "gemini_vertex",
             "model": "google/gemini-3.5-flash",
             "source": "db",
             "extra": {},
@@ -268,12 +268,12 @@ def test_rank_voice_candidates_uses_configured_voice_ai_binding(tmp_path):
         )
 
     kwargs = m_generate.call_args.kwargs
-    assert kwargs["provider_override"] == "gemini_vertex_adc"
+    assert kwargs["provider_override"] == "gemini_vertex"
     assert kwargs["model_override"] == "gemini-3.5-flash"
-    assert result["provider"] == "gemini_vertex_adc"
+    assert result["provider"] == "gemini_vertex"
     assert result["model"] == "gemini-3.5-flash"
-    assert result["debug"]["provider"] == "gemini_vertex_adc"
-    assert result["debug"]["request"]["raw"]["provider"] == "gemini_vertex_adc"
+    assert result["debug"]["provider"] == "gemini_vertex"
+    assert result["debug"]["request"]["raw"]["provider"] == "gemini_vertex"
     assert result["debug"]["request"]["raw"]["model"] == "gemini-3.5-flash"
 
 

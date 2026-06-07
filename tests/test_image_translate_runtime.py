@@ -489,7 +489,8 @@ def test_runtime_circuit_breaks_under_429_storm(tmp_path):
          patch.object(rt, "_sleep"), \
          patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
          patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
-         patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
+         patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen), \
+         patch.object(rt.ImageTranslateRuntime, "_evaluate_item_quality", lambda *args, **kwargs: None):
         rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
 
     # 没有熔断时应该是 5 items × 3 attempts = 15 次。熔断后远低于此。
@@ -939,7 +940,9 @@ def test_parallel_runs_all_items_and_is_faster_than_sequential(tmp_path):
          patch.object(rt.tos_clients, "download_file", side_effect=fake_download), \
          patch.object(rt.tos_clients, "upload_file", lambda lp, key: None), \
          patch.object(rt.gemini_image, "generate_image", side_effect=fake_gen):
-        rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1).start("t-img-1")
+        runtime = rt.ImageTranslateRuntime(bus=MagicMock(), user_id=1)
+        runtime._evaluate_item_quality = lambda *args, **kwargs: None
+        runtime.start("t-img-1")
     elapsed = _time.monotonic() - t0
 
     assert elapsed < 0.5, f"parallel should be fast, got {elapsed:.2f}s"

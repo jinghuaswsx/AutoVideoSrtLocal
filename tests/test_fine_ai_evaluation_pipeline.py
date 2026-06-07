@@ -251,7 +251,7 @@ def test_repository_normalizes_iso_z_timestamps_for_mysql_datetime_columns(monke
     ]
 
 
-def test_repository_latest_external_link_falls_back_to_card_video_when_link_drifted(monkeypatch):
+def test_repository_latest_external_link_rejects_card_video_match_when_link_drifted(monkeypatch):
     from appcore import fine_ai_evaluation_repository as repo_mod
 
     calls = []
@@ -282,7 +282,7 @@ def test_repository_latest_external_link_falls_back_to_card_video_when_link_drif
         card_video_name="current-title.mp4",
     )
 
-    assert result["evaluation_run_id"] == "eval_same_video"
+    assert result is None
     assert len(calls) == 2
     assert "$.external_product_link" in calls[0][0]
     assert "$.external_product_link" not in calls[1][0]

@@ -118,8 +118,9 @@ def _install_template_stub(monkeypatch):
 
 
 def test_admin_ai_usage_forbidden_for_non_admin(authed_user_client_no_db):
-    resp = authed_user_client_no_db.get("/admin/ai-usage")
-    assert resp.status_code == 403
+    resp = authed_user_client_no_db.get("/admin/ai-usage", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
 
 
 def test_my_ai_usage_only_returns_current_user_rows(authed_user_client_no_db, monkeypatch):
@@ -574,9 +575,23 @@ def test_ai_pricing_write_routes_forbidden_for_non_admin(authed_user_client_no_d
         "note": "test",
     }
 
-    assert authed_user_client_no_db.post("/admin/settings/ai-pricing", json=payload).status_code == 403
-    assert authed_user_client_no_db.put("/admin/settings/ai-pricing/1", json=payload).status_code == 403
-    assert authed_user_client_no_db.delete("/admin/settings/ai-pricing/1").status_code == 403
+    post_resp = authed_user_client_no_db.post(
+        "/admin/settings/ai-pricing",
+        json=payload,
+        follow_redirects=False,
+    )
+    put_resp = authed_user_client_no_db.put(
+        "/admin/settings/ai-pricing/1",
+        json=payload,
+        follow_redirects=False,
+    )
+    delete_resp = authed_user_client_no_db.delete(
+        "/admin/settings/ai-pricing/1",
+        follow_redirects=False,
+    )
+
+    assert [post_resp.status_code, put_resp.status_code, delete_resp.status_code] == [302, 302, 302]
+    assert [post_resp.headers["Location"], put_resp.headers["Location"], delete_resp.headers["Location"]] == ["/", "/", "/"]
 
 
 def test_ai_pricing_response_service_shapes_payloads():

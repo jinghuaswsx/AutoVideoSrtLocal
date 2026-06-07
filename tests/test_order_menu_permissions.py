@@ -90,9 +90,10 @@ def test_data_analytics_permission_grant_allows_user_page_access(monkeypatch):
 def test_data_analytics_without_permission_blocks_user_page_access(monkeypatch):
     client = _client_for_user(monkeypatch, permissions={"data_analytics": False})
 
-    response = client.get("/order-analytics")
+    response = client.get("/order-analytics", follow_redirects=False)
 
-    assert response.status_code == 403
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/"
 
 
 def test_orphan_orders_permission_grant_allows_user_page_access(monkeypatch):

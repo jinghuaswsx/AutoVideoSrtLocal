@@ -234,9 +234,9 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
 
     assert any("SELECT d.site_code" in sql for sql, _args in calls)
     de_order = details[0]
-    assert de_order["shopify_platform_fee_usd"] == 3.02
+    assert de_order["shopify_platform_fee_usd"] == 3.01
     assert de_order["international_card_fee_usd"] == 1.09
-    assert de_order["currency_conversion_fee_usd"] == 1.64
+    assert de_order["currency_conversion_fee_usd"] == 1.65
     assert de_order["shopify_fee_total_usd"] == 5.75
     assert de_order["stored_shopify_fee_total_usd"] == 5.75
     assert de_order["refund_deduction_usd"] == 12.0

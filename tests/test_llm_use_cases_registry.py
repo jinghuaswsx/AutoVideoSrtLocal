@@ -21,7 +21,9 @@ def test_all_use_cases_have_required_fields():
 
 
 def test_llm_use_case_providers_have_registered_adapters():
-    assert LLM_PROVIDER_CODES <= set(PROVIDER_ADAPTERS)
+    retired_aliases = {"gemini_vertex_adc"}
+    assert (LLM_PROVIDER_CODES - retired_aliases) <= set(PROVIDER_ADAPTERS)
+    assert retired_aliases.isdisjoint(PROVIDER_ADAPTERS)
     for code, uc in USE_CASES.items():
         provider = uc["default_provider"]
         if provider in LLM_PROVIDER_CODES:
@@ -287,7 +289,7 @@ def test_material_evaluation_defaults_to_openrouter_gemini_flash():
     uc = USE_CASES["material_evaluation.evaluate"]
     assert uc["module"] == "material"
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-3.5-flash"
+    assert uc["default_model"] == "google/gemini-3-flash-preview"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
     assert MODULE_LABELS["material"] == "素材管理"

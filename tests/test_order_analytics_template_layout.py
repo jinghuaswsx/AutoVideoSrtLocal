@@ -257,6 +257,28 @@ def test_realtime_summary_splits_global_new_old_and_unmatched_scope_cards():
     assert 'id="realtimeUnmatchedSpend"' in panel
 
 
+def test_realtime_unmatched_scope_card_links_to_detail_pages():
+    panel = _realtime_panel_source()
+    template = _template_source()
+    link_block = template[
+        template.index("function updateRealtimeUnmatchedDetailLinks"):
+        template.index("function initNewProductLaunch", template.index("function updateRealtimeUnmatchedDetailLinks"))
+    ]
+
+    assert 'id="realtimeUnmatchedOrdersLink"' in panel
+    assert 'id="realtimeUnmatchedAdsLink"' in panel
+    assert 'href="/order-analytics/realtime-unmatched-orders"' in panel
+    assert 'href="/order-analytics/realtime-unmatched-ads"' in panel
+    assert 'target="_blank" rel="noopener noreferrer"' in panel
+    assert "function updateRealtimeUnmatchedDetailLinks()" in template
+    assert "updateRealtimeUnmatchedDetailLinks();" in template
+    assert "start_date" in link_block
+    assert "end_date" in link_block
+    assert "site_code" in link_block
+    assert "product_launch_window_days" in link_block
+    assert "product_id" not in link_block
+
+
 def test_realtime_scope_cards_include_cost_breakdown_and_ratio_targets():
     panel = _realtime_panel_source()
 
@@ -469,6 +491,26 @@ def test_ads_level_name_columns_expose_copy_buttons():
     assert "if (copyLabel)" in template
     assert "if (level === 'ad')" not in template
     assert 'data-ads-copy-name="' not in template[: template.index("function adsRenderList")]
+
+
+def test_realtime_product_sales_name_and_code_have_copy_and_medias_search():
+    """Docs-anchor: docs/superpowers/specs/2026-06-07-realtime-dashboard-product-sales-copy-search.md"""
+    template = _template_source()
+    render_start = template.index("function renderRealtimeProductSales")
+    render_end = template.index("function formatCampaignAllocationStatus", render_start)
+    render_func = template[render_start:render_end]
+
+    assert "addRealtimeProductSalesCell(tr, row);" in render_func
+    assert "product_name || '未知商品') + (row.product_code ? ' · ' + row.product_code : '')" not in render_func
+    assert "function addRealtimeProductSalesCell(tr, row)" in template
+    assert "appendRealtimeProductCopyRow(" in template
+    assert "data-realtime-product-copy-text" in template
+    assert "copyTextToClipboard(text)" in template
+    assert "search.href = '/medias/?q=' + encodeURIComponent(codeText);" in template
+    assert "data-realtime-product-search-code" in template
+    assert "realtimeProductSearchIconSvg" in template
+    assert ".oar-product-sales-stack" in template
+    assert ".oar-product-line-action.is-copied" in template
 
 
 def test_ads_subtabs_use_large_click_targets():

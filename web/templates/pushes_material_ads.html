@@ -19,7 +19,7 @@
       {% if video_snap.image_url %}
       <img src="{{ video_snap.image_url }}" style="width: 100%; height: 100%; object-fit: cover;" alt="cover">
       {% endif %}
-      <a href="{{ video_snap.url }}" target="_blank" style="position: absolute; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.9); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--oc-fg, #111827); font-size: 18px; font-weight: bold; text-decoration: none; box-shadow: 0 4px 8px rgba(0,0,0,0.25); cursor: pointer;">▶</a>
+      <a href="{{ video_snap.url }}" target="_blank" rel="noopener noreferrer" style="position: absolute; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.9); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--oc-fg, #111827); font-size: 18px; font-weight: bold; text-decoration: none; box-shadow: 0 4px 8px rgba(0,0,0,0.25); cursor: pointer;">▶</a>
     </div>
     {% else %}
     <div style="width: 100%; height: 320px; background: var(--oc-bg-subtle, #f3f4f6); border-radius: 8px; border: 1px dashed var(--oc-border-strong, #d1d5db); display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 48px;">🎞</div>

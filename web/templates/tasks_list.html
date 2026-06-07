@@ -1408,14 +1408,14 @@ function tcRenderReviewAsset(asset) {
   }
   if (asset.type === 'image') {
     return '<div class="tc-review-asset">'
-      + '<a class="tc-review-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
+      + '<a class="tc-review-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener noreferrer">'
       + '<img class="tc-review-image" src="' + tcAttr(url) + '" alt="' + tcAttr((asset && asset.label) || '审核图片') + '">'
       + '</a>'
       + metaHtml
       + '</div>';
   }
   return '<div class="tc-review-asset">'
-    + '<a class="tc-btn" href="' + tcAttr(url) + '" target="_blank" rel="noopener">打开素材</a>'
+    + '<a class="tc-btn" href="' + tcAttr(url) + '" target="_blank" rel="noopener noreferrer">打开素材</a>'
     + metaHtml
     + '</div>';
 }
@@ -1528,7 +1528,7 @@ function tcRenderReadinessEvidenceItem(item) {
   if (type === 'image' && url) {
     if (tcIsPortraitEvidence(item)) {
       return '<div class="' + className + '">'
-        + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
+        + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener noreferrer">'
         + '<span class="tc-readiness-portrait-card">'
         + '<img class="tc-readiness-image tc-readiness-image--portrait" src="' + tcAttr(url) + '" alt="' + tcAttr((item && item.label) || '产物图片') + '">'
         + '</span>'
@@ -1537,7 +1537,7 @@ function tcRenderReadinessEvidenceItem(item) {
         + '</div>';
     }
     return '<div class="' + className + '">'
-      + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">'
+      + '<a class="tc-readiness-image-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener noreferrer">'
       + '<img class="tc-readiness-image" src="' + tcAttr(url) + '" alt="' + tcAttr((item && item.label) || '产物图片') + '">'
       + '</a>'
       + tcRenderReadinessImageMeta(label, rawMeta)
@@ -1545,7 +1545,7 @@ function tcRenderReadinessEvidenceItem(item) {
   }
   if (type === 'link' && url) {
     return '<div class="' + className + '">'
-      + '<a class="tc-readiness-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener">' + label + '</a>'
+      + '<a class="tc-readiness-link" href="' + tcAttr(url) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>'
       + metaHtml
       + '</div>';
   }
@@ -1688,7 +1688,7 @@ function tcRenderSubtitleRemovalContext(event) {
     tcRenderSubtitleRemovalMeta('结果反馈', context.error || ''),
   ].filter(Boolean).join('');
   const action = detailUrl
-    ? '<a class="tc-btn tc-btn--primary" href="' + tcAttr(detailUrl) + '" target="_blank" rel="noopener">字幕移除任务页</a>'
+    ? '<a class="tc-btn tc-btn--primary" href="' + tcAttr(detailUrl) + '" target="_blank" rel="noopener noreferrer">字幕移除任务页</a>'
     : '';
   return '<div class="tc-niuma-panel">'
     + '<div class="tc-niuma-head">'
@@ -3214,7 +3214,7 @@ async function tcLoadReadiness(id, task) {
     const data = await tcFetchJson('/tasks/api/child/' + id + '/readiness');
     if (data.error) { wrap.textContent = data.error; return; }
     const mediaUrl = data.media_search_url || tcMediasUrl(id, task.media_product_id, data.country_code || task.country_code, data.product_code || task.product_code || '', 'translate');
-    const jump = '<div style="margin-bottom:8px;"><a class="tc-btn tc-btn--primary" style="height:28px; padding:5px 10px; text-decoration:none;" href="' + tcEsc(mediaUrl) + '" target="_blank" rel="noopener">打开素材管理</a></div>';
+    const jump = '<div style="margin-bottom:8px;"><a class="tc-btn tc-btn--primary" style="height:28px; padding:5px 10px; text-decoration:none;" href="' + tcEsc(mediaUrl) + '" target="_blank" rel="noopener noreferrer">打开素材管理</a></div>';
     if (Array.isArray(data.checks) && data.checks.length) {
       const linkCombinedChecks = [];
       const trailingChecks = [];

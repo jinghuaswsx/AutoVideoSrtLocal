@@ -142,10 +142,11 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "USD/CNY 每日基准汇率同步",
         "description": (
             "每天北京时间 06:00 拉取 USD/CNY 汇率，使用 Frankfurter 主源与 Open ER API、FloatRates "
-            "两个校验源做三源交叉验证；最大相对差异 <= 5% 才归档为当天订单核算基准。Docs-anchor: "
+            "两个校验源做三源交叉验证；最大相对差异 <= 5% 才归档为当天订单核算基准，并刷新最近 30 天"
+            "归档基准汇率平均值作为缺档兜底。Docs-anchor: "
             "docs/superpowers/specs/2026-06-06-usd-cny-daily-exchange-rate-design.md"
         ),
-        "schedule": "每天 06:00（北京时间，三来源交叉验证）",
+        "schedule": "每天 06:00（北京时间，三来源交叉验证 + 30 天平均兜底）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-usd-cny-exchange-rate-sync.timer",

@@ -59,6 +59,8 @@ def test_copywriting_runner_logs_ai_billing(monkeypatch, tmp_path):
         "output_tokens": 25,
         "units_type": "tokens",
         "response_cost_cny": None,
+        "request_payload": None,
+        "response_payload": {"segments": [{"index": 0, "text": "Buy now"}]},
         "success": True,
     }
 

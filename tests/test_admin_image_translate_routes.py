@@ -1,6 +1,10 @@
 def test_get_prompts_requires_admin(monkeypatch):
     from web.app import create_app
 
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
     normal_user = {"id": 2, "username": "u", "role": "user", "is_active": 1}
     monkeypatch.setattr("web.auth.get_by_id", lambda uid: normal_user if int(uid) == 2 else None)
 
@@ -10,8 +14,9 @@ def test_get_prompts_requires_admin(monkeypatch):
         sess["_user_id"] = "2"
         sess["_fresh"] = True
 
-    resp = client.get("/admin/api/image-translate/prompts")
-    assert resp.status_code == 403
+    resp = client.get("/admin/api/image-translate/prompts", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "/"
 
 
 def test_admin_get_all_prompts_returns_dynamic_language_objects(authed_client_no_db, monkeypatch):
@@ -77,7 +82,7 @@ def test_admin_settings_script_moves_voice_library_sync_to_top():
     assert "stack.prepend(section)" in script
 
 
-def test_admin_settings_template_has_shopifyid_sync_bottom_card():
+def test_admin_settings_template_places_shopifyid_sync_before_voice_library_card():
     from pathlib import Path
 
     template = Path("web/templates/admin_settings.html").read_text(encoding="utf-8")
@@ -85,7 +90,7 @@ def test_admin_settings_template_has_shopifyid_sync_bottom_card():
     assert 'id="shopifyidSyncCard"' in template
     assert "Shopify ID 同步" in template
     assert "shopifyidSyncTriggerBtn" in template
-    assert template.index('id="shopifyidSyncCard"') > template.index('id="voice-library-sync"')
+    assert template.index('id="shopifyidSyncCard"') < template.index('id="voice-library-sync"')
 
 
 def test_admin_shopifyid_sync_trigger_route(authed_client_no_db, monkeypatch):
@@ -270,6 +275,64 @@ def test_admin_settings_shows_and_saves_material_roas_exchange_rate(
 
     assert resp.status_code == 302
     assert store["material_roas_rmb_per_usd"] == "6.9"
+
+
+def test_admin_settings_shows_dynamic_exchange_rate_fallback(
+    authed_client_no_db, monkeypatch
+):
+    from web.routes import admin as r
+
+    monkeypatch.setattr(r, "PROJECT_TYPE_LABELS", {})
+    monkeypatch.setattr(r, "get_all_retention_settings", lambda: {"default": 168})
+    monkeypatch.setattr(r, "get_setting", lambda key: None)
+    monkeypatch.setattr(r.product_roas, "get_configured_rmb_per_usd", lambda: "6.83")
+    monkeypatch.setattr(r.medias, "list_languages_for_admin", lambda: [])
+    monkeypatch.setattr(r.product_link_domains, "list_domains", lambda include_disabled=True: [])
+    monkeypatch.setattr(
+        r.exchange_rates,
+        "exchange_rate_admin_payload",
+        lambda *, limit: {
+            "limit": limit,
+            "rows": [],
+            "current_fallback": {
+                "fallback_date": "2026-06-07",
+                "usd_to_cny": 6.7656,
+                "window_start": "2026-05-09",
+                "window_end": "2026-06-07",
+                "sample_count": 2,
+                "updated_at": "2026-06-07T19:18:09",
+            },
+            "fallback_history": [
+                {
+                    "fallback_date": "2026-06-07",
+                    "usd_to_cny": 6.7656,
+                    "window_start": "2026-05-09",
+                    "window_end": "2026-06-07",
+                    "sample_count": 2,
+                    "updated_at": "2026-06-07T19:18:09",
+                }
+            ],
+            "fallback_logic": {
+                "description": (
+                    "最近 30 天已归档 USD/CNY 基准汇率的算术平均值；"
+                    "缺当天基准时优先使用该值；无样本时退回系统配置汇率"
+                )
+            },
+        },
+    )
+
+    resp = authed_client_no_db.get("/admin/settings")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert 'id="exchangeRateFallbackCard"' in body
+    assert "USD/CNY 动态兜底汇率" in body
+    assert "6.765600" in body
+    assert "2026-06-07T19:18:09" in body
+    assert "2026-05-09 至 2026-06-07" in body
+    assert "最近 30 天已归档 USD/CNY 基准汇率的算术平均值" in body
+    assert "最终旧配置兜底" in body
+    assert "6.83" in body
 
 
 def test_admin_post_prompt_accepts_dynamic_language(authed_client_no_db, monkeypatch):

@@ -160,8 +160,10 @@ def _country_sample(country_code):
             "product_market_fit_score": 70,
             "demand_score": 70,
             "competition_score": 70,
+            "aesthetic_fit_score": 70,
             "pricing_score": 70,
             "creative_fit_score": 70,
+            "cultural_fit_score": 70,
             "landing_page_fit_score": 70,
             "operational_fit_score": 70,
             "compliance_risk_score": 70,
@@ -188,6 +190,7 @@ def _country_sample(country_code):
             "competitive_disadvantages": [],
             "evidence_gaps": [],
         },
+        "aesthetic_analysis": {},
         "pricing_analysis": {
             "current_price": None,
             "current_currency": "",
@@ -237,6 +240,7 @@ def _country_sample(country_code):
             "unit_and_currency_notes": [],
             "faq_directions": [],
         },
+        "cultural_analysis": {},
         "risks": {
             "claim_risks": [],
             "compliance_risks": [],

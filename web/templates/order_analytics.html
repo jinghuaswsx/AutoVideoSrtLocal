@@ -290,12 +290,47 @@
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border);
 }
+.oar-scope-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
 .oar-scope-title {
   margin: 0;
   color: var(--fg);
   font-size: var(--text-base);
   font-weight: 700;
   line-height: 1.25;
+}
+.oar-scope-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.oar-scope-detail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.oar-scope-detail-link:hover {
+  background: var(--bg-muted);
+}
+.oar-scope-detail-link[aria-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
 }
 .oar-scope-source {
   margin-top: var(--space-1);
@@ -518,6 +553,69 @@
   color: var(--fg-muted);
   font-size: var(--text-xs);
   line-height: 1.35;
+}
+.oar-product-sales-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  text-align: left;
+}
+.oar-product-copy-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: 0;
+}
+.oar-product-line-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.oar-product-code-text {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.oar-product-line-action {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--fg-muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease),
+              border-color var(--duration-fast) var(--ease),
+              color var(--duration-fast) var(--ease);
+}
+.oar-product-line-action:hover,
+.oar-product-line-action:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-muted);
+  outline: none;
+}
+.oar-product-line-action.is-copied {
+  border-color: var(--success-bg);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+.oar-product-line-action svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .oar-id-cell {
   font-family: var(--font-mono); font-size: var(--text-xs); color: var(--fg-muted);
@@ -1322,6 +1420,14 @@
   .oa-table { font-size: 12px; min-width: 0; }
   .oa-table th, .oa-table td { padding: 8px 10px; }
   .oar-product-cell { min-width: 200px; max-width: 280px; }
+  .oar-product-copy-row {
+    display: flex;
+    align-items: flex-start;
+  }
+  .oar-product-line-action {
+    width: 20px;
+    height: 20px;
+  }
   .oar-campaign-table th:first-child,
   .oar-campaign-table td:first-child {
     width: 220px;
@@ -1826,7 +1932,13 @@
       <section class="oar-scope-card oar-scope-card--unmatched" data-realtime-scope-card="unmatched" aria-labelledby="realtimeUnmatchedScopeTitle">
         <div class="oar-scope-card-head">
           <div>
-            <h3 class="oar-scope-title" id="realtimeUnmatchedScopeTitle">未匹配广告和订单</h3>
+            <div class="oar-scope-title-row">
+              <h3 class="oar-scope-title" id="realtimeUnmatchedScopeTitle">未匹配广告和订单</h3>
+              <span class="oar-scope-detail-actions" aria-label="未匹配明细">
+                <a class="oar-scope-detail-link" id="realtimeUnmatchedOrdersLink" href="/order-analytics/realtime-unmatched-orders" target="_blank" rel="noopener noreferrer">未匹配订单</a>
+                <a class="oar-scope-detail-link" id="realtimeUnmatchedAdsLink" href="/order-analytics/realtime-unmatched-ads" target="_blank" rel="noopener noreferrer">未匹配广告</a>
+              </span>
+            </div>
             <div class="oar-scope-source" id="realtimeUnmatchedSource">product_launch_scope=unmatched · 未匹配广告和订单同口径核算</div>
           </div>
           <span class="oar-scope-chip">未匹配</span>
@@ -4830,6 +4942,35 @@
     return { start: s, end: e };
   }
 
+  function updateRealtimeUnmatchedDetailLinks() {
+    var links = [
+      { id: 'realtimeUnmatchedOrdersLink', path: '/order-analytics/realtime-unmatched-orders' },
+      { id: 'realtimeUnmatchedAdsLink', path: '/order-analytics/realtime-unmatched-ads' }
+    ];
+    var range;
+    try {
+      range = getRealtimeDateRange();
+    } catch (err) {
+      range = null;
+    }
+    links.forEach(function(item) {
+      var link = document.getElementById(item.id);
+      if (!link) return;
+      if (!range) {
+        link.href = '#';
+        link.setAttribute('aria-disabled', 'true');
+        return;
+      }
+      var params = new URLSearchParams();
+      params.set('start_date', range.start);
+      params.set('end_date', range.end);
+      if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
+      params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');
+      link.href = item.path + '?' + params.toString();
+      link.setAttribute('aria-disabled', 'false');
+    });
+  }
+
   function initNewProductLaunch() {
     var realtimeSite = document.getElementById('realtimeSiteFilter');
     var nplSite = document.getElementById('nplSiteFilter');
@@ -5223,6 +5364,7 @@
 
   // ── 入口：同步刷新顶部卡片 + 子 tab ─────────────────
   function loadRealtimeOverview() {
+    updateRealtimeUnmatchedDetailLinks();
     loadRealtimeTopCards();
     loadRealtimeSubTabs();
   }
@@ -6023,11 +6165,9 @@
       }
     });
     (rows || []).forEach(function(row) {
-      var product = (row.product_name || '未知商品') +
-        (row.product_code ? ' · ' + row.product_code : '');
       var tr = document.createElement('tr');
-      addTextCell(tr, product, 'oar-product-cell');
-      
+      addRealtimeProductSalesCell(tr, row);
+
       addCoverImageCell(tr, row.product_id);
 
       addTextCell(tr, fmtInt(row.order_count));
@@ -6199,6 +6339,125 @@
       cn.className = 'oar-product-name-cn';
       cn.textContent = cnText;
       stack.appendChild(cn);
+    }
+
+    td.appendChild(stack);
+    tr.appendChild(td);
+  }
+
+  function copyTextToClipboard(text) {
+    var value = String(text || '');
+    if (!value) return Promise.reject(new Error('empty'));
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(value);
+    }
+    return new Promise(function(resolve, reject) {
+      var input = document.createElement('textarea');
+      input.value = value;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.top = '-1000px';
+      input.style.left = '-1000px';
+      document.body.appendChild(input);
+      input.focus();
+      input.select();
+      try {
+        if (document.execCommand('copy')) resolve();
+        else reject(new Error('copy_failed'));
+      } catch (err) {
+        reject(err);
+      } finally {
+        document.body.removeChild(input);
+      }
+    });
+  }
+
+  function realtimeProductCopyIconSvg() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  }
+
+  function realtimeProductSearchIconSvg() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>';
+  }
+
+  function setRealtimeProductCopyState(btn, label, className) {
+    var originalTitle = btn.dataset.realtimeProductCopyTitle || btn.title || '复制';
+    btn.dataset.realtimeProductCopyTitle = originalTitle;
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    if (className) btn.classList.add(className);
+    window.setTimeout(function() {
+      btn.title = originalTitle;
+      btn.setAttribute('aria-label', originalTitle);
+      if (className) btn.classList.remove(className);
+    }, 1200);
+  }
+
+  function createRealtimeProductCopyButton(text, title) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'oar-product-line-action';
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    btn.setAttribute('data-realtime-product-copy-text', text);
+    btn.innerHTML = realtimeProductCopyIconSvg();
+    btn.addEventListener('click', function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      copyTextToClipboard(text)
+        .then(function() { setRealtimeProductCopyState(btn, '已复制', 'is-copied'); })
+        .catch(function() { setRealtimeProductCopyState(btn, '复制失败', ''); });
+    });
+    return btn;
+  }
+
+  function appendRealtimeProductCopyRow(stack, text, textClassName, copyTitle) {
+    var line = document.createElement('div');
+    line.className = 'oar-product-copy-row';
+
+    var label = document.createElement('span');
+    label.className = textClassName;
+    label.textContent = text;
+    line.appendChild(label);
+
+    line.appendChild(createRealtimeProductCopyButton(text, copyTitle));
+    stack.appendChild(line);
+    return line;
+  }
+
+  function addRealtimeProductSalesCell(tr, row) {
+    var td = document.createElement('td');
+    td.className = 'oar-product-cell';
+
+    var nameText = String((row && row.product_name) || '未知商品').trim() || '未知商品';
+    var codeText = String((row && row.product_code) || '').trim();
+    var stack = document.createElement('div');
+    stack.className = 'oar-product-sales-stack';
+
+    appendRealtimeProductCopyRow(
+      stack,
+      nameText,
+      'oar-product-line-text',
+      '复制中文产品名'
+    );
+    var codeLine = appendRealtimeProductCopyRow(
+      stack,
+      codeText || '-',
+      'oar-product-line-text oar-product-code-text',
+      '复制 product code'
+    );
+
+    if (codeText) {
+      var search = document.createElement('a');
+      search.className = 'oar-product-line-action oar-product-search-action';
+      search.href = '/medias/?q=' + encodeURIComponent(codeText);
+      search.target = '_blank';
+      search.rel = 'noopener noreferrer';
+      search.title = '在素材管理中搜索';
+      search.setAttribute('aria-label', '在素材管理中搜索 product code');
+      search.setAttribute('data-realtime-product-search-code', codeText);
+      search.innerHTML = realtimeProductSearchIconSvg();
+      codeLine.appendChild(search);
     }
 
     td.appendChild(stack);
@@ -9242,30 +9501,7 @@
   }
 
   function adsCopyText(text) {
-    var value = String(text || '');
-    if (!value) return Promise.reject(new Error('empty'));
-    if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(value);
-    }
-    return new Promise(function(resolve, reject) {
-      var input = document.createElement('textarea');
-      input.value = value;
-      input.setAttribute('readonly', '');
-      input.style.position = 'fixed';
-      input.style.top = '-1000px';
-      input.style.left = '-1000px';
-      document.body.appendChild(input);
-      input.focus();
-      input.select();
-      try {
-        if (document.execCommand('copy')) resolve();
-        else reject(new Error('copy_failed'));
-      } catch (err) {
-        reject(err);
-      } finally {
-        document.body.removeChild(input);
-      }
-    });
+    return copyTextToClipboard(text);
   }
 
   function adsSetCopyButtonState(btn, label, className) {

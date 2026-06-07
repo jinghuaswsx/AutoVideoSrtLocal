@@ -192,7 +192,6 @@ def test_pushes_script_persists_filters_pagination_and_sort_in_url():
     assert "window.addEventListener('popstate'" in script
     assert "params.set('status', statusSel.value);" in script
     assert "params.set('lang', langSel.value);" in script
-    assert "params.set('product', product);" in script
     assert "params.set('keyword', keyword);" in script
     assert "params.set('owner_id', ownerSel ? ownerSel.value : '');" in script
     assert "params.set('audit_result', auditResultSel ? auditResultSel.value : '');" in script

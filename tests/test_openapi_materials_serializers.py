@@ -204,8 +204,10 @@ def test_openapi_link_check_builds_bootstrap_response():
             "_matched_by": "localized_links_exact",
         }
 
+    reference_calls = []
+
     def fake_list_references(product_id, lang):
-        captured["references"] = (product_id, lang)
+        reference_calls.append((product_id, lang))
         return [
             {"id": "skip", "kind": "detail", "filename": "empty.jpg", "object_key": ""},
             {"id": "cover", "kind": "cover", "filename": "cover.jpg", "object_key": "covers/de.jpg"},
@@ -229,13 +231,22 @@ def test_openapi_link_check_builds_bootstrap_response():
         "https://example.com/de/products/demo?b=&a=1#frag",
         "de",
     )
-    assert captured["references"] == (7, "de")
+    assert reference_calls == [(7, "de"), (7, "en")]
     assert payload["product"] == {"id": 7, "product_code": "demo", "name": "Demo"}
     assert payload["target_language"] == "de"
     assert payload["target_language_name"] == "DE"
     assert payload["matched_by"] == "localized_links_exact"
     assert payload["normalized_url"] == "https://example.com/de/products/demo?b=&a=1"
     assert payload["reference_images"] == [
+        {
+            "id": "cover",
+            "kind": "cover",
+            "filename": "cover.jpg",
+            "download_url": "https://local/covers/de.jpg",
+            "storage_backend": "local",
+        }
+    ]
+    assert payload["original_images"] == [
         {
             "id": "cover",
             "kind": "cover",

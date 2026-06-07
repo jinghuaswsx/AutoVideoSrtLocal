@@ -64,12 +64,12 @@
               <td class="links-cell">
                 <div class="link-item">
                   <span class="link-label">源</span>
-                  <a href="{{ task.source_link }}" target="_blank" class="truncate-link">{{ task.source_link }}</a>
+                  <a href="{{ task.source_link }}" target="_blank" rel="noopener noreferrer" class="truncate-link">{{ task.source_link }}</a>
                 </div>
                 {% if task.transit_link %}
                 <div class="link-item transit">
                   <span class="link-label">跳</span>
-                  <a href="{{ task.transit_link }}" target="_blank" class="truncate-link">{{ task.transit_link }}</a>
+                  <a href="{{ task.transit_link }}" target="_blank" rel="noopener noreferrer" class="truncate-link">{{ task.transit_link }}</a>
                 </div>
                 {% endif %}
               </td>
