@@ -448,6 +448,26 @@ def test_ads_level_name_columns_expose_copy_buttons():
     assert 'data-ads-copy-name="' not in template[: template.index("function adsRenderList")]
 
 
+def test_realtime_product_sales_name_and_code_have_copy_and_medias_search():
+    """Docs-anchor: docs/superpowers/specs/2026-06-07-realtime-dashboard-product-sales-copy-search.md"""
+    template = _template_source()
+    render_start = template.index("function renderRealtimeProductSales")
+    render_end = template.index("function formatCampaignAllocationStatus", render_start)
+    render_func = template[render_start:render_end]
+
+    assert "addRealtimeProductSalesCell(tr, row);" in render_func
+    assert "product_name || '未知商品') + (row.product_code ? ' · ' + row.product_code : '')" not in render_func
+    assert "function addRealtimeProductSalesCell(tr, row)" in template
+    assert "appendRealtimeProductCopyRow(" in template
+    assert "data-realtime-product-copy-text" in template
+    assert "copyTextToClipboard(text)" in template
+    assert "search.href = '/medias/?q=' + encodeURIComponent(codeText);" in template
+    assert "data-realtime-product-search-code" in template
+    assert "realtimeProductSearchIconSvg" in template
+    assert ".oar-product-sales-stack" in template
+    assert ".oar-product-line-action.is-copied" in template
+
+
 def test_ads_subtabs_use_large_click_targets():
     """Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md"""
     template = _template_source()
