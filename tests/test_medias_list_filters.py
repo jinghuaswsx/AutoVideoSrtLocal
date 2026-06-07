@@ -221,3 +221,29 @@ def test_medias_toolbar_compacts_actions_and_filters():
     assert "if (searchBtn) searchBtn.addEventListener('click', () => runSearchNow({ syncUrl: true }));" in events_block
     assert "kwInput.addEventListener('input', scheduleLiveSearch);" in events_block
     assert "if (searchBtn && kwInput)" not in events_block
+
+
+def test_medias_mobile_adaptation_cardifies_product_and_video_tables():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/2026-06-07-medias-mobile-adaptation-design.md" in html
+    assert "height: 100dvh !important;" in html
+    assert "env(safe-area-inset-bottom,0px)" in html
+
+    anchor = html.index("docs/superpowers/specs/2026-06-07-medias-mobile-adaptation-design.md")
+    mobile_start = html.index("@media (max-width: 640px)", anchor)
+    mobile_block = html[mobile_start:html.index(".oc-page-tabs {", mobile_start)]
+
+    assert ".oc-table-medias tbody tr" in mobile_block
+    assert 'grid-template-areas:' in mobile_block
+    assert '"cover info"' in mobile_block
+    assert '"actions actions"' in mobile_block
+    assert '.oc-table-medias tbody td:nth-child(10)::before { content:"语种和投放情况";' in mobile_block
+
+    assert ".oc-vm-table tbody tr" in mobile_block
+    assert '"preview product"' in mobile_block
+    assert '"spend spend"' in mobile_block
+    assert '.oc-vm-table tbody td:nth-child(7)::before { content:"广告表现";' in mobile_block
+    assert "grid-template-columns:50px repeat(5, minmax(38px, 1fr));" in mobile_block
