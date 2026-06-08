@@ -1859,11 +1859,32 @@ def _build_weekly_product_scope(
         has_continuous_7d_active = bool(required_active_dates and required_active_dates.issubset(weekly_active_dates))
         is_stopped = status == "stopped" or str(item.get("delivery_status") or "").strip().lower() == "stopped"
         weekly_eligible = bool(has_ad_data and not is_stopped and delivery_age_days >= 7 and has_continuous_7d_active)
+
+        # 动态判定并升级潜力品，但仅限本周连续 7 天活跃的经营评估样本。
+        is_active = (
+            str(item.get("delivery_status") or "").strip().lower() == "active"
+            or _safe_float(item.get("active_7d_ad_spend_usd")) > 0
+        )
+        potential = False
+        if weekly_eligible and is_active and status not in {"stable", "secondary_stable"}:
+            last_7d_orders = _safe_int(item.get("last_7d_orders"))
+            roas_val = item.get("overall_roas")
+            if last_7d_orders >= 35 or (roas_val is not None and _safe_float(roas_val) >= 1.2 and last_7d_orders >= 3):
+                potential = True
+
         display_status = status
         if not has_ad_data:
             display_status = "never"
         elif is_stopped:
             display_status = "stopped"
+        elif potential:
+            display_status = "potential"
+            item["status"] = "potential"
+            item["display_label"] = "潜力品"
+            marks = list(item.get("stable_marks") or [])
+            if "潜力品" not in marks:
+                marks.append("潜力品")
+            item["stable_marks"] = marks
         elif not weekly_eligible:
             display_status = "test"
         elif display_status not in buckets:
@@ -1885,7 +1906,7 @@ def _build_weekly_product_scope(
             counts["stable_total"] += 1
         elif display_status in counts:
             counts[display_status] += 1
-        if weekly_eligible:
+        if weekly_eligible or display_status == "potential":
             counts["evaluated_total"] += 1
             pid = _safe_int(item.get("product_id"))
             code = str(item.get("product_code") or "").strip().lower()
@@ -1898,7 +1919,7 @@ def _build_weekly_product_scope(
                     scope_sets["active_ids"].add(pid)
                 if code:
                     scope_sets["active_codes"].add(code)
-            if display_status in {"stable", "secondary_stable"}:
+            if display_status in {"stable", "secondary_stable", "potential"}:
                 if pid:
                     scope_sets["supplement_ids"].add(pid)
                 if code:
@@ -2171,7 +2192,7 @@ def _build_product_supplement_recommendations(
     scope_sets: dict[str, set[Any]],
 ) -> dict[str, Any]:
     buckets = product_stability.get("buckets") or {}
-    candidate_items = list(buckets.get("stable") or []) + list(buckets.get("secondary_stable") or [])
+    candidate_items = list(buckets.get("stable") or []) + list(buckets.get("secondary_stable") or []) + list(buckets.get("potential") or [])
     product_index = _build_product_index(product_rows)
     candidates: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
