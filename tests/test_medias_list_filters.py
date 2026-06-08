@@ -319,6 +319,7 @@ def test_medias_mobile_adaptation_keeps_tables_scrollable_and_aligned():
     assert ".oc-table-medias tbody,\n  .oc-vm-table tbody {\n    display:table-row-group;" in mobile_block
     assert ".oc-table-medias tr,\n  .oc-vm-table tr {\n    display:table-row;" in mobile_block
     assert ".oc-table-medias th,\n  .oc-table-medias td,\n  .oc-vm-table th,\n  .oc-vm-table td {\n    display:table-cell;" in mobile_block
+    assert ".oc-table-medias thead th,\n  .oc-vm-table thead th {\n    position:static !important;" in mobile_block
 
     assert "grid-template-areas:" not in mobile_block
     assert "display:none;" not in mobile_block[mobile_block.index(".oc-table-medias thead,"):]

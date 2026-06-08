@@ -32,6 +32,16 @@
 - `web/templates/medias_list.html`：产品管理筛选区新增下拉；产品表移动端固定宽度改为与 `colgroup` 一致。
 - `web/static/medias.js`：列表请求带上 `stability_status`，筛选变化时重载第一页。
 
+## 移动端 Safari 表头对齐修订
+
+2026-06-08 线上反馈：iPhone Safari 中产品管理表横向滑动后，sticky 表头的列名会与真实数据列错位。Chrome 移动模拟下 `<th>` / `<td>` 坐标一致，但 Safari 对横向滚动容器里的 `position: sticky` table cell 存在绘制偏移。
+
+修订规则：
+
+- `max-width: 640px` 下产品管理表和视频素材表禁用 table header sticky，`thead th` 回到 `position: static`。
+- 移动端优先保证列名和数据在同一个 table 流里横向同步；不使用克隆表头或独立浮动表头。
+- 桌面端继续保留现有 sticky 表头。
+
 ## 非目标
 
 - 不新增数据库表或迁移。
