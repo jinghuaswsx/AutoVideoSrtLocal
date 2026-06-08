@@ -1605,3 +1605,15 @@ def _next_meta_hot_material_filename(product_id: int, base_filename: str) -> str
             return candidate
         candidate = f"{stem}_{suffix}{ext}"
         suffix += 1
+
+
+def get_hot_post_detail(
+    post_id: int,
+    *,
+    user_id: int | None = None,
+) -> dict[str, Any] | None:
+    row = store.get_hot_post_by_id(post_id, user_id=user_id)
+    if not row:
+        return None
+    return _hydrate_item(row)
+

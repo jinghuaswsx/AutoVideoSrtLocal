@@ -2260,3 +2260,72 @@ def list_category_options(*, query_fn: QueryFn = query) -> list[dict[str, Any]]:
         (),
     )
     return list(rows)
+
+
+def get_hot_post_by_id(
+    post_id: int,
+    *,
+    user_id: int | None = None,
+    query_fn: QueryFn = query,
+) -> dict[str, Any] | None:
+    favorite_join, favorite_select, favorite_params = _favorite_join(user_id)
+    rows = query_fn(
+        f"""
+        SELECT p.id, p.wedev_post_id, p.page_id, p.post_id, p.bm_page_id,
+               p.post_url, p.ad_library_url, p.product_url, p.creation_time,
+               p.first_seen_at, p.last_synced_at, p.likes, p.comments, p.shares,
+               p.latest_likes, p.latest_comments, p.latest_shares,
+               p.sync_period_likes, p.sync_period_hours, p.copycat,
+               p.is_pushed,
+               p.is_marked, p.mark_status, p.marked_at, p.marked_by,
+               p.local_product_id, p.local_media_item_id,
+               (
+                 SELECT MAX(t.id)
+                 FROM tasks t
+                 WHERE t.parent_task_id IS NULL
+                   AND t.media_item_id = p.local_media_item_id
+                   AND t.archived_at IS NULL
+                   AND t.status <> 'cancelled'
+               ) AS new_product_parent_task_id,
+               {favorite_select},
+               p.video_url, p.image_url, p.invisible, p.invisible_region,
+               p.message_html, p.message_zh_html, p.message_zh_status,
+               p.message_zh_attempts, p.message_zh_error, p.message_zh_translated_at,
+               p.raw_json,
+               p.local_video_path, p.local_video_duration_seconds, p.local_video_cover_path,
+               p.local_video_status, p.local_video_error,
+               p.local_video_downloaded_at, p.local_video_attempts,
+               a.status AS analysis_status,
+               a.product_title, a.product_title_zh, a.product_title_zh_status,
+               a.product_title_zh_attempts, a.product_title_zh_error,
+               a.product_title_zh_translated_at,
+               a.product_main_image_url, a.price_min,
+               a.price_max, a.currency, a.sku_prices_json,
+               a.category_l1, a.category_confidence, a.category_reason,
+               a.last_error, a.analyzed_at,
+               {EUROPE_FIT_SELECT_SQL},
+               va.id AS video_copyability_analysis_id,
+               va.overall_score AS video_copyability_overall_score,
+               va.copyability_score AS video_copyability_copyability_score,
+               va.meta_us_ad_fit_score AS video_copyability_meta_us_ad_fit_score,
+               va.product_fit_score AS video_copyability_product_fit_score,
+               va.compliance_risk_score AS video_copyability_compliance_risk_score,
+               va.recommendation AS video_copyability_recommendation,
+               va.summary AS video_copyability_summary,
+               va.summary_zh AS video_copyability_summary_zh,
+               va.llm_provider AS video_copyability_provider,
+               va.llm_model AS video_copyability_model,
+               va.analysis_json AS video_copyability_analysis_json,
+               va.analyzed_at AS video_copyability_analyzed_at
+        FROM meta_hot_posts p
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        {EUROPE_FIT_DONE_JOIN_SQL}
+        LEFT JOIN meta_hot_post_video_copyability_analyses va
+          ON va.hot_post_id = p.id AND va.status = 'done'
+        {favorite_join}
+        WHERE p.id = %s
+        """,
+        list(favorite_params + [int(post_id)]),
+    )
+    return rows[0] if rows else None
+

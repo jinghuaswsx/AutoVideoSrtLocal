@@ -963,3 +963,51 @@ def test_meta_hot_posts_ai_visibility_api_get_and_post_use_current_user(
     assert captured["get_user_id"]
     assert captured["post_user_id"]
     assert captured["post_payload"] == {"preferences": {"us": True, "europe": False}}
+
+
+def test_meta_hot_post_detail_page_requires_login(authed_client_no_db):
+    raw_client = authed_client_no_db.application.test_client()
+    resp = raw_client.get("/xuanpin/meta-hot-posts/123")
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+
+
+def test_meta_hot_post_detail_page_requires_admin(authed_user_client_no_db):
+    resp = authed_user_client_no_db.get("/xuanpin/meta-hot-posts/123")
+    assert resp.status_code == 302
+    assert "/" in resp.headers.get("Location", "")
+
+
+def test_meta_hot_post_detail_page_renders_post(authed_client_no_db, monkeypatch):
+    fake_post = {
+        "id": 123,
+        "wedev_post_id": "test_post_123",
+        "product_url": "https://example.com/p",
+        "video_url": "https://example.com/v.mp4",
+        "message_html": "This is a test message",
+        "is_favorited": False,
+        "latest_likes": 100,
+        "latest_comments": 10,
+        "latest_shares": 5,
+        "likes": 50,
+        "comments": 5,
+        "shares": 2,
+        "sync_period_likes": 50,
+        "sync_period_hours": 24,
+    }
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.get_hot_post_detail",
+        lambda post_id, user_id=None: fake_post if post_id == 123 else None,
+    )
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.ai_analysis_visibility_for_user",
+        lambda user_id: {"us": True, "europe": False},
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts/123")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Meta热帖详情 - ID: 123" in body
+    assert "meta-hot-card-grid" in body
+    assert "cacheMetaHotItems" in body
+
