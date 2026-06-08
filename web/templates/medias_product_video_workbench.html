@@ -395,9 +395,14 @@
 <div id="vwAdModal" class="vw-modal-mask" role="dialog" aria-modal="true" hidden>
   <div class="vw-modal">
     <div class="vw-modal-head">
-      <div style="min-width: 0; flex: 1; margin-right: 12px;">
-        <div class="vw-modal-title" id="vwAdTitle">广告数据</div>
-        <div class="vw-sub" id="vwAdSub"></div>
+      <div style="min-width: 0; flex: 1; margin-right: 12px; display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <div class="vw-modal-title" id="vwAdTitle">广告数据</div>
+          <div class="vw-sub" id="vwAdSub"></div>
+        </div>
+        <div id="vwAdOrderRoasBox" style="margin-left: 20px; font-size: 20px; font-weight: 800; color: var(--vw-blue);" hidden>
+          订单 ROAS: <span id="vwAdOrderRoasVal">--</span>
+        </div>
       </div>
       <button type="button" class="vw-btn" data-close-modal="vwAdModal">关闭</button>
     </div>
@@ -1521,6 +1526,21 @@
     const countryName = countryCode ? (countryMap[countryCode.toUpperCase()] || countryCode) : '';
     document.getElementById('vwAdTitle').textContent = countryName ? `广告数据 (${countryName})` : '广告数据';
     document.getElementById('vwAdSub').textContent = mk.name || '';
+
+    const orderRoasBox = document.getElementById('vwAdOrderRoasBox');
+    const orderRoasVal = document.getElementById('vwAdOrderRoasVal');
+    if (orderRoasBox && orderRoasVal) {
+      if (countryCode) {
+        const countryCodeUpper = countryCode.toUpperCase();
+        const targetCountry = (card.target_country_versions || []).find(c => c.country_code.toUpperCase() === countryCodeUpper);
+        const orderRoas = targetCountry && targetCountry.order_stats ? targetCountry.order_stats.total_roas : null;
+        orderRoasVal.textContent = orderRoas == null ? '-' : Number(orderRoas).toFixed(2);
+        orderRoasBox.hidden = false;
+      } else {
+        orderRoasBox.hidden = true;
+      }
+    }
+
     document.getElementById('vwAdFrom').value = todayIso(-29);
     document.getElementById('vwAdTo').value = todayIso(0);
     setModalOpen('vwAdModal', true);

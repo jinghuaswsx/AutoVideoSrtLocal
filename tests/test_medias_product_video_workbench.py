@@ -46,6 +46,8 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "target_country_versions" in html
     assert 'data-action="ad-country"' in html
     assert "currentAdCountryCode" in html
+    assert "vwAdOrderRoasBox" in html
+    assert "vwAdOrderRoasVal" in html
 
 
 def test_video_workbench_import_flow_matches_mk_progress_contract():
