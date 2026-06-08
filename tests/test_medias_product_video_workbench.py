@@ -48,8 +48,8 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "currentAdCountryCode" in html
     assert "vwAdOrderRoasBox" in html
     assert "vwAdOrderRoasVal" in html
-    assert "vwAdOrderSummaryBox" in html
-    assert "vwAdOrderSummary" in html
+    assert "vw-kpi-compare" in html
+    assert "vw-kpi-compare-row" in html
 
 
 
