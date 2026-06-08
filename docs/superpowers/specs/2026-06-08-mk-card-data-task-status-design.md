@@ -55,6 +55,8 @@ Date: 2026-06-08
 
 每个 `target_country_versions[]` 行同步附加 `task`，每个 `translated_versions[]` 国家行同步附加 `task`。汇总行的 `task` 指向 `parent_task`。
 
+任务负责人显示名从 `users.xingming` / `users.username` 解析；生产表没有 `users.display_name`，任务状态查询不得引用该字段。
+
 ## UX Contract
 
 - `task` 存在且有正整数 `id`：
