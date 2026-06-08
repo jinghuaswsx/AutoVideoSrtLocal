@@ -1502,6 +1502,24 @@
     document.getElementById('f-sort').addEventListener('change', () => {
       state.page = 1; load();
     });
+    let keywordTimeout = null;
+    const keywordInput = document.getElementById('f-keyword');
+    if (keywordInput) {
+      keywordInput.addEventListener('input', () => {
+        if (keywordTimeout) clearTimeout(keywordTimeout);
+        keywordTimeout = setTimeout(() => {
+          state.page = 1;
+          load();
+        }, 500);
+      });
+      keywordInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          if (keywordTimeout) clearTimeout(keywordTimeout);
+          state.page = 1;
+          load();
+        }
+      });
+    }
     document.getElementById('btn-reset').addEventListener('click', () => {
       document.querySelectorAll('.push-toolbar input').forEach(i => (i.value = ''));
       document.getElementById('f-status').value = 'pending';
