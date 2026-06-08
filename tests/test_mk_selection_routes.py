@@ -142,7 +142,7 @@ def test_mk_selection_video_heat_matches_mk_backend_ads_count_rules():
     assert "function heatLevel(adsCount)" in template
     assert "const count = Number(adsCount || 0);" in template
     assert "if (count >= 10) return {label:'高', cls:'high'};" in template
-    assert "if (count >= 5) return {label:'中', cls:'med'};" in template
+    assert "if (count >= 3) return {label:'中', cls:'med'};" in template
     assert "function spendHeatLevel(spends)" in template
     assert "const heat = spendHeatLevel(r.mk_total_spends);" in template
     assert "const heat = heatLevel(r.video_ads_count);" in template
