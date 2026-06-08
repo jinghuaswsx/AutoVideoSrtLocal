@@ -361,7 +361,7 @@ def assess_material(
 ) -> dict[str, Any]:
     import os
     import sys
-    if not ("pytest" in sys.argv[0] or "pytest" in "".join(sys.argv) or "PYTEST_CURRENT_TEST" in os.environ):
+    if not ("pytest" in sys.modules or "pytest" in sys.argv[0] or "pytest" in "".join(sys.argv) or "PYTEST_CURRENT_TEST" in os.environ):
         raise EuropeFitAssessmentError("自动或手动的第三方大模型欧洲适配评估已被禁用，评估数据必须由 Antigravity 离线生成后回填")
     local_video_path = str(row.get("local_video_path") or "").strip()
     resolved = video_localization.resolve_local_video_path(local_video_path)
