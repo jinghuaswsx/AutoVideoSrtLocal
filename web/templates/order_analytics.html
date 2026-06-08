@@ -642,6 +642,26 @@
   min-width: 380px;
   white-space: nowrap;
 }
+.oar-hour-cell.is-current {
+  background-color: oklch(97% 0.02 140) !important;
+  border-left: 4px solid oklch(62% 0.12 140) !important;
+  box-shadow: inset 0 0 0 1px oklch(90% 0.04 140);
+}
+.oar-hour-cell.is-current .oar-row-ad .oar-hour-time,
+.oar-hour-cell.is-current .oar-row-ad .oar-hour-label {
+  color: oklch(52% 0.14 140) !important;
+  font-weight: 700 !important;
+}
+.oar-hour-cell.is-current .oar-row-bj .oar-hour-time,
+.oar-hour-cell.is-current .oar-row-bj .oar-hour-label {
+  color: oklch(50% 0.15 250) !important;
+  font-weight: 700 !important;
+}
+.oar-hour-cell.is-current .oar-row-berlin .oar-hour-time,
+.oar-hour-cell.is-current .oar-row-berlin .oar-hour-label {
+  color: oklch(58% 0.16 45) !important;
+  font-weight: 700 !important;
+}
 .oar-hour-row {
   display: flex;
   align-items: baseline;
@@ -6280,6 +6300,9 @@
           var tr = document.createElement('tr');
           var hourTd = document.createElement('td');
           hourTd.className = 'oar-hour-cell';
+          if (isCurrentHourWindow(row)) {
+            hourTd.className += ' is-current';
+          }
           hourTd.innerHTML = formatRealtimeHourCell(row);
           tr.appendChild(hourTd);
           [
@@ -7135,6 +7158,21 @@
     return startHour + ':00-' + endHour + ':00 广告日小时';
   }
 
+  function isCurrentHourWindow(row) {
+    if (!row || !row.window_start_at || !row.window_end_at) return false;
+    var now = new Date();
+    var parseBeijingDate = function(str) {
+      var isoStr = String(str).replace(' ', 'T');
+      if (isoStr.indexOf('+') === -1 && isoStr.indexOf('Z') === -1) {
+        isoStr += '+08:00';
+      }
+      return new Date(isoStr);
+    };
+    var start = parseBeijingDate(row.window_start_at);
+    var end = parseBeijingDate(row.window_end_at);
+    return start && end && (now >= start && now < end);
+  }
+
   function formatRealtimeHourCell(row) {
     row = row || {};
     var mainTime = '';
@@ -7160,14 +7198,14 @@
     var html = '';
 
     // Row 1: 广告日小时
-    html += '<div class="oar-hour-row">';
+    html += '<div class="oar-hour-row oar-row-ad">';
     html += '<span class="oar-hour-time oar-hour-main">' + escapeHtml(mainTime) + '</span>';
     html += '<span class="oar-hour-label">' + escapeHtml(mainLabel) + '</span>';
     html += '</div>';
 
     // Row 2: 北京时间
     if (bjTime) {
-      html += '<div class="oar-hour-row">';
+      html += '<div class="oar-hour-row oar-row-bj">';
       html += '<span class="oar-hour-time oar-hour-sub">' + escapeHtml(bjTime) + '</span>';
       html += '<span class="oar-hour-label">' + escapeHtml(bjLabel) + '</span>';
       html += '</div>';
@@ -7175,7 +7213,7 @@
 
     // Row 3: 德国柏林时间
     if (berlinTime) {
-      html += '<div class="oar-hour-row">';
+      html += '<div class="oar-hour-row oar-row-berlin">';
       html += '<span class="oar-hour-time oar-hour-sub">' + escapeHtml(berlinTime) + '</span>';
       html += '<span class="oar-hour-label">' + escapeHtml(berlinLabel) + '</span>';
       html += '</div>';
