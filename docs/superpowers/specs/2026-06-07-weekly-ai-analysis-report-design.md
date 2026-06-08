@@ -380,6 +380,73 @@ AI 必须输出 JSON：
   - 素材 90 天消耗、广告数、建议原因。
 - 页面新增 `补素材建议` 可视化区，分成 `扩国家` 和 `补素材` 两张表。AI prompt 同步携带这部分确定性建议，AI 可以补充解释，但不能编造不存在的素材。
 
+## 流程图与提示词可视化（2026-06-08 追加）
+
+用户追加要求：`每周 AI 分析` 页面顶部必须可视化展示完整工作流程，并让运营能看到中间所有 AI 大模型调用的提示词、输入数据和报文情况。
+
+### 展示目标
+
+- 在 `每周 AI 分析` 面板顶部、数据质量条和 KPI 之前新增流程图。
+- 流程图按真实后端执行顺序展示：选择业务周、拉取每日实时大盘、汇总产品盈亏、汇总广告计划、读取稳定分级、计算产品评估范围、生成补素材建议、调用周报总分析 AI、调用逐产品推进 AI、解析 JSON、落库并返回页面。
+- 涉及 LLM 的节点必须带 `提示词` 按钮；点击后弹窗展示该节点的中文提示词、输入数据、调用参数和报文摘要。
+- 非 LLM 节点只展示输入 / 输出摘要，不提供提示词按钮。
+- 页面默认展示流程图，不需要用户先生成报告；预览状态也必须能看到将要发送给模型的压缩数据包。
+
+### 后端调试数据契约
+
+`GET /order-analytics/weekly-ai-analysis/report` 和 `POST /order-analytics/weekly-ai-analysis/generate` 响应新增 `workflow_debug`：
+
+```json
+{
+  "nodes": [
+    {
+      "id": "weekly_ai_chat",
+      "title": "周报总分析 AI",
+      "kind": "llm",
+      "status": "ready|success|failed|skipped",
+      "summary": "中文摘要",
+      "input_keys": ["period", "data_quality", "summary"],
+      "output_keys": ["business_health", "product_direction"],
+      "prompt_button": true,
+      "prompt_ref": "weekly_ai_chat"
+    }
+  ],
+  "llm_calls": {
+    "weekly_ai_chat": {
+      "title": "周报总分析 AI",
+      "use_case_code": "order_analytics.weekly_ai_analysis",
+      "provider": "openrouter",
+      "model": "google/gemini-flash-1.5",
+      "entrypoint": "appcore.llm_client.invoke_chat",
+      "system_prompt": "中文系统提示词",
+      "user_prompt": "中文用户提示词",
+      "messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}],
+      "input_data": {},
+      "request_payload": {},
+      "response_contract": {},
+      "response_summary": {}
+    }
+  }
+}
+```
+
+逐产品 AI 节点使用 `sample_calls` 展示候选产品的样例报文，最多展示前 5 个候选；不得为了展示调试信息额外触发 LLM 调用。
+
+### 提示词规则
+
+- 所有展示给用户的提示词必须使用中文。
+- 页面展示的提示词必须来自后端真实构造函数：周报总分析来自 `build_ai_prompt`，逐产品评估来自 `build_product_action_evaluation_system_prompt` 和 `build_product_action_evaluation_prompt`。
+- 输入数据必须是后端实际传给 LLM 的压缩 JSON，不允许前端重新拼接一份不同口径的数据。
+- 报文情况至少展示 use case、provider、model、入口函数、temperature、token 限制、response format / response schema、输入字段列表和输出字段列表。
+- 已生成快照返回时，`workflow_debug` 可以基于保存的 `data_snapshot_json` 重新构造；不需要保存完整 LLM 请求历史。
+
+### 前端
+
+- 流程图使用数据分析现有安静、工具型样式，不做营销式 hero。
+- 节点必须在移动端单列排列，按钮和文字不能互相遮挡。
+- 提示词弹窗复用现有数据分析弹窗样式；弹窗内使用分区展示：调用信息、系统提示词、用户提示词、输入数据、请求报文、输出契约 / 响应摘要。
+- JSON 展示使用等宽字体、自动换行和滚动容器，避免撑破页面。
+
 ## 定时任务
 
 新增 `appcore/weekly_ai_analysis_report.py` 或放入 `appcore/order_analytics/weekly_ai_report.py` 的 `register(scheduler)`：

@@ -355,6 +355,8 @@ def test_generate_ai_report_success_upserts(monkeypatch):
     assert saved_report["product_action_evaluations"] == []
     assert saved_report["product_action_evaluation_summary"]["total"] == 0
     assert params[9] == 9
+    assert report["workflow_debug"]["llm_calls"]["weekly_ai_chat"]["system_prompt"].startswith("你是电商经营数据分析师")
+    assert report["workflow_debug"]["llm_calls"]["weekly_ai_chat"]["request_payload"]["response_format"] == {"type": "json_object"}
 
 
 def _minimal_product_candidate(product_id=101, product_code="P101"):
@@ -438,6 +440,46 @@ def test_product_action_prompt_contains_country_tiers_and_material_sources():
     assert "local_material_candidates" in prompt
     assert "mingkong_material_candidates" in prompt
     assert "mk/demo.mp4" in prompt
+
+
+def test_workflow_debug_exposes_flow_prompts_inputs_and_payloads(monkeypatch):
+    monkeypatch.setattr(war, "query_one", lambda *a, **k: None)
+    package = {
+        "period": {"week_start": date(2026, 5, 31), "week_end": date(2026, 6, 6)},
+        "data_quality": {"status": "ok", "source_mode": "daily_final"},
+        "summary": {"profit_usd": 120, "true_roas": 1.6},
+        "daily_global": [],
+        "daily_by_store": {"all": [], "newjoy": [], "omurio": []},
+        "segments": {},
+        "product_scope": {"evaluated_product_count": 1},
+        "analysis_product_rows": [],
+        "analysis_campaign_rows": [],
+        "product_tier_order_share": {},
+        "product_stability": {},
+        "product_supplement_recommendations": {},
+        "low_order_products": {},
+        "rule_findings": {},
+        "product_ai_evaluation_candidates": [_minimal_product_candidate()],
+    }
+
+    debug = war.build_workflow_debug(package, status="preview")
+
+    assert debug["docs_anchor"].endswith("流程图与提示词可视化2026-06-08-追加")
+    assert any(node["id"] == "weekly_ai_chat" and node["prompt_button"] for node in debug["nodes"])
+    assert any(node["id"] == "product_action_ai" and node["prompt_button"] for node in debug["nodes"])
+    weekly_call = debug["llm_calls"]["weekly_ai_chat"]
+    assert weekly_call["system_prompt"] == "你是电商经营数据分析师。请基于给定 JSON 数据输出严格 JSON，不要输出 markdown，不要编造不存在的产品、广告或数据。"
+    assert "请分析这一周业务有没有问题" in weekly_call["user_prompt"]
+    assert weekly_call["input_data"]["period"]["week_start"] == "2026-05-31"
+    assert weekly_call["request_payload"]["temperature"] == 0.2
+    assert weekly_call["request_payload"]["response_format"] == {"type": "json_object"}
+    product_call = debug["llm_calls"]["product_action_ai"]
+    assert product_call["provider"] == "openrouter"
+    assert product_call["model"] == "google/gemini-3.5-flash"
+    assert product_call["input_data"]["candidate_count"] == 1
+    assert product_call["sample_calls"]
+    assert "第一阶梯 DE/FR" in product_call["sample_calls"][0]["user_prompt"]
+    assert product_call["sample_calls"][0]["request_payload"]["response_schema"] == war.PRODUCT_ACTION_RESPONSE_SCHEMA
 
 
 def test_invoke_product_action_evaluation_uses_openrouter_gemini_schema(monkeypatch):
