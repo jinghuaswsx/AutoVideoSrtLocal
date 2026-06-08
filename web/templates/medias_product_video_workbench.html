@@ -301,6 +301,19 @@
   display: block;
   margin-bottom: 2px;
 }
+#vwAdModal .vw-modal {
+  width: min(1600px, 96vw);
+}
+#vwAdModal .vw-table th,
+#vwAdModal .vw-table td {
+  white-space: nowrap;
+}
+#vwAdModal .vw-modal-title,
+#vwAdModal #vwAdSub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 </style>
 {% endblock %}
 
@@ -331,7 +344,7 @@
 <div id="vwAdModal" class="vw-modal-mask" role="dialog" aria-modal="true" hidden>
   <div class="vw-modal">
     <div class="vw-modal-head">
-      <div>
+      <div style="min-width: 0; flex: 1; margin-right: 12px;">
         <div class="vw-modal-title" id="vwAdTitle">广告数据</div>
         <div class="vw-sub" id="vwAdSub"></div>
       </div>
@@ -1435,20 +1448,55 @@
       <div class="vw-kpi"><span>ROAS</span><strong>${roas(s.roas)}</strong></div>
       <div class="vw-kpi"><span>购买数</span><strong>${Number(s.result_count || 0)}</strong></div>
     `;
+    const countryMap = {
+      'DE': '德',
+      'FR': '法',
+      'ES': '西',
+      'IT': '意',
+      'JA': '日',
+      'PT': '葡',
+      'NL': '荷',
+      'SV': '瑞',
+      'FI': '芬',
+      'US': '美',
+      'GB': '英',
+      'CA': '加',
+      'AU': '澳',
+      'EN': '英'
+    };
+    function formatAdRoas(val) {
+      const rVal = roas(val);
+      if (rVal === '-') return '-';
+      const num = Number(val);
+      if (isNaN(num)) return esc(rVal);
+      
+      if (num > 1.2) {
+        return `<strong style="color: var(--vw-blue); font-size: 1.5em; font-weight: bold;">${rVal}</strong>`;
+      } else if (num > 1.0) {
+        return `<span style="color: #f97316; font-size: 1.5em; font-weight: bold;">${rVal}</span>`;
+      } else {
+        return rVal;
+      }
+    }
     const rows = data.rows || [];
-    document.getElementById('vwAdRows').innerHTML = rows.length ? rows.map(row => `
-      <tr>
-        <td>${esc(row.activity_date || '')}</td>
-        <td>${esc(row.ad_account_name || row.ad_account_id || '-')}</td>
-        <td>${esc(row.ad_name || '-')}<div class="vw-sub">${esc(row.normalized_ad_code || '')}</div></td>
-        <td>${esc(row.market_country || '-')}</td>
-        <td>${money(row.spend_usd || 0, 2)}</td>
-        <td>${money(row.purchase_value_usd || 0, 2)}</td>
-        <td>${roas(row.roas)}</td>
-        <td>${Number(row.result_count || 0)}</td>
-        <td>${esc(row.match_reason || '-')}</td>
-      </tr>
-    `).join('') : '<tr><td colspan="9">当前日期范围没有匹配广告</td></tr>';
+    document.getElementById('vwAdRows').innerHTML = rows.length ? rows.map(row => {
+      const marketCode = String(row.market_country || '').trim().toUpperCase();
+      const countryPrefix = countryMap[marketCode] || '';
+      const countryText = countryPrefix ? `${countryPrefix}${marketCode}` : (row.market_country || '-');
+      return `
+        <tr>
+          <td>${esc(row.activity_date || '')}</td>
+          <td>${esc(row.ad_account_name || row.ad_account_id || '-')}</td>
+          <td>${esc(row.ad_name || '-')}<div class="vw-sub">${esc(row.normalized_ad_code || '')}</div></td>
+          <td>${esc(countryText)}</td>
+          <td>${money(row.spend_usd || 0, 2)}</td>
+          <td>${money(row.purchase_value_usd || 0, 2)}</td>
+          <td>${formatAdRoas(row.roas)}</td>
+          <td>${Number(row.result_count || 0)}</td>
+          <td>${esc(row.match_reason || '-')}</td>
+        </tr>
+      `;
+    }).join('') : '<tr><td colspan="9">当前日期范围没有匹配广告</td></tr>';
   }
 
   function langCode(lang) {
