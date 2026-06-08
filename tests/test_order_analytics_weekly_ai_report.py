@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from appcore.order_analytics import weekly_ai_report as war
 
@@ -364,13 +364,16 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert any(row["normalized_campaign_code"] == "P202" for row in package["campaign_rows"])
     assert package["product_stability"]["counts"]["stable_total"] == 1
     assert package["product_stability"]["counts"]["secondary_stable"] == 1
-    assert package["product_stability"]["counts"]["test"] == 2
-    assert package["product_stability"]["counts"]["insufficient_history"] == 0
+    assert package["product_stability"]["counts"]["test"] == 1
+    assert package["product_stability"]["counts"]["insufficient_history"] == 1
     assert package["product_stability"]["buckets"]["stable"][0]["product_code"] == "P101"
     assert package["product_scope"]["evaluated_product_count"] == 2
-    assert package["product_scope"]["excluded_without_continuous_7d_active_count"] == 2
+    assert package["product_scope"]["excluded_under_7d_count"] == 1
+    assert package["product_scope"]["excluded_without_continuous_7d_active_count"] == 1
     assert package["product_stability"]["buckets"]["test"][0]["display_label"] == "测试中"
     assert package["product_stability"]["buckets"]["test"][0]["weekly_active_day_count"] in {0, 1}
+    assert package["product_stability"]["buckets"]["insufficient_history"][0]["product_code"] == "P303"
+    assert package["product_stability"]["buckets"]["insufficient_history"][0]["display_label"] == "投放未满7天"
     share = package["product_tier_order_share"]
     assert share["weekly"]["total_orders"] == 34
     assert share["weekly"]["stable"]["order_count"] == 19
@@ -449,6 +452,260 @@ def test_build_weekly_data_package_fallback_classifies_orders_when_stability_cac
     assert share["other"]["order_share_pct"] == 1.0345
 
 
+def test_stability_cache_failure_does_not_fall_back_to_full_analysis(monkeypatch):
+    monkeypatch.setattr(war, "get_realtime_roas_overview", _fake_overview)
+    monkeypatch.setattr(war, "generate_product_profit_list", _fake_product_profit)
+    monkeypatch.setattr(war, "load_product_lang_ad_summary_cache", lambda pids: {})
+    _stub_product_candidate_loaders(monkeypatch)
+
+    def fail_stability(limit=0):
+        raise RuntimeError("cache offline")
+
+    monkeypatch.setattr(war, "load_product_stability_summary", fail_stability)
+
+    package = war.build_weekly_data_package(
+        date(2026, 5, 31),
+        date(2026, 6, 6),
+        now=datetime(2026, 6, 7, 12, 0, 0),
+    )
+
+    assert package["product_scope"]["filter_applied"] is False
+    assert package["analysis_product_rows"] == []
+    assert package["analysis_campaign_rows"] == []
+    assert package["low_order_products"]["one_to_two"] == []
+    assert package["low_order_products"]["three_to_five"] == []
+    assert package["rule_findings"]["products_scale"] == []
+    assert package["rule_findings"]["products_watch"] == []
+    assert package["rule_findings"]["products_cut"] == []
+    assert package["rule_findings"]["ads_increase"] == []
+    assert package["rule_findings"]["ads_reduce"] == []
+    assert package["rule_findings"]["ads_pause"] == []
+    assert package["product_supplement_recommendations"]["country_expansion"] == []
+    assert package["product_supplement_recommendations"]["material_fill"] == []
+    assert package["product_tier_order_share"]["available"] is False
+    assert package["product_tier_order_share"]["daily"] == []
+    assert package["product_ai_evaluation_candidates"] == []
+    warning_codes = {item["code"] for item in package["data_quality"]["warnings"]}
+    assert "product_stability_unavailable" in warning_codes
+    assert "product_stability_scope_unavailable" in warning_codes
+    prompt_payload = war._compact_for_prompt(package)
+    assert prompt_payload["top_products_by_profit"] == []
+    assert prompt_payload["worst_products_by_profit"] == []
+    assert prompt_payload["top_campaigns_by_spend"] == []
+
+
+def test_missing_delivery_start_is_quality_warning_not_under_7d():
+    week_start = date(2026, 5, 31)
+    week_end = date(2026, 6, 6)
+    active_dates = {week_start + timedelta(days=offset) for offset in range(7)}
+    product_stability = {
+        "buckets": {
+            "stable": [{
+                "product_id": 707,
+                "product_code": "P707",
+                "product_name": "Missing Start Product",
+                "status": "stable",
+                "last_7d_orders": 30,
+                "active_7d_ad_spend_usd": 80,
+                "delivery_status": "active",
+            }],
+        },
+        "warnings": [],
+    }
+
+    scoped, product_scope, _scope_sets = war._build_weekly_product_scope(
+        product_stability,
+        week_start=week_start,
+        week_end=week_end,
+        active_dates_by_product={("id", "707"): active_dates, ("code", "p707"): active_dates},
+        limit=0,
+    )
+    quality_warnings = war._weekly_product_quality_warnings(
+        product_stability=scoped,
+        product_scope=product_scope,
+    )
+
+    assert scoped["counts"]["stable_total"] == 1
+    assert scoped["counts"]["insufficient_history"] == 0
+    assert product_scope["missing_delivery_start_count"] == 1
+    assert scoped["buckets"]["stable"][0]["weekly_delivery_start_missing"] is True
+    assert {item["code"] for item in quality_warnings} == {"missing_delivery_start_date"}
+
+
+def test_weekly_ai_candidates_use_unlimited_stability_scope(monkeypatch):
+    monkeypatch.setattr(war, "get_realtime_roas_overview", _fake_overview)
+    monkeypatch.setattr(war, "generate_product_profit_list", _fake_product_profit)
+    stable_rows = [
+        {
+            "product_id": 1000 + index,
+            "product_code": f"P{1000 + index}",
+            "product_name": f"Stable {index}",
+            "status": "stable",
+            "stable_7d": True,
+            "last_7d_orders": 100 - index,
+            "details": {"delivery_start_date": "2026-05-20"},
+        }
+        for index in range(55)
+    ]
+    monkeypatch.setattr(
+        war,
+        "load_product_stability_summary",
+        lambda limit=0: {
+            "counts": {"total": 55},
+            "buckets": {"stable": stable_rows},
+            "warnings": [],
+            "computed_at": "2026-06-07T12:00:00",
+        },
+    )
+    monkeypatch.setattr(war, "load_product_lang_ad_summary_cache", lambda pids: {})
+    active_dates = {date(2026, 5, 31) + timedelta(days=offset) for offset in range(7)}
+    monkeypatch.setattr(
+        war,
+        "_weekly_ad_active_dates_by_product",
+        lambda rows: {
+            key: active_dates
+            for row in stable_rows
+            for key in (("id", str(row["product_id"])), ("code", row["product_code"].lower()))
+        },
+    )
+    monkeypatch.setattr(war, "_load_product_identity_maps", lambda ids, codes, notes: ({}, {}))
+    captured = {}
+
+    def fake_build_candidates(**kwargs):
+        captured["stable_count"] = len((kwargs["product_stability"].get("buckets") or {}).get("stable") or [])
+        return []
+
+    monkeypatch.setattr(war, "_build_product_ai_evaluation_candidates", fake_build_candidates)
+
+    package = war.build_weekly_data_package(
+        date(2026, 5, 31),
+        date(2026, 6, 6),
+        now=datetime(2026, 6, 7, 12, 0, 0),
+    )
+
+    assert len(package["product_stability"]["buckets"]["stable"]) == 50
+    assert captured["stable_count"] == 55
+
+
+def test_candidate_data_quality_notes_roll_up_to_package_data_quality(monkeypatch):
+    monkeypatch.setattr(war, "get_realtime_roas_overview", _fake_overview)
+    monkeypatch.setattr(war, "generate_product_profit_list", _fake_product_profit)
+    monkeypatch.setattr(
+        war,
+        "load_product_stability_summary",
+        lambda limit=0: {
+            "counts": {"total": 1},
+            "buckets": {
+                "stable": [{
+                    "product_id": 101,
+                    "product_code": "P101",
+                    "product_name": "Scale Product",
+                    "status": "stable",
+                    "stable_7d": True,
+                    "last_7d_orders": 140,
+                    "details": {"delivery_start_date": "2026-05-20"},
+                }]
+            },
+            "warnings": [],
+            "computed_at": "2026-06-07T12:00:00",
+        },
+    )
+    monkeypatch.setattr(
+        war,
+        "_load_product_identity_maps",
+        lambda ids, codes, notes: ({101: {"id": 101, "product_code": "P101", "name": "Scale Product", "main_image": ""}}, {}),
+    )
+    monkeypatch.setattr(war, "_load_product_ad_summary", lambda product_ids, notes: {})
+
+    def fake_material_summary(product_ids, notes):
+        notes.append({"code": "material_lang_summary_unavailable", "message": "本地素材语言汇总加载失败：boom"})
+        return {}
+
+    monkeypatch.setattr(war, "_load_material_summary_by_lang", fake_material_summary)
+    monkeypatch.setattr(war, "_load_order_country_distribution", lambda product_ids, week_start, week_end, notes: {})
+    monkeypatch.setattr(war, "_load_ad_country_distribution", lambda product_ids, week_start, week_end, notes: {})
+    monkeypatch.setattr(war, "_load_local_material_candidates", lambda product_ids, notes: {})
+    monkeypatch.setattr(war, "_load_mingkong_product_summary", lambda product_codes, notes: {})
+    monkeypatch.setattr(war, "_load_mingkong_material_candidates", lambda product_codes, notes: {})
+    monkeypatch.setattr(war, "load_product_lang_ad_summary_cache", lambda pids: {})
+    monkeypatch.setattr(war, "_load_quality_materials", lambda product_code, limit=5: [])
+
+    package = war.build_weekly_data_package(
+        date(2026, 5, 31),
+        date(2026, 6, 6),
+        now=datetime(2026, 6, 7, 12, 0, 0),
+    )
+
+    warning_codes = [item["code"] for item in package["data_quality"]["warnings"]]
+    assert warning_codes.count("material_lang_summary_unavailable") == 1
+    assert package["product_ai_evaluation_candidates"][0]["data_quality_notes"][0]["code"] == "material_lang_summary_unavailable"
+
+
+def test_candidate_missing_product_id_rolls_up_to_report_notes(monkeypatch):
+    _stub_product_candidate_loaders(monkeypatch)
+    report_notes = []
+
+    candidates = war._build_product_ai_evaluation_candidates(
+        product_stability={
+            "buckets": {
+                "stable": [{
+                    "product_code": "P-NO-ID",
+                    "product_name": "Missing ID",
+                    "status": "stable",
+                }]
+            }
+        },
+        product_rows=[],
+        campaign_rows=[],
+        week_start=date(2026, 5, 31),
+        week_end=date(2026, 6, 6),
+        identity_by_id={},
+        identity_by_code={},
+        global_notes=[],
+        report_notes=report_notes,
+    )
+
+    assert candidates[0]["data_quality_notes"][0]["code"] == "missing_product_id"
+    assert report_notes[0]["code"] == "missing_product_id"
+
+
+def test_supplement_warning_rolls_up_to_package_data_quality(monkeypatch):
+    monkeypatch.setattr(war, "get_realtime_roas_overview", _fake_overview)
+    monkeypatch.setattr(war, "generate_product_profit_list", _fake_product_profit)
+    monkeypatch.setattr(
+        war,
+        "load_product_stability_summary",
+        lambda limit=0: {
+            "counts": {"total": 1},
+            "buckets": {
+                "stable": [{
+                    "product_id": 101,
+                    "product_code": "P101",
+                    "product_name": "Scale Product",
+                    "status": "stable",
+                    "stable_7d": True,
+                    "last_7d_orders": 140,
+                    "details": {"delivery_start_date": "2026-05-20"},
+                }]
+            },
+            "warnings": [],
+            "computed_at": "2026-06-07T12:00:00",
+        },
+    )
+    monkeypatch.setattr(war, "load_product_lang_ad_summary_cache", lambda pids: (_ for _ in ()).throw(RuntimeError("lang cache down")))
+    _stub_product_candidate_loaders(monkeypatch)
+
+    package = war.build_weekly_data_package(
+        date(2026, 5, 31),
+        date(2026, 6, 6),
+        now=datetime(2026, 6, 7, 12, 0, 0),
+    )
+
+    warning_codes = {item["code"] for item in package["data_quality"]["warnings"]}
+    assert "lang_ad_summary_unavailable" in warning_codes
+    assert package["product_supplement_recommendations"]["warnings"][0]["code"] == "lang_ad_summary_unavailable"
+
+
 def test_existing_report_backfills_missing_product_tier_order_share(monkeypatch):
     calls = []
     backfilled_share = {
@@ -508,17 +765,76 @@ def test_existing_report_backfills_missing_product_tier_order_share(monkeypatch)
     assert share["weekly"]["other"]["order_count"] == 3
 
 
+def test_weekly_scope_does_not_promote_test_product_to_potential():
+    week_start = date(2026, 5, 31)
+    week_end = date(2026, 6, 6)
+    active_dates = {week_start + timedelta(days=offset) for offset in range(7)}
+    product_stability = {
+        "buckets": {
+            "test": [{
+                "product_id": 606,
+                "product_code": "P606",
+                "product_name": "Continuous Test Product",
+                "status": "test",
+                "last_7d_orders": 70,
+                "overall_roas": 2.2,
+                "active_7d_ad_spend_usd": 80,
+                "delivery_status": "active",
+                "details": {"delivery_start_date": "2026-05-20"},
+            }],
+        },
+        "warnings": [],
+        "computed_at": "2026-06-07T12:00:00",
+    }
+
+    scoped, _scope, scope_sets = war._build_weekly_product_scope(
+        product_stability,
+        week_start=week_start,
+        week_end=week_end,
+        active_dates_by_product={("id", "606"): active_dates, ("code", "p606"): active_dates},
+        limit=0,
+    )
+    share = war._build_product_tier_order_share(
+        daily_overviews=[
+            (
+                week_start,
+                {
+                    "product_sales_stats": [{
+                        "product_id": 606,
+                        "product_code": "P606",
+                        "order_count": 9,
+                    }]
+                },
+            )
+        ],
+        product_stability=scoped,
+    )
+
+    assert scoped["counts"]["potential"] == 0
+    assert not scoped["buckets"]["potential"]
+    assert scoped["buckets"]["test"][0]["product_code"] == "P606"
+    assert 606 not in scope_sets["supplement_ids"]
+    assert share["weekly"]["potential"]["order_count"] == 0
+    assert share["weekly"]["other"]["order_count"] == 9
+
+
 def test_generate_ai_report_success_upserts(monkeypatch):
     package = {
         "period": {"week_start": date(2026, 5, 31), "week_end": date(2026, 6, 6)},
         "data_quality": {"status": "ok"},
         "summary": {"profit_usd": 120, "true_roas": 1.6},
+        "product_ai_evaluation_candidates": [{"identity": {"product_code": "P101"}}],
     }
     writes = []
     monkeypatch.setattr(war, "query_one", lambda *a, **k: None)
     monkeypatch.setattr(war, "query", lambda *a, **k: [])
     monkeypatch.setattr(war, "execute", lambda *a, **k: writes.append((a, k)) or 1)
     monkeypatch.setattr(war, "build_weekly_data_package", lambda *a, **k: package)
+    monkeypatch.setattr(
+        war,
+        "_generate_product_action_evaluations",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("sync product evaluations should be skipped")),
+    )
     monkeypatch.setattr(
         war.llm_client,
         "invoke_chat",
@@ -545,9 +861,55 @@ def test_generate_ai_report_success_upserts(monkeypatch):
     saved_report = json.loads(params[6])
     assert saved_report["product_action_evaluations"] == []
     assert saved_report["product_action_evaluation_summary"]["total"] == 0
+    assert saved_report["product_action_evaluation_summary"]["candidate_count"] == 1
+    assert saved_report["product_action_evaluation_summary"]["skipped"] == 1
+    assert saved_report["product_action_evaluation_summary"]["mode"] == "skipped_sync"
     assert params[9] == 9
     assert report["workflow_debug"]["llm_calls"]["weekly_ai_chat"]["system_prompt"].startswith("你是电商经营数据分析师")
     assert report["workflow_debug"]["llm_calls"]["weekly_ai_chat"]["request_payload"]["response_format"] == {"type": "json_object"}
+
+
+def test_generate_ai_report_defaults_to_skip_product_action_evaluations(monkeypatch):
+    package = {
+        "period": {"week_start": date(2026, 5, 31), "week_end": date(2026, 6, 6)},
+        "data_quality": {"status": "ok"},
+        "summary": {"profit_usd": 120},
+        "product_ai_evaluation_candidates": [_minimal_product_candidate()],
+    }
+    writes = []
+    monkeypatch.setattr(war, "query_one", lambda *a, **k: None)
+    monkeypatch.setattr(war, "query", lambda *a, **k: [])
+    monkeypatch.setattr(war, "execute", lambda *a, **k: writes.append((a, k)) or 1)
+    monkeypatch.setattr(war, "build_weekly_data_package", lambda *a, **k: package)
+    monkeypatch.setattr(
+        war.llm_client,
+        "invoke_chat",
+        lambda *a, **k: {
+            "json": {
+                "business_health": {"status": "ok", "summary": "正常", "evidence": []},
+                "product_direction": {"scale": [], "watch": [], "cut": []},
+                "ad_actions": {"increase": [], "reduce": [], "pause": []},
+                "risk_flags": [],
+                "executive_summary": [],
+            },
+            "text": "{}",
+            "usage_log_id": 10,
+        },
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("manual sync generation must not call product action evaluations")
+
+    monkeypatch.setattr(war, "_generate_product_action_evaluations", fail_if_called)
+
+    report = war.generate_ai_report(date(2026, 5, 31), user_id=7, force=True)
+
+    summary = report["report"]["product_action_evaluation_summary"]
+    assert summary["mode"] == "skipped_sync"
+    assert summary["candidate_count"] == 1
+    assert summary["skipped"] == 1
+    saved_report = json.loads(writes[0][0][1][6])
+    assert saved_report["product_action_evaluation_summary"]["mode"] == "skipped_sync"
 
 
 def _minimal_product_candidate(product_id=101, product_code="P101"):

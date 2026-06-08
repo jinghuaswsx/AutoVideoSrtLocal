@@ -115,7 +115,7 @@ def test_order_analytics_weekly_ai_analysis_use_case_registered():
     assert uc["module"] == "order_analytics"
     assert uc["label"] == "每周 AI 分析"
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-flash-1.5"
+    assert uc["default_model"] == "google/gemini-3.5-flash"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
     assert MODULE_LABELS["order_analytics"] == "数据分析"
@@ -129,7 +129,7 @@ def test_order_analytics_weekly_ai_analysis_use_case_registered():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 66
+    assert len(USE_CASES) == 67
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES

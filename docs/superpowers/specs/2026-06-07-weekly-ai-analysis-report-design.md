@@ -71,10 +71,10 @@ list_recent_reports(limit: int = 12) -> list[dict]
 - `daily_by_store`：`all` / `newjoy` / `omurio` 每天同款指标。
 - `segments`：周日、周一到周三、周四到周六、周五到周六等分段对比。
 - `product_rows`：产品维度收入、订单、销量、广告费、ROAS、利润、利润率、活跃天数、每日订单分布。
-- `product_tier_order_share`：按稳定品、潜力品、其他品汇总订单量占比，包含每周汇总和每天明细。稳定品读取 `product_stability.buckets.stable`；潜力品读取 `secondary_stable` 和历史兼容 `potential`；其他品为本周有订单但不属于前两类的所有产品。占比分母使用同一周期内 `product_sales_stats` 的产品订单量合计。
+- `product_tier_order_share`：按稳定品、潜力品、其他品汇总订单量占比，包含每周汇总和每天明细。稳定品读取 `product_stability.buckets.stable`；潜力品读取 `secondary_stable` 和历史兼容 `potential`；其他品为本周有订单但不属于前两类的所有产品。占比分母使用同一周期内 `product_sales_stats` 的产品订单量合计。V1.0 收口口径：普通测试品不得在周报里按周订单量、ROAS 或连续活跃天数临时升级为潜力品；如未达到稳定品 / 二级稳定品阈值，其订单占比仍归入其他品。
 - `potential_new_products`：统计所选业务周内 `media_products.created_at` 落在 `week_start` 到 `week_end` 的新品，并只从周报分级为 `测试中` 的产品里选出表现最好的 10 个。排序仅使用本周日均单量和 ROAS，不读取上广告时间、产品位置或产品属性。
 - 兼容旧快照：已有 `weekly_ai_analysis_reports.data_snapshot_json` 如果缺少 `product_tier_order_share`，读取报告时必须按同一周重新计算该字段并补进响应；补算不重新调用 AI、不覆盖旧 AI 结论。
-- 缓存兜底：如果稳定分级缓存为空但同周 `product_sales_stats` 有订单，周报必须先按同周订单阈值生成兜底分级，再统计 `product_tier_order_share`；稳定品沿用 7 天订单阈值，二级稳定品沿用最近 7 天每日不少于 5 单且日均超过 10 单的订单阈值，并在 `product_stability.warnings` 标明该分级来自订单兜底。
+- 缓存兜底：如果稳定分级缓存为空、但并非稳定分级加载失败，且同周 `product_sales_stats` 有订单，周报必须先按同周订单阈值生成兜底分级，再统计 `product_tier_order_share`；稳定品沿用 7 天订单阈值，二级稳定品沿用最近 7 天每日不少于 5 单且日均超过 10 单的订单阈值，并在 `product_stability.warnings` 和顶层 `data_quality.warnings` 标明该分级来自订单兜底。若稳定分级加载失败并带 `product_stability_unavailable`，不得用全量或订单兜底样本替代稳定分级门禁。
 - `campaign_rows`：账户、campaign、匹配产品、每日 spend / purchase value / ROAS、周累计、首个出量日、活跃天数。
 - `low_order_products`：1-2 单、3-5 单产品汇总，标记是否有广告消耗。
 - `rule_findings`：后端规则先产出的确定性异常，如预算放大 ROAS 下滑、店铺亏损集中、数据质量 mismatch。
@@ -86,7 +86,7 @@ list_recent_reports(limit: int = 12) -> list[dict]
 默认模型：
 
 - provider：`openrouter`
-- model：`google/gemini-flash-1.5`（OpenRouter Gemini 1.5 Flash，2026-06-07 核对 model slug）
+- model：`google/gemini-3.5-flash`
 - usage service：`openrouter`
 - units：`tokens`
 
@@ -200,6 +200,7 @@ AI 必须输出 JSON：
 - 测试品：仍在投放或有广告数据，已满 7 天但未达到稳定品 / 二级稳定品。
 - 已停投：历史有广告消耗，但 `media_product_ad_summary_cache.delivery_status = stopped`。
 - 未投放：无广告消耗且 `delivery_status = never`，只进入后台统计，不作为重点经营表默认展示。
+- V1.0 分层统一：`稳定品`、`二级稳定品`、`潜力品`、`测试品`、`已停投`、`未投放`、`投放未满 7 天` 是互斥展示状态。周报可以展示测试品，但不得把测试品动态升级为潜力品；产品分层订单占比、补素材建议和逐产品 AI 推进评估均以稳定品、二级稳定品和历史兼容 potential 为核心对象。
 
 ### 展示策略
 
@@ -230,6 +231,9 @@ AI 必须输出 JSON：
 - `测试品`、`已停投`、`未投放` 不进入逐产品 Gemini 调用；它们仍可在稳定分级表展示，但不产生逐产品 AI 推进建议。
 - 候选产品由后端从稳定分级缓存生成，按稳定品优先、近 7 天订单和近 30 天订单降序排序；每条候选产品一次 LLM 调用。
 - 如果稳定分级缓存不可用或候选为空，周报整体 AI 仍可生成，逐产品建议区显示空态，不让周报失败。
+- V1.0 最终收尾：稳定分级缓存不可用时，不得把商品方向、低单量、广告动作、补素材建议或逐产品 AI 评估退化为全量产品分析；这些依赖产品分级门禁的模块必须返回空样本或空态，并把原因上浮到顶层 `data_quality.warnings`。
+- V1.0 最终收尾：稳定分级表的 UI 展示数量限制不得影响逐产品候选全集；后端候选必须从同一周 scoped 的未截断分级全集生成，再按 `MAX_PRODUCT_ACTION_EVALUATIONS` 截断。
+- V1.0 最终收尾：手动生成和定时生成整体 AI 报告时不得在同一个同步流程里串行调用最多 80 个逐产品 AI；V1 阶段只同步生成整体周报和候选清单，逐产品 AI 评估默认跳过，`product_action_evaluation_summary.mode` 标记为 `skipped_sync`，前端显示本次已跳过逐产品 AI 的空态，避免请求或 scheduler 长时间阻塞。
 
 ### 国家阶梯
 
@@ -264,6 +268,14 @@ AI 必须输出 JSON：
 - `data_quality_notes`：数据缺失、缓存不可用、口径差异等说明。
 
 所有补充数据查询必须 best-effort：任一附加数据源失败时只写入 `data_quality_notes`，不得中断周报整体生成。
+同时，产品分级、商品身份、素材候选、国家分布等影响 AI 可信度的数据缺失必须汇总到周报顶层 `data_quality.warnings`，前端数据质量条和风险区都要可见，不允许只藏在单产品候选对象里。
+前端还必须在稳定分级区展示 `product_stability.warnings`，在 AI 推进建议区展示候选 `data_quality_notes` 的去重汇总；报告已生成后，`risk_flags` 不能覆盖或隐藏这些数据质量提醒。
+
+### 投放开始日期缺失
+
+- `delivery_start_date` / `delivery_start_time` 缺失表示“投放开始日期未知”，不得等同于“投放未满 7 天”。
+- 只有存在有效投放开始日期，且距所选周结束不足 7 天时，才归入 `投放未满 7 天`。
+- 开始日期缺失但有广告数据的产品按其他门禁继续判断；同时把样本计入 `product_scope.missing_delivery_start_count`，并上浮到顶层 `data_quality.warnings`。
 
 ### LLM use case
 

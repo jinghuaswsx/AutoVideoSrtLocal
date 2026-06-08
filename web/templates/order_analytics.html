@@ -3213,6 +3213,7 @@
           <span class="dq-bar__chip" id="weeklyAiDqRange">—</span>
         </div>
         <div class="dq-bar__sub" id="weeklyAiDqSub"></div>
+        <div class="dq-bar__sub" id="weeklyAiDqDetails"></div>
       </div>
     </div>
   </section>
@@ -3364,6 +3365,7 @@
       <div class="oa-table-title">稳定产品分级</div>
       <div class="oar-note" id="weeklyAiStabilityComputedAt"></div>
     </div>
+    <div class="oar-note" id="weeklyAiStabilityWarnings"></div>
     <div id="weeklyAiStabilitySummary" class="oa-stats"></div>
     <div class="oa-table-scroll" id="weeklyAiStabilityScroll">
       <table class="oa-table">
@@ -3389,6 +3391,7 @@
     <div class="oa-table-header">
       <div class="oa-table-title">AI 推进建议</div>
     </div>
+    <div class="oar-note" id="weeklyAiProductEvaluationWarnings"></div>
     <div class="oa-table-scroll">
       <table class="oa-table">
         <thead>
@@ -7317,6 +7320,10 @@
     if (potentialNewSummary) potentialNewSummary.innerHTML = '';
     var potentialNewNote = document.getElementById('weeklyAiPotentialNewNote');
     if (potentialNewNote) potentialNewNote.textContent = '';
+    ['weeklyAiDqDetails', 'weeklyAiStabilityWarnings', 'weeklyAiProductEvaluationWarnings'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
     [
       ['weeklyAiSegmentBody', 8],
       ['weeklyAiDailyBody', 10],
@@ -7392,6 +7399,10 @@
     if (workflowSummary) workflowSummary.textContent = '流程加载失败';
     var workflowBody = document.getElementById('weeklyAiWorkflowBody');
     if (workflowBody) workflowBody.innerHTML = '<div class="oam-modal-error">' + escapeHtml(message || '加载失败') + '</div>';
+    ['weeklyAiDqDetails', 'weeklyAiStabilityWarnings', 'weeklyAiProductEvaluationWarnings'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
     [
       ['weeklyAiSegmentBody', 8],
       ['weeklyAiDailyBody', 10],
@@ -7474,6 +7485,11 @@
       (dq.errors || []).slice(0, 2).forEach(function(item) { if (item && item.message) parts.push(item.message); });
       (dq.warnings || []).slice(0, 2).forEach(function(item) { if (item && item.message) parts.push(item.message); });
       sub.textContent = parts.length ? parts.join(' / ') : ('检验完成于 ' + (dq.generated_at ? formatShortDateTime(dq.generated_at) : '—'));
+    }
+    var details = document.getElementById('weeklyAiDqDetails');
+    if (details) {
+      var qualityItems = weeklyAiQualityItems(dq);
+      details.innerHTML = qualityItems.length ? weeklyAiCompactList(qualityItems, 10) : '';
     }
   }
 
@@ -7649,6 +7665,40 @@
     modal.hidden = false;
   }
 
+  function weeklyAiQualityItems(dq) {
+    var out = [];
+    (dq && dq.errors || []).forEach(function(item) {
+      if (item && item.message) out.push({code: item.code || 'error', message: item.message});
+    });
+    (dq && dq.warnings || []).forEach(function(item) {
+      if (item && item.message) out.push({code: item.code || 'warning', message: item.message});
+    });
+    return weeklyAiDedupeItems(out);
+  }
+
+  function weeklyAiDedupeItems(items) {
+    var seen = {};
+    return (items || []).filter(function(item) {
+      var key = String((item && item.code) || '') + '::' + String((item && item.message) || '');
+      if (!item || !item.message || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  }
+
+  function weeklyAiCompactList(items, limit) {
+    var values = weeklyAiDedupeItems(items || []);
+    var visible = values.slice(0, limit || 8);
+    var more = values.length - visible.length;
+    if (!visible.length) return '';
+    var html = '<ul>' + visible.map(function(item) {
+      var code = item.code ? ('[' + item.code + '] ') : '';
+      return '<li>' + escapeHtml(code + item.message) + '</li>';
+    }).join('') + '</ul>';
+    if (more > 0) html += '<div>还有 ' + more + ' 条数据质量提醒未展开。</div>';
+    return html;
+  }
+
   function renderWeeklyAiInsights(report, pkg) {
     var health = document.getElementById('weeklyAiBusinessHealth');
     var exec = document.getElementById('weeklyAiExecutiveSummary');
@@ -7656,7 +7706,7 @@
     if (!report) {
       if (health) health.textContent = '尚未生成 AI 报告';
       if (exec) exec.innerHTML = weeklyAiList(((pkg.rule_findings || {}).business || []).map(function(item) { return item.message; }));
-      if (risks) risks.innerHTML = weeklyAiList(((pkg.data_quality || {}).warnings || []));
+      if (risks) risks.innerHTML = weeklyAiList(weeklyAiQualityItems((pkg || {}).data_quality || {}));
       return;
     }
     var business = report.business_health || {};
@@ -7665,7 +7715,12 @@
         escapeHtml(business.summary || '') + weeklyAiList(business.evidence || []);
     }
     if (exec) exec.innerHTML = weeklyAiList(report.executive_summary || []);
-    if (risks) risks.innerHTML = weeklyAiList(report.risk_flags || []);
+    if (risks) {
+      var qualityRisks = weeklyAiQualityItems((pkg || {}).data_quality || {}).map(function(item) {
+        return {message: item.message};
+      });
+      risks.innerHTML = weeklyAiList((report.risk_flags || []).concat(qualityRisks));
+    }
   }
 
   function fmtPercentValue(value) {
@@ -7845,6 +7900,10 @@
     var body = document.getElementById('weeklyAiTierOrderShareBody');
     if (!body) return;
     body.innerHTML = '';
+    if (share && share.available === false) {
+      body.innerHTML = '<tr><td colspan="8">' + escapeHtml(((share.notes || [])[0]) || '产品分层订单占比暂不可用') + '</td></tr>';
+      return;
+    }
     var weekly = share.weekly || null;
     if (weekly) {
       weeklyAiAppendRow(body, ['整周'].concat(weeklyAiTierShareCells(weekly)));
@@ -7914,6 +7973,7 @@
     var summary = document.getElementById('weeklyAiStabilitySummary');
     var body = document.getElementById('weeklyAiStabilityBody');
     var computed = document.getElementById('weeklyAiStabilityComputedAt');
+    var warnings = document.getElementById('weeklyAiStabilityWarnings');
     var counts = (stability || {}).counts || {};
     var buckets = (stability || {}).buckets || {};
     if (summary) {
@@ -7928,6 +7988,9 @@
     }
     if (computed) {
       computed.textContent = stability.computed_at ? ('分级刷新 · ' + formatShortDateTime(stability.computed_at)) : '';
+    }
+    if (warnings) {
+      warnings.innerHTML = weeklyAiCompactList(stability.warnings || [], 6);
     }
     if (!body) return;
     body.innerHTML = '';
@@ -7999,13 +8062,21 @@
 
   function renderWeeklyAiProductEvaluations(report, pkg) {
     var body = document.getElementById('weeklyAiProductEvaluationBody');
+    var warnings = document.getElementById('weeklyAiProductEvaluationWarnings');
     if (!body) return;
     body.innerHTML = '';
+    if (warnings) {
+      warnings.innerHTML = weeklyAiCompactList(weeklyAiCandidateQualityNotes(pkg), 6);
+    }
     var rows = ((report || {}).product_action_evaluations || []);
     if (!rows.length) {
       var candidateCount = ((pkg || {}).product_ai_evaluation_candidates || []).length;
+      var summary = ((report || {}).product_action_evaluation_summary || {});
+      var skippedSync = summary.mode === 'skipped_sync' && candidateCount;
       body.innerHTML = '<tr><td colspan="8">' +
-        (candidateCount ? '生成 AI 报告后展示稳定品 / 潜力品逐产品推进建议' : '暂无稳定品 / 潜力品逐产品评估候选') +
+        (skippedSync
+          ? ('本次同步生成已跳过逐产品 AI，候选 ' + candidateCount + ' 个，避免请求超时；整体周报已生成')
+          : (candidateCount ? '生成 AI 报告后展示稳定品 / 潜力品逐产品推进建议' : '暂无稳定品 / 潜力品逐产品评估候选')) +
         '</td></tr>';
       return;
     }
@@ -8021,6 +8092,16 @@
         item.status === 'failed' ? '失败' : (Math.max(0, Math.min(100, Number(item.confidence || 0))).toFixed(0) + '%')
       ]);
     });
+  }
+
+  function weeklyAiCandidateQualityNotes(pkg) {
+    var out = [];
+    ((pkg || {}).product_ai_evaluation_candidates || []).forEach(function(candidate) {
+      (candidate.data_quality_notes || []).forEach(function(item) {
+        if (item && item.message) out.push({code: item.code || 'candidate_data_quality', message: item.message});
+      });
+    });
+    return weeklyAiDedupeItems(out);
   }
 
   function weeklyAiCountryText(names, codes) {

@@ -1111,7 +1111,9 @@ def weekly_ai_analysis_generate():
             user_id=getattr(current_user, "id", None),
             force=bool(payload.get("force")),
             generated_by="manual",
+            run_product_action_evaluations=False,
         )
+        product_eval_summary = ((report.get("report") or {}).get("product_action_evaluation_summary") or {})
         _audit_order_analytics_action(
             "order_analytics_weekly_ai_analysis_generated",
             target_type="weekly_ai_analysis_report",
@@ -1122,6 +1124,7 @@ def weekly_ai_analysis_generate():
                 "week_end": week_end.isoformat(),
                 "status": report.get("status"),
                 "data_quality_status": (report.get("data_quality") or {}).get("status"),
+                "product_action_evaluation_mode": product_eval_summary.get("mode"),
             },
         )
         return _json_response(_json_safe(report))
