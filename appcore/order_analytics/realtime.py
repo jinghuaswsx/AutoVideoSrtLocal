@@ -2736,6 +2736,54 @@ def _sum_realtime_campaign_spend_at(
     return round(sum(float(row.get("spend_usd") or 0) for row in scoped_rows), 4), True
 
 
+def _attach_hourly_ad_metrics_from_roas_points(
+    *,
+    hourly: list[dict[str, Any]],
+    roas_points: list[dict[str, Any]],
+) -> bool:
+    """Fill hourly ad metrics from cumulative ROAS nodes.
+
+    Docs-anchor: docs/superpowers/specs/2026-06-07-realtime-roas-trend-hourly-ad-spend-design.md
+    """
+    if not hourly or not roas_points:
+        return False
+    points_by_hour: dict[int, dict[str, Any]] = {}
+    for point in roas_points:
+        hour = point.get("hour")
+        if hour is None or point.get("node_at") is None:
+            continue
+        points_by_hour[int(hour)] = point
+    if not points_by_hour:
+        return False
+    hourly_by_hour = {
+        int(row["hour"]): row
+        for row in hourly
+        if row.get("hour") is not None
+    }
+    ready = False
+    for hour, item in hourly_by_hour.items():
+        point = points_by_hour.get(hour)
+        if point is None:
+            continue
+        if hour == 0:
+            start_spend = 0.0
+        else:
+            previous = points_by_hour.get(hour - 1)
+            if previous is None:
+                continue
+            start_spend = _money(previous.get("ad_spend"))
+        end_spend = _money(point.get("ad_spend"))
+        ad_spend = _money(max(0.0, end_spend - start_spend))
+        revenue_with_shipping = _revenue_with_shipping(
+            item.get("order_revenue"),
+            item.get("shipping_revenue"),
+        )
+        item["ad_spend"] = ad_spend
+        item["true_roas"] = _roas(revenue_with_shipping, ad_spend)
+        ready = True
+    return ready
+
+
 def _attach_realtime_hourly_ad_metrics(
     *,
     target: date,
@@ -3954,6 +4002,9 @@ def get_realtime_roas_overview(
                     "ad_source": "meta_ad_realtime_daily_campaign_metrics",
                     "ad_granularity": "campaign_realtime_snapshot",
                     "hourly_ad_ready": hourly_ad_ready,
+                    "hourly_ad_source": (
+                        "meta_realtime_campaign_delta" if hourly_ad_ready else None
+                    ),
                 },
                 "freshness": {
                     "first_order_at": order_summary.get("first_order_at"),
@@ -4134,6 +4185,9 @@ def get_realtime_roas_overview(
                 "ad_source": "roi_realtime_daily_snapshots",
                 "ad_granularity": "day_realtime_snapshot",
                 "hourly_ad_ready": hourly_ad_ready,
+                "hourly_ad_source": (
+                    "meta_realtime_campaign_delta" if hourly_ad_ready else None
+                ),
             },
             "freshness": {
                 "first_order_at": None,
@@ -4315,7 +4369,15 @@ def get_realtime_roas_overview(
     last_order_updated_at = hourly_order_stats["last_order_updated_at"]
     hourly = hourly_order_stats["hourly"]
     hourly_ad_ready = False
-    if realtime_ad_summary is not None:
+    hourly_ad_source = None
+    if not normalized_product_id and not site_filter_active and not normalized_launch_scope:
+        hourly_ad_ready = _attach_hourly_ad_metrics_from_roas_points(
+            hourly=hourly,
+            roas_points=roas_points,
+        )
+        if hourly_ad_ready:
+            hourly_ad_source = "roi_daily_roas_nodes_delta"
+    if not hourly_ad_ready:
         hourly_ad_ready = _attach_realtime_hourly_ad_metrics(
             target=target,
             data_until=data_until,
@@ -4325,6 +4387,8 @@ def get_realtime_roas_overview(
             unmatched_ads=launch_scope_unmatched,
             site_codes=normalized_site_codes,
         )
+        if hourly_ad_ready:
+            hourly_ad_source = "meta_realtime_campaign_delta"
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
@@ -4411,6 +4475,7 @@ def get_realtime_roas_overview(
             "ad_source": ad_source,
             "ad_granularity": ad_granularity,
             "hourly_ad_ready": hourly_ad_ready,
+            "hourly_ad_source": hourly_ad_source,
         },
         "freshness": {
             "first_order_at": first_order_at,
