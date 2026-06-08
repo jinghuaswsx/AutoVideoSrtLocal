@@ -3514,7 +3514,10 @@ async function tcAction(kind, id, action) {
     if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
   } catch (e) {
     if (e.message === 'readiness_failed') {
-      alert('未通过产物齐全检查，请去素材管理补齐封面/视频/文案后再提交');
+      const readinessMessage = e.payload && e.payload.message
+        ? e.payload.message
+        : '未通过产物齐全检查，请去素材管理补齐封面/视频/文案后再提交';
+      alert(readinessMessage);
     } else {
       alert(action + ' 失败：' + e.message);
     }
@@ -3601,7 +3604,7 @@ async function tcSubmitManualRawResult() {
     });
     const body = await rsp.json().catch(() => ({}));
     if (!rsp.ok) {
-      throw new Error(body.error || body.detail || rsp.statusText);
+      throw new Error(body.message || body.error || body.detail || rsp.statusText);
     }
     TC_MANUAL_RAW_SUBMITTED = true;
     tcSetManualRawResultStatus('已上传成功，文件大小 ' + tcFormatBytes(body.new_size || file.size) + '。关闭本弹窗后将刷新页面，请在审核流程中预览并点击『确认』通过审核入库。', 'success');

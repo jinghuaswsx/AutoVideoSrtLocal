@@ -14,6 +14,7 @@ from typing import Any, Iterable
 from urllib.parse import quote, urlencode
 
 from appcore import user_notifications as notifications_svc
+from appcore import video_size_limits
 from appcore.db import execute, get_conn, query_one, query_all
 
 log = logging.getLogger(__name__)
@@ -2545,6 +2546,7 @@ class NotReadyError(RuntimeError):
     """compute_readiness gate failed; carries missing keys."""
     def __init__(self, missing: list[str], detail: str = ""):
         self.missing = missing
+        self.detail = detail
         super().__init__(detail or f"missing: {missing}")
 
 
@@ -4728,6 +4730,37 @@ def submit_child(*, task_id: int, actor_user_id: int) -> None:
     if not result.get("completed") and not result.get("submitted"):
         missing = result.get("missing") or []
         raise NotReadyError(missing=missing, detail=f"readiness failed: {missing}")
+    if result.get("submitted"):
+        _reject_child_submission_if_push_video_oversize(
+            task_id=int(task_id),
+            actor_user_id=int(actor_user_id),
+            row=row,
+        )
+
+
+def _reject_child_submission_if_push_video_oversize(
+    *,
+    task_id: int,
+    actor_user_id: int,
+    row: dict,
+) -> None:
+    item = _find_child_task_target_lang_item(
+        task_id=int(task_id),
+        row=row,
+        allow_source_fallback=True,
+    )
+    if not item:
+        return
+    check = video_size_limits.push_video_size_check(item.get("file_size"))
+    if not check["over_limit"]:
+        return
+    reason = video_size_limits.build_push_video_oversize_reason(check["size_bytes"])
+    reject_child(
+        task_id=int(task_id),
+        actor_user_id=int(actor_user_id),
+        reason=reason,
+    )
+    raise NotReadyError(missing=["video_size"], detail=reason)
 
 
 def approve_child(*, task_id: int, actor_user_id: int, is_admin: bool = False) -> None:

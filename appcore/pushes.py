@@ -18,6 +18,7 @@ from appcore import (
     settings as system_settings,
     shopify_image_tasks,
     tasks as tasks_svc,
+    video_size_limits,
 )
 from appcore.db import query, query_one, execute, get_conn
 
@@ -280,6 +281,74 @@ class ProductLocalizedTextsPayloadError(Exception):
 
 class ProductLocalizedTextsPushConfigError(Exception):
     """产品文案推送配置不完整。"""
+
+
+class PushVideoTooLargeError(Exception):
+    """Video exceeds the push target size limit."""
+
+    def __init__(self, check: dict[str, Any]) -> None:
+        self.check = check
+        super().__init__(video_size_limits.build_push_video_size_summary(check["size_bytes"]))
+
+
+def push_video_size_check_for_item(item: dict | None) -> dict[str, Any]:
+    check = video_size_limits.push_video_size_check((item or {}).get("file_size"))
+    check["summary"] = video_size_limits.build_push_video_size_summary(check["size_bytes"])
+    if check["over_limit"]:
+        check["issues"] = [
+            (
+                f"视频大小 {check['size_mb']} 超过 {check['max_mb']}，"
+                f"请重新处理视频，建议码率 {check['suggested_bitrate']}。"
+            )
+        ]
+    else:
+        check["issues"] = []
+    return check
+
+
+def ensure_push_video_size(item: dict | None) -> dict[str, Any]:
+    check = push_video_size_check_for_item(item)
+    if check["over_limit"]:
+        raise PushVideoTooLargeError(check)
+    return check
+
+
+def merge_video_size_quality_check(
+    quality_check: dict[str, Any] | None,
+    item: dict | None,
+) -> dict[str, Any]:
+    result = dict(quality_check or {})
+    result.setdefault("status", "pending")
+    result["video_size_check"] = push_video_size_check_for_item(item)
+    size_check = result["video_size_check"]
+    if not size_check["over_limit"]:
+        return result
+
+    summary = size_check["summary"]
+    video_result = dict(result.get("video_result") or {})
+    video_result["status"] = "failed"
+    video_result["summary"] = summary
+    issues = [
+        str(issue)
+        for issue in (video_result.get("issues") or [])
+        if str(issue or "").strip()
+    ]
+    for issue in size_check["issues"]:
+        if issue not in issues:
+            issues.append(issue)
+    video_result["issues"] = issues
+    result["video_result"] = video_result
+    result["status"] = "failed"
+    result["summary"] = summary
+    failed_reasons = [
+        str(reason)
+        for reason in (result.get("failed_reasons") or [])
+        if str(reason or "").strip()
+    ]
+    if summary not in failed_reasons:
+        failed_reasons.insert(0, summary)
+    result["failed_reasons"] = failed_reasons
+    return result
 
 
 _COPY_LABEL_RE = re.compile(r"(标题|文案|描述)\s*[:：]\s*")

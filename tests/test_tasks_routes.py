@@ -1923,6 +1923,68 @@ def test_parent_manual_result_uploads_video_and_auto_approves(
     ]
 
 
+def test_parent_manual_result_rejects_oversize_push_video(
+    authed_user_client_no_db,
+    monkeypatch,
+):
+    large_size = 101 * 1024 * 1024
+    calls = {"upload": [], "approve": [], "audit": [], "mark_uploaded": [], "reject": []}
+
+    def fake_replace_processed_video(**kwargs):
+        calls["upload"].append(kwargs)
+        return large_size
+
+    def fake_row(tid):
+        return {"id": tid, "status": "raw_in_progress"}
+
+    monkeypatch.setattr(
+        "web.routes.tasks.rvp_svc.replace_processed_video",
+        fake_replace_processed_video,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc._row",
+        fake_row,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.mark_uploaded",
+        lambda task_id, actor_user_id: calls["mark_uploaded"].append((task_id, actor_user_id)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.reject_raw",
+        lambda **kwargs: calls["reject"].append(kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.approve_raw",
+        lambda **kwargs: calls["approve"].append(kwargs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: calls["audit"].append((task_id, action, detail)),
+    )
+
+    rsp = authed_user_client_no_db.post(
+        "/tasks/api/parent/44/manual_result",
+        data={"file": (io.BytesIO(b"fixed-video"), "fixed.mp4")},
+        content_type="multipart/form-data",
+    )
+
+    body = rsp.get_json()
+    assert rsp.status_code == 413
+    assert body["error"] == "video_too_large"
+    assert body["size_mb"] == "101.0 MB"
+    assert "码率改到 3000" in body["message"]
+    assert calls["mark_uploaded"] == [(44, 2)]
+    assert calls["reject"][0]["task_id"] == 44
+    assert "101.0 MB" in calls["reject"][0]["reason"]
+    assert calls["approve"] == []
+    assert calls["audit"][1][1] == "task_parent_manual_result_rejected_oversize"
+
+
 def test_parent_manual_result_uploads_video_on_completed_status(
     authed_user_client_no_db,
     monkeypatch,
@@ -2176,6 +2238,31 @@ def test_child_action_routes_registered_admin(authed_client_no_db):
     assert rsp.status_code in (200, 400, 500)
 
 
+def test_child_submit_returns_readiness_message(authed_user_client_no_db, monkeypatch):
+    from appcore import tasks as tasks_svc
+
+    def fake_submit_child(**kwargs):
+        raise tasks_svc.NotReadyError(
+            missing=["video_size"],
+            detail="视频文件大小 101.0 MB，超过推送上限 100.0 MB。请重新处理视频，建议将码率改到 3000，确保视频控制在 100 MB 以内。",
+        )
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.submit_child",
+        fake_submit_child,
+        raising=False,
+    )
+
+    rsp = authed_user_client_no_db.post("/tasks/api/child/44/submit")
+
+    assert rsp.status_code == 422
+    assert rsp.get_json() == {
+        "error": "readiness_failed",
+        "missing": ["video_size"],
+        "message": "视频文件大小 101.0 MB，超过推送上限 100.0 MB。请重新处理视频，建议将码率改到 3000，确保视频控制在 100 MB 以内。",
+    }
+
+
 def test_child_approve_allows_non_admin_service_authorized_assignee(
     authed_user_client_no_db,
     monkeypatch,
@@ -2341,6 +2428,7 @@ def test_index_html_contains_tab_buttons(authed_client_no_db):
     assert "<th>更新时间</th>" not in body
     assert "tcRender" in body  # JS bootstrapped
     assert "tcCreateRawProcessor" in body
+    assert "const readinessMessage = e.payload && e.payload.message" in body
     assert "原视频处理人" in body
     assert ">认领</button>" not in body
 

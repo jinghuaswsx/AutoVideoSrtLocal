@@ -478,6 +478,7 @@ def _serialize_row(
         "display_name": row.get("display_name"),
         "duration_seconds": row.get("duration_seconds"),
         "file_size": row.get("file_size"),
+        "file_size_mb": pushes.push_video_size_check_for_item(row)["size_mb"],
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         "pushed_at": row["pushed_at"].isoformat() if row.get("pushed_at") else None,
         "status": status,
@@ -622,7 +623,11 @@ def api_build_payload(item_id: int):
         "localized_push_target_url": pushes.build_localized_texts_target_url(mk_id),
         "product_links_push": product_links_push,
         "preview_cover_url": preview_cover_url,
-        "quality_check": _quality_check_for_item(item_id),
+        "quality_check": pushes.merge_video_size_quality_check(
+            _quality_check_for_item(item_id),
+            item,
+        ),
+        "video_size_check": pushes.push_video_size_check_for_item(item),
         "manual_link_confirmed": manual_link_confirmed,
     })
 
@@ -780,6 +785,9 @@ def api_get_rework_screenshot(filename: str):
 @admin_required
 def api_retry_quality_check(item_id: int):
     result = push_quality_checks.evaluate_item(item_id, source="manual")
+    item = medias.get_item(item_id)
+    if item:
+        result = pushes.merge_video_size_quality_check(result, item)
     status = 200 if result.get("status") != "error" else 500
     _audit_push_action(
         item_id,
@@ -807,6 +815,19 @@ def api_push(item_id: int):
         return _json_response({"error": "product_not_found"}, 404)
     if item.get("pushed_at"):
         return _json_response({"error": "already_pushed"}, 409)
+    try:
+        pushes.ensure_push_video_size(item)
+    except pushes.PushVideoTooLargeError as exc:
+        check = exc.check
+        return _json_response({
+            "error": "video_too_large",
+            "message": str(exc),
+            "size_bytes": check["size_bytes"],
+            "size_mb": check["size_mb"],
+            "max_bytes": check["max_bytes"],
+            "max_mb": check["max_mb"],
+            "suggested_bitrate": check["suggested_bitrate"],
+        }, 413)
 
     existing_mk_id = product.get("mk_id")
     had_no_mk_id = existing_mk_id is None or str(existing_mk_id).strip() in ("", "0")

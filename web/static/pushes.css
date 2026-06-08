@@ -375,6 +375,14 @@
   margin-top: 2px;
   font-variant-numeric: tabular-nums;
 }
+.item-size-highlight {
+  margin-top: 4px;
+  color: var(--oc-accent);
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
 .product-link {
   color: var(--oc-fg);
   text-decoration: none;
@@ -774,6 +782,54 @@
   color: var(--oc-fg-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+.pm-quality-size-check {
+  display: grid;
+  gap: var(--oc-sp-2);
+  padding: var(--oc-sp-3);
+  border: 1px solid var(--oc-border);
+  border-radius: var(--oc-r-md);
+  background: var(--oc-bg-subtle);
+}
+.pm-quality-size-check.is-passed {
+  border-color: var(--oc-success);
+  background: var(--oc-success-bg);
+}
+.pm-quality-size-check.is-failed {
+  border-color: var(--oc-danger);
+  background: var(--oc-danger-bg);
+}
+.pm-quality-size-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--oc-sp-3);
+}
+.pm-quality-size-label {
+  color: var(--oc-fg);
+  font-size: 13px;
+  font-weight: 700;
+}
+.pm-quality-size-value {
+  color: var(--oc-accent);
+  font-size: 16px;
+  line-height: 1.25;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.pm-quality-size-check.is-failed .pm-quality-size-value {
+  color: var(--oc-danger-fg);
+}
+.pm-quality-size-summary,
+.pm-quality-size-advice {
+  margin: 0;
+  color: var(--oc-fg);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pm-quality-size-advice {
+  color: var(--oc-danger-fg);
+  font-weight: 700;
 }
 .pm-quality-issues,
 .pm-quality-reasons {
