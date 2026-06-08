@@ -29,8 +29,12 @@ log = logging.getLogger(__name__)
 TASK_CODE = "weekly_ai_analysis_report"
 USE_CASE_CODE = "order_analytics.weekly_ai_analysis"
 PRODUCT_EVALUATION_USE_CASE_CODE = "order_analytics.weekly_product_action_evaluation"
+WEEKLY_ANALYSIS_PROVIDER = "openrouter"
+WEEKLY_ANALYSIS_MODEL = "google/gemini-flash-1.5"
+PRODUCT_EVALUATION_PROVIDER = "openrouter"
 PRODUCT_EVALUATION_MODEL = "google/gemini-3.5-flash"
 MAX_PRODUCT_ACTION_EVALUATIONS = 80
+MAX_PRODUCT_ACTION_DEBUG_SAMPLES = 5
 _PRODUCT_EVALUATION_STATUSES = ("stable", "secondary_stable", "potential")
 _PRODUCT_EVALUATION_STATUS_LABELS = {
     "stable": "稳定品",
@@ -2017,6 +2021,176 @@ def _sort_and_limit_stability_buckets(
     return out
 
 
+def _build_order_fallback_product_stability(
+    product_sales: dict[tuple[str, str, str], dict[str, Any]],
+    *,
+    week_start: date,
+    week_end: date,
+    limit: int = 50,
+) -> dict[str, Any]:
+    bucket_keys = ("stable", "secondary_stable", "potential", "test", "stopped", "never", "insufficient_history")
+    buckets: dict[str, list[dict[str, Any]]] = {key: [] for key in bucket_keys}
+    counts = {
+        "total": 0,
+        "stable_total": 0,
+        "stable_7d": 0,
+        "stable_30d": 0,
+        "secondary_stable": 0,
+        "potential": 0,
+        "test": 0,
+        "stopped": 0,
+        "never": 0,
+        "insufficient_history": 0,
+        "evaluated_total": 0,
+    }
+    week_days = list(_dates_between(week_start, week_end))
+    computed_at = datetime.now(_CST).replace(microsecond=0).isoformat(sep=" ")
+    for sales in product_sales.values():
+        daily_by_date = {
+            _date_value(row.get("date")): _safe_int(row.get("order_count"))
+            for row in sales.get("daily") or []
+            if _date_value(row.get("date")) is not None
+        }
+        daily_counts = [_safe_int(daily_by_date.get(day)) for day in week_days]
+        total_orders = sum(daily_counts)
+        if total_orders <= 0:
+            continue
+        min_daily = min(daily_counts) if daily_counts else 0
+        avg_daily = round(total_orders / len(week_days), 2) if week_days else 0.0
+        stable_7d = bool(total_orders >= 210 or (total_orders >= 140 and min_daily >= 10))
+        secondary_stable = bool(not stable_7d and min_daily >= 5 and avg_daily > 10)
+        if stable_7d:
+            status = "stable"
+            label = "稳定品"
+            marks = ["7天稳定", "订单兜底"]
+            counts["stable_total"] += 1
+            counts["stable_7d"] += 1
+        elif secondary_stable:
+            status = "secondary_stable"
+            label = "二级稳定品"
+            marks = ["二级稳定", "订单兜底"]
+            counts["secondary_stable"] += 1
+        else:
+            status = "test"
+            label = "测试中"
+            marks = ["订单兜底"]
+            counts["test"] += 1
+        counts["total"] += 1
+        counts["evaluated_total"] += 1
+        item = {
+            "product_id": sales.get("product_id"),
+            "product_code": sales.get("product_code") or "",
+            "product_name": sales.get("name") or "",
+            "status": status,
+            "display_label": label,
+            "stable_7d": stable_7d,
+            "stable_30d": False,
+            "stable_marks": marks,
+            "last_7d_orders": total_orders,
+            "last_30d_orders": total_orders,
+            "avg_7d_orders": avg_daily,
+            "avg_30d_orders": avg_daily,
+            "min_daily_orders_7d": min_daily,
+            "min_daily_orders_30d": min_daily,
+            "active_7d_ad_spend_usd": 0.0,
+            "total_ad_spend_usd": 0.0,
+            "overall_roas": None,
+            "delivery_status": "order_fallback",
+            "computed_for_date": week_end.isoformat(),
+            "computed_at": computed_at,
+            "weekly_delivery_start_date": week_start.isoformat(),
+            "weekly_delivery_age_days": len(week_days),
+            "weekly_eligible_for_analysis": status in {"stable", "secondary_stable"},
+            "weekly_active_dates": [day.isoformat() for day in week_days if _safe_int(daily_by_date.get(day)) > 0],
+            "weekly_active_day_count": sum(1 for count in daily_counts if count > 0),
+            "weekly_has_continuous_7d_active": bool(week_days and min_daily > 0),
+            "weekly_display_status": status,
+            "details": {
+                "source": "product_sales_stats_order_fallback",
+                "reason": "稳定分级缓存为空，按所选业务周产品订单兜底分级。",
+                "delivery_start_date": week_start.isoformat(),
+                "delivery_age_days": len(week_days),
+                "eligible_for_weekly_analysis": status in {"stable", "secondary_stable"},
+                "daily_orders_7d": [
+                    {"date": day.isoformat(), "orders": _safe_int(daily_by_date.get(day))}
+                    for day in week_days
+                ],
+            },
+        }
+        buckets[status].append(item)
+
+    return {
+        "counts": counts,
+        "buckets": _sort_and_limit_stability_buckets(buckets, limit=limit),
+        "warnings": [{
+            "code": "product_stability_order_fallback",
+            "message": "稳定分级缓存为空，已按所选业务周产品订单兜底分级。",
+        }] if counts["total"] else [],
+        "computed_at": computed_at if counts["total"] else None,
+        "source": "product_sales_stats_order_fallback",
+        "scope_note": "稳定分级缓存为空时，按所选业务周订单阈值兜底分级。",
+    }
+
+
+def _build_order_fallback_product_scope(
+    product_stability: dict[str, Any],
+    *,
+    week_start: date,
+    week_end: date,
+    limit: int = 50,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, set[Any]]]:
+    items = _flatten_stability_items(product_stability)
+    scope_sets: dict[str, set[Any]] = {
+        "eligible_ids": set(),
+        "eligible_codes": set(),
+        "active_ids": set(),
+        "active_codes": set(),
+        "supplement_ids": set(),
+        "supplement_codes": set(),
+    }
+    for item in items:
+        pid = _safe_int(item.get("product_id"))
+        code = str(item.get("product_code") or "").strip().lower()
+        status = str(item.get("status") or "").strip().lower()
+        if pid:
+            scope_sets["eligible_ids"].add(pid)
+            scope_sets["active_ids"].add(pid)
+        if code:
+            scope_sets["eligible_codes"].add(code)
+            scope_sets["active_codes"].add(code)
+        if status in {"stable", "secondary_stable", "potential"}:
+            if pid:
+                scope_sets["supplement_ids"].add(pid)
+            if code:
+                scope_sets["supplement_codes"].add(code)
+    counts = dict(product_stability.get("counts") or {})
+    counts["evaluated_total"] = len(items)
+    scoped_summary = dict(product_stability)
+    scoped_summary["counts"] = counts
+    scoped_summary["buckets"] = _sort_and_limit_stability_buckets(
+        product_stability.get("buckets") or {},
+        limit=limit,
+    )
+    scoped_summary["scope_note"] = "稳定分级缓存为空，按所选业务周订单阈值兜底分级。"
+    product_scope = {
+        "filter_applied": bool(items),
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "required_continuous_active_days": 0,
+        "evaluated_product_count": len(items),
+        "excluded_under_7d_count": 0,
+        "excluded_without_continuous_7d_active_count": 0,
+        "excluded_without_ad_data_count": 0,
+        "excluded_without_continuous_7d_active_samples": [],
+        "excluded_without_ad_data_samples": [],
+        "fallback_applied": True,
+        "notes": [
+            "稳定分级缓存为空，周报已按同周产品订单阈值兜底分级。",
+        ],
+    }
+    return scoped_summary, product_scope, scope_sets
+
+
 def _build_weekly_product_scope(
     product_stability: dict[str, Any],
     *,
@@ -2544,20 +2718,40 @@ def build_weekly_data_package(
         product_stability_raw = media_product_stability.empty_stability_summary(
             warning=f"产品稳定分级缓存暂不可用：{str(exc)[:160]}"
         )
-    product_stability, product_scope, product_scope_sets = _build_weekly_product_scope(
-        product_stability_raw,
-        week_start=week_start,
-        week_end=week_end,
-        active_dates_by_product=weekly_active_dates_by_product,
-        limit=50,
-    )
-    product_stability_for_share, _share_scope, _share_scope_sets = _build_weekly_product_scope(
-        product_stability_raw,
-        week_start=week_start,
-        week_end=week_end,
-        active_dates_by_product=weekly_active_dates_by_product,
-        limit=0,
-    )
+    if not _all_stability_items(product_stability_raw) and product_sales:
+        product_stability_fallback = _build_order_fallback_product_stability(
+            product_sales,
+            week_start=week_start,
+            week_end=week_end,
+            limit=0,
+        )
+        product_stability, product_scope, product_scope_sets = _build_order_fallback_product_scope(
+            product_stability_fallback,
+            week_start=week_start,
+            week_end=week_end,
+            limit=50,
+        )
+        product_stability_for_share, _share_scope, _share_scope_sets = _build_order_fallback_product_scope(
+            product_stability_fallback,
+            week_start=week_start,
+            week_end=week_end,
+            limit=0,
+        )
+    else:
+        product_stability, product_scope, product_scope_sets = _build_weekly_product_scope(
+            product_stability_raw,
+            week_start=week_start,
+            week_end=week_end,
+            active_dates_by_product=weekly_active_dates_by_product,
+            limit=50,
+        )
+        product_stability_for_share, _share_scope, _share_scope_sets = _build_weekly_product_scope(
+            product_stability_raw,
+            week_start=week_start,
+            week_end=week_end,
+            active_dates_by_product=weekly_active_dates_by_product,
+            limit=0,
+        )
     product_ai_notes: list[dict[str, Any]] = []
     stability_product_ids, stability_product_codes = _collect_product_refs(
         _all_stability_items(product_stability)
@@ -2752,6 +2946,422 @@ def build_product_action_evaluation_prompt(candidate: dict[str, Any]) -> str:
         "输出字段必须符合 response_schema。当前产品数据：\n"
         + json.dumps(_serialize(compact), ensure_ascii=False)
     )
+
+
+def _network_route_intent_for_debug(provider: str) -> str:
+    return "proxy_required" if (provider or "").strip().lower() == "openrouter" else "unknown"
+
+
+def _payload_size_bytes(payload: Any) -> int:
+    return len(json.dumps(_serialize(payload), ensure_ascii=False).encode("utf-8"))
+
+
+def _enabled_binding_for_debug(
+    use_case_code: str,
+    *,
+    default_provider: str,
+    default_model: str,
+) -> dict[str, str]:
+    try:
+        row = query_one(
+            "SELECT provider_code, model_id, enabled "
+            "FROM llm_use_case_bindings WHERE use_case_code=%s",
+            (use_case_code,),
+        )
+        if row and int(row.get("enabled") or 0) == 1:
+            return {
+                "provider": str(row.get("provider_code") or default_provider),
+                "model": str(row.get("model_id") or default_model),
+                "binding_source": "db",
+            }
+    except Exception:
+        log.debug("weekly_ai debug binding lookup failed for %s", use_case_code, exc_info=True)
+    return {
+        "provider": default_provider,
+        "model": default_model,
+        "binding_source": "default",
+    }
+
+
+def _weekly_ai_response_contract() -> dict[str, Any]:
+    return {
+        "response_format": {"type": "json_object"},
+        "required_top_level": [
+            "business_health",
+            "product_direction",
+            "ad_actions",
+            "material_supplement",
+            "risk_flags",
+            "executive_summary",
+        ],
+        "notes": [
+            "必须输出严格 JSON，不输出 markdown。",
+            "商品和广告结论只能基于 product_scope 中已满 7 天投放的样本。",
+            "补素材建议只能复述输入数据里的扩国家和素材补位建议，不得编造素材。",
+        ],
+    }
+
+
+def _workflow_package_metrics(package: dict[str, Any]) -> dict[str, Any]:
+    candidates = package.get("product_ai_evaluation_candidates") or []
+    return {
+        "daily_global_count": len(package.get("daily_global") or []),
+        "store_scopes": list((package.get("daily_by_store") or {}).keys()),
+        "product_count": len(package.get("product_rows") or []),
+        "analysis_product_count": len(package.get("analysis_product_rows") or []),
+        "campaign_count": len(package.get("campaign_rows") or []),
+        "analysis_campaign_count": len(package.get("analysis_campaign_rows") or []),
+        "product_ai_candidate_count": len(candidates) if isinstance(candidates, list) else 0,
+        "prompt_input_bytes": _payload_size_bytes(_compact_for_prompt(package)),
+    }
+
+
+def _weekly_ai_chat_debug(
+    package: dict[str, Any],
+    *,
+    ai_report: dict[str, Any] | None,
+    status: str | None,
+    error_message: str | None,
+) -> dict[str, Any]:
+    compact = _compact_for_prompt(package)
+    messages = build_ai_prompt(package)
+    system_prompt = next((msg.get("content", "") for msg in messages if msg.get("role") == "system"), "")
+    user_prompt = next((msg.get("content", "") for msg in messages if msg.get("role") == "user"), "")
+    binding = _enabled_binding_for_debug(
+        USE_CASE_CODE,
+        default_provider=WEEKLY_ANALYSIS_PROVIDER,
+        default_model=WEEKLY_ANALYSIS_MODEL,
+    )
+    request_payload = {
+        "type": "chat",
+        "model": binding["model"],
+        "messages": _serialize(messages),
+        "network_route_intent": _network_route_intent_for_debug(binding["provider"]),
+        "temperature": 0.2,
+        "max_tokens": 3500,
+        "response_format": {"type": "json_object"},
+        "timeout_seconds": 120,
+    }
+    response_summary = {
+        "status": status or ("success" if ai_report else "preview"),
+        "top_level_keys": list(ai_report.keys()) if isinstance(ai_report, dict) else [],
+        "error_message": error_message,
+    }
+    return {
+        "title": "周报总分析 AI",
+        "use_case_code": USE_CASE_CODE,
+        "provider": binding["provider"],
+        "model": binding["model"],
+        "binding_source": binding["binding_source"],
+        "entrypoint": "appcore.llm_client.invoke_chat",
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+        "messages": _serialize(messages),
+        "input_data": _serialize(compact),
+        "input_keys": list(compact.keys()),
+        "request_payload": _serialize(request_payload),
+        "calling_params": {
+            "temperature": 0.2,
+            "max_tokens": 3500,
+            "response_format": {"type": "json_object"},
+            "timeout_seconds": 120,
+        },
+        "response_contract": _weekly_ai_response_contract(),
+        "response_summary": response_summary,
+    }
+
+
+def _product_action_sample_debug(
+    candidate: dict[str, Any],
+    *,
+    week_start: str,
+    week_end: str,
+    index: int,
+) -> dict[str, Any]:
+    identity = candidate.get("identity") or {}
+    compact = _compact_product_candidate_for_prompt(candidate)
+    system_prompt = build_product_action_evaluation_system_prompt()
+    user_prompt = build_product_action_evaluation_prompt(candidate)
+    project_id = (
+        f"weekly-product-action-{week_start}-"
+        f"{identity.get('product_id') or identity.get('product_code') or index}"
+    )
+    request_payload = {
+        "type": "generate",
+        "model": PRODUCT_EVALUATION_MODEL,
+        "prompt": user_prompt,
+        "system": system_prompt,
+        "network_route_intent": _network_route_intent_for_debug(PRODUCT_EVALUATION_PROVIDER),
+        "temperature": 0.2,
+        "max_output_tokens": 4096,
+        "response_schema": PRODUCT_ACTION_RESPONSE_SCHEMA,
+        "google_search": False,
+        "timeout_seconds": 120,
+        "project_id": project_id,
+        "billing_extra": {
+            "week_start": week_start,
+            "week_end": week_end,
+            "product_id": identity.get("product_id"),
+            "product_code": identity.get("product_code"),
+            "candidate_index": index,
+        },
+    }
+    return {
+        "id": f"product_action_ai_{index}",
+        "title": f"逐产品推进 AI · {identity.get('product_code') or index}",
+        "use_case_code": PRODUCT_EVALUATION_USE_CASE_CODE,
+        "provider": PRODUCT_EVALUATION_PROVIDER,
+        "model": PRODUCT_EVALUATION_MODEL,
+        "entrypoint": "appcore.llm_client.invoke_generate",
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "input_data": _serialize(compact),
+        "input_keys": list(compact.keys()),
+        "request_payload": _serialize(request_payload),
+        "calling_params": {
+            "temperature": 0.2,
+            "max_output_tokens": 4096,
+            "response_schema": PRODUCT_ACTION_RESPONSE_SCHEMA,
+            "google_search": False,
+            "timeout_seconds": 120,
+        },
+        "response_contract": PRODUCT_ACTION_RESPONSE_SCHEMA,
+    }
+
+
+def _product_action_llm_debug(
+    package: dict[str, Any],
+    *,
+    ai_report: dict[str, Any] | None,
+    status: str | None,
+) -> dict[str, Any]:
+    raw_candidates = package.get("product_ai_evaluation_candidates") or []
+    candidates = [item for item in raw_candidates if isinstance(item, dict)]
+    period = package.get("period") or {}
+    week_start = str(period.get("week_start") or "")[:10]
+    week_end = str(period.get("week_end") or "")[:10]
+    sample_calls = [
+        _product_action_sample_debug(candidate, week_start=week_start, week_end=week_end, index=index)
+        for index, candidate in enumerate(candidates[:MAX_PRODUCT_ACTION_DEBUG_SAMPLES], start=1)
+    ]
+    response_summary = {}
+    if isinstance(ai_report, dict):
+        response_summary = dict(ai_report.get("product_action_evaluation_summary") or {})
+    return {
+        "title": "逐产品推进 AI",
+        "use_case_code": PRODUCT_EVALUATION_USE_CASE_CODE,
+        "provider": PRODUCT_EVALUATION_PROVIDER,
+        "model": PRODUCT_EVALUATION_MODEL,
+        "entrypoint": "appcore.llm_client.invoke_generate",
+        "system_prompt": build_product_action_evaluation_system_prompt(),
+        "user_prompt": (
+            "每个候选产品会单独调用一次。下方 sample_calls 展示前 "
+            f"{MAX_PRODUCT_ACTION_DEBUG_SAMPLES} 个候选产品的真实中文提示词和输入 JSON。"
+        ),
+        "input_data": {
+            "candidate_count": len(candidates),
+            "max_evaluations": MAX_PRODUCT_ACTION_EVALUATIONS,
+            "sample_product_codes": [
+                str((candidate.get("identity") or {}).get("product_code") or "")
+                for candidate in candidates[:MAX_PRODUCT_ACTION_DEBUG_SAMPLES]
+            ],
+            "sample_candidates": [
+                _serialize(_compact_product_candidate_for_prompt(candidate))
+                for candidate in candidates[:MAX_PRODUCT_ACTION_DEBUG_SAMPLES]
+            ],
+        },
+        "input_keys": [
+            "identity",
+            "stability",
+            "weekly_product",
+            "campaigns",
+            "order_country_distribution",
+            "ad_country_distribution",
+            "material_summary_by_lang",
+            "local_material_candidates",
+            "mingkong_summary",
+            "mingkong_material_candidates",
+            "target_country_tiers",
+            "data_quality_notes",
+        ],
+        "request_payload": {
+            "type": "generate",
+            "model": PRODUCT_EVALUATION_MODEL,
+            "system": build_product_action_evaluation_system_prompt(),
+            "temperature": 0.2,
+            "max_output_tokens": 4096,
+            "response_schema": PRODUCT_ACTION_RESPONSE_SCHEMA,
+            "google_search": False,
+            "timeout_seconds": 120,
+        },
+        "calling_params": {
+            "temperature": 0.2,
+            "max_output_tokens": 4096,
+            "response_schema": PRODUCT_ACTION_RESPONSE_SCHEMA,
+            "google_search": False,
+            "timeout_seconds": 120,
+        },
+        "response_contract": PRODUCT_ACTION_RESPONSE_SCHEMA,
+        "response_summary": response_summary or {"status": status or "preview"},
+        "sample_calls": sample_calls,
+    }
+
+
+def build_workflow_debug(
+    package: dict[str, Any] | None,
+    *,
+    ai_report: dict[str, Any] | None = None,
+    status: str | None = None,
+    error_message: str | None = None,
+) -> dict[str, Any]:
+    package = package or {}
+    metrics = _workflow_package_metrics(package) if package else {}
+    weekly_status = "success" if ai_report else ("failed" if status == "failed" else "ready")
+    raw_candidates = package.get("product_ai_evaluation_candidates") or []
+    candidate_count = len(raw_candidates) if isinstance(raw_candidates, list) else 0
+    product_eval_summary = (ai_report or {}).get("product_action_evaluation_summary") if isinstance(ai_report, dict) else None
+    if status == "failed":
+        product_status = "skipped"
+    elif product_eval_summary:
+        product_status = "success"
+    elif candidate_count:
+        product_status = "ready"
+    else:
+        product_status = "skipped"
+    store_scopes = metrics.get("store_scopes") or []
+    nodes = [
+        {
+            "id": "select_week",
+            "title": "选择业务周",
+            "kind": "input",
+            "status": "success" if package.get("period") else "ready",
+            "summary": "将任意日期归一到周日，并固定统计周日到周六。",
+            "input_keys": ["week_start"],
+            "output_keys": ["period"],
+        },
+        {
+            "id": "load_daily_overview",
+            "title": "读取每日实时大盘",
+            "kind": "data",
+            "status": "success" if metrics.get("daily_global_count") else "ready",
+            "summary": f"按 all/newjoy/omurio 拉取每日 KPI，共 {metrics.get('daily_global_count', 0)} 个业务日。",
+            "input_keys": ["period", "site_codes"],
+            "output_keys": ["daily_global", "daily_by_store", "data_quality"],
+            "metrics": {"store_scopes": store_scopes},
+        },
+        {
+            "id": "aggregate_products",
+            "title": "汇总产品盈亏",
+            "kind": "data",
+            "status": "success" if metrics.get("product_count") else "ready",
+            "summary": f"汇总产品收入、广告费、利润、ROAS；评估范围内产品 {metrics.get('analysis_product_count', 0)} 个。",
+            "input_keys": ["product_sales_stats", "product_profit_list"],
+            "output_keys": ["product_rows", "analysis_product_rows", "product_profit_summary"],
+        },
+        {
+            "id": "aggregate_campaigns",
+            "title": "汇总广告计划",
+            "kind": "data",
+            "status": "success" if metrics.get("campaign_count") else "ready",
+            "summary": f"汇总匹配产品的广告计划，评估范围内计划 {metrics.get('analysis_campaign_count', 0)} 条。",
+            "input_keys": ["realtime_overview.campaigns"],
+            "output_keys": ["campaign_rows", "analysis_campaign_rows"],
+        },
+        {
+            "id": "load_stability",
+            "title": "读取稳定分级",
+            "kind": "data",
+            "status": "success" if package.get("product_stability") else "ready",
+            "summary": "读取稳定品、二级稳定品、测试品和停投状态，形成产品评估范围。",
+            "input_keys": ["media_product_stability"],
+            "output_keys": ["product_stability", "product_scope", "product_tier_order_share"],
+        },
+        {
+            "id": "supplement_recommendations",
+            "title": "生成补素材建议",
+            "kind": "rule",
+            "status": "success" if package.get("product_supplement_recommendations") else "ready",
+            "summary": "基于语言广告缓存和明空素材候选，生成扩国家与英语素材补位建议。",
+            "input_keys": ["product_stability", "analysis_product_rows", "material caches"],
+            "output_keys": ["product_supplement_recommendations"],
+        },
+        {
+            "id": "weekly_ai_chat",
+            "title": "周报总分析 AI",
+            "kind": "llm",
+            "status": weekly_status,
+            "summary": "把压缩后的周度经营数据包发送给大模型，输出业务健康、商品方向和广告动作 JSON。",
+            "input_keys": list(_compact_for_prompt(package).keys()) if package else [],
+            "output_keys": _weekly_ai_response_contract()["required_top_level"],
+            "prompt_button": True,
+            "prompt_ref": "weekly_ai_chat",
+            "metrics": {"prompt_input_bytes": metrics.get("prompt_input_bytes")},
+        },
+        {
+            "id": "product_action_ai",
+            "title": "逐产品推进 AI",
+            "kind": "llm",
+            "status": product_status,
+            "summary": f"只对稳定品 / 二级稳定品 / 潜力品逐个调用模型，候选 {candidate_count} 个。",
+            "input_keys": ["product_ai_evaluation_candidates"],
+            "output_keys": ["product_action_evaluations", "product_action_evaluation_summary"],
+            "prompt_button": True,
+            "prompt_ref": "product_action_ai",
+            "metrics": {
+                "candidate_count": candidate_count,
+                "max_evaluations": MAX_PRODUCT_ACTION_EVALUATIONS,
+                "debug_sample_count": min(candidate_count, MAX_PRODUCT_ACTION_DEBUG_SAMPLES),
+            },
+        },
+        {
+            "id": "parse_store",
+            "title": "解析 JSON 并落库",
+            "kind": "storage",
+            "status": "failed" if status == "failed" else ("success" if ai_report else "ready"),
+            "summary": "解析模型 JSON，成功后写入 weekly_ai_analysis_reports；失败保留 raw_text 和错误原因。",
+            "input_keys": ["raw_text", "ai_report_json", "data_snapshot_json"],
+            "output_keys": ["weekly_ai_analysis_reports", "raw_text", "error_message"],
+        },
+        {
+            "id": "render_page",
+            "title": "返回页面渲染",
+            "kind": "output",
+            "status": "success" if package else "ready",
+            "summary": "返回数据包、AI 报告、数据质量、流程图和提示词调试信息。",
+            "input_keys": ["data_package", "report", "workflow_debug"],
+            "output_keys": ["KPI", "AI 总结", "表格", "流程图"],
+        },
+    ]
+    llm_calls = {
+        "weekly_ai_chat": _weekly_ai_chat_debug(
+            package,
+            ai_report=ai_report,
+            status=status,
+            error_message=error_message,
+        ),
+        "product_action_ai": _product_action_llm_debug(
+            package,
+            ai_report=ai_report,
+            status=status,
+        ),
+    }
+    return {
+        "version": "2026-06-08",
+        "docs_anchor": "docs/superpowers/specs/2026-06-07-weekly-ai-analysis-report-design.md#流程图与提示词可视化2026-06-08-追加",
+        "summary": {
+            "period": _serialize(package.get("period") or {}),
+            "data_quality_status": (package.get("data_quality") or {}).get("status"),
+            "status": status or ("success" if ai_report else "preview"),
+            "error_message": error_message,
+            "metrics": metrics,
+        },
+        "nodes": nodes,
+        "llm_calls": llm_calls,
+    }
 
 
 def _parse_ai_json(result: dict[str, Any]) -> dict[str, Any]:
@@ -3046,6 +3656,8 @@ def _row_to_report(row: dict[str, Any]) -> dict[str, Any]:
             )
     ai_report = _loads_json(row.get("ai_report_json"), None)
     data_quality = _loads_json(row.get("data_quality_json"), None) or data_package.get("data_quality")
+    status = row.get("status") or "success"
+    error_message = row.get("error_message")
     return {
         "period": {
             "week_start": row.get("week_start_date"),
@@ -3053,7 +3665,7 @@ def _row_to_report(row: dict[str, Any]) -> dict[str, Any]:
             "timezone": META_ATTRIBUTION_TIMEZONE,
             "week_definition": "sunday_to_saturday",
         },
-        "status": row.get("status") or "success",
+        "status": status,
         "snapshot": {
             "generated_at": row.get("generated_at"),
             "generated_by": row.get("generated_by"),
@@ -3063,7 +3675,13 @@ def _row_to_report(row: dict[str, Any]) -> dict[str, Any]:
         "data_package": data_package,
         "report": ai_report,
         "raw_text": row.get("raw_text"),
-        "error_message": row.get("error_message"),
+        "error_message": error_message,
+        "workflow_debug": build_workflow_debug(
+            data_package,
+            ai_report=ai_report if isinstance(ai_report, dict) else None,
+            status=status,
+            error_message=error_message,
+        ),
     }
 
 
@@ -3112,6 +3730,7 @@ def get_or_build_report_payload(week_start: date, week_end: date | None = None) 
         "report": None,
         "raw_text": None,
         "error_message": None,
+        "workflow_debug": build_workflow_debug(package, status="preview"),
         "recent_weeks": list_recent_reports(limit=12),
     }
 
@@ -3185,6 +3804,7 @@ def generate_ai_report(
             "report": ai_report,
             "raw_text": raw_text,
             "error_message": None,
+            "workflow_debug": build_workflow_debug(package, ai_report=ai_report, status="success"),
             "recent_weeks": list_recent_reports(limit=12),
         }
     except Exception as exc:  # noqa: BLE001
@@ -3235,6 +3855,11 @@ def generate_ai_report(
             "report": None,
             "raw_text": raw_text,
             "error_message": str(exc),
+            "workflow_debug": build_workflow_debug(
+                package,
+                status="failed",
+                error_message=str(exc),
+            ),
             "recent_weeks": list_recent_reports(limit=12),
         }
 

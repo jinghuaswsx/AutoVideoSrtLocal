@@ -74,6 +74,7 @@ list_recent_reports(limit: int = 12) -> list[dict]
 - `product_tier_order_share`：按稳定品、潜力品、其他品汇总订单量占比，包含每周汇总和每天明细。稳定品读取 `product_stability.buckets.stable`；潜力品读取 `secondary_stable` 和历史兼容 `potential`；其他品为本周有订单但不属于前两类的所有产品。占比分母使用同一周期内 `product_sales_stats` 的产品订单量合计。
 - `potential_new_products`：统计所选业务周内 `media_products.created_at` 落在 `week_start` 到 `week_end` 的新品，并只从周报分级为 `测试中` 的产品里选出表现最好的 10 个。排序仅使用本周日均单量和 ROAS，不读取上广告时间、产品位置或产品属性。
 - 兼容旧快照：已有 `weekly_ai_analysis_reports.data_snapshot_json` 如果缺少 `product_tier_order_share`，读取报告时必须按同一周重新计算该字段并补进响应；补算不重新调用 AI、不覆盖旧 AI 结论。
+- 缓存兜底：如果稳定分级缓存为空但同周 `product_sales_stats` 有订单，周报必须先按同周订单阈值生成兜底分级，再统计 `product_tier_order_share`；稳定品沿用 7 天订单阈值，二级稳定品沿用最近 7 天每日不少于 5 单且日均超过 10 单的订单阈值，并在 `product_stability.warnings` 标明该分级来自订单兜底。
 - `campaign_rows`：账户、campaign、匹配产品、每日 spend / purchase value / ROAS、周累计、首个出量日、活跃天数。
 - `low_order_products`：1-2 单、3-5 单产品汇总，标记是否有广告消耗。
 - `rule_findings`：后端规则先产出的确定性异常，如预算放大 ROAS 下滑、店铺亏损集中、数据质量 mismatch。
@@ -388,6 +389,73 @@ AI 必须输出 JSON：
   - 建议补投的英语素材名称 / 路径 / material key。
   - 素材 90 天消耗、广告数、建议原因。
 - 页面新增 `补素材建议` 可视化区，分成 `扩国家` 和 `补素材` 两张表。AI prompt 同步携带这部分确定性建议，AI 可以补充解释，但不能编造不存在的素材。
+
+## 流程图与提示词可视化（2026-06-08 追加）
+
+用户追加要求：`每周 AI 分析` 页面顶部必须可视化展示完整工作流程，并让运营能看到中间所有 AI 大模型调用的提示词、输入数据和报文情况。
+
+### 展示目标
+
+- 在 `每周 AI 分析` 面板顶部、数据质量条和 KPI 之前新增流程图。
+- 流程图按真实后端执行顺序展示：选择业务周、拉取每日实时大盘、汇总产品盈亏、汇总广告计划、读取稳定分级、计算产品评估范围、生成补素材建议、调用周报总分析 AI、调用逐产品推进 AI、解析 JSON、落库并返回页面。
+- 涉及 LLM 的节点必须带 `提示词` 按钮；点击后弹窗展示该节点的中文提示词、输入数据、调用参数和报文摘要。
+- 非 LLM 节点只展示输入 / 输出摘要，不提供提示词按钮。
+- 页面默认展示流程图，不需要用户先生成报告；预览状态也必须能看到将要发送给模型的压缩数据包。
+
+### 后端调试数据契约
+
+`GET /order-analytics/weekly-ai-analysis/report` 和 `POST /order-analytics/weekly-ai-analysis/generate` 响应新增 `workflow_debug`：
+
+```json
+{
+  "nodes": [
+    {
+      "id": "weekly_ai_chat",
+      "title": "周报总分析 AI",
+      "kind": "llm",
+      "status": "ready|success|failed|skipped",
+      "summary": "中文摘要",
+      "input_keys": ["period", "data_quality", "summary"],
+      "output_keys": ["business_health", "product_direction"],
+      "prompt_button": true,
+      "prompt_ref": "weekly_ai_chat"
+    }
+  ],
+  "llm_calls": {
+    "weekly_ai_chat": {
+      "title": "周报总分析 AI",
+      "use_case_code": "order_analytics.weekly_ai_analysis",
+      "provider": "openrouter",
+      "model": "google/gemini-flash-1.5",
+      "entrypoint": "appcore.llm_client.invoke_chat",
+      "system_prompt": "中文系统提示词",
+      "user_prompt": "中文用户提示词",
+      "messages": [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}],
+      "input_data": {},
+      "request_payload": {},
+      "response_contract": {},
+      "response_summary": {}
+    }
+  }
+}
+```
+
+逐产品 AI 节点使用 `sample_calls` 展示候选产品的样例报文，最多展示前 5 个候选；不得为了展示调试信息额外触发 LLM 调用。
+
+### 提示词规则
+
+- 所有展示给用户的提示词必须使用中文。
+- 页面展示的提示词必须来自后端真实构造函数：周报总分析来自 `build_ai_prompt`，逐产品评估来自 `build_product_action_evaluation_system_prompt` 和 `build_product_action_evaluation_prompt`。
+- 输入数据必须是后端实际传给 LLM 的压缩 JSON，不允许前端重新拼接一份不同口径的数据。
+- 报文情况至少展示 use case、provider、model、入口函数、temperature、token 限制、response format / response schema、输入字段列表和输出字段列表。
+- 已生成快照返回时，`workflow_debug` 可以基于保存的 `data_snapshot_json` 重新构造；不需要保存完整 LLM 请求历史。
+
+### 前端
+
+- 流程图使用数据分析现有安静、工具型样式，不做营销式 hero。
+- 节点必须在移动端单列排列，按钮和文字不能互相遮挡。
+- 提示词弹窗复用现有数据分析弹窗样式；弹窗内使用分区展示：调用信息、系统提示词、用户提示词、输入数据、请求报文、输出契约 / 响应摘要。
+- JSON 展示使用等宽字体、自动换行和滚动容器，避免撑破页面。
 
 ## 定时任务
 

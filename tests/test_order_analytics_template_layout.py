@@ -131,6 +131,11 @@ def test_weekly_ai_analysis_tab_and_panel_present():
     assert "每周 AI 分析" in topbar
     assert "每周 AI 分析" in mobile
     assert 'id="panelWeeklyAiAnalysis"' in template
+    assert "每周 AI 分析流程图" in template
+    assert 'id="weeklyAiWorkflowBody"' in template
+    assert 'id="weeklyAiPromptModal"' in template
+    assert 'data-weekly-ai-prompt-ref' in template
+    assert "weeklyAiRenderCallDetails" in template
     assert 'id="weeklyAiDqBar"' in template
     assert 'id="weeklyAiStabilitySummary"' in template
     assert 'id="weeklyAiTierOrderShareBody"' in template
