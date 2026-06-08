@@ -48,14 +48,14 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "currentAdCountryCode" in html
     assert "vwAdOrderRoasBox" in html
     assert "vwAdOrderRoasVal" in html
-    assert "vwAdOrderSummaryBox" in html
-    assert "vwAdOrderSummary" in html
     assert "docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md" in html
     assert "vwDataModal" in html
     assert "function renderCardDataPanel(card)" in html
     assert "function openCardDataModal(card)" in html
     assert 'data-action="card-data"' in html
     assert "广告明细" in html
+    assert "vw-kpi-compare" in html
+    assert "vw-kpi-compare-row" in html
 
 
 def test_video_workbench_import_flow_matches_mk_progress_contract():
