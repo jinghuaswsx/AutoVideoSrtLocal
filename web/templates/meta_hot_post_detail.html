@@ -493,6 +493,7 @@ button.mh-link-btn { cursor:pointer; }
       <a href="/xuanpin/meta-hot-posts" class="mh-btn secondary" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-weight: 700; height: 34px; padding: 0 16px; border-radius: 6px;">
         ← 返回热帖列表
       </a>
+      <span id="mhStatus" style="margin-left: 12px; font-size: 13px; font-weight: bold; color: var(--mh-muted);">Ready</span>
       <div class="mh-status-actions">
         <div class="mh-ai-analysis-actions" aria-label="AI分析显示设置">
           <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhUsAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('us')">显示美国AI分析</button>
@@ -504,6 +505,17 @@ button.mh-link-btn { cursor:pointer; }
 
   <div id="metaHotCardGrid" class="meta-hot-card-grid">
     <div class="mh-empty">加载中...</div>
+  </div>
+
+  <div style="display: none;">
+    <span id="mhCount">0</span>
+    <button id="mhSourceLocal"></button>
+    <button id="mhSourceTOS"></button>
+    <button id="mhCardZoomButton"></button>
+    <select id="mhFavoriteSort"></select>
+    <div id="mhProductListPanel"></div>
+    <div id="mhPagerTop"></div>
+    <div id="mhPagerBottom"></div>
   </div>
 
   <div class="mh-modal" id="mhPromptModal" hidden>
