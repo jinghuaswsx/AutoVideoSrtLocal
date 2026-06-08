@@ -315,6 +315,8 @@ def test_medias_mobile_adaptation_keeps_tables_scrollable_and_aligned():
     assert "overflow-x:auto !important;" in mobile_block
     assert ".oc-table-medias {\n    display:table !important;" in mobile_block
     assert ".oc-vm-table {\n    display:table !important;" in mobile_block
+    assert ".oc-table-medias th:nth-child(6), .oc-table-medias td:nth-child(6) { width:100px; min-width:100px; max-width:100px; }" in html
+    assert ".oc-table-medias th:nth-child(16), .oc-table-medias td:nth-child(16) { width:240px; min-width:240px; max-width:240px; }" in html
     assert "width:2176px !important;" in mobile_block
     assert "width:2120px !important;" in mobile_block
     assert ".oc-table-medias thead,\n  .oc-vm-table thead {\n    display:table-header-group;" in mobile_block

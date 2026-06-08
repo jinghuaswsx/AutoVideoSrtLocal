@@ -821,7 +821,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-table th, .oc-table td { padding:var(--oc-sp-3) var(--oc-sp-4); text-align:left; vertical-align:middle; border-bottom:1px solid var(--oc-border); }
 .oc-table thead th { background:var(--oc-bg-subtle); color:var(--oc-fg-muted); font-weight:600; font-size:12px; letter-spacing:0.02em; }
 .oc-table-medias { min-width: 2176px; }
-.oc-table-medias th, .oc-table-medias td { padding:8px 5px !important; }
+.oc-table-medias th, .oc-table-medias td { box-sizing:border-box; padding:8px 5px !important; }
 .oc-table-medias thead th { text-align:center !important; white-space:nowrap !important; }
 .oc-table tbody tr:hover { background:var(--oc-bg-subtle); }
 .oc-table-medias td.source-cell,
@@ -840,6 +840,22 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-table th:last-child, .oc-table td.actions { text-align:center; }
 .oc-table td.actions { white-space:normal; min-width:260px; }
 .oc-table-medias td.actions { min-width:0; }
+.oc-table-medias th:nth-child(1), .oc-table-medias td:nth-child(1) { width:48px; min-width:48px; max-width:48px; }
+.oc-table-medias th:nth-child(2), .oc-table-medias td:nth-child(2) { width:128px; min-width:128px; max-width:128px; }
+.oc-table-medias th:nth-child(3), .oc-table-medias td:nth-child(3) { width:210px; min-width:210px; max-width:210px; }
+.oc-table-medias th:nth-child(4), .oc-table-medias td:nth-child(4) { width:90px; min-width:90px; max-width:90px; }
+.oc-table-medias th:nth-child(5), .oc-table-medias td:nth-child(5) { width:110px; min-width:110px; max-width:110px; }
+.oc-table-medias th:nth-child(6), .oc-table-medias td:nth-child(6) { width:100px; min-width:100px; max-width:100px; }
+.oc-table-medias th:nth-child(7), .oc-table-medias td:nth-child(7) { width:70px; min-width:70px; max-width:70px; }
+.oc-table-medias th:nth-child(8), .oc-table-medias td:nth-child(8) { width:80px; min-width:80px; max-width:80px; }
+.oc-table-medias th:nth-child(9), .oc-table-medias td:nth-child(9) { width:70px; min-width:70px; max-width:70px; }
+.oc-table-medias th:nth-child(10), .oc-table-medias td:nth-child(10) { width:290px; min-width:290px; max-width:290px; }
+.oc-table-medias th:nth-child(11), .oc-table-medias td:nth-child(11) { width:320px; min-width:320px; max-width:320px; }
+.oc-table-medias th:nth-child(12), .oc-table-medias td:nth-child(12) { width:112px; min-width:112px; max-width:112px; }
+.oc-table-medias th:nth-child(13), .oc-table-medias td:nth-child(13) { width:92px; min-width:92px; max-width:92px; }
+.oc-table-medias th:nth-child(14), .oc-table-medias td:nth-child(14) { width:112px; min-width:112px; max-width:112px; }
+.oc-table-medias th:nth-child(15), .oc-table-medias td:nth-child(15) { width:104px; min-width:104px; max-width:104px; }
+.oc-table-medias th:nth-child(16), .oc-table-medias td:nth-child(16) { width:240px; min-width:240px; max-width:240px; }
 .oc-table td.actions .oc-btn svg { margin-right:2px; }
 .oc-table td.oc-product-id-cell { vertical-align:middle; }
 .oc-product-id-main { line-height:1.35; overflow-wrap:anywhere; word-break:break-all; }
