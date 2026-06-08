@@ -1155,6 +1155,212 @@ def _build_product_tier_order_share(
     }
 
 
+def _load_weekly_created_products(
+    week_start: date,
+    week_end: date,
+    notes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    start_text = f"{week_start.isoformat()} 00:00:00"
+    end_text = f"{(week_end + timedelta(days=1)).isoformat()} 00:00:00"
+    try:
+        rows = query(
+            "SELECT id, product_code, name, main_image, product_link, listing_status, created_at "
+            "FROM media_products "
+            "WHERE deleted_at IS NULL "
+            "  AND created_at >= %s "
+            "  AND created_at < %s "
+            "ORDER BY created_at DESC, id DESC",
+            (start_text, end_text),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai created products load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "weekly_created_products_unavailable",
+            "message": f"本周上线新品加载失败：{str(exc)[:160]}",
+        })
+        return []
+
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        item = dict(row)
+        pid = _safe_int(item.get("id"))
+        code = str(item.get("product_code") or "").strip()
+        if not pid and not code:
+            continue
+        out.append({
+            "product_id": pid,
+            "product_code": code,
+            "product_name": str(item.get("name") or "").strip(),
+            "name": str(item.get("name") or "").strip(),
+            "main_image": item.get("main_image"),
+            "product_link": str(item.get("product_link") or "").strip(),
+            "listing_status": str(item.get("listing_status") or "").strip(),
+            "created_at": _serialize_value(item.get("created_at")),
+        })
+    return out
+
+
+def _testing_product_keys(product_stability: dict[str, Any]) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    buckets = (product_stability or {}).get("buckets") or {}
+    for item in buckets.get("test") or []:
+        if isinstance(item, dict):
+            keys.update(_product_ref_keys(item))
+    return keys
+
+
+def _product_daily_orders_for_week(
+    product_row: dict[str, Any],
+    *,
+    week_start: date,
+    week_end: date,
+) -> list[dict[str, Any]]:
+    by_date: dict[str, int] = {}
+    for row in product_row.get("daily") or []:
+        day = str((row or {}).get("date") or "")[:10]
+        if day:
+            by_date[day] = _safe_int((row or {}).get("order_count"))
+    return [
+        {"date": day.isoformat(), "order_count": by_date.get(day.isoformat(), 0)}
+        for day in _dates_between(week_start, week_end)
+    ]
+
+
+def _campaign_metrics_for_product(
+    product: dict[str, Any],
+    campaign_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    pid = _safe_int(product.get("product_id"))
+    code = str(product.get("product_code") or "").strip().lower()
+    if not pid and not code:
+        return {
+            "ad_cost_usd": 0.0,
+            "purchase_value_usd": 0.0,
+            "result_count": 0,
+            "roas": None,
+            "active_days": 0,
+        }
+    ids = {pid} if pid else set()
+    codes = {code} if code else set()
+    spend = 0.0
+    purchase_value = 0.0
+    results = 0
+    active_dates: set[str] = set()
+    for campaign in campaign_rows or []:
+        if not _row_matches_scope(campaign, ids=ids, codes=codes):
+            continue
+        spend += _safe_float(campaign.get("spend_usd"))
+        purchase_value += _safe_float(campaign.get("purchase_value_usd"))
+        results += _safe_int(campaign.get("result_count"))
+        for daily in campaign.get("daily") or []:
+            day = str((daily or {}).get("date") or "")[:10]
+            if day and (_safe_float((daily or {}).get("spend_usd")) > 0 or _safe_int((daily or {}).get("result_count")) > 0):
+                active_dates.add(day)
+    spend = _round_money(spend)
+    purchase_value = _round_money(purchase_value)
+    return {
+        "ad_cost_usd": spend,
+        "purchase_value_usd": purchase_value,
+        "result_count": results,
+        "roas": _roas(purchase_value, spend),
+        "active_days": len(active_dates),
+    }
+
+
+def _build_potential_new_products(
+    *,
+    week_start: date,
+    week_end: date,
+    product_stability: dict[str, Any],
+    product_rows: list[dict[str, Any]],
+    campaign_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    notes: list[dict[str, Any]] = []
+    weekly_created_products = _load_weekly_created_products(week_start, week_end, notes)
+    testing_keys = _testing_product_keys(product_stability)
+    product_index = _build_product_index(product_rows)
+    day_count = max(len(_dates_between(week_start, week_end)), 1)
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for product in weekly_created_products:
+        if not (_product_ref_keys(product) & testing_keys):
+            continue
+        pid = _safe_int(product.get("product_id"))
+        code = str(product.get("product_code") or "").strip()
+        key = (str(pid or ""), code.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        product_row = (
+            product_index.get(("id", str(pid or "")))
+            or product_index.get(("code", code.lower()))
+            or {}
+        )
+        campaign_metrics = _campaign_metrics_for_product(product, campaign_rows)
+        order_count = _safe_int(product_row.get("order_count"))
+        roas_value = product_row.get("roas")
+        if roas_value is None:
+            roas_value = campaign_metrics.get("roas")
+        product_ad_cost = _safe_float(product_row.get("ad_cost_usd"))
+        campaign_ad_cost = _safe_float(campaign_metrics.get("ad_cost_usd"))
+        ad_cost = _round_money(product_ad_cost if product_ad_cost > 0 else campaign_ad_cost)
+        rows.append({
+            "label": "潜力新品",
+            "display_label": "潜力新品",
+            "product_grade": "测试中",
+            "status": "test",
+            "product_id": pid,
+            "product_code": code,
+            "product_name": product.get("product_name") or product_row.get("product_name") or product_row.get("name") or "",
+            "name": product.get("product_name") or product_row.get("name") or "",
+            "product_main_image_url": _product_image_url(product.get("main_image"), pid),
+            "product_cover_url": _media_cover_url(pid),
+            "media_search_url": _media_search_url(code),
+            "created_at": product.get("created_at"),
+            "listing_status": product.get("listing_status") or "",
+            "order_count": order_count,
+            "avg_daily_orders": round(order_count / day_count, 2),
+            "roas": _round_ratio(roas_value),
+            "ad_cost_usd": ad_cost,
+            "profit_usd": _round_money(product_row.get("profit_usd")),
+            "daily_orders": _product_daily_orders_for_week(product_row, week_start=week_start, week_end=week_end),
+            "campaign_result_count": _safe_int(campaign_metrics.get("result_count")),
+            "campaign_active_days": _safe_int(campaign_metrics.get("active_days")),
+        })
+
+    rows.sort(
+        key=lambda item: (
+            -_safe_float(item.get("avg_daily_orders")),
+            -(_safe_float(item.get("roas")) if item.get("roas") is not None else -1.0),
+            str(item.get("product_code") or ""),
+        )
+    )
+    top_rows = rows[:10]
+    return {
+        "period": {
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+        },
+        "summary": {
+            "weekly_created_product_count": len(weekly_created_products),
+            "testing_candidate_count": len(rows),
+            "display_count": len(top_rows),
+            "total_orders": sum(_safe_int(row.get("order_count")) for row in rows),
+            "top_10_orders": sum(_safe_int(row.get("order_count")) for row in top_rows),
+        },
+        "rows": top_rows,
+        "ranking_rule": "avg_daily_orders_desc_roas_desc",
+        "source": "media_products.created_at + product_stability.buckets.test + weekly product ROAS",
+        "notes": notes + [
+            {
+                "code": "potential_new_products_scope",
+                "message": "只从所选周上线且周报分级为测试中的产品里，按日均单量和 ROAS 选前 10 个。",
+            }
+        ],
+    }
+
+
 def _load_product_identity_maps(
     product_ids: list[int],
     product_codes: list[str],
@@ -2565,6 +2771,13 @@ def build_weekly_data_package(
         daily_overviews=all_overviews,
         product_stability=product_stability_for_share,
     )
+    potential_new_products = _build_potential_new_products(
+        week_start=week_start,
+        week_end=week_end,
+        product_stability=product_stability,
+        product_rows=product_rows,
+        campaign_rows=campaign_rows,
+    )
     analysis_product_rows = _filter_rows_for_scope(
         product_rows,
         product_scope=product_scope,
@@ -2634,6 +2847,7 @@ def build_weekly_data_package(
         "analysis_campaign_rows": analysis_campaign_rows,
         "product_stability": product_stability,
         "product_tier_order_share": product_tier_order_share,
+        "potential_new_products": potential_new_products,
         "product_scope": product_scope,
         "product_supplement_recommendations": supplement_recommendations,
         "product_ai_evaluation_candidates": product_ai_evaluation_candidates,
@@ -2654,6 +2868,7 @@ def _compact_for_prompt(package: dict[str, Any]) -> dict[str, Any]:
         "segments": package.get("segments"),
         "product_scope": package.get("product_scope"),
         "product_tier_order_share": package.get("product_tier_order_share"),
+        "potential_new_products": package.get("potential_new_products"),
         "top_products_by_profit": sorted(
             product_rows,
             key=lambda row: -_safe_float(row.get("profit_usd")),
