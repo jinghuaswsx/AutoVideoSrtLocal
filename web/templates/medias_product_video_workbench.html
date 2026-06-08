@@ -1,3 +1,4 @@
+{# Docs-anchor: docs/superpowers/specs/2026-06-08-medias-workbench-mk-card-flow-alignment.md #}
 {% extends "layout.html" %}
 {% block title %}视频素材决策台 - {{ product.name }} - AutoVideoSrt{% endblock %}
 {% block page_title %}
@@ -8,7 +9,6 @@
 {% block extra_head %}
 <style>
 :root {
-  --vw-bg: #f7fafc;
   --vw-panel: #ffffff;
   --vw-muted: #64748b;
   --vw-fg: #172033;
@@ -31,10 +31,7 @@
   padding: 12px 14px; background: var(--vw-panel); border: 1px solid var(--vw-border); border-radius: var(--vw-r);
 }
 .vw-kpis { display: flex; flex-wrap: wrap; gap: 8px; }
-.vw-kpi {
-  min-width: 112px; padding: 8px 10px; border: 1px solid var(--vw-border); border-radius: 6px;
-  background: #fbfdff;
-}
+.vw-kpi { min-width: 112px; padding: 8px 10px; border: 1px solid var(--vw-border); border-radius: 6px; background: #fbfdff; }
 .vw-kpi span { display: block; font-size: 11px; color: var(--vw-muted); }
 .vw-kpi strong { display: block; margin-top: 2px; font-size: 16px; }
 .vw-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -97,34 +94,117 @@
 .vw-card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
 .vw-card-actions .vw-btn { width: 100%; }
 .vw-state { grid-column: 1 / -1; font-size: 12px; color: var(--vw-muted); min-height: 18px; }
-.vw-empty, .vw-error { grid-column: 1 / -1; padding: 70px 16px; text-align: center; color: var(--vw-muted); background: #fff; border: 1px solid var(--vw-border); border-radius: var(--vw-r); }
-.vw-error { color: var(--vw-red); }
-.vw-modal-mask {
-  position: fixed; inset: 0; background: rgba(15,23,42,.42); z-index: 2100;
-  display: none; align-items: center; justify-content: center; padding: 20px;
+.vw-empty, .vw-error {
+  grid-column: 1 / -1; padding: 70px 16px; text-align: center; color: var(--vw-muted);
+  background: #fff; border: 1px solid var(--vw-border); border-radius: var(--vw-r);
 }
-.vw-modal {
+.vw-error { color: var(--vw-red); }
+.vw-modal-mask, .vw-flow-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,.42); z-index: 2100;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.vw-modal-mask[hidden], .vw-flow-backdrop[hidden] { display: none !important; }
+.vw-modal, .vw-progress-modal, .vw-xiao-dialog {
   width: min(1080px, 96vw); max-height: 90vh; overflow: auto; background: #fff; border-radius: 8px;
   border: 1px solid var(--vw-border); box-shadow: 0 20px 50px rgba(15,23,42,.25);
 }
-.vw-modal-head {
+.vw-progress-modal { width: min(920px, 96vw); }
+.vw-xiao-dialog { width: min(1040px, 96vw); }
+.vw-modal-head, .vw-progress-head {
   position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 12px; align-items: center;
   padding: 12px 14px; background: #fff; border-bottom: 1px solid var(--vw-border);
 }
-.vw-modal-title { font-size: 16px; font-weight: 700; }
-.vw-modal-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.vw-modal-title, .vw-progress-title, .vw-xiao-title { font-size: 16px; font-weight: 700; margin: 0; }
+.vw-modal-body, .vw-progress-body, .vw-xiao-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .vw-modal-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .vw-table-wrap { overflow: auto; border: 1px solid var(--vw-border); border-radius: 6px; }
 .vw-table { width: 100%; border-collapse: collapse; min-width: 860px; font-size: 12px; }
 .vw-table th, .vw-table td { padding: 7px 8px; border-bottom: 1px solid var(--vw-border); text-align: left; vertical-align: top; }
 .vw-table th { background: #f8fafc; color: var(--vw-muted); font-weight: 700; position: sticky; top: 0; }
-.vw-task-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.vw-lang-row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
+.vw-info {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px;
+  border: 1px solid var(--vw-border); border-radius: 8px; padding: 10px; background: #fbfdff;
+}
+.vw-info-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; }
+.vw-info-label { color: var(--vw-muted); font-size: 12px; }
+.vw-info-value { min-width: 0; font-size: 13px; color: var(--vw-fg); overflow-wrap: anywhere; }
+.vw-info-link { color: var(--vw-blue); text-decoration: none; }
+.vw-info-status { display: inline-flex; align-items: center; margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; background: #eef6fb; color: var(--vw-blue); }
+.vw-info-status.ok { background: var(--vw-green-bg); color: var(--vw-green); }
+.vw-info-status.fail { background: var(--vw-red-bg); color: var(--vw-red); }
+.vw-copy-btn {
+  width: 26px; height: 24px; padding: 0; margin-left: 4px; border: 1px solid var(--vw-border-strong);
+  border-radius: 5px; background: #fff; color: var(--vw-blue); cursor: pointer;
+}
+.vw-copy-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.vw-fine-ai {
+  border: 1px solid var(--vw-border); border-radius: 8px; background: #fbfdff; padding: 10px;
+  font-size: 12px; color: var(--vw-fg);
+}
+.vw-fine-ai-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.vw-fine-ai-title { font-weight: 700; }
+.vw-fine-ai-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.vw-fine-ai-table th, .vw-fine-ai-table td { padding: 6px; border-top: 1px solid var(--vw-border); text-align: left; vertical-align: top; }
+.vw-progress-steps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.vw-progress-step {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) 58px; gap: 10px;
+  border: 1px solid var(--vw-border); border-radius: 8px; padding: 10px; background: #fff;
+}
+.vw-progress-step-mark { width: 14px; height: 14px; border-radius: 999px; border: 2px solid #94a3b8; margin-top: 2px; }
+.vw-progress-step.running .vw-progress-step-mark { border-color: var(--vw-blue); background: #eef6fb; }
+.vw-progress-step.done .vw-progress-step-mark { border-color: var(--vw-green); background: var(--vw-green-bg); }
+.vw-progress-step.warning .vw-progress-step-mark { border-color: var(--vw-amber); background: var(--vw-amber-bg); }
+.vw-progress-step.error .vw-progress-step-mark { border-color: var(--vw-red); background: var(--vw-red-bg); }
+.vw-progress-step-title { font-weight: 700; font-size: 13px; }
+.vw-progress-step-detail, .vw-progress-status { color: var(--vw-muted); font-size: 12px; }
+.vw-progress-step-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.vw-progress-step-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.vw-progress-notice, .vw-xiao-status {
+  border-radius: 6px; padding: 8px 10px; font-size: 12px; background: #eef6fb; color: var(--vw-blue);
+}
+.vw-progress-notice.danger, .vw-xiao-status.error { background: var(--vw-red-bg); color: var(--vw-red); }
+.vw-xiao-status.success { background: var(--vw-green-bg); color: var(--vw-green); }
+.vw-xiao-status.running { background: #eef6fb; color: var(--vw-blue); }
+.vw-domain-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.vw-domain-row { border: 1px solid var(--vw-border); border-radius: 8px; padding: 8px; background: #fbfdff; display: flex; flex-direction: column; gap: 4px; }
+.vw-domain-row label { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.vw-subcards { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.vw-subcard { border: 1px solid var(--vw-border); border-radius: 6px; padding: 8px; background: #fbfdff; font-size: 12px; }
+.vw-subcard.done { border-color: #bbf7d0; background: var(--vw-green-bg); }
+.vw-subcard.warning { border-color: #fde68a; background: var(--vw-amber-bg); }
+.vw-subcard.error { border-color: #fecaca; background: var(--vw-red-bg); }
+.vw-xiao-product-info { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 12px; align-items: stretch; }
+.vw-xiao-product-image {
+  width: 200px; height: 200px; border: 1px solid var(--vw-border); border-radius: 8px;
+  overflow: hidden; background: #e2e8f0; display: flex; align-items: center; justify-content: center; color: var(--vw-muted);
+}
+.vw-xiao-product-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vw-xiao-field { display: flex; flex-direction: column; gap: 6px; }
+.vw-xiao-label { font-weight: 700; font-size: 13px; }
+.vw-xiao-help { color: var(--vw-muted); font-size: 12px; }
+.vw-xiao-lang-pills { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.vw-xiao-lang-pill { display: block; }
+.vw-xiao-lang-card {
+  min-height: 78px; border: 1px solid var(--vw-border); border-radius: 8px; padding: 8px;
+  background: #fff; display: flex; flex-direction: column; gap: 4px; cursor: pointer;
+}
+.vw-xiao-lang-card.disabled { opacity: .78; background: #f8fafc; }
+.vw-xiao-lang-card.high { border-color: #86efac; background: #f0fdf4; }
+.vw-xiao-lang-card.medium { border-color: #fde68a; background: #fffbeb; }
+.vw-xiao-lang-card.low { border-color: #fecaca; background: #fef2f2; }
+.vw-xiao-lang-main { display: flex; gap: 6px; align-items: center; font-weight: 700; }
+.vw-xiao-ai-suggestion { font-size: 11px; color: var(--vw-muted); }
+.vw-xiao-force-btn { align-self: flex-start; min-height: 22px; font-size: 11px; color: var(--vw-red); border-color: #fecaca; }
+.vw-xiao-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.vw-xiao-urgent-toggle { margin-right: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 @media (max-width: 720px) {
   .vw-grid { grid-template-columns: 1fr; }
   .vw-card { min-height: auto; }
   .vw-frame { width: 100%; height: auto; aspect-ratio: 9 / 16; }
-  .vw-task-grid, .vw-lang-row { grid-template-columns: 1fr; }
+  .vw-info, .vw-xiao-product-info { grid-template-columns: 1fr; }
+  .vw-xiao-product-image { width: 100%; height: auto; aspect-ratio: 1 / 1; }
+  .vw-progress-step { grid-template-columns: 18px minmax(0, 1fr); }
+  .vw-progress-status { grid-column: 2; }
 }
 </style>
 {% endblock %}
@@ -153,7 +233,7 @@
   </div>
 </div>
 
-<div id="vwAdModal" class="vw-modal-mask" role="dialog" aria-modal="true">
+<div id="vwAdModal" class="vw-modal-mask" role="dialog" aria-modal="true" hidden>
   <div class="vw-modal">
     <div class="vw-modal-head">
       <div>
@@ -184,31 +264,100 @@
   </div>
 </div>
 
-<div id="vwTaskModal" class="vw-modal-mask" role="dialog" aria-modal="true">
-  <div class="vw-modal">
-    <div class="vw-modal-head">
+<div id="vwImportProgressModal" class="vw-flow-backdrop" role="dialog" aria-modal="true" aria-labelledby="vwImportTitle" hidden>
+  <div class="vw-progress-modal">
+    <div class="vw-progress-head">
       <div>
-        <div class="vw-modal-title" id="vwTaskTitle">创建小语种任务</div>
-        <div class="vw-sub" id="vwTaskSub"></div>
+        <h3 id="vwImportTitle" class="vw-progress-title">入库工作进程</h3>
+        <div class="vw-sub">把明空原视频写入英文素材库，完成后继续进入任务中心流程。</div>
       </div>
-      <button type="button" class="vw-btn" data-close-modal="vwTaskModal">关闭</button>
+      <button type="button" class="vw-btn" data-vw-import-close>关闭</button>
     </div>
-    <div class="vw-modal-body">
-      <div class="vw-task-grid">
-        <label>原视频处理人
-          <select id="vwRawProcessor" class="vw-input" style="width:100%;"></select>
-        </label>
-        <label>源素材
-          <input id="vwTaskItem" class="vw-input" style="width:100%;" readonly>
-        </label>
+    <div class="vw-progress-body">
+      <section id="vwImportInfo" class="vw-info" aria-label="入库产品信息">
+        <div class="vw-info-row"><span class="vw-info-label">产品中文名</span><span id="vwImportProductName" class="vw-info-value">--</span></div>
+        <div class="vw-info-row">
+          <span class="vw-info-label">产品链接</span>
+          <span class="vw-info-value">
+            <a id="vwImportProductLink" class="vw-info-link" href="#" target="_blank" rel="noopener noreferrer">--</a>
+            <span id="vwImportLinkStatus" class="vw-info-status">检测中</span>
+            <button type="button" class="vw-copy-btn" data-vw-copy-link="vwImportProductLink" title="复制链接" aria-label="复制链接"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+          </span>
+        </div>
+        <div class="vw-info-row">
+          <span class="vw-info-label">产品ID</span>
+          <span class="vw-info-value">
+            <span id="vwImportProductCode">--</span>
+            <button type="button" class="vw-copy-btn" data-vw-copy-text="vwImportProductCode" title="复制产品ID" aria-label="复制产品ID"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+          </span>
+        </div>
+        <div class="vw-info-row"><span class="vw-info-label">90天消耗</span><span id="vwImportSpends" class="vw-info-value">--</span></div>
+      </section>
+      <div class="vw-progress-meta">
+        <div class="vw-sub">素材：<strong id="vwImportFile">--</strong></div>
+        <div class="vw-sub">产品：<strong id="vwImportProduct">--</strong></div>
       </div>
-      <div>
-        <div style="font-weight:700;margin-bottom:8px;">目标语种与负责人</div>
-        <div id="vwTaskLangs"></div>
+      <section id="vwImportFineAi" class="vw-fine-ai" aria-label="AI 精细评估建议"></section>
+      <ol id="vwImportSteps" class="vw-progress-steps"></ol>
+      <div id="vwImportError" class="vw-progress-notice danger" hidden></div>
+    </div>
+  </div>
+</div>
+
+<div id="vwXiaoModal" class="vw-flow-backdrop" role="dialog" aria-modal="true" aria-labelledby="vwXiaoTitle" hidden>
+  <div class="vw-xiao-dialog">
+    <div class="vw-progress-head">
+      <h3 id="vwXiaoTitle" class="vw-xiao-title">创建小语种翻译任务</h3>
+      <button type="button" class="vw-btn" data-vw-xiao-cancel>关闭</button>
+    </div>
+    <div class="vw-xiao-body">
+      <section class="vw-xiao-product-info" aria-label="产品信息">
+        <div class="vw-xiao-product-image">
+          <img id="vwXiaoProductImage" alt="" loading="lazy" decoding="async" hidden>
+          <span id="vwXiaoProductImageEmpty">无主图</span>
+        </div>
+        <div class="vw-info">
+          <div class="vw-info-row"><span class="vw-info-label">产品中文名</span><span id="vwXiaoProductName" class="vw-info-value">--</span></div>
+          <div class="vw-info-row">
+            <span class="vw-info-label">产品链接</span>
+            <span class="vw-info-value">
+              <a id="vwXiaoProductLink" class="vw-info-link" href="#" target="_blank" rel="noopener noreferrer">--</a>
+              <span id="vwXiaoProductLinkStatus" class="vw-info-status">检测中</span>
+              <button type="button" class="vw-copy-btn" data-vw-copy-link="vwXiaoProductLink" title="复制链接" aria-label="复制链接"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+            </span>
+          </div>
+          <div class="vw-info-row">
+            <span class="vw-info-label">产品ID</span>
+            <span class="vw-info-value">
+              <span id="vwXiaoProductCode">--</span>
+              <button type="button" class="vw-copy-btn" data-vw-copy-text="vwXiaoProductCode" title="复制产品ID" aria-label="复制产品ID"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+            </span>
+          </div>
+          <div class="vw-info-row"><span class="vw-info-label">90天消耗</span><span id="vwXiaoSpends" class="vw-info-value">--</span></div>
+        </div>
+      </section>
+      <section id="vwXiaoFineAi" class="vw-fine-ai" aria-label="AI 精细评估建议"></section>
+      <div class="vw-xiao-field">
+        <label class="vw-xiao-label" for="vwXiaoTranslator">小语种翻译负责人：</label>
+        <select id="vwXiaoTranslator" class="vw-input" style="width:100%; height:36px;"></select>
+        <div class="vw-xiao-help">产品负责人用于素材归属；小语种翻译负责人用于当前语言任务，可与产品负责人不同。</div>
       </div>
-      <div class="vw-modal-controls">
-        <button type="button" class="vw-btn vw-btn-primary" id="vwTaskSubmit">创建任务</button>
-        <span class="vw-sub" id="vwTaskState"></span>
+      <div class="vw-xiao-field">
+        <label class="vw-xiao-label" for="vwXiaoRawProcessor">原视频处理人：</label>
+        <select id="vwXiaoRawProcessor" class="vw-input" style="width:100%; height:36px;"></select>
+      </div>
+      <div class="vw-xiao-field">
+        <span class="vw-xiao-label">目标国家（至少勾选一个）：</span>
+        <div id="vwXiaoLangs" class="vw-xiao-lang-pills"></div>
+      </div>
+      <div id="vwXiaoStatus" class="vw-xiao-status" hidden></div>
+      <div class="vw-xiao-actions">
+        <label class="vw-xiao-urgent-toggle" for="vwXiaoUrgent">
+          <input id="vwXiaoUrgent" type="checkbox">
+          <span>紧急任务</span>
+        </label>
+        <button type="button" class="vw-btn" data-vw-xiao-cancel>取消</button>
+        <button type="button" class="vw-btn vw-btn-primary" id="vwXiaoConfirm" data-vw-xiao-confirm>确认创建</button>
       </div>
     </div>
   </div>
@@ -226,15 +375,37 @@
   const kpis = document.getElementById('vwKpis');
   const langStrip = document.getElementById('vwLangStrip');
   const summaryNote = document.getElementById('vwSummaryNote');
+  const activeUsersApi = '/tasks/api/translation-work-users';
+  const importSteps = [
+    {key: 'prepare', title: '准备素材信息', detail: '等待读取明空卡片字段'},
+    {key: 'productOwner', title: '选择产品负责人', detail: '入库前确认素材管理产品负责人'},
+    {key: 'product', title: '检查产品与链接', detail: '负责人确认后检查产品并创建或复用产品'},
+    {key: 'download', title: '下载明空原视频', detail: '等待服务端下载原视频'},
+    {key: 'store', title: '写入素材库', detail: '等待写入英文素材库'},
+    {key: 'domains', title: '选择发布域名', detail: '入库完成后选择该产品要发布到哪些域名'},
+    {key: 'next', title: '后续任务入口', detail: '发布域名确认后继续创建小语种任务'}
+  ];
   let currentData = null;
   let currentAdCard = null;
-  let currentTaskCard = null;
+  let activeUsersCache = null;
+  let productOwnerCache = new Map();
+  let fineAiCache = new Map();
+  let importCard = null;
+  let importProductId = null;
+  let importItemId = null;
+  let importTaskId = null;
+  let importFailedStep = 'product';
+  let importDomainOptions = [];
+  let xiaoContext = null;
 
-  function csrfHeaders() {
+  function csrfHeaders(extra = {}) {
     const meta = document.querySelector('meta[name="csrf-token"]');
-    const headers = {'Content-Type': 'application/json'};
+    const headers = Object.assign({}, extra);
     if (meta) headers['X-CSRFToken'] = meta.getAttribute('content') || '';
     return headers;
+  }
+  function jsonHeaders() {
+    return csrfHeaders({'Content-Type': 'application/json'});
   }
   function esc(value) {
     return String(value == null ? '' : value)
@@ -264,11 +435,140 @@
   async function fetchJson(url, options = {}) {
     const resp = await fetch(url, options);
     const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) throw new Error(data.message || data.error || resp.statusText);
+    if (!resp.ok) throw requestError(url, resp, data);
     return data;
+  }
+  function requestError(endpoint, rsp, data) {
+    const statusTextValue = rsp ? (rsp.status + (rsp.statusText ? ' ' + rsp.statusText : '')) : 'unknown';
+    const detail = data && (data.error || data.detail || data.message);
+    return new Error('请求 ' + endpoint + ' 返回 ' + statusTextValue + '：' + (detail || '无错误详情'));
+  }
+  function setModalOpen(id, isOpen) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !isOpen;
   }
   function cardById(cardId) {
     return (currentData && currentData.cards || []).find(card => card.card_id === cardId) || null;
+  }
+  function taskHref(taskId) {
+    return '/tasks/?task_id=' + encodeURIComponent(taskId);
+  }
+  function safeMediaSrc(value) {
+    const url = String(value || '').trim();
+    if (!url) return '';
+    if (/^https?:\/\//i.test(url)) return url;
+    if (url.startsWith('/')) return url;
+    return '';
+  }
+  function videoUrls(card) {
+    const mk = card.mk_video || {};
+    const coverUrl = mk.local_cover_object_key
+      ? `/medias/object?object_key=${encodeURIComponent(mk.local_cover_object_key)}`
+      : (mk.image_path ? `/xuanpin/api/mk-media?path=${encodeURIComponent(mk.image_path)}` : '');
+    const videoUrl = mk.path ? `/xuanpin/api/mk-video?path=${encodeURIComponent(mk.path)}` : '';
+    return {coverUrl, videoUrl};
+  }
+  function cardContext(card) {
+    const mk = card && card.mk_video || {};
+    const urls = card ? videoUrls(card) : {};
+    const productLink = String(card && card.mk_product_link || '').trim();
+    return {
+      productName: String(card && card.mk_product_name || productName || '').trim(),
+      productLink,
+      productCode: String(productCode || '').replace(/-rjc$/i, ''),
+      spends: money(mk.spends || 0),
+      filename: String(mk.name || '').trim(),
+      imageUrl: safeMediaSrc(card && card.main_image) || safeMediaSrc(urls.coverUrl),
+      coverUrl: urls.coverUrl || '',
+      videoUrl: urls.videoUrl || '',
+    };
+  }
+  function productLinkValue(card) {
+    return String(card && card.mk_product_link || '').trim() || null;
+  }
+  function copyText(text, btn) {
+    if (!text) return;
+    const done = function() {
+      const old = btn.innerHTML;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>';
+      setTimeout(function() { btn.innerHTML = old; }, 900);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done).catch(function() {});
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try { document.execCommand('copy'); done(); } catch (_err) {}
+    textarea.remove();
+  }
+  function probeProductLink(url, statusEl) {
+    if (!statusEl) return;
+    statusEl.className = 'vw-info-status';
+    statusEl.textContent = '检测中';
+    if (!url || !/^https?:\/\//i.test(url)) {
+      statusEl.className = 'vw-info-status fail';
+      statusEl.textContent = '无链接';
+      return;
+    }
+    fetch('/mk-import/probe-url?url=' + encodeURIComponent(url))
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok) {
+          statusEl.className = 'vw-info-status ok';
+          statusEl.textContent = '200';
+        } else {
+          statusEl.className = 'vw-info-status fail';
+          statusEl.textContent = data.status_code ? String(data.status_code) : (data.detail || '不可达');
+        }
+      })
+      .catch(function() {
+        statusEl.className = 'vw-info-status fail';
+        statusEl.textContent = '检测失败';
+      });
+  }
+  function renderInfo(prefix, context) {
+    const data = context || {};
+    const nameEl = document.getElementById(prefix + 'ProductName');
+    const linkEl = document.getElementById(prefix + 'ProductLink');
+    const codeEl = document.getElementById(prefix + 'ProductCode');
+    const spendsEl = document.getElementById(prefix === 'vwXiao' ? 'vwXiaoSpends' : prefix + 'Spends');
+    const statusEl = document.getElementById(prefix === 'vwXiao' ? 'vwXiaoProductLinkStatus' : prefix + 'LinkStatus');
+    if (nameEl) nameEl.textContent = data.productName || '--';
+    if (codeEl) codeEl.textContent = data.productCode || '--';
+    if (spendsEl) spendsEl.textContent = data.spends || '--';
+    if (linkEl) {
+      if (data.productLink && /^https?:\/\//i.test(data.productLink)) {
+        linkEl.href = data.productLink;
+        linkEl.textContent = data.productLink;
+      } else {
+        linkEl.removeAttribute('href');
+        linkEl.textContent = data.productLink || '--';
+      }
+    }
+    probeProductLink(data.productLink, statusEl);
+  }
+  function renderXiaoImage(context) {
+    const img = document.getElementById('vwXiaoProductImage');
+    const empty = document.getElementById('vwXiaoProductImageEmpty');
+    const src = safeMediaSrc(context && context.imageUrl);
+    if (!img || !empty) return;
+    if (src) {
+      img.src = src;
+      img.alt = context.productName || '商品主图';
+      img.hidden = false;
+      empty.hidden = true;
+    } else {
+      img.removeAttribute('src');
+      img.alt = '';
+      img.hidden = true;
+      empty.hidden = false;
+    }
   }
 
   async function loadWorkbench(sortBy) {
@@ -281,10 +581,9 @@
       renderCards(data);
     } catch (err) {
       grid.innerHTML = `<div class="vw-error">加载失败：${esc(err.message)}</div>`;
-      summaryNote.textContent = '加载失败';
+      if (summaryNote) summaryNote.textContent = '加载失败';
     }
   }
-
   function renderSummary(data) {
     const s = data.summary || {};
     const ad = data.ad_summary || {};
@@ -296,9 +595,8 @@
       <div class="vw-kpi"><span>整体 ROAS</span><strong>${roas(ad.overall_roas)}</strong></div>
       <div class="vw-kpi"><span>投放情况</span><strong>${statusText(ad.delivery_status)}</strong></div>
     `;
-    summaryNote.textContent = `共 ${s.total_mk_videos || 0} 条明空视频素材`;
+    if (summaryNote) summaryNote.textContent = `共 ${s.total_mk_videos || 0} 条明空视频素材`;
   }
-
   function renderLangStrip(data) {
     const langCoverage = data.lang_coverage || {};
     const rows = Object.keys(langCoverage).sort().map(code => {
@@ -313,7 +611,6 @@
     });
     langStrip.innerHTML = rows.length ? rows.join('') : '<span class="vw-sub">暂无本地语种素材</span>';
   }
-
   function renderCards(data) {
     const cards = data.cards || [];
     if (!cards.length) {
@@ -322,14 +619,10 @@
     }
     grid.innerHTML = cards.map(renderCard).join('');
   }
-
   function renderCard(card) {
     const mk = card.mk_video || {};
     const inLib = Boolean(card.in_library);
-    const coverUrl = mk.local_cover_object_key
-      ? `/medias/object?object_key=${encodeURIComponent(mk.local_cover_object_key)}`
-      : (mk.image_path ? `/xuanpin/api/mk-media?path=${encodeURIComponent(mk.image_path)}` : '');
-    const videoUrl = mk.path ? `/xuanpin/api/mk-video?path=${encodeURIComponent(mk.path)}` : '';
+    const urls = videoUrls(card);
     const langRows = (card.lang_ad_summary || []).map(row => {
       const cls = `vw-status-${row.delivery_status || 'never'}`;
       return `<span class="vw-ad-pill ${cls}" title="${esc(row.item_count || 0)} 条本地素材">
@@ -344,8 +637,8 @@
       ? `${isLegacyMatch ? '历史匹配本地素材' : '已绑定本地素材'} #${bound.id || card.media_item_id || '-'} ${bound.filename ? ' / ' + esc(bound.filename) : ''}`
       : '尚未加入素材库';
     const link = card.mk_product_link ? `<a class="vw-link" href="${esc(card.mk_product_link)}" target="_blank" rel="noopener noreferrer">${esc(card.mk_product_link)}</a>` : '<span class="vw-sub">无产品链接</span>';
-    const media = coverUrl
-      ? `<img src="${esc(coverUrl)}" loading="lazy" alt="${esc(mk.name || '')}">`
+    const media = urls.coverUrl
+      ? `<img src="${esc(urls.coverUrl)}" loading="lazy" alt="${esc(mk.name || '')}">`
       : '<div class="vw-empty-media">无封面</div>';
     const actions = inLib
       ? `<button type="button" class="vw-btn vw-btn-primary" data-action="task" data-card-id="${esc(card.card_id)}">创建小语种任务</button>
@@ -353,7 +646,7 @@
          <a class="vw-btn" href="/medias/video?keyword=${encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
          <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`
       : `<button type="button" class="vw-btn vw-btn-primary" data-action="import" data-card-id="${esc(card.card_id)}">加入素材库</button>
-         <button type="button" class="vw-btn" data-action="supplement-task" data-card-id="${esc(card.card_id)}">补素材任务</button>
+         <button type="button" class="vw-btn" disabled title="先加入素材库后才能创建小语种任务">创建小语种任务</button>
          <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>
          <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`;
     return `
@@ -368,7 +661,7 @@
           <div class="vw-metric"><span>广告数</span><strong>${Number(mk.ads_count || 0)}</strong></div>
         </div>
         <div class="vw-frame">
-          ${videoUrl ? `<video controls preload="none" poster="${esc(coverUrl)}" src="${esc(videoUrl)}"></video>` : media}
+          ${urls.videoUrl ? `<video controls preload="none" poster="${esc(urls.coverUrl)}" src="${esc(urls.videoUrl)}"></video>` : media}
         </div>
         <div class="vw-local">
           <div class="vw-local-row"><span>上传者</span><strong>${esc(mk.author || '-')}</strong></div>
@@ -380,44 +673,455 @@
       </div>
     `;
   }
-
   function setCardState(card, text) {
     const el = document.getElementById('vwState_' + card.card_id);
     if (el) el.textContent = text || '';
   }
 
-  async function importMaterialPayload(card) {
-    const mk = card.mk_video || {};
-    return fetchJson('/mk-import/video', {
-      method: 'POST',
-      headers: csrfHeaders(),
-      body: JSON.stringify({
-        mk_video_metadata: {
-          media_product_id: productId,
-          mk_id: card.mk_product_id || null,
-          mk_product_id: card.mk_product_id || null,
-          mk_product_name: card.mk_product_name || '',
-          product_name: card.mk_product_name || productName || '',
-          product_code: (currentData.product && currentData.product.mk_search_handle) || productCode || '',
-          product_link: card.mk_product_link || null,
-          video_path: mk.path || null,
-          cover_path: mk.image_path || null,
-          filename: mk.name || '',
-          main_image: card.main_image || null
-        }
-      })
-    });
+  async function fetchActiveUsers() {
+    if (activeUsersCache) return activeUsersCache;
+    const data = await fetchJson(activeUsersApi);
+    activeUsersCache = data.users || data.translators || [];
+    return activeUsersCache;
+  }
+  function userLabel(user) {
+    const fallback = user && user.id ? `用户 #${user.id}` : '';
+    const name = String((user && (user.display_name || user.username)) || fallback).trim();
+    if (user && user.todo_count !== undefined && user.urgent_count !== undefined && user.completed_today_count !== undefined) {
+      return `${name}  待处理 ${user.todo_count}  紧急 ${user.urgent_count}  今天已完成 ${user.completed_today_count}`;
+    }
+    return name;
+  }
+  function userOption(user) {
+    return `<option value="${esc(user.id)}">${esc(userLabel(user))}</option>`;
+  }
+  async function resolveProductOwner(pid) {
+    const id = Number(pid || 0);
+    if (!id) return null;
+    if (productOwnerCache.has(id)) return productOwnerCache.get(id);
+    try {
+      const data = await fetchJson('/medias/api/products/' + encodeURIComponent(id));
+      const product = (data && data.product) || data || {};
+      const ownerId = Number(product.user_id || product.owner_id || 0);
+      const ownerName = String(product.user_name || product.owner_name || product.user_display_name || '').trim();
+      const result = ownerId > 0 ? {id: ownerId, name: ownerName} : null;
+      productOwnerCache.set(id, result);
+      return result;
+    } catch (_err) {
+      productOwnerCache.set(id, null);
+      return null;
+    }
   }
 
-  async function importMaterial(card) {
-    setCardState(card, '入库中...');
+  function evaluationRows(detail) {
+    if (!detail) return [];
+    const source = detail.country_evaluations || detail.countries || detail.country_results || detail.results || [];
+    if (Array.isArray(source)) return source;
+    if (typeof source === 'object') {
+      return Object.keys(source).map(code => Object.assign({country_code: code}, source[code] || {}));
+    }
+    return [];
+  }
+  function evaluationCode(row) {
+    return String(row.country_code || row.lang || row.code || '').trim().toUpperCase();
+  }
+  function evaluationScore(row) {
+    const score = Number(row.score || row.ai_score || row.final_score);
+    return Number.isFinite(score) ? score : null;
+  }
+  function evaluationTone(row) {
+    const rec = String(row.recommendation || row.decision || row.result || '').trim();
+    const score = evaluationScore(row);
+    if (rec === '不做' || rec === 'HOLD' || row.is_suitable === false) return 'low';
+    if (rec === '做' || rec === 'GO' || row.is_suitable === true) return 'high';
+    if (score !== null) {
+      if (score >= 75) return 'high';
+      if (score >= 55) return 'medium';
+      return 'low';
+    }
+    return '';
+  }
+  function evaluationSuggestionText(row) {
+    if (!row) return 'AI建议：暂无';
+    const score = evaluationScore(row);
+    const suffix = score === null ? '' : ' ' + (Number.isInteger(score) ? score : score.toFixed(1));
+    const tone = evaluationTone(row);
+    if (tone === 'high') return 'AI建议：建议做' + suffix;
+    if (tone === 'medium') return 'AI建议：先测试' + suffix;
+    if (tone === 'low') return 'AI建议：暂不做' + suffix;
+    return 'AI建议：暂无';
+  }
+  function evaluationSummary(row) {
+    return String(row.summary || row.reason || row.detail || row.analysis || '').trim();
+  }
+  function renderFineAiPanel(targetId, detail) {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const rows = evaluationRows(detail);
+    if (!rows.length) {
+      target.innerHTML = `
+        <div class="vw-fine-ai-head">
+          <span class="vw-fine-ai-title">AI 精细评估建议</span>
+          <span class="vw-sub">暂无可用结果</span>
+        </div>
+        <div class="vw-sub">还没有可用的 5 国精细评估结果。可以继续创建任务，但建议先参考明空视频素材库的精细评估结果。</div>
+      `;
+      return;
+    }
+    const avg = detail.average_score || detail.avg_score || detail.summary_score || '';
+    const recommendation = detail.recommendation || detail.decision || detail.overall_recommendation || '';
+    target.innerHTML = `
+      <div class="vw-fine-ai-head">
+        <span class="vw-fine-ai-title">AI 精细评估建议</span>
+        <span class="vw-sub">${esc([recommendation ? '综合建议：' + recommendation : '', avg ? '平均分 ' + avg : ''].filter(Boolean).join(' · '))}</span>
+      </div>
+      <table class="vw-fine-ai-table">
+        <thead><tr><th>国家</th><th>建议</th><th>说明</th></tr></thead>
+        <tbody>${rows.map(row => `
+          <tr>
+            <td>${esc(evaluationCode(row) || row.country_name_zh || '-')}</td>
+            <td>${esc(evaluationSuggestionText(row).replace('AI建议：', ''))}</td>
+            <td>${esc(evaluationSummary(row) || '-')}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    `;
+  }
+  async function loadFineAiDetail(pid) {
+    const id = Number(pid || 0);
+    if (!id) return null;
+    if (fineAiCache.has(id)) return fineAiCache.get(id);
     try {
-      const result = await importMaterialPayload(card);
-      setCardState(card, `已入库，素材 #${result.media_item_id || ''}`);
-      await loadWorkbench(document.getElementById('vwSort').value);
+      const data = await fetchJson('/medias/api/products/' + encodeURIComponent(id));
+      const product = (data && data.product) || data || {};
+      const detail = product.ai_evaluation_detail || product.fine_ai_evaluation || null;
+      fineAiCache.set(id, detail || null);
+      return detail || null;
+    } catch (_err) {
+      fineAiCache.set(id, null);
+      return null;
+    }
+  }
+  async function hydrateFineAi(targetId, pid) {
+    renderFineAiPanel(targetId, null);
+    const detail = await loadFineAiDetail(pid);
+    renderFineAiPanel(targetId, detail);
+    if (targetId === 'vwXiaoFineAi') applyAiSuggestions(detail);
+  }
+
+  function importStepActionHtml(stepKey) {
+    const retry = `<button type="button" class="vw-btn" data-vw-import-retry="${esc(stepKey)}" hidden>重新尝试</button>`;
+    if (stepKey === 'productOwner') {
+      return `
+        <div class="vw-progress-step-panel" id="vwImportProductOwnerPanel" hidden>
+          <div id="vwImportProductOwnerNotice" class="vw-progress-notice"></div>
+        </div>
+        <div class="vw-progress-step-actions">${retry}</div>`;
+    }
+    if (stepKey === 'domains') {
+      return `
+        <div class="vw-progress-step-panel" id="vwImportDomainsPanel" hidden>
+          <div id="vwImportDomainList" class="vw-domain-list"></div>
+          <div id="vwImportDomainNotice" class="vw-progress-notice" hidden></div>
+          <div class="vw-progress-step-actions">
+            <button type="button" class="vw-btn" data-vw-import-domain-retry hidden>重新加载域名</button>
+            <button type="button" class="vw-btn vw-btn-primary" data-vw-import-domain-save>确定发布域名</button>
+          </div>
+        </div>
+        <div class="vw-progress-step-actions">${retry}</div>`;
+    }
+    if (stepKey === 'next') {
+      return `
+        <div class="vw-progress-step-panel" id="vwImportNextPanel" hidden>
+          <div class="vw-progress-step-actions">
+            <button type="button" class="vw-btn vw-btn-primary" data-vw-import-continue>下一步：创建小语种任务</button>
+            <button type="button" class="vw-btn" data-vw-import-open-tasks>去任务中心</button>
+            <button type="button" class="vw-btn" data-vw-import-open-medias>去素材管理</button>
+            <button type="button" class="vw-btn" data-vw-import-close>关闭</button>
+          </div>
+        </div>
+        <div class="vw-progress-step-actions">${retry}</div>`;
+    }
+    return `<div class="vw-progress-step-actions">${retry}</div>`;
+  }
+  function renderImportSteps() {
+    document.getElementById('vwImportSteps').innerHTML = importSteps.map(step => `
+      <li class="vw-progress-step pending" data-vw-import-step="${esc(step.key)}">
+        <span class="vw-progress-step-mark" aria-hidden="true"></span>
+        <div>
+          <div class="vw-progress-step-title">${esc(step.title)}</div>
+          <div class="vw-progress-step-detail" data-vw-import-detail>${esc(step.detail)}</div>
+          <div class="vw-subcards" data-vw-import-subcards hidden></div>
+          <div data-vw-import-action="${esc(step.key)}" hidden>${importStepActionHtml(step.key)}</div>
+        </div>
+        <span class="vw-progress-status" data-vw-import-status>待处理</span>
+      </li>
+    `).join('');
+  }
+  function statusLabel(status) {
+    return {pending: '待处理', running: '处理中', done: '完成', warning: '需关注', error: '失败'}[status] || status || '待处理';
+  }
+  function setImportStep(stepKey, status, detail) {
+    const step = document.querySelector(`[data-vw-import-step="${stepKey}"]`);
+    if (!step) return;
+    step.classList.remove('pending', 'running', 'done', 'warning', 'error');
+    step.classList.add(status || 'pending');
+    const detailEl = step.querySelector('[data-vw-import-detail]');
+    if (detailEl && detail !== undefined) detailEl.innerHTML = detail || '';
+    const statusEl = step.querySelector('[data-vw-import-status]');
+    if (statusEl) statusEl.textContent = statusLabel(status);
+  }
+  function setImportActionVisible(stepKey, visible) {
+    const el = document.querySelector(`[data-vw-import-action="${stepKey}"]`);
+    if (el) el.hidden = !visible;
+  }
+  function appendImportSubcard(stepKey, result) {
+    const step = document.querySelector(`[data-vw-import-step="${stepKey}"]`);
+    const list = step && step.querySelector('[data-vw-import-subcards]');
+    if (!list || !result) return;
+    const status = ['done', 'warning', 'error'].includes(result.status) ? result.status : 'done';
+    const div = document.createElement('div');
+    div.className = 'vw-subcard ' + status;
+    div.innerHTML = `<strong>${esc(result.title || '步骤结果')}</strong>${result.message ? `<div>${esc(result.message)}</div>` : ''}`;
+    list.appendChild(div);
+    list.hidden = false;
+  }
+  function importPayload(card) {
+    const mk = card.mk_video || {};
+    const urls = videoUrls(card);
+    return {
+      mk_video_metadata: {
+        media_product_id: productId,
+        mk_id: card.mk_product_id || null,
+        mk_product_id: card.mk_product_id || null,
+        mk_product_name: card.mk_product_name || '',
+        product_name: card.mk_product_name || productName || '',
+        product_code: (currentData.product && currentData.product.mk_search_handle) || productCode || '',
+        product_link: card.mk_product_link || null,
+        video_path: mk.path || null,
+        cover_path: mk.image_path || null,
+        mp4_url: urls.videoUrl || null,
+        cover_url: urls.coverUrl || null,
+        filename: mk.name || '',
+        main_image: card.main_image || null,
+        spends: money(mk.spends || 0)
+      }
+    };
+  }
+  function importErrorStep(message) {
+    const text = String(message || '');
+    if (text.includes('product_owner') || text.includes('产品负责人')) return 'productOwner';
+    if (text.includes('domain') || text.includes('域名')) return 'domains';
+    return importFailedStep || 'product';
+  }
+  function failImport(message) {
+    const step = importErrorStep(message);
+    setImportStep(step, 'error', esc(message || '入库失败'));
+    document.getElementById('vwImportError').hidden = false;
+    document.getElementById('vwImportError').textContent = message || '入库失败';
+    document.querySelectorAll('[data-vw-import-retry]').forEach(btn => { btn.hidden = true; });
+    const retry = document.querySelector(`[data-vw-import-retry="${step}"]`) || document.querySelector('[data-vw-import-retry="product"]');
+    if (retry) {
+      retry.hidden = false;
+      setImportActionVisible(retry.dataset.vwImportRetry || step, true);
+    }
+  }
+  async function startImport(card) {
+    importCard = card;
+    importProductId = null;
+    importItemId = null;
+    importTaskId = null;
+    importDomainOptions = [];
+    importFailedStep = 'product';
+    const context = cardContext(card);
+    renderImportSteps();
+    renderInfo('vwImport', context);
+    document.getElementById('vwImportFile').textContent = context.filename || '--';
+    document.getElementById('vwImportProduct').textContent = context.productName || context.productCode || '--';
+    document.getElementById('vwImportError').hidden = true;
+    document.getElementById('vwImportError').textContent = '';
+    document.getElementById('vwImportNextPanel')?.setAttribute('hidden', '');
+    setModalOpen('vwImportProgressModal', true);
+    hydrateFineAi('vwImportFineAi', productId);
+    setImportStep('prepare', 'done', '素材字段已读取，准备提交服务端入库');
+    setImportStep('productOwner', 'running', '正在确认素材管理产品负责人');
+    setImportStep('product', 'pending', '负责人确认后检查产品与链接');
+    setImportStep('download', 'pending', '产品确认后下载明空原视频');
+    setImportStep('store', 'pending', '视频下载完成后写入素材库');
+    setImportStep('domains', 'pending', '入库完成后选择发布域名');
+    setImportStep('next', 'pending', '发布域名确认后创建小语种任务');
+    setCardState(card, '入库流程已打开...');
+    try {
+      const owner = await resolveProductOwner(productId);
+      const ownerText = owner && owner.name ? '：' + esc(owner.name) : '';
+      setImportStep('productOwner', 'done', '产品已在素材管理，沿用现有产品负责人' + ownerText);
+      setImportStep('product', 'running', '服务端正在查重、复用产品，并检测商品链接');
+      const payload = importPayload(card);
+      if (owner && owner.id) payload.product_owner_id = owner.id;
+      const data = await fetchJson('/mk-import/video', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify(payload)
+      });
+      completeImport(data, card);
     } catch (err) {
       setCardState(card, '入库失败：' + err.message);
+      failImport(err.message);
     }
+  }
+  function completeImport(data, card) {
+    const productResultId = Number(data.media_product_id || data.product_id || productId || 0);
+    const itemResultId = Number(data.media_item_id || data.item_id || 0);
+    importProductId = productResultId || productId;
+    importItemId = itemResultId || null;
+    card.in_library = true;
+    card.media_item_id = itemResultId || card.media_item_id;
+    card.bound_item = Object.assign({}, card.bound_item || {}, {
+      id: itemResultId || card.media_item_id,
+      filename: (card.mk_video && card.mk_video.name) || ''
+    });
+    setImportStep('product', data.is_new_product ? 'done' : 'done', (data.is_new_product ? '新建产品完成' : '复用已有产品') + '，产品 ID：' + (productResultId || '--'));
+    setImportStep('download', 'done', '明空原视频已下载到服务端并校验完成');
+    setImportStep('store', 'done', '英文素材已写入素材库，素材 ID：' + (itemResultId || '--'));
+    appendImportSubcard('store', {
+      status: 'done',
+      title: '入库完成',
+      message: `产品 #${productResultId || productId}，素材 #${itemResultId || '--'} 已入库。请确认发布域名后继续创建小语种任务。`
+    });
+    setCardState(card, `已入库，素材 #${itemResultId || ''}`);
+    renderCards(currentData || {cards: []});
+    setImportStep('domains', 'running', '正在加载产品发布域名');
+    loadDomains(importProductId);
+  }
+  function renderDomainRows(domains) {
+    if (!Array.isArray(domains) || !domains.length) {
+      return '<div class="vw-progress-notice danger">没有可用发布域名，请稍后到素材管理链接管理补充。</div>';
+    }
+    return domains.map(item => {
+      const id = Number(item.id || 0);
+      const checked = item.product_enabled || item.is_default;
+      const disabled = item.enabled === false;
+      const title = item.name || item.domain || item.url || ('域名 #' + id);
+      const status = item.url ? `<a class="vw-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">打开</a>` : '<span class="vw-sub">无链接</span>';
+      return `<div class="vw-domain-row">
+        <label><input type="checkbox" value="${esc(id)}" data-vw-domain-checkbox ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}> ${esc(title)}</label>
+        <div class="vw-sub">${esc(item.url || '')}</div>
+        <div>${status}</div>
+      </div>`;
+    }).join('');
+  }
+  function selectedDomainIds() {
+    return Array.from(document.querySelectorAll('[data-vw-domain-checkbox]:checked'))
+      .map(node => Number(node.value))
+      .filter(value => Number.isFinite(value) && value > 0);
+  }
+  function defaultDomainIds() {
+    const enabled = (importDomainOptions || []).filter(item => item && item.enabled !== false);
+    const ids = enabled.filter(item => item.is_default || item.product_enabled).map(item => Number(item.id || 0)).filter(Boolean);
+    if (ids.length) return ids;
+    const first = enabled.length ? Number(enabled[0].id || 0) : 0;
+    return first ? [first] : [];
+  }
+  async function loadDomains(pid) {
+    const panel = document.getElementById('vwImportDomainsPanel');
+    const list = document.getElementById('vwImportDomainList');
+    const notice = document.getElementById('vwImportDomainNotice');
+    const save = document.querySelector('[data-vw-import-domain-save]');
+    const retry = document.querySelector('[data-vw-import-domain-retry]');
+    if (!panel || !list || !save) return;
+    panel.hidden = false;
+    setImportActionVisible('domains', true);
+    save.disabled = true;
+    if (retry) retry.hidden = true;
+    if (notice) notice.hidden = true;
+    list.innerHTML = '<div class="vw-progress-notice">正在加载域名...</div>';
+    try {
+      const data = await fetchJson(`/medias/api/products/${encodeURIComponent(pid)}/product-link-domains`);
+      importDomainOptions = data.domains || [];
+      list.innerHTML = renderDomainRows(importDomainOptions);
+      save.disabled = false;
+      setImportStep('domains', 'running', '请确认该产品后续要发布到哪些域名');
+    } catch (err) {
+      setImportStep('domains', 'error', err.message);
+      list.innerHTML = '';
+      if (notice) {
+        notice.hidden = false;
+        notice.className = 'vw-progress-notice danger';
+        notice.textContent = '域名加载失败：' + err.message;
+      }
+      if (retry) retry.hidden = false;
+    }
+  }
+  async function saveDomains() {
+    const save = document.querySelector('[data-vw-import-domain-save]');
+    const notice = document.getElementById('vwImportDomainNotice');
+    if (!importProductId || !save) return;
+    const selected = selectedDomainIds();
+    const enabledIds = selected.length ? selected : defaultDomainIds();
+    save.disabled = true;
+    save.textContent = '保存中...';
+    if (notice) {
+      notice.hidden = !selected.length;
+      notice.className = 'vw-progress-notice';
+      notice.textContent = selected.length ? '' : '未选择发布域名，已按默认域名继续。';
+    }
+    try {
+      const data = await fetchJson(`/medias/api/products/${encodeURIComponent(importProductId)}/product-link-domains`, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({enabled_domain_ids: enabledIds})
+      });
+      importDomainOptions = data.domains || importDomainOptions;
+      document.getElementById('vwImportDomainList').innerHTML = renderDomainRows(importDomainOptions);
+      setImportStep('domains', 'done', enabledIds.length ? `已同步 ${enabledIds.length} 个发布域名到链接管理` : '未找到默认发布域名');
+      if (Array.isArray(data.probe_results)) {
+        data.probe_results.forEach(result => appendImportSubcard('domains', result));
+      }
+      setImportStep('next', 'done', '发布域名已确认，可以创建小语种任务');
+      showImportNextActions();
+      if (notice) {
+        notice.hidden = false;
+        notice.className = enabledIds.length ? 'vw-progress-notice' : 'vw-progress-notice danger';
+        notice.textContent = enabledIds.length ? '发布域名已同步到产品链接管理。' : '没有可用默认域名，请稍后到链接管理补充。';
+      }
+    } catch (err) {
+      setImportStep('domains', 'error', err.message);
+      if (notice) {
+        notice.hidden = false;
+        notice.className = 'vw-progress-notice danger';
+        notice.textContent = '发布域名保存失败：' + err.message;
+      }
+    } finally {
+      save.disabled = false;
+      save.textContent = '确定发布域名';
+    }
+  }
+  function showImportNextActions() {
+    const panel = document.getElementById('vwImportNextPanel');
+    setImportActionVisible('next', true);
+    if (panel) panel.hidden = false;
+    const taskBtn = document.querySelector('[data-vw-import-open-tasks]');
+    if (taskBtn) taskBtn.disabled = false;
+  }
+  function openImportTasks() {
+    if (importTaskId) window.open(taskHref(importTaskId), '_blank', 'noopener,noreferrer');
+    else window.open('/tasks/', '_blank', 'noopener,noreferrer');
+  }
+  function openImportMedias() {
+    const code = String(productCode || '').trim();
+    const href = code ? `/medias/?q=${encodeURIComponent(code)}` : '/medias';
+    window.open(href, '_blank', 'noopener,noreferrer');
+  }
+  function continueImportTask() {
+    if (importTaskId) {
+      openImportTasks();
+      return;
+    }
+    if (!importProductId || !importItemId) {
+      setImportStep('next', 'error', '缺少产品或素材 ID，无法创建小语种任务');
+      return;
+    }
+    openXiaoModal({card: importCard, productId: importProductId, itemId: importItemId, fromImport: true});
   }
 
   function openAdModal(card) {
@@ -427,10 +1131,9 @@
     document.getElementById('vwAdSub').textContent = mk.name || '';
     document.getElementById('vwAdFrom').value = todayIso(-29);
     document.getElementById('vwAdTo').value = todayIso(0);
-    document.getElementById('vwAdModal').style.display = 'flex';
+    setModalOpen('vwAdModal', true);
     loadAdDetail();
   }
-
   async function loadAdDetail() {
     if (!currentAdCard) return;
     const mk = currentAdCard.mk_video || {};
@@ -449,7 +1152,6 @@
       document.getElementById('vwAdState').textContent = '加载失败';
     }
   }
-
   function renderAdDetail(data) {
     const s = data.summary || {};
     document.getElementById('vwAdSummary').innerHTML = `
@@ -474,104 +1176,314 @@
     `).join('') : '<tr><td colspan="9">当前日期范围没有匹配广告</td></tr>';
   }
 
-  async function openTaskModal(card) {
-    currentTaskCard = card;
-    const bound = card.bound_item || {};
-    const isSupplement = !card.media_item_id;
-    document.getElementById('vwTaskTitle').textContent = isSupplement ? '补充素材任务' : '创建小语种任务';
-    document.getElementById('vwTaskSub').textContent = bound.filename || (card.mk_video && card.mk_video.name) || '';
-    document.getElementById('vwTaskItem').value = isSupplement
-      ? `导入到产品 #${productId} ${productName || ''}`
-      : `#${card.media_item_id} ${bound.filename || ''}`;
-    document.getElementById('vwTaskState').textContent = '加载中...';
-    document.getElementById('vwTaskModal').style.display = 'flex';
-    try {
-      const langUrl = card.media_item_id
-        ? '/tasks/api/languages?media_item_id=' + encodeURIComponent(card.media_item_id)
-        : '/tasks/api/languages';
-      const [users, raw, langs] = await Promise.all([
-        fetchJson('/tasks/api/translation-work-users'),
-        fetchJson('/tasks/api/raw-processors'),
-        fetchJson(langUrl)
-      ]);
-      const translators = users.users || users.translators || [];
-      const rawProcessors = raw.users || [];
-      document.getElementById('vwRawProcessor').innerHTML = rawProcessors.map(user => `<option value="${user.id}">${esc(user.display_name || user.username)}</option>`).join('');
-      document.getElementById('vwTaskLangs').innerHTML = (langs.languages || []).map(lang => {
-        const code = String(lang.code || '').toUpperCase();
-        const label = lang.label || `${lang.name_zh || code} (${code})`;
-        const disabled = lang.existing ? 'disabled' : '';
-        const options = translators.map(user => `<option value="${user.id}">${esc(user.display_name || user.username)}</option>`).join('');
-        return `<div class="vw-lang-row">
-          <label><input type="checkbox" value="${esc(code)}" data-vw-task-lang ${disabled}> ${esc(label)}${lang.existing ? ' 已有任务' : ''}</label>
-          <select class="vw-input" data-vw-task-user="${esc(code)}" ${disabled}>
-            <option value="">选择负责人</option>${options}
-          </select>
-        </div>`;
-      }).join('') || '<div class="vw-sub">暂无可用小语种</div>';
-      document.getElementById('vwTaskState').textContent = '';
-    } catch (err) {
-      document.getElementById('vwTaskState').textContent = '加载失败：' + err.message;
+  function langCode(lang) {
+    if (lang && typeof lang === 'object') return String(lang.code || '').trim().toUpperCase();
+    return String(lang || '').trim().toUpperCase();
+  }
+  function langLabel(lang) {
+    const code = langCode(lang);
+    if (!code) return '';
+    if (lang && typeof lang === 'object') {
+      const direct = String(lang.label || '').trim();
+      if (direct) return direct;
+      const name = String(lang.name_zh || lang.name || '').trim();
+      if (name) return name + ' (' + code + ')';
+    }
+    const fallback = {DE: '德语', FR: '法语', ES: '西班牙语', IT: '意大利语', JA: '日语', PT: '葡萄牙语', NL: '荷兰语', SV: '瑞典语', FI: '芬兰语'}[code];
+    return fallback ? fallback + ' (' + code + ')' : code;
+  }
+  function renderLanguageCards(langs) {
+    return (Array.isArray(langs) ? langs : []).map(lang => {
+      const code = langCode(lang);
+      if (!code) return '';
+      const existing = !!lang.existing;
+      return `<label class="vw-xiao-lang-pill">
+        <span class="vw-xiao-lang-card ${existing ? 'disabled' : ''}" data-vw-ai-lang-card="${esc(code)}" title="${existing ? '已有活跃或完成任务' : '当前还没有 AI 评估结果'}">
+          <span class="vw-xiao-lang-main">
+            <input class="vw-xiao-lang-check" type="checkbox" value="${esc(code)}" ${existing ? 'disabled data-vw-existing="1"' : ''}>
+            <span>${esc(langLabel(lang))}${existing ? ' (已有任务)' : ''}</span>
+          </span>
+          <small class="vw-xiao-ai-suggestion">${existing ? '已有任务' : 'AI建议：暂无'}</small>
+          ${existing ? `<button type="button" class="vw-btn vw-xiao-force-btn" data-vw-force-lang="${esc(code)}">强制创建</button>` : ''}
+        </span>
+      </label>`;
+    }).join('');
+  }
+  function applyAiSuggestions(detail) {
+    const rows = evaluationRows(detail);
+    const index = {};
+    rows.forEach(row => {
+      const code = evaluationCode(row);
+      if (code) index[code] = row;
+    });
+    document.querySelectorAll('[data-vw-ai-lang-card]').forEach(card => {
+      const cb = card.querySelector('.vw-xiao-lang-check');
+      if (cb && cb.dataset.vwForce === '1') return;
+      const code = String(card.dataset.vwAiLangCard || '').toUpperCase();
+      const row = index[code];
+      const small = card.querySelector('.vw-xiao-ai-suggestion');
+      card.classList.remove('high', 'medium', 'low');
+      if (row) {
+        const tone = evaluationTone(row);
+        if (tone) card.classList.add(tone);
+        if (small) small.textContent = evaluationSuggestionText(row);
+        card.title = evaluationSummary(row) || evaluationSuggestionText(row);
+      } else if (small && !(cb && cb.dataset.vwExisting === '1')) {
+        small.textContent = 'AI建议：暂无';
+      }
+    });
+  }
+  function forceUnlockLanguage(button) {
+    const card = button.closest('.vw-xiao-lang-card');
+    const cb = card && card.querySelector('.vw-xiao-lang-check');
+    const small = card && card.querySelector('.vw-xiao-ai-suggestion');
+    if (!cb) return;
+    cb.disabled = false;
+    cb.checked = true;
+    cb.dataset.vwForce = '1';
+    card.classList.remove('disabled');
+    card.classList.add('low');
+    if (small) small.textContent = '已强选';
+    button.hidden = true;
+  }
+  function selectedCountries() {
+    return Array.from(document.querySelectorAll('#vwXiaoLangs .vw-xiao-lang-check'))
+      .filter(cb => cb.checked && !cb.disabled)
+      .map(cb => String(cb.value || '').toUpperCase())
+      .filter(Boolean);
+  }
+  function isForceCreate() {
+    return Array.from(document.querySelectorAll('#vwXiaoLangs .vw-xiao-lang-check'))
+      .some(cb => cb.checked && cb.dataset.vwForce === '1');
+  }
+  function languageAssignments(selection) {
+    const assignments = {};
+    const translatorId = Number(selection && selection.translatorId || 0);
+    (selection.countries || []).forEach(country => {
+      const code = String(country || '').trim().toUpperCase();
+      if (code && translatorId) assignments[code] = translatorId;
+    });
+    return assignments;
+  }
+  function setXiaoStatus(kind, html) {
+    const el = document.getElementById('vwXiaoStatus');
+    if (!el) return;
+    el.hidden = false;
+    el.className = 'vw-xiao-status ' + kind;
+    el.innerHTML = html;
+  }
+  function hideXiaoStatus() {
+    const el = document.getElementById('vwXiaoStatus');
+    if (el) {
+      el.hidden = true;
+      el.innerHTML = '';
     }
   }
-
-  async function submitTask() {
-    if (!currentTaskCard) return;
-    const rawEl = document.getElementById('vwRawProcessor');
-    const rawProcessorId = rawEl && rawEl.value ? Number(rawEl.value) : null;
-    const countries = [];
-    const languageAssignments = {};
-    document.querySelectorAll('[data-vw-task-lang]').forEach(cb => {
-      if (!cb.checked || cb.disabled) return;
-      const code = String(cb.value || '').toUpperCase();
-      const userEl = document.querySelector(`[data-vw-task-user="${code}"]`);
-      const userId = userEl && userEl.value ? Number(userEl.value) : null;
-      countries.push(code);
-      if (userId) languageAssignments[code] = userId;
+  function setXiaoBusy(isBusy) {
+    const confirm = document.getElementById('vwXiaoConfirm');
+    const cancelButtons = document.querySelectorAll('[data-vw-xiao-cancel]');
+    document.getElementById('vwXiaoTranslator').disabled = !!isBusy;
+    document.getElementById('vwXiaoRawProcessor').disabled = !!isBusy;
+    document.querySelectorAll('#vwXiaoLangs .vw-xiao-lang-check').forEach(cb => {
+      const existing = cb.dataset.vwExisting === '1' && cb.dataset.vwForce !== '1';
+      cb.disabled = !!isBusy || existing;
     });
-    if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
-    if (!countries.length) { alert('至少选择一个语种'); return; }
-    for (const code of countries) {
-      if (!languageAssignments[code]) { alert('请为 ' + code + ' 选择负责人'); return; }
+    if (confirm) {
+      confirm.disabled = !!isBusy;
+      confirm.textContent = isBusy ? '创建中...' : '确认创建';
     }
-    document.getElementById('vwTaskState').textContent = '创建中...';
+    cancelButtons.forEach(btn => { btn.disabled = !!isBusy && !btn.closest('.vw-progress-head'); });
+  }
+  function showXiaoSuccess(taskId) {
+    const confirm = document.getElementById('vwXiaoConfirm');
+    if (confirm) {
+      confirm.disabled = true;
+      confirm.textContent = '已创建';
+    }
+    setXiaoStatus('success',
+      '<strong>任务已创建，父任务 #' + esc(taskId) + '</strong>'
+      + '<div>下一步：进入任务中心处理这个任务。</div>'
+      + '<div style="margin-top:8px;"><a class="vw-btn vw-btn-primary" target="_blank" rel="noopener noreferrer" href="' + esc(taskHref(taskId)) + '">打开任务 #' + esc(taskId) + '</a></div>'
+    );
+  }
+  function showXiaoFailure(endpoint, error) {
+    const message = error && error.message ? error.message : String(error || '未知错误');
+    setXiaoStatus('error',
+      '<strong>请求失败</strong>'
+      + '<div>请求：' + esc(endpoint || '/tasks/api/parent') + '</div>'
+      + '<div>原因：' + esc(message) + '</div>'
+      + '<div>关闭后可回到当前卡片重新发起创建。</div>'
+    );
+  }
+  async function openXiaoModal(options) {
+    const card = options.card || null;
+    const pid = Number(options.productId || productId || 0);
+    const itemId = Number(options.itemId || (card && card.media_item_id) || 0);
+    if (!pid || !itemId) {
+      setCardState(card, '先加入素材库后才能创建小语种任务');
+      return;
+    }
+    xiaoContext = {
+      card,
+      productId: pid,
+      itemId,
+      fromImport: !!options.fromImport,
+      productLink: productLinkValue(card),
+      sourceButton: options.sourceButton || null,
+    };
+    const context = cardContext(card);
+    renderInfo('vwXiao', context);
+    renderXiaoImage(context);
+    hideXiaoStatus();
+    document.getElementById('vwXiaoUrgent').checked = false;
+    document.getElementById('vwXiaoTranslator').innerHTML = '<option value="">加载中...</option>';
+    document.getElementById('vwXiaoRawProcessor').innerHTML = '<option value="">加载中...</option>';
+    document.getElementById('vwXiaoLangs').innerHTML = '<div class="vw-progress-notice">正在加载目标国家...</div>';
+    document.getElementById('vwXiaoConfirm').disabled = true;
+    setModalOpen('vwXiaoModal', true);
+    hydrateFineAi('vwXiaoFineAi', pid);
     try {
-      let mediaItemId = Number(currentTaskCard.media_item_id || 0);
-      if (!mediaItemId) {
-        document.getElementById('vwTaskState').textContent = '正在加入素材库...';
-        const imported = await importMaterialPayload(currentTaskCard);
-        mediaItemId = Number(imported.media_item_id || 0);
-        if (!mediaItemId) throw new Error('入库成功但缺少 media_item_id');
-        currentTaskCard.media_item_id = mediaItemId;
-        currentTaskCard.bound_item = {
-          id: mediaItemId,
-          filename: (currentTaskCard.mk_video && currentTaskCard.mk_video.name) || ''
-        };
-        document.getElementById('vwTaskItem').value = `#${mediaItemId} ${currentTaskCard.bound_item.filename || ''}`;
-        document.getElementById('vwTaskState').textContent = '素材已入库，正在创建任务...';
+      const owner = await resolveProductOwner(pid);
+      const [users, langs] = await Promise.all([
+        fetchActiveUsers(),
+        fetchJson('/tasks/api/languages?media_item_id=' + encodeURIComponent(itemId))
+      ]);
+      if (!users.length) throw new Error('没有可用翻译工作用户');
+      const userOptions = '<option value="">请选择负责人</option>' + users.map(userOption).join('');
+      const rawOptions = '<option value="">请选择原视频处理人</option>' + users.map(userOption).join('');
+      document.getElementById('vwXiaoTranslator').innerHTML = userOptions;
+      document.getElementById('vwXiaoRawProcessor').innerHTML = rawOptions;
+      if (owner && owner.id) {
+        document.getElementById('vwXiaoTranslator').value = String(owner.id);
+        document.getElementById('vwXiaoRawProcessor').value = String(owner.id);
       }
-      const result = await fetchJson('/tasks/api/parent', {
+      document.getElementById('vwXiaoLangs').innerHTML = renderLanguageCards(langs.languages || []) || '<div class="vw-sub">暂无可用小语种</div>';
+      const detail = await loadFineAiDetail(pid);
+      applyAiSuggestions(detail);
+      document.getElementById('vwXiaoConfirm').disabled = false;
+      setXiaoBusy(false);
+    } catch (err) {
+      document.getElementById('vwXiaoConfirm').disabled = true;
+      setXiaoStatus('error', '<strong>加载失败</strong><div>' + esc(err.message) + '</div>');
+    }
+  }
+  async function submitXiaoTask() {
+    if (!xiaoContext) return;
+    const endpoint = '/tasks/api/parent';
+    const translatorId = Number(document.getElementById('vwXiaoTranslator').value || 0);
+    const rawProcessorId = Number(document.getElementById('vwXiaoRawProcessor').value || 0);
+    const countries = selectedCountries();
+    if (!translatorId) { setXiaoStatus('error', '请选择小语种翻译负责人'); return; }
+    if (!rawProcessorId) { setXiaoStatus('error', '请选择原视频处理人'); return; }
+    if (!countries.length) { setXiaoStatus('error', '请选择目标国家'); return; }
+    const selection = {
+      translatorId,
+      rawProcessorId,
+      countries,
+      force: isForceCreate(),
+      isUrgent: !!document.getElementById('vwXiaoUrgent').checked
+    };
+    setXiaoBusy(true);
+    setXiaoStatus('running', '<strong>正在创建任务</strong><div>正在请求 ' + esc(endpoint) + '</div>');
+    let created = false;
+    try {
+      const data = await fetchJson(endpoint, {
         method: 'POST',
-        headers: csrfHeaders(),
+        headers: jsonHeaders(),
         body: JSON.stringify({
-          media_product_id: productId,
-          media_item_id: mediaItemId,
-          countries,
-          raw_processor_id: rawProcessorId,
-          language_assignments: languageAssignments
+          media_product_id: xiaoContext.productId,
+          media_item_id: xiaoContext.itemId,
+          product_link: xiaoContext.productLink || null,
+          translator_id: selection.translatorId,
+          raw_processor_id: selection.rawProcessorId,
+          language_assignments: languageAssignments(selection),
+          countries: selection.countries,
+          force: !!selection.force,
+          is_urgent: !!selection.isUrgent
         })
       });
-      const parentId = result.parent_task_id || '';
-      document.getElementById('vwTaskState').innerHTML = `已创建任务 #${parentId} <a class="vw-link" href="/tasks/detail/${parentId}" target="_blank" rel="noopener noreferrer">打开任务中心</a>`;
+      const taskId = Number(data.parent_task_id || 0);
+      if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+      importTaskId = xiaoContext.fromImport ? taskId : importTaskId;
+      if (xiaoContext.fromImport) {
+        setImportStep('next', 'done', `小语种任务已创建，父任务 #${taskId}`);
+        const tasksBtn = document.querySelector('[data-vw-import-open-tasks]');
+        if (tasksBtn) tasksBtn.disabled = false;
+      }
+      if (xiaoContext.card) {
+        setCardState(xiaoContext.card, `任务已创建 #${taskId}`);
+      }
+      created = true;
+      showXiaoSuccess(taskId);
     } catch (err) {
-      document.getElementById('vwTaskState').textContent = '创建失败：' + err.message;
+      showXiaoFailure(endpoint, err);
+    } finally {
+      if (!created) setXiaoBusy(false);
     }
   }
 
   document.addEventListener('click', event => {
     const close = event.target.closest('[data-close-modal]');
     if (close) {
-      document.getElementById(close.dataset.closeModal).style.display = 'none';
+      setModalOpen(close.dataset.closeModal, false);
+      return;
+    }
+    const copyTextBtn = event.target.closest('[data-vw-copy-text]');
+    if (copyTextBtn) {
+      const el = document.getElementById(copyTextBtn.dataset.vwCopyText);
+      copyText(el ? el.textContent.trim() : '', copyTextBtn);
+      return;
+    }
+    const copyLinkBtn = event.target.closest('[data-vw-copy-link]');
+    if (copyLinkBtn) {
+      const el = document.getElementById(copyLinkBtn.dataset.vwCopyLink);
+      copyText(el ? (el.getAttribute('href') || '').trim() : '', copyLinkBtn);
+      return;
+    }
+    if (event.target.closest('[data-vw-import-close]')) {
+      setModalOpen('vwImportProgressModal', false);
+      return;
+    }
+    if (event.target.closest('[data-vw-import-domain-save]')) {
+      saveDomains();
+      return;
+    }
+    if (event.target.closest('[data-vw-import-domain-retry]')) {
+      if (importProductId) loadDomains(importProductId);
+      return;
+    }
+    if (event.target.closest('[data-vw-import-continue]')) {
+      continueImportTask();
+      return;
+    }
+    if (event.target.closest('[data-vw-import-open-tasks]')) {
+      openImportTasks();
+      return;
+    }
+    if (event.target.closest('[data-vw-import-open-medias]')) {
+      openImportMedias();
+      return;
+    }
+    const retry = event.target.closest('[data-vw-import-retry]');
+    if (retry && importCard) {
+      setModalOpen('vwImportProgressModal', false);
+      startImport(importCard);
+      return;
+    }
+    if (event.target.closest('[data-vw-xiao-cancel]')) {
+      setModalOpen('vwXiaoModal', false);
+      xiaoContext = null;
+      return;
+    }
+    if (event.target.closest('[data-vw-xiao-confirm]')) {
+      submitXiaoTask();
+      return;
+    }
+    const forceBtn = event.target.closest('[data-vw-force-lang]');
+    if (forceBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      forceUnlockLanguage(forceBtn);
       return;
     }
     const actionEl = event.target.closest('[data-action]');
@@ -583,13 +1495,12 @@
     }
     const card = cardById(actionEl.dataset.cardId);
     if (!card) return;
-    if (action === 'import') importMaterial(card);
+    if (action === 'import') startImport(card);
     if (action === 'ad') openAdModal(card);
-    if (action === 'task' || action === 'supplement-task') openTaskModal(card);
+    if (action === 'task') openXiaoModal({card, productId, itemId: card.media_item_id, sourceButton: actionEl});
   });
   document.getElementById('vwSort').addEventListener('change', event => loadWorkbench(event.target.value));
   document.getElementById('vwAdLoadBtn').addEventListener('click', loadAdDetail);
-  document.getElementById('vwTaskSubmit').addEventListener('click', submitTask);
 
   loadWorkbench(document.getElementById('vwSort').value);
 })();
