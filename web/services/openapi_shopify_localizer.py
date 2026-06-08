@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Callable
 
 from appcore import medias, product_link_domains, shopify_image_tasks
@@ -22,6 +23,7 @@ HeartbeatTaskFn = Callable[[int, str, int], int]
 CompleteTaskFn = Callable[[int, dict], dict]
 FailTaskFn = Callable[[int, str, str, dict], dict]
 SerializeShopifyImageTaskFn = Callable[[dict | None], dict | None]
+UpdateProductFn = Callable[..., int]
 
 
 @dataclass(frozen=True)
@@ -160,6 +162,75 @@ def build_shopify_localizer_bootstrap_response(
         },
         "reference_images": reference_images,
         "localized_images": localized_images,
+    }
+
+
+def _loads_localized_links(value) -> dict:
+    if isinstance(value, dict):
+        return dict(value)
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def build_shopify_localizer_product_link_save_response(
+    body: dict | None,
+    *,
+    is_valid_language_fn: IsValidLanguageFn | None = None,
+    get_product_by_code_fn: GetProductByCodeFn | None = None,
+    update_product_fn: UpdateProductFn | None = None,
+) -> dict:
+    body = body or {}
+    product_code = str(body.get("product_code") or "").strip().lower()
+    lang = str(body.get("lang") or "").strip().lower()
+    domain = str(body.get("domain") or "").strip().lower()
+    link_url = str(body.get("link_url") or "").strip()
+    if not product_code or not lang or not link_url:
+        raise ShopifyLocalizerBootstrapError("missing product_code, lang or link_url", 400)
+    if not link_url.startswith(("http://", "https://")):
+        raise ShopifyLocalizerBootstrapError("link_url must be http(s)", 400)
+
+    is_valid_language_fn = is_valid_language_fn or medias.is_valid_language
+    get_product_by_code_fn = get_product_by_code_fn or medias.get_product_by_code
+    update_product_fn = update_product_fn or medias.update_product
+    if not is_valid_language_fn(lang):
+        raise ShopifyLocalizerBootstrapError("invalid lang", 400)
+
+    product = get_product_by_code_fn(product_code)
+    if not product:
+        raise ShopifyLocalizerBootstrapError("product not found", 404)
+
+    links = _loads_localized_links(product.get("localized_links_json"))
+    if domain:
+        try:
+            normalized_domain = product_link_domains.normalize_domain(domain)
+        except ValueError:
+            normalized_domain = product_link_domains.domain_from_url(link_url)
+        if not normalized_domain:
+            raise ShopifyLocalizerBootstrapError("domain_invalid", 400)
+        bucket = links.get(lang)
+        bucket = dict(bucket) if isinstance(bucket, dict) else {}
+        bucket[normalized_domain] = link_url
+        links[lang] = bucket
+        saved_domain = normalized_domain
+    else:
+        links[lang] = link_url
+        saved_domain = product_link_domains.domain_from_url(link_url)
+
+    update_product_fn(int(product["id"]), localized_links_json=links)
+    return {
+        "ok": True,
+        "saved": True,
+        "product_id": int(product["id"]),
+        "product_code": product_code,
+        "lang": lang,
+        "domain": saved_domain,
+        "link_url": link_url,
+        "localized_links_json": links,
     }
 
 

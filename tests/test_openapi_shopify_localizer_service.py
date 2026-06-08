@@ -139,6 +139,44 @@ def test_shopify_localizer_domains_response_returns_all_configured_domains():
     }
 
 
+def test_shopify_localizer_product_link_save_updates_target_domain_only():
+    from web.services.openapi_shopify_localizer import build_shopify_localizer_product_link_save_response
+
+    captured: dict = {}
+
+    payload = build_shopify_localizer_product_link_save_response(
+        {
+            "product_code": " Instant-Snap-Iodine-Swabs-RJC ",
+            "lang": "IT",
+            "domain": "NewJoyloo.com",
+            "link_url": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc?variant=46081369309357",
+        },
+        is_valid_language_fn=lambda lang: lang == "it",
+        get_product_by_code_fn=lambda code: {
+            "id": 704,
+            "product_code": code,
+            "localized_links_json": {
+                "de": "https://newjoyloo.com/de/products/demo-rjc",
+                "it": {"omurio.com": "https://omurio.com/it/products/demo-rjc"},
+            },
+        },
+        update_product_fn=lambda product_id, **fields: captured.update({"product_id": product_id, "fields": fields}) or 1,
+    )
+
+    assert payload["ok"] is True
+    assert payload["product_id"] == 704
+    assert payload["domain"] == "newjoyloo.com"
+    assert payload["link_url"].endswith("?variant=46081369309357")
+    assert captured["product_id"] == 704
+    assert captured["fields"]["localized_links_json"] == {
+        "de": "https://newjoyloo.com/de/products/demo-rjc",
+        "it": {
+            "omurio.com": "https://omurio.com/it/products/demo-rjc",
+            "newjoyloo.com": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc?variant=46081369309357",
+        },
+    }
+
+
 def test_shopify_localizer_task_claim_builds_response():
     from web.services.openapi_shopify_localizer import build_shopify_localizer_task_claim_response
 

@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from appcore.payment_screenshot_filter import is_payment_screenshot
 from link_check_desktop.image_compare import find_best_reference, run_binary_quick_check
@@ -44,6 +44,8 @@ STOREFRONT_USER_AGENT = (
 )
 STOREFRONT_FETCH_ATTEMPTS = 3
 STOREFRONT_FETCH_RETRY_DELAY_S = 1.0
+PRODUCT_LINK_VERIFY_ATTEMPTS = 4
+PRODUCT_LINK_VERIFY_DELAY_S = 10.0
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
 
 
@@ -921,15 +923,211 @@ def verify_storefront_body(
 ) -> dict[str, Any]:
     product = fetch_storefront_product(product_code, locale=locale, store_domain=store_domain)
     body_html = str(product.get("description") or product.get("body_html") or "")
-    srcs = taa_cdp.extract_image_srcs(body_html)
+    refs = taa_cdp.extract_image_refs(body_html)
+    srcs = [ref.get("src") or "" for ref in refs]
+    replaceable_srcs = [
+        _normalize_src(ref.get("src") or "")
+        for ref in refs
+        if not is_payment_screenshot(_normalize_src(ref.get("src") or ""), ref.get("alt") or "")
+        and not _normalize_src(ref.get("src") or "").lower().split("?", 1)[0].endswith(".gif")
+    ]
     return {
         "product_id": str(product.get("id") or ""),
         "title": product.get("title"),
         "image_count": len(srcs),
+        "replaceable_image_count": len(replaceable_srcs),
         "expected_total": len(expected_urls),
         "expected_present": sum(1 for url in expected_urls if url in body_html),
-        "old_non_shopify_count": sum(1 for src in srcs if "cdn.shopify.com/s/files/" not in src),
+        "old_non_shopify_count": sum(1 for src in replaceable_srcs if "cdn.shopify.com/s/files/" not in src),
     }
+
+
+def _detail_url_filename(url: str) -> str:
+    return Path(urlparse(str(url or "")).path).name
+
+
+def _material_link_urls_for_verification(
+    bootstrap: dict[str, Any],
+    *,
+    store_domain: str,
+    shop_locale: str,
+) -> list[str]:
+    normalized_domain = settings.normalize_domain(store_domain)
+    normalized_locale = str(shop_locale or "").strip().lower()
+    urls: list[str] = []
+    for row in bootstrap.get("link_urls") or []:
+        if not isinstance(row, dict):
+            continue
+        row_url = str(row.get("url") or "").strip()
+        if not row_url:
+            continue
+        row_domain = settings.normalize_domain(row.get("domain") or row_url)
+        row_lang = str(row.get("lang") or "").strip().lower()
+        if row_domain == normalized_domain and (not row_lang or row_lang == normalized_locale):
+            urls.append(row_url)
+    fallback_url = str(bootstrap.get("link_url") or "").strip()
+    if fallback_url and not urls:
+        urls.append(fallback_url)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        deduped.append(url)
+    return deduped
+
+
+def _default_variant_id(product: dict[str, Any]) -> str:
+    variants = product.get("variants") or []
+    if not isinstance(variants, list) or not variants:
+        return ""
+    first = variants[0] if isinstance(variants[0], dict) else {}
+    variant_id = str(first.get("id") or "").strip()
+    return variant_id if variant_id.isdigit() else ""
+
+
+def _with_variant_param(link_url: str, variant_id: str) -> str:
+    normalized_variant_id = str(variant_id or "").strip()
+    if not normalized_variant_id:
+        return ""
+    parsed = urlparse(str(link_url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    pairs = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key != "variant"]
+    pairs.append(("variant", normalized_variant_id))
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(pairs), parsed.fragment))
+
+
+def _fetch_product_link_html(link_url: str, *, timeout: int = 30) -> tuple[str, str]:
+    request = urllib.request.Request(
+        link_url,
+        headers={
+            "User-Agent": STOREFRONT_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        raw = response.read()
+        content_type = response.headers.get("Content-Type") or ""
+        charset = "utf-8"
+        if "charset=" in content_type:
+            charset = content_type.rsplit("charset=", 1)[-1].split(";", 1)[0].strip() or charset
+        return raw.decode(charset, errors="replace"), response.geturl()
+
+
+def verify_product_link_detail_images(
+    link_url: str,
+    *,
+    expected_urls: list[str],
+    old_urls: list[str],
+) -> dict[str, Any]:
+    html, final_url = _fetch_product_link_html(link_url)
+    expected_files = [_detail_url_filename(url) for url in expected_urls if _detail_url_filename(url)]
+    srcs = taa_cdp.extract_image_srcs(html)
+    expected_present = sum(
+        1
+        for url, filename in zip(expected_urls, expected_files)
+        if (url and url in html) or (filename and filename in html)
+    )
+    return {
+        "url": link_url,
+        "final_url": final_url,
+        "image_count": len(srcs),
+        "expected_total": len(expected_files),
+        "expected_present": expected_present,
+        "old_exact_count": sum(1 for old in old_urls if old and old in html),
+        "old_wxalbum_count": sum(1 for src in srcs if "wxalbum" in src),
+        "expected_files": expected_files,
+    }
+
+
+def _product_link_verification_passed(result: dict[str, Any]) -> bool:
+    expected_total = int(result.get("expected_total") or 0)
+    expected_present = int(result.get("expected_present") or 0)
+    old_exact_count = int(result.get("old_exact_count") or 0)
+    old_wxalbum_count = int(result.get("old_wxalbum_count") or 0)
+    return bool(expected_total and expected_present >= expected_total and old_exact_count == 0 and old_wxalbum_count == 0)
+
+
+def verify_product_link_detail_images_with_retry(
+    link_url: str,
+    *,
+    expected_urls: list[str],
+    old_urls: list[str],
+    cancel_token: cancellation.CancellationToken | None = None,
+) -> dict[str, Any]:
+    last_result: dict[str, Any] = {}
+    last_error = ""
+    for attempt in range(1, PRODUCT_LINK_VERIFY_ATTEMPTS + 1):
+        cancellation.throw_if_cancelled(cancel_token)
+        try:
+            last_result = verify_product_link_detail_images(
+                link_url,
+                expected_urls=expected_urls,
+                old_urls=old_urls,
+            )
+            last_result["attempt"] = attempt
+            if _product_link_verification_passed(last_result):
+                return last_result
+        except Exception as exc:
+            last_error = str(exc)
+            last_result = {"url": link_url, "attempt": attempt, "error": last_error}
+        if attempt < PRODUCT_LINK_VERIFY_ATTEMPTS:
+            print(
+                "详情图：产品链接校验暂未同步，"
+                f"link={link_url} attempt={attempt}/{PRODUCT_LINK_VERIFY_ATTEMPTS} "
+                f"expected={last_result.get('expected_present')}/{last_result.get('expected_total')} "
+                f"old={last_result.get('old_exact_count')} wxalbum={last_result.get('old_wxalbum_count')}"
+            )
+            cancellation.cancellable_sleep(cancel_token, PRODUCT_LINK_VERIFY_DELAY_S)
+    if last_error:
+        last_result.setdefault("error", last_error)
+    return last_result
+
+
+def assert_detail_replacement_contract(detail_result: dict[str, Any], storefront_result: dict[str, Any]) -> None:
+    image_count = int(detail_result.get("image_count") or 0)
+    replacement_count = int(detail_result.get("replacement_count") or 0)
+    missing_count = int(detail_result.get("skipped_missing_count") or 0)
+    expected_total = int(storefront_result.get("expected_total") or 0)
+    expected_present = int(storefront_result.get("expected_present") or 0)
+    old_non_shopify_count = int(storefront_result.get("old_non_shopify_count") or 0)
+    if (
+        image_count > 0
+        and replacement_count == 0
+        and missing_count > 0
+        and expected_total == 0
+        and old_non_shopify_count > 0
+    ):
+        raise RuntimeError(
+            "storefront detail verification failed: expected=0/0 "
+            f"image_count={image_count} missing={missing_count}"
+        )
+    if expected_total and expected_present < expected_total:
+        raise RuntimeError(
+            f"storefront detail verification failed: expected {expected_present}/{expected_total}"
+        )
+    if replacement_count > 0 and old_non_shopify_count > 0:
+        raise RuntimeError(
+            "storefront detail verification failed: "
+            f"{old_non_shopify_count} persisted non-Shopify detail image(s) remain"
+        )
+
+
+def assert_product_link_detail_contract(result: dict[str, Any]) -> None:
+    if _product_link_verification_passed(result):
+        return
+    raise RuntimeError(
+        "product link detail verification failed: "
+        f"url={result.get('url')} "
+        f"expected={result.get('expected_present')}/{result.get('expected_total')} "
+        f"old={result.get('old_exact_count')} "
+        f"wxalbum={result.get('old_wxalbum_count')}"
+    )
 
 
 def fetch_storefront_image_display_sizes(
@@ -1562,12 +1760,56 @@ def run(
             expected_urls=expected_urls,
             store_domain=args.store_domain,
         )
-        storefront_expected = int(result["storefront"].get("expected_total") or 0)
-        storefront_present = int(result["storefront"].get("expected_present") or 0)
-        if storefront_expected and storefront_present < storefront_expected:
-            raise RuntimeError(
-                f"storefront detail verification failed: expected {storefront_present}/{storefront_expected}"
-            )
+        assert_detail_replacement_contract(detail_result, result["storefront"])
+        product_link_urls = _material_link_urls_for_verification(
+            bootstrap,
+            store_domain=args.store_domain,
+            shop_locale=args.shop_locale,
+        )
+        result["product_links"] = []
+        if expected_urls and product_link_urls:
+            old_urls = [row["old"] for row in detail_result.get("replacements") or [] if row.get("old")]
+            for link_url in product_link_urls:
+                print(f"详情图：开始校验素材库商品链接详情页 {link_url}")
+                product_link_result = verify_product_link_detail_images_with_retry(
+                    link_url,
+                    expected_urls=expected_urls,
+                    old_urls=old_urls,
+                    cancel_token=cancel_token,
+                )
+                result["product_links"].append(product_link_result)
+                if not _product_link_verification_passed(product_link_result):
+                    variant_link_url = _with_variant_param(link_url, _default_variant_id(target_product))
+                    if variant_link_url and variant_link_url != link_url:
+                        print(f"详情图：素材库商品链接未同步，尝试默认 variant 链接 {variant_link_url}")
+                        variant_link_result = verify_product_link_detail_images_with_retry(
+                            variant_link_url,
+                            expected_urls=expected_urls,
+                            old_urls=old_urls,
+                            cancel_token=cancel_token,
+                        )
+                        if _product_link_verification_passed(variant_link_result):
+                            save_link_result = api_client.save_product_link(
+                                cfg["base_url"],
+                                cfg["api_key"],
+                                product_code=args.product_code,
+                                lang=args.shop_locale,
+                                domain=args.store_domain,
+                                link_url=variant_link_url,
+                            )
+                            variant_link_result["repaired_from"] = link_url
+                            variant_link_result["saved_product_link"] = save_link_result
+                            result["product_links"][-1] = variant_link_result
+                            product_link_result = variant_link_result
+                            print(f"详情图：已将素材库商品链接更新为默认 variant 链接 {variant_link_url}")
+                assert_product_link_detail_contract(product_link_result)
+                print(
+                    "详情图：素材库商品链接详情页校验完成 "
+                    f"expected={product_link_result.get('expected_present')}/"
+                    f"{product_link_result.get('expected_total')} "
+                    f"old={product_link_result.get('old_exact_count')} "
+                    f"wxalbum={product_link_result.get('old_wxalbum_count')}"
+                )
         print(
             "详情图：前台商品页校验完成 "
             f"expected={result['storefront'].get('expected_present')}/"

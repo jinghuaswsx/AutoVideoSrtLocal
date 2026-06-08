@@ -107,6 +107,33 @@ def save_shopify_product_id(
     return bool(payload.get("saved"))
 
 
+def save_product_link(
+    base_url: str,
+    api_key: str,
+    *,
+    product_code: str,
+    lang: str,
+    domain: str,
+    link_url: str,
+    timeout: int = 15,
+) -> dict[str, Any]:
+    response = requests.post(
+        f"{base_url.rstrip('/')}/openapi/medias/shopify-image-localizer/product-link",
+        headers={"X-API-Key": api_key},
+        json={
+            "product_code": str(product_code or "").strip().lower(),
+            "lang": str(lang or "").strip().lower(),
+            "domain": str(domain or "").strip().lower(),
+            "link_url": str(link_url or "").strip(),
+        },
+        timeout=timeout,
+    )
+    payload = _json_payload(response)
+    if response.status_code >= 400:
+        raise ApiError(response.status_code, payload)
+    return payload
+
+
 def claim_task(
     base_url: str,
     api_key: str,
