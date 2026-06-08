@@ -1053,7 +1053,7 @@ def _query_ad_detail_rows(
         "  AND COALESCE(m.spend_usd, 0) > 0 "
         "  AND DATE(COALESCE(m.meta_business_date, m.report_date)) BETWEEN %s AND %s "
         f"  AND ({match_sql}) "
-        "ORDER BY activity_date DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
+        "ORDER BY m.market_country ASC, activity_date DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
         "LIMIT 500",
         [product_id, date_from.isoformat(), date_to.isoformat(), *match_args],
     )
