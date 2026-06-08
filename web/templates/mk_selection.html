@@ -1670,10 +1670,24 @@ function mkRangeQueryParam() {
 }
 
 function syncMkSnapshotModeControls() {
+  const snapshotRangeSelect = document.getElementById('snapshotRangeSelect');
   const snapshotSelect = document.getElementById('snapshotSelect');
-  if (!snapshotSelect) return;
-  snapshotSelect.hidden = Boolean(selectedMkRange);
-  snapshotSelect.disabled = Boolean(selectedMkRange);
+  if (!snapshotSelect || !snapshotRangeSelect) return;
+
+  const hideDateControls = ['yesterday-top300', 'preselection'].includes(currentMkLibraryTab);
+  if (hideDateControls) {
+    snapshotRangeSelect.style.display = 'none';
+    snapshotSelect.style.display = 'none';
+  } else {
+    snapshotRangeSelect.style.display = '';
+    if (selectedMkRange) {
+      snapshotSelect.style.display = 'none';
+      snapshotSelect.disabled = true;
+    } else {
+      snapshotSelect.style.display = '';
+      snapshotSelect.disabled = false;
+    }
+  }
 }
 
 async function loadMkSelectionSnapshots() {
@@ -1979,7 +1993,11 @@ async function loadMkYesterdayTop100(page) {
     const previousText = previousLabel ? ` · 对比 ${previousLabel}` : '';
     const statusLabel = currentMkLibraryStatusLabel();
     const uploaderLabel = currentMkUploaderFilterLabel();
-    status.textContent = `快照 ${snapshotLabel}${previousText} · 昨天消耗前300${kw ? ` · 搜索 ${kw}` : ''}${statusLabel ? ` · ${statusLabel}` : ''}${uploaderLabel ? ` · ${uploaderLabel}` : ''}`;
+    
+    const dateDimBadge = data.previous_snapshot 
+      ? `<span class="oc-badge oc-badge--high" style="font-size: 13px; font-weight: 600; padding: 2px 8px; margin-right: 8px; vertical-align: middle;">数据维度: ${escapeHtml(data.previous_snapshot)}</span>`
+      : '';
+    status.innerHTML = `${dateDimBadge}快照 ${escapeHtml(snapshotLabel)}${escapeHtml(previousText)} · 昨天消耗前300${kw ? ` · 搜索 ${escapeHtml(kw)}` : ''}${statusLabel ? ` · ${escapeHtml(statusLabel)}` : ''}${uploaderLabel ? ` · ${escapeHtml(uploaderLabel)}` : ''}`;
     if (!data.items || !data.items.length) {
       grid.innerHTML = '<div class="oc-empty">暂无昨天消耗前300归档</div>';
     } else {
