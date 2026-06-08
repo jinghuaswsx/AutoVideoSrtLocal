@@ -48,6 +48,9 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "currentAdCountryCode" in html
     assert "vwAdOrderRoasBox" in html
     assert "vwAdOrderRoasVal" in html
+    assert "vwAdOrderSummaryBox" in html
+    assert "vwAdOrderSummary" in html
+
 
 
 def test_video_workbench_import_flow_matches_mk_progress_contract():
@@ -351,6 +354,10 @@ def test_build_video_workbench_ad_detail_summarizes_date_range():
     captured = {}
 
     def fake_query(sql, params=None):
+        if any(x in sql for x in ["order_profit_lines", "SUM(COALESCE", "information_schema.TABLES"]):
+            if "COUNT" in sql:
+                return [{"order_count": 0}]
+            return [{"spend": 0.0, "pvalue": 0.0, "ok": 0}]
         if "FROM media_products" in sql:
             return [{"id": 321, "name": "Demo", "product_code": "demo-rjc"}]
         if "FROM media_items" in sql:
@@ -423,6 +430,10 @@ def test_build_video_workbench_ad_detail_falls_back_to_country_when_name_terms_d
     ad_queries = []
 
     def fake_query(sql, params=None):
+        if any(x in sql for x in ["order_profit_lines", "SUM(COALESCE", "information_schema.TABLES"]):
+            if "COUNT" in sql:
+                return [{"order_count": 0}]
+            return [{"spend": 0.0, "pvalue": 0.0, "ok": 0}]
         if "FROM media_products" in sql:
             return [{"id": 704, "name": "Instant Snap Iodine Swabs", "product_code": "instant-snap-iodine-swabs-rjc"}]
         if "FROM media_items" in sql:
@@ -458,6 +469,7 @@ def test_build_video_workbench_ad_detail_falls_back_to_country_when_name_terms_d
                 }
             ]
         raise AssertionError(sql)
+
 
     payload = route.build_video_workbench_ad_detail(
         704,
@@ -504,6 +516,10 @@ def test_build_video_workbench_ad_detail_with_country_filter():
     captured = {}
 
     def fake_query(sql, params=None):
+        if any(x in sql for x in ["order_profit_lines", "SUM(COALESCE", "information_schema.TABLES"]):
+            if "COUNT" in sql:
+                return [{"order_count": 0}]
+            return [{"spend": 0.0, "pvalue": 0.0, "ok": 0}]
         if "FROM media_products" in sql:
             return [{"id": 321, "name": "Demo", "product_code": "demo-rjc"}]
         if "FROM media_items" in sql:
