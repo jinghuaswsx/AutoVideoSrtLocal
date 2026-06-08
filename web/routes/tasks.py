@@ -615,24 +615,35 @@ def api_create_new_product_task():
         current_app.logger.exception("create new product task failed")
         return _json_response({"error": f"Internal error: {exc}"}, 500)
 
-    _audit_task_action(
-        int(result["parent_task_id"]),
-        "task_new_product_created",
-        {
-            "source": result.get("source"),
-            "task_kind": result.get("task_kind"),
-            "media_product_id": result.get("media_product_id"),
-            "media_item_id": result.get("media_item_id"),
-            "countries": result.get("countries"),
-            "language_assignments": result.get("language_assignments"),
-            "raw_processor_id": result.get("raw_processor_id"),
-            "is_urgent": result.get("is_urgent"),
-            **(
-                {"meta_hot_post_id": result.get("meta_hot_post_id")}
-                if result.get("meta_hot_post_id") else {}
-            ),
-        },
-    )
+    if result.get("imported_only"):
+        _audit_task_action(
+            0,
+            "task_new_product_imported",
+            {
+                "task_kind": result.get("task_kind"),
+                "media_product_id": result.get("media_product_id"),
+                "media_item_id": result.get("media_item_id"),
+            },
+        )
+    else:
+        _audit_task_action(
+            int(result["parent_task_id"]),
+            "task_new_product_created",
+            {
+                "source": result.get("source"),
+                "task_kind": result.get("task_kind"),
+                "media_product_id": result.get("media_product_id"),
+                "media_item_id": result.get("media_item_id"),
+                "countries": result.get("countries"),
+                "language_assignments": result.get("language_assignments"),
+                "raw_processor_id": result.get("raw_processor_id"),
+                "is_urgent": result.get("is_urgent"),
+                **(
+                    {"meta_hot_post_id": result.get("meta_hot_post_id")}
+                    if result.get("meta_hot_post_id") else {}
+                ),
+            },
+        )
     try:
         _trigger_material_evaluation(
             product_id=int(result["media_product_id"]),
