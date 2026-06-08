@@ -40,6 +40,10 @@
 
 避免 Ubuntu Server 上 Chromium Snap 带来的维护成本，统一由 `playwright install chromium` 管理浏览器二进制。
 
+### 5. Playwright Python 包进入主依赖
+
+Web 启动路径和多个自动化模块会直接导入 `playwright.sync_api`，因此 `playwright` 必须保留在根目录 `requirements.txt`，不能只依赖服务器上已有 venv 或浏览器运行脚本的临时安装。
+
 ## 交付物
 
 - 安装脚本
