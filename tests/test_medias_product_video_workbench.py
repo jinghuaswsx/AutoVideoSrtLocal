@@ -353,6 +353,80 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
     assert pt_target["status"] == "translated"
 
 
+def test_translated_versions_do_not_merge_broad_supplement_keywords():
+    from web.routes.medias import material_supplement as route
+
+    bound = {
+        "id": 572,
+        "product_id": 6,
+        "lang": "en",
+        "filename": "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材-B-指派-张晴.mp4",
+        "display_name": "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材-B-指派-张晴.mp4",
+        "task_id": None,
+        "source_raw_id": 19,
+        "source_ref_id": None,
+    }
+    library_items = [
+        bound,
+        {
+            "id": 835,
+            "product_id": 6,
+            "lang": "pt",
+            "filename": "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材(葡萄牙语)-指派-蔡靖华.mp4",
+            "display_name": "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材(葡萄牙语)-指派-蔡靖华.mp4",
+            "task_id": None,
+            "source_raw_id": 19,
+            "source_ref_id": 19,
+        },
+        {
+            "id": 872,
+            "product_id": 6,
+            "lang": "it",
+            "filename": "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材(意大利语)-指派-蔡靖华.mp4",
+            "display_name": "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材(意大利语)-指派-蔡靖华.mp4",
+            "task_id": None,
+            "source_raw_id": None,
+            "source_ref_id": None,
+        },
+        {
+            "id": 1218,
+            "product_id": 6,
+            "lang": "it",
+            "filename": "2026.03.31-可堆叠棒球帽收纳盒-原素材-补充素材(意大利语)-指派-蔡靖华.mp4",
+            "display_name": "2026.03.31-可堆叠棒球帽收纳盒-原素材-补充素材(意大利语)-指派-蔡靖华.mp4",
+            "task_id": None,
+            "source_raw_id": 164,
+            "source_ref_id": 164,
+        },
+        {
+            "id": 1271,
+            "product_id": 6,
+            "lang": "it",
+            "filename": "2026.03.09-可堆叠棒球帽收纳盒-原素材-补充素材(意大利语)-指派-蔡靖华.mp4",
+            "display_name": "2026.03.09-可堆叠棒球帽收纳盒-原素材-补充素材(意大利语)-指派-蔡靖华.mp4",
+            "task_id": None,
+            "source_raw_id": 126,
+            "source_ref_id": 126,
+        },
+    ]
+    for item in library_items:
+        item["ad_performance"] = route._empty_ad_performance()
+
+    versions, summary, target_rows = route._build_translated_versions(
+        bound_item=bound,
+        library_items=library_items,
+        order_report=route._empty_order_report(6),
+    )
+
+    version_rows = [row for row in versions if not row.get("is_summary")]
+    assert {row["media_item_id"] for row in version_rows} == {572, 835, 872}
+    assert {row["country_code"] for row in version_rows if row["country_code"]} == {"IT", "PT"}
+    assert summary["translated_country_codes"] == ["IT", "PT"]
+    assert "DE" in summary["missing_country_codes"]
+    it_target = next(row for row in target_rows if row["country_code"] == "IT")
+    assert it_target["version"]["media_item_id"] == 872
+
+
 def test_build_video_workbench_ad_detail_summarizes_date_range():
     from web.routes.medias import material_supplement as route
 
