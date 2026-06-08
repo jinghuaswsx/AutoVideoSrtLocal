@@ -68,6 +68,10 @@ def test_list_translation_work_users_requires_translate_and_work_scope(monkeypat
 
     monkeypatch.setattr(users, "_user_display_name_expr", lambda: "username", raising=False)
     monkeypatch.setattr(users, "query", fake_query)
+    monkeypatch.setattr(
+        "appcore.tasks.get_active_pending_push_task_ids",
+        lambda: set()
+    )
 
     assert users.list_translation_work_users() == [
         {
@@ -188,6 +192,10 @@ def test_list_translation_work_users_counts_blocked_tasks(monkeypatch):
 
     monkeypatch.setattr(users, "_user_display_name_expr", lambda: "username", raising=False)
     monkeypatch.setattr(users, "query", fake_query)
+    monkeypatch.setattr(
+        "appcore.tasks.get_active_pending_push_task_ids",
+        lambda: set()
+    )
 
     res = users.list_translation_work_users()
     assert len(res) == 2
@@ -199,5 +207,78 @@ def test_list_translation_work_users_counts_blocked_tasks(monkeypatch):
     # Verify that the query SQL statement contains 'blocked'
     counts_sql = queries[0][0]
     assert "'blocked'" in counts_sql
-    assert "status IN ('pending', 'raw_in_progress', 'assigned', 'blocked')" in counts_sql
+    assert "status IN ('pending', 'raw_in_progress', 'raw_review')" in counts_sql
+    assert "status IN ('blocked', 'assigned', 'review')" in counts_sql
+
+
+def test_list_translation_work_users_excludes_pending_push(monkeypatch):
+    from appcore import users
+
+    queries = []
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        if "FROM tasks" in sql:
+            return [
+                {"assignee_id": 1, "todo_count": 5, "urgent_count": 2, "completed_today_count": 3},
+            ]
+        else:
+            return [
+                {
+                    "id": 1,
+                    "username": "zhou",
+                    "display_name": "周干琴",
+                    "role": "user",
+                    "permissions": '{"can_translate": true, "work_scope_translation": true}',
+                },
+            ]
+
+    monkeypatch.setattr(users, "_user_display_name_expr", lambda: "username", raising=False)
+    monkeypatch.setattr(users, "query", fake_query)
+    monkeypatch.setattr(
+        "appcore.tasks.get_active_pending_push_task_ids",
+        lambda: {999}
+    )
+
+    res = users.list_translation_work_users()
+    assert len(res) == 1
+    assert res[0]["todo_count"] == 5
+
+    counts_sql = queries[0][0]
+    assert "id NOT IN (999)" in counts_sql
+
+
+def test_get_employee_task_stats_excludes_pending_push(monkeypatch):
+    from appcore import tasks
+
+    queries = []
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        return [
+            {
+                "assignee_id": 1,
+                "employee_name": "周干琴",
+                "today_completed": 0,
+                "today_pending": 5,
+                "urgent_pending": 2,
+                "total_tasks": 10,
+                "raw_tasks": 0,
+                "translate_tasks": 10,
+            }
+        ]
+
+    monkeypatch.setattr(tasks, "_user_display_name_expr", lambda prefix: "u.username", raising=False)
+    monkeypatch.setattr(tasks, "query_all", fake_query)
+    monkeypatch.setattr(
+        "appcore.tasks.get_active_pending_push_task_ids",
+        lambda: {999}
+    )
+
+    res = tasks.get_employee_task_stats("2026-06-08")
+    assert len(res) == 1
+    assert res[0]["today_pending"] == 5
+
+    stats_sql = queries[0][0]
+    assert "t.id NOT IN (999)" in stats_sql
 

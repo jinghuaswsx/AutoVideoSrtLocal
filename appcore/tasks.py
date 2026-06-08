@@ -341,6 +341,25 @@ def _pending_push_args() -> tuple[str, str]:
     return (CHILD_ASSIGNED, CHILD_REVIEW)
 
 
+def get_active_pending_push_task_ids() -> set[int]:
+    """获取所有当前处于‘待推送’（pending_push）状态的子任务ID。"""
+    sql = (
+        "SELECT t.id FROM tasks t "
+        "LEFT JOIN media_items pending_push_item ON pending_push_item.id = ("
+        "  SELECT MAX(mi_sub.id) FROM media_items mi_sub "
+        "  WHERE mi_sub.task_id = t.id "
+        "  AND mi_sub.product_id = t.media_product_id "
+        "  AND LOWER(mi_sub.lang) = LOWER(TRIM(COALESCE(t.country_code, ''))) "
+        "  AND mi_sub.deleted_at IS NULL"
+        ") "
+        "LEFT JOIN media_push_status_cache psc_pending_push ON psc_pending_push.item_id = pending_push_item.id "
+        f"WHERE t.parent_task_id IS NOT NULL AND t.status IN ('assigned', 'review') "
+        f"AND {_pending_push_condition()}"
+    )
+    rows = query_all(sql, _pending_push_args())
+    return {int(row["id"]) for row in rows if row.get("id") is not None}
+
+
 def _pending_push_task_ids_for_rows(rows: Iterable[dict]) -> set[int]:
     task_ids: list[int] = []
     for row in rows or []:
@@ -5013,6 +5032,13 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
     if not end_date:
         end_date = start_date
     expr = _user_display_name_expr("u")
+
+    pending_push_ids = get_active_pending_push_task_ids()
+    exclude_clause = ""
+    if pending_push_ids:
+        ids_str = ",".join(str(i) for i in pending_push_ids)
+        exclude_clause = f"AND t.id NOT IN ({ids_str}) "
+
     sql = (
         "SELECT "
         "  t.assignee_id, "
@@ -5024,11 +5050,11 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
         "  SUM(CASE WHEN ("
         "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
         "      (t.parent_task_id IS NOT NULL AND t.status IN ('blocked', 'assigned', 'review'))"
-        "  ) THEN 1 ELSE 0 END) AS today_pending, "
+        f"  ) {exclude_clause} THEN 1 ELSE 0 END) AS today_pending, "
         "  SUM(CASE WHEN ("
         "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
         "      (t.parent_task_id IS NOT NULL AND t.status IN ('blocked', 'assigned', 'review'))"
-        "  ) AND t.is_urgent = 1 THEN 1 ELSE 0 END) AS urgent_pending, "
+        f"  ) {exclude_clause} AND t.is_urgent = 1 THEN 1 ELSE 0 END) AS urgent_pending, "
         "  COUNT(t.id) AS total_tasks, "
         "  SUM(CASE WHEN t.parent_task_id IS NULL THEN 1 ELSE 0 END) AS raw_tasks, "
         "  SUM(CASE WHEN t.parent_task_id IS NOT NULL THEN 1 ELSE 0 END) AS translate_tasks "
