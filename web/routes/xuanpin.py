@@ -988,11 +988,11 @@ def api_meta_hot_posts_ai_analysis_run(post_id: int, mode: str):
 def api_meta_hot_posts_import(post_id: int):
     payload = request.get_json(silent=True) or {}
     try:
-        translator_id = int(payload.get("translator_id") or 0)
+        owner_id = int(payload.get("owner_id") or payload.get("translator_id") or 0)
     except (TypeError, ValueError):
-        translator_id = 0
-    if not translator_id:
-        return jsonify({"success": False, "error": "translator_id_required"}), 400
+        owner_id = 0
+    if not owner_id:
+        return jsonify({"success": False, "error": "owner_id_required"}), 400
 
     from appcore.meta_hot_posts.service import import_hot_post
     from appcore import runner_lifecycle, material_evaluation
@@ -1000,7 +1000,7 @@ def api_meta_hot_posts_import(post_id: int):
     try:
         res = import_hot_post(
             post_id=post_id,
-            translator_id=translator_id,
+            translator_id=owner_id,
             actor_user_id=int(current_user.id),
         )
 
