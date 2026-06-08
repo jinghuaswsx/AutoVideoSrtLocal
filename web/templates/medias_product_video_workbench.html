@@ -271,7 +271,28 @@
   border: 1px solid #fecaca;
 }
 .vw-chip-main { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 800; font-size: 12px; }
-.vw-chip-sub { color: var(--vw-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-chip-sub {
+  color: var(--vw-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+  flex: 1;
+  min-height: 30px;
+}
+.vw-chip-sub-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+.vw-chip-copy-btn {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
 .vw-panel-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; }
 .vw-panel-table th, .vw-panel-table td { padding: 7px 8px; border-bottom: 1px solid var(--vw-border); text-align: right; vertical-align: top; }
 .vw-panel-table th:first-child, .vw-panel-table td:first-child { text-align: left; }
@@ -374,9 +395,14 @@
 <div id="vwAdModal" class="vw-modal-mask" role="dialog" aria-modal="true" hidden>
   <div class="vw-modal">
     <div class="vw-modal-head">
-      <div style="min-width: 0; flex: 1; margin-right: 12px;">
-        <div class="vw-modal-title" id="vwAdTitle">广告数据</div>
-        <div class="vw-sub" id="vwAdSub"></div>
+      <div style="min-width: 0; flex: 1; margin-right: 12px; display: flex; align-items: center; justify-content: space-between;">
+        <div>
+          <div class="vw-modal-title" id="vwAdTitle">广告数据</div>
+          <div class="vw-sub" id="vwAdSub"></div>
+        </div>
+        <div id="vwAdOrderRoasBox" style="margin-left: 20px; font-size: 20px; font-weight: 800; color: var(--vw-blue);" hidden>
+          订单 ROAS: <span id="vwAdOrderRoasVal">--</span>
+        </div>
       </div>
       <button type="button" class="vw-btn" data-close-modal="vwAdModal">关闭</button>
     </div>
@@ -388,15 +414,8 @@
         <span class="vw-sub" id="vwAdState"></span>
       </div>
       <div class="vw-kpis" id="vwAdSummary"></div>
-      <div class="vw-table-wrap">
-        <table class="vw-table">
-          <thead>
-            <tr>
-              <th>日期</th><th>账户</th><th>广告名</th><th>国家</th><th>花费</th><th>购买金额</th><th>ROAS</th><th>购买数</th><th>匹配</th>
-            </tr>
-          </thead>
-          <tbody id="vwAdRows"><tr><td colspan="9">请选择视频</td></tr></tbody>
-        </table>
+      <div id="vwAdRows" class="vw-ad-country-cards" style="display: flex; flex-direction: column; gap: 16px; margin-top: 12px;">
+        <div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">请选择视频</div>
       </div>
     </div>
   </div>
@@ -525,6 +544,7 @@
   ];
   let currentData = null;
   let currentAdCard = null;
+  let currentAdCountryCode = null;
   let activeUsersCache = null;
   let productOwnerCache = new Map();
   let fineAiCache = new Map();
@@ -801,11 +821,26 @@
         cls = version.delivery_status === 'active' ? 'state-active' : 'state-stopped';
         const rVal = version.roas;
         const formattedRoas = rVal == null ? '-' : Number(rVal).toFixed(2);
-        roasHtml = `<div class="vw-chip-roas-badge">ROAS: ${formattedRoas}</div>`;
+        roasHtml = `
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: auto; gap: 4px; width: 100%;">
+            <div class="vw-chip-roas-badge" style="margin-top: 0;">ROAS: ${formattedRoas}</div>
+            <button type="button" class="vw-mini-btn" data-action="ad-country" data-card-id="${esc(card.card_id)}" data-country-code="${esc(row.country_code || '')}" style="padding: 2px 6px; font-size: 11px; line-height: 1; min-height: 20px; height: 20px;">广告</button>
+          </div>
+        `;
       }
+      const hasMaterial = row.status === 'translated' && version && (version.filename || version.display_name);
       return `<div class="vw-country-chip ${cls}">
         <div class="vw-chip-main"><span>${esc(row.country_code || '')}</span><span>${countryStatusText(row)}</span></div>
-        <div class="vw-chip-sub" title="${esc(sub)}">${esc(row.lang_name || row.lang || '')} · ${esc(sub)}</div>
+        <div class="vw-chip-sub-row">
+          <div class="vw-chip-sub" title="${esc(row.lang_name || row.lang || '')} · ${esc(sub)}">
+            ${esc(row.lang_name || row.lang || '')} · ${esc(sub)}
+          </div>
+          ${hasMaterial ? `
+            <button type="button" class="vw-inline-icon-btn vw-chip-copy-btn" onclick="copyText('${esc(version.filename || version.display_name || '')}', this)" title="复制视频文件名" aria-label="复制视频文件名">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+          ` : ''}
+        </div>
         ${roasHtml}
       </div>`;
     }).join('');
@@ -1480,11 +1515,32 @@
     openXiaoModal({card: importCard, productId: importProductId, itemId: importItemId, fromImport: true});
   }
 
-  function openAdModal(card) {
+  function openAdModal(card, countryCode = null) {
     currentAdCard = card;
+    currentAdCountryCode = countryCode;
     const mk = card.mk_video || {};
-    document.getElementById('vwAdTitle').textContent = '广告数据';
+    const countryMap = {
+      'DE': '德国', 'FR': '法国', 'ES': '西班牙', 'IT': '意大利',
+      'JP': '日本', 'PT': '葡萄牙', 'NL': '荷兰', 'SE': '瑞典', 'EN': '英国/通用'
+    };
+    const countryName = countryCode ? (countryMap[countryCode.toUpperCase()] || countryCode) : '';
+    document.getElementById('vwAdTitle').textContent = countryName ? `广告数据 (${countryName})` : '广告数据';
     document.getElementById('vwAdSub').textContent = mk.name || '';
+
+    const orderRoasBox = document.getElementById('vwAdOrderRoasBox');
+    const orderRoasVal = document.getElementById('vwAdOrderRoasVal');
+    if (orderRoasBox && orderRoasVal) {
+      if (countryCode) {
+        const countryCodeUpper = countryCode.toUpperCase();
+        const targetCountry = (card.target_country_versions || []).find(c => c.country_code.toUpperCase() === countryCodeUpper);
+        const orderRoas = targetCountry && targetCountry.order_stats ? targetCountry.order_stats.total_roas : null;
+        orderRoasVal.textContent = orderRoas == null ? '-' : Number(orderRoas).toFixed(2);
+        orderRoasBox.hidden = false;
+      } else {
+        orderRoasBox.hidden = true;
+      }
+    }
+
     document.getElementById('vwAdFrom').value = todayIso(-29);
     document.getElementById('vwAdTo').value = todayIso(0);
     setModalOpen('vwAdModal', true);
@@ -1496,6 +1552,7 @@
     const params = new URLSearchParams();
     if (mk.path) params.set('video_path', mk.path);
     if (currentAdCard.media_item_id) params.set('media_item_id', currentAdCard.media_item_id);
+    if (currentAdCountryCode) params.set('country', currentAdCountryCode);
     params.set('date_from', document.getElementById('vwAdFrom').value || todayIso(-29));
     params.set('date_to', document.getElementById('vwAdTo').value || todayIso(0));
     document.getElementById('vwAdState').textContent = '加载中...';
@@ -1504,7 +1561,7 @@
       renderAdDetail(data);
       document.getElementById('vwAdState').textContent = `匹配 ${data.summary.matched_ad_count || 0} 条`;
     } catch (err) {
-      document.getElementById('vwAdRows').innerHTML = `<tr><td colspan="9">加载失败：${esc(err.message)}</td></tr>`;
+      document.getElementById('vwAdRows').innerHTML = `<div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">加载失败：${esc(err.message)}</div>`;
       document.getElementById('vwAdState').textContent = '加载失败';
     }
   }
@@ -1547,24 +1604,86 @@
       }
     }
     const rows = data.rows || [];
-    document.getElementById('vwAdRows').innerHTML = rows.length ? rows.map(row => {
-      const marketCode = String(row.market_country || '').trim().toUpperCase();
+    if (!rows.length) {
+      document.getElementById('vwAdRows').innerHTML = '<div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">当前日期范围没有匹配广告</div>';
+      return;
+    }
+
+    const groups = [];
+    const groupsMap = {};
+    rows.forEach(row => {
+      const code = String(row.market_country || '').trim().toUpperCase() || 'UNKNOWN';
+      if (!groupsMap[code]) {
+        groupsMap[code] = {
+          code: code,
+          rows: [],
+          spend: 0,
+          purchase_value: 0,
+          result_count: 0
+        };
+        groups.push(groupsMap[code]);
+      }
+      const g = groupsMap[code];
+      g.rows.push(row);
+      g.spend += Number(row.spend_usd || 0);
+      g.purchase_value += Number(row.purchase_value_usd || 0);
+      g.result_count += Number(row.result_count || 0);
+    });
+
+    document.getElementById('vwAdRows').innerHTML = groups.map(group => {
+      const marketCode = group.code;
       const countryPrefix = countryMap[marketCode] || '';
-      const countryText = countryPrefix ? `${countryPrefix}${marketCode}` : (row.market_country || '-');
-      return `
-        <tr>
-          <td>${esc(row.activity_date || '')}</td>
-          <td>${esc(row.ad_account_name || row.ad_account_id || '-')}</td>
-          <td>${esc(row.ad_name || '-')}<div class="vw-sub">${esc(row.normalized_ad_code || '')}</div></td>
-          <td>${esc(countryText)}</td>
-          <td>${money(row.spend_usd || 0, 2)}</td>
-          <td>${money(row.purchase_value_usd || 0, 2)}</td>
-          <td>${formatAdRoas(row.roas)}</td>
-          <td>${Number(row.result_count || 0)}</td>
-          <td>${esc(row.match_reason || '-')}</td>
-        </tr>
+      const countryText = countryPrefix ? `${countryPrefix}${marketCode}` : marketCode;
+      
+      const countryRoas = group.spend > 0 ? (group.purchase_value / group.spend) : null;
+      
+      const headerKpiHtml = `
+        <div style="display: flex; gap: 16px; align-items: center;">
+          <div style="font-size: 13px; color: var(--vw-muted);">花费: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">$${money(group.spend || 0, 2)}</strong></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">购买金额: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">$${money(group.purchase_value || 0, 2)}</strong></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">ROAS: <span style="margin-left: 2px;">${formatAdRoas(countryRoas)}</span></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">购买数: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">${Number(group.result_count || 0)}</strong></div>
+        </div>
       `;
-    }).join('') : '<tr><td colspan="9">当前日期范围没有匹配广告</td></tr>';
+
+      const tbodyRowsHtml = group.rows.map(row => {
+        return `
+          <tr>
+            <td>${esc(row.activity_date || '')}</td>
+            <td>${esc(row.ad_account_name || row.ad_account_id || '-')}</td>
+            <td>${esc(row.ad_name || '-')}<div class="vw-sub">${esc(row.normalized_ad_code || '')}</div></td>
+            <td>${money(row.spend_usd || 0, 2)}</td>
+            <td>${money(row.purchase_value_usd || 0, 2)}</td>
+            <td>${formatAdRoas(row.roas)}</td>
+            <td>${Number(row.result_count || 0)}</td>
+            <td>${esc(row.match_reason || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <section class="vw-section">
+          <div class="vw-section-head">
+            <div class="vw-section-title" style="font-size: 15px; color: var(--vw-blue);">国家：${esc(countryText)}</div>
+            ${headerKpiHtml}
+          </div>
+          <div class="vw-section-body" style="padding: 0;">
+            <div class="vw-table-wrap">
+              <table class="vw-table">
+                <thead>
+                  <tr>
+                    <th>日期</th><th>账户</th><th>广告名</th><th>花费</th><th>购买金额</th><th>ROAS</th><th>购买数</th><th>匹配</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${tbodyRowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      `;
+    }).join('');
   }
 
   function langCode(lang) {
@@ -1965,6 +2084,7 @@
     if (!card) return;
     if (action === 'import') startImport(card);
     if (action === 'ad') openAdModal(card);
+    if (action === 'ad-country') openAdModal(card, actionEl.dataset.countryCode);
     if (action === 'task') openXiaoModal({card, productId, itemId: card.media_item_id, sourceButton: actionEl});
     if (action === 'ai-start') startAiEvaluation(card, '');
     if (action === 'ai-country') startAiEvaluation(card, actionEl.dataset.countryLang || '');

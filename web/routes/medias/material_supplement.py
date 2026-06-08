@@ -1041,7 +1041,14 @@ def _query_ad_detail_rows(
     match_sql: str,
     match_args: list[Any],
     query_fn=db_query,
+    country: str | None = None,
 ) -> list[dict]:
+    extra_clause = ""
+    extra_args = []
+    if country:
+        extra_clause = "  AND UPPER(COALESCE(m.market_country, '')) = %s "
+        extra_args.append(str(country).strip().upper())
+
     return query_fn(
         "SELECT m.id, m.ad_account_id, m.ad_account_name, "
         "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
@@ -1053,9 +1060,10 @@ def _query_ad_detail_rows(
         "  AND COALESCE(m.spend_usd, 0) > 0 "
         "  AND DATE(COALESCE(m.meta_business_date, m.report_date)) BETWEEN %s AND %s "
         f"  AND ({match_sql}) "
+        f"{extra_clause}"
         "ORDER BY m.market_country ASC, activity_date DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
         "LIMIT 500",
-        [product_id, date_from.isoformat(), date_to.isoformat(), *match_args],
+        [product_id, date_from.isoformat(), date_to.isoformat(), *match_args, *extra_args],
     )
 
 
@@ -1129,6 +1137,10 @@ def build_video_workbench_ad_detail(
     if not terms:
         return _empty_ad_detail_result(date_from, date_to, [])
 
+    country = args.get("country") or args.get("country_code")
+    if country:
+        country = str(country).strip()
+
     match_clauses = []
     match_args: list[Any] = []
     for item in terms:
@@ -1142,10 +1154,13 @@ def build_video_workbench_ad_detail(
         " OR ".join(match_clauses),
         match_args,
         query_fn=query_fn,
+        country=country,
     )
     match_reason_override = None
     if not rows:
         fallback_countries = _load_ad_detail_fallback_countries(product_id, query_fn=query_fn)
+        if country:
+            fallback_countries = [c for c in fallback_countries if c.upper() == country.upper()]
         if fallback_countries:
             placeholders = ",".join(["%s"] * len(fallback_countries))
             rows = _query_ad_detail_rows(

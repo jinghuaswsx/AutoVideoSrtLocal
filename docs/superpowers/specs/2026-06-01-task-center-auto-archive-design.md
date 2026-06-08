@@ -7,13 +7,15 @@
   - `docs/superpowers/specs/2026-05-16-task-center-e2e-flow-design.md`
   - `docs/superpowers/specs/2026-05-28-task-center-archive-tab-design.md`
 
+> 2026-06-08 更新：自动归档执行频率已由 `docs/superpowers/specs/2026-06-08-task-center-unarchive-hourly-archive-design.md` 覆盖，从每天 06:00 调整为每小时。
+
 ## 背景
 
-任务中心已支持人工归档，归档通过 `tasks.archived_at` / `tasks.archived_by` 控制列表可见性，不改变任务原始 `status`。现在需要让系统每天自动清理已经完成且对应素材已推送成功的任务，减少“已完成”列表里的长期存量，同时保留原任务状态、推送日志和系统归档时间。
+任务中心已支持人工归档，归档通过 `tasks.archived_at` / `tasks.archived_by` 控制列表可见性，不改变任务原始 `status`。现在需要让系统定时自动清理已经完成且对应素材已推送成功的任务，减少“已完成”列表里的长期存量，同时保留原任务状态、推送日志和系统归档时间。
 
 ## 目标
 
-1. 每天北京时间 06:00 执行一次任务中心自动归档。
+1. 每小时执行一次任务中心自动归档。
 2. 子任务达到 `status='done'` 且对应小语种素材 `media_items.pushed_at IS NOT NULL` 时，系统自动归档该子任务。
 3. 父任务只在 `status='all_done'` 且其下已完成子任务对应素材全部推送成功时自动归档；`raw_done` 不自动归档。
 4. 自动归档不改变 `tasks.status`、`completed_at`、`cancelled_at`、`media_push_logs` 等已有状态和日志。
@@ -80,7 +82,7 @@ tasks.archived_by INT DEFAULT NULL
 - `TASK_CODE = "task_center_auto_archive"`
 - `tick_once(limit: int | None = None)` 调用 `tasks.auto_archive_completed_pushed_tasks`
 - 通过 `scheduled_tasks.start_run` / `finish_run` 记录执行结果
-- `register(scheduler)` 使用 APScheduler cron 触发器：`hour=6, minute=0`
+- `register(scheduler)` 使用 APScheduler interval 触发器：`hours=1`
 
 在 `appcore/scheduler.py` 注册该调度；在 `appcore/scheduled_tasks.py` 登记任务定义，显示到 Web 后台“定时任务”模块。
 
@@ -100,7 +102,7 @@ tasks.archived_by INT DEFAULT NULL
    - `raw_done` 父任务不归档。
    - `all_done` 父任务在已完成子任务全部推送后归档。
 2. `tests/test_task_center_auto_archive_scheduler.py`
-   - 调度注册为每天 06:00。
+   - 调度注册为每小时。
    - `tick_once` 记录 scheduled run 成功/失败。
 3. `tests/test_appcore_scheduled_tasks.py`
    - 定时任务定义包含 `task_center_auto_archive`。

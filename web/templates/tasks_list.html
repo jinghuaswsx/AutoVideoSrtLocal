@@ -1220,6 +1220,7 @@ const TC_EVENT_TEXT = {
   push_material_approved: { title: '管理员审核通过', progress: '已推送', tone: 'success', summary: '推送管理已完成素材推送，当前任务进入投放素材已通过状态。' },
   push_rework_rejected: { title: '管理员审核拒绝', progress: '继续完善素材内容', tone: 'danger', summary: '管理员在推送管理标注了问题点，需要负责人按批注继续完善素材内容。' },
   auto_archived: { title: '系统自动归档', progress: '已归档', tone: 'success', summary: '系统确认任务已完成且对应素材已推送成功，自动放入已归档列表。' },
+  unarchived: { title: '取消归档', progress: '已恢复', tone: 'info', summary: '管理员取消了任务归档，任务已恢复到正常列表。' },
   cancelled: { title: '取消任务', progress: '已取消', tone: 'warning', summary: '任务已被取消，后续不会继续流转。' },
   unblocked: { title: '子任务解锁', progress: '可开始翻译', tone: 'success', summary: '原始视频审核通过后，翻译子任务已解锁。' },
   submitted: { title: '提交翻译验收', progress: '等待管理员验收', tone: 'info', summary: '翻译员已提交产物，等待管理员审核通过或打回。' },
@@ -2778,6 +2779,10 @@ async function tcRefreshTaskRow(id) {
       rowEl.remove();
       return;
     }
+    if (!task.archived_at && TC_CURRENT_BUCKET === 'archived') {
+      rowEl.remove();
+      return;
+    }
     
     const users = await tcLoadAssigneeFilterUsers();
     rowEl.innerHTML = tcBuildTaskRowHtml(task, users);
@@ -2885,6 +2890,16 @@ async function tcArchiveTask(id) {
   });
   await tcRefreshTaskRow(id);
 }
+async function tcUnarchiveTask(id) {
+  const taskId = Number(id || 0);
+  if (!taskId) return;
+  if (!confirm('确认取消归档这个任务？')) return;
+  await tcFetchJson('/tasks/api/' + encodeURIComponent(String(id)) + '/unarchive', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  await tcRefreshTaskRow(id);
+}
 function tcTaskActionGroup(actions) {
   const visible = (actions || []).filter(Boolean);
   return `<div class="tc-row-actions">${visible.join('')}</div>`;
@@ -2937,6 +2952,10 @@ function tcDisabledTaskAction(label) {
 function tcArchiveTaskAction(id) {
   if (!TC_IS_ADMIN) return '';
   return `<button class="tc-btn tc-btn--danger" onclick="tcArchiveTask(${Number(id || 0)})">归档</button>`;
+}
+function tcUnarchiveTaskAction(id) {
+  if (!TC_IS_ADMIN) return '';
+  return `<button class="tc-btn" onclick="tcUnarchiveTask(${Number(id || 0)})">取消归档</button>`;
 }
 function tcCanHandleRawTask(it) {
   const assigneeId = Number(it && it.assignee_id || 0);
@@ -3023,7 +3042,7 @@ function tcTaskRowAction(it) {
     if (!it.archived_at) {
       actions.push(tcArchiveTaskAction(id));
     } else {
-      actions.push(`<button class="tc-btn tc-btn--danger" disabled>已归档</button>`);
+      actions.push(tcUnarchiveTaskAction(id));
     }
   }
 
