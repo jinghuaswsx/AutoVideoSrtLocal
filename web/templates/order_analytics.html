@@ -17,13 +17,9 @@
   <button type="button" class="oa-tab {% if active_tab == 'newProductLaunch' %}active{% endif %}" data-tab="newProductLaunch" role="tab" aria-selected="{% if active_tab == 'newProductLaunch' %}true{% else %}false{% endif %}">新品投放分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
-  <button type="button" class="oa-tab {% if active_tab == 'adAccounts' %}active{% endif %}" data-tab="adAccounts" role="tab" aria-selected="{% if active_tab == 'adAccounts' %}true{% else %}false{% endif %}">广告账户</button>
-  <button type="button" class="oa-tab {% if active_tab == 'dashboard' %}active{% endif %}" data-tab="dashboard" role="tab" aria-selected="{% if active_tab == 'dashboard' %}true{% else %}false{% endif %}">产品看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
-  <button type="button" class="oa-tab {% if active_tab == 'weeklyRoas' %}active{% endif %}" data-tab="weeklyRoas" role="tab" aria-selected="{% if active_tab == 'weeklyRoas' %}true{% else %}false{% endif %}">ROAS 周报</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
-  <button type="button" class="oa-tab {% if active_tab == 'import' %}active{% endif %}" data-tab="import" role="tab" aria-selected="{% if active_tab == 'import' %}true{% else %}false{% endif %}">Shopify 订单导入</button>
   <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </span>
 {% endblock %}
@@ -1981,13 +1977,9 @@
   <button type="button" class="oa-tab {% if active_tab == 'newProductLaunch' %}active{% endif %}" data-tab="newProductLaunch" role="tab" aria-selected="{% if active_tab == 'newProductLaunch' %}true{% else %}false{% endif %}">新品投放分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
-  <button type="button" class="oa-tab {% if active_tab == 'adAccounts' %}active{% endif %}" data-tab="adAccounts" role="tab" aria-selected="{% if active_tab == 'adAccounts' %}true{% else %}false{% endif %}">广告账户</button>
-  <button type="button" class="oa-tab {% if active_tab == 'dashboard' %}active{% endif %}" data-tab="dashboard" role="tab" aria-selected="{% if active_tab == 'dashboard' %}true{% else %}false{% endif %}">产品看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
-  <button type="button" class="oa-tab {% if active_tab == 'weeklyRoas' %}active{% endif %}" data-tab="weeklyRoas" role="tab" aria-selected="{% if active_tab == 'weeklyRoas' %}true{% else %}false{% endif %}">ROAS 周报</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
-  <button type="button" class="oa-tab {% if active_tab == 'import' %}active{% endif %}" data-tab="import" role="tab" aria-selected="{% if active_tab == 'import' %}true{% else %}false{% endif %}">Shopify 订单导入</button>
   <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </nav>
 
@@ -4038,6 +4030,7 @@
     <button type="button" class="oa-subtab-btn" data-ads-subtab="adset" aria-pressed="false">Ad Set</button>
     <button type="button" class="oa-subtab-btn is-active" data-ads-subtab="ad" aria-pressed="true">Ad</button>
     <button type="button" class="oa-subtab-btn" data-ads-subtab="manual-input" aria-pressed="false">人工录入</button>
+    <button type="button" class="oa-subtab-btn" data-ads-subtab="ad-accounts" aria-pressed="false">广告账户</button>
   </nav>
 
   <!-- 概览 sub-panel：保留原有「按产品汇总」内容 -->
@@ -4359,59 +4352,61 @@
       </div>
     </form>
   </dialog>
+
+  <!-- 广告账户 sub-panel -->
+  <div class="oa-subpanel" data-subpanel="ad-accounts" id="panelAdAccounts">
+    <div class="oad-toolbar">
+      <div class="oad-toolbar-row">
+        <button type="button" class="oad-btn-primary" id="metaAdAccountAdd">新增账户</button>
+        <button type="button" class="oad-btn-primary" id="metaAdAccountSave">保存配置</button>
+        <div class="oar-note">用于 Meta 实时同步、收盘日同步和产品盈亏广告费分摊</div>
+      </div>
+    </div>
+    <div class="oa-table-wrap">
+      <div class="oa-table-header">
+        <div class="oa-table-title">Meta 广告账户与店铺映射</div>
+        <div class="oar-note" id="metaAdAccountsStatus">加载中...</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>启用</th>
+              <th>店铺</th>
+              <th>名称</th>
+              <th>Code</th>
+              <th>Account ID</th>
+              <th>Business ID</th>
+              <th>CSV 前缀</th>
+              <th title="Meta UI 内列模板 ID（账户内自建后复制 column_preset URL 参数）">列模板</th>
+              <th>同步方式</th>
+              <th title="Meta 后台账户配置时区。XHR 通道按这个时区构造 /insights 的 time_range；CSV 通道由 Ads Manager 渲染时自带，无需关心。">时区</th>
+              <th>备注</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="metaAdAccountsBody">
+            <tr><td colspan="12" class="oad-loading">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <datalist id="metaAdAccountTimezoneOptions">
+      <option value="America/Los_Angeles">
+      <option value="America/New_York">
+      <option value="Asia/Shanghai">
+      <option value="Europe/London">
+      <option value="UTC">
+    </datalist>
+    <datalist id="metaAdColumnPresetChoices">
+      <option value="1680560372975676" label="111 · newjoyloo">
+      <option value="1645951873103193" label="1111 · Omurio">
+      <option value="1658418688523178" label="1111 · newjoyloo_old">
+    </datalist>
+  </div>
 </div>
 
 <!-- ═══════ Tab: 广告账户 ═══════ -->
-<section class="oa-panel {% if active_tab == 'adAccounts' %}active{% endif %}" id="panelAdAccounts">
-  <div class="oad-toolbar">
-    <div class="oad-toolbar-row">
-      <button type="button" class="oad-btn-primary" id="metaAdAccountAdd">新增账户</button>
-      <button type="button" class="oad-btn-primary" id="metaAdAccountSave">保存配置</button>
-      <div class="oar-note">用于 Meta 实时同步、收盘日同步和产品盈亏广告费分摊</div>
-    </div>
-  </div>
-  <div class="oa-table-wrap">
-    <div class="oa-table-header">
-      <div class="oa-table-title">Meta 广告账户与店铺映射</div>
-      <div class="oar-note" id="metaAdAccountsStatus">加载中...</div>
-    </div>
-    <div class="oa-table-scroll">
-      <table class="oa-table oar-compact-table">
-        <thead>
-          <tr>
-            <th>启用</th>
-            <th>店铺</th>
-            <th>名称</th>
-            <th>Code</th>
-            <th>Account ID</th>
-            <th>Business ID</th>
-            <th>CSV 前缀</th>
-            <th title="Meta UI 内列模板 ID（账户内自建后复制 column_preset URL 参数）">列模板</th>
-            <th>同步方式</th>
-            <th title="Meta 后台账户配置时区。XHR 通道按这个时区构造 /insights 的 time_range；CSV 通道由 Ads Manager 渲染时自带，无需关心。">时区</th>
-            <th>备注</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody id="metaAdAccountsBody">
-          <tr><td colspan="12" class="oad-loading">加载中...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-  <datalist id="metaAdAccountTimezoneOptions">
-    <option value="America/Los_Angeles">
-    <option value="America/New_York">
-    <option value="Asia/Shanghai">
-    <option value="Europe/London">
-    <option value="UTC">
-  </datalist>
-  <datalist id="metaAdColumnPresetChoices">
-    <option value="1680560372975676" label="111 · newjoyloo">
-    <option value="1645951873103193" label="1111 · Omurio">
-    <option value="1658418688523178" label="1111 · newjoyloo_old">
-  </datalist>
-</section>
 {% endblock %}
 
 {% block scripts %}
@@ -10387,6 +10382,8 @@
     } else if (target === 'unmatched-campaigns') {
       initAdUnmatchedCampaigns();
       loadAdUnmatchedCampaigns();
+    } else if (target === 'ad-accounts') {
+      initMetaAdAccounts();
     }
   }
 
@@ -10982,7 +10979,11 @@
       var code = (params.get('ads_code') || '').trim();
       var hasDeepLink = params.get('tab') === 'ads' && ADS_LEVELS.indexOf(level) !== -1 && code;
       if (!hasDeepLink) {
-        setAdsSubtab('ad');
+        if (window.location.pathname.indexOf('ad-accounts-view') !== -1 || params.get('subtab') === 'ad-accounts') {
+          setAdsSubtab('ad-accounts');
+        } else {
+          setAdsSubtab('ad');
+        }
       }
     };
   } else {
@@ -10993,7 +10994,11 @@
       var code = (params.get('ads_code') || '').trim();
       var hasDeepLink = params.get('tab') === 'ads' && ADS_LEVELS.indexOf(level) !== -1 && code;
       if (!hasDeepLink) {
-        setAdsSubtab('ad');
+        if (window.location.pathname.indexOf('ad-accounts-view') !== -1 || params.get('subtab') === 'ad-accounts') {
+          setAdsSubtab('ad-accounts');
+        } else {
+          setAdsSubtab('ad');
+        }
       }
     });
   }
