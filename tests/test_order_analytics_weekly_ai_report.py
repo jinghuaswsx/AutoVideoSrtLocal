@@ -91,9 +91,21 @@ def _fake_overview(date_text, **kwargs):
                 "matched_product_id": 202,
                 "matched_product_code": "P202",
                 "matched_product_name": "Low Order Product",
-                "spend_usd": 90 if day_index >= 5 else 10,
-                "purchase_value_usd": 0 if day_index >= 5 else 20,
+                "spend_usd": 90 if day_index == 6 else 0,
+                "purchase_value_usd": 0,
                 "result_count": 0,
+            },
+            {
+                "ad_account_id": "act_1",
+                "ad_account_name": "Newjoy",
+                "campaign_name": "P505 potential",
+                "normalized_campaign_code": "P505",
+                "matched_product_id": 505,
+                "matched_product_code": "P505",
+                "matched_product_name": "Potential Product",
+                "spend_usd": 5,
+                "purchase_value_usd": 20,
+                "result_count": 1,
             },
         ]
     return overview
@@ -274,13 +286,17 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert set(package["daily_by_store"]) == {"all", "newjoy", "omurio"}
     assert package["segments"]["thursday_to_saturday"]["profit_usd"] < 0
     assert package["product_rows"][0]["product_code"] == "P101"
-    assert any(row["product_code"] == "P202" for row in package["low_order_products"]["one_to_two"])
+    assert not any(row["product_code"] == "P202" for row in package["low_order_products"]["one_to_two"])
     assert any(row["normalized_campaign_code"] == "P202" for row in package["campaign_rows"])
     assert package["product_stability"]["counts"]["stable_total"] == 1
-    assert package["product_stability"]["counts"]["insufficient_history"] == 1
+    assert package["product_stability"]["counts"]["secondary_stable"] == 1
+    assert package["product_stability"]["counts"]["test"] == 2
+    assert package["product_stability"]["counts"]["insufficient_history"] == 0
     assert package["product_stability"]["buckets"]["stable"][0]["product_code"] == "P101"
-    assert package["product_scope"]["evaluated_product_count"] == 3
-    assert package["product_scope"]["excluded_under_7d_count"] == 1
+    assert package["product_scope"]["evaluated_product_count"] == 2
+    assert package["product_scope"]["excluded_without_continuous_7d_active_count"] == 2
+    assert package["product_stability"]["buckets"]["test"][0]["display_label"] == "测试中"
+    assert package["product_stability"]["buckets"]["test"][0]["weekly_active_day_count"] in {0, 1}
     share = package["product_tier_order_share"]
     assert share["weekly"]["total_orders"] == 34
     assert share["weekly"]["stable"]["order_count"] == 19
@@ -298,7 +314,7 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert share["daily"][5]["other"]["order_share_pct"] == 25.0
     assert package["product_supplement_recommendations"]["country_expansion"][0]["product_code"] == "P101"
     assert package["product_supplement_recommendations"]["material_fill"][0]["material_key"] == "mk-1"
-    assert package["rule_findings"]["ads_pause"]
+    assert not any(row.get("matched_product_code") == "P202" for row in package["rule_findings"]["ads_pause"])
 
 
 def test_existing_report_backfills_missing_product_tier_order_share(monkeypatch):

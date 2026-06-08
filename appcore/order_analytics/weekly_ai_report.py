@@ -1626,6 +1626,43 @@ def _campaigns_by_product(campaign_rows: list[dict[str, Any]]) -> tuple[dict[int
     return dict(by_id), dict(by_code)
 
 
+def _weekly_ad_active_dates_by_product(campaign_rows: list[dict[str, Any]]) -> dict[tuple[str, str], set[date]]:
+    active_dates: dict[tuple[str, str], set[date]] = defaultdict(set)
+    for row in campaign_rows or []:
+        keys: list[tuple[str, str]] = []
+        pid = _safe_int(row.get("matched_product_id") or row.get("product_id"))
+        if pid > 0:
+            keys.append(("id", str(pid)))
+        code = str(row.get("matched_product_code") or row.get("product_code") or "").strip().lower()
+        if code:
+            keys.append(("code", code))
+        if not keys:
+            continue
+        for daily in row.get("daily") or []:
+            if _safe_float(daily.get("spend_usd")) <= 0 and _safe_int(daily.get("result_count")) <= 0:
+                continue
+            day = _date_value(daily.get("date"))
+            if day is None:
+                continue
+            for key in keys:
+                active_dates[key].add(day)
+    return dict(active_dates)
+
+
+def _weekly_active_dates_for_item(
+    item: dict[str, Any],
+    active_dates_by_product: dict[tuple[str, str], set[date]],
+) -> set[date]:
+    dates: set[date] = set()
+    pid = _safe_int(item.get("product_id"))
+    if pid > 0:
+        dates.update(active_dates_by_product.get(("id", str(pid)), set()))
+    code = str(item.get("product_code") or "").strip().lower()
+    if code:
+        dates.update(active_dates_by_product.get(("code", code), set()))
+    return dates
+
+
 def _compact_stability_for_candidate(item: dict[str, Any], ad_summary: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "status": item.get("status") or "",
@@ -1779,10 +1816,13 @@ def _sort_and_limit_stability_buckets(
 def _build_weekly_product_scope(
     product_stability: dict[str, Any],
     *,
+    week_start: date,
     week_end: date,
+    active_dates_by_product: dict[tuple[str, str], set[date]],
     limit: int = 50,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, set[Any]]]:
     items = _flatten_stability_items(product_stability)
+    required_active_dates = set(_dates_between(week_start, week_end))
     bucket_keys = ("stable", "secondary_stable", "potential", "test", "stopped", "never", "insufficient_history")
     buckets: dict[str, list[dict[str, Any]]] = {key: [] for key in bucket_keys}
     counts = {
@@ -1806,7 +1846,7 @@ def _build_weekly_product_scope(
         "supplement_ids": set(),
         "supplement_codes": set(),
     }
-    under_7_samples: list[dict[str, Any]] = []
+    without_continuous_active_samples: list[dict[str, Any]] = []
     without_ad_samples: list[dict[str, Any]] = []
 
     for raw_item in items:
@@ -1815,27 +1855,58 @@ def _build_weekly_product_scope(
         start_date = _stability_delivery_start(item)
         delivery_age_days = (week_end - start_date).days + 1 if start_date and start_date <= week_end else 0
         has_ad_data = _stability_has_ad_data(item)
-        weekly_eligible = bool(has_ad_data and delivery_age_days >= 7)
+        weekly_active_dates = _weekly_active_dates_for_item(item, active_dates_by_product)
+        has_continuous_7d_active = bool(required_active_dates and required_active_dates.issubset(weekly_active_dates))
+        is_stopped = status == "stopped" or str(item.get("delivery_status") or "").strip().lower() == "stopped"
+        weekly_eligible = bool(has_ad_data and not is_stopped and delivery_age_days >= 7 and has_continuous_7d_active)
+
+        # 动态判定并升级潜力品，但仅限本周连续 7 天活跃的经营评估样本。
+        is_active = (
+            str(item.get("delivery_status") or "").strip().lower() == "active"
+            or _safe_float(item.get("active_7d_ad_spend_usd")) > 0
+        )
+        potential = False
+        if weekly_eligible and is_active and status not in {"stable", "secondary_stable"}:
+            last_7d_orders = _safe_int(item.get("last_7d_orders"))
+            roas_val = item.get("overall_roas")
+            if last_7d_orders >= 35 or (roas_val is not None and _safe_float(roas_val) >= 1.2 and last_7d_orders >= 3):
+                potential = True
+
         display_status = status
         if not has_ad_data:
             display_status = "never"
+        elif is_stopped:
+            display_status = "stopped"
+        elif potential:
+            display_status = "potential"
+            item["status"] = "potential"
+            item["display_label"] = "潜力品"
+            marks = list(item.get("stable_marks") or [])
+            if "潜力品" not in marks:
+                marks.append("潜力品")
+            item["stable_marks"] = marks
         elif not weekly_eligible:
-            display_status = "insufficient_history"
+            display_status = "test"
         elif display_status not in buckets:
             display_status = "test"
 
         item["weekly_delivery_start_date"] = start_date.isoformat() if start_date else None
         item["weekly_delivery_age_days"] = delivery_age_days
         item["weekly_eligible_for_analysis"] = weekly_eligible
+        item["weekly_active_dates"] = sorted(day.isoformat() for day in weekly_active_dates if week_start <= day <= week_end)
+        item["weekly_active_day_count"] = len(set(item["weekly_active_dates"]))
+        item["weekly_has_continuous_7d_active"] = has_continuous_7d_active
         item["weekly_display_status"] = display_status
-        if display_status == "insufficient_history":
-            item["display_label"] = "投放未满7天"
+        if display_status == "stopped":
+            item["display_label"] = "终止投放"
+        elif display_status == "test":
+            item["display_label"] = "测试中"
 
         if display_status == "stable":
             counts["stable_total"] += 1
         elif display_status in counts:
             counts[display_status] += 1
-        if weekly_eligible:
+        if weekly_eligible or display_status == "potential":
             counts["evaluated_total"] += 1
             pid = _safe_int(item.get("product_id"))
             code = str(item.get("product_code") or "").strip().lower()
@@ -1848,18 +1919,20 @@ def _build_weekly_product_scope(
                     scope_sets["active_ids"].add(pid)
                 if code:
                     scope_sets["active_codes"].add(code)
-            if display_status in {"stable", "secondary_stable"}:
+            if display_status in {"stable", "secondary_stable", "potential"}:
                 if pid:
                     scope_sets["supplement_ids"].add(pid)
                 if code:
                     scope_sets["supplement_codes"].add(code)
-        elif has_ad_data and len(under_7_samples) < 10:
-            under_7_samples.append({
+        elif has_ad_data and not is_stopped and len(without_continuous_active_samples) < 10:
+            without_continuous_active_samples.append({
                 "product_id": item.get("product_id"),
                 "product_code": item.get("product_code"),
                 "product_name": item.get("product_name"),
                 "delivery_start_date": item.get("weekly_delivery_start_date"),
                 "delivery_age_days": delivery_age_days,
+                "weekly_active_day_count": item["weekly_active_day_count"],
+                "weekly_active_dates": item["weekly_active_dates"],
             })
         elif not has_ad_data and len(without_ad_samples) < 10:
             without_ad_samples.append({
@@ -1880,20 +1953,22 @@ def _build_weekly_product_scope(
         "buckets": _sort_and_limit_stability_buckets(buckets, limit=limit),
         "warnings": product_stability.get("warnings") or [],
         "computed_at": product_stability.get("computed_at"),
-        "scope_note": "仅将截至本周结束日投放满 7 天的产品纳入经营评估。",
+        "scope_note": "仅将所选周连续 7 天都有广告活跃数据的产品纳入经营评估。",
     }
     product_scope = {
         "filter_applied": bool(items),
+        "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
-        "minimum_delivery_days": 7,
+        "required_continuous_active_days": 7,
         "evaluated_product_count": counts["evaluated_total"],
         "excluded_under_7d_count": counts["insufficient_history"],
+        "excluded_without_continuous_7d_active_count": len(without_continuous_active_samples),
         "excluded_without_ad_data_count": counts["never"],
-        "excluded_under_7d_samples": under_7_samples,
+        "excluded_without_continuous_7d_active_samples": without_continuous_active_samples,
         "excluded_without_ad_data_samples": without_ad_samples,
         "notes": [
-            "投放起始时间按自然日截断，起始日计为第 1 天。",
-            "商品方向、广告动作、稳定分级和补素材建议只使用投放满 7 天的产品样本。",
+            "广告活跃按周报同口径广告计划日数据判断，任一天有广告花费或购买结果即视为当天活跃。",
+            "商品方向、低单量、广告动作、补素材建议和逐产品 AI 评估只使用所选周连续 7 天活跃的产品样本。",
         ],
     }
     return scoped_summary, product_scope, scope_sets
@@ -2117,7 +2192,7 @@ def _build_product_supplement_recommendations(
     scope_sets: dict[str, set[Any]],
 ) -> dict[str, Any]:
     buckets = product_stability.get("buckets") or {}
-    candidate_items = list(buckets.get("stable") or []) + list(buckets.get("secondary_stable") or [])
+    candidate_items = list(buckets.get("stable") or []) + list(buckets.get("secondary_stable") or []) + list(buckets.get("potential") or [])
     product_index = _build_product_index(product_rows)
     candidates: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -2239,6 +2314,7 @@ def build_weekly_data_package(
         product_sales,
     )
     campaign_rows = _aggregate_campaigns(all_overviews)
+    weekly_active_dates_by_product = _weekly_ad_active_dates_by_product(campaign_rows)
     daily_global = daily_by_store["all"]
     segments = _build_segments(daily_global)
 
@@ -2266,12 +2342,16 @@ def build_weekly_data_package(
         )
     product_stability, product_scope, product_scope_sets = _build_weekly_product_scope(
         product_stability_raw,
+        week_start=week_start,
         week_end=week_end,
+        active_dates_by_product=weekly_active_dates_by_product,
         limit=50,
     )
     product_stability_for_share, _share_scope, _share_scope_sets = _build_weekly_product_scope(
         product_stability_raw,
+        week_start=week_start,
         week_end=week_end,
+        active_dates_by_product=weekly_active_dates_by_product,
         limit=0,
     )
     product_ai_notes: list[dict[str, Any]] = []
