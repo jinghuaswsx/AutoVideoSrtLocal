@@ -157,6 +157,12 @@ def test_weekly_ai_analysis_tab_and_panel_present():
     assert "renderWeeklyAiProductEvaluations" in template
     assert "renderWeeklyAiSupplementRecommendations" in template
     assert "initWeeklyAiAnalysis" in template
+    assert "weeklyAiStableTypeLabel" in template
+    assert "weeklyAiPotentialNewTypeLabel" in template
+    assert "<th>标记</th>" not in template
+    assert "<th>标签</th>" not in template
+    assert "<th>产品分级</th>" not in template
+    assert "statCard('二级稳定品'" not in template
 
 
 def test_new_product_launch_panel_has_three_scope_tabs_and_request_param():

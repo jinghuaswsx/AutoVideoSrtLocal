@@ -357,8 +357,9 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert potential_new["summary"]["weekly_created_product_count"] == 4
     assert potential_new["summary"]["testing_candidate_count"] == 2
     assert potential_new["rows"][0]["product_code"] == "P202"
-    assert potential_new["rows"][0]["label"] == "潜力新品"
-    assert potential_new["rows"][0]["product_grade"] == "测试中"
+    assert potential_new["rows"][0]["type_label"] == "潜力新品 · 测试中"
+    assert "label" not in potential_new["rows"][0]
+    assert "product_grade" not in potential_new["rows"][0]
     assert potential_new["rows"][0]["avg_daily_orders"] == 0.14
     assert not any(row["product_code"] in {"P101", "P505"} for row in potential_new["rows"])
 

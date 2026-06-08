@@ -3199,10 +3199,9 @@
       <table class="oa-table">
         <thead>
           <tr>
-            <th>标签</th>
+            <th>类型</th>
             <th>产品主图</th>
             <th>产品</th>
-            <th>产品分级</th>
             <th>本周订单</th>
             <th>日均单量</th>
             <th>ROAS</th>
@@ -3229,7 +3228,6 @@
             <th>类型</th>
             <th>产品主图</th>
             <th>产品</th>
-            <th>标记</th>
             <th>7天单量</th>
             <th>30天单量</th>
             <th>7天日均</th>
@@ -7150,8 +7148,8 @@
       ['weeklyAiDailyBody', 10],
       ['weeklyAiStoreBody', 7],
       ['weeklyAiTierOrderShareBody', 8],
-      ['weeklyAiPotentialNewBody', 10],
-      ['weeklyAiStabilityBody', 10],
+      ['weeklyAiPotentialNewBody', 9],
+      ['weeklyAiStabilityBody', 9],
       ['weeklyAiProductEvaluationBody', 8],
       ['weeklyAiSupplementCountryBody', 5],
       ['weeklyAiSupplementMaterialBody', 8],
@@ -7220,8 +7218,8 @@
       ['weeklyAiDailyBody', 10],
       ['weeklyAiStoreBody', 7],
       ['weeklyAiTierOrderShareBody', 8],
-      ['weeklyAiPotentialNewBody', 10],
-      ['weeklyAiStabilityBody', 10],
+      ['weeklyAiPotentialNewBody', 9],
+      ['weeklyAiStabilityBody', 9],
       ['weeklyAiProductEvaluationBody', 8],
       ['weeklyAiSupplementCountryBody', 5],
       ['weeklyAiSupplementMaterialBody', 8],
@@ -7524,6 +7522,15 @@
     if (!body.children.length) body.innerHTML = '<tr><td colspan="8">暂无产品分层订单占比数据</td></tr>';
   }
 
+  function weeklyAiPotentialNewTypeLabel(item) {
+    item = item || {};
+    var explicitType = String(item.type_label || '').trim();
+    if (explicitType) return explicitType;
+    var grade = String(item.weekly_display_status || item.status || '测试中').trim();
+    if (grade === 'test') grade = '测试中';
+    return '潜力新品 · ' + (grade || '测试中');
+  }
+
   function renderWeeklyAiPotentialNewProducts(data) {
     var summaryEl = document.getElementById('weeklyAiPotentialNewSummary');
     var note = document.getElementById('weeklyAiPotentialNewNote');
@@ -7544,10 +7551,9 @@
     body.innerHTML = '';
     ((data || {}).rows || []).forEach(function(item) {
       weeklyAiAppendRow(body, [
-        escapeHtml(item.label || item.display_label || '潜力新品'),
+        escapeHtml(weeklyAiPotentialNewTypeLabel(item)),
         weeklyAiProductImageCell(item),
         weeklyAiProductCell(item),
-        escapeHtml(item.product_grade || '测试中'),
         item.order_count || 0,
         Number(item.avg_daily_orders || 0).toFixed(2),
         fmtRoasValue(item.roas),
@@ -7556,7 +7562,19 @@
         escapeHtml(formatShortDateTime(item.created_at))
       ]);
     });
-    if (!body.children.length) body.innerHTML = '<tr><td colspan="10">暂无潜力新品数据</td></tr>';
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="9">暂无潜力新品数据</td></tr>';
+  }
+
+  function weeklyAiStableTypeLabel(groupLabel, item) {
+    item = item || {};
+    if (groupLabel === '稳定品') {
+      var marks = (item.stable_marks || []).filter(Boolean);
+      return marks.length ? ('稳定品 · ' + marks.join(' / ')) : '稳定品';
+    }
+    if (groupLabel === '潜力品') return '潜力品';
+    if (groupLabel === '测试中') return '测试中';
+    if (groupLabel === '终止投放') return '终止投放';
+    return groupLabel || item.display_label || '-';
   }
 
   function renderWeeklyAiProductStability(stability) {
@@ -7570,11 +7588,10 @@
         statCard('稳定品', counts.stable_total || 0) +
         statCard('7天稳定', counts.stable_7d || 0) +
         statCard('30天稳定', counts.stable_30d || 0) +
-        statCard('二级稳定品', counts.secondary_stable || 0) +
-        statCard('潜力品', counts.potential || 0) +
-        statCard('测试品', counts.test || 0) +
-        statCard('已停投', counts.stopped || 0) +
-        statCard('未满7天', counts.insufficient_history || 0);
+        statCard('潜力品', (counts.secondary_stable || 0) + (counts.potential || 0)) +
+        statCard('测试中', counts.test || 0) +
+        statCard('终止投放', counts.stopped || 0) +
+        statCard('未投放', counts.never || 0);
     }
     if (computed) {
       computed.textContent = stability.computed_at ? ('分级刷新 · ' + formatShortDateTime(stability.computed_at)) : '';
@@ -7583,19 +7600,19 @@
     body.innerHTML = '';
     var bucketDefs = [
       ['稳定品', buckets.stable || []],
-      ['二级稳定品', buckets.secondary_stable || []],
-      ['潜力品', buckets.potential || []],
-      ['测试品', buckets.test || []],
-      ['已停投', buckets.stopped || []],
-      ['未满7天', buckets.insufficient_history || []]
+      ['潜力品', (buckets.secondary_stable || []).concat(buckets.potential || [])],
+      ['测试中', buckets.test || []],
+      ['终止投放', buckets.stopped || []]
     ];
+    if ((buckets.insufficient_history || []).length) {
+      bucketDefs.push(['测试中', buckets.insufficient_history || []]);
+    }
     bucketDefs.forEach(function(group) {
       (group[1] || []).slice(0, (group[0] === '稳定品' || group[0] === '潜力品') ? 20 : 10).forEach(function(item) {
         weeklyAiAppendRow(body, [
-          group[0],
+          escapeHtml(weeklyAiStableTypeLabel(group[0], item)),
           weeklyAiProductImageCell(item),
           weeklyAiProductCell(item),
-          escapeHtml((item.stable_marks || []).join(' / ') || item.display_label || ''),
           item.last_7d_orders || 0,
           item.last_30d_orders || 0,
           Number(item.avg_7d_orders || 0).toFixed(2),
@@ -7605,7 +7622,7 @@
         ]);
       });
     });
-    if (!body.children.length) body.innerHTML = '<tr><td colspan="10">暂无稳定分级数据</td></tr>';
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="9">暂无稳定分级数据</td></tr>';
   }
 
   function weeklyAiActionLabel(action) {
@@ -7619,7 +7636,6 @@
     };
     return map[action] || action || '-';
   }
-
   function weeklyAiStageText(item) {
     var stage = item.stage || {};
     var parts = [];

@@ -1306,9 +1306,7 @@ def _build_potential_new_products(
         campaign_ad_cost = _safe_float(campaign_metrics.get("ad_cost_usd"))
         ad_cost = _round_money(product_ad_cost if product_ad_cost > 0 else campaign_ad_cost)
         rows.append({
-            "label": "潜力新品",
-            "display_label": "潜力新品",
-            "product_grade": "测试中",
+            "type_label": "潜力新品 · 测试中",
             "status": "test",
             "product_id": pid,
             "product_code": code,
