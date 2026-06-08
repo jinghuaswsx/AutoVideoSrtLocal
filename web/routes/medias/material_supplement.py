@@ -133,16 +133,49 @@ def _card_id(video_path: str, media_item_id: int | None = None) -> str:
 def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
     if lib_item['id'] == bound_item['id']:
         return True
-    if lib_item.get('source_raw_id') is not None and bound_item.get('source_raw_id') is not None:
-        if lib_item['source_raw_id'] == bound_item['source_raw_id']:
-            return True
-    if lib_item.get('source_ref_id') == bound_item['id']:
+
+    # 1. Explicit source mismatch guard: if both specify a source product/item, they must match
+    ref_lib = lib_item.get('source_ref_id') or lib_item.get('source_raw_id')
+    ref_bound = bound_item.get('source_ref_id') or bound_item.get('source_raw_id')
+    if ref_lib is not None and ref_bound is not None:
+        try:
+            if int(ref_lib) != int(ref_bound):
+                return False
+        except (ValueError, TypeError):
+            pass
+
+    # Direct references or matching parent references mean they are related
+    if ref_lib is not None and int(ref_lib) == int(bound_item['id']):
         return True
-    
-    # Fallback: filename keyword matching
+    if ref_bound is not None and int(ref_bound) == int(lib_item['id']):
+        return True
+    if ref_lib is not None and ref_bound is not None:
+        try:
+            if int(ref_lib) == int(ref_bound):
+                return True
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Date prefix mismatch guard: if both files start with date prefixes, they must have the same date
+    # or one must embed the other's date (indicating translation tracking)
     fn_lib = str(lib_item.get('filename') or '').strip().lower()
     fn_bound = str(bound_item.get('filename') or '').strip().lower()
-    
+
+    date_pattern = re.compile(r'^(\d{4}[.-]\d{2}[.-]\d{2})')
+    match_lib = date_pattern.match(fn_lib)
+    match_bound = date_pattern.match(fn_bound)
+    if match_lib and match_bound:
+        date_lib = match_lib.group(1).replace('-', '.')
+        date_bound = match_bound.group(1).replace('-', '.')
+        if date_lib != date_bound:
+            digits_lib = "".join(re.findall(r"\d+", fn_lib))
+            digits_bound = "".join(re.findall(r"\d+", fn_bound))
+            raw_date_lib = date_lib.replace('.', '')
+            raw_date_bound = date_bound.replace('.', '')
+            if raw_date_lib not in digits_bound and raw_date_bound not in digits_lib:
+                return False
+
+    # 3. Fallback: filename keyword matching
     # Distinguishing keywords for this product's materials:
     for keyword in ["李文龙", "谭云", "补充素材"]:
         if keyword in fn_lib and keyword in fn_bound:

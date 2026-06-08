@@ -3382,3 +3382,32 @@ def test_api_product_supplement_aggregates_spend_and_adds_summary_tab(authed_cli
     assert tv[1]["lang"] == "en"
     assert tv[2]["lang"] == "it"
 
+
+def test_is_translation_of_with_guards():
+    from web.routes.medias.material_supplement import _is_translation_of
+
+    # 1. Same id -> True
+    assert _is_translation_of({"id": 1}, {"id": 1}) is True
+
+    # 2. Source raw/ref mismatch guard
+    item_a = {"id": 1, "source_raw_id": 10, "filename": "2026.03.25-棒球帽-补充素材.mp4"}
+    item_b = {"id": 2, "source_raw_id": 20, "filename": "2026.03.25-棒球帽-补充素材.mp4"}
+    # Even if they have the same date and keyword, their explicit source ids mismatch -> False
+    assert _is_translation_of(item_a, item_b) is False
+
+    # 3. Source raw/ref match
+    item_c = {"id": 3, "source_raw_id": 10, "filename": "2026.03.25-棒球帽-补充素材.mp4"}
+    assert _is_translation_of(item_a, item_c) is True
+
+    # 4. Date prefix mismatch guard
+    item_d = {"id": 4, "filename": "2026.03.25-棒球帽-补充素材.mp4"}
+    item_e = {"id": 5, "filename": "2026.04.09-棒球帽-补充素材.mp4"}
+    # Date mismatches and neither embeds the other's date -> False
+    assert _is_translation_of(item_d, item_e) is False
+
+    # 5. Date prefix mismatch but embedded date allowed
+    item_f = {"id": 6, "filename": "2025.06.05-棒球帽.mp4"}
+    item_g = {"id": 7, "filename": "2026.06.06-棒球帽-20250605-fr.mp4"}
+    # g embeds f's date, and 20250605 is in date patterns -> True
+    assert _is_translation_of(item_f, item_g) is True
+
