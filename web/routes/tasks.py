@@ -7,7 +7,7 @@ import os
 import re
 from functools import wraps
 
-from flask import Blueprint, current_app, render_template, request
+from flask import Blueprint, current_app, render_template, request, send_file, abort
 from flask_login import current_user, login_required
 
 from web.auth import permission_required
@@ -287,7 +287,79 @@ def index():
 @permission_required("task_center")
 @admin_required
 def new_product_page():
-    return render_template("task_new_product.html")
+    from appcore.db import query, query_one
+    items_sql = """
+        SELECT 
+            i.id AS media_item_id,
+            i.product_id AS media_product_id,
+            i.filename,
+            i.display_name,
+            i.thumbnail_path,
+            i.duration_seconds,
+            i.created_at,
+            p.name AS product_name,
+            p.product_code,
+            p.product_link,
+            p.main_image AS product_main_image,
+            p.user_id AS product_owner_id,
+            u.username AS creator_name,
+            u.display_name AS creator_display_name
+        FROM media_items i
+        JOIN media_products p ON i.product_id = p.id
+        LEFT JOIN users u ON i.user_id = u.id
+        WHERE i.lang = 'en' AND i.deleted_at IS NULL AND p.deleted_at IS NULL
+        ORDER BY i.created_at DESC
+        LIMIT 100
+    """
+    projects = query(items_sql)
+    for p in projects:
+        item_id = p["media_item_id"]
+        # 查询翻译子任务
+        tasks_sql = """
+            SELECT id, country_code, status, assignee_id, parent_task_id, is_urgent
+            FROM tasks
+            WHERE media_item_id = %s AND parent_task_id IS NOT NULL AND deleted_at IS NULL
+        """
+        p["subtasks"] = query(tasks_sql, (item_id,))
+        
+        # 查询去字幕父任务
+        parent_sql = """
+            SELECT id, status, assignee_id, is_urgent
+            FROM tasks
+            WHERE media_item_id = %s AND parent_task_id IS NULL AND deleted_at IS NULL
+            LIMIT 1
+        """
+        p["parent_task"] = query_one(parent_sql, (item_id,))
+    
+    return render_template("task_new_product.html", projects=projects)
+
+
+@bp.route("/api/new-product/thumbnail/<int:item_id>")
+@login_required
+def get_item_thumbnail(item_id: int):
+    from appcore.db import query_one
+    row = query_one("SELECT thumbnail_path FROM media_items WHERE id=%s", (item_id,))
+    if row and row.get("thumbnail_path") and os.path.exists(row["thumbnail_path"]):
+        return send_file(row["thumbnail_path"])
+    abort(404)
+
+
+@bp.route("/api/new-product/project/<int:media_item_id>", methods=["DELETE"])
+@login_required
+@permission_required("task_center")
+@admin_required
+def delete_new_product_project(media_item_id: int):
+    from appcore.db import execute
+    try:
+        # 1. 软删 media_items
+        execute("UPDATE media_items SET deleted_at=NOW() WHERE id=%s", (media_item_id,))
+        # 2. 软删关联的 tasks (包括 parent 和 child)
+        execute("UPDATE tasks SET deleted_at=NOW() WHERE media_item_id=%s", (media_item_id,))
+        _audit_task_action(0, "new_product_project_deleted", {"media_item_id": media_item_id})
+        return _json_response({"ok": True})
+    except Exception as exc:
+        current_app.logger.exception("delete new product project failed")
+        return _json_response({"error": str(exc)}, 500)
 
 
 @bp.route("/stats")
