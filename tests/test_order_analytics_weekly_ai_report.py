@@ -301,6 +301,65 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert package["rule_findings"]["ads_pause"]
 
 
+def test_existing_report_backfills_missing_product_tier_order_share(monkeypatch):
+    calls = []
+    backfilled_share = {
+        "weekly": {
+            "label": "整周",
+            "total_orders": 20,
+            "stable": {"key": "stable", "label": "稳定品", "order_count": 12, "order_share_pct": 60.0},
+            "potential": {"key": "potential", "label": "潜力品", "order_count": 5, "order_share_pct": 25.0},
+            "other": {"key": "other", "label": "其他品", "order_count": 3, "order_share_pct": 15.0},
+        },
+        "daily": [],
+        "source": "product_sales_stats",
+    }
+
+    monkeypatch.setattr(
+        war,
+        "query_one",
+        lambda *a, **k: {
+            "week_start_date": date(2026, 5, 31),
+            "week_end_date": date(2026, 6, 6),
+            "generated_at": datetime(2026, 6, 7, 20, 5, 0),
+            "generated_by": "manual",
+            "status": "success",
+            "data_snapshot_json": json.dumps({
+                "summary": {"order_count": 20},
+                "data_quality": {"status": "ok"},
+                "product_stability": {"counts": {"stable_total": 1}},
+            }),
+            "ai_report_json": json.dumps({"executive_summary": ["旧报告结论"]}),
+            "raw_text": "{}",
+            "data_quality_json": json.dumps({"status": "ok"}),
+            "usage_log_id": 9,
+            "error_message": None,
+        },
+    )
+    monkeypatch.setattr(war, "query", lambda *a, **k: [])
+
+    def fake_build_weekly_data_package(week_start, week_end):
+        calls.append((week_start, week_end))
+        return {
+            "data_quality": {"status": "ok"},
+            "product_tier_order_share": backfilled_share,
+            "product_stability": {"counts": {"stable_total": 1}},
+        }
+
+    monkeypatch.setattr(war, "build_weekly_data_package", fake_build_weekly_data_package)
+
+    report = war.get_or_build_report_payload(date(2026, 6, 3))
+
+    assert calls == [(date(2026, 5, 31), date(2026, 6, 6))]
+    assert report["status"] == "success"
+    assert report["report"]["executive_summary"] == ["旧报告结论"]
+    share = report["data_package"]["product_tier_order_share"]
+    assert share["weekly"]["total_orders"] == 20
+    assert share["weekly"]["stable"]["order_count"] == 12
+    assert share["weekly"]["potential"]["order_count"] == 5
+    assert share["weekly"]["other"]["order_count"] == 3
+
+
 def test_generate_ai_report_success_upserts(monkeypatch):
     package = {
         "period": {"week_start": date(2026, 5, 31), "week_end": date(2026, 6, 6)},

@@ -72,6 +72,7 @@ list_recent_reports(limit: int = 12) -> list[dict]
 - `segments`：周日、周一到周三、周四到周六、周五到周六等分段对比。
 - `product_rows`：产品维度收入、订单、销量、广告费、ROAS、利润、利润率、活跃天数、每日订单分布。
 - `product_tier_order_share`：按稳定品、潜力品、其他品汇总订单量占比，包含每周汇总和每天明细。稳定品读取 `product_stability.buckets.stable`；潜力品读取 `secondary_stable` 和历史兼容 `potential`；其他品为本周有订单但不属于前两类的所有产品。占比分母使用同一周期内 `product_sales_stats` 的产品订单量合计。
+- 兼容旧快照：已有 `weekly_ai_analysis_reports.data_snapshot_json` 如果缺少 `product_tier_order_share`，读取报告时必须按同一周重新计算该字段并补进响应；补算不重新调用 AI、不覆盖旧 AI 结论。
 - `campaign_rows`：账户、campaign、匹配产品、每日 spend / purchase value / ROAS、周累计、首个出量日、活跃天数。
 - `low_order_products`：1-2 单、3-5 单产品汇总，标记是否有广告消耗。
 - `rule_findings`：后端规则先产出的确定性异常，如预算放大 ROAS 下滑、店铺亏损集中、数据质量 mismatch。
