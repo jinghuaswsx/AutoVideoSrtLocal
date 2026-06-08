@@ -130,65 +130,64 @@ def _card_id(video_path: str, media_item_id: int | None = None) -> str:
         return f"lib-{media_item_id}-{path_hash}"
     return f"mk-{path_hash}"
 
+
+def _link_value(value: Any) -> str:
+    raw = str(value or "").strip()
+    return raw if raw and raw.lower() != "none" else ""
+
+
+def _legacy_translation_fingerprint(value: str | None) -> str:
+    normalized = _term_no_ext(value or "")
+    if not normalized:
+        return ""
+    normalized = re.sub(r"[\(（][^\)）]{1,20}语[\)）]", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    date_match = re.match(r"^(20\d{2})[.\-_年]?(\d{1,2})[.\-_月]?(\d{1,2})", normalized)
+    if not date_match:
+        return ""
+    date_key = "".join(part.zfill(2) if idx else part for idx, part in enumerate(date_match.groups()))
+    before_assignee = re.split(r"[-_\s]*(?:指派|上传者|上传人)[-_\s]*", normalized, maxsplit=1)[0]
+    tokens = [
+        token.strip()
+        for token in re.split(r"[-_\s]+", before_assignee)
+        if token.strip()
+    ]
+    material_tokens = [
+        token
+        for token in tokens[1:]
+        if not re.fullmatch(r"[a-z]", token)
+    ]
+    if len(material_tokens) < 2:
+        return ""
+    return "|".join([date_key, *material_tokens])
+
+
 def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
-    if lib_item['id'] == bound_item['id']:
+    lib_id = _link_value(lib_item.get("id"))
+    bound_id = _link_value(bound_item.get("id"))
+    if lib_id and bound_id and lib_id == bound_id:
         return True
 
-    # 1. Explicit source mismatch guard: if both specify a source product/item, they must match
-    ref_lib = lib_item.get('source_ref_id') or lib_item.get('source_raw_id')
-    ref_bound = bound_item.get('source_ref_id') or bound_item.get('source_raw_id')
-    if ref_lib is not None and ref_bound is not None:
-        try:
-            if int(ref_lib) != int(ref_bound):
-                return False
-        except (ValueError, TypeError):
-            pass
+    lib_source_raw = _link_value(lib_item.get("source_raw_id"))
+    lib_source_ref = _link_value(lib_item.get("source_ref_id"))
+    bound_source_raw = _link_value(bound_item.get("source_raw_id"))
+    bound_source_ref = _link_value(bound_item.get("source_ref_id"))
 
-    # Direct references or matching parent references mean they are related
-    if ref_lib is not None and int(ref_lib) == int(bound_item['id']):
+    bound_source_values = {value for value in (bound_source_raw, bound_source_ref) if value}
+    if lib_source_raw and lib_source_raw in bound_source_values:
         return True
-    if ref_bound is not None and int(ref_bound) == int(lib_item['id']):
+    if lib_source_ref and lib_source_ref in {*bound_source_values, bound_id}:
         return True
-    if ref_lib is not None and ref_bound is not None:
-        try:
-            if int(ref_lib) == int(ref_bound):
-                return True
-        except (ValueError, TypeError):
-            pass
 
-    # 2. Date prefix mismatch guard: if both files start with date prefixes, they must have the same date
-    # or one must embed the other's date (indicating translation tracking)
-    fn_lib = str(lib_item.get('filename') or '').strip().lower()
-    fn_bound = str(bound_item.get('filename') or '').strip().lower()
+    if lib_source_raw or lib_source_ref or bound_source_raw or bound_source_ref:
+        if (lib_source_raw or lib_source_ref) and (bound_source_raw or bound_source_ref):
+            return False
 
-    date_pattern = re.compile(r'^(\d{4}[.-]\d{2}[.-]\d{2})')
-    match_lib = date_pattern.match(fn_lib)
-    match_bound = date_pattern.match(fn_bound)
-    if match_lib and match_bound:
-        date_lib = match_lib.group(1).replace('-', '.')
-        date_bound = match_bound.group(1).replace('-', '.')
-        if date_lib != date_bound:
-            digits_lib = "".join(re.findall(r"\d+", fn_lib))
-            digits_bound = "".join(re.findall(r"\d+", fn_bound))
-            raw_date_lib = date_lib.replace('.', '')
-            raw_date_bound = date_bound.replace('.', '')
-            if raw_date_lib not in digits_bound and raw_date_bound not in digits_lib:
-                return False
+    lib_fingerprint = _legacy_translation_fingerprint(lib_item.get("filename") or lib_item.get("display_name"))
+    bound_fingerprint = _legacy_translation_fingerprint(bound_item.get("filename") or bound_item.get("display_name"))
+    if lib_fingerprint and bound_fingerprint and lib_fingerprint == bound_fingerprint:
+        return True
 
-    # 3. Fallback: filename keyword matching
-    # Distinguishing keywords for this product's materials:
-    for keyword in ["李文龙", "谭云", "补充素材"]:
-        if keyword in fn_lib and keyword in fn_bound:
-            return True
-            
-    # Check date patterns (e.g. 20250605 or 2025.06.05)
-    digits_lib = "".join(re.findall(r"\d+", fn_lib))
-    digits_bound = "".join(re.findall(r"\d+", fn_bound))
-    for date_str in ["20250605", "2025.06.05", "20250619", "2025.06.19"]:
-        date_clean = date_str.replace(".", "")
-        if date_clean in digits_lib and date_clean in digits_bound:
-            return True
-            
     return False
 
 
