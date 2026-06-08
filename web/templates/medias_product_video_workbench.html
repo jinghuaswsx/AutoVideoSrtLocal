@@ -271,7 +271,28 @@
   border: 1px solid #fecaca;
 }
 .vw-chip-main { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 800; font-size: 12px; }
-.vw-chip-sub { color: var(--vw-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-chip-sub {
+  color: var(--vw-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+  flex: 1;
+  min-height: 30px;
+}
+.vw-chip-sub-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+.vw-chip-copy-btn {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
 .vw-panel-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; }
 .vw-panel-table th, .vw-panel-table td { padding: 7px 8px; border-bottom: 1px solid var(--vw-border); text-align: right; vertical-align: top; }
 .vw-panel-table th:first-child, .vw-panel-table td:first-child { text-align: left; }
@@ -796,9 +817,19 @@
         const formattedRoas = rVal == null ? '-' : Number(rVal).toFixed(2);
         roasHtml = `<div class="vw-chip-roas-badge">ROAS: ${formattedRoas}</div>`;
       }
+      const hasMaterial = row.status === 'translated' && version && (version.filename || version.display_name);
       return `<div class="vw-country-chip ${cls}">
         <div class="vw-chip-main"><span>${esc(row.country_code || '')}</span><span>${countryStatusText(row)}</span></div>
-        <div class="vw-chip-sub" title="${esc(sub)}">${esc(row.lang_name || row.lang || '')} · ${esc(sub)}</div>
+        <div class="vw-chip-sub-row">
+          <div class="vw-chip-sub" title="${esc(row.lang_name || row.lang || '')} · ${esc(sub)}">
+            ${esc(row.lang_name || row.lang || '')} · ${esc(sub)}
+          </div>
+          ${hasMaterial ? `
+            <button type="button" class="vw-inline-icon-btn vw-chip-copy-btn" onclick="copyText('${esc(version.filename || version.display_name || '')}', this)" title="复制视频文件名" aria-label="复制视频文件名">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+          ` : ''}
+        </div>
         ${roasHtml}
       </div>`;
     }).join('');
