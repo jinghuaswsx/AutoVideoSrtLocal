@@ -125,7 +125,10 @@
 }
 ```
 
-百分比字段使用现有 `_compute_pct_change(current, previous)` 语义；`previous=0 && current>0` 时为 `null`。
+百分比字段按指标类型计算：
+
+- `revenue_with_shipping` / `order_count`：使用现有 `_compute_pct_change(current, previous)` 语义；`previous=0 && current>0` 时为 `null`。
+- `profit_with_estimate_usd`：利润允许为负，不能直接用负数 `previous` 作分母，否则会出现“昨天亏损、今天盈利却显示负增长”。利润变化百分比按改善率计算：`(current - previous) / abs(previous) * 100`；`previous=0 && current!=0` 时为 `null`，`previous=0 && current=0` 时为 `0%`。
 
 ## 后端设计
 
@@ -189,6 +192,7 @@
   - 不退回日终整日广告表。
 - 昨天同刻订单数为 0、今天订单数为 0：显示 `0%`。
 - 昨天同刻订单数为 0、今天订单数大于 0：不追加百分比。
+- 昨天同刻利润为负、今天利润更高（含转正）：显示正百分比并用增长色；昨天同刻利润为负、今天利润更低：显示负百分比并用下降色。
 
 ## 不做
 

@@ -93,6 +93,57 @@ def test_build_yesterday_same_time_comparison_for_current_global(monkeypatch):
     assert "profit_summary" in calls
 
 
+def test_build_yesterday_same_time_comparison_profit_uses_absolute_negative_baseline(monkeypatch):
+    """Docs-anchor: docs/superpowers/specs/2026-06-06-realtime-dashboard-yesterday-same-time-comparison-design.md#API设计"""
+    target = date(2026, 6, 5)
+    current_until = datetime(2026, 6, 6, 10, 20)
+
+    monkeypatch.setattr(
+        realtime_oa,
+        "_get_realtime_order_summary",
+        lambda *_args, **_kwargs: {
+            "revenue_with_shipping": 1000.0,
+            "order_count": 50,
+        },
+    )
+    monkeypatch.setattr(
+        realtime_oa,
+        "_build_order_profit_summary_until",
+        lambda *_args, **_kwargs: {"profit_with_estimate_usd": -100.0},
+    )
+
+    comparison = realtime_oa._build_yesterday_same_time_comparison(
+        {
+            "period": {
+                "date": target,
+                "day_start_at": datetime(2026, 6, 5, 16, 0),
+                "day_end_at": datetime(2026, 6, 6, 16, 0),
+                "data_until_at": current_until,
+            },
+            "summary": {
+                "revenue_with_shipping": 1200.0,
+                "order_count": 60,
+            },
+            "order_profit_summary": {
+                "profit_with_estimate_usd": 200.0,
+            },
+        },
+        target=target,
+        now=datetime(2026, 6, 6, 10, 25),
+        product_id=None,
+        product_ids=None,
+        unmatched_ads=False,
+        product_launch_scope=None,
+        site_codes=("newjoy", "omurio"),
+    )
+
+    assert comparison["summary"]["profit_with_estimate_usd"] == {
+        "current": 200.0,
+        "previous": -100.0,
+        "pct": 300.0,
+    }
+
+
 @pytest.mark.parametrize(
     "target, product_id, product_ids, unmatched_ads, product_launch_scope, site_codes",
     [
@@ -151,6 +202,27 @@ def test_metric_comparison_handles_previous_zero():
         "current": 5,
         "previous": 0,
         "pct": None,
+    }
+
+
+def test_metric_comparison_absolute_negative_baseline_tracks_profit_direction():
+    assert realtime_oa._metric_comparison(
+        200.0,
+        -100.0,
+        use_abs_previous_denominator=True,
+    ) == {
+        "current": 200.0,
+        "previous": -100.0,
+        "pct": 300.0,
+    }
+    assert realtime_oa._metric_comparison(
+        -200.0,
+        -100.0,
+        use_abs_previous_denominator=True,
+    ) == {
+        "current": -200.0,
+        "previous": -100.0,
+        "pct": -100.0,
     }
 
 
