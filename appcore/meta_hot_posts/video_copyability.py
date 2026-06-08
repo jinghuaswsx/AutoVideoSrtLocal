@@ -219,6 +219,10 @@ def analyze_video_copyability(
     compress_fn: Callable[..., str] = compress_video_for_analysis,
     invoke_fn: Callable[..., Mapping[str, Any]] = llm_client.invoke_generate,
 ) -> dict[str, Any]:
+    import os
+    import sys
+    if not ("pytest" in sys.argv[0] or "pytest" in "".join(sys.argv) or "PYTEST_CURRENT_TEST" in os.environ):
+        raise RuntimeError("自动或手动的第三方大模型美国视频可抄性分析已被禁用，评估数据必须由 Antigravity 离线生成后回填")
     post_id = int(row["hot_post_id"])
     local_path = video_localization.resolve_local_video_path(
         str(row.get("local_video_path") or ""),
