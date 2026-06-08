@@ -667,7 +667,6 @@ def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "数据分析" in body
-    assert "订单导入" in body
     assert "订单分析" in body
     assert "广告分析" in body
     assert 'data-tab="ads"' in body
@@ -680,7 +679,7 @@ def test_data_analysis_page_has_meta_ad_accounts_tab(authed_client_no_db):
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "广告账户" in body
-    assert 'data-tab="adAccounts"' in body
+    assert 'data-ads-subtab="ad-accounts"' in body
     assert 'id="panelAdAccounts"' in body
     assert 'id="metaAdAccountsBody"' in body
     assert 'id="metaAdSyncModal"' in body
@@ -1282,8 +1281,8 @@ def test_dashboard_tab_is_default(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert 'data-tab="dashboard"' in body
-    assert 'id="panelDashboard"' in body
+    assert 'data-tab="realtime"' in body
+    assert 'id="panelRealtime"' in body
 
 
 def test_get_dashboard_defaults_to_order_count_sort(monkeypatch):

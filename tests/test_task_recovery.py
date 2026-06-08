@@ -653,6 +653,7 @@ def test_recover_all_interrupted_tasks_auto_starts_resumable_image_translate():
 
 
 def test_recover_all_interrupted_tasks_picks_up_interrupted_subtitle_removal_rows(monkeypatch):
+    from unittest.mock import patch
     from appcore import task_recovery
 
     row = {
@@ -663,6 +664,7 @@ def test_recover_all_interrupted_tasks_picks_up_interrupted_subtitle_removal_row
             {
                 "type": "subtitle_removal",
                 "status": "interrupted",
+                "_user_id": 99,
                 "provider_task_id": "run-boot",
                 "steps": {
                     "prepare": "done",
@@ -690,13 +692,15 @@ def test_recover_all_interrupted_tasks_picks_up_interrupted_subtitle_removal_row
         lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
     )
 
-    recovered = task_recovery.recover_all_interrupted_tasks()
+    with patch("web.services.subtitle_removal_runner.start", return_value=True) as m_start:
+        recovered = task_recovery.recover_all_interrupted_tasks()
 
     assert recovered == 1
     assert persisted[0][0] == "sr-boot"
     assert persisted[0][2] == "running"
     assert persisted[0][1]["status"] == "running"
     assert persisted[0][1]["steps"]["poll"] == "running"
+    m_start.assert_called_once_with("sr-boot", user_id=99)
 
 
 def test_recover_project_state_keeps_subtitle_removal_provider_task_running():

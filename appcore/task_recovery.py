@@ -449,3 +449,21 @@ def _auto_resume_after_recovery(task_id: str, project_type: str, recovered: dict
                 "[task_recovery] failed to auto-resume link_check task %s",
                 task_id, exc_info=True,
             )
+    elif project_type == "subtitle_removal":
+        user_id = recovered.get("_user_id")
+        try:
+            user_id = int(user_id) if user_id is not None else None
+        except (TypeError, ValueError):
+            user_id = None
+        try:
+            from web.services import subtitle_removal_runner
+            started = subtitle_removal_runner.start(task_id, user_id=user_id)
+            log.warning(
+                "[task_recovery] auto-resumed subtitle_removal task %s (started=%s)",
+                task_id, started,
+            )
+        except Exception:
+            log.warning(
+                "[task_recovery] failed to auto-resume subtitle_removal task %s",
+                task_id, exc_info=True,
+            )
