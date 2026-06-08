@@ -2994,8 +2994,58 @@ def _upsert_report(
     )
 
 
+def _has_product_tier_order_share(data_package: dict[str, Any]) -> bool:
+    share = data_package.get("product_tier_order_share")
+    weekly = share.get("weekly") if isinstance(share, dict) else None
+    return (
+        isinstance(share, dict)
+        and isinstance(weekly, dict)
+        and "total_orders" in weekly
+        and isinstance(share.get("daily"), list)
+    )
+
+
+def _backfill_product_tier_order_share_for_snapshot(
+    data_package: dict[str, Any],
+    *,
+    week_start: date,
+    week_end: date,
+) -> dict[str, Any]:
+    if _has_product_tier_order_share(data_package):
+        return data_package
+    rebuilt = build_weekly_data_package(week_start, week_end)
+    share = rebuilt.get("product_tier_order_share")
+    if not isinstance(share, dict):
+        return data_package
+    enriched = dict(data_package)
+    enriched["product_tier_order_share"] = share
+    if (
+        not isinstance(enriched.get("product_stability"), dict)
+        and isinstance(rebuilt.get("product_stability"), dict)
+    ):
+        enriched["product_stability"] = rebuilt["product_stability"]
+    return enriched
+
+
 def _row_to_report(row: dict[str, Any]) -> dict[str, Any]:
     data_package = _loads_json(row.get("data_snapshot_json"), {}) or {}
+    if not isinstance(data_package, dict):
+        data_package = {}
+    week_start = _date_value(row.get("week_start_date"))
+    week_end = _date_value(row.get("week_end_date"))
+    if week_start:
+        try:
+            data_package = _backfill_product_tier_order_share_for_snapshot(
+                data_package,
+                week_start=week_start,
+                week_end=week_end or week_start + timedelta(days=6),
+            )
+        except Exception:  # noqa: BLE001
+            log.warning(
+                "weekly ai product tier order share backfill failed week_start=%s",
+                week_start,
+                exc_info=True,
+            )
     ai_report = _loads_json(row.get("ai_report_json"), None)
     data_quality = _loads_json(row.get("data_quality_json"), None) or data_package.get("data_quality")
     return {

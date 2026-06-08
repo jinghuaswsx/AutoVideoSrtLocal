@@ -29,6 +29,7 @@ librosa>=0.10.0
 gunicorn>=21.2.0,<26.0
 simple-websocket>=1.1.0,<2.0
 websocket-client>=1.8.0,<2.0
+playwright>=1.54,<2.0
 volcengine-python-sdk>=5.0.0,<6.0
 fast-langdetect>=0.2.0,<1.0
 yt-dlp>=2024.8.6
