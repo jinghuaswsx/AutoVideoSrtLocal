@@ -313,6 +313,8 @@ def test_medias_mobile_adaptation_keeps_tables_scrollable_and_aligned():
     mobile_block = html[mobile_start:html.index(".oc-page-tabs {", mobile_start)]
 
     assert "overflow-x:auto !important;" in mobile_block
+    assert ".oc-table-medias {\n    display:table !important;" in mobile_block
+    assert ".oc-vm-table {\n    display:table !important;" in mobile_block
     assert "width:2176px !important;" in mobile_block
     assert "width:2120px !important;" in mobile_block
     assert ".oc-table-medias thead,\n  .oc-vm-table thead {\n    display:table-header-group;" in mobile_block

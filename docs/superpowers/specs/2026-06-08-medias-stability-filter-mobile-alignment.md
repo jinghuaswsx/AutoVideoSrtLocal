@@ -39,6 +39,7 @@
 修订规则：
 
 - `max-width: 640px` 下产品管理表和视频素材表禁用 table header sticky，`thead th` 回到 `position: static`。
+- `max-width: 640px` 下产品管理表和视频素材表自身必须保持 `display: table`；不能让 table 变成 `block`，否则 `thead` 和 `tbody` 会各自按内容重新计算列宽。
 - 移动端优先保证列名和数据在同一个 table 流里横向同步；不使用克隆表头或独立浮动表头。
 - 桌面端继续保留现有 sticky 表头。
 
