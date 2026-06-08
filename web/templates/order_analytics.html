@@ -7497,12 +7497,12 @@
     var counts = (stability || {}).counts || {};
     var buckets = (stability || {}).buckets || {};
     if (summary) {
-      var secondaryCount = Number(counts.secondary_stable || 0) + Number(counts.potential || 0);
       summary.innerHTML =
         statCard('稳定品', counts.stable_total || 0) +
         statCard('7天稳定', counts.stable_7d || 0) +
         statCard('30天稳定', counts.stable_30d || 0) +
-        statCard('二级稳定品', secondaryCount) +
+        statCard('二级稳定品', counts.secondary_stable || 0) +
+        statCard('潜力品', counts.potential || 0) +
         statCard('测试品', counts.test || 0) +
         statCard('已停投', counts.stopped || 0) +
         statCard('未满7天', counts.insufficient_history || 0);
@@ -7514,13 +7514,14 @@
     body.innerHTML = '';
     var bucketDefs = [
       ['稳定品', buckets.stable || []],
-      ['二级稳定品', (buckets.secondary_stable || []).concat(buckets.potential || [])],
+      ['二级稳定品', buckets.secondary_stable || []],
+      ['潜力品', buckets.potential || []],
       ['测试品', buckets.test || []],
       ['已停投', buckets.stopped || []],
       ['未满7天', buckets.insufficient_history || []]
     ];
     bucketDefs.forEach(function(group) {
-      (group[1] || []).slice(0, group[0] === '稳定品' ? 20 : 10).forEach(function(item) {
+      (group[1] || []).slice(0, (group[0] === '稳定品' || group[0] === '潜力品') ? 20 : 10).forEach(function(item) {
         weeklyAiAppendRow(body, [
           group[0],
           weeklyAiProductImageCell(item),
