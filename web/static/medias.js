@@ -3936,7 +3936,10 @@
         <td class="mono">${p.id}</td>
         <td><div class="oc-thumb-sm">${coverCell}</div></td>
         <td class="wrap product-info-td">${productInfoCell}</td>
-        <td class="source-cell" data-pid="${p.id}" data-source="${escapeHtml(p.source || '明空')}" title="点击编辑产品来源">${productSourcePill(p.source || '明空')}</td>
+        <td class="source-cell" data-pid="${p.id}" data-source="${escapeHtml(p.source || '明空')}" title="点击编辑产品来源">
+          ${productSourcePill(p.source || '明空')}
+          <a href="/xuanpin/mk?q=${encodeURIComponent(productCode.replace(/[-_]?rjc$/i, ''))}&range=all&sort=ads_count" target="_blank" class="oc-mk-search-btn" onclick="event.stopPropagation();">明空<br>查看</a>
+        </td>
         <td class="sku-action-cell">
           <button type="button" class="oc-btn sm ${skuBtnClass} sku-detail-btn" data-sku-detail="${p.id}" title="查看 SKU 详细信息">SKU</button>
         </td>
