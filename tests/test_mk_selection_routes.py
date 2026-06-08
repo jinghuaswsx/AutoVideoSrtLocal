@@ -319,7 +319,7 @@ def test_mk_selection_material_archive_filters_use_explicit_scope_and_single_day
     assert "function ensureMkSnapshotOptionsForTab" in template
     assert "/xuanpin/api/mk-material-library/snapshots?limit=60" in template
     assert "let selectedMkSnapshotSource = '';" in template
-    assert "snapshotSelect.hidden = Boolean(selectedMkRange);" in template
+    assert "snapshotSelect.style.display = 'none';" in template
     assert (
         "const url = `/xuanpin/api/mk-selection?page=${page}&page_size=${PAGE_SIZE}"
         "&keyword=${encodeURIComponent(kw)}${mkSnapshotQueryParam()}${mkSortQueryParam()}`;"
