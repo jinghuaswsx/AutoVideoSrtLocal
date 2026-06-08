@@ -357,13 +357,13 @@ def page():
             "/order-analytics/new-product-launch": "newProductLaunch",
             "/order-analytics/dxm-orders-view": "dxmOrders",
             "/order-analytics/ads-view": "ads",
-            "/order-analytics/ad-accounts-view": "adAccounts",
-            "/order-analytics/product-dashboard-view": "dashboard",
+            "/order-analytics/ad-accounts-view": "ads",
+            "/order-analytics/product-dashboard-view": "realtime",
             "/order-analytics/country-dashboard-view": "countryDashboard",
             "/order-analytics/true-roas-view": "trueRoas",
-            "/order-analytics/weekly-roas-view": "weeklyRoas",
+            "/order-analytics/weekly-roas-view": "realtime",
             "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
-            "/order-analytics/import-view": "import",
+            "/order-analytics/import-view": "realtime",
             "/order-analytics/shopify-analytics-view": "analytics",
         }
         active_tab = mapping.get(path, "realtime")
