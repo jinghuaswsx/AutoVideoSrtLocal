@@ -1046,6 +1046,9 @@
     }
 
     function refreshSubtitleRemovalState() {
+      if (pendingActionMode === "resubmit") {
+        return Promise.resolve(null);
+      }
       if (!apiUrl) {
         return Promise.resolve(null);
       }

@@ -91,7 +91,7 @@
 .vw-local-row { display: flex; justify-content: space-between; gap: 8px; }
 .vw-ad-pills { display: flex; flex-wrap: wrap; gap: 5px; min-height: 22px; }
 .vw-ad-pill { border-radius: 999px; padding: 3px 7px; font-size: 11px; font-weight: 700; }
-.vw-card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
+.vw-card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
 .vw-card-actions .vw-btn { width: 100%; }
 .vw-state { grid-column: 1 / -1; font-size: 12px; color: var(--vw-muted); min-height: 18px; }
 .vw-empty, .vw-error {
@@ -197,14 +197,173 @@
 .vw-xiao-force-btn { align-self: flex-start; min-height: 22px; font-size: 11px; color: var(--vw-red); border-color: #fecaca; }
 .vw-xiao-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .vw-xiao-urgent-toggle { margin-right: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.vw-task-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vw-lang-row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
+.vw-grid { display: flex; flex-direction: column; gap: 14px; }
+.vw-card {
+  width: 100%; min-height: 0; border-left-width: 3px; padding: 14px;
+  display: grid; grid-template-columns: 276px minmax(0, 1fr); gap: 18px;
+  max-width: 50%; min-width: 960px;
+}
+.vw-left-card { position: relative; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.vw-right-panel { min-width: 0; border-left: 1px solid var(--vw-border); padding-left: 18px; display: grid; gap: 14px; align-content: start; }
+.vw-product-line { display: grid; gap: 3px; margin-top: 38px; }
+.vw-product-name { font-size: 15px; font-weight: 800; color: var(--vw-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+.vw-product-name:hover { color: var(--vw-blue); text-decoration: underline; }
+.vw-product-en { font-size: 12px; color: var(--vw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-product-code { font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--vw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-product-code-row { display: flex; align-items: center; gap: 6px; }
+.vw-product-code-text { font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--vw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-inline-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--vw-border-strong); border-radius: 4px; background: #fff; color: var(--vw-blue); cursor: pointer; flex-shrink: 0; text-decoration: none; }
+.vw-inline-icon-btn:hover { background: #eef6fb; border-color: var(--vw-blue); }
+.vw-inline-icon-btn svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 2.2; }
+.vw-local-state-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 4px; }
+.vw-locate-btn { min-height: 20px; font-size: 11px; padding: 0 6px; border-radius: 4px; }
+.vw-title-row { display: grid; gap: 4px; }
+.vw-title { margin-top: 0; min-height: 0; font-size: 14px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vw-link-row { display: flex; gap: 4px; align-items: center; border-top: 1px solid var(--vw-border); padding-top: 8px; font-size: 11px; }
+.vw-heat { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 800; }
+.vw-heat-high { background: #fee2e2; color: #dc2626; }
+.vw-heat-mid { background: #fef3c7; color: #b45309; }
+.vw-heat-low { background: #f1f5f9; color: #64748b; }
+.vw-frame { width: 216px; height: 384px; }
+.vw-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--vw-border); margin-top: 2px; }
+.vw-tab { height: 28px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--vw-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.vw-tab.active { color: var(--vw-blue); border-bottom-color: var(--vw-blue); }
+.vw-tab:disabled { opacity: .45; cursor: not-allowed; }
+.vw-pane { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; }
+.vw-pane.active { display: flex; }
+.vw-play-btn {
+  position: absolute; inset: 0; margin: auto; width: 48px; height: 48px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.9); background: rgba(15,23,42,.68); color: #fff; cursor: pointer; z-index: 2;
+}
+.vw-play-btn::before { content: ""; display: block; margin: 15px 0 0 18px; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 14px solid currentColor; }
+.vw-section { border: 1px solid var(--vw-border); border-radius: 8px; background: #fff; overflow: hidden; }
+.vw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--vw-border); background: #f8fafc; }
+.vw-section-title { font-weight: 800; font-size: 14px; }
+.vw-section-body { padding: 12px; }
+.vw-country-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.vw-country-chip { min-width: 0; border: 1px solid var(--vw-border); border-radius: 8px; padding: 8px; background: #fff; display: flex; flex-direction: column; gap: 4px; }
+.vw-country-chip.state-active { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
+.vw-country-chip.state-stopped { border-color: #fecaca; background: #fef2f2; color: #dc2626; }
+.vw-country-chip.state-missing { border-color: #e2e8f0; background: #fff; color: #64748b; }
+.vw-country-chip.state-active .vw-chip-sub { color: #166534; opacity: 0.85; }
+.vw-country-chip.state-stopped .vw-chip-sub { color: #991b1b; opacity: 0.85; }
+.vw-country-chip .vw-chip-roas-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  width: fit-content;
+  margin-top: auto;
+}
+.vw-country-chip.state-active .vw-chip-roas-badge {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+.vw-country-chip.state-stopped .vw-chip-roas-badge {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+.vw-chip-main { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 800; font-size: 12px; }
+.vw-chip-sub {
+  color: var(--vw-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+  flex: 1;
+  min-height: 30px;
+}
+.vw-chip-sub-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+.vw-chip-copy-btn {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.vw-panel-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; }
+.vw-panel-table th, .vw-panel-table td { padding: 7px 8px; border-bottom: 1px solid var(--vw-border); text-align: right; vertical-align: top; }
+.vw-panel-table th:first-child, .vw-panel-table td:first-child { text-align: left; }
+.vw-panel-table th { color: var(--vw-muted); background: #f8fafc; font-weight: 800; }
+.vw-panel-scroll { overflow: auto; border: 1px solid var(--vw-border); border-radius: 7px; }
+.vw-ai-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(142px, 1fr)); gap: 8px; }
+.vw-ai-card { border: 1px solid var(--vw-border); border-radius: 8px; padding: 9px; display: grid; gap: 6px; background: #fff; min-width: 0; }
+.vw-ai-card.is-good { border-color: #bbf7d0; background: #f0fdf4; }
+.vw-ai-card.is-risk { border-color: #fecaca; background: #fef2f2; }
+.vw-ai-card.is-pending { border-color: #e2e8f0; background: #f8fafc; }
+.vw-ai-title { display: flex; justify-content: space-between; gap: 8px; font-weight: 800; font-size: 12px; }
+.vw-ai-summary { color: var(--vw-muted); font-size: 11px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vw-mini-btn { min-height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--vw-border-strong); background: #fff; color: var(--vw-blue); cursor: pointer; font-size: 11px; font-weight: 700; }
+.vw-mini-btn:hover:not(:disabled) { border-color: var(--vw-blue); background: #eef6fb; }
+.vw-mini-btn:disabled { opacity: .55; cursor: not-allowed; }
+@media (max-width: 1024px) {
+  .vw-card { max-width: 100%; min-width: 0; }
+}
 @media (max-width: 720px) {
   .vw-grid { grid-template-columns: 1fr; }
-  .vw-card { min-height: auto; }
+  .vw-card { min-height: auto; grid-template-columns: 1fr; max-width: 100%; min-width: 0; }
+  .vw-right-panel { border-left: 0; padding-left: 0; border-top: 1px solid var(--vw-border); padding-top: 14px; }
   .vw-frame { width: 100%; height: auto; aspect-ratio: 9 / 16; }
+  .vw-task-grid, .vw-lang-row { grid-template-columns: 1fr; }
   .vw-info, .vw-xiao-product-info { grid-template-columns: 1fr; }
   .vw-xiao-product-image { width: 100%; height: auto; aspect-ratio: 1 / 1; }
   .vw-progress-step { grid-template-columns: 18px minmax(0, 1fr); }
   .vw-progress-status { grid-column: 2; }
+}
+.vw-row-active { background-color: #f0fdf4 !important; }
+.vw-row-stopped { background-color: #fef2f2 !important; }
+.vw-row-warn { background-color: #fffbeb !important; }
+.vw-roas-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  white-space: nowrap !important;
+}
+.vw-roas-label {
+  font-size: 8px !important;
+  color: var(--vw-muted) !important;
+  font-weight: normal !important;
+  text-transform: uppercase;
+  position: relative;
+  top: -0.25em;
+  margin-right: 2px;
+}
+.vw-roas-value {
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  color: var(--vw-blue) !important;
+}
+.vw-order-value {
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  color: var(--vw-green) !important;
+  display: block;
+  margin-bottom: 2px;
+}
+#vwAdModal .vw-modal {
+  width: min(1600px, 96vw);
+}
+#vwAdModal .vw-table th,
+#vwAdModal .vw-table td {
+  white-space: nowrap;
+}
+#vwAdModal .vw-modal-title,
+#vwAdModal #vwAdSub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
 {% endblock %}
@@ -236,7 +395,7 @@
 <div id="vwAdModal" class="vw-modal-mask" role="dialog" aria-modal="true" hidden>
   <div class="vw-modal">
     <div class="vw-modal-head">
-      <div>
+      <div style="min-width: 0; flex: 1; margin-right: 12px;">
         <div class="vw-modal-title" id="vwAdTitle">广告数据</div>
         <div class="vw-sub" id="vwAdSub"></div>
       </div>
@@ -250,15 +409,8 @@
         <span class="vw-sub" id="vwAdState"></span>
       </div>
       <div class="vw-kpis" id="vwAdSummary"></div>
-      <div class="vw-table-wrap">
-        <table class="vw-table">
-          <thead>
-            <tr>
-              <th>日期</th><th>账户</th><th>广告名</th><th>国家</th><th>花费</th><th>购买金额</th><th>ROAS</th><th>购买数</th><th>匹配</th>
-            </tr>
-          </thead>
-          <tbody id="vwAdRows"><tr><td colspan="9">请选择视频</td></tr></tbody>
-        </table>
+      <div id="vwAdRows" class="vw-ad-country-cards" style="display: flex; flex-direction: column; gap: 16px; margin-top: 12px;">
+        <div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">请选择视频</div>
       </div>
     </div>
   </div>
@@ -387,6 +539,7 @@
   ];
   let currentData = null;
   let currentAdCard = null;
+  let currentAdCountryCode = null;
   let activeUsersCache = null;
   let productOwnerCache = new Map();
   let fineAiCache = new Map();
@@ -619,57 +772,290 @@
     }
     grid.innerHTML = cards.map(renderCard).join('');
   }
+  function heatLevel(adsCount) {
+    const n = Number(adsCount || 0);
+    if (n >= 10) return {label: '高', cls: 'vw-heat-high'};
+    if (n >= 3) return {label: '中', cls: 'vw-heat-mid'};
+    return {label: '低', cls: 'vw-heat-low'};
+  }
+  function englishNameFromFilename(name) {
+    const text = String(name || '').replace(/\.[a-z0-9]+$/i, '');
+    const parts = text.split(/[-_—]+/).map(s => s.trim()).filter(Boolean);
+    const english = parts.find(part => /^[A-Za-z0-9][A-Za-z0-9\s'&]+$/.test(part));
+    return english || 'Natural Product';
+  }
+  function countryStatusText(row) {
+    if (!row || row.status === 'missing') return '未翻译';
+    const version = row.version || {};
+    if (version.delivery_status === 'active') return '投放中';
+    return '未投放';
+  }
+  function metricSpendRoas(perf, prefix) {
+    const spend = Number((perf || {})[`${prefix}_spend_usd`] || 0);
+    const r = (perf || {})[`${prefix}_roas`];
+    return `${money(spend, 2)}<div class="vw-sub"><span class="vw-roas-row"><span class="vw-roas-label">ROAS</span><span class="vw-roas-value">${roas(r)}</span></span></div>`;
+  }
+  function orderMetric(order, prefix) {
+    const row = order || {};
+    const orders = Number(row[`${prefix}_orders`] || 0);
+    const spend = Number(row[`${prefix}_spend`] || 0);
+    const r = row[`${prefix}_roas`];
+    return `<span class="vw-order-value">${orders}</span><div class="vw-sub">${money(spend, 2)} · <span class="vw-roas-row"><span class="vw-roas-label">ROAS</span><span class="vw-roas-value">${roas(r)}</span></span></div>`;
+  }
+  function renderTranslationPanel(card) {
+    const targets = card.target_country_versions || [];
+    const summary = card.translation_summary || {};
+    const chips = targets.map(row => {
+      const version = row.version;
+      let cls = 'state-missing';
+      let roasHtml = '';
+      const sub = row.status === 'translated' && version
+        ? `#${version.media_item_id || '-'} ${version.filename || version.display_name || ''}`
+        : '暂无对应翻译素材';
+      if (row.status === 'translated' && version) {
+        cls = version.delivery_status === 'active' ? 'state-active' : 'state-stopped';
+        const rVal = version.roas;
+        const formattedRoas = rVal == null ? '-' : Number(rVal).toFixed(2);
+        roasHtml = `
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: auto; gap: 4px; width: 100%;">
+            <div class="vw-chip-roas-badge" style="margin-top: 0;">ROAS: ${formattedRoas}</div>
+            <button type="button" class="vw-mini-btn" data-action="ad-country" data-card-id="${esc(card.card_id)}" data-country-code="${esc(row.country_code || '')}" style="padding: 2px 6px; font-size: 11px; line-height: 1; min-height: 20px; height: 20px;">广告</button>
+          </div>
+        `;
+      }
+      const hasMaterial = row.status === 'translated' && version && (version.filename || version.display_name);
+      return `<div class="vw-country-chip ${cls}">
+        <div class="vw-chip-main"><span>${esc(row.country_code || '')}</span><span>${countryStatusText(row)}</span></div>
+        <div class="vw-chip-sub-row">
+          <div class="vw-chip-sub" title="${esc(row.lang_name || row.lang || '')} · ${esc(sub)}">
+            ${esc(row.lang_name || row.lang || '')} · ${esc(sub)}
+          </div>
+          ${hasMaterial ? `
+            <button type="button" class="vw-inline-icon-btn vw-chip-copy-btn" onclick="copyText('${esc(version.filename || version.display_name || '')}', this)" title="复制视频文件名" aria-label="复制视频文件名">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+          ` : ''}
+        </div>
+        ${roasHtml}
+      </div>`;
+    }).join('');
+    return `<section class="vw-section">
+      <div class="vw-section-head">
+        <div class="vw-section-title">翻译版本</div>
+        <div class="vw-sub">${Number(summary.translated_count || 0)} / ${Number(summary.target_count || 8)} 国已翻译</div>
+      </div>
+      <div class="vw-section-body">
+        <div class="vw-country-grid">${chips || '<div class="vw-sub">暂无翻译版本</div>'}</div>
+      </div>
+    </section>`;
+  }
+  function renderAdPanel(card) {
+    const versions = card.translated_versions || [];
+    const rows = versions.map(v => {
+      const perf = v.ad_performance || {};
+      const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
+      const cls = v.delivery_status === 'active' ? 'vw-row-active' : (v.delivery_status === 'stopped' ? 'vw-row-stopped' : '');
+      return `<tr class="${cls}">
+        <td><strong>${esc(label)}</strong>${v.media_item_id ? `<div class="vw-sub">#${v.media_item_id} ${esc(v.filename || v.display_name || '')}</div>` : ''}</td>
+        <td>${metricSpendRoas(perf, 'today')}</td>
+        <td>${metricSpendRoas(perf, 'yesterday')}</td>
+        <td>${metricSpendRoas(perf, 'last_7d')}</td>
+        <td>${metricSpendRoas(perf, 'last_30d')}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="vw-section">
+      <div class="vw-section-head">
+        <div class="vw-section-title">投放消耗 / ROAS</div>
+        <button type="button" class="vw-mini-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告明细</button>
+      </div>
+      <div class="vw-section-body">
+        <div class="vw-panel-scroll">
+          <table class="vw-panel-table">
+            <thead><tr><th>版本</th><th>今天</th><th>昨天</th><th>7天</th><th>30天</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="5">暂无投放数据</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+  }
+  function renderOrderPanel(card) {
+    const versions = card.translated_versions || [];
+    const rows = versions.map(v => {
+      const order = v.order_stats || {};
+      const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
+      let cls = '';
+      if (v.delivery_status !== 'never') {
+        const todayOrders = Number(order.today_orders || 0);
+        const yesterdayOrders = Number(order.yesterday_orders || 0);
+        const last7dOrders = Number(order.last_7d_orders || 0);
+        if (todayOrders > 0 || yesterdayOrders > 0) {
+          cls = 'vw-row-active';
+        } else if (last7dOrders > 0) {
+          cls = 'vw-row-warn';
+        } else {
+          cls = 'vw-row-stopped';
+        }
+      }
+      return `<tr class="${cls}">
+        <td><strong>${esc(label)}</strong></td>
+        <td>${orderMetric(order, 'today')}</td>
+        <td>${orderMetric(order, 'yesterday')}</td>
+        <td>${orderMetric(order, 'last_7d')}</td>
+        <td>${orderMetric(order, 'last_30d')}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="vw-section">
+      <div class="vw-section-head">
+        <div class="vw-section-title">订单量情况</div>
+        <div class="vw-sub">今天 / 昨天 / 7天 / 30天</div>
+      </div>
+      <div class="vw-section-body">
+        <div class="vw-panel-scroll">
+          <table class="vw-panel-table">
+            <thead><tr><th>版本</th><th>今天</th><th>昨天</th><th>7天</th><th>30天</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="5">暂无订单数据</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+  }
+  function aiCountryClass(row) {
+    if (!row || !row.evaluated) return 'is-pending';
+    return row.is_suitable ? 'is-good' : 'is-risk';
+  }
+  function aiCountryLabel(row) {
+    if (!row || !row.evaluated) return row && row.status === 'running' ? '评估中' : '待评估';
+    return row.is_suitable ? '建议做' : '谨慎';
+  }
+  function renderAiPanel(card) {
+    const ai = (currentData && currentData.ai_evaluation) || {};
+    const countries = ai.countries || [];
+    const canEvaluate = Boolean(card.media_item_id);
+    const cards = countries.map(row => {
+      const score = row.score == null ? '-' : Number(row.score).toFixed(0);
+      const btnText = row.evaluated ? '重评' : '评估';
+      return `<div class="vw-ai-card ${aiCountryClass(row)}">
+        <div class="vw-ai-title"><span>${esc(row.country_code)} ${esc(row.country_name || '')}</span><span>${score}</span></div>
+        <div class="vw-ai-summary" title="${esc(row.summary || row.reason || '')}">${esc(row.summary || row.reason || aiCountryLabel(row))}</div>
+        <button type="button" class="vw-mini-btn" data-action="ai-country" data-card-id="${esc(card.card_id)}" data-country-lang="${esc(row.rerun_lang || row.lang || '')}" ${canEvaluate ? '' : 'disabled'}>${btnText}</button>
+      </div>`;
+    }).join('');
+    return `<section class="vw-section">
+      <div class="vw-section-head">
+        <div>
+          <div class="vw-section-title">AI 8国评估建议</div>
+          <div class="vw-sub">已评估 ${Number(ai.evaluated_count || 0)} / ${Number(ai.target_country_count || 8)} · ${esc(ai.ai_evaluation_result || '暂无结论')}</div>
+        </div>
+        <button type="button" class="vw-btn vw-btn-primary" data-action="ai-start" data-card-id="${esc(card.card_id)}" ${canEvaluate ? '' : 'disabled title="先加入素材库后评估"'}>补评8国</button>
+      </div>
+      <div class="vw-section-body">
+        <div class="vw-ai-grid">${cards || '<div class="vw-sub">暂无 AI 评估数据</div>'}</div>
+      </div>
+    </section>`;
+  }
+
   function renderCard(card) {
     const mk = card.mk_video || {};
     const inLib = Boolean(card.in_library);
     const urls = videoUrls(card);
-    const langRows = (card.lang_ad_summary || []).map(row => {
-      const cls = `vw-status-${row.delivery_status || 'never'}`;
-      return `<span class="vw-ad-pill ${cls}" title="${esc(row.item_count || 0)} 条本地素材">
-        ${esc(String(row.lang || '').toUpperCase())} ${statusText(row.delivery_status)} ${money(row.ad_spend || 0)} ROAS ${roas(row.roas)}
-      </span>`;
-    }).join('');
+    const coverUrl = urls.coverUrl || '';
+    const videoUrl = urls.videoUrl || '';
     const bound = card.bound_item || {};
     const matchSource = card.library_match_source || bound.match_source || '';
     const isLegacyMatch = matchSource === 'media_items_legacy_product_scope';
     const tagText = inLib ? (isLegacyMatch ? '历史入库' : '已入库') : '未入库';
-    const state = inLib
-      ? `${isLegacyMatch ? '历史匹配本地素材' : '已绑定本地素材'} #${bound.id || card.media_item_id || '-'} ${bound.filename ? ' / ' + esc(bound.filename) : ''}`
-      : '尚未加入素材库';
-    const link = card.mk_product_link ? `<a class="vw-link" href="${esc(card.mk_product_link)}" target="_blank" rel="noopener noreferrer">${esc(card.mk_product_link)}</a>` : '<span class="vw-sub">无产品链接</span>';
-    const media = urls.coverUrl
-      ? `<img src="${esc(urls.coverUrl)}" loading="lazy" alt="${esc(mk.name || '')}">`
-      : '<div class="vw-empty-media">无封面</div>';
+
+    let stateHtml = '';
+    if (inLib) {
+      const itemId = bound.id || card.media_item_id || '';
+      let locateUrl = `/medias/?q=${encodeURIComponent(productCode)}&product=${productId}&lang=en&action=video`;
+      if (itemId) {
+        locateUrl += `&item=${itemId}`;
+      }
+      if (bound.task_id) {
+        locateUrl += `&from_task=${bound.task_id}`;
+      }
+      stateHtml = `
+        <div class="vw-local-state-row">
+          <span class="vw-sub" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-right: 6px;" title="${isLegacyMatch ? '历史匹配本地素材' : '已绑定本地素材'} #${itemId}${bound.filename ? ' / ' + esc(bound.filename) : ''}">
+            ${isLegacyMatch ? '历史匹配' : '已绑定'} #${itemId}${bound.filename ? ' / ' + esc(bound.filename) : ''}
+          </span>
+          <a class="vw-mini-btn vw-locate-btn" href="${locateUrl}" target="_blank" rel="noopener noreferrer">定位</a>
+        </div>
+      `;
+    } else {
+      stateHtml = `<div class="vw-sub">尚未加入素材库</div>`;
+    }
+
+    const rawLink = String(card.mk_product_link || '').trim();
+    const link = rawLink ? `<a class="vw-link" href="${esc(rawLink)}" target="_blank" rel="noopener noreferrer">${esc(rawLink)}</a>` : '<span class="vw-sub">无产品链接</span>';
+    const heat = heatLevel(mk.ads_count);
+    const cnName = card.mk_product_name || productName || '无中文产品名';
+    const enName = englishNameFromFilename(mk.name);
+    const productCodeClean = productCode.replace(/-rjc$/i, '');
+    const posterAttr = coverUrl ? ` poster="${esc(coverUrl)}"` : '';
     const actions = inLib
       ? `<button type="button" class="vw-btn vw-btn-primary" data-action="task" data-card-id="${esc(card.card_id)}">创建小语种任务</button>
-         <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>
-         <a class="vw-btn" href="/medias/video?keyword=${encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
-         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`
+         <a class="vw-btn" href="${mk.material_key ? '/xuanpin/mk/videos/' + encodeURIComponent(mk.material_key) : '/medias/video?keyword=' + encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
+         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>
+         <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>`
       : `<button type="button" class="vw-btn vw-btn-primary" data-action="import" data-card-id="${esc(card.card_id)}">加入素材库</button>
          <button type="button" class="vw-btn" disabled title="先加入素材库后才能创建小语种任务">创建小语种任务</button>
          <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>
-         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`;
+         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>`;
     return `
       <div class="vw-card ${inLib ? 'is-in' : ''}" data-card-id="${esc(card.card_id)}">
-        <div class="vw-tag" title="${esc(isLegacyMatch ? '产品内文件名/路径精确匹配，未写入绑定表' : '')}">${tagText}</div>
-        <div class="vw-title" title="${esc(mk.name || '')}">${esc(mk.name || '未命名素材')}</div>
-        <div class="vw-sub">${esc(card.mk_product_name || productName || '无产品名')}</div>
-        <div class="vw-sub">${link}</div>
-        <div class="vw-metrics">
-          <div class="vw-metric"><span>90天消耗</span><strong>${money(mk.spends || 0)}</strong></div>
-          <div class="vw-metric"><span>昨日消耗</span><strong>${money(mk.yesterday_spend_delta || 0)}</strong></div>
-          <div class="vw-metric"><span>广告数</span><strong>${Number(mk.ads_count || 0)}</strong></div>
+        <div class="vw-left-card">
+          <div class="vw-tag" title="${esc(isLegacyMatch ? '产品内文件名/路径精确匹配，未写入绑定表' : '')}">${tagText}</div>
+          <div class="vw-product-line">
+            ${rawLink ? `<a class="vw-product-name" href="${esc(rawLink)}" target="_blank" rel="noopener noreferrer" title="${esc(cnName)}">${esc(cnName)}</a>` : `<div class="vw-product-name" title="${esc(cnName)}">${esc(cnName)}</div>`}
+            <div class="vw-product-en" title="${esc(enName)}">${esc(enName)}</div>
+            <div class="vw-product-code-row">
+              <span class="vw-product-code-text" title="${esc(productCode)}">${esc(productCode)}</span>
+              <button type="button" class="vw-inline-icon-btn" onclick="copyText('${esc(productCode)}', this)" title="复制产品Code" aria-label="复制产品Code">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+              <a href="/medias/?q=${encodeURIComponent(productCode)}" target="_blank" class="vw-inline-icon-btn" title="在素材管理中搜索此产品Code" aria-label="搜索此产品Code">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+              </a>
+            </div>
+          </div>
+          <div class="vw-title-row">
+            <div class="vw-title" title="${esc(mk.name || '')}">${esc(mk.name || '未命名素材')}</div>
+            <div class="vw-link-row">${link}</div>
+          </div>
+          <div class="vw-metrics">
+            <div class="vw-metric"><span>投放热度</span><strong><span class="vw-heat ${heat.cls}">${heat.label}</span></strong></div>
+            <div class="vw-metric"><span>90天消耗</span><strong>${money(mk.spends || 0, 2)}</strong></div>
+            <div class="vw-metric"><span>昨日消耗</span><strong>${money(mk.yesterday_spend_delta || 0, 2)}</strong></div>
+          </div>
+          <div class="vw-tabs" role="tablist" aria-label="素材预览">
+            <button type="button" class="vw-tab active" data-vw-tab="cover">图片</button>
+            <button type="button" class="vw-tab" data-vw-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
+          </div>
+          <div class="vw-frame">
+            <div class="vw-pane active" data-vw-pane="cover">
+              ${coverUrl ? `<img src="${esc(coverUrl)}" loading="lazy" decoding="async" alt="${esc(mk.name || '')}">` : '<div class="vw-empty-media">无封面</div>'}
+              ${videoUrl ? '<button type="button" class="vw-play-btn" data-vw-play aria-label="播放视频"></button>' : ''}
+            </div>
+            <div class="vw-pane" data-vw-pane="video">
+              ${videoUrl ? `<video class="vw-video-source" controls preload="none" playsinline data-src="${esc(videoUrl)}"${posterAttr}></video>` : '<div class="vw-empty-media">无视频</div>'}
+            </div>
+          </div>
+          <div class="vw-local">
+            <div class="vw-local-row"><span>广告数</span><strong>${Number(mk.ads_count || 0)}</strong></div>
+            <div class="vw-local-row"><span>上传者</span><strong>${esc(mk.author || '-')}</strong></div>
+            <div class="vw-local-row"><span>上传时间</span><strong>${esc(String(mk.upload_time || '-').slice(0, 10))}</strong></div>
+            ${stateHtml}
+          </div>
+          <div class="vw-card-actions">${actions}<div class="vw-state" id="vwState_${esc(card.card_id)}"></div></div>
         </div>
-        <div class="vw-frame">
-          ${urls.videoUrl ? `<video controls preload="none" poster="${esc(urls.coverUrl)}" src="${esc(urls.videoUrl)}"></video>` : media}
+        <div class="vw-right-panel">
+          ${renderTranslationPanel(card)}
+          ${renderAdPanel(card)}
+          ${renderOrderPanel(card)}
+          ${renderAiPanel(card)}
         </div>
-        <div class="vw-local">
-          <div class="vw-local-row"><span>上传者</span><strong>${esc(mk.author || '-')}</strong></div>
-          <div class="vw-local-row"><span>上传时间</span><strong>${esc(String(mk.upload_time || '-').slice(0, 10))}</strong></div>
-          <div class="vw-sub">${state}</div>
-          <div class="vw-ad-pills">${langRows || '<span class="vw-sub">暂无语种投放数据</span>'}</div>
-        </div>
-        <div class="vw-card-actions">${actions}<div class="vw-state" id="vwState_${esc(card.card_id)}"></div></div>
       </div>
     `;
   }
@@ -1124,10 +1510,16 @@
     openXiaoModal({card: importCard, productId: importProductId, itemId: importItemId, fromImport: true});
   }
 
-  function openAdModal(card) {
+  function openAdModal(card, countryCode = null) {
     currentAdCard = card;
+    currentAdCountryCode = countryCode;
     const mk = card.mk_video || {};
-    document.getElementById('vwAdTitle').textContent = '广告数据';
+    const countryMap = {
+      'DE': '德国', 'FR': '法国', 'ES': '西班牙', 'IT': '意大利',
+      'JP': '日本', 'PT': '葡萄牙', 'NL': '荷兰', 'SE': '瑞典', 'EN': '英国/通用'
+    };
+    const countryName = countryCode ? (countryMap[countryCode.toUpperCase()] || countryCode) : '';
+    document.getElementById('vwAdTitle').textContent = countryName ? `广告数据 (${countryName})` : '广告数据';
     document.getElementById('vwAdSub').textContent = mk.name || '';
     document.getElementById('vwAdFrom').value = todayIso(-29);
     document.getElementById('vwAdTo').value = todayIso(0);
@@ -1140,6 +1532,7 @@
     const params = new URLSearchParams();
     if (mk.path) params.set('video_path', mk.path);
     if (currentAdCard.media_item_id) params.set('media_item_id', currentAdCard.media_item_id);
+    if (currentAdCountryCode) params.set('country', currentAdCountryCode);
     params.set('date_from', document.getElementById('vwAdFrom').value || todayIso(-29));
     params.set('date_to', document.getElementById('vwAdTo').value || todayIso(0));
     document.getElementById('vwAdState').textContent = '加载中...';
@@ -1148,7 +1541,7 @@
       renderAdDetail(data);
       document.getElementById('vwAdState').textContent = `匹配 ${data.summary.matched_ad_count || 0} 条`;
     } catch (err) {
-      document.getElementById('vwAdRows').innerHTML = `<tr><td colspan="9">加载失败：${esc(err.message)}</td></tr>`;
+      document.getElementById('vwAdRows').innerHTML = `<div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">加载失败：${esc(err.message)}</div>`;
       document.getElementById('vwAdState').textContent = '加载失败';
     }
   }
@@ -1160,20 +1553,117 @@
       <div class="vw-kpi"><span>ROAS</span><strong>${roas(s.roas)}</strong></div>
       <div class="vw-kpi"><span>购买数</span><strong>${Number(s.result_count || 0)}</strong></div>
     `;
+    const countryMap = {
+      'DE': '德',
+      'FR': '法',
+      'ES': '西',
+      'IT': '意',
+      'JA': '日',
+      'PT': '葡',
+      'NL': '荷',
+      'SV': '瑞',
+      'FI': '芬',
+      'US': '美',
+      'GB': '英',
+      'CA': '加',
+      'AU': '澳',
+      'EN': '英'
+    };
+    function formatAdRoas(val) {
+      const rVal = roas(val);
+      if (rVal === '-') return '-';
+      const num = Number(val);
+      if (isNaN(num)) return esc(rVal);
+      
+      if (num > 1.2) {
+        return `<strong style="color: var(--vw-blue); font-size: 1.5em; font-weight: bold;">${rVal}</strong>`;
+      } else if (num > 1.0) {
+        return `<span style="color: #f97316; font-size: 1.5em; font-weight: bold;">${rVal}</span>`;
+      } else {
+        return rVal;
+      }
+    }
     const rows = data.rows || [];
-    document.getElementById('vwAdRows').innerHTML = rows.length ? rows.map(row => `
-      <tr>
-        <td>${esc(row.activity_date || '')}</td>
-        <td>${esc(row.ad_account_name || row.ad_account_id || '-')}</td>
-        <td>${esc(row.ad_name || '-')}<div class="vw-sub">${esc(row.normalized_ad_code || '')}</div></td>
-        <td>${esc(row.market_country || '-')}</td>
-        <td>${money(row.spend_usd || 0, 2)}</td>
-        <td>${money(row.purchase_value_usd || 0, 2)}</td>
-        <td>${roas(row.roas)}</td>
-        <td>${Number(row.result_count || 0)}</td>
-        <td>${esc(row.match_reason || '-')}</td>
-      </tr>
-    `).join('') : '<tr><td colspan="9">当前日期范围没有匹配广告</td></tr>';
+    if (!rows.length) {
+      document.getElementById('vwAdRows').innerHTML = '<div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">当前日期范围没有匹配广告</div>';
+      return;
+    }
+
+    const groups = [];
+    const groupsMap = {};
+    rows.forEach(row => {
+      const code = String(row.market_country || '').trim().toUpperCase() || 'UNKNOWN';
+      if (!groupsMap[code]) {
+        groupsMap[code] = {
+          code: code,
+          rows: [],
+          spend: 0,
+          purchase_value: 0,
+          result_count: 0
+        };
+        groups.push(groupsMap[code]);
+      }
+      const g = groupsMap[code];
+      g.rows.push(row);
+      g.spend += Number(row.spend_usd || 0);
+      g.purchase_value += Number(row.purchase_value_usd || 0);
+      g.result_count += Number(row.result_count || 0);
+    });
+
+    document.getElementById('vwAdRows').innerHTML = groups.map(group => {
+      const marketCode = group.code;
+      const countryPrefix = countryMap[marketCode] || '';
+      const countryText = countryPrefix ? `${countryPrefix}${marketCode}` : marketCode;
+      
+      const countryRoas = group.spend > 0 ? (group.purchase_value / group.spend) : null;
+      
+      const headerKpiHtml = `
+        <div style="display: flex; gap: 16px; align-items: center;">
+          <div style="font-size: 13px; color: var(--vw-muted);">花费: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">$${money(group.spend || 0, 2)}</strong></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">购买金额: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">$${money(group.purchase_value || 0, 2)}</strong></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">ROAS: <span style="margin-left: 2px;">${formatAdRoas(countryRoas)}</span></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">购买数: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">${Number(group.result_count || 0)}</strong></div>
+        </div>
+      `;
+
+      const tbodyRowsHtml = group.rows.map(row => {
+        return `
+          <tr>
+            <td>${esc(row.activity_date || '')}</td>
+            <td>${esc(row.ad_account_name || row.ad_account_id || '-')}</td>
+            <td>${esc(row.ad_name || '-')}<div class="vw-sub">${esc(row.normalized_ad_code || '')}</div></td>
+            <td>${money(row.spend_usd || 0, 2)}</td>
+            <td>${money(row.purchase_value_usd || 0, 2)}</td>
+            <td>${formatAdRoas(row.roas)}</td>
+            <td>${Number(row.result_count || 0)}</td>
+            <td>${esc(row.match_reason || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <section class="vw-section">
+          <div class="vw-section-head">
+            <div class="vw-section-title" style="font-size: 15px; color: var(--vw-blue);">国家：${esc(countryText)}</div>
+            ${headerKpiHtml}
+          </div>
+          <div class="vw-section-body" style="padding: 0;">
+            <div class="vw-table-wrap">
+              <table class="vw-table">
+                <thead>
+                  <tr>
+                    <th>日期</th><th>账户</th><th>广告名</th><th>花费</th><th>购买金额</th><th>ROAS</th><th>购买数</th><th>匹配</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${tbodyRowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      `;
+    }).join('');
   }
 
   function langCode(lang) {
@@ -1422,6 +1912,73 @@
     }
   }
 
+  function activateVideoTab(tab, options = {}) {
+    if (!tab || tab.disabled) return;
+    const card = tab.closest('.vw-card');
+    if (!card) return;
+    const target = tab.dataset.vwTab || 'cover';
+    card.querySelectorAll('[data-vw-tab]').forEach(btn => btn.classList.toggle('active', btn === tab));
+    card.querySelectorAll('[data-vw-pane]').forEach(pane => pane.classList.toggle('active', pane.dataset.vwPane === target));
+    if (target === 'video') {
+      const video = card.querySelector('.vw-video-source');
+      const src = video && video.dataset.src;
+      if (video && src && !video.getAttribute('src')) video.setAttribute('src', src);
+      if (options.play && video && typeof video.play === 'function') {
+        const result = video.play();
+        if (result && typeof result.catch === 'function') result.catch(() => {});
+      }
+    }
+  }
+
+  function playVideoFromButton(button) {
+    const card = button && button.closest('.vw-card');
+    const tab = card && card.querySelector('[data-vw-tab="video"]');
+    activateVideoTab(tab, {play: true});
+  }
+
+  async function startAiEvaluation(card, countryLang) {
+    const lang = String(countryLang || '').trim();
+    const ai = (currentData && currentData.ai_evaluation) || {};
+    const runId = ai.run_id || '';
+    const canRerunCountry = Boolean(lang && runId);
+    const endpoint = canRerunCountry
+      ? `/medias/api/products/${productId}/evaluate/${encodeURIComponent(runId)}/countries/${encodeURIComponent(lang)}/rerun`
+      : `/medias/api/products/${productId}/evaluate`;
+    const body = {};
+    if (card.media_item_id) body.media_item_id = Number(card.media_item_id);
+    setCardState(card, canRerunCountry ? `${lang.toUpperCase()} 评估中...` : 'AI 8国评估中...');
+    try {
+      const result = await fetchJson(endpoint, {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify(body)
+      });
+      const nextRunId = result.run_id || runId;
+      setCardState(card, 'AI 评估已启动');
+      if (nextRunId) pollAiStatus(card, nextRunId, 0);
+    } catch (err) {
+      setCardState(card, 'AI 评估失败：' + err.message);
+    }
+  }
+
+  async function pollAiStatus(card, runId, attempt) {
+    if (!runId || attempt > 120) return;
+    try {
+      const data = await fetchJson(`/medias/api/products/${productId}/evaluate/status?run_id=${encodeURIComponent(runId)}`);
+      const progress = data.progress || {};
+      const done = Number(progress.completed_count || 0);
+      const total = Number(progress.total_count || 8);
+      setCardState(card, `AI 评估进度 ${done}/${total}`);
+      if (['completed', 'partially_completed', 'failed'].includes(String(data.status || '').toLowerCase())) {
+        await loadWorkbench(document.getElementById('vwSort').value);
+        return;
+      }
+      window.setTimeout(() => pollAiStatus(card, runId, attempt + 1), 3000);
+    } catch (err) {
+      setCardState(card, 'AI 进度查询失败：' + err.message);
+    }
+  }
+
   document.addEventListener('click', event => {
     const close = event.target.closest('[data-close-modal]');
     if (close) {
@@ -1486,6 +2043,16 @@
       forceUnlockLanguage(forceBtn);
       return;
     }
+    const tab = event.target.closest('[data-vw-tab]');
+    if (tab) {
+      activateVideoTab(tab);
+      return;
+    }
+    const playBtn = event.target.closest('[data-vw-play]');
+    if (playBtn) {
+      playVideoFromButton(playBtn);
+      return;
+    }
     const actionEl = event.target.closest('[data-action]');
     if (!actionEl) return;
     const action = actionEl.dataset.action;
@@ -1497,7 +2064,10 @@
     if (!card) return;
     if (action === 'import') startImport(card);
     if (action === 'ad') openAdModal(card);
+    if (action === 'ad-country') openAdModal(card, actionEl.dataset.countryCode);
     if (action === 'task') openXiaoModal({card, productId, itemId: card.media_item_id, sourceButton: actionEl});
+    if (action === 'ai-start') startAiEvaluation(card, '');
+    if (action === 'ai-country') startAiEvaluation(card, actionEl.dataset.countryLang || '');
   });
   document.getElementById('vwSort').addEventListener('change', event => loadWorkbench(event.target.value));
   document.getElementById('vwAdLoadBtn').addEventListener('click', loadAdDetail);

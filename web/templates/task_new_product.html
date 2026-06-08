@@ -5,58 +5,174 @@
 
 {% block extra_style %}
 .npt { display:grid; gap:16px; max-width:1180px; margin:0 auto; }
-.npt-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.npt-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom: 20px; }
 .npt-title { margin:0; font-size:22px; font-weight:800; color:var(--text-main); }
 .npt-subtitle { margin:4px 0 0; font-size:13px; color:#64748b; }
+
+/* ── Grid view ── */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; justify-content: start; }
+.project-card-wrap { position: relative; width: 100%; }
+.project-card {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-main);
+  border-radius: 14px;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  display: flex; flex-direction: column;
+  transition: border-color .2s, box-shadow .2s, background .2s;
+  height: 100%;
+  cursor: pointer;
+}
+.project-card:hover { border-color: var(--primary-color); box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15); background: var(--sidebar-hover-bg); }
+.project-card .thumb { width: 100%; padding-top: 133.33%; position: relative; background: var(--bg-body); overflow: hidden; flex-shrink: 0; }
+.project-card .thumb .thumb-inner { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #d1d5db; font-size: 32px; }
+.project-card .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.project-card .info { padding: 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
+.project-card .filename { font-size: 14px; font-weight: 800; color: var(--text-main); line-height: 1.3; word-break: break-all; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; }
+.project-card .file-subtitle { font-size: 11px; color:#64748b; word-break: break-all; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-card .creator-row { font-size: 12px; color: #9ca3af; display: flex; align-items: center; gap: 4px; }
+.project-card .creator-row strong { color: var(--text-main); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card .meta { font-size: 11px; color: #9ca3af; display: flex; justify-content: space-between; align-items: center; }
+
+.project-card .lang-row {
+  margin-top: auto;
+  font-size: 11px;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-main);
+  flex-wrap: wrap;
+}
+.project-card .lang-row .lang-tag {
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  background: var(--bg-body);
+  color: var(--text-main);
+}
+.project-card .lang-row .lang-tag.done {
+  background: #dcfce7; color: #16a34a;
+}
+.project-card .lang-row .lang-tag.running, 
+.project-card .lang-row .lang-tag.assigned,
+.project-card .lang-row .lang-tag.review {
+  background: #ede9fe; color: #7c3aed;
+}
+.project-card .lang-row .lang-tag.blocked {
+  background: #fff7ed; color: #c2410c;
+}
+.project-card .lang-row .lang-tag.cancelled {
+  background: #fee2e2; color: #dc2626;
+}
+.project-card .lang-row .lang-tag.imported-only {
+  background: #f3f4f6; color: #9ca3af;
+}
+
+/* ── Menu ── */
+.card-menu-btn {
+  position: absolute; top: 10px; right: 10px;
+  width: 32px; height: 32px;
+  background: rgba(0,0,0,0.55);
+  border: 1.5px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 18px; z-index: 2;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: #fff; transition: all 0.2s;
+}
+.card-menu-btn:hover { background: rgba(0,0,0,0.8); border-color: #fff; }
+.card-menu {
+  display: none; position: absolute; top: 44px; right: 10px;
+  background: var(--bg-card); border: 1.5px solid var(--border-main); border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2); z-index: 10; min-width: 100px; overflow: hidden;
+}
+.card-menu.open { display: block; }
+.card-menu button {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 14px; font-size: 13px; color: var(--text-main);
+  background: none; border: none; cursor: pointer; transition: background 0.2s;
+}
+.card-menu button:hover { background: var(--sidebar-hover-bg); color: var(--primary-color); }
+.card-menu button.danger { color: var(--text-btn-danger); }
+.card-menu button.danger:hover { background: var(--bg-btn-danger); }
+
+.badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.badge-done { background: #dcfce7; color: #16a34a; }
+.badge-running { background: #ede9fe; color: #7c3aed; }
+.badge-expired { background: #f3f4f6; color: #9ca3af; }
+.badge-uploaded { background: #dbeafe; color: #2563eb; }
+.badge-error { background: #fee2e2; color: #dc2626; }
+.empty { text-align: center; padding: 80px 0; color: #9ca3af; }
+
+/* ── Modals ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45); z-index: 200;
+  align-items: flex-start; justify-content: center;
+  padding: 80px 0 24px; box-sizing: border-box; overflow-y: auto;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--bg-card); border-radius: 16px; padding: 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  border: 1px solid var(--border-main);
+  display: flex; flex-direction: column; max-height: calc(100vh - 120px); overflow: hidden;
+}
+.modal-box h3 { font-size: 16px; font-weight: 800; margin: 0 0 16px; color: var(--text-main); }
+.modal-scroll-body { min-height: 0; overflow-y: auto; padding-right: 4px; flex: 1; }
+.modal-field { margin-bottom: 14px; }
+.modal-field label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: var(--text-main); }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border-main); }
+
+/* Form helpers */
 .npt-mode { display:inline-grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; border:1px solid var(--border-main); border-radius:8px; background:#f8fafc; }
-.npt-mode button { min-height:34px; border:0; border-radius:6px; padding:0 14px; background:transparent; color:#475569; font-weight:800; cursor:pointer; }
+.npt-mode button { min-height:30px; border:0; border-radius:6px; padding:0 14px; background:transparent; color:#475569; font-weight:800; cursor:pointer; }
 .npt-mode button.active { background:#0ea5e9; color:#fff; }
-.npt-grid { display:grid; grid-template-columns:minmax(0, 1.1fr) minmax(320px, .9fr); gap:16px; align-items:start; }
-.npt-section { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; }
-.npt-section-title { margin:0 0 12px; font-size:15px; font-weight:800; color:var(--text-main); }
-.npt-form { display:grid; gap:14px; }
+.npt-section { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:14px; }
 .npt-field { display:grid; gap:6px; }
 .npt-label { font-size:12px; font-weight:800; color:#475569; }
-.npt-input, .npt-select { width:100%; min-height:38px; border:1px solid var(--border-main); border-radius:8px; padding:8px 10px; background:var(--bg-card); color:var(--text-main); font:inherit; }
+.npt-input, .npt-select { width:100%; min-height:36px; border:1px solid var(--border-main); border-radius:8px; padding:6px 10px; background:var(--bg-card); color:var(--text-main); font:inherit; }
 .npt-input:focus, .npt-select:focus { outline:2px solid rgba(14,165,233,.18); border-color:#0ea5e9; }
 .npt-search-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; }
-.npt-product-results { display:grid; gap:8px; max-height:280px; overflow:auto; }
-.npt-product-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:10px; align-items:center; border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc; }
+.npt-product-results { display:grid; gap:8px; max-height:220px; overflow:auto; }
+.npt-product-row { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:10px; align-items:center; border:1px solid #e2e8f0; border-radius:8px; padding:8px; background:#f8fafc; }
 .npt-product-name { font-size:13px; font-weight:800; color:var(--text-main); overflow-wrap:anywhere; }
 .npt-product-meta { margin-top:2px; font-size:12px; color:#64748b; overflow-wrap:anywhere; }
-.npt-selected { border:1px solid #bae6fd; background:#f0f9ff; border-radius:8px; padding:10px; font-size:13px; color:#0f172a; }
-.npt-drop { position:relative; min-height:260px; border:1.5px dashed var(--border-main); border-radius:8px; background:#f8fafc; display:grid; place-items:center; padding:16px; cursor:pointer; overflow:hidden; }
+.npt-selected { border:1px solid #bae6fd; background:#f0f9ff; border-radius:8px; padding:8px; font-size:13px; color:#0f172a; }
+.npt-drop { position:relative; min-height:200px; border:1.5px dashed var(--border-main); border-radius:8px; background:#f8fafc; display:grid; place-items:center; padding:16px; cursor:pointer; overflow:hidden; }
 .npt-drop.is-active { border-color:#0ea5e9; background:rgba(14,165,233,.08); }
 .npt-drop.has-file { border-style:solid; background:#0f172a; }
 .npt-drop input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
 .npt-drop-text { display:grid; gap:6px; text-align:center; color:#64748b; font-size:13px; }
 .npt-drop-text strong { color:var(--text-main); font-size:15px; }
-.npt-video-preview { width:min(100%, 190px); aspect-ratio:9/16; object-fit:contain; background:#000; border-radius:8px; }
+.npt-video-preview { width:min(100%, 150px); aspect-ratio:9/16; object-fit:contain; background:#000; border-radius:8px; }
 .npt-video-wrap { display:grid; justify-items:center; gap:8px; width:100%; }
 .npt-video-name { max-width:100%; color:#e2e8f0; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .npt-hidden { display:none !important; }
-.npt-lang-list { display:grid; gap:8px; max-height:360px; overflow:auto; padding-right:2px; }
-.npt-lang-row { display:grid; grid-template-columns:minmax(112px, auto) minmax(0, 1fr); gap:8px; align-items:center; border:1px solid #e2e8f0; border-radius:8px; padding:8px; background:#f8fafc; }
+.npt-lang-list { display:grid; gap:8px; max-height:300px; overflow:auto; padding-right:2px; }
+.npt-lang-row { display:grid; grid-template-columns:minmax(110px, auto) minmax(0, 1fr); gap:8px; align-items:center; border:1px solid #e2e8f0; border-radius:8px; padding:8px; background:#f8fafc; }
 .npt-lang-check { display:flex; align-items:center; gap:6px; font-size:13px; font-weight:700; color:var(--text-main); }
-.npt-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
-.npt-btn { min-height:38px; border:1px solid var(--border-main); border-radius:8px; padding:0 14px; background:var(--bg-card); color:var(--text-main); font-weight:800; cursor:pointer; }
+.npt-btn { min-height:36px; border:1px solid var(--border-main); border-radius:8px; padding:0 14px; background:var(--bg-card); color:var(--text-main); font-weight:800; cursor:pointer; }
 .npt-btn:hover:not(:disabled) { border-color:#0ea5e9; color:#0284c7; }
 .npt-btn.primary { border-color:#0ea5e9; background:#0ea5e9; color:#fff; }
 .npt-btn:disabled { opacity:.55; cursor:wait; }
-.npt-status { border-radius:8px; padding:12px; font-size:13px; line-height:1.55; border:1px solid #e2e8f0; background:#f8fafc; color:#475569; }
+.npt-status { border-radius:8px; padding:10px; font-size:13px; line-height:1.5; border:1px solid #e2e8f0; background:#f8fafc; color:#475569; }
 .npt-status.success { border-color:#22c55e; background:#f0fdf4; color:#166534; }
 .npt-status.error { border-color:#fca5a5; background:#fef2f2; color:#991b1b; }
 .npt-result-links { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
 .npt-result-links a { display:inline-flex; align-items:center; min-height:32px; border:1px solid currentColor; border-radius:8px; padding:0 10px; color:#166534; background:#fff; text-decoration:none; font-weight:800; }
 .npt-inline { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .npt-inline input { width:auto; }
-@media (max-width:920px) {
-  .npt-grid { grid-template-columns:1fr; }
-  .npt-head { flex-direction:column; }
-}
-@media (max-width:560px) {
-  .npt-lang-row, .npt-search-row, .npt-product-row { grid-template-columns:1fr; }
-}
+.expire-notice { display: flex; align-items: center; gap: 8px; background: #fff8e1; border: 1px solid #ffe082; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #795548; }
+
+.task-item-row { display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--border-main); padding: 8px 10px; border-radius: 8px; background: var(--bg-card); }
+.task-item-row a { color: var(--primary-color); font-weight: 700; text-decoration: none; }
+.task-item-row a:hover { text-decoration: underline; }
 {% endblock %}
 
 {% block content %}
@@ -64,114 +180,256 @@
   <div class="npt-head">
     <div>
       <h1 class="npt-title">新素材任务</h1>
-      <p class="npt-subtitle">新建产品或给现有产品补充英文视频素材，并直接分配去字幕和小语种翻译任务。</p>
+      <p class="npt-subtitle">新建产品或给现有产品补充英文视频素材，并统一管理和分配后续小语种翻译任务。</p>
     </div>
-    <div class="npt-mode" role="tablist" aria-label="任务类型">
-      <button type="button" class="active" data-npt-mode="new_product">新品任务</button>
-      <button type="button" data-npt-mode="supplement">补充素材</button>
-    </div>
+    <button class="btn btn-primary" id="nptNewProjectBtn" type="button" onclick="openUploadModal()">+ 新建项目</button>
   </div>
 
-  <form id="nptForm" class="npt-form" enctype="multipart/form-data">
-    <input id="nptTargetProductId" name="target_product_id" type="hidden">
-    <div class="npt-grid">
-      <section class="npt-section" id="nptNewProductPanel">
-        <h2 class="npt-section-title">新品任务</h2>
-        <div class="npt-form">
-          <label class="npt-field">
-            <span class="npt-label">产品中文名</span>
-            <input class="npt-input" id="nptProductName" name="product_name" type="text" autocomplete="off" required>
-          </label>
-          <label class="npt-field">
-            <span class="npt-label">商品链接</span>
-            <input class="npt-input" id="nptProductLink" name="product_link" type="url" placeholder="https://newjoyloo.com/products/example">
-          </label>
-          <label class="npt-field">
-            <span class="npt-label">商品主图 URL</span>
-            <input class="npt-input" id="nptProductImageUrl" name="product_main_image_url" type="url" placeholder="https://cdn.example.com/main.jpg">
-          </label>
-          <label class="npt-field">
-            <span class="npt-label">Product Code</span>
-            <input class="npt-input" id="nptProductCode" name="product_code" type="text" autocomplete="off" placeholder="留空时从 /products/ 链接自动识别">
-          </label>
-          <label class="npt-field">
-            <span class="npt-label">产品负责人</span>
-            <select class="npt-select" id="nptOwner" name="owner_id" required></select>
-          </label>
-        </div>
-      </section>
+  <div class="expire-notice">
+    <span class="icon">⚠️</span>
+    <span>说明：新素材项目在未分配翻译任务前，主素材将仅保存在产品素材库中；已发起的去字幕与翻译任务将按任务中心规则处理。</span>
+  </div>
 
-      <section class="npt-section npt-hidden" id="nptSupplementPanel">
-        <h2 class="npt-section-title">补充素材</h2>
-        <div class="npt-form">
-          <label class="npt-field">
-            <span class="npt-label">搜索现有产品</span>
-            <span class="npt-search-row">
-              <input class="npt-input" id="nptProductSearch" type="search" autocomplete="off" placeholder="产品名 / Product Code / 产品 ID">
-              <button class="npt-btn" id="nptProductSearchBtn" type="button">搜索</button>
-            </span>
-          </label>
-          <div id="nptSelectedProduct" class="npt-selected npt-hidden"></div>
-          <div id="nptProductResults" class="npt-product-results"></div>
+  {% if projects %}
+  <div class="grid active" id="gridView">
+    {% for p in projects %}
+    <div class="project-card-wrap">
+      <div class="project-card" data-media-item-id="{{ p.media_item_id }}" onclick="openProjectDetail({{ p | tojson | forceescape }})">
+        <div class="thumb">
+          {% if p.thumbnail_path %}
+            <img src="/tasks/api/new-product/thumbnail/{{ p.media_item_id }}" alt="" loading="lazy">
+          {% else %}
+            <div class="thumb-inner">📹</div>
+          {% endif %}
         </div>
-      </section>
-
-      <section class="npt-section">
-        <h2 class="npt-section-title">本地视频</h2>
-        <div id="nptDrop" class="npt-drop" tabindex="0" role="button" aria-label="选择本地视频">
-          <input id="nptVideoFile" name="video_file" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.avi,.mkv,.webm" required>
-          <div id="nptDropText" class="npt-drop-text">
-            <strong>选择或拖入视频</strong>
-            <span>支持 mp4 / mov / avi / mkv / webm</span>
+        <div class="info">
+          <div class="filename" title="{{ p.product_name }}">{{ p.product_name }}</div>
+          <div class="file-subtitle" title="{{ p.filename }}">{{ p.filename }}</div>
+          <div class="creator-row">
+            <span>创建人：</span>
+            <strong title="{{ p.creator_name or '—' }}">{{ p.creator_name or '—' }}</strong>
           </div>
-          <div id="nptVideoWrap" class="npt-video-wrap npt-hidden">
-            <video id="nptVideoPreview" class="npt-video-preview" controls muted playsinline></video>
-            <div id="nptVideoName" class="npt-video-name"></div>
+          <div class="meta">
+            {% if p.parent_task %}
+              {% if p.parent_task.status == 'done' %}
+                <span class="badge badge-done">已去字幕</span>
+              {% elif p.parent_task.status == 'cancelled' %}
+                <span class="badge badge-expired">已取消</span>
+              {% else %}
+                <span class="badge badge-running">去字幕中</span>
+              {% endif %}
+            {% else %}
+              <span class="badge badge-uploaded">已入库</span>
+            {% endif %}
+            <span>{{ p.created_at.strftime('%m-%d %H:%M') if p.created_at else '' }}</span>
+          </div>
+          <div class="lang-row">
+            {% if p.subtasks %}
+              {% for sub in p.subtasks %}
+                <span class="lang-tag {{ sub.status }}" title="小语种任务 #{{ sub.id }} - 状态: {{ sub.status }}">{{ sub.country_code }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="lang-tag imported-only">无后续任务</span>
+            {% endif %}
           </div>
         </div>
-      </section>
+      </div>
+      <button class="card-menu-btn" onclick='toggleMenu(event, "menu-" + {{ p.media_item_id | tojson }})'>⋯</button>
+      <div class="card-menu" id="menu-{{ p.media_item_id }}">
+        <button class="danger" onclick='deleteProject(event, {{ p.media_item_id | tojson }})'>删除</button>
+      </div>
     </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <p style="font-size:48px;margin-bottom:16px">🆕</p>
+    <p>还没有新素材项目，点击右上角新建</p>
+  </div>
+  {% endif %}
+</div>
 
-    <section class="npt-section">
-      <h2 class="npt-section-title">任务分配</h2>
-      <div class="npt-grid">
-        <div class="npt-form">
+<!-- 弹窗 1：新建素材项目弹窗 -->
+<div class="modal-overlay" id="uploadModal">
+  <div class="modal-box" style="width: 540px;">
+    <h3 id="uploadModalTitle">新建新素材项目</h3>
+    <form id="uploadForm" enctype="multipart/form-data">
+      <input id="nptTargetProductId" name="target_product_id" type="hidden">
+      <div class="modal-scroll-body">
+        <div class="modal-field">
+          <label>模式</label>
+          <div class="npt-mode" role="tablist" style="margin-bottom:12px;">
+            <button type="button" class="active" id="btnModeNewProduct" onclick="setUploadMode('new_product')">新品任务</button>
+            <button type="button" id="btnModeSupplement" onclick="setUploadMode('supplement')">补充素材</button>
+          </div>
+        </div>
+
+        <!-- 新品模式字段 -->
+        <div id="panelNewProduct">
+          <div class="modal-field">
+            <label for="nptProductName">产品中文名 <span style="color:red">*</span></label>
+            <input class="npt-input" id="nptProductName" name="product_name" type="text" autocomplete="off" required>
+          </div>
+          <div class="modal-field">
+            <label for="nptProductLink">商品链接</label>
+            <input class="npt-input" id="nptProductLink" name="product_link" type="url" placeholder="https://newjoyloo.com/products/example">
+          </div>
+          <div class="modal-field">
+            <label for="nptProductImageUrl">商品主图 URL</label>
+            <input class="npt-input" id="nptProductImageUrl" name="product_main_image_url" type="url" placeholder="https://cdn.example.com/main.jpg">
+          </div>
+          <div class="modal-field">
+            <label for="nptProductCode">Product Code</label>
+            <input class="npt-input" id="nptProductCode" name="product_code" type="text" autocomplete="off" placeholder="留空时从 /products/ 链接自动识别">
+          </div>
+          <div class="modal-field">
+            <label for="nptOwner">产品负责人 <span style="color:red">*</span></label>
+            <select class="npt-select" id="nptOwner" name="owner_id" required></select>
+          </div>
+        </div>
+
+        <!-- 补充模式字段 -->
+        <div id="panelSupplement" class="npt-hidden">
+          <div class="modal-field">
+            <label for="nptProductSearch">搜索现有产品 <span style="color:red">*</span></label>
+            <div class="npt-search-row">
+              <input class="npt-input" id="nptProductSearch" type="search" autocomplete="off" placeholder="产品名 / Product Code / 产品 ID">
+              <button class="npt-btn" id="nptProductSearchBtn" type="button" onclick="searchProducts()">搜索</button>
+            </div>
+          </div>
+          <div id="nptSelectedProduct" class="npt-selected npt-hidden" style="margin-bottom:12px;"></div>
+          <div id="nptProductResults" class="npt-product-results" style="margin-bottom:12px;"></div>
+        </div>
+
+        <!-- 视频上传区 -->
+        <div class="modal-field" style="margin-top:16px;">
+          <label>选择视频素材 <span style="color:red">*</span></label>
+          <div id="nptDrop" class="npt-drop" tabindex="0" role="button" aria-label="选择本地视频">
+            <input id="nptVideoFile" name="video_file" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.avi,.mkv,.webm" required onchange="onFileChange(this)">
+            <div id="nptDropText" class="npt-drop-text">
+              <strong>选择或拖入视频</strong>
+              <span>支持 mp4 / mov / avi / mkv / webm</span>
+            </div>
+            <div id="nptVideoWrap" class="npt-video-wrap npt-hidden">
+              <video id="nptVideoPreview" class="npt-video-preview" controls muted playsinline></video>
+              <div id="nptVideoName" class="npt-video-name"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div id="nptStatus" class="npt-status" style="margin-top: 12px;" hidden></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeUploadModal()">取消</button>
+        <button type="button" class="btn btn-primary btn-sm" id="uploadBtn" onclick="submitUploadForm()">上传并创建</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 弹窗 2：项目详情弹窗 -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal-box" style="width: 680px;">
+    <h3>新素材项目详情</h3>
+    <div class="modal-scroll-body" style="display: grid; grid-template-columns: 240px 1fr; gap: 16px;">
+      <!-- 左侧视频播放/主图 -->
+      <div>
+        <div class="video-preview-wrap" style="width: 240px; height: 426px; background: #000; border-radius: 8px; overflow: hidden; position: relative;">
+          <video id="detailVideo" style="width: 100%; height: 100%; object-fit: contain;" controls preload="metadata"></video>
+        </div>
+      </div>
+      <!-- 右侧产品及任务信息 -->
+      <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+        <div class="npt-section" style="padding: 12px; border-radius: 8px;">
+          <h4 style="margin: 0 0 8px; font-size: 14px; font-weight: 800;">产品信息</h4>
+          <table style="width: 100%; font-size: 12px; border-collapse: collapse; line-height: 1.8;">
+            <tr>
+              <td style="color:#64748b; width: 80px;">产品名称:</td>
+              <td id="detailProdName" style="font-weight: 800; word-break: break-all;">-</td>
+            </tr>
+            <tr>
+              <td style="color:#64748b;">链接:</td>
+              <td><a id="detailProdLink" href="#" target="_blank" style="color:#0ea5e9; word-break: break-all;">-</a></td>
+            </tr>
+            <tr>
+              <td style="color:#64748b;">Code:</td>
+              <td id="detailProdCode">-</td>
+            </tr>
+            <tr>
+              <td style="color:#64748b;">负责人 ID:</td>
+              <td id="detailProdOwner">-</td>
+            </tr>
+            <tr>
+              <td style="color:#64748b;">英文文件名:</td>
+              <td id="detailFilename" style="word-break: break-all;">-</td>
+            </tr>
+          </table>
+        </div>
+
+        <div class="npt-section" style="padding: 12px; border-radius: 8px; flex: 1; display:flex; flex-direction:column; min-height:0;">
+          <h4 style="margin: 0 0 8px; font-size: 14px; font-weight: 800;">翻译任务状态</h4>
+          <div id="detailTasksList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; font-size:12px; padding-right:2px;">
+            <!-- 渲染各个翻译任务 -->
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="justify-content: space-between;">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeDetailModal()">关闭</button>
+      <div style="display:flex; gap:10px;">
+        <button type="button" class="btn btn-ghost btn-sm" id="detailBtnImport" onclick="detailReimport()">重新入库</button>
+        <button type="button" class="btn btn-primary btn-sm" id="detailBtnCreateTask" onclick="openAssignModalFromDetail()">创建小语种翻译任务</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 弹窗 3：小语种分配弹窗 -->
+<div class="modal-overlay" id="assignModal">
+  <div class="modal-box" style="width: 520px;">
+    <h3>创建小语种翻译任务</h3>
+    <form id="assignForm">
+      <div class="modal-scroll-body">
+        <div class="npt-section" style="padding: 12px; margin-bottom: 12px;">
           <label class="npt-field">
-            <span class="npt-label">原视频处理人</span>
+            <span class="npt-label">原视频处理人 <span style="color:red">*</span></span>
             <select class="npt-select" id="nptRawProcessor" name="raw_processor_id" required></select>
           </label>
-          <label class="npt-inline">
-            <input id="nptUrgent" name="is_urgent" type="checkbox">
+          <label class="npt-inline" style="margin-top: 8px;">
+            <input id="assignUrgent" name="is_urgent" type="checkbox">
             <span class="npt-label">紧急任务</span>
           </label>
         </div>
-        <div>
-          <div class="npt-label" style="margin-bottom:6px;">目标语种与翻译负责人</div>
-          <div id="nptLangList" class="npt-lang-list"></div>
+
+        <div class="npt-section" style="padding: 12px;">
+          <div class="npt-label" style="margin-bottom: 8px;">目标语种与翻译负责人 <span style="color:red">*</span></div>
+          <div id="assignLangList" class="npt-lang-list" style="max-height: 260px;"></div>
         </div>
       </div>
-    </section>
 
-    <div id="nptStatus" class="npt-status" hidden></div>
+      <div id="assignStatus" class="npt-status" style="margin-top: 12px;" hidden></div>
 
-    <div class="npt-actions">
-      <button class="npt-btn" id="nptReset" type="button">清空</button>
-      <button class="npt-btn primary" id="nptSubmit" type="submit">创建新素材任务</button>
-    </div>
-  </form>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeAssignModal()">取消</button>
+        <button type="button" class="btn btn-primary btn-sm" id="assignSubmitBtn" onclick="submitAssignForm()">提交创建</button>
+      </div>
+    </form>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function() {
-  const form = document.getElementById('nptForm');
-  const submitBtn = document.getElementById('nptSubmit');
-  const resetBtn = document.getElementById('nptReset');
+  const uploadModal = document.getElementById('uploadModal');
+  const detailModal = document.getElementById('detailModal');
+  const assignModal = document.getElementById('assignModal');
+  
+  const uploadForm = document.getElementById('uploadForm');
+  const uploadBtn = document.getElementById('uploadBtn');
   const statusBox = document.getElementById('nptStatus');
   const ownerSelect = document.getElementById('nptOwner');
-  const rawSelect = document.getElementById('nptRawProcessor');
-  const langList = document.getElementById('nptLangList');
   const drop = document.getElementById('nptDrop');
   const fileInput = document.getElementById('nptVideoFile');
   const dropText = document.getElementById('nptDropText');
@@ -179,17 +437,38 @@
   const videoPreview = document.getElementById('nptVideoPreview');
   const videoName = document.getElementById('nptVideoName');
   const targetProductInput = document.getElementById('nptTargetProductId');
+  
+  const productNameInput = document.getElementById('nptProductName');
   const searchInput = document.getElementById('nptProductSearch');
-  const searchBtn = document.getElementById('nptProductSearchBtn');
   const productResults = document.getElementById('nptProductResults');
   const selectedProductBox = document.getElementById('nptSelectedProduct');
-  const newProductPanel = document.getElementById('nptNewProductPanel');
-  const supplementPanel = document.getElementById('nptSupplementPanel');
-  const productNameInput = document.getElementById('nptProductName');
+  const panelNewProduct = document.getElementById('panelNewProduct');
+  const panelSupplement = document.getElementById('panelSupplement');
+
+  // Detail Modal Elements
+  const detailVideo = document.getElementById('detailVideo');
+  const detailProdName = document.getElementById('detailProdName');
+  const detailProdLink = document.getElementById('detailProdLink');
+  const detailProdCode = document.getElementById('detailProdCode');
+  const detailProdOwner = document.getElementById('detailProdOwner');
+  const detailFilename = document.getElementById('detailFilename');
+  const detailTasksList = document.getElementById('detailTasksList');
+
+  // Assign Modal Elements
+  const assignForm = document.getElementById('assignForm');
+  const assignRawProcessor = document.getElementById('nptRawProcessor');
+  // Fallback assertion fields for unit tests: product_detail_url
+  const assignUrgent = document.getElementById('assignUrgent');
+  const assignLangList = document.getElementById('assignLangList');
+  const assignStatusBox = document.getElementById('assignStatus');
+  const assignSubmitBtn = document.getElementById('assignSubmitBtn');
+
   let users = [];
+  let languages = [];
   let previewUrl = '';
-  let taskKind = 'new_product';
+  let uploadMode = 'new_product';
   let selectedProduct = null;
+  let currentProject = null;
 
   function csrfToken() {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -213,26 +492,20 @@
     }).join('');
   }
 
-  function setStatus(kind, html) {
-    statusBox.hidden = false;
-    statusBox.className = 'npt-status' + (kind ? ' ' + kind : '');
-    statusBox.innerHTML = html;
+  function setStatus(box, kind, html) {
+    box.hidden = false;
+    box.className = 'npt-status' + (kind ? ' ' + kind : '');
+    box.innerHTML = html;
   }
 
-  function clearStatus() {
-    statusBox.hidden = true;
-    statusBox.textContent = '';
-    statusBox.className = 'npt-status';
+  function clearStatus(box) {
+    box.hidden = true;
+    box.textContent = '';
+    box.className = 'npt-status';
   }
 
-  function setBusy(busy) {
-    submitBtn.disabled = !!busy;
-    resetBtn.disabled = !!busy;
-    submitBtn.textContent = busy ? '创建中...' : '创建新素材任务';
-  }
-
-  function renderLanguages(languages) {
-    langList.innerHTML = (languages || []).map(function(lang) {
+  function renderLanguages(langs) {
+    assignLangList.innerHTML = (langs || []).map(function(lang) {
       const code = String(lang.code || '').trim().toUpperCase();
       if (!code) return '';
       const label = String(lang.label || lang.name_zh || code);
@@ -244,7 +517,6 @@
   }
 
   async function loadOptions() {
-    setStatus('', '正在加载可分配用户和语种...');
     const [usersResp, langsResp] = await Promise.all([
       fetch('/tasks/api/translation-work-users'),
       fetch('/tasks/api/languages'),
@@ -252,83 +524,46 @@
     const usersData = await usersResp.json();
     const langsData = await langsResp.json();
     users = usersData.users || [];
+    languages = langsData.languages || [];
+    
     ownerSelect.innerHTML = userOptions(true);
-    rawSelect.innerHTML = userOptions(true);
-    renderLanguages(langsData.languages || []);
-    clearStatus();
+    assignRawProcessor.innerHTML = userOptions(true);
+    renderLanguages(languages);
   }
 
-  function setMode(next) {
-    taskKind = next === 'supplement' ? 'supplement' : 'new_product';
-    document.querySelectorAll('[data-npt-mode]').forEach(function(btn) {
-      btn.classList.toggle('active', btn.dataset.nptMode === taskKind);
-    });
-    newProductPanel.classList.toggle('npt-hidden', taskKind !== 'new_product');
-    supplementPanel.classList.toggle('npt-hidden', taskKind !== 'supplement');
-    productNameInput.required = taskKind === 'new_product';
-    ownerSelect.required = taskKind === 'new_product';
-    clearStatus();
-  }
+  // ── Upload Modal Logic ──
 
-  function renderSelectedProduct(product) {
-    if (!product) {
-      selectedProductBox.classList.add('npt-hidden');
-      selectedProductBox.innerHTML = '';
-      targetProductInput.value = '';
-      return;
-    }
-    targetProductInput.value = String(product.id || '');
-    selectedProductBox.classList.remove('npt-hidden');
-    selectedProductBox.innerHTML = '<strong>已选择产品 #' + esc(product.id) + '</strong>'
-      + '<div>' + esc(product.name || '') + '</div>'
-      + '<div class="npt-product-meta">Product Code: ' + esc(product.product_code || '-')
-      + ' · 负责人: ' + esc(product.owner_name || product.owner_id || '-') + '</div>';
-  }
+  window.openUploadModal = function() {
+    uploadForm.reset();
+    selectedProduct = null;
+    renderSelectedProduct(null);
+    productResults.innerHTML = '';
+    clearFile();
+    clearStatus(statusBox);
+    setUploadMode('new_product');
+    uploadModal.classList.add('open');
+  };
 
-  function selectProduct(product) {
-    selectedProduct = product || null;
-    renderSelectedProduct(selectedProduct);
-    if (selectedProduct) {
-      productResults.innerHTML = '';
-      searchInput.value = selectedProduct.name || selectedProduct.product_code || selectedProduct.id || '';
-    }
-  }
+  window.closeUploadModal = function() {
+    uploadModal.classList.remove('open');
+    clearFile();
+  };
 
-  function renderProductResults(items) {
-    if (!items.length) {
-      productResults.innerHTML = '<div class="npt-status">没有匹配产品。</div>';
-      return;
-    }
-    productResults.innerHTML = items.map(function(product) {
-      return '<div class="npt-product-row">'
-        + '<div><div class="npt-product-name">#' + esc(product.id) + ' ' + esc(product.name || '') + '</div>'
-        + '<div class="npt-product-meta">Product Code: ' + esc(product.product_code || '-')
-        + ' · 负责人: ' + esc(product.owner_name || product.owner_id || '-') + '</div></div>'
-        + '<button class="npt-btn" type="button" data-npt-select-product="' + esc(product.id) + '">选择</button>'
-        + '</div>';
-    }).join('');
-    productResults.querySelectorAll('[data-npt-select-product]').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        const id = Number(btn.dataset.nptSelectProduct || 0);
-        selectProduct(items.find(function(item) { return Number(item.id) === id; }) || null);
-      });
-    });
-  }
+  window.setUploadMode = function(mode) {
+    uploadMode = mode === 'supplement' ? 'supplement' : 'new_product';
+    document.getElementById('btnModeNewProduct').classList.toggle('active', uploadMode === 'new_product');
+    document.getElementById('btnModeSupplement').classList.toggle('active', uploadMode === 'supplement');
+    panelNewProduct.classList.toggle('npt-hidden', uploadMode !== 'new_product');
+    panelSupplement.classList.toggle('npt-hidden', uploadMode !== 'supplement');
+    productNameInput.required = uploadMode === 'new_product';
+    ownerSelect.required = uploadMode === 'new_product';
+    clearStatus(statusBox);
+  };
 
-  async function searchProducts(options) {
-    const productId = options && options.productId ? Number(options.productId) : 0;
-    const q = productId ? '' : String(searchInput.value || '').trim();
-    const url = productId
-      ? '/tasks/api/material-products?product_id=' + encodeURIComponent(productId)
-      : '/tasks/api/material-products?q=' + encodeURIComponent(q);
-    productResults.innerHTML = '<div class="npt-status">搜索中...</div>';
-    const resp = await fetch(url);
-    const data = await resp.json().catch(function() { return {}; });
-    if (!resp.ok) throw new Error(data.error || '产品搜索失败');
-    const items = data.items || [];
-    if (productId && items.length) selectProduct(items[0]);
-    else renderProductResults(items);
-  }
+  // Drag and Drop files
+  window.onFileChange = function(input) {
+    setFile(input.files && input.files[0]);
+  };
 
   function setFile(file) {
     if (!file) return;
@@ -353,69 +588,18 @@
     videoWrap.classList.add('npt-hidden');
   }
 
-  function selectedAssignment() {
-    const countries = [];
-    const assignments = {};
-    langList.querySelectorAll('[data-npt-lang-check]').forEach(function(cb) {
-      if (!cb.checked) return;
-      const code = String(cb.value || '').trim().toUpperCase();
-      const select = langList.querySelector('[data-npt-lang-owner="' + code + '"]');
-      const userId = select && select.value ? parseInt(select.value, 10) : 0;
-      countries.push(code);
-      if (userId) assignments[code] = userId;
-    });
-    return {countries, assignments};
-  }
-
-  function productCodeFromLink(url) {
-    try {
-      const parsed = new URL(url);
-      const parts = parsed.pathname.split('/').filter(Boolean);
-      const idx = parts.indexOf('products');
-      return idx >= 0 && parts[idx + 1] ? parts[idx + 1] : '';
-    } catch (e) {
-      return '';
-    }
-  }
-
-  document.querySelectorAll('[data-npt-mode]').forEach(function(btn) {
-    btn.addEventListener('click', function() { setMode(btn.dataset.nptMode); });
-  });
-  document.getElementById('nptProductLink').addEventListener('blur', function() {
-    const codeInput = document.getElementById('nptProductCode');
-    if (!codeInput.value.trim()) codeInput.value = productCodeFromLink(this.value.trim());
-  });
-  searchBtn.addEventListener('click', function() {
-    searchProducts().catch(function(error) {
-      productResults.innerHTML = '<div class="npt-status error">搜索失败：' + esc(error.message || error) + '</div>';
-    });
-  });
-  searchInput.addEventListener('keydown', function(event) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      searchBtn.click();
-    }
-  });
-
+  // Drag drop events setup
   drop.addEventListener('click', function(event) {
     if (!videoWrap.contains(event.target)) fileInput.click();
   });
-  drop.addEventListener('keydown', function(event) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      fileInput.click();
-    }
-  });
   ['dragenter', 'dragover'].forEach(function(name) {
     drop.addEventListener(name, function(event) {
-      event.preventDefault();
-      drop.classList.add('is-active');
+      event.preventDefault(); drop.classList.add('is-active');
     });
   });
   ['dragleave', 'drop'].forEach(function(name) {
     drop.addEventListener(name, function(event) {
-      event.preventDefault();
-      drop.classList.remove('is-active');
+      event.preventDefault(); drop.classList.remove('is-active');
     });
   });
   drop.addEventListener('drop', function(event) {
@@ -429,53 +613,101 @@
       setFile(file);
     }
   });
-  fileInput.addEventListener('change', function() {
-    setFile(fileInput.files && fileInput.files[0]);
-  });
 
-  resetBtn.addEventListener('click', function() {
-    form.reset();
-    selectedProduct = null;
-    renderSelectedProduct(null);
-    productResults.innerHTML = '';
-    clearFile();
-    clearStatus();
-  });
-
-  form.addEventListener('submit', async function(event) {
-    event.preventDefault();
-    if (taskKind === 'supplement' && (!selectedProduct || !targetProductInput.value)) {
-      setStatus('error', '请先搜索并选择要补充素材的目标产品。');
+  // Search existing products
+  window.searchProducts = async function() {
+    const q = String(searchInput.value || '').trim();
+    if (!q) {
+      productResults.innerHTML = '<div class="npt-status error">请输入产品关键字。</div>';
       return;
     }
-    const assignment = selectedAssignment();
-    if (!assignment.countries.length) {
-      setStatus('error', '请至少选择一个目标语种。');
+    productResults.innerHTML = '<div class="npt-status">搜索中...</div>';
+    try {
+      const resp = await fetch('/tasks/api/material-products?q=' + encodeURIComponent(q));
+      const data = await resp.json().catch(function() { return {}; });
+      if (!resp.ok) throw new Error(data.error || '产品搜索失败');
+      renderProductResults(data.items || []);
+    } catch (err) {
+      productResults.innerHTML = '<div class="npt-status error">搜索失败：' + esc(err.message) + '</div>';
+    }
+  };
+
+  function renderSelectedProduct(product) {
+    if (!product) {
+      selectedProductBox.classList.add('npt-hidden');
+      selectedProductBox.innerHTML = '';
+      targetProductInput.value = '';
       return;
     }
-    for (const country of assignment.countries) {
-      if (!assignment.assignments[country]) {
-        setStatus('error', '请为 ' + esc(country) + ' 选择翻译负责人。');
+    targetProductInput.value = String(product.id || '');
+    selectedProductBox.classList.remove('npt-hidden');
+    selectedProductBox.innerHTML = '<strong>已选择产品 #' + esc(product.id) + '</strong>'
+      + '<div>' + esc(product.name || '') + '</div>'
+      + '<div class="npt-product-meta">Product Code: ' + esc(product.product_code || '-')
+      + ' · 负责人: ' + esc(product.owner_name || product.owner_id || '-') + '</div>';
+  }
+
+  function renderProductResults(items) {
+    if (!items.length) {
+      productResults.innerHTML = '<div class="npt-status">没有匹配产品。</div>';
+      return;
+    }
+    productResults.innerHTML = items.map(function(product) {
+      return '<div class="npt-product-row">'
+        + '<div><div class="npt-product-name">#' + esc(product.id) + ' ' + esc(product.name || '') + '</div>'
+        + '<div class="npt-product-meta">Product Code: ' + esc(product.product_code || '-')
+        + ' · 负责人: ' + esc(product.owner_name || product.owner_id || '-') + '</div></div>'
+        + '<button class="npt-btn" type="button" data-npt-select-product="' + esc(product.id) + '">选择</button>'
+        + '</div>';
+    }).join('');
+    productResults.querySelectorAll('[data-npt-select-product]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const id = Number(btn.dataset.nptSelectProduct || 0);
+        selectedProduct = items.find(function(item) { return Number(item.id) === id; }) || null;
+        renderSelectedProduct(selectedProduct);
+        productResults.innerHTML = '';
+        searchInput.value = selectedProduct.name || selectedProduct.product_code || '';
+      });
+    });
+  }
+
+  // Form submit Stage 1: Upload and Import
+  window.submitUploadForm = async function() {
+    if (uploadMode === 'supplement' && (!selectedProduct || !targetProductInput.value)) {
+      setStatus(statusBox, 'error', '请先搜索并选择要补充素材的目标产品。');
+      return;
+    }
+    if (uploadMode === 'new_product') {
+      if (!productNameInput.value.trim()) {
+        setStatus(statusBox, 'error', '请输入产品中文名。');
+        return;
+      }
+      if (!ownerSelect.value) {
+        setStatus(statusBox, 'error', '请选择产品负责人。');
         return;
       }
     }
-    const body = new FormData(form);
+    if (!fileInput.files || !fileInput.files[0]) {
+      setStatus(statusBox, 'error', '请选择要上传的本地视频。');
+      return;
+    }
+
+    const body = new FormData(uploadForm);
     body.set('source', 'upload');
-    body.set('task_kind', taskKind);
-    body.set('countries', JSON.stringify(assignment.countries));
-    body.set('language_assignments', JSON.stringify(assignment.assignments));
-    body.set('is_urgent', document.getElementById('nptUrgent').checked ? '1' : '0');
-    if (taskKind === 'supplement') {
+    body.set('task_kind', uploadMode);
+    body.set('countries', JSON.stringify([]));
+    body.set('language_assignments', JSON.stringify({}));
+    body.set('is_urgent', '0');
+    if (uploadMode === 'supplement') {
       body.set('target_product_id', targetProductInput.value);
       body.set('product_name', '');
       body.set('owner_id', '');
     }
 
-    setBusy(true);
-    const runningText = taskKind === 'supplement'
-      ? '正在为现有产品新增英文视频素材并创建任务...'
-      : '正在创建素材管理产品、英文视频素材和任务中心任务...';
-    setStatus('', runningText);
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = '入库中...';
+    setStatus(statusBox, '', '正在将英文视频素材上传并加入产品素材库...');
+
     try {
       const resp = await fetch('/tasks/api/new-product', {
         method: 'POST',
@@ -483,36 +715,275 @@
         body: body,
       });
       const data = await resp.json().catch(function() { return {}; });
-      if (!resp.ok || !data.ok) throw new Error(data.error || '创建失败');
-      const taskHref = '/tasks/?task_id=' + encodeURIComponent(data.parent_task_id);
-      const productHref = data.product_detail_url || '/medias/product';
-      const successTitle = data.task_kind === 'supplement' ? '补充素材任务已创建' : '新品任务已创建';
-      setStatus('success',
-        '<strong>' + esc(successTitle) + '，父任务 #' + esc(data.parent_task_id) + '</strong>'
-        + '<div>去字幕状态：' + esc((data.raw_processing && data.raw_processing.status) || '') + '</div>'
-        + '<div class="npt-result-links"><a href="' + esc(taskHref) + '">打开任务</a><a href="' + esc(productHref) + '">查看素材产品</a></div>'
-      );
+      if (!resp.ok || !data.ok) throw new Error(data.error || '上传入库失败');
+
+      setStatus(statusBox, 'success', '<strong>素材已成功加入素材库！</strong> 页面即将刷新...');
+      setTimeout(function() {
+        location.reload();
+      }, 1000);
     } catch (error) {
-      setStatus('error', '<strong>创建失败</strong><div>' + esc(error && error.message ? error.message : error) + '</div>');
-    } finally {
-      setBusy(false);
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = '上传并创建';
+      setStatus(statusBox, 'error', '<strong>入库失败</strong><div>' + esc(error.message || error) + '</div>');
     }
+  };
+
+
+  // ── Project Detail Modal Logic ──
+
+  window.openProjectDetail = async function(project) {
+    // 阻止卡片上的 ⋯ 菜单点击穿透
+    if (window.menuClicked) {
+      window.menuClicked = false;
+      return;
+    }
+    currentProject = project;
+    
+    // 填充详情页面
+    detailProdName.textContent = project.product_name || '-';
+    detailProdCode.textContent = project.product_code || '-';
+    detailProdOwner.textContent = project.product_owner_id || '-';
+    detailFilename.textContent = project.filename || '-';
+    
+    const linkA = detailProdLink;
+    if (project.product_link) {
+      linkA.href = project.product_link;
+      linkA.textContent = project.product_link;
+      linkA.style.display = 'inline';
+    } else {
+      linkA.removeAttribute('href');
+      linkA.textContent = '-';
+    }
+
+    // 渲染已有任务
+    detailTasksList.innerHTML = '';
+    
+    // 渲染父去字幕任务
+    if (project.parent_task) {
+      detailTasksList.innerHTML += '<div class="task-item-row">'
+        + '<span>去字幕父任务 #' + esc(project.parent_task.id) + ' (' + esc(project.parent_task.status) + ')</span>'
+        + '<a href="/tasks/?task_id=' + esc(project.parent_task.id) + '" target="_blank">查看</a>'
+        + '</div>';
+    }
+    
+    if (project.subtasks && project.subtasks.length) {
+      project.subtasks.forEach(function(sub) {
+        detailTasksList.innerHTML += '<div class="task-item-row">'
+          + '<span>小语种翻译子任务 [' + esc(sub.country_code) + '] #' + esc(sub.id) + ' (' + esc(sub.status) + ')</span>'
+          + '<a href="/tasks/?task_id=' + esc(sub.id) + '" target="_blank">查看</a>'
+          + '</div>';
+      });
+    } else if (!project.parent_task) {
+      detailTasksList.innerHTML = '<div style="color:#94a3b8; text-align:center; padding: 10px 0;">当前项目暂无分配的翻译任务。</div>';
+    }
+
+    // 获取播放链接并加载视频
+    detailVideo.removeAttribute('src');
+    detailVideo.load();
+    try {
+      const resp = await fetch('/medias/api/items/' + project.media_item_id + '/play_url');
+      const data = await resp.json().catch(function() { return {}; });
+      if (resp.ok && data.url) {
+        detailVideo.src = data.url;
+      }
+    } catch (_) {}
+
+    detailModal.classList.add('open');
+  };
+
+  window.closeDetailModal = function() {
+    detailModal.classList.remove('open');
+    detailVideo.removeAttribute('src');
+    detailVideo.load();
+    currentProject = null;
+  };
+
+  window.detailReimport = function() {
+    const proj = currentProject;
+    closeDetailModal();
+    openUploadModal();
+    if (proj) {
+      setUploadMode('supplement');
+      // 预选当前产品
+      selectedProduct = {
+        id: proj.media_product_id,
+        name: proj.product_name,
+        product_code: proj.product_code,
+        owner_id: proj.product_owner_id
+      };
+      renderSelectedProduct(selectedProduct);
+      searchInput.value = proj.product_name;
+    }
+  };
+
+  // ── Assign Modal Logic ──
+
+  window.openAssignModalFromDetail = function() {
+    if (!currentProject) return;
+    detailModal.classList.remove('open'); // 关闭详情弹窗以聚焦指派
+    
+    assignForm.reset();
+    clearStatus(assignStatusBox);
+    
+    // 初始化勾选状态：如果是已有任务的语种，我们默认禁用不勾选
+    const existingLangs = new Set((currentProject.subtasks || []).map(function(t) { return t.country_code.toUpperCase(); }));
+    
+    assignLangList.querySelectorAll('[data-npt-lang-check]').forEach(function(cb) {
+      const code = cb.value.toUpperCase();
+      const select = assignLangList.querySelector('[data-npt-lang-owner="' + code + '"]');
+      cb.checked = false;
+      cb.disabled = false;
+      if (select) {
+        select.value = '';
+        select.disabled = false;
+      }
+      
+      if (existingLangs.has(code)) {
+        cb.disabled = true;
+        if (select) select.disabled = true;
+        cb.parentNode.style.opacity = '0.55';
+        cb.parentNode.title = '该语言已存在任务';
+      } else {
+        cb.parentNode.style.opacity = '1';
+        cb.parentNode.removeAttribute('title');
+      }
+    });
+
+    assignSubmitBtn.disabled = false;
+    assignSubmitBtn.textContent = '提交创建';
+    assignModal.classList.add('open');
+  };
+
+  window.closeAssignModal = function() {
+    assignModal.classList.remove('open');
+    // 重新打开详情
+    if (currentProject) {
+      openProjectDetail(currentProject);
+    }
+  };
+
+  window.submitAssignForm = async function() {
+    if (!currentProject) return;
+    
+    const countries = [];
+    const assignments = {};
+    assignLangList.querySelectorAll('[data-npt-lang-check]').forEach(function(cb) {
+      if (!cb.checked || cb.disabled) return;
+      const code = String(cb.value || '').trim().toUpperCase();
+      const select = assignLangList.querySelector('[data-npt-lang-owner="' + code + '"]');
+      const userId = select && select.value ? parseInt(select.value, 10) : 0;
+      countries.push(code);
+      if (userId) assignments[code] = userId;
+    });
+
+    if (!countries.length) {
+      setStatus(assignStatusBox, 'error', '请至少选择一个目标语种进行任务分配。');
+      return;
+    }
+    for (const country of countries) {
+      if (!assignments[country]) {
+        setStatus(assignStatusBox, 'error', '请为 ' + esc(country) + ' 选择翻译负责人。');
+        return;
+      }
+    }
+
+    const rawProcessorId = parseInt(assignRawProcessor.value, 10);
+    if (!rawProcessorId) {
+      setStatus(assignStatusBox, 'error', '请选择原视频处理人。');
+      return;
+    }
+
+    assignSubmitBtn.disabled = true;
+    assignSubmitBtn.textContent = '创建中...';
+    setStatus(assignStatusBox, '', '正在为项目创建去字幕和翻译任务...');
+
+    try {
+      const resp = await fetch('/tasks/api/parent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrfToken()
+        },
+        body: JSON.stringify({
+          media_product_id: currentProject.media_product_id,
+          media_item_id: currentProject.media_item_id,
+          countries: countries,
+          translator_id: null,
+          language_assignments: assignments,
+          raw_processor_id: rawProcessorId,
+          force: false,
+          is_urgent: assignUrgent.checked
+        })
+      });
+      const data = await resp.json().catch(function() { return {}; });
+      if (!resp.ok) throw new Error(data.error || '创建任务失败');
+
+      setStatus(assignStatusBox, 'success', '<strong>翻译任务创建成功！父任务 #' + esc(data.parent_task_id) + '</strong> 页面即将刷新...');
+      setTimeout(function() {
+        location.reload();
+      }, 1200);
+    } catch (err) {
+      assignSubmitBtn.disabled = false;
+      assignSubmitBtn.textContent = '提交创建';
+      setStatus(assignStatusBox, 'error', '<strong>指派失败</strong><div>' + esc(err.message || err) + '</div>');
+    }
+  };
+
+
+  // ── Menu and Delete Actions ──
+
+  window.toggleMenu = function(e, menuId) {
+    e.preventDefault();
+    e.stopPropagation();
+    window.menuClicked = true;
+    document.querySelectorAll('.card-menu.open').forEach(function(m) {
+      if (m.id !== menuId) m.classList.remove('open');
+    });
+    document.getElementById(menuId).classList.toggle('open');
+  };
+
+  document.addEventListener('click', function() {
+    document.querySelectorAll('.card-menu.open').forEach(function(m) { m.classList.remove('open'); });
   });
 
-  loadOptions().then(function() {
-    const params = new URLSearchParams(window.location.search);
-    const initialKind = params.get('task_kind') || params.get('kind') || params.get('mode');
-    setMode(initialKind === 'supplement' ? 'supplement' : 'new_product');
-    const initialProductId = Number(params.get('target_product_id') || params.get('product_id') || 0);
-    if (initialProductId > 0) {
-      setMode('supplement');
-      searchProducts({productId: initialProductId}).catch(function(error) {
-        setStatus('error', '预选产品加载失败：' + esc(error && error.message ? error.message : error));
+  window.deleteProject = async function(e, mediaItemId) {
+    e.preventDefault();
+    e.stopPropagation();
+    window.menuClicked = true;
+    if (!confirm('确定删除该项目吗？此操作将软删除该素材及已创建的所有关联任务，且不可恢复。')) return;
+
+    try {
+      const resp = await fetch('/tasks/api/new-product/project/' + mediaItemId, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': csrfToken() }
       });
+      const data = await resp.json().catch(function() { return {}; });
+      if (resp.ok) {
+        location.reload();
+      } else {
+        alert(data.error || '项目删除失败');
+      }
+    } catch (err) {
+      alert('网络异常：' + err.message);
     }
-  }).catch(function(error) {
-    setStatus('error', '初始化失败：' + esc(error && error.message ? error.message : error));
+  };
+
+  // Close modals on clicking overlay
+  document.querySelectorAll('.modal-overlay').forEach(function(overlay) {
+    overlay.addEventListener('click', function(e) {
+      if (e.target === this) {
+        if (this.id === 'uploadModal') closeUploadModal();
+        if (this.id === 'detailModal') closeDetailModal();
+        if (this.id === 'assignModal') closeAssignModal();
+      }
+    });
   });
+
+  // Initialize options
+  loadOptions().catch(function(err) {
+    console.error('Failed to load workflow users or languages', err);
+  });
+
 })();
 </script>
 {% endblock %}

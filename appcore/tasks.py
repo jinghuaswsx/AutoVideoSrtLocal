@@ -54,6 +54,7 @@ CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
 CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
 CHILD_PUSH_MATERIAL_SKIPPED_EVENT = "push_material_skipped"
 TASK_ARCHIVED_EVENT = "archived"
+TASK_UNARCHIVED_EVENT = "unarchived"
 TASK_AUTO_ARCHIVED_EVENT = "auto_archived"
 TASK_AUTO_ARCHIVE_SOURCE = "task_center_auto_archive"
 TASK_PENDING_PUSH = "pending_push"
@@ -339,6 +340,25 @@ def _pending_push_condition(
 
 def _pending_push_args() -> tuple[str, str]:
     return (CHILD_ASSIGNED, CHILD_REVIEW)
+
+
+def get_active_pending_push_task_ids() -> set[int]:
+    """获取所有当前处于‘待推送’（pending_push）状态的子任务ID。"""
+    sql = (
+        "SELECT t.id FROM tasks t "
+        "LEFT JOIN media_items pending_push_item ON pending_push_item.id = ("
+        "  SELECT MAX(mi_sub.id) FROM media_items mi_sub "
+        "  WHERE mi_sub.task_id = t.id "
+        "  AND mi_sub.product_id = t.media_product_id "
+        "  AND LOWER(mi_sub.lang) = LOWER(TRIM(COALESCE(t.country_code, ''))) "
+        "  AND mi_sub.deleted_at IS NULL"
+        ") "
+        "LEFT JOIN media_push_status_cache psc_pending_push ON psc_pending_push.item_id = pending_push_item.id "
+        f"WHERE t.parent_task_id IS NOT NULL AND t.status IN ('assigned', 'review') "
+        f"AND {_pending_push_condition()}"
+    )
+    rows = query_all(sql, _pending_push_args())
+    return {int(row["id"]) for row in rows if row.get("id") is not None}
 
 
 def _pending_push_task_ids_for_rows(rows: Iterable[dict]) -> set[int]:
@@ -1226,6 +1246,44 @@ def archive_task(*, task_id: int, actor_user_id: int, is_admin: bool) -> bool:
         "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
         "VALUES (%s, %s, %s, %s)",
         (int(task_id), TASK_ARCHIVED_EVENT, int(actor_user_id), None),
+    )
+    return True
+
+
+def unarchive_task(*, task_id: int, actor_user_id: int, is_admin: bool) -> bool:
+    """Restore an archived task to normal task-center lists without changing status."""
+    if not is_admin:
+        raise PermissionError("only admin can unarchive tasks")
+    row = query_one(
+        "SELECT id, status, archived_at, archived_by FROM tasks WHERE id=%s",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("task not found")
+    if not row.get("archived_at"):
+        return False
+
+    affected = execute(
+        "UPDATE tasks SET archived_at=NULL, archived_by=NULL, updated_at=NOW() "
+        "WHERE id=%s AND archived_at IS NOT NULL",
+        (int(task_id),),
+    )
+    if not affected:
+        return False
+    payload = {
+        "previous_archived_at": _auto_archive_value(row.get("archived_at")),
+        "previous_archived_by": row.get("archived_by"),
+        "task_status": row.get("status"),
+    }
+    execute(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
+        "VALUES (%s, %s, %s, %s)",
+        (
+            int(task_id),
+            TASK_UNARCHIVED_EVENT,
+            int(actor_user_id),
+            json.dumps(payload, ensure_ascii=False),
+        ),
     )
     return True
 
@@ -5013,6 +5071,13 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
     if not end_date:
         end_date = start_date
     expr = _user_display_name_expr("u")
+
+    pending_push_ids = get_active_pending_push_task_ids()
+    exclude_clause = ""
+    if pending_push_ids:
+        ids_str = ",".join(str(i) for i in pending_push_ids)
+        exclude_clause = f"AND t.id NOT IN ({ids_str}) "
+
     sql = (
         "SELECT "
         "  t.assignee_id, "
@@ -5024,11 +5089,11 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
         "  SUM(CASE WHEN ("
         "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
         "      (t.parent_task_id IS NOT NULL AND t.status IN ('blocked', 'assigned', 'review'))"
-        "  ) THEN 1 ELSE 0 END) AS today_pending, "
+        f"  ) {exclude_clause} THEN 1 ELSE 0 END) AS today_pending, "
         "  SUM(CASE WHEN ("
         "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
         "      (t.parent_task_id IS NOT NULL AND t.status IN ('blocked', 'assigned', 'review'))"
-        "  ) AND t.is_urgent = 1 THEN 1 ELSE 0 END) AS urgent_pending, "
+        f"  ) {exclude_clause} AND t.is_urgent = 1 THEN 1 ELSE 0 END) AS urgent_pending, "
         "  COUNT(t.id) AS total_tasks, "
         "  SUM(CASE WHEN t.parent_task_id IS NULL THEN 1 ELSE 0 END) AS raw_tasks, "
         "  SUM(CASE WHEN t.parent_task_id IS NOT NULL THEN 1 ELSE 0 END) AS translate_tasks "

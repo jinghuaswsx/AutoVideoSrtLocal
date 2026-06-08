@@ -223,7 +223,12 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "request-payload" in body
     assert "/xuanpin/api/meta-hot-posts/category-prompt" in body
     assert "/xuanpin/api/meta-hot-posts/failures" in body
-    assert "新素材任务" in body
+    assert "只入素材库" in body
+    assert "等待本地视频" in body
+    assert "创建新品任务" in body
+    assert "body: JSON.stringify({ owner_id: ownerId })" in body
+    assert "metaHotHasReadyLocalVideo" in body
+    assert ">新素材任务</button>" not in body
     assert "新品任务" in body
     assert "补充素材" in body
     assert "mkiCreateNewProductTaskFromMetaHot" in body
@@ -1010,4 +1015,7 @@ def test_meta_hot_post_detail_page_renders_post(authed_client_no_db, monkeypatch
     assert "Meta热帖详情 - ID: 123" in body
     assert "meta-hot-card-grid" in body
     assert "cacheMetaHotItems" in body
-
+    assert "只入素材库" in body
+    assert "创建新品任务" in body
+    assert "body: JSON.stringify({ owner_id: ownerId })" in body
+    assert "metaHotHasReadyLocalVideo" in body

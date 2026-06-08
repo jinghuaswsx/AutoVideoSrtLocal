@@ -2,7 +2,7 @@
 
 ## 背景
 
-`material_evaluation.evaluate` 目前一次请求要求模型同时返回 DE/FR/IT/ES/JA/EN 六个国家。生产记录显示 OpenRouter `google/gemini-3.5-flash` 在部分商品上只返回一个国家，后端补齐缺失国家为“模型未返回该语种结果，需人工复核”，但仍按成功落库，导致运营误以为 AI 评估已完整完成。
+`material_evaluation.evaluate` 早期一次请求要求模型同时返回 DE/FR/IT/ES/JA/EN 六个国家。生产记录显示 OpenRouter `google/gemini-3.5-flash` 在部分商品上只返回一个国家，后端补齐缺失国家为“模型未返回该语种结果，需人工复核”，但仍按成功落库，导致运营误以为 AI 评估已完整完成。
 
 ## 目标
 
@@ -22,6 +22,10 @@
 `evaluate_product_if_ready` 在完成商品链接、封面、英文视频和尝试次数预检后，遍历 `evaluation_target_languages()`。每个国家调用现有 `_invoke_evaluation_llm_with_recovery`，但使用该国家专属 prompt、response schema、usage `project_id` 和 billing extra。每国响应通过 `normalize_result(raw, [lang])` 归一化，再聚合成原来的 `countries` 数组，最后统一计算均分和总结果。
 
 评估详情增加轻量元数据：`evaluation_mode: "per_country"`、`country_call_count`，并在有解析修复或重试时按国家保存 `llm_recovery`。
+
+## 2026-06-08 工作台 8 国口径
+
+素材工作台 V2 确认采用 8 国评估口径：`DE/FR/IT/ES/NL/PT/SE/JP`，对应素材评估语言代码为 `de/fr/it/es/nl/pt/sv/ja`。`material_evaluation.evaluation_target_languages()` 默认国家集合同步改为这 8 国；美国英语 `en` 不再是素材工作台 V2 的默认评估国家。
 
 ## 验证
 

@@ -291,10 +291,15 @@ def test_task_center_rows_expose_archive_action_for_any_unarchived_task(authed_c
     assert "function tcArchiveTask" in body
     assert "'/tasks/api/' + encodeURIComponent(String(id)) + '/archive'" in body
     assert "确认归档这个任务？" in body
+    assert "function tcUnarchiveTask" in body
+    assert "'/tasks/api/' + encodeURIComponent(String(id)) + '/unarchive'" in body
+    assert "确认取消归档这个任务？" in body
     assert "确认归档这个已完成任务？" not in body
     assert "function tcTaskActionGroup(actions)" in body
     assert "tcArchiveTask(${Number(id || 0)})" in body
+    assert "tcUnarchiveTask(${Number(id || 0)})" in body
     assert "归档" in body
+    assert "取消归档" in body
 
     assert "actions.push(mainBtn);" in body
     archive_start = body.index("// 4. Archive button")
@@ -303,6 +308,7 @@ def test_task_center_rows_expose_archive_action_for_any_unarchived_task(authed_c
     assert "const isCompleted" not in archive_block
     assert "if (!it.archived_at)" in archive_block
     assert "actions.push(tcArchiveTaskAction(id));" in archive_block
+    assert "actions.push(tcUnarchiveTaskAction(id));" in archive_block
 
 
 def test_task_center_hides_dispatch_pool_menu(authed_client_no_db):
@@ -865,6 +871,31 @@ def test_archive_task_route_delegates_to_service(authed_client_no_db, monkeypatc
     assert calls == [
         {"task_id": 44, "actor_user_id": 1, "is_admin": True},
         {"audit": (44, "task_archived", None)},
+    ]
+
+
+def test_unarchive_task_route_delegates_to_service(authed_client_no_db, monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.unarchive_task",
+        lambda **kwargs: calls.append(kwargs) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: calls.append(
+            {"audit": (task_id, action, detail)}
+        ),
+    )
+
+    rsp = authed_client_no_db.post("/tasks/api/44/unarchive", json={})
+
+    assert rsp.status_code == 200
+    assert rsp.get_json() == {"ok": True}
+    assert calls == [
+        {"task_id": 44, "actor_user_id": 1, "is_admin": True},
+        {"audit": (44, "task_unarchived", None)},
     ]
 
 

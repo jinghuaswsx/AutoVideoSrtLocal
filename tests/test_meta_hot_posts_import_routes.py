@@ -45,10 +45,10 @@ def test_import_endpoint_requires_admin(monkeypatch):
 
 
 
-def test_import_endpoint_requires_translator_id(authed_client_no_db):
+def test_import_endpoint_requires_owner_id(authed_client_no_db):
     resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/123/import", json={})
     assert resp.status_code == 400
-    assert resp.get_json()["error"] == "translator_id_required"
+    assert resp.get_json()["error"] == "owner_id_required"
 
 
 def test_import_endpoint_success_calls_service_and_triggers_evaluation(authed_client_no_db, monkeypatch):
@@ -75,7 +75,7 @@ def test_import_endpoint_success_calls_service_and_triggers_evaluation(authed_cl
     monkeypatch.setattr("appcore.runner_lifecycle.start_tracked_thread", fake_start_tracked_thread)
     monkeypatch.setattr("appcore.material_evaluation.evaluate_product_if_ready", lambda *args, **kwargs: None)
 
-    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/123/import", json={"translator_id": 3})
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/123/import", json={"owner_id": 3})
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["success"] is True
@@ -94,6 +94,31 @@ def test_import_endpoint_success_calls_service_and_triggers_evaluation(authed_cl
     assert kwargs["task_id"] == "456"
     assert kwargs["args"] == (456,)
     assert kwargs["entrypoint"] == "meta_hot_posts.import"
+
+
+def test_import_endpoint_accepts_legacy_translator_id(authed_client_no_db, monkeypatch):
+    import_called = []
+
+    def fake_import_hot_post(post_id, translator_id, actor_user_id):
+        import_called.append({
+            "post_id": post_id,
+            "translator_id": translator_id,
+            "actor_user_id": actor_user_id,
+        })
+        return {
+            "media_product_id": 456,
+            "media_item_id": 789,
+            "is_new_product": False,
+        }
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.import_hot_post", fake_import_hot_post)
+    monkeypatch.setattr("appcore.runner_lifecycle.start_tracked_thread", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.material_evaluation.evaluate_product_if_ready", lambda *args, **kwargs: None)
+
+    resp = authed_client_no_db.post("/xuanpin/api/meta-hot-posts/123/import", json={"translator_id": 4})
+
+    assert resp.status_code == 200
+    assert import_called[0]["translator_id"] == 4
 
 
 def test_import_endpoint_value_error_returns_400(authed_client_no_db, monkeypatch):

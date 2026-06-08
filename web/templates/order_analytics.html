@@ -18,9 +18,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
-  <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
-  <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </span>
 {% endblock %}
 {% block topbar_actions %}
@@ -32,15 +30,6 @@
       <line x1="12" y1="3" x2="12" y2="15"/>
     </svg>
     <span>Payments 导入</span>
-  </button>
-  <button type="button" class="ppr-btn ppr-btn-primary" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18"/>
-      <rect x="7" y="13" width="3" height="5"/>
-      <rect x="12" y="9" width="3" height="9"/>
-      <rect x="17" y="5" width="3" height="13"/>
-    </svg>
-    <span>产品盈亏报表</span>
   </button>
 </span>
 {% endblock %}
@@ -639,7 +628,55 @@
   padding: 9px var(--space-3); vertical-align: top;
 }
 .oar-hour-cell {
-  min-width: 220px;
+  min-width: 380px;
+  white-space: nowrap;
+}
+.oar-hour-cell.is-current {
+  background-color: oklch(97% 0.02 140) !important;
+  border-left: 4px solid oklch(62% 0.12 140) !important;
+  box-shadow: inset 0 0 0 1px oklch(90% 0.04 140);
+}
+.oar-hour-cell.is-current .oar-row-ad .oar-hour-time,
+.oar-hour-cell.is-current .oar-row-ad .oar-hour-label {
+  color: oklch(52% 0.14 140) !important;
+  font-weight: 700 !important;
+}
+.oar-hour-cell.is-current .oar-row-bj .oar-hour-time,
+.oar-hour-cell.is-current .oar-row-bj .oar-hour-label {
+  color: oklch(50% 0.15 250) !important;
+  font-weight: 700 !important;
+}
+.oar-hour-cell.is-current .oar-row-berlin .oar-hour-time,
+.oar-hour-cell.is-current .oar-row-berlin .oar-hour-label {
+  color: oklch(58% 0.16 45) !important;
+  font-weight: 700 !important;
+}
+.oar-hour-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: var(--space-4);
+  line-height: 1.4;
+}
+.oar-hour-time {
+  display: inline-block;
+  width: 210px;
+  flex-shrink: 0;
+  text-align: left;
+  font-family: var(--font-mono);
+}
+.oar-hour-time.oar-hour-main {
+  font-weight: 600;
+  color: var(--fg);
+}
+.oar-hour-time.oar-hour-sub {
+  font-weight: 500;
+  color: var(--fg-subtle);
+}
+.oar-hour-label {
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  font-weight: 500;
   white-space: nowrap;
 }
 .oar-hour-main {
@@ -1963,15 +2000,6 @@
     </svg>
     <span>Payments 导入</span>
   </button>
-  <button type="button" class="ppr-btn ppr-btn-primary" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18"/>
-      <rect x="7" y="13" width="3" height="5"/>
-      <rect x="12" y="9" width="3" height="9"/>
-      <rect x="17" y="5" width="3" height="13"/>
-    </svg>
-    <span>盈亏报表</span>
-  </button>
 </div>
 
 {% include "_data_quality_bar.html" %}
@@ -1982,9 +2010,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
-  <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
-  <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </nav>
 
 
@@ -2185,14 +2211,14 @@
 
   <div class="oar-note" style="margin-top: var(--space-5); margin-bottom: var(--space-2);">订单明细、订单盈亏明细跟随上方日期范围；产品销量、广告计划和 ROAS 走势按当前实时数据展示</div>
   <div class="oar-subtabs" role="tablist" aria-label="实时大盘明细">
-    <button type="button" class="oar-subtab is-active" data-realtime-subtab="orders">订单明细</button>
-    <button type="button" class="oar-subtab" data-realtime-subtab="profitDetails">订单盈亏明细</button>
-    <button type="button" class="oar-subtab" data-realtime-subtab="products">产品销量</button>
-    <button type="button" class="oar-subtab" data-realtime-subtab="campaigns">广告计划</button>
-    <button type="button" class="oar-subtab" data-realtime-subtab="trend">ROAS 走势</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'orders' %}is-active{% endif %}" data-realtime-subtab="orders">订单明细</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'profitDetails' %}is-active{% endif %}" data-realtime-subtab="profitDetails">订单盈亏明细</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'products' %}is-active{% endif %}" data-realtime-subtab="products">产品销量</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'campaigns' %}is-active{% endif %}" data-realtime-subtab="campaigns">广告计划</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'trend' %}is-active{% endif %}" data-realtime-subtab="trend">ROAS 走势</button>
   </div>
 
-  <div class="oar-subpanel is-active" id="realtimeSubOrders">
+  <div class="oar-subpanel {% if active_subtab == 'orders' %}is-active{% endif %}" id="realtimeSubOrders">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">今天订单明细 <span class="oar-page-info" id="realtimeOrderPageInfo">加载中...</span></div>
@@ -2222,7 +2248,7 @@
     </div>
   </div>
 
-  <div class="oar-subpanel" id="realtimeSubProfitDetails">
+  <div class="oar-subpanel {% if active_subtab == 'profitDetails' %}is-active{% endif %}" id="realtimeSubProfitDetails">
     <div class="oa-table-wrap">
       <div class="oa-table-header oa-table-header-stack">
         <div class="oar-profit-header-line">
@@ -2309,7 +2335,7 @@
     </div>
   </div>
 
-  <div class="oar-subpanel" id="realtimeSubProducts">
+  <div class="oar-subpanel {% if active_subtab == 'products' %}is-active{% endif %}" id="realtimeSubProducts">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">产品销量统计</div>
@@ -2336,7 +2362,7 @@
     </div>
   </div>
 
-  <div class="oar-subpanel" id="realtimeSubCampaigns">
+  <div class="oar-subpanel {% if active_subtab == 'campaigns' %}is-active{% endif %}" id="realtimeSubCampaigns">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">广告计划实时数据</div>
@@ -2370,7 +2396,7 @@
     </div>
   </div>
 
-  <div class="oar-subpanel" id="realtimeSubTrend">
+  <div class="oar-subpanel {% if active_subtab == 'trend' %}is-active{% endif %}" id="realtimeSubTrend">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">当天 ROAS 走势</div>
@@ -5187,7 +5213,18 @@
   }
   document.querySelectorAll('[data-realtime-subtab]').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      setRealtimeSubtab(btn.dataset.realtimeSubtab);
+      var name = btn.dataset.realtimeSubtab;
+      var routeMapping = {
+        'orders': 'order',
+        'profitDetails': 'profit',
+        'products': 'product',
+        'campaigns': 'campaign',
+        'trend': 'trend'
+      };
+      var subtabRoute = routeMapping[name] || 'order';
+      var params = new URLSearchParams(window.location.search);
+      var queryString = params.toString();
+      window.location.href = '/order-analytics/realtime/' + subtabRoute + (queryString ? '?' + queryString : '');
     });
   });
   var nplRefresh = document.getElementById('nplRefresh');
@@ -5254,6 +5291,51 @@
     } else if (initialTab === 'weeklyAiAnalysis') {
       initWeeklyAiAnalysis();
     } else if (initialTab === 'realtime') {
+      var urlParams = new URLSearchParams(window.location.search);
+      var qRange = urlParams.get('range');
+      var qStart = urlParams.get('start_date');
+      var qEnd = urlParams.get('end_date');
+      var qSiteCode = urlParams.get('site_code');
+      var qLaunchWindow = urlParams.get('launch_window');
+      var qProductId = urlParams.get('product_id');
+      var qProductLabel = urlParams.get('product_label');
+      var qCampaignFilter = urlParams.get('campaign_filter');
+
+      if (qLaunchWindow) {
+        realtimeState.launchWindowDays = qLaunchWindow;
+        syncLaunchWindowSelects();
+      }
+      if (qSiteCode) {
+        realtimeState.siteCode = qSiteCode;
+        var siteFilter = document.getElementById('realtimeSiteFilter');
+        if (siteFilter) siteFilter.value = qSiteCode;
+      }
+      if (qProductId) {
+        realtimeState.productId = parseInt(qProductId, 10);
+        realtimeState.productLabel = qProductLabel || '';
+        var picker = document.getElementById('realtimeProductPicker');
+        var nameSpan = document.getElementById('realtimePickerProductName');
+        if (picker && nameSpan) {
+          nameSpan.textContent = realtimeState.productLabel || ('ID: ' + realtimeState.productId);
+          picker.style.display = 'flex';
+        }
+      }
+      if (qCampaignFilter === 'unallocated') {
+        realtimeState.campaignFilter = 'unallocated';
+        var card = document.getElementById('realtimeProfitUnallocatedAdCard');
+        if (card) card.classList.add('is-active');
+      }
+      if (qStart && qEnd) {
+        realtimeState.range = qRange || 'custom';
+        setInputValue('realtimeStartDate', qStart);
+        setInputValue('realtimeEndDate', qEnd);
+        syncRealtimeRangeSelection();
+        resetRealtimeProfitPage();
+      } else if (qRange) {
+        setRealtimeRange(qRange, true);
+      } else {
+        setRealtimeRange('today', true);
+      }
       loadRealtimeOverview();
     } else if (initialTab === 'newProductLaunch') {
       initNewProductLaunch();
@@ -5291,6 +5373,56 @@
     realtimeState.profitHasMore = true;
   }
 
+  function updateRealtimeUrlState() {
+    var params = new URLSearchParams(window.location.search);
+    var startEl = document.getElementById('realtimeStartDate');
+    var endEl = document.getElementById('realtimeEndDate');
+    if (startEl && startEl.value) params.set('start_date', startEl.value);
+    if (endEl && endEl.value) params.set('end_date', endEl.value);
+
+    var siteFilter = document.getElementById('realtimeSiteFilter');
+    if (siteFilter) {
+      if (siteFilter.value) {
+        params.set('site_code', siteFilter.value);
+      } else {
+        params.delete('site_code');
+      }
+    }
+
+    var launchWindow = document.getElementById('realtimeLaunchWindowDays');
+    if (launchWindow) {
+      if (launchWindow.value) {
+        params.set('launch_window', launchWindow.value);
+      } else {
+        params.delete('launch_window');
+      }
+    }
+
+    if (realtimeState.productId) {
+      params.set('product_id', realtimeState.productId);
+      if (realtimeState.productLabel) params.set('product_label', realtimeState.productLabel);
+    } else {
+      params.delete('product_id');
+      params.delete('product_label');
+    }
+
+    if (realtimeState.range) {
+      params.set('range', realtimeState.range);
+    } else {
+      params.delete('range');
+    }
+
+    if (realtimeState.campaignFilter) {
+      params.set('campaign_filter', realtimeState.campaignFilter);
+    } else {
+      params.delete('campaign_filter');
+    }
+
+    var queryString = params.toString();
+    var newUrl = window.location.pathname + (queryString ? '?' + queryString : '');
+    window.history.replaceState(null, '', newUrl);
+  }
+
   function setRealtimeSubtab(name) {
     document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
       item.classList.toggle('is-active', item.dataset.realtimeSubtab === name);
@@ -5303,10 +5435,9 @@
   function showRealtimeUnallocatedCampaigns() {
     var card = document.getElementById('realtimeProfitUnallocatedAdCard');
     if (card && card.getAttribute('aria-disabled') === 'true') return;
-    realtimeState.campaignFilter = 'unallocated';
-    if (card) card.classList.add('is-active');
-    setRealtimeSubtab('campaigns');
-    renderRealtimeCampaigns(realtimeLastCampaignRows);
+    var params = new URLSearchParams(window.location.search);
+    params.set('campaign_filter', 'unallocated');
+    window.location.href = '/order-analytics/realtime/campaign?' + params.toString();
   }
 
   function clearRealtimeCampaignFilter() {
@@ -5314,6 +5445,11 @@
     var card = document.getElementById('realtimeProfitUnallocatedAdCard');
     if (card) card.classList.remove('is-active');
     renderRealtimeCampaigns(realtimeLastCampaignRows);
+
+    var params = new URLSearchParams(window.location.search);
+    params.delete('campaign_filter');
+    var newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.replaceState(null, '', newUrl);
   }
 
   function setRealtimeRange(range, skipLoad) {
@@ -5813,6 +5949,7 @@
     updateRealtimeUnmatchedDetailLinks();
     loadRealtimeTopCards();
     loadRealtimeSubTabs();
+    updateRealtimeUrlState();
   }
 
   // ── 顶部卡片：按选择的时间范围聚合 ───────────────
@@ -6284,6 +6421,9 @@
           var tr = document.createElement('tr');
           var hourTd = document.createElement('td');
           hourTd.className = 'oar-hour-cell';
+          if (isCurrentHourWindow(row)) {
+            hourTd.className += ' is-current';
+          }
           hourTd.innerHTML = formatRealtimeHourCell(row);
           tr.appendChild(hourTd);
           [
@@ -7139,18 +7279,68 @@
     return startHour + ':00-' + endHour + ':00 广告日小时';
   }
 
+  function isCurrentHourWindow(row) {
+    if (!row || !row.window_start_at || !row.window_end_at) return false;
+    var now = new Date();
+    var parseBeijingDate = function(str) {
+      var isoStr = String(str).replace(' ', 'T');
+      if (isoStr.indexOf('+') === -1 && isoStr.indexOf('Z') === -1) {
+        isoStr += '+08:00';
+      }
+      return new Date(isoStr);
+    };
+    var start = parseBeijingDate(row.window_start_at);
+    var end = parseBeijingDate(row.window_end_at);
+    return start && end && (now >= start && now < end);
+  }
+
   function formatRealtimeHourCell(row) {
     row = row || {};
-    var main = formatRealtimeBusinessHour(row.hour);
-    var bjRange = row.window_start_at && row.window_end_at
-      ? '北京时间（UTC+8） ' + formatRoasWindow(row.window_start_at, row.window_end_at)
+    var mainTime = '';
+    if (typeof row.hour === 'number') {
+      var startHour = String(row.hour).padStart(2, '0');
+      var endHour = String(row.hour + 1).padStart(2, '0');
+      mainTime = startHour + ':00-' + endHour + ':00';
+    } else {
+      mainTime = row.hour || '-';
+    }
+    var mainLabel = '广告日小时';
+
+    var bjTime = row.window_start_at && row.window_end_at
+      ? formatRoasWindow(row.window_start_at, row.window_end_at)
       : '';
-    var berlinRange = row.berlin_window_start_at && row.berlin_window_end_at
-      ? '德国柏林时间（Europe/Berlin） ' + formatRoasWindow(row.berlin_window_start_at, row.berlin_window_end_at)
+    var bjLabel = bjTime ? '北京时间（UTC+8） ' : '';
+
+    var berlinTime = row.berlin_window_start_at && row.berlin_window_end_at
+      ? formatRoasWindow(row.berlin_window_start_at, row.berlin_window_end_at)
       : '';
-    return '<div class="oar-hour-main">' + escapeHtml(main) + '</div>' +
-      (bjRange ? '<div class="oar-hour-sub">' + escapeHtml(bjRange) + '</div>' : '') +
-      (berlinRange ? '<div class="oar-hour-sub">' + escapeHtml(berlinRange) + '</div>' : '');
+    var berlinLabel = berlinTime ? '德国柏林时间（Europe/Berlin） ' : '';
+
+    var html = '';
+
+    // Row 1: 广告日小时
+    html += '<div class="oar-hour-row oar-row-ad">';
+    html += '<span class="oar-hour-time oar-hour-main">' + escapeHtml(mainTime) + '</span>';
+    html += '<span class="oar-hour-label">' + escapeHtml(mainLabel) + '</span>';
+    html += '</div>';
+
+    // Row 2: 北京时间
+    if (bjTime) {
+      html += '<div class="oar-hour-row oar-row-bj">';
+      html += '<span class="oar-hour-time oar-hour-sub">' + escapeHtml(bjTime) + '</span>';
+      html += '<span class="oar-hour-label">' + escapeHtml(bjLabel) + '</span>';
+      html += '</div>';
+    }
+
+    // Row 3: 德国柏林时间
+    if (berlinTime) {
+      html += '<div class="oar-hour-row oar-row-berlin">';
+      html += '<span class="oar-hour-time oar-hour-sub">' + escapeHtml(berlinTime) + '</span>';
+      html += '<span class="oar-hour-label">' + escapeHtml(berlinLabel) + '</span>';
+      html += '</div>';
+    }
+
+    return html;
   }
 
   function formatTimeRule(period, points) {

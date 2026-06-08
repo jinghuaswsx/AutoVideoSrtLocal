@@ -18,6 +18,11 @@ def test_order_analytics_sub_routes_unauthenticated_302(client):
     sub_routes = [
         "/order-analytics",
         "/order-analytics/realtime",
+        "/order-analytics/realtime/order",
+        "/order-analytics/realtime/profit",
+        "/order-analytics/realtime/product",
+        "/order-analytics/realtime/campaign",
+        "/order-analytics/realtime/trend",
         "/order-analytics/new-product-launch",
         "/order-analytics/dxm-orders-view",
         "/order-analytics/ads-view",
@@ -37,26 +42,36 @@ def test_order_analytics_sub_routes_unauthenticated_302(client):
 
 
 def test_order_analytics_sub_routes_authenticated_200(authed_client_no_db):
-    """验证已登录用户（且拥有数据分析权限）访问各子路由都返回 200，并正确激活 tab。"""
-    sub_routes = {
-        "/order-analytics": "realtime",
-        "/order-analytics/realtime": "realtime",
-        "/order-analytics/new-product-launch": "newProductLaunch",
-        "/order-analytics/dxm-orders-view": "dxmOrders",
-        "/order-analytics/ads-view": "ads",
-        "/order-analytics/ad-accounts-view": "ads",
-        "/order-analytics/product-dashboard-view": "realtime",
-        "/order-analytics/country-dashboard-view": "countryDashboard",
-        "/order-analytics/true-roas-view": "trueRoas",
-        "/order-analytics/weekly-roas-view": "realtime",
-        "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
-        "/order-analytics/import-view": "realtime",
-        "/order-analytics/shopify-analytics-view": "analytics",
-    }
-    
+    """验证已登录用户（且拥有数据分析权限）访问各子路由都返回 200/302，并正确激活 tab。"""
     # 模拟以防外部依赖报错
     with patch("appcore.meta_ad_accounts.get_all_accounts", return_value=[]), \
          patch("appcore.meta_ad_accounts.AVAILABLE_STORE_CODES", {"newjoy", "omurio"}):
+        
+        # Test redirect routes
+        for route in ("/order-analytics", "/order-analytics/realtime"):
+            resp = authed_client_no_db.get(route)
+            assert resp.status_code == 302
+            assert "/order-analytics/realtime/order" in resp.headers["Location"]
+
+        sub_routes = {
+            "/order-analytics/realtime/order": "realtime",
+            "/order-analytics/realtime/profit": "realtime",
+            "/order-analytics/realtime/product": "realtime",
+            "/order-analytics/realtime/campaign": "realtime",
+            "/order-analytics/realtime/trend": "realtime",
+            "/order-analytics/new-product-launch": "newProductLaunch",
+            "/order-analytics/dxm-orders-view": "dxmOrders",
+            "/order-analytics/ads-view": "ads",
+            "/order-analytics/ad-accounts-view": "ads",
+            "/order-analytics/product-dashboard-view": "realtime",
+            "/order-analytics/country-dashboard-view": "countryDashboard",
+            "/order-analytics/true-roas-view": "trueRoas",
+            "/order-analytics/weekly-roas-view": "realtime",
+            "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
+            "/order-analytics/import-view": "realtime",
+            "/order-analytics/shopify-analytics-view": "analytics",
+        }
+        
         for route, expected_tab in sub_routes.items():
             resp = authed_client_no_db.get(route)
             assert resp.status_code == 200

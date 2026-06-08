@@ -639,12 +639,12 @@ button.mh-link-btn { cursor:pointer; }
       </div>
       <div class="mh-modal-body">
         <div style="margin-bottom: 15px;">
-          <label for="mhImportOwnerSelect" style="display:block; margin-bottom:6px; font-weight:bold; font-size:13px;">指派负责人：</label>
+          <label for="mhImportOwnerSelect" style="display:block; margin-bottom:6px; font-weight:bold; font-size:13px;">产品负责人：</label>
           <select id="mhImportOwnerSelect" class="mh-select" style="width:100%; height:36px;"></select>
         </div>
         <div class="mh-modal-actions" style="justify-content: flex-end;">
           <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhImportOwnerModal')">取消</button>
-          <button id="mhImportOwnerConfirm" class="mh-btn" type="button">确认导入</button>
+          <button id="mhImportOwnerConfirm" class="mh-btn" type="button">确认只入库</button>
         </div>
       </div>
     </div>
@@ -757,6 +757,17 @@ const mhFilterBindings = [
 ];
 function esc(v) {
   return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function metaHotHasReadyLocalVideo(row) {
+  return Boolean(
+    row
+    && String(row.local_video_status || '').toLowerCase() === 'downloaded'
+    && row.local_video_url
+  );
+}
+function metaHotLocalVideoWaitMessage(row) {
+  const status = String((row && row.local_video_status) || '').trim();
+  return status ? `本地视频未就绪：${status}` : '本地视频未就绪，等待本地化完成';
 }
 function fmt(v) { return v === null || v === undefined || v === '' ? '-' : esc(v); }
 function fmtMoney(min, max, currency) {
@@ -1292,25 +1303,28 @@ function renderCard(row) {
   const localItemId = Number(row.local_media_item_id || 0);
   const isImported = localProductId > 0 && localItemId > 0;
   const newProductTaskId = Number(row.new_product_parent_task_id || 0);
+  const hasReadyLocalVideo = metaHotHasReadyLocalVideo(row);
+  const localVideoWaitTitle = esc(metaHotLocalVideoWaitMessage(row));
 
   const importBtn = isImported
     ? `<button class="mh-link-btn mki-btn--disabled" type="button" disabled>已入库</button>`
-    : `<button class="mh-link-btn mki-import-btn" type="button" onclick="mkiImportMetaHotPost(this, ${postId})">加入素材库</button>`;
+    : hasReadyLocalVideo
+    ? `<button class="mh-link-btn mki-import-btn" type="button" title="只创建素材库产品和英文视频，不创建任务" onclick="mkiImportMetaHotPost(this, ${postId})">只入素材库</button>`
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="${localVideoWaitTitle}">等待本地视频</button>`;
 
-  const canCreateNewProductTask = String(row.local_video_status || '').toLowerCase() === 'downloaded' && !!row.local_video_url;
   const newProductTaskBtn = newProductTaskId
     ? `<button class="mh-link-btn mki-btn--disabled" type="button" disabled>任务 #${newProductTaskId}</button>`
-    : canCreateNewProductTask
-    ? `<button class="mh-link-btn" type="button" onclick="mkiCreateNewProductTaskFromMetaHot(this, ${postId})">新素材任务</button>`
-    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先完成本地视频入库">新素材任务</button>`;
+    : hasReadyLocalVideo
+    ? `<button class="mh-link-btn" type="button" onclick="mkiCreateNewProductTaskFromMetaHot(this, ${postId})">创建新品任务</button>`
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="${localVideoWaitTitle}">创建新品任务</button>`;
 
   const smallLangBtn = isImported
     ? `<button class="mh-link-btn" type="button" onclick="mkiCreateSmallLangTaskFromMetaHot(this, ${postId})" data-mki-local-product-id="${localProductId}" data-mki-local-item-id="${localItemId}">创建小语种任务</button>`
-    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先加入素材库">创建小语种任务</button>`;
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先只入素材库">创建小语种任务</button>`;
 
   const fineAiBtn = isImported
     ? `<button class="mh-link-btn" type="button" onclick="mkiFineAiEvaluateFromMetaHot(this, ${postId})" data-mki-local-product-id="${localProductId}" data-mki-local-item-id="${localItemId}">AI精细评估</button>`
-    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先加入素材库">AI精细评估</button>`;
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先只入素材库">AI精细评估</button>`;
 
   return `<article class="mh-card" data-post-id="${postId}">
     ${renderMetaHotPostId(row)}
@@ -2181,6 +2195,11 @@ function mkiUserOptions(selectedId, includeEmpty) {
 
 async function mkiImportMetaHotPost(btn, postId) {
   mkiImportingPostId = Number(postId);
+  const cachedItem = mhItemsById.get(Number(postId));
+  if (!metaHotHasReadyLocalVideo(cachedItem)) {
+    mkiToast('warning', metaHotLocalVideoWaitMessage(cachedItem));
+    return;
+  }
   const modal = document.getElementById('mhImportOwnerModal');
   const select = document.getElementById('mhImportOwnerSelect');
   const confirmBtn = document.getElementById('mhImportOwnerConfirm');
@@ -2189,6 +2208,7 @@ async function mkiImportMetaHotPost(btn, postId) {
   
   select.innerHTML = '<option value="">加载中...</option>';
   confirmBtn.disabled = true;
+  confirmBtn.textContent = '确认只入库';
   modal.hidden = false;
   
   try {
@@ -2213,14 +2233,14 @@ async function mkiImportMetaHotPost(btn, postId) {
     }
     
     confirmBtn.disabled = true;
-    confirmBtn.textContent = '导入中...';
-    qs('mhStatus').textContent = '正在导入至英文素材库并启动AI评估...';
+    confirmBtn.textContent = '入库中...';
+    qs('mhStatus').textContent = '正在只入库英文视频素材并启动 AI 评估...';
     
     try {
       const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/import`, {
         method: 'POST',
         headers: metaHotJsonHeaders(),
-        body: JSON.stringify({ translator_id: ownerId })
+        body: JSON.stringify({ owner_id: ownerId })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) throw new Error(data.error || 'import_failed');
@@ -2232,15 +2252,14 @@ async function mkiImportMetaHotPost(btn, postId) {
         updateMetaHotCard(cached);
       }
       
-      modal.hidden = false;
       closeMetaHotModal('mhImportOwnerModal');
-      qs('mhStatus').textContent = '素材已成功加入素材库！AI 评估已在后台自动触发。';
-      mkiToast('success', '加入素材库成功！');
+      qs('mhStatus').textContent = '已只入素材库，未创建任务；AI 评估已在后台触发。';
+      mkiToast('success', '只入素材库成功');
     } catch (err) {
       confirmBtn.disabled = false;
-      confirmBtn.textContent = '确认导入';
+      confirmBtn.textContent = '确认只入库';
       alert('导入失败：' + (err.message || '网络错误'));
-      qs('mhStatus').textContent = '加入素材库失败';
+      qs('mhStatus').textContent = '只入素材库失败';
     }
   };
 }
@@ -2717,7 +2736,7 @@ async function mkiCreateSmallLangTaskFromMetaHot(btn, postId) {
   const productId = Number(btn.dataset.mkiLocalProductId || 0);
   const itemId = Number(btn.dataset.mkiLocalItemId || 0);
   if (!productId || !itemId) {
-    mkiToast('warning', '请先加入素材库后才能创建小语种任务');
+    mkiToast('warning', '请先只入素材库后才能创建小语种任务');
     return;
   }
   const endpoint = '/tasks/api/parent';
@@ -2779,13 +2798,13 @@ async function mkiCreateNewProductTaskFromMetaHot(btn, postId) {
     || String(cachedItem.local_video_status || '').toLowerCase() !== 'downloaded'
     || !cachedItem.local_video_url
   ) {
-    mkiToast('warning', '请先完成本地视频入库');
+    mkiToast('warning', metaHotLocalVideoWaitMessage(cachedItem));
     return;
   }
   const itemId = Number(cachedItem.local_media_item_id || 0);
   const productId = Number(cachedItem.local_product_id || 0);
   const selection = await mkiXiaoOpenModal({
-    title: '创建新素材任务',
+    title: '创建新品任务',
     endpoint: endpoint,
     productId: productId,
     itemId: itemId,
@@ -3114,7 +3133,7 @@ async function mkiFineAiEvaluateFromMetaHot(btn, postId) {
   const productId = Number(btn.dataset.mkiLocalProductId || 0);
   const itemId = Number(btn.dataset.mkiLocalItemId || 0);
   if (!productId) {
-    mkiToast('warning', '先加入素材库后才能进行 AI 评估');
+    mkiToast('warning', '先只入素材库后才能进行 AI 评估');
     return;
   }
   if (!window.EvalCountryTable || typeof window.EvalCountryTable.openModal !== 'function') {
