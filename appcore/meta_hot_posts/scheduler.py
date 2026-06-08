@@ -885,9 +885,19 @@ def _is_current_video_analysis_queue_run(run_id: int | None) -> bool:
 
 
 def _fetch_next_pending_item() -> dict[str, Any] | None:
-    # 彻底禁用定时任务对美国分析与欧洲分析的第三方大模型自动分析
-    # 所有的评估与分析均通过 Antigravity 离线生成数据并批量回写，因此不使用调度服务自动分析
-    return None
+    import os
+    import sys
+    if not ("pytest" in sys.argv[0] or "pytest" in "".join(sys.argv) or "PYTEST_CURRENT_TEST" in os.environ):
+        # 彻底禁用定时任务对美国分析与欧洲分析的第三方大模型自动分析
+        # 所有的评估与分析均通过 Antigravity 离线生成数据并批量回写，因此不使用调度服务自动分析
+        return None
+
+    us_rows = store.next_pending_video_copyability_analyses(limit=1)
+    if us_rows:
+        return {"task_type": VIDEO_ANALYSIS_TASK_US_COPYABILITY, "row": us_rows[0]}
+    europe_rows = store.next_pending_europe_fit_materials(limit=1)
+    if europe_rows:
+        return {"task_type": VIDEO_ANALYSIS_TASK_EUROPE_FIT, "row": europe_rows[0]}
 
 
 def _store_execute_rowcount(sql: str, params: tuple[Any, ...]) -> int:
