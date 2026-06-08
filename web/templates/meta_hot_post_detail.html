@@ -782,29 +782,15 @@ function handleMetaHotPostVideoKey(event) {
 function setVideoSource(source) {
   mhVideoSource = source;
   // 更新按钮状态
-  qs('mhSourceLocal').classList.toggle('active', source === 'local');
-  qs('mhSourceTOS').classList.toggle('active', source === 'tos');
+  const localBtn = qs('mhSourceLocal');
+  if (localBtn) localBtn.classList.toggle('active', source === 'local');
+  const tosBtn = qs('mhSourceTOS');
+  if (tosBtn) tosBtn.classList.toggle('active', source === 'tos');
   // 保存到 localStorage
   localStorage.setItem('mhVideoSource', source);
   pauseMetaHotVideos();
-  // 重新加载当前页面以应用新设置
-  if (mhSubtab === 'library') {
-    loadMetaHotPosts(mhPage);
-  } else if (mhSubtab === 'today') {
-    loadTodayNewMaterials(mhPage);
-  } else if (mhSubtab === 'europe') {
-    loadEuropeTopMaterials();
-  } else if (mhSubtab === 'us') {
-    loadUsTopMaterials();
-  } else if (mhSubtab === 'favorites') {
-    loadFavoriteMetaHotPosts(mhPage);
-  } else if (mhSubtab === 'products') {
-    if (mhProductPostHash) {
-      loadCurrentMetaHotProductPosts(mhPage);
-    } else {
-      loadMetaHotProductList(mhPage);
-    }
-  }
+  // 重新渲染当前页面已应用新设置
+  rerenderMetaHotCards();
 }
 
 // 从 localStorage 恢复视频源设置
