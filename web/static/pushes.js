@@ -416,11 +416,8 @@
       html += `<div class="ready-row ready-row-domain" style="display: flex; flex-direction: column; gap: 2px; align-items: flex-start;">${domainParts.map(p => `<div>${p}</div>`).join('')}</div>`;
     }
     if (window.PUSH_IS_ADMIN && item && item.id) {
-      const disabled = item.task_id ? '' : ' disabled';
-      const title = item.task_id
-        ? '管理员兜底确认推送必要条件'
-        : '这条素材没有关联任务，不能人工确认必要条件';
-      html += `<div class="ready-row ready-row-override"><button type="button" class="btn-mini readiness-override-btn" data-action="readiness-override" data-id="${escapeAttr(item.id)}" title="${escapeAttr(title)}"${disabled}>人工确认</button></div>`;
+      const title = '管理员兜底确认推送必要条件';
+      html += `<div class="ready-row ready-row-override"><button type="button" class="btn-mini readiness-override-btn" data-action="readiness-override" data-id="${escapeAttr(item.id)}" title="${escapeAttr(title)}">人工确认</button></div>`;
     }
     html += `</div>`;
     return html;
@@ -2291,9 +2288,7 @@
       el('button', { type: 'button', class: 'pm-close', 'aria-label': '关闭' }, '×'),
     ]);
     const list = el('div', { class: 'readiness-override-list' });
-    const note = item.task_id
-      ? '每一行可单独人工确认；确认后该必要条件按最高优先级视为就绪。'
-      : '这条素材没有关联任务，无法写入人工确认事件。';
+    const note = '每一行可单独人工确认；确认后该必要条件按最高优先级视为就绪。';
     const status = el('div', { class: 'pm-rework-status', hidden: true });
     dialog.appendChild(header);
     dialog.appendChild(el('div', { class: 'pm-rework-note' }, note));
