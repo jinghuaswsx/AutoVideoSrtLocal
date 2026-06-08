@@ -165,6 +165,18 @@ def _fake_product_profit(*, date_from, date_to):
     }
 
 
+def _stub_product_candidate_loaders(monkeypatch):
+    monkeypatch.setattr(war, "_load_product_ad_summary", lambda product_ids, notes: {})
+    monkeypatch.setattr(war, "_load_material_summary_by_lang", lambda product_ids, notes: {})
+    monkeypatch.setattr(war, "_load_order_country_distribution", lambda product_ids, week_start, week_end, notes: {})
+    monkeypatch.setattr(war, "_load_ad_country_distribution", lambda product_ids, week_start, week_end, notes: {})
+    monkeypatch.setattr(war, "_load_local_material_candidates", lambda product_ids, notes: {})
+    monkeypatch.setattr(war, "_load_mingkong_product_summary", lambda product_codes, notes: {})
+    monkeypatch.setattr(war, "_load_mingkong_material_candidates", lambda product_codes, notes: {})
+    monkeypatch.setattr(war, "_load_quality_materials", lambda product_code, limit=5: [])
+    monkeypatch.setattr(war, "_load_weekly_created_products", lambda week_start, week_end, notes: [])
+
+
 def _fake_order_fallback_overview(date_text, **kwargs):
     overview = _fake_overview(date_text, **kwargs)
     store = (kwargs.get("site_codes") or ["all"])[0]
@@ -423,6 +435,7 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
 def test_build_weekly_data_package_fallback_classifies_orders_when_stability_cache_empty(monkeypatch):
     monkeypatch.setattr(war, "get_realtime_roas_overview", _fake_order_fallback_overview)
     monkeypatch.setattr(war, "generate_product_profit_list", lambda **kwargs: {"summary": {}, "rows": []})
+    monkeypatch.setattr(war, "_load_weekly_created_products", lambda week_start, week_end, notes: [])
     monkeypatch.setattr(
         war,
         "load_product_stability_summary",

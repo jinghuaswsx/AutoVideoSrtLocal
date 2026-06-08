@@ -49,6 +49,7 @@ _POTENTIAL_NEW_STATUS_LABELS = {
     "never": "周度观察",
     "weekly_observation": "周度观察",
 }
+_ORDER_FALLBACK_STABILITY_SOURCE = "product_sales_stats_order_fallback"
 _TARGET_COUNTRY_TIER_CODES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("tier1", "第一阶梯", ("DE", "FR")),
     ("tier2", "第二阶梯", ("ES", "IT", "JP")),
@@ -719,6 +720,125 @@ def _aggregate_product_sales(
                 "sales_amount_usd": sales,
             })
     return products
+
+
+def _product_sales_order_active_dates(
+    product_sales: dict[tuple[str, str, str], dict[str, Any]],
+) -> dict[tuple[str, str], set[date]]:
+    active_dates: dict[tuple[str, str], set[date]] = defaultdict(set)
+    for sales in product_sales.values():
+        keys: set[tuple[str, str]] = set()
+        pid = _safe_int(sales.get("product_id"))
+        code = str(sales.get("product_code") or "").strip().lower()
+        if pid > 0:
+            keys.add(("id", str(pid)))
+        if code:
+            keys.add(("code", code))
+        if not keys:
+            continue
+        for daily in sales.get("daily") or []:
+            if _safe_int((daily or {}).get("order_count")) <= 0:
+                continue
+            day = _date_value((daily or {}).get("date"))
+            if not day:
+                continue
+            for key in keys:
+                active_dates[key].add(day)
+    return active_dates
+
+
+def _has_unavailable_product_stability(summary: dict[str, Any]) -> bool:
+    if str((summary or {}).get("scope_status") or "").strip().lower() == "unavailable":
+        return True
+    for warning in (summary or {}).get("warnings") or []:
+        code = str((warning or {}).get("code") or "").strip()
+        if code in {"product_stability_unavailable", "product_stability_cache_unavailable"}:
+            return True
+    return False
+
+
+def _build_order_fallback_product_stability(
+    product_sales: dict[tuple[str, str, str], dict[str, Any]],
+    *,
+    week_start: date,
+    week_end: date,
+) -> dict[str, Any] | None:
+    if not product_sales:
+        return None
+    dates = _dates_between(week_start, week_end)
+    day_count = max(len(dates), 1)
+    buckets: dict[str, list[dict[str, Any]]] = {
+        "stable": [],
+        "secondary_stable": [],
+        "potential": [],
+        "test": [],
+        "stopped": [],
+        "never": [],
+        "insufficient_history": [],
+    }
+    for sales in product_sales.values():
+        order_count = _safe_int(sales.get("order_count"))
+        if order_count <= 0:
+            continue
+        by_date = {
+            str((daily or {}).get("date") or "")[:10]: _safe_int((daily or {}).get("order_count"))
+            for daily in sales.get("daily") or []
+        }
+        daily_counts = [by_date.get(day.isoformat(), 0) for day in dates]
+        min_7d = min(daily_counts) if daily_counts else 0
+        avg_7d = round(order_count / day_count, 2)
+        stable_7d = bool(order_count >= 210 or (order_count >= 140 and min_7d >= 10))
+        secondary_stable = bool(not stable_7d and min_7d >= 5 and avg_7d > 10)
+        if stable_7d:
+            status = "stable"
+            display_label = "稳定品"
+        elif secondary_stable:
+            status = "secondary_stable"
+            display_label = "二级稳定品"
+        else:
+            status = "test"
+            display_label = "测试中"
+        item = {
+            "product_id": sales.get("product_id"),
+            "product_code": sales.get("product_code") or "",
+            "product_name": sales.get("name") or "",
+            "status": status,
+            "display_label": display_label,
+            "stable_7d": stable_7d,
+            "stable_30d": False,
+            "last_7d_orders": order_count,
+            "last_30d_orders": order_count,
+            "avg_7d_orders": avg_7d,
+            "avg_30d_orders": avg_7d,
+            "min_7d_orders": min_7d,
+            "details": {"delivery_start_date": week_start.isoformat()},
+            "weekly_order_fallback": True,
+        }
+        buckets[status].append(item)
+    if not any(buckets.values()):
+        return None
+    counts = {
+        "total": sum(len(rows) for rows in buckets.values()),
+        "stable_total": len(buckets["stable"]),
+        "stable_7d": len(buckets["stable"]),
+        "stable_30d": 0,
+        "secondary_stable": len(buckets["secondary_stable"]),
+        "potential": 0,
+        "test": len(buckets["test"]),
+        "stopped": 0,
+        "never": 0,
+        "insufficient_history": 0,
+    }
+    return {
+        "counts": counts,
+        "buckets": buckets,
+        "warnings": [{
+            "code": "product_stability_order_fallback",
+            "message": "产品稳定分级缓存为空，已按本周 product_sales_stats 订单阈值生成临时分级。",
+        }],
+        "computed_at": None,
+        "source": _ORDER_FALLBACK_STABILITY_SOURCE,
+    }
 
 
 def _load_product_profit_rows(
@@ -2330,9 +2450,12 @@ def _build_weekly_product_scope(
         "scope_status": "available" if items else "empty",
         "scope_note": "仅将所选周连续 7 天都有广告活跃数据的产品纳入经营评估。",
     }
+    if product_stability.get("source"):
+        scoped_summary["source"] = product_stability.get("source")
     product_scope = {
         "filter_applied": bool(items),
         "scope_status": "available" if items else "empty",
+        "fallback_applied": product_stability.get("source") == _ORDER_FALLBACK_STABILITY_SOURCE,
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
         "required_continuous_active_days": 7,
@@ -2714,6 +2837,16 @@ def build_weekly_data_package(
         product_stability_raw = media_product_stability.empty_stability_summary(
             warning=f"产品稳定分级缓存暂不可用：{str(exc)[:160]}"
         )
+    if not _flatten_stability_items(product_stability_raw) and not _has_unavailable_product_stability(product_stability_raw):
+        fallback_stability = _build_order_fallback_product_stability(
+            product_sales,
+            week_start=week_start,
+            week_end=week_end,
+        )
+        if fallback_stability:
+            product_stability_raw = fallback_stability
+            for key, active_dates in _product_sales_order_active_dates(product_sales).items():
+                weekly_active_dates_by_product.setdefault(key, set()).update(active_dates)
     product_stability_full, product_scope, product_scope_sets = _build_weekly_product_scope(
         product_stability_raw,
         week_start=week_start,
