@@ -3335,6 +3335,33 @@
 
   <div class="oa-table-wrap">
     <div class="oa-table-header">
+      <div class="oa-table-title">潜力新品情况</div>
+      <div class="oar-note" id="weeklyAiPotentialNewNote"></div>
+    </div>
+    <div id="weeklyAiPotentialNewSummary" class="oa-stats"></div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>标签</th>
+            <th>产品主图</th>
+            <th>产品</th>
+            <th>产品分级</th>
+            <th>本周订单</th>
+            <th>日均单量</th>
+            <th>ROAS</th>
+            <th>广告费</th>
+            <th>利润</th>
+            <th>上线时间</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiPotentialNewBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
       <div class="oa-table-title">稳定产品分级</div>
       <div class="oar-note" id="weeklyAiStabilityComputedAt"></div>
     </div>
@@ -7288,11 +7315,16 @@
     if (stabilitySummary) stabilitySummary.innerHTML = '';
     var stabilityComputed = document.getElementById('weeklyAiStabilityComputedAt');
     if (stabilityComputed) stabilityComputed.textContent = '';
+    var potentialNewSummary = document.getElementById('weeklyAiPotentialNewSummary');
+    if (potentialNewSummary) potentialNewSummary.innerHTML = '';
+    var potentialNewNote = document.getElementById('weeklyAiPotentialNewNote');
+    if (potentialNewNote) potentialNewNote.textContent = '';
     [
       ['weeklyAiSegmentBody', 8],
       ['weeklyAiDailyBody', 10],
       ['weeklyAiStoreBody', 7],
       ['weeklyAiTierOrderShareBody', 8],
+      ['weeklyAiPotentialNewBody', 10],
       ['weeklyAiStabilityBody', 10],
       ['weeklyAiProductEvaluationBody', 8],
       ['weeklyAiSupplementCountryBody', 5],
@@ -7367,6 +7399,7 @@
       ['weeklyAiDailyBody', 10],
       ['weeklyAiStoreBody', 7],
       ['weeklyAiTierOrderShareBody', 8],
+      ['weeklyAiPotentialNewBody', 10],
       ['weeklyAiStabilityBody', 10],
       ['weeklyAiProductEvaluationBody', 8],
       ['weeklyAiSupplementCountryBody', 5],
@@ -7414,6 +7447,7 @@
     renderWeeklyAiDaily(pkg.daily_global || []);
     renderWeeklyAiStores(pkg.daily_by_store || {});
     renderWeeklyAiTierOrderShare(pkg.product_tier_order_share || {});
+    renderWeeklyAiPotentialNewProducts(pkg.potential_new_products || {});
     renderWeeklyAiProductStability(pkg.product_stability || {});
     renderWeeklyAiProductEvaluations(data.report || null, pkg);
     renderWeeklyAiSupplementRecommendations(pkg.product_supplement_recommendations || {}, data.report || null);
@@ -7821,6 +7855,41 @@
       weeklyAiAppendRow(body, [String(row.date || row.label || '').slice(0, 10)].concat(weeklyAiTierShareCells(row)));
     });
     if (!body.children.length) body.innerHTML = '<tr><td colspan="8">暂无产品分层订单占比数据</td></tr>';
+  }
+
+  function renderWeeklyAiPotentialNewProducts(data) {
+    var summaryEl = document.getElementById('weeklyAiPotentialNewSummary');
+    var note = document.getElementById('weeklyAiPotentialNewNote');
+    var body = document.getElementById('weeklyAiPotentialNewBody');
+    var summary = (data || {}).summary || {};
+    if (summaryEl) {
+      summaryEl.innerHTML =
+        statCard('上线新品', summary.weekly_created_product_count || 0) +
+        statCard('测试中候选', summary.testing_candidate_count || 0) +
+        statCard('展示数量', summary.display_count || 0) +
+        statCard('候选订单', summary.total_orders || 0) +
+        statCard('Top10订单', summary.top_10_orders || 0);
+    }
+    if (note) {
+      note.textContent = '按本周日均单量降序、ROAS 降序取前 10';
+    }
+    if (!body) return;
+    body.innerHTML = '';
+    ((data || {}).rows || []).forEach(function(item) {
+      weeklyAiAppendRow(body, [
+        escapeHtml(item.label || item.display_label || '潜力新品'),
+        weeklyAiProductImageCell(item),
+        weeklyAiProductCell(item),
+        escapeHtml(item.product_grade || '测试中'),
+        item.order_count || 0,
+        Number(item.avg_daily_orders || 0).toFixed(2),
+        fmtRoasValue(item.roas),
+        fmtMoney(item.ad_cost_usd),
+        fmtMoney(item.profit_usd),
+        escapeHtml(formatShortDateTime(item.created_at))
+      ]);
+    });
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="10">暂无潜力新品数据</td></tr>';
   }
 
   function renderWeeklyAiProductStability(stability) {

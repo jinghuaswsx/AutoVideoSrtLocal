@@ -152,6 +152,42 @@ def _fake_product_profit(*, date_from, date_to):
     }
 
 
+def _fake_order_fallback_overview(date_text, **kwargs):
+    overview = _fake_overview(date_text, **kwargs)
+    store = (kwargs.get("site_codes") or ["all"])[0]
+    if store == "all":
+        business_day = date.fromisoformat(date_text[:10])
+        day_index = (business_day - date(2026, 5, 31)).days + 1
+        overview["product_sales_stats"] = [
+            {
+                "product_id": 101,
+                "product_code": "P101",
+                "product_name": "Order Stable Product",
+                "order_count": 30,
+                "units": 30,
+                "total_sales": 3000,
+            },
+            {
+                "product_id": 505,
+                "product_code": "P505",
+                "product_name": "Order Secondary Product",
+                "order_count": 11,
+                "units": 11,
+                "total_sales": 1100,
+            },
+            {
+                "product_id": 202,
+                "product_code": "P202",
+                "product_name": "Long Tail Product",
+                "order_count": 3 if day_index == 1 else 0,
+                "units": 3 if day_index == 1 else 0,
+                "total_sales": 240 if day_index == 1 else 0,
+            },
+        ]
+        overview["campaigns"] = []
+    return overview
+
+
 def test_previous_complete_business_week_uses_sunday_to_saturday():
     week_start, week_end = war.previous_complete_business_week(datetime(2026, 6, 7, 12, 0, 0))
 
@@ -272,6 +308,44 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
             "ads_count": 6,
         }],
     )
+    monkeypatch.setattr(
+        war,
+        "_load_weekly_created_products",
+        lambda week_start, week_end, notes: [
+            {
+                "product_id": 101,
+                "product_code": "P101",
+                "product_name": "Scale Product",
+                "name": "Scale Product",
+                "main_image": "",
+                "created_at": "2026-06-01 10:00:00",
+            },
+            {
+                "product_id": 202,
+                "product_code": "P202",
+                "product_name": "Low Order Product",
+                "name": "Low Order Product",
+                "main_image": "",
+                "created_at": "2026-06-02 10:00:00",
+            },
+            {
+                "product_id": 303,
+                "product_code": "P303",
+                "product_name": "New Product",
+                "name": "New Product",
+                "main_image": "",
+                "created_at": "2026-06-03 10:00:00",
+            },
+            {
+                "product_id": 505,
+                "product_code": "P505",
+                "product_name": "Potential Product",
+                "name": "Potential Product",
+                "main_image": "",
+                "created_at": "2026-06-04 10:00:00",
+            },
+        ],
+    )
 
     package = war.build_weekly_data_package(
         date(2026, 5, 31),
@@ -315,6 +389,122 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert package["product_supplement_recommendations"]["country_expansion"][0]["product_code"] == "P101"
     assert package["product_supplement_recommendations"]["material_fill"][0]["material_key"] == "mk-1"
     assert not any(row.get("matched_product_code") == "P202" for row in package["rule_findings"]["ads_pause"])
+    potential_new = package["potential_new_products"]
+    assert potential_new["summary"]["weekly_created_product_count"] == 4
+    assert potential_new["summary"]["testing_candidate_count"] == 2
+    assert potential_new["rows"][0]["product_code"] == "P202"
+    assert potential_new["rows"][0]["label"] == "潜力新品"
+    assert potential_new["rows"][0]["product_grade"] == "测试中"
+    assert potential_new["rows"][0]["avg_daily_orders"] == 0.14
+    assert not any(row["product_code"] in {"P101", "P505"} for row in potential_new["rows"])
+
+
+def test_build_weekly_data_package_fallback_classifies_orders_when_stability_cache_empty(monkeypatch):
+    monkeypatch.setattr(war, "get_realtime_roas_overview", _fake_order_fallback_overview)
+    monkeypatch.setattr(war, "generate_product_profit_list", lambda **kwargs: {"summary": {}, "rows": []})
+    monkeypatch.setattr(
+        war,
+        "load_product_stability_summary",
+        lambda limit=50: {
+            "counts": {"total": 0},
+            "buckets": {
+                "stable": [],
+                "secondary_stable": [],
+                "potential": [],
+                "test": [],
+                "stopped": [],
+                "never": [],
+                "insufficient_history": [],
+            },
+            "warnings": [],
+            "computed_at": None,
+        },
+    )
+    monkeypatch.setattr(war, "load_product_lang_ad_summary_cache", lambda pids: {})
+
+    package = war.build_weekly_data_package(
+        date(2026, 5, 31),
+        date(2026, 6, 6),
+        now=datetime(2026, 6, 7, 12, 0, 0),
+    )
+
+    stability = package["product_stability"]
+    assert stability["source"] == "product_sales_stats_order_fallback"
+    assert stability["counts"]["stable_total"] == 1
+    assert stability["counts"]["secondary_stable"] == 1
+    assert stability["counts"]["test"] == 1
+    assert stability["buckets"]["stable"][0]["product_code"] == "P101"
+    assert stability["buckets"]["secondary_stable"][0]["product_code"] == "P505"
+    assert stability["warnings"][0]["code"] == "product_stability_order_fallback"
+    assert package["product_scope"]["fallback_applied"] is True
+
+    share = package["product_tier_order_share"]["weekly"]
+    assert share["total_orders"] == 290
+    assert share["stable"]["order_count"] == 210
+    assert share["stable"]["order_share_pct"] == 72.4138
+    assert share["potential"]["order_count"] == 77
+    assert share["potential"]["order_share_pct"] == 26.5517
+    assert share["other"]["order_count"] == 3
+    assert share["other"]["order_share_pct"] == 1.0345
+
+
+def test_existing_report_backfills_missing_product_tier_order_share(monkeypatch):
+    calls = []
+    backfilled_share = {
+        "weekly": {
+            "label": "整周",
+            "total_orders": 20,
+            "stable": {"key": "stable", "label": "稳定品", "order_count": 12, "order_share_pct": 60.0},
+            "potential": {"key": "potential", "label": "潜力品", "order_count": 5, "order_share_pct": 25.0},
+            "other": {"key": "other", "label": "其他品", "order_count": 3, "order_share_pct": 15.0},
+        },
+        "daily": [],
+        "source": "product_sales_stats",
+    }
+
+    monkeypatch.setattr(
+        war,
+        "query_one",
+        lambda *a, **k: {
+            "week_start_date": date(2026, 5, 31),
+            "week_end_date": date(2026, 6, 6),
+            "generated_at": datetime(2026, 6, 7, 20, 5, 0),
+            "generated_by": "manual",
+            "status": "success",
+            "data_snapshot_json": json.dumps({
+                "summary": {"order_count": 20},
+                "data_quality": {"status": "ok"},
+                "product_stability": {"counts": {"stable_total": 1}},
+            }),
+            "ai_report_json": json.dumps({"executive_summary": ["旧报告结论"]}),
+            "raw_text": "{}",
+            "data_quality_json": json.dumps({"status": "ok"}),
+            "usage_log_id": 9,
+            "error_message": None,
+        },
+    )
+    monkeypatch.setattr(war, "query", lambda *a, **k: [])
+
+    def fake_build_weekly_data_package(week_start, week_end):
+        calls.append((week_start, week_end))
+        return {
+            "data_quality": {"status": "ok"},
+            "product_tier_order_share": backfilled_share,
+            "product_stability": {"counts": {"stable_total": 1}},
+        }
+
+    monkeypatch.setattr(war, "build_weekly_data_package", fake_build_weekly_data_package)
+
+    report = war.get_or_build_report_payload(date(2026, 6, 3))
+
+    assert calls == [(date(2026, 5, 31), date(2026, 6, 6))]
+    assert report["status"] == "success"
+    assert report["report"]["executive_summary"] == ["旧报告结论"]
+    share = report["data_package"]["product_tier_order_share"]
+    assert share["weekly"]["total_orders"] == 20
+    assert share["weekly"]["stable"]["order_count"] == 12
+    assert share["weekly"]["potential"]["order_count"] == 5
+    assert share["weekly"]["other"]["order_count"] == 3
 
 
 def test_generate_ai_report_success_upserts(monkeypatch):

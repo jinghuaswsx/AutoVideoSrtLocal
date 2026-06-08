@@ -1159,6 +1159,212 @@ def _build_product_tier_order_share(
     }
 
 
+def _load_weekly_created_products(
+    week_start: date,
+    week_end: date,
+    notes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    start_text = f"{week_start.isoformat()} 00:00:00"
+    end_text = f"{(week_end + timedelta(days=1)).isoformat()} 00:00:00"
+    try:
+        rows = query(
+            "SELECT id, product_code, name, main_image, product_link, listing_status, created_at "
+            "FROM media_products "
+            "WHERE deleted_at IS NULL "
+            "  AND created_at >= %s "
+            "  AND created_at < %s "
+            "ORDER BY created_at DESC, id DESC",
+            (start_text, end_text),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("weekly_ai created products load failed: %s", exc, exc_info=True)
+        notes.append({
+            "code": "weekly_created_products_unavailable",
+            "message": f"本周上线新品加载失败：{str(exc)[:160]}",
+        })
+        return []
+
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        item = dict(row)
+        pid = _safe_int(item.get("id"))
+        code = str(item.get("product_code") or "").strip()
+        if not pid and not code:
+            continue
+        out.append({
+            "product_id": pid,
+            "product_code": code,
+            "product_name": str(item.get("name") or "").strip(),
+            "name": str(item.get("name") or "").strip(),
+            "main_image": item.get("main_image"),
+            "product_link": str(item.get("product_link") or "").strip(),
+            "listing_status": str(item.get("listing_status") or "").strip(),
+            "created_at": _serialize_value(item.get("created_at")),
+        })
+    return out
+
+
+def _testing_product_keys(product_stability: dict[str, Any]) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    buckets = (product_stability or {}).get("buckets") or {}
+    for item in buckets.get("test") or []:
+        if isinstance(item, dict):
+            keys.update(_product_ref_keys(item))
+    return keys
+
+
+def _product_daily_orders_for_week(
+    product_row: dict[str, Any],
+    *,
+    week_start: date,
+    week_end: date,
+) -> list[dict[str, Any]]:
+    by_date: dict[str, int] = {}
+    for row in product_row.get("daily") or []:
+        day = str((row or {}).get("date") or "")[:10]
+        if day:
+            by_date[day] = _safe_int((row or {}).get("order_count"))
+    return [
+        {"date": day.isoformat(), "order_count": by_date.get(day.isoformat(), 0)}
+        for day in _dates_between(week_start, week_end)
+    ]
+
+
+def _campaign_metrics_for_product(
+    product: dict[str, Any],
+    campaign_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    pid = _safe_int(product.get("product_id"))
+    code = str(product.get("product_code") or "").strip().lower()
+    if not pid and not code:
+        return {
+            "ad_cost_usd": 0.0,
+            "purchase_value_usd": 0.0,
+            "result_count": 0,
+            "roas": None,
+            "active_days": 0,
+        }
+    ids = {pid} if pid else set()
+    codes = {code} if code else set()
+    spend = 0.0
+    purchase_value = 0.0
+    results = 0
+    active_dates: set[str] = set()
+    for campaign in campaign_rows or []:
+        if not _row_matches_scope(campaign, ids=ids, codes=codes):
+            continue
+        spend += _safe_float(campaign.get("spend_usd"))
+        purchase_value += _safe_float(campaign.get("purchase_value_usd"))
+        results += _safe_int(campaign.get("result_count"))
+        for daily in campaign.get("daily") or []:
+            day = str((daily or {}).get("date") or "")[:10]
+            if day and (_safe_float((daily or {}).get("spend_usd")) > 0 or _safe_int((daily or {}).get("result_count")) > 0):
+                active_dates.add(day)
+    spend = _round_money(spend)
+    purchase_value = _round_money(purchase_value)
+    return {
+        "ad_cost_usd": spend,
+        "purchase_value_usd": purchase_value,
+        "result_count": results,
+        "roas": _roas(purchase_value, spend),
+        "active_days": len(active_dates),
+    }
+
+
+def _build_potential_new_products(
+    *,
+    week_start: date,
+    week_end: date,
+    product_stability: dict[str, Any],
+    product_rows: list[dict[str, Any]],
+    campaign_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    notes: list[dict[str, Any]] = []
+    weekly_created_products = _load_weekly_created_products(week_start, week_end, notes)
+    testing_keys = _testing_product_keys(product_stability)
+    product_index = _build_product_index(product_rows)
+    day_count = max(len(_dates_between(week_start, week_end)), 1)
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for product in weekly_created_products:
+        if not (_product_ref_keys(product) & testing_keys):
+            continue
+        pid = _safe_int(product.get("product_id"))
+        code = str(product.get("product_code") or "").strip()
+        key = (str(pid or ""), code.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        product_row = (
+            product_index.get(("id", str(pid or "")))
+            or product_index.get(("code", code.lower()))
+            or {}
+        )
+        campaign_metrics = _campaign_metrics_for_product(product, campaign_rows)
+        order_count = _safe_int(product_row.get("order_count"))
+        roas_value = product_row.get("roas")
+        if roas_value is None:
+            roas_value = campaign_metrics.get("roas")
+        product_ad_cost = _safe_float(product_row.get("ad_cost_usd"))
+        campaign_ad_cost = _safe_float(campaign_metrics.get("ad_cost_usd"))
+        ad_cost = _round_money(product_ad_cost if product_ad_cost > 0 else campaign_ad_cost)
+        rows.append({
+            "label": "潜力新品",
+            "display_label": "潜力新品",
+            "product_grade": "测试中",
+            "status": "test",
+            "product_id": pid,
+            "product_code": code,
+            "product_name": product.get("product_name") or product_row.get("product_name") or product_row.get("name") or "",
+            "name": product.get("product_name") or product_row.get("name") or "",
+            "product_main_image_url": _product_image_url(product.get("main_image"), pid),
+            "product_cover_url": _media_cover_url(pid),
+            "media_search_url": _media_search_url(code),
+            "created_at": product.get("created_at"),
+            "listing_status": product.get("listing_status") or "",
+            "order_count": order_count,
+            "avg_daily_orders": round(order_count / day_count, 2),
+            "roas": _round_ratio(roas_value),
+            "ad_cost_usd": ad_cost,
+            "profit_usd": _round_money(product_row.get("profit_usd")),
+            "daily_orders": _product_daily_orders_for_week(product_row, week_start=week_start, week_end=week_end),
+            "campaign_result_count": _safe_int(campaign_metrics.get("result_count")),
+            "campaign_active_days": _safe_int(campaign_metrics.get("active_days")),
+        })
+
+    rows.sort(
+        key=lambda item: (
+            -_safe_float(item.get("avg_daily_orders")),
+            -(_safe_float(item.get("roas")) if item.get("roas") is not None else -1.0),
+            str(item.get("product_code") or ""),
+        )
+    )
+    top_rows = rows[:10]
+    return {
+        "period": {
+            "week_start": week_start.isoformat(),
+            "week_end": week_end.isoformat(),
+        },
+        "summary": {
+            "weekly_created_product_count": len(weekly_created_products),
+            "testing_candidate_count": len(rows),
+            "display_count": len(top_rows),
+            "total_orders": sum(_safe_int(row.get("order_count")) for row in rows),
+            "top_10_orders": sum(_safe_int(row.get("order_count")) for row in top_rows),
+        },
+        "rows": top_rows,
+        "ranking_rule": "avg_daily_orders_desc_roas_desc",
+        "source": "media_products.created_at + product_stability.buckets.test + weekly product ROAS",
+        "notes": notes + [
+            {
+                "code": "potential_new_products_scope",
+                "message": "只从所选周上线且周报分级为测试中的产品里，按日均单量和 ROAS 选前 10 个。",
+            }
+        ],
+    }
+
+
 def _load_product_identity_maps(
     product_ids: list[int],
     product_codes: list[str],
@@ -1817,6 +2023,176 @@ def _sort_and_limit_stability_buckets(
     return out
 
 
+def _build_order_fallback_product_stability(
+    product_sales: dict[tuple[str, str, str], dict[str, Any]],
+    *,
+    week_start: date,
+    week_end: date,
+    limit: int = 50,
+) -> dict[str, Any]:
+    bucket_keys = ("stable", "secondary_stable", "potential", "test", "stopped", "never", "insufficient_history")
+    buckets: dict[str, list[dict[str, Any]]] = {key: [] for key in bucket_keys}
+    counts = {
+        "total": 0,
+        "stable_total": 0,
+        "stable_7d": 0,
+        "stable_30d": 0,
+        "secondary_stable": 0,
+        "potential": 0,
+        "test": 0,
+        "stopped": 0,
+        "never": 0,
+        "insufficient_history": 0,
+        "evaluated_total": 0,
+    }
+    week_days = list(_dates_between(week_start, week_end))
+    computed_at = datetime.now(_CST).replace(microsecond=0).isoformat(sep=" ")
+    for sales in product_sales.values():
+        daily_by_date = {
+            _date_value(row.get("date")): _safe_int(row.get("order_count"))
+            for row in sales.get("daily") or []
+            if _date_value(row.get("date")) is not None
+        }
+        daily_counts = [_safe_int(daily_by_date.get(day)) for day in week_days]
+        total_orders = sum(daily_counts)
+        if total_orders <= 0:
+            continue
+        min_daily = min(daily_counts) if daily_counts else 0
+        avg_daily = round(total_orders / len(week_days), 2) if week_days else 0.0
+        stable_7d = bool(total_orders >= 210 or (total_orders >= 140 and min_daily >= 10))
+        secondary_stable = bool(not stable_7d and min_daily >= 5 and avg_daily > 10)
+        if stable_7d:
+            status = "stable"
+            label = "稳定品"
+            marks = ["7天稳定", "订单兜底"]
+            counts["stable_total"] += 1
+            counts["stable_7d"] += 1
+        elif secondary_stable:
+            status = "secondary_stable"
+            label = "二级稳定品"
+            marks = ["二级稳定", "订单兜底"]
+            counts["secondary_stable"] += 1
+        else:
+            status = "test"
+            label = "测试中"
+            marks = ["订单兜底"]
+            counts["test"] += 1
+        counts["total"] += 1
+        counts["evaluated_total"] += 1
+        item = {
+            "product_id": sales.get("product_id"),
+            "product_code": sales.get("product_code") or "",
+            "product_name": sales.get("name") or "",
+            "status": status,
+            "display_label": label,
+            "stable_7d": stable_7d,
+            "stable_30d": False,
+            "stable_marks": marks,
+            "last_7d_orders": total_orders,
+            "last_30d_orders": total_orders,
+            "avg_7d_orders": avg_daily,
+            "avg_30d_orders": avg_daily,
+            "min_daily_orders_7d": min_daily,
+            "min_daily_orders_30d": min_daily,
+            "active_7d_ad_spend_usd": 0.0,
+            "total_ad_spend_usd": 0.0,
+            "overall_roas": None,
+            "delivery_status": "order_fallback",
+            "computed_for_date": week_end.isoformat(),
+            "computed_at": computed_at,
+            "weekly_delivery_start_date": week_start.isoformat(),
+            "weekly_delivery_age_days": len(week_days),
+            "weekly_eligible_for_analysis": status in {"stable", "secondary_stable"},
+            "weekly_active_dates": [day.isoformat() for day in week_days if _safe_int(daily_by_date.get(day)) > 0],
+            "weekly_active_day_count": sum(1 for count in daily_counts if count > 0),
+            "weekly_has_continuous_7d_active": bool(week_days and min_daily > 0),
+            "weekly_display_status": status,
+            "details": {
+                "source": "product_sales_stats_order_fallback",
+                "reason": "稳定分级缓存为空，按所选业务周产品订单兜底分级。",
+                "delivery_start_date": week_start.isoformat(),
+                "delivery_age_days": len(week_days),
+                "eligible_for_weekly_analysis": status in {"stable", "secondary_stable"},
+                "daily_orders_7d": [
+                    {"date": day.isoformat(), "orders": _safe_int(daily_by_date.get(day))}
+                    for day in week_days
+                ],
+            },
+        }
+        buckets[status].append(item)
+
+    return {
+        "counts": counts,
+        "buckets": _sort_and_limit_stability_buckets(buckets, limit=limit),
+        "warnings": [{
+            "code": "product_stability_order_fallback",
+            "message": "稳定分级缓存为空，已按所选业务周产品订单兜底分级。",
+        }] if counts["total"] else [],
+        "computed_at": computed_at if counts["total"] else None,
+        "source": "product_sales_stats_order_fallback",
+        "scope_note": "稳定分级缓存为空时，按所选业务周订单阈值兜底分级。",
+    }
+
+
+def _build_order_fallback_product_scope(
+    product_stability: dict[str, Any],
+    *,
+    week_start: date,
+    week_end: date,
+    limit: int = 50,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, set[Any]]]:
+    items = _flatten_stability_items(product_stability)
+    scope_sets: dict[str, set[Any]] = {
+        "eligible_ids": set(),
+        "eligible_codes": set(),
+        "active_ids": set(),
+        "active_codes": set(),
+        "supplement_ids": set(),
+        "supplement_codes": set(),
+    }
+    for item in items:
+        pid = _safe_int(item.get("product_id"))
+        code = str(item.get("product_code") or "").strip().lower()
+        status = str(item.get("status") or "").strip().lower()
+        if pid:
+            scope_sets["eligible_ids"].add(pid)
+            scope_sets["active_ids"].add(pid)
+        if code:
+            scope_sets["eligible_codes"].add(code)
+            scope_sets["active_codes"].add(code)
+        if status in {"stable", "secondary_stable", "potential"}:
+            if pid:
+                scope_sets["supplement_ids"].add(pid)
+            if code:
+                scope_sets["supplement_codes"].add(code)
+    counts = dict(product_stability.get("counts") or {})
+    counts["evaluated_total"] = len(items)
+    scoped_summary = dict(product_stability)
+    scoped_summary["counts"] = counts
+    scoped_summary["buckets"] = _sort_and_limit_stability_buckets(
+        product_stability.get("buckets") or {},
+        limit=limit,
+    )
+    scoped_summary["scope_note"] = "稳定分级缓存为空，按所选业务周订单阈值兜底分级。"
+    product_scope = {
+        "filter_applied": bool(items),
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "required_continuous_active_days": 0,
+        "evaluated_product_count": len(items),
+        "excluded_under_7d_count": 0,
+        "excluded_without_continuous_7d_active_count": 0,
+        "excluded_without_ad_data_count": 0,
+        "excluded_without_continuous_7d_active_samples": [],
+        "excluded_without_ad_data_samples": [],
+        "fallback_applied": True,
+        "notes": [
+            "稳定分级缓存为空，周报已按同周产品订单阈值兜底分级。",
+        ],
+    }
+    return scoped_summary, product_scope, scope_sets
+
+
 def _build_weekly_product_scope(
     product_stability: dict[str, Any],
     *,
@@ -2344,20 +2720,40 @@ def build_weekly_data_package(
         product_stability_raw = media_product_stability.empty_stability_summary(
             warning=f"产品稳定分级缓存暂不可用：{str(exc)[:160]}"
         )
-    product_stability, product_scope, product_scope_sets = _build_weekly_product_scope(
-        product_stability_raw,
-        week_start=week_start,
-        week_end=week_end,
-        active_dates_by_product=weekly_active_dates_by_product,
-        limit=50,
-    )
-    product_stability_for_share, _share_scope, _share_scope_sets = _build_weekly_product_scope(
-        product_stability_raw,
-        week_start=week_start,
-        week_end=week_end,
-        active_dates_by_product=weekly_active_dates_by_product,
-        limit=0,
-    )
+    if not _all_stability_items(product_stability_raw) and product_sales:
+        product_stability_fallback = _build_order_fallback_product_stability(
+            product_sales,
+            week_start=week_start,
+            week_end=week_end,
+            limit=0,
+        )
+        product_stability, product_scope, product_scope_sets = _build_order_fallback_product_scope(
+            product_stability_fallback,
+            week_start=week_start,
+            week_end=week_end,
+            limit=50,
+        )
+        product_stability_for_share, _share_scope, _share_scope_sets = _build_order_fallback_product_scope(
+            product_stability_fallback,
+            week_start=week_start,
+            week_end=week_end,
+            limit=0,
+        )
+    else:
+        product_stability, product_scope, product_scope_sets = _build_weekly_product_scope(
+            product_stability_raw,
+            week_start=week_start,
+            week_end=week_end,
+            active_dates_by_product=weekly_active_dates_by_product,
+            limit=50,
+        )
+        product_stability_for_share, _share_scope, _share_scope_sets = _build_weekly_product_scope(
+            product_stability_raw,
+            week_start=week_start,
+            week_end=week_end,
+            active_dates_by_product=weekly_active_dates_by_product,
+            limit=0,
+        )
     product_ai_notes: list[dict[str, Any]] = []
     stability_product_ids, stability_product_codes = _collect_product_refs(
         _all_stability_items(product_stability)
@@ -2378,6 +2774,13 @@ def build_weekly_data_package(
     product_tier_order_share = _build_product_tier_order_share(
         daily_overviews=all_overviews,
         product_stability=product_stability_for_share,
+    )
+    potential_new_products = _build_potential_new_products(
+        week_start=week_start,
+        week_end=week_end,
+        product_stability=product_stability,
+        product_rows=product_rows,
+        campaign_rows=campaign_rows,
     )
     analysis_product_rows = _filter_rows_for_scope(
         product_rows,
@@ -2448,6 +2851,7 @@ def build_weekly_data_package(
         "analysis_campaign_rows": analysis_campaign_rows,
         "product_stability": product_stability,
         "product_tier_order_share": product_tier_order_share,
+        "potential_new_products": potential_new_products,
         "product_scope": product_scope,
         "product_supplement_recommendations": supplement_recommendations,
         "product_ai_evaluation_candidates": product_ai_evaluation_candidates,
@@ -2468,6 +2872,7 @@ def _compact_for_prompt(package: dict[str, Any]) -> dict[str, Any]:
         "segments": package.get("segments"),
         "product_scope": package.get("product_scope"),
         "product_tier_order_share": package.get("product_tier_order_share"),
+        "potential_new_products": package.get("potential_new_products"),
         "top_products_by_profit": sorted(
             product_rows,
             key=lambda row: -_safe_float(row.get("profit_usd")),
@@ -3199,8 +3604,58 @@ def _upsert_report(
     )
 
 
+def _has_product_tier_order_share(data_package: dict[str, Any]) -> bool:
+    share = data_package.get("product_tier_order_share")
+    weekly = share.get("weekly") if isinstance(share, dict) else None
+    return (
+        isinstance(share, dict)
+        and isinstance(weekly, dict)
+        and "total_orders" in weekly
+        and isinstance(share.get("daily"), list)
+    )
+
+
+def _backfill_product_tier_order_share_for_snapshot(
+    data_package: dict[str, Any],
+    *,
+    week_start: date,
+    week_end: date,
+) -> dict[str, Any]:
+    if _has_product_tier_order_share(data_package):
+        return data_package
+    rebuilt = build_weekly_data_package(week_start, week_end)
+    share = rebuilt.get("product_tier_order_share")
+    if not isinstance(share, dict):
+        return data_package
+    enriched = dict(data_package)
+    enriched["product_tier_order_share"] = share
+    if (
+        not isinstance(enriched.get("product_stability"), dict)
+        and isinstance(rebuilt.get("product_stability"), dict)
+    ):
+        enriched["product_stability"] = rebuilt["product_stability"]
+    return enriched
+
+
 def _row_to_report(row: dict[str, Any]) -> dict[str, Any]:
     data_package = _loads_json(row.get("data_snapshot_json"), {}) or {}
+    if not isinstance(data_package, dict):
+        data_package = {}
+    week_start = _date_value(row.get("week_start_date"))
+    week_end = _date_value(row.get("week_end_date"))
+    if week_start:
+        try:
+            data_package = _backfill_product_tier_order_share_for_snapshot(
+                data_package,
+                week_start=week_start,
+                week_end=week_end or week_start + timedelta(days=6),
+            )
+        except Exception:  # noqa: BLE001
+            log.warning(
+                "weekly ai product tier order share backfill failed week_start=%s",
+                week_start,
+                exc_info=True,
+            )
     ai_report = _loads_json(row.get("ai_report_json"), None)
     data_quality = _loads_json(row.get("data_quality_json"), None) or data_package.get("data_quality")
     status = row.get("status") or "success"
