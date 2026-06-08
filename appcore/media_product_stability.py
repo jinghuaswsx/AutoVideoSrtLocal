@@ -13,6 +13,7 @@ from appcore.order_analytics import current_meta_business_date
 STATUS_STABLE = "stable"
 STATUS_SECONDARY_STABLE = "secondary_stable"
 STATUS_POTENTIAL = "potential"
+STATUS_POTENTIAL_NEW = "potential_new"
 STATUS_TEST = "test"
 STATUS_STOPPED = "stopped"
 STATUS_NEVER = "never"
@@ -22,6 +23,7 @@ STATUS_LABELS = {
     STATUS_STABLE: "稳定品",
     STATUS_SECONDARY_STABLE: "二级稳定品",
     STATUS_POTENTIAL: "潜力品",
+    STATUS_POTENTIAL_NEW: "潜力新品",
     STATUS_TEST: "测试品",
     STATUS_STOPPED: "已停投",
     STATUS_NEVER: "未投放",
@@ -38,6 +40,8 @@ STABILITY_STATUS_FILTERS = (
     FILTER_STABLE_7D,
     FILTER_STABLE_30D,
     STATUS_SECONDARY_STABLE,
+    STATUS_POTENTIAL,
+    STATUS_POTENTIAL_NEW,
     STATUS_TEST,
     STATUS_STOPPED,
     STATUS_NEVER,
@@ -139,6 +143,7 @@ def empty_stability_summary(*, warning: str | None = None) -> dict[str, Any]:
             "stable_30d": 0,
             "secondary_stable": 0,
             "potential": 0,
+            "potential_new": 0,
             "test": 0,
             "stopped": 0,
             "never": 0,
@@ -148,6 +153,7 @@ def empty_stability_summary(*, warning: str | None = None) -> dict[str, Any]:
             STATUS_STABLE: [],
             STATUS_SECONDARY_STABLE: [],
             STATUS_POTENTIAL: [],
+            STATUS_POTENTIAL_NEW: [],
             STATUS_TEST: [],
             STATUS_STOPPED: [],
             STATUS_NEVER: [],
@@ -246,20 +252,23 @@ def classify_product(
     else:
         status = STATUS_TEST
 
-    # 动态判定并升级潜力品 (potential)
+    # 动态判定并升级潜力品 (potential) / 潜力新品 (potential_new)
+    potential_new = False
     potential = False
     if has_ad_data and is_active and status not in {STATUS_STABLE, STATUS_SECONDARY_STABLE}:
         roas_val = ad_summary.get("overall_roas")
         if not eligible_for_weekly_analysis:
             # 1. 潜力新品（未满7天）：单量 >= 5 或者 ROAS >= 1.2（有单）
             if last_7d_orders >= 5 or (roas_val is not None and _safe_float(roas_val) >= 1.2 and last_7d_orders >= 1):
-                potential = True
+                potential_new = True
         else:
             # 2. 潜力旧品（已满7天）：单量 >= 35 或者 ROAS >= 1.2 且单量 >= 3
             if last_7d_orders >= 35 or (roas_val is not None and _safe_float(roas_val) >= 1.2 and last_7d_orders >= 3):
                 potential = True
 
-    if potential:
+    if potential_new:
+        status = STATUS_POTENTIAL_NEW
+    elif potential:
         status = STATUS_POTENTIAL
 
     stable_marks: list[str] = []
@@ -271,6 +280,8 @@ def classify_product(
         stable_marks.append("二级稳定")
     if status == STATUS_POTENTIAL:
         stable_marks.append("潜力品")
+    if status == STATUS_POTENTIAL_NEW:
+        stable_marks.append("潜力新品")
 
     reasons: list[str] = []
     if stable_7d:
@@ -279,8 +290,10 @@ def classify_product(
         reasons.append("最近 30 天达到稳定品阈值")
     if status == STATUS_SECONDARY_STABLE:
         reasons.append("最近 7 天每日不少于 5 单且日均超过 10 单，未达稳定品阈值")
+    elif status == STATUS_POTENTIAL_NEW:
+        reasons.append("达到潜力新品判定标准")
     elif status == STATUS_POTENTIAL:
-        reasons.append("达到潜力品判定标准")
+        reasons.append("达到潜力旧品判定标准")
     elif status == STATUS_TEST:
         reasons.append("已满 7 天但未达到稳定品或二级稳定品阈值")
     elif status == STATUS_STOPPED:
@@ -545,6 +558,7 @@ def stability_summary_from_rows(rows: Iterable[dict[str, Any]], *, limit: int = 
         "stable_30d": 0,
         "secondary_stable": 0,
         "potential": 0,
+        "potential_new": 0,
         "test": 0,
         "stopped": 0,
         "never": 0,
@@ -554,6 +568,7 @@ def stability_summary_from_rows(rows: Iterable[dict[str, Any]], *, limit: int = 
         STATUS_STABLE: [],
         STATUS_SECONDARY_STABLE: [],
         STATUS_POTENTIAL: [],
+        STATUS_POTENTIAL_NEW: [],
         STATUS_TEST: [],
         STATUS_STOPPED: [],
         STATUS_NEVER: [],
@@ -566,7 +581,7 @@ def stability_summary_from_rows(rows: Iterable[dict[str, Any]], *, limit: int = 
             counts["stable_total"] += 1
         elif status == STATUS_SECONDARY_STABLE:
             counts["secondary_stable"] += 1
-        elif status in (STATUS_POTENTIAL, STATUS_TEST, STATUS_STOPPED, STATUS_NEVER):
+        elif status in (STATUS_POTENTIAL, STATUS_POTENTIAL_NEW, STATUS_TEST, STATUS_STOPPED, STATUS_NEVER):
             counts[status] += 1
         elif status == STATUS_INSUFFICIENT_HISTORY:
             counts["insufficient_history"] += 1
@@ -605,8 +620,8 @@ def load_stability_summary(*, limit: int = 50) -> dict[str, Any]:
         "overall_roas, delivery_status, computed_for_date, computed_at, details_json "
         "FROM media_product_stability_snapshots "
         "ORDER BY CASE status "
-        "  WHEN 'stable' THEN 1 WHEN 'secondary_stable' THEN 2 WHEN 'potential' THEN 3 "
-        "  WHEN 'test' THEN 4 WHEN 'stopped' THEN 5 WHEN 'insufficient_history' THEN 6 ELSE 7 END, "
+        "  WHEN 'stable' THEN 1 WHEN 'secondary_stable' THEN 2 WHEN 'potential_new' THEN 3 WHEN 'potential' THEN 4 "
+        "  WHEN 'test' THEN 5 WHEN 'stopped' THEN 6 WHEN 'insufficient_history' THEN 7 ELSE 8 END, "
         "last_7d_orders DESC, last_30d_orders DESC"
     )
     return stability_summary_from_rows(rows, limit=limit)

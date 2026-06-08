@@ -124,7 +124,7 @@ def test_classify_product_requires_full_7_delivery_days():
     today = date(2026, 6, 7)
     row = stability.classify_product(
         product_id=1,
-        daily_orders=_orders(today, 7, 20),
+        daily_orders=_orders(today, 7, 0),
         ad_summary={
             "delivery_status": "active",
             "active_7d_ad_spend_usd": 10,
@@ -137,6 +137,26 @@ def test_classify_product_requires_full_7_delivery_days():
     assert row["stable_7d"] is False
     assert row["delivery_age_days"] == 6
     assert row["eligible_for_weekly_analysis"] is False
+
+
+def test_classify_product_potential_new():
+    from appcore import media_product_stability as stability
+
+    today = date(2026, 6, 7)
+    row = stability.classify_product(
+        product_id=1,
+        daily_orders=_orders(today, 7, 2),  # 7d orders = 14 >= 5
+        ad_summary={
+            "delivery_status": "active",
+            "active_7d_ad_spend_usd": 10,
+            "delivery_start_time": "2026-06-02T14:30:00",
+        },
+        today=today,
+    )
+
+    assert row["status"] == "potential_new"
+    assert row["stable_marks"] == ["潜力新品"]
+    assert "达到潜力新品判定标准" in row["details"]["reasons"]
 
 
 def test_stability_summary_counts_and_limits_rows():
@@ -161,6 +181,7 @@ def test_stability_summary_counts_and_limits_rows():
         },
         {"product_id": 3, "product_code": "P", "status": "secondary_stable", "last_7d_orders": 77},
         {"product_id": 6, "product_code": "LEGACY", "status": "potential", "last_7d_orders": 50},
+        {"product_id": 8, "product_code": "NEWBIE", "status": "potential_new", "last_7d_orders": 10},
         {"product_id": 4, "product_code": "T", "status": "test", "last_7d_orders": 8},
         {"product_id": 5, "product_code": "X", "status": "stopped", "last_7d_orders": 0},
         {"product_id": 7, "product_code": "N", "status": "insufficient_history", "last_7d_orders": 80},
@@ -173,6 +194,7 @@ def test_stability_summary_counts_and_limits_rows():
     assert summary["counts"]["stable_30d"] == 1
     assert summary["counts"]["secondary_stable"] == 1
     assert summary["counts"]["potential"] == 1
+    assert summary["counts"]["potential_new"] == 1
     assert summary["counts"]["test"] == 1
     assert summary["counts"]["stopped"] == 1
     assert summary["counts"]["insufficient_history"] == 1

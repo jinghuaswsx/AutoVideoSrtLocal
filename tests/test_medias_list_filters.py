@@ -250,6 +250,8 @@ def test_medias_list_html_has_filter_dropdowns():
     assert "未投" in html
     assert "稳定分级：全部" in html
     assert "二级稳定品" in html
+    assert "潜力品" in html
+    assert "潜力新品" in html
     assert "投放未满7天" in html
     assert "数据已完成" in html
     assert "缺失（预估）" in html

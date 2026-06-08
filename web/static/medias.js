@@ -677,7 +677,7 @@
 
     const stability = (p || {}).stability || {};
     const stabStatus = String(stability.status || '').toLowerCase();
-    if (stabStatus === 'stable' || stabStatus === 'secondary_stable' || stabStatus === 'potential') {
+    if (stabStatus === 'stable' || stabStatus === 'secondary_stable' || stabStatus === 'potential' || stabStatus === 'potential_new') {
       let cls = '';
       let label = '';
       if (stabStatus === 'stable') {
@@ -689,6 +689,9 @@
       } else if (stabStatus === 'potential') {
         cls = 'potential';
         label = '潜力品';
+      } else if (stabStatus === 'potential_new') {
+        cls = 'potential-new';
+        label = '潜力新品';
       }
       const titleParts = [
         `7天单量 ${Number(stability.last_7d_orders || 0)}`,
