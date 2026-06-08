@@ -317,7 +317,7 @@ def new_product_page():
         tasks_sql = """
             SELECT id, country_code, status, assignee_id, parent_task_id, is_urgent
             FROM tasks
-            WHERE media_item_id = %s AND parent_task_id IS NOT NULL AND deleted_at IS NULL
+            WHERE media_item_id = %s AND parent_task_id IS NOT NULL AND archived_at IS NULL
         """
         p["subtasks"] = query(tasks_sql, (item_id,))
         
@@ -325,7 +325,7 @@ def new_product_page():
         parent_sql = """
             SELECT id, status, assignee_id, is_urgent
             FROM tasks
-            WHERE media_item_id = %s AND parent_task_id IS NULL AND deleted_at IS NULL
+            WHERE media_item_id = %s AND parent_task_id IS NULL AND archived_at IS NULL
             LIMIT 1
         """
         p["parent_task"] = query_one(parent_sql, (item_id,))
@@ -353,7 +353,7 @@ def delete_new_product_project(media_item_id: int):
         # 1. 软删 media_items
         execute("UPDATE media_items SET deleted_at=NOW() WHERE id=%s", (media_item_id,))
         # 2. 软删关联的 tasks (包括 parent 和 child)
-        execute("UPDATE tasks SET deleted_at=NOW() WHERE media_item_id=%s", (media_item_id,))
+        execute("UPDATE tasks SET archived_at=NOW(), archived_by=%s WHERE media_item_id=%s", (int(current_user.id), media_item_id))
         _audit_task_action(0, "new_product_project_deleted", {"media_item_id": media_item_id})
         return _json_response({"ok": True})
     except Exception as exc:
