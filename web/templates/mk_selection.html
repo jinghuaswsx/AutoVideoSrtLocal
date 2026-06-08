@@ -1982,7 +1982,10 @@ function syncMkSearchQueryToUrl() {
   const libraryStatus = currentMkLibraryStatus();
   const uploader = currentMkUploaderFilter();
   const sortSelect = document.getElementById('mkSortSelect');
-  const sort = sortSelect ? String(sortSelect.value || 'spend_90').trim() : 'spend_90';
+  let sort = sortSelect ? String(sortSelect.value || 'spend_90').trim() : 'spend_90';
+  if (currentMkLibraryTab === 'yesterday-top300') {
+    sort = 'spend_yesterday';
+  }
 
   const url = new URL(window.location.href);
   const params = url.searchParams;
@@ -2092,6 +2095,9 @@ function resetMkSearch() {
 }
 
 function currentMkSort() {
+  if (currentMkLibraryTab === 'yesterday-top300') {
+    return 'spend_yesterday';
+  }
   const select = document.getElementById('mkSortSelect');
   const value = select ? String(select.value || '').trim() : '';
   return ['spend_90', 'ads_count', 'spend_yesterday'].includes(value) ? value : 'spend_90';
@@ -2331,6 +2337,11 @@ function applyMkLibraryTabState() {
   document.getElementById('mkVideosPanel').hidden = currentMkLibraryTab !== 'videos';
   document.getElementById('mkYesterdayTop100Panel').hidden = currentMkLibraryTab !== 'yesterday-top300';
   document.getElementById('mkMaterialPreselectionPanel').hidden = currentMkLibraryTab !== 'preselection';
+
+  const sortSelect = document.getElementById('mkSortSelect');
+  if (sortSelect) {
+    sortSelect.hidden = currentMkLibraryTab === 'yesterday-top300';
+  }
 }
 
 async function switchMkLibraryTab(tab, options = {}) {
