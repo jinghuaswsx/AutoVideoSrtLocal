@@ -28,7 +28,13 @@
 2. 起 dev server，未登录路由必须 302（不能 500）
 3. 登录后 200；新路由必须 `@login_required + @admin_required`
 4. POST 前端必带 `X-CSRFToken`（从 `layout.html` meta 读）
-
+## AutoVideoSrtLocal pytest 最小化规则（强制）
+- 默认不跑全量 `pytest -q`；按仓库 `docs/superpowers/specs/2026-06-08-targeted-pytest-verification.md` 选择改动相关测试。
+- 首选 `python3 scripts/pytest_related.py --base origin/master --run`；Windows 若只有 `python` 则用 `python scripts/pytest_related.py --base origin/master --run`。
+- 没有脚本时人工列 `pytest <相关 files> -q`。
+- 脚本无目标时说明“无直接 pytest 覆盖”，改跑最小必要非 pytest 验证，不得自动退回全量。
+- 只有发布/合并/用户明确要求、pytest 配置/fixture/依赖变更、跨模块重构，或 schema/auth/deploy/scheduler/LLM/storage/billing 等广影响改动时跑全量。
+- 最终汇报必须说明全量是否跳过、理由，以及实际运行的 focused tests 或替代验证。
 ## 硬红线（违反 = 立即停手）
 - **主工作目录零污染**：除非用户当条消息明确说「马上 hotfix」，否则只能在 `git worktree add` 隔离目录里改代码。
 - **`master` 只 hotfix**：常规需求 / 重构 / 跨模块改动一律走 worktree。

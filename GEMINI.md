@@ -41,13 +41,22 @@
 ## 5. 测试与验证顺序
 
 每次改动后至少做到：
-1. **跑相关 pytest**：按 `docs/superpowers/specs/2026-06-08-targeted-pytest-verification.md` 选择必要测试；非发布/合并/广影响门禁不跑全量。
+1. **跑相关 pytest**：按下方 pytest 最小化规则选择必要测试。
 2. **起本地 dev server**：用空闲端口（默认 5000，本地起空闲端口避免撞生产）。
 3. **未登录重定向**：未登录访问敏感路由应是 302，不能 500。
 4. **登录后响应**：登录后核心页面 / 新接口应返回 200。
 5. **真实产物验证**：涉及真实任务、音频、视频、产品链接、数据采集时，要验证真实服务器状态和产物。
 6. **429 容错**：不能把 429 当成链接存在/不存在结论；要缩小范围、慢速重试或换可靠来源。
 7. **最终汇报**：必须列清楚改了什么、验证了什么、产物在哪里、还有什么风险。
+
+## AutoVideoSrtLocal pytest 最小化规则（强制）
+
+- 默认不跑全量 `pytest -q`；按仓库 `docs/superpowers/specs/2026-06-08-targeted-pytest-verification.md` 选择改动相关测试。
+- 首选 `python3 scripts/pytest_related.py --base origin/master --run`；Windows 若只有 `python` 则用 `python scripts/pytest_related.py --base origin/master --run`。
+- 没有脚本时人工列 `pytest <相关 files> -q`。
+- 脚本无目标时说明“无直接 pytest 覆盖”，改跑最小必要非 pytest 验证，不得自动退回全量。
+- 只有发布/合并/用户明确要求、pytest 配置/fixture/依赖变更、跨模块重构，或 schema/auth/deploy/scheduler/LLM/storage/billing 等广影响改动时跑全量。
+- 最终汇报必须说明全量是否跳过、理由，以及实际运行的 focused tests 或替代验证。
 
 ## 6. 发布原则
 

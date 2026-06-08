@@ -11,8 +11,15 @@
 - **优先用 Skill 系统**：`superpowers:*`、`claude-api`、`webapp-testing`、`frontend-design`、`mcp-builder`；改代码前若适用必须先 `Skill` 调用。
 - **严禁调用 `deploy/publish.sh`**：本机自主闭环已替代它（见 AGENTS.md「发布」节）。
 - **改代码前看 worktree 路径**：当前 `pwd` 不在 `~/.paseo/worktrees/...` 下且非用户明确 hotfix → 先 `git worktree add`。
-- **测试默认 targeted pytest**：按 `docs/superpowers/specs/2026-06-08-targeted-pytest-verification.md` 选择必要测试；非发布/合并/广影响门禁不跑全量。
 - **任务流转 UI 必须闭环**：触发动作后留在上下文内显示 loading、成功 ID/下一步入口、失败接口与错误原因。
+
+## AutoVideoSrtLocal pytest 最小化规则（强制）
+- 默认不跑全量 `pytest -q`；按仓库 `docs/superpowers/specs/2026-06-08-targeted-pytest-verification.md` 选择改动相关测试。
+- 首选 `python3 scripts/pytest_related.py --base origin/master --run`；Windows 若只有 `python` 则用 `python scripts/pytest_related.py --base origin/master --run`。
+- 没有脚本时人工列 `pytest <相关 files> -q`。
+- 脚本无目标时说明“无直接 pytest 覆盖”，改跑最小必要非 pytest 验证，不得自动退回全量。
+- 只有发布/合并/用户明确要求、pytest 配置/fixture/依赖变更、跨模块重构，或 schema/auth/deploy/scheduler/LLM/storage/billing 等广影响改动时跑全量。
+- 最终汇报必须说明全量是否跳过、理由，以及实际运行的 focused tests 或替代验证。
 
 ## 模块级 CLAUDE.md（只在进入对应目录时加载）
 - `web/templates/CLAUDE.md` — Jinja 模板继承防呆 + asr-normalize-card 事故
