@@ -497,6 +497,10 @@ button.mh-link-btn { cursor:pointer; }
 
   {% set mh_query = request.args %}
   <section class="mh-toolbar">
+    <div class="mh-field" style="grid-column: span 2;">
+      <label for="mhSearchQuery">搜索</label>
+      <input class="mh-input" id="mhSearchQuery" type="text" placeholder="搜索标题、内容、链接 (中英文)" value="{{ mh_query.get('q', '') }}" onkeydown="if(event.key === 'Enter') { loadMetaHotPosts(1); }">
+    </div>
     <div class="mh-field">
       <label for="mhCategory">类目</label>
       <select class="mh-select" id="mhCategory">
@@ -740,6 +744,7 @@ function metaHotJsonHeaders() {
   return headers;
 }
 const mhFilterBindings = [
+  {param: 'q', inputId: 'mhSearchQuery'},
   {param: 'category', inputId: 'mhCategory'},
   {param: 'mark_status', inputId: 'mhMarkStatus'},
   {param: 'push_status', inputId: 'mhPushStatus'},
@@ -1740,7 +1745,7 @@ async function loadMetaHotProductPosts(productHash, page = 1) {
   qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '产品帖子');
 }
 function resetMetaHotPosts() {
-  ['mhCategory','mhMarkStatus','mhPushStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
+  ['mhSearchQuery','mhCategory','mhMarkStatus','mhPushStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
   loadMetaHotPosts(1);
 }
 async function refreshMetaHotPosts() {

@@ -131,7 +131,7 @@ def _favorite_sort_arg(args: Mapping[str, Any]) -> str:
 
 def _favorite_order_sql(sort: str) -> str:
     if sort == "interactions":
-        return "COALESCE(p.latest_likes, 0) DESC, fav.created_at DESC, fav.id DESC"
+        return "p.latest_likes DESC, fav.created_at DESC, fav.id DESC"
     if sort == "creation_time":
         return "p.creation_time DESC, fav.created_at DESC, fav.id DESC"
     return "fav.created_at DESC, fav.id DESC"
@@ -286,7 +286,7 @@ def list_hot_posts(
           ON va.hot_post_id = p.id AND va.status = 'done'
         {favorite_join}
         {where_sql}
-        ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC
+        ORDER BY p.sync_period_likes DESC, p.creation_time DESC, p.id DESC
         LIMIT %s OFFSET %s
         """,
         list(favorite_params + params + [page_size, offset]),
@@ -312,13 +312,30 @@ def list_favorite_hot_posts(
     sort = _favorite_sort_arg(args)
     order_sql = _favorite_order_sql(sort)
     actor_id = int(user_id or 0)
+
+    where: list[str] = ["fav.user_id = %s"]
+    params: list[Any] = [actor_id]
+
+    keyword = _text_arg(args, "q")
+    if keyword:
+        where.append(
+            "(p.message_html LIKE %s OR p.message_zh_html LIKE %s "
+            "OR a.product_title LIKE %s OR a.product_title_zh LIKE %s OR p.product_url LIKE %s)"
+        )
+        like = f"%{keyword}%"
+        params.extend([like, like, like, like, like])
+
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+
     count_rows = query_fn(
-        """
+        f"""
         SELECT COUNT(*) AS cnt
         FROM meta_hot_post_favorites fav
-        WHERE fav.user_id = %s
+        JOIN meta_hot_posts p ON p.id = fav.hot_post_id
+        LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
+        {where_sql}
         """,
-        [actor_id],
+        list(params),
     )
     rows = query_fn(
         f"""
@@ -374,11 +391,11 @@ def list_favorite_hot_posts(
         {EUROPE_FIT_DONE_JOIN_SQL}
         LEFT JOIN meta_hot_post_video_copyability_analyses va
           ON va.hot_post_id = p.id AND va.status = 'done'
-        WHERE fav.user_id = %s
+        {where_sql}
         ORDER BY {order_sql}
         LIMIT %s OFFSET %s
         """,
-        [actor_id, page_size, offset],
+        list(params + [page_size, offset]),
     )
     return {
         "items": rows,
@@ -400,10 +417,24 @@ def list_today_new_hot_posts(
     page_size = _int_arg(args, "page_size", 50, 10, 100)
     offset = (page - 1) * page_size
     favorite_join, favorite_select, favorite_params = _favorite_join(user_id)
-    where_sql = """
-        WHERE p.first_seen_at >= CURDATE()
-          AND p.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-    """
+
+    where: list[str] = [
+        "p.first_seen_at >= CURDATE()",
+        "p.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)",
+    ]
+    params: list[Any] = []
+
+    keyword = _text_arg(args, "q")
+    if keyword:
+        where.append(
+            "(p.message_html LIKE %s OR p.message_zh_html LIKE %s "
+            "OR a.product_title LIKE %s OR a.product_title_zh LIKE %s OR p.product_url LIKE %s)"
+        )
+        like = f"%{keyword}%"
+        params.extend([like, like, like, like, like])
+
+    where_sql = "WHERE " + " AND ".join(where) if where else ""
+
     count_rows = query_fn(
         f"""
         SELECT COUNT(*) AS cnt
@@ -411,7 +442,7 @@ def list_today_new_hot_posts(
         LEFT JOIN meta_hot_post_product_analyses a ON a.product_url_hash = p.product_url_hash
         {where_sql}
         """,
-        [],
+        list(params),
     )
     rows = query_fn(
         f"""
@@ -468,10 +499,10 @@ def list_today_new_hot_posts(
           ON va.hot_post_id = p.id AND va.status = 'done'
         {favorite_join}
         {where_sql}
-        ORDER BY p.first_seen_at DESC, COALESCE(p.sync_period_likes, 0) DESC, p.id DESC
+        ORDER BY p.first_seen_at DESC, p.sync_period_likes DESC, p.id DESC
         LIMIT %s OFFSET %s
         """,
-        list(favorite_params + [page_size, offset]),
+        list(favorite_params + params + [page_size, offset]),
     )
     return {
         "items": rows,
