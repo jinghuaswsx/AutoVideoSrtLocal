@@ -302,8 +302,7 @@ def new_product_page():
             p.product_link,
             p.main_image AS product_main_image,
             p.user_id AS product_owner_id,
-            u.username AS creator_name,
-            u.display_name AS creator_display_name
+            u.username AS creator_name
         FROM media_items i
         JOIN media_products p ON i.product_id = p.id
         LEFT JOIN users u ON i.user_id = u.id
