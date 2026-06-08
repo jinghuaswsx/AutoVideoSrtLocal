@@ -271,6 +271,9 @@
   .vw-progress-step { grid-template-columns: 18px minmax(0, 1fr); }
   .vw-progress-status { grid-column: 2; }
 }
+.vw-row-active { background-color: #f0fdf4 !important; }
+.vw-row-stopped { background-color: #fef2f2 !important; }
+.vw-row-warn { background-color: #fffbeb !important; }
 </style>
 {% endblock %}
 
@@ -741,7 +744,8 @@
     const rows = versions.map(v => {
       const perf = v.ad_performance || {};
       const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
-      return `<tr>
+      const cls = v.delivery_status === 'active' ? 'vw-row-active' : (v.delivery_status === 'stopped' ? 'vw-row-stopped' : '');
+      return `<tr class="${cls}">
         <td><strong>${esc(label)}</strong>${v.media_item_id ? `<div class="vw-sub">#${v.media_item_id} ${esc(v.filename || v.display_name || '')}</div>` : ''}</td>
         <td>${metricSpendRoas(perf, 'today')}</td>
         <td>${metricSpendRoas(perf, 'yesterday')}</td>
@@ -769,7 +773,20 @@
     const rows = versions.map(v => {
       const order = v.order_stats || {};
       const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
-      return `<tr>
+      let cls = '';
+      if (v.delivery_status !== 'never') {
+        const todayOrders = Number(order.today_orders || 0);
+        const yesterdayOrders = Number(order.yesterday_orders || 0);
+        const last7dOrders = Number(order.last_7d_orders || 0);
+        if (todayOrders > 0 || yesterdayOrders > 0) {
+          cls = 'vw-row-active';
+        } else if (last7dOrders > 0) {
+          cls = 'vw-row-warn';
+        } else {
+          cls = 'vw-row-stopped';
+        }
+      }
+      return `<tr class="${cls}">
         <td><strong>${esc(label)}</strong></td>
         <td>${orderMetric(order, 'today')}</td>
         <td>${orderMetric(order, 'yesterday')}</td>
