@@ -558,6 +558,25 @@ def test_mk_selection_video_cards_include_cached_ad_status_icons_and_media_searc
     assert "未命中素材库投放" not in template
     assert "return icons.length ? `<div class=\"mk-video-status-icons\">${icons.join('')}</div>` : '';" in template
     assert "function renderMkMediaSearchLink(r)" in template
+
+
+def test_mk_selection_video_cards_include_workbench_data_modal_entry():
+    template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md" in template
+    assert "mk-status-half--data" in template
+    assert "mk-status-icon--data" in template
+    assert "data-mk-card-data-product-id" in template
+    assert "onclick=\"openMkCardDataModal(this)\"" in template
+    assert "function openMkCardDataModal(btn)" in template
+    assert "function mkCardDataRenderTranslationPanel(card)" in template
+    assert "function mkCardDataRenderAdPanel(card)" in template
+    assert "function mkCardDataRenderOrderPanel(card)" in template
+    assert "function mkCardDataRenderAiPanel(card, workbenchData)" in template
+    assert "/medias/api/product/${encodeURIComponent(id)}/video-workbench" in template
+    assert "/video-workbench/ad-detail" in template
+    assert "mk-card-data-country-grid" in template
+    assert "mk-card-data-table-scroll" in template
     assert "media_search_url" in template
     assert "mk-media-search-link" in template
     assert "/medias/?q=" in template

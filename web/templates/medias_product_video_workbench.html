@@ -1,4 +1,5 @@
 {# Docs-anchor: docs/superpowers/specs/2026-06-08-medias-workbench-mk-card-flow-alignment.md #}
+{# Docs-anchor: docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md #}
 {% extends "layout.html" %}
 {% block title %}视频素材决策台 - {{ product.name }} - AutoVideoSrt{% endblock %}
 {% block page_title %}
@@ -355,6 +356,16 @@
 #vwAdModal .vw-modal {
   width: min(1600px, 96vw);
 }
+#vwDataModal .vw-modal {
+  width: min(1120px, 96vw);
+}
+#vwDataBody {
+  max-height: calc(90vh - 72px);
+  overflow: auto;
+}
+#vwDataBody .vw-section + .vw-section {
+  margin-top: 12px;
+}
 #vwAdModal .vw-table th,
 #vwAdModal .vw-table td {
   white-space: nowrap;
@@ -389,6 +400,21 @@
   </div>
   <div id="vwGrid" class="vw-grid">
     <div class="vw-empty">加载视频素材...</div>
+  </div>
+</div>
+
+<div id="vwDataModal" class="vw-modal-mask" role="dialog" aria-modal="true" hidden>
+  <div class="vw-modal">
+    <div class="vw-modal-head">
+      <div style="min-width: 0; flex: 1; margin-right: 12px;">
+        <div class="vw-modal-title" id="vwDataTitle">视频数据</div>
+        <div class="vw-sub" id="vwDataSub"></div>
+      </div>
+      <button type="button" class="vw-btn" data-close-modal="vwDataModal">关闭</button>
+    </div>
+    <div class="vw-modal-body" id="vwDataBody">
+      <div class="vw-empty">请选择视频卡片</div>
+    </div>
   </div>
 </div>
 
@@ -953,6 +979,17 @@
       </div>
     </section>`;
   }
+  function renderCardDataPanel(card) {
+    if (!card) {
+      return '<div class="vw-empty">暂无视频数据</div>';
+    }
+    return [
+      renderTranslationPanel(card),
+      renderAdPanel(card),
+      renderOrderPanel(card),
+      renderAiPanel(card)
+    ].join('');
+  }
 
   function renderCard(card) {
     const mk = card.mk_video || {};
@@ -998,10 +1035,10 @@
       ? `<button type="button" class="vw-btn vw-btn-primary" data-action="task" data-card-id="${esc(card.card_id)}">创建小语种任务</button>
          <a class="vw-btn" href="${mk.material_key ? '/xuanpin/mk/videos/' + encodeURIComponent(mk.material_key) : '/medias/video?keyword=' + encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
          <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>
-         <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>`
+         <button type="button" class="vw-btn" data-action="card-data" data-card-id="${esc(card.card_id)}">广告数据</button>`
       : `<button type="button" class="vw-btn vw-btn-primary" data-action="import" data-card-id="${esc(card.card_id)}">加入素材库</button>
          <button type="button" class="vw-btn" disabled title="先加入素材库后才能创建小语种任务">创建小语种任务</button>
-         <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>
+         <button type="button" class="vw-btn" data-action="card-data" data-card-id="${esc(card.card_id)}">广告数据</button>
          <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>`;
     return `
       <div class="vw-card ${inLib ? 'is-in' : ''}" data-card-id="${esc(card.card_id)}">
@@ -1051,10 +1088,7 @@
           <div class="vw-card-actions">${actions}<div class="vw-state" id="vwState_${esc(card.card_id)}"></div></div>
         </div>
         <div class="vw-right-panel">
-          ${renderTranslationPanel(card)}
-          ${renderAdPanel(card)}
-          ${renderOrderPanel(card)}
-          ${renderAiPanel(card)}
+          ${renderCardDataPanel(card)}
         </div>
       </div>
     `;
@@ -1508,6 +1542,15 @@
       return;
     }
     openXiaoModal({card: importCard, productId: importProductId, itemId: importItemId, fromImport: true});
+  }
+
+  function openCardDataModal(card) {
+    if (!card) return;
+    const mk = card.mk_video || {};
+    document.getElementById('vwDataTitle').textContent = '视频数据';
+    document.getElementById('vwDataSub').textContent = mk.name || '';
+    document.getElementById('vwDataBody').innerHTML = renderCardDataPanel(card);
+    setModalOpen('vwDataModal', true);
   }
 
   function openAdModal(card, countryCode = null) {
@@ -2063,6 +2106,7 @@
     const card = cardById(actionEl.dataset.cardId);
     if (!card) return;
     if (action === 'import') startImport(card);
+    if (action === 'card-data') openCardDataModal(card);
     if (action === 'ad') openAdModal(card);
     if (action === 'ad-country') openAdModal(card, actionEl.dataset.countryCode);
     if (action === 'task') openXiaoModal({card, productId, itemId: card.media_item_id, sourceButton: actionEl});

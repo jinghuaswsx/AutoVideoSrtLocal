@@ -1,4 +1,5 @@
 {% extends "layout.html" %}
+{# Docs-anchor: docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md #}
 {% block title %}选品中心 - AutoVideoSrt{% endblock %}
 {% block page_title %}
 <span class="selection-center-title">选品中心</span>
@@ -176,16 +177,19 @@
 }
 .mk-video-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(248px, 248px)); gap:var(--oc-sp-3); justify-content:flex-start; }
 .mk-video-card { position:relative; width:var(--mk-video-card-w); display:flex; flex-direction:column; gap:var(--oc-sp-2); border:1px solid var(--oc-border); border-radius:var(--oc-r-md); overflow:hidden; background:var(--oc-bg); padding:var(--oc-sp-3); font-size:13px; }
-.mk-status-header-row { display:flex; width:100%; height:36px; align-items:center; margin-bottom:4px; }
-.mk-status-half { flex:0 0 50%; width:50%; height:36px; display:flex; align-items:center; }
-.mk-status-half--left { justify-content:flex-end; padding-right:4px; }
-.mk-status-half--right { justify-content:flex-start; padding-left:4px; }
+.mk-status-header-row { display:flex; width:100%; height:36px; align-items:center; justify-content:center; gap:4px; margin-bottom:4px; }
+.mk-status-half { flex:0 0 42px; width:42px; height:36px; display:flex; align-items:center; justify-content:center; }
+.mk-status-half--left,
+.mk-status-half--right,
+.mk-status-half--data { padding:0; }
 .mk-status-icon { width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--oc-border-strong); border-radius:9999px; background:rgba(255,255,255,.92); box-shadow:0 1px 4px rgba(15,23,42,.12); text-decoration:none; transition: filter 0.2s ease, opacity 0.2s ease; }
+.mk-status-icon[type="button"] { cursor:pointer; }
 .mk-status-icon:hover { text-decoration:none; filter:brightness(0.95); opacity:0.95; }
 .mk-status-icon svg { width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .mk-status-icon-emoji { font-size:22px; line-height:1; }
 .mk-status-icon--product { color:var(--oc-accent); }
 .mk-status-icon--video { color:var(--oc-success-fg); }
+.mk-status-icon--data { color:#0f766e; }
 .mk-line-clamp { display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; word-break:break-word; }
 .mk-line-clamp--1 { -webkit-line-clamp:1; min-height:1.35em; }
 .mk-line-clamp--2 { -webkit-line-clamp:2; min-height:calc(1.35em * 2); }
@@ -790,6 +794,58 @@
 .mk-preselection-fine-ai { margin-bottom:2px; }
 .mk-preselection-note-input { min-height:88px; width:100%; resize:vertical; border:1px solid var(--oc-border-strong); border-radius:8px; padding:10px 12px; font:inherit; }
 .mk-preselection-actions { display:flex; justify-content:flex-end; gap:8px; padding:12px 18px 16px; border-top:1px solid var(--oc-border); }
+.mk-card-data-backdrop { display:none; position:fixed; inset:0; z-index:2300; align-items:center; justify-content:center; padding:20px; background:rgba(15,23,42,.45); }
+.mk-card-data-backdrop.is-open { display:flex; }
+.mk-card-data-modal { width:min(1120px,96vw); max-height:90vh; display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--oc-border); border-radius:12px; background:#fff; box-shadow:0 18px 60px rgba(15,23,42,.28); }
+.mk-card-data-modal--wide { width:min(1500px,96vw); }
+.mk-card-data-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; border-bottom:1px solid var(--oc-border); background:#fff; }
+.mk-card-data-title { margin:0; min-width:0; font-size:18px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mk-card-data-sub { margin-top:2px; color:var(--oc-fg-muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mk-card-data-body { flex:1 1 auto; min-height:0; overflow:auto; padding:14px 18px 18px; }
+.mk-card-data-empty { padding:46px 16px; border:1px dashed var(--oc-border-strong); border-radius:10px; color:var(--oc-fg-muted); text-align:center; background:var(--oc-bg-subtle); }
+.mk-card-data-section { border:1px solid var(--oc-border); border-radius:8px; background:#fff; overflow:hidden; }
+.mk-card-data-section + .mk-card-data-section { margin-top:12px; }
+.mk-card-data-section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-bottom:1px solid var(--oc-border); background:var(--oc-bg-subtle); }
+.mk-card-data-section-title { font-weight:800; font-size:14px; }
+.mk-card-data-section-body { padding:12px; }
+.mk-card-data-country-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; }
+.mk-card-data-country { min-width:0; min-height:102px; display:flex; flex-direction:column; gap:4px; border:1px solid var(--oc-border); border-radius:8px; padding:8px; background:#fff; }
+.mk-card-data-country.is-active { border-color:#bbf7d0; background:#f0fdf4; color:#15803d; }
+.mk-card-data-country.is-stopped { border-color:#fecaca; background:#fef2f2; color:#dc2626; }
+.mk-card-data-country.is-missing { border-color:#e2e8f0; background:#fff; color:var(--oc-fg-muted); }
+.mk-card-data-country-title { display:flex; justify-content:space-between; gap:6px; font-weight:800; font-size:12px; }
+.mk-card-data-country-sub { flex:1; color:var(--oc-fg-muted); font-size:11px; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-all; }
+.mk-card-data-roas-badge { display:inline-flex; width:max-content; padding:2px 6px; border:1px solid #bbf7d0; border-radius:4px; background:#dcfce7; color:#15803d; font-size:12px; font-weight:800; }
+.mk-card-data-table-scroll { overflow:auto; border:1px solid var(--oc-border); border-radius:7px; }
+.mk-card-data-table { width:100%; min-width:620px; border-collapse:collapse; font-size:12px; }
+.mk-card-data-table th,
+.mk-card-data-table td { padding:7px 8px; border-bottom:1px solid var(--oc-border); text-align:right; vertical-align:top; }
+.mk-card-data-table th:first-child,
+.mk-card-data-table td:first-child { text-align:left; }
+.mk-card-data-table th { color:var(--oc-fg-muted); background:var(--oc-bg-subtle); font-weight:800; }
+.mk-card-data-row-active { background:#f0fdf4; }
+.mk-card-data-row-stopped { background:#fef2f2; }
+.mk-card-data-row-warn { background:#fffbeb; }
+.mk-card-data-roas-row { display:inline-flex; align-items:baseline; gap:2px; white-space:nowrap; }
+.mk-card-data-roas-label { font-size:8px; color:var(--oc-fg-muted); text-transform:uppercase; position:relative; top:-0.25em; margin-right:2px; }
+.mk-card-data-roas-value { font-size:13px; font-weight:800; color:var(--oc-accent); }
+.mk-card-data-order-value { display:block; margin-bottom:2px; color:var(--oc-success-fg); font-size:16px; font-weight:800; }
+.mk-card-data-ai-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(142px, 1fr)); gap:8px; }
+.mk-card-data-ai-card { min-width:0; display:grid; gap:6px; border:1px solid var(--oc-border); border-radius:8px; padding:9px; background:#fff; }
+.mk-card-data-ai-card.is-good { border-color:#bbf7d0; background:#f0fdf4; }
+.mk-card-data-ai-card.is-risk { border-color:#fecaca; background:#fef2f2; }
+.mk-card-data-ai-card.is-pending { border-color:#e2e8f0; background:#f8fafc; }
+.mk-card-data-ai-title { display:flex; justify-content:space-between; gap:8px; font-weight:800; font-size:12px; }
+.mk-card-data-ai-summary { color:var(--oc-fg-muted); font-size:11px; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.mk-card-data-mini-btn { min-height:24px; padding:0 8px; border:1px solid var(--oc-border-strong); border-radius:6px; background:#fff; color:var(--oc-accent); cursor:pointer; font-size:11px; font-weight:800; }
+.mk-card-data-mini-btn:hover:not(:disabled) { border-color:var(--oc-accent); background:var(--oc-bg-muted); }
+.mk-card-data-mini-btn:disabled { opacity:.55; cursor:not-allowed; }
+.mk-card-data-ad-controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+.mk-card-data-ad-input { height:32px; border:1px solid var(--oc-border-strong); border-radius:6px; background:#fff; padding:0 8px; font:inherit; font-size:13px; }
+.mk-card-data-kpis { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.mk-card-data-kpi { min-width:112px; padding:8px 10px; border:1px solid var(--oc-border); border-radius:6px; background:var(--oc-bg-subtle); }
+.mk-card-data-kpi span { display:block; font-size:11px; color:var(--oc-fg-muted); }
+.mk-card-data-kpi strong { display:block; margin-top:2px; font-size:16px; }
 @media (max-width: 768px) {
   /* Docs-anchor: docs/superpowers/specs/2026-06-04-mk-selection-mobile-filter-responsive-design.md */
   .oc-header--actions { width:100%; }
@@ -817,6 +873,11 @@
   .mk-preselection-product { grid-template-columns:72px minmax(0,1fr); }
   .mk-preselection-product img { width:72px; height:72px; }
   .mk-preselection-product-line { grid-template-columns:1fr; gap:2px; }
+  .mk-card-data-backdrop { padding:10px; }
+  .mk-card-data-modal { width:100%; max-height:94vh; border-radius:10px; }
+  .mk-card-data-head { padding:12px; }
+  .mk-card-data-body { padding:12px; }
+  .mk-card-data-country-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 420px) {
   .oc-header { margin-bottom:10px; }
@@ -826,6 +887,7 @@
     padding-left:8px;
     padding-right:8px;
   }
+  .mk-card-data-country-grid { grid-template-columns:1fr; }
 }
 {% endblock %}
 
@@ -979,6 +1041,45 @@
   <div id="detailContent" style="padding:20px 24px; overflow-y:auto; max-height:calc(94vh - 60px);">加载中...</div>
 </div>
 
+<div id="mkCardDataModal" class="mk-card-data-backdrop" onclick="if(event.target===this)mkCardDataCloseModal()">
+  <div class="mk-card-data-modal" role="dialog" aria-modal="true" aria-labelledby="mkCardDataTitle">
+    <div class="mk-card-data-head">
+      <div style="min-width:0; flex:1;">
+        <h3 id="mkCardDataTitle" class="mk-card-data-title">视频数据</h3>
+        <div id="mkCardDataSub" class="mk-card-data-sub"></div>
+      </div>
+      <button type="button" class="oc-btn oc-btn--ghost" onclick="mkCardDataCloseModal()">关闭</button>
+    </div>
+    <div id="mkCardDataBody" class="mk-card-data-body">
+      <div class="mk-card-data-empty">请选择视频卡片</div>
+    </div>
+  </div>
+</div>
+
+<div id="mkCardAdModal" class="mk-card-data-backdrop" onclick="if(event.target===this)mkCardDataCloseAdModal()">
+  <div class="mk-card-data-modal mk-card-data-modal--wide" role="dialog" aria-modal="true" aria-labelledby="mkCardAdTitle">
+    <div class="mk-card-data-head">
+      <div style="min-width:0; flex:1;">
+        <h3 id="mkCardAdTitle" class="mk-card-data-title">广告明细</h3>
+        <div id="mkCardAdSub" class="mk-card-data-sub"></div>
+      </div>
+      <button type="button" class="oc-btn oc-btn--ghost" onclick="mkCardDataCloseAdModal()">关闭</button>
+    </div>
+    <div class="mk-card-data-body">
+      <div class="mk-card-data-ad-controls">
+        <label>开始 <input id="mkCardAdFrom" class="mk-card-data-ad-input" type="date"></label>
+        <label>结束 <input id="mkCardAdTo" class="mk-card-data-ad-input" type="date"></label>
+        <button type="button" class="oc-btn oc-btn--primary" onclick="mkCardDataLoadAdDetail()">查询</button>
+        <span id="mkCardAdState" class="mk-card-data-sub"></span>
+      </div>
+      <div id="mkCardAdSummary" class="mk-card-data-kpis"></div>
+      <div id="mkCardAdRows">
+        <div class="mk-card-data-empty">请选择广告入口</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="mkPreselectionModal" class="mk-preselection-modal-backdrop" onclick="if(event.target===this)mkiClosePreselectionModal()">
   <div class="mk-preselection-modal" role="dialog" aria-modal="true" aria-labelledby="mkPreselectionTitle">
     <div class="mk-preselection-modal-head">
@@ -1035,6 +1136,9 @@ const MK_VIDEO_PAGE_SIZE = 100;
 let mkCardZoomed = false;
 const MK_CARD_ZOOM_STORAGE_KEY = 'mkCardZoomed';
 const MKI_FINE_AI_RESULT_CACHE = new Map();
+const MK_CARD_DATA_CACHE = new Map();
+let mkCardDataCurrent = null;
+let mkCardDataAdContext = null;
 
 function fmtMoney(v) {
   if (v >= 10000) return '$' + (v/10000).toFixed(1) + '万';
@@ -1093,6 +1197,432 @@ function safeInternalHref(value) {
   const url = String(value ?? '').trim();
   if (/^\/medias\/\?q=/i.test(url)) return escapeHtml(url);
   return '';
+}
+
+function mkCardDataMoney(value, digits = 2) {
+  const n = Number(value || 0);
+  return '$' + n.toFixed(digits);
+}
+
+function mkCardDataRoas(value) {
+  return value == null ? '-' : Number(value).toFixed(2);
+}
+
+function mkCardDataTodayIso(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + Number(offsetDays || 0));
+  return d.toISOString().slice(0, 10);
+}
+
+function mkCardDataPathKey(value) {
+  return normalizeMkMediaPath(value).toLowerCase();
+}
+
+function mkCardDataIdsFromRecord(r) {
+  const productStatus = r.product_ad_status || {};
+  const materialStatus = r.material_ad_status || {};
+  const localProductId = Number(materialStatus.media_product_id || r.media_product_id || 0);
+  const localItemId = Number(materialStatus.media_item_id || r.media_item_id || 0);
+  const productId = Number(productStatus.media_product_id || localProductId || 0);
+  return {productId, itemId: localItemId};
+}
+
+function renderMkCardDataButton(attrs = {}) {
+  const productId = Number(attrs.productId || 0);
+  const itemId = Number(attrs.itemId || 0);
+  return `<button type="button"
+      class="mk-status-icon mk-status-icon--data"
+      title="查看视频数据"
+      aria-label="查看视频数据"
+      data-mk-card-data="1"
+      data-mk-card-data-product-id="${escapeHtml(productId || '')}"
+      data-mk-card-data-item-id="${escapeHtml(itemId || '')}"
+      data-mk-card-data-video-path="${escapeHtml(attrs.videoPath || '')}"
+      data-mk-card-data-video-name="${escapeHtml(attrs.videoName || '')}"
+      data-mk-card-data-material-key="${escapeHtml(attrs.materialKey || '')}"
+      data-mk-card-data-product-code="${escapeHtml(attrs.productCode || '')}"
+      onclick="openMkCardDataModal(this)">
+    ${mkStatusIconSvg('data')}
+  </button>`;
+}
+
+function renderMkCardDataButtonFromRecord(r, productId, itemId) {
+  return renderMkCardDataButton({
+    productId,
+    itemId,
+    videoPath: normalizeMkMediaPath(r.video_path || ''),
+    videoName: r.video_name || '',
+    materialKey: r.material_key || '',
+    productCode: r.product_handle || r.product_code || ''
+  });
+}
+
+function mkCardDataSetModalOpen(open) {
+  const modal = document.getElementById('mkCardDataModal');
+  if (modal) modal.classList.toggle('is-open', Boolean(open));
+}
+
+function mkCardDataCloseModal() {
+  mkCardDataSetModalOpen(false);
+  mkCardDataCurrent = null;
+}
+
+function mkCardDataSetAdModalOpen(open) {
+  const modal = document.getElementById('mkCardAdModal');
+  if (modal) modal.classList.toggle('is-open', Boolean(open));
+}
+
+function mkCardDataCloseAdModal() {
+  mkCardDataSetAdModalOpen(false);
+  mkCardDataAdContext = null;
+}
+
+function mkCardDataSetEmpty(message, subMessage = '') {
+  const body = document.getElementById('mkCardDataBody');
+  if (!body) return;
+  body.innerHTML = `<div class="mk-card-data-empty">
+    <strong>${escapeHtml(message || '暂无工作台数据')}</strong>
+    ${subMessage ? `<div style="margin-top:6px;">${escapeHtml(subMessage)}</div>` : ''}
+  </div>`;
+}
+
+async function mkCardDataFetchWorkbench(productId) {
+  const id = Number(productId || 0);
+  if (!id) throw new Error('缺少素材管理产品 ID');
+  if (MK_CARD_DATA_CACHE.has(id)) return MK_CARD_DATA_CACHE.get(id);
+  const data = await mkiFetchJson(`/medias/api/product/${encodeURIComponent(id)}/video-workbench`);
+  MK_CARD_DATA_CACHE.set(id, data);
+  return data;
+}
+
+function mkCardDataFindCard(workbenchData, source) {
+  const cards = (workbenchData && workbenchData.cards) || [];
+  const itemId = Number(source.itemId || 0);
+  const videoPath = mkCardDataPathKey(source.videoPath || '');
+  const materialKey = String(source.materialKey || '').trim();
+  const videoName = String(source.videoName || '').trim().toLowerCase();
+  if (itemId) {
+    const byItem = cards.find(card => Number(card.media_item_id || 0) === itemId);
+    if (byItem) return byItem;
+  }
+  if (videoPath) {
+    const byPath = cards.find(card => mkCardDataPathKey((card.mk_video || {}).path || '') === videoPath);
+    if (byPath) return byPath;
+  }
+  if (materialKey) {
+    const byKey = cards.find(card => String((card.mk_video || {}).material_key || '').trim() === materialKey);
+    if (byKey) return byKey;
+  }
+  if (videoName) {
+    return cards.find(card => String((card.mk_video || {}).name || '').trim().toLowerCase() === videoName) || null;
+  }
+  return null;
+}
+
+async function openMkCardDataModal(btn) {
+  const productId = Number(btn?.dataset?.mkCardDataProductId || 0);
+  const source = {
+    productId,
+    itemId: Number(btn?.dataset?.mkCardDataItemId || 0),
+    videoPath: btn?.dataset?.mkCardDataVideoPath || '',
+    videoName: btn?.dataset?.mkCardDataVideoName || '',
+    materialKey: btn?.dataset?.mkCardDataMaterialKey || '',
+    productCode: btn?.dataset?.mkCardDataProductCode || ''
+  };
+  document.getElementById('mkCardDataTitle').textContent = '视频数据';
+  document.getElementById('mkCardDataSub').textContent = source.videoName || source.productCode || '';
+  mkCardDataSetEmpty('正在加载视频数据...');
+  mkCardDataSetModalOpen(true);
+  if (!productId) {
+    mkCardDataCurrent = {source, data: null, card: null};
+    mkCardDataSetEmpty('暂无工作台数据', '当前卡片还没有匹配到素材管理产品，请先加入素材库或确认产品关联。');
+    return;
+  }
+  try {
+    const data = await mkCardDataFetchWorkbench(productId);
+    const card = mkCardDataFindCard(data, source);
+    mkCardDataCurrent = {source, data, card, productId};
+    if (!card) {
+      mkCardDataSetEmpty('未匹配到工作台视频卡片', '已找到素材管理产品，但没有在工作台数据中匹配到当前视频。');
+      return;
+    }
+    document.getElementById('mkCardDataSub').textContent = (card.mk_video && card.mk_video.name) || source.videoName || '';
+    document.getElementById('mkCardDataBody').innerHTML = mkCardDataRenderPanel(card, data);
+  } catch (err) {
+    mkCardDataSetEmpty('视频数据加载失败', err.message || '请求失败');
+  }
+}
+
+function mkCardDataCountryStatusText(row) {
+  if (!row || row.status === 'missing') return '未翻译';
+  const version = row.version || {};
+  if (version.delivery_status === 'active') return '投放中';
+  return '未投放';
+}
+
+function mkCardDataMetricSpendRoas(perf, prefix) {
+  const spend = Number((perf || {})[`${prefix}_spend_usd`] || 0);
+  const r = (perf || {})[`${prefix}_roas`];
+  return `${mkCardDataMoney(spend)}<div class="mk-card-data-sub"><span class="mk-card-data-roas-row"><span class="mk-card-data-roas-label">ROAS</span><span class="mk-card-data-roas-value">${mkCardDataRoas(r)}</span></span></div>`;
+}
+
+function mkCardDataOrderMetric(order, prefix) {
+  const row = order || {};
+  const orders = Number(row[`${prefix}_orders`] || 0);
+  const spend = Number(row[`${prefix}_spend`] || 0);
+  const r = row[`${prefix}_roas`];
+  return `<span class="mk-card-data-order-value">${orders}</span><div class="mk-card-data-sub">${mkCardDataMoney(spend)} · <span class="mk-card-data-roas-row"><span class="mk-card-data-roas-label">ROAS</span><span class="mk-card-data-roas-value">${mkCardDataRoas(r)}</span></span></div>`;
+}
+
+function mkCardDataRenderTranslationPanel(card) {
+  const targets = card.target_country_versions || [];
+  const summary = card.translation_summary || {};
+  const chips = targets.map(row => {
+    const version = row.version;
+    const hasVersion = row.status === 'translated' && version;
+    const cls = hasVersion ? (version.delivery_status === 'active' ? 'is-active' : 'is-stopped') : 'is-missing';
+    const sub = hasVersion ? `#${version.media_item_id || '-'} ${version.filename || version.display_name || ''}` : '暂无对应翻译素材';
+    const roasHtml = hasVersion
+      ? `<div style="display:flex; align-items:center; justify-content:space-between; gap:4px; margin-top:auto;">
+          <span class="mk-card-data-roas-badge">ROAS: ${mkCardDataRoas(version.roas)}</span>
+          <button type="button" class="mk-card-data-mini-btn" data-mk-card-data-country-code="${escapeHtml(row.country_code || '')}" onclick="mkCardDataOpenAdDetail(this)">广告</button>
+        </div>`
+      : '';
+    return `<div class="mk-card-data-country ${cls}">
+      <div class="mk-card-data-country-title"><span>${escapeHtml(row.country_code || '')}</span><span>${escapeHtml(mkCardDataCountryStatusText(row))}</span></div>
+      <div class="mk-card-data-country-sub" title="${escapeHtml((row.lang_name || row.lang || '') + ' · ' + sub)}">${escapeHtml(row.lang_name || row.lang || '')} · ${escapeHtml(sub)}</div>
+      ${roasHtml}
+    </div>`;
+  }).join('');
+  return `<section class="mk-card-data-section">
+    <div class="mk-card-data-section-head">
+      <div class="mk-card-data-section-title">翻译版本</div>
+      <div class="mk-card-data-sub">${Number(summary.translated_count || 0)} / ${Number(summary.target_count || 8)} 国已翻译</div>
+    </div>
+    <div class="mk-card-data-section-body">
+      <div class="mk-card-data-country-grid">${chips || '<div class="mk-card-data-sub">暂无翻译版本</div>'}</div>
+    </div>
+  </section>`;
+}
+
+function mkCardDataRenderAdPanel(card) {
+  const versions = card.translated_versions || [];
+  const rows = versions.map(v => {
+    const perf = v.ad_performance || {};
+    const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
+    const cls = v.delivery_status === 'active' ? 'mk-card-data-row-active' : (v.delivery_status === 'stopped' ? 'mk-card-data-row-stopped' : '');
+    return `<tr class="${cls}">
+      <td><strong>${escapeHtml(label)}</strong>${v.media_item_id ? `<div class="mk-card-data-sub">#${v.media_item_id} ${escapeHtml(v.filename || v.display_name || '')}</div>` : ''}</td>
+      <td>${mkCardDataMetricSpendRoas(perf, 'today')}</td>
+      <td>${mkCardDataMetricSpendRoas(perf, 'yesterday')}</td>
+      <td>${mkCardDataMetricSpendRoas(perf, 'last_7d')}</td>
+      <td>${mkCardDataMetricSpendRoas(perf, 'last_30d')}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="mk-card-data-section">
+    <div class="mk-card-data-section-head">
+      <div class="mk-card-data-section-title">投放消耗 / ROAS</div>
+      <button type="button" class="mk-card-data-mini-btn" onclick="mkCardDataOpenAdDetail(this)">广告明细</button>
+    </div>
+    <div class="mk-card-data-section-body">
+      <div class="mk-card-data-table-scroll">
+        <table class="mk-card-data-table">
+          <thead><tr><th>版本</th><th>今天</th><th>昨天</th><th>7天</th><th>30天</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="5">暂无投放数据</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  </section>`;
+}
+
+function mkCardDataRenderOrderPanel(card) {
+  const versions = card.translated_versions || [];
+  const rows = versions.map(v => {
+    const order = v.order_stats || {};
+    const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
+    let cls = '';
+    if (v.delivery_status !== 'never') {
+      const todayOrders = Number(order.today_orders || 0);
+      const yesterdayOrders = Number(order.yesterday_orders || 0);
+      const last7dOrders = Number(order.last_7d_orders || 0);
+      cls = (todayOrders > 0 || yesterdayOrders > 0) ? 'mk-card-data-row-active' : (last7dOrders > 0 ? 'mk-card-data-row-warn' : 'mk-card-data-row-stopped');
+    }
+    return `<tr class="${cls}">
+      <td><strong>${escapeHtml(label)}</strong></td>
+      <td>${mkCardDataOrderMetric(order, 'today')}</td>
+      <td>${mkCardDataOrderMetric(order, 'yesterday')}</td>
+      <td>${mkCardDataOrderMetric(order, 'last_7d')}</td>
+      <td>${mkCardDataOrderMetric(order, 'last_30d')}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="mk-card-data-section">
+    <div class="mk-card-data-section-head">
+      <div class="mk-card-data-section-title">订单量情况</div>
+      <div class="mk-card-data-sub">今天 / 昨天 / 7天 / 30天</div>
+    </div>
+    <div class="mk-card-data-section-body">
+      <div class="mk-card-data-table-scroll">
+        <table class="mk-card-data-table">
+          <thead><tr><th>版本</th><th>今天</th><th>昨天</th><th>7天</th><th>30天</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="5">暂无订单数据</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  </section>`;
+}
+
+function mkCardDataAiClass(row) {
+  if (!row || !row.evaluated) return 'is-pending';
+  return row.is_suitable ? 'is-good' : 'is-risk';
+}
+
+function mkCardDataAiLabel(row) {
+  if (!row || !row.evaluated) return row && row.status === 'running' ? '评估中' : '待评估';
+  return row.is_suitable ? '建议做' : '谨慎';
+}
+
+function mkCardDataRenderAiPanel(card, workbenchData) {
+  const ai = (workbenchData && workbenchData.ai_evaluation) || {};
+  const countries = ai.countries || [];
+  const cards = countries.map(row => {
+    const score = row.score == null ? '-' : Number(row.score).toFixed(0);
+    return `<div class="mk-card-data-ai-card ${mkCardDataAiClass(row)}">
+      <div class="mk-card-data-ai-title"><span>${escapeHtml(row.country_code)} ${escapeHtml(row.country_name || '')}</span><span>${score}</span></div>
+      <div class="mk-card-data-ai-summary" title="${escapeHtml(row.summary || row.reason || '')}">${escapeHtml(row.summary || row.reason || mkCardDataAiLabel(row))}</div>
+      <button type="button" class="mk-card-data-mini-btn" onclick="mkCardDataOpenWorkbench()">打开工作台</button>
+    </div>`;
+  }).join('');
+  return `<section class="mk-card-data-section">
+    <div class="mk-card-data-section-head">
+      <div>
+        <div class="mk-card-data-section-title">AI 8国评估建议</div>
+        <div class="mk-card-data-sub">已评估 ${Number(ai.evaluated_count || 0)} / ${Number(ai.target_country_count || 8)} · ${escapeHtml(ai.ai_evaluation_result || '暂无结论')}</div>
+      </div>
+      <button type="button" class="oc-btn oc-btn--ghost" onclick="mkCardDataOpenWorkbench()">工作台</button>
+    </div>
+    <div class="mk-card-data-section-body">
+      <div class="mk-card-data-ai-grid">${cards || '<div class="mk-card-data-sub">暂无 AI 评估数据</div>'}</div>
+    </div>
+  </section>`;
+}
+
+function mkCardDataRenderPanel(card, workbenchData) {
+  return [
+    mkCardDataRenderTranslationPanel(card),
+    mkCardDataRenderAdPanel(card),
+    mkCardDataRenderOrderPanel(card),
+    mkCardDataRenderAiPanel(card, workbenchData)
+  ].join('');
+}
+
+function mkCardDataOpenWorkbench() {
+  const productId = Number((mkCardDataCurrent && mkCardDataCurrent.productId) || 0);
+  if (!productId) return;
+  window.open(`/medias/product/video_workbench/${encodeURIComponent(productId)}`, '_blank', 'noopener,noreferrer');
+}
+
+function mkCardDataOpenAdDetail(btn) {
+  if (!mkCardDataCurrent || !mkCardDataCurrent.card || !mkCardDataCurrent.productId) return;
+  const countryCode = String(btn?.dataset?.mkCardDataCountryCode || '').trim().toUpperCase();
+  const card = mkCardDataCurrent.card;
+  const mk = card.mk_video || {};
+  mkCardDataAdContext = {productId: mkCardDataCurrent.productId, card, countryCode};
+  document.getElementById('mkCardAdTitle').textContent = countryCode ? `广告明细 (${countryCode})` : '广告明细';
+  document.getElementById('mkCardAdSub').textContent = mk.name || '';
+  document.getElementById('mkCardAdFrom').value = mkCardDataTodayIso(-29);
+  document.getElementById('mkCardAdTo').value = mkCardDataTodayIso(0);
+  document.getElementById('mkCardAdSummary').innerHTML = '';
+  document.getElementById('mkCardAdRows').innerHTML = '<div class="mk-card-data-empty">正在加载广告明细...</div>';
+  mkCardDataSetAdModalOpen(true);
+  mkCardDataLoadAdDetail();
+}
+
+async function mkCardDataLoadAdDetail() {
+  if (!mkCardDataAdContext) return;
+  const {productId, card, countryCode} = mkCardDataAdContext;
+  const mk = card.mk_video || {};
+  const params = new URLSearchParams();
+  if (mk.path) params.set('video_path', mk.path);
+  if (card.media_item_id) params.set('media_item_id', card.media_item_id);
+  if (countryCode) params.set('country', countryCode);
+  params.set('date_from', document.getElementById('mkCardAdFrom').value || mkCardDataTodayIso(-29));
+  params.set('date_to', document.getElementById('mkCardAdTo').value || mkCardDataTodayIso(0));
+  document.getElementById('mkCardAdState').textContent = '加载中...';
+  try {
+    const data = await mkiFetchJson(`/medias/api/product/${encodeURIComponent(productId)}/video-workbench/ad-detail?${params.toString()}`);
+    mkCardDataRenderAdDetail(data);
+    document.getElementById('mkCardAdState').textContent = `匹配 ${Number((data.summary || {}).matched_ad_count || 0)} 条`;
+  } catch (err) {
+    document.getElementById('mkCardAdRows').innerHTML = `<div class="mk-card-data-empty">加载失败：${escapeHtml(err.message || '请求失败')}</div>`;
+    document.getElementById('mkCardAdState').textContent = '加载失败';
+  }
+}
+
+function mkCardDataFormatAdRoas(value) {
+  const text = mkCardDataRoas(value);
+  if (text === '-') return '-';
+  const num = Number(value);
+  if (Number.isNaN(num)) return escapeHtml(text);
+  if (num > 1.2) return `<strong style="color:var(--oc-accent);font-size:1.35em;">${text}</strong>`;
+  if (num > 1.0) return `<span style="color:#f97316;font-size:1.35em;font-weight:800;">${text}</span>`;
+  return text;
+}
+
+function mkCardDataRenderAdDetail(data) {
+  const s = data.summary || {};
+  document.getElementById('mkCardAdSummary').innerHTML = `
+    <div class="mk-card-data-kpi"><span>花费</span><strong>${mkCardDataMoney(s.spend_usd || 0)}</strong></div>
+    <div class="mk-card-data-kpi"><span>购买金额</span><strong>${mkCardDataMoney(s.purchase_value_usd || 0)}</strong></div>
+    <div class="mk-card-data-kpi"><span>ROAS</span><strong>${mkCardDataRoas(s.roas)}</strong></div>
+    <div class="mk-card-data-kpi"><span>购买数</span><strong>${Number(s.result_count || 0)}</strong></div>
+  `;
+  const rows = data.rows || [];
+  if (!rows.length) {
+    document.getElementById('mkCardAdRows').innerHTML = '<div class="mk-card-data-empty">当前日期范围没有匹配广告</div>';
+    return;
+  }
+  const groups = [];
+  const byCountry = {};
+  rows.forEach(row => {
+    const code = String(row.market_country || '').trim().toUpperCase() || 'UNKNOWN';
+    if (!byCountry[code]) {
+      byCountry[code] = {code, rows: [], spend: 0, purchase: 0, resultCount: 0};
+      groups.push(byCountry[code]);
+    }
+    byCountry[code].rows.push(row);
+    byCountry[code].spend += Number(row.spend_usd || 0);
+    byCountry[code].purchase += Number(row.purchase_value_usd || 0);
+    byCountry[code].resultCount += Number(row.result_count || 0);
+  });
+  document.getElementById('mkCardAdRows').innerHTML = groups.map(group => {
+    const roasValue = group.spend > 0 ? group.purchase / group.spend : null;
+    const bodyRows = group.rows.map(row => `
+      <tr>
+        <td>${escapeHtml(row.activity_date || '')}</td>
+        <td>${escapeHtml(row.ad_account_name || row.ad_account_id || '-')}</td>
+        <td>${escapeHtml(row.ad_name || '-')}<div class="mk-card-data-sub">${escapeHtml(row.normalized_ad_code || '')}</div></td>
+        <td>${mkCardDataMoney(row.spend_usd || 0)}</td>
+        <td>${mkCardDataMoney(row.purchase_value_usd || 0)}</td>
+        <td>${mkCardDataFormatAdRoas(row.roas)}</td>
+        <td>${Number(row.result_count || 0)}</td>
+        <td>${escapeHtml(row.match_reason || '-')}</td>
+      </tr>
+    `).join('');
+    return `<section class="mk-card-data-section">
+      <div class="mk-card-data-section-head">
+        <div class="mk-card-data-section-title">国家：${escapeHtml(group.code)}</div>
+        <div class="mk-card-data-sub">花费 ${mkCardDataMoney(group.spend)} · 购买金额 ${mkCardDataMoney(group.purchase)} · ROAS ${mkCardDataFormatAdRoas(roasValue)} · 购买数 ${Number(group.resultCount || 0)}</div>
+      </div>
+      <div class="mk-card-data-section-body">
+        <div class="mk-card-data-table-scroll">
+          <table class="mk-card-data-table">
+            <thead><tr><th>日期</th><th>账户</th><th>广告名</th><th>花费</th><th>购买金额</th><th>ROAS</th><th>购买数</th><th>匹配</th></tr></thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+  }).join('');
 }
 
 async function copyMkText(value, button) {
@@ -1310,6 +1840,9 @@ function mkStatusIconSvg(type) {
   if (type === 'video') {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m10 9 5 3-5 3V9Z"></path></svg>';
   }
+  if (type === 'data') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5"></path><path d="M4 19h17"></path><rect x="7" y="11" width="3" height="5" rx="1"></rect><rect x="12" y="8" width="3" height="8" rx="1"></rect><rect x="17" y="6" width="3" height="10" rx="1"></rect></svg>';
+  }
   return '';
 }
 
@@ -1329,11 +1862,7 @@ function renderMkStatusIconCluster(r) {
 function renderMkStatusIconHeaderRow(r) {
   const hasProductInLibrary = Boolean(r.has_local_product_in_library || (r.product_ad_status && r.product_ad_status.has_local_match));
   const hasVideoInLibrary = Boolean(r.has_local_material_in_library);
-  
-  if (!hasProductInLibrary && !hasVideoInLibrary) {
-    return '';
-  }
-  
+
   const productCodeSearch = mkiProductCodeWithRjc(r.product_handle || r.product_code || '');
   const productSearchUrl = productCodeSearch ? `/medias/?q=${encodeURIComponent(productCodeSearch)}` : '/medias';
   
@@ -1346,6 +1875,7 @@ function renderMkStatusIconHeaderRow(r) {
   const localProductId = Number(materialStatus.media_product_id || r.media_product_id || 0);
   const localItemId = Number(materialStatus.media_item_id || r.media_item_id || 0);
   const existingProductId = Number(productStatus.media_product_id || localProductId || 0);
+  const dataIconHtml = renderMkCardDataButtonFromRecord(r, existingProductId, localItemId);
   
   const videoSearchUrl = (productCodeSearch && existingProductId && localItemId)
     ? `/medias/?q=${encodeURIComponent(productCodeSearch)}&product=${existingProductId}&lang=en&action=video&item=${localItemId}`
@@ -1358,6 +1888,7 @@ function renderMkStatusIconHeaderRow(r) {
   return `<div class="mk-status-header-row">
     <div class="mk-status-half mk-status-half--left">${productIconHtml}</div>
     <div class="mk-status-half mk-status-half--right">${videoIconHtml}</div>
+    <div class="mk-status-half mk-status-half--data">${dataIconHtml}</div>
   </div>`;
 }
 
@@ -4926,8 +5457,13 @@ function mkiEnsureImportedStatusIcon(card, metadata, btn) {
   if (!cluster) {
     cluster = document.createElement('div');
     cluster.className = 'mk-status-header-row';
-    cluster.innerHTML = '<div class="mk-status-half mk-status-half--left"></div><div class="mk-status-half mk-status-half--right"></div>';
+    cluster.innerHTML = '<div class="mk-status-half mk-status-half--left"></div><div class="mk-status-half mk-status-half--right"></div><div class="mk-status-half mk-status-half--data"></div>';
     card.insertBefore(cluster, card.firstChild);
+  }
+  if (!cluster.querySelector('.mk-status-half--data')) {
+    const dataHalf = document.createElement('div');
+    dataHalf.className = 'mk-status-half mk-status-half--data';
+    cluster.appendChild(dataHalf);
   }
   
   const leftHalf = cluster.querySelector('.mk-status-half--left');
@@ -4954,6 +5490,25 @@ function mkiEnsureImportedStatusIcon(card, metadata, btn) {
       : (productCodeSearch ? `/medias/?q=${encodeURIComponent(productCodeSearch)}` : '/medias');
       
     rightHalf.innerHTML = `<a class="mk-status-icon mk-status-icon--video" href="${escapeHtml(videoSearchUrl)}" target="_blank" rel="noopener noreferrer" title="视频已入库" aria-label="视频已入库">${mkStatusIconSvg('video')}</a>`;
+  }
+  const dataHalf = cluster.querySelector('.mk-status-half--data');
+  if (dataHalf) {
+    const productId = metadata ? (metadata.media_product_id || metadata.product_id) : (btn ? btn.dataset.mkiLocalProductId : '');
+    const itemId = metadata ? (metadata.media_item_id || metadata.item_id) : (btn ? btn.dataset.mkiLocalItemId : '');
+    const existing = dataHalf.querySelector('[data-mk-card-data]');
+    if (existing) {
+      existing.dataset.mkCardDataProductId = productId ? String(productId) : existing.dataset.mkCardDataProductId || '';
+      existing.dataset.mkCardDataItemId = itemId ? String(itemId) : existing.dataset.mkCardDataItemId || '';
+    } else {
+      dataHalf.innerHTML = renderMkCardDataButton({
+        productId,
+        itemId,
+        videoPath: btn && btn.dataset ? btn.dataset.mkiVideoPath || '' : '',
+        videoName: btn && btn.dataset ? btn.dataset.mkiFilename || '' : '',
+        materialKey: btn && btn.dataset ? btn.dataset.mkiMaterialKey || '' : '',
+        productCode: btn && btn.dataset ? btn.dataset.mkiProductCode || '' : ''
+      });
+    }
   }
 }
 
