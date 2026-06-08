@@ -71,6 +71,7 @@ list_recent_reports(limit: int = 12) -> list[dict]
 - `daily_by_store`：`all` / `newjoy` / `omurio` 每天同款指标。
 - `segments`：周日、周一到周三、周四到周六、周五到周六等分段对比。
 - `product_rows`：产品维度收入、订单、销量、广告费、ROAS、利润、利润率、活跃天数、每日订单分布。
+- `product_tier_order_share`：按稳定品、潜力品、其他品汇总订单量占比，包含每周汇总和每天明细。稳定品读取 `product_stability.buckets.stable`；潜力品读取 `secondary_stable` 和历史兼容 `potential`；其他品为本周有订单但不属于前两类的所有产品。占比分母使用同一周期内 `product_sales_stats` 的产品订单量合计。
 - `campaign_rows`：账户、campaign、匹配产品、每日 spend / purchase value / ROAS、周累计、首个出量日、活跃天数。
 - `low_order_products`：1-2 单、3-5 单产品汇总，标记是否有广告消耗。
 - `rule_findings`：后端规则先产出的确定性异常，如预算放大 ROAS 下滑、店铺亏损集中、数据质量 mismatch。
@@ -204,6 +205,10 @@ AI 必须输出 JSON：
   - 汇总稳定品总数、7 天稳定数、30 天稳定数、二级稳定品数、测试品数、已停投数、投放未满 7 天数。
   - 明细表展示头部稳定品和二级稳定品的产品、7 天 / 30 天订单、日均、最低日单量、ROAS、投放状态。
   - 这部分进入 LLM prompt，辅助商品方向和素材补充建议。
+- `每周 AI 分析` 增加 `产品分层订单占比` 表：
+  - 第一行展示整周汇总订单量和稳定品 / 潜力品 / 其他品订单占比。
+  - 后续行展示每天的同口径订单量和占比。
+  - 该数据进入 LLM prompt，用于判断增长或下滑是否由稳定品、潜力品还是长尾其他品驱动。
 
 ## 稳定 / 潜力品逐产品 AI 推进评估（2026-06-07 追加）
 

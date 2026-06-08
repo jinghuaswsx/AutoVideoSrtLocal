@@ -3165,6 +3165,29 @@
 
   <div class="oa-table-wrap">
     <div class="oa-table-header">
+      <div class="oa-table-title">产品分层订单占比</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table">
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>订单总量</th>
+            <th>稳定品订单</th>
+            <th>稳定品占比</th>
+            <th>潜力品订单</th>
+            <th>潜力品占比</th>
+            <th>其他品订单</th>
+            <th>其他品占比</th>
+          </tr>
+        </thead>
+        <tbody id="weeklyAiTierOrderShareBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
       <div class="oa-table-title">稳定产品分级</div>
       <div class="oar-note" id="weeklyAiStabilityComputedAt"></div>
     </div>
@@ -7092,6 +7115,7 @@
       ['weeklyAiSegmentBody', 8],
       ['weeklyAiDailyBody', 10],
       ['weeklyAiStoreBody', 7],
+      ['weeklyAiTierOrderShareBody', 8],
       ['weeklyAiStabilityBody', 10],
       ['weeklyAiProductEvaluationBody', 8],
       ['weeklyAiSupplementCountryBody', 5],
@@ -7160,6 +7184,7 @@
       ['weeklyAiSegmentBody', 8],
       ['weeklyAiDailyBody', 10],
       ['weeklyAiStoreBody', 7],
+      ['weeklyAiTierOrderShareBody', 8],
       ['weeklyAiStabilityBody', 10],
       ['weeklyAiProductEvaluationBody', 8],
       ['weeklyAiSupplementCountryBody', 5],
@@ -7204,6 +7229,7 @@
     renderWeeklyAiSegments(pkg.segments || {});
     renderWeeklyAiDaily(pkg.daily_global || []);
     renderWeeklyAiStores(pkg.daily_by_store || {});
+    renderWeeklyAiTierOrderShare(pkg.product_tier_order_share || {});
     renderWeeklyAiProductStability(pkg.product_stability || {});
     renderWeeklyAiProductEvaluations(data.report || null, pkg);
     renderWeeklyAiSupplementRecommendations(pkg.product_supplement_recommendations || {}, data.report || null);
@@ -7426,6 +7452,39 @@
         fmtRoasValue(row.true_roas)
       ]);
     });
+  }
+
+  function weeklyAiTierBucket(row, key) {
+    return (row && row[key]) || {order_count: 0, order_share_pct: 0};
+  }
+
+  function weeklyAiTierShareCells(row) {
+    var stable = weeklyAiTierBucket(row, 'stable');
+    var potential = weeklyAiTierBucket(row, 'potential');
+    var other = weeklyAiTierBucket(row, 'other');
+    return [
+      row.total_orders || 0,
+      stable.order_count || 0,
+      fmtPercentValue(stable.order_share_pct),
+      potential.order_count || 0,
+      fmtPercentValue(potential.order_share_pct),
+      other.order_count || 0,
+      fmtPercentValue(other.order_share_pct)
+    ];
+  }
+
+  function renderWeeklyAiTierOrderShare(share) {
+    var body = document.getElementById('weeklyAiTierOrderShareBody');
+    if (!body) return;
+    body.innerHTML = '';
+    var weekly = share.weekly || null;
+    if (weekly) {
+      weeklyAiAppendRow(body, ['整周'].concat(weeklyAiTierShareCells(weekly)));
+    }
+    (share.daily || []).forEach(function(row) {
+      weeklyAiAppendRow(body, [String(row.date || row.label || '').slice(0, 10)].concat(weeklyAiTierShareCells(row)));
+    });
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="8">暂无产品分层订单占比数据</td></tr>';
   }
 
   function renderWeeklyAiProductStability(stability) {

@@ -133,6 +133,7 @@ def test_weekly_ai_analysis_tab_and_panel_present():
     assert 'id="panelWeeklyAiAnalysis"' in template
     assert 'id="weeklyAiDqBar"' in template
     assert 'id="weeklyAiStabilitySummary"' in template
+    assert 'id="weeklyAiTierOrderShareBody"' in template
     assert 'id="weeklyAiStabilityBody"' in template
     assert 'id="weeklyAiProductEvaluationBody"' in template
     assert 'id="weeklyAiSupplementCountryBody"' in template
@@ -140,6 +141,7 @@ def test_weekly_ai_analysis_tab_and_panel_present():
     assert 'id="weeklyAiProductBody"' in template
     assert 'id="weeklyAiAdBody"' in template
     assert "产品主图" in template
+    assert "产品分层订单占比" in template
     assert "AI 推进建议" in template
     assert "补素材建议" in template
     assert "weeklyAiProductImageCell" in template
@@ -147,6 +149,7 @@ def test_weekly_ai_analysis_tab_and_panel_present():
     assert "data-weekly-ai-copy-text" in template
     assert "/medias/?q=" in template
     assert "renderWeeklyAiProductStability" in template
+    assert "renderWeeklyAiTierOrderShare" in template
     assert "renderWeeklyAiProductEvaluations" in template
     assert "renderWeeklyAiSupplementRecommendations" in template
     assert "initWeeklyAiAnalysis" in template

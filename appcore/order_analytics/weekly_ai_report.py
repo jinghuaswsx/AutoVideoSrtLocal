@@ -1047,6 +1047,114 @@ def _collect_product_refs(items: list[dict[str, Any]]) -> tuple[list[int], list[
     return ids, codes
 
 
+def _product_ref_keys(item: dict[str, Any]) -> set[tuple[str, str]]:
+    keys: set[tuple[str, str]] = set()
+    pid = _safe_int(item.get("product_id") or item.get("matched_product_id"))
+    if pid > 0:
+        keys.add(("id", str(pid)))
+    code = str(
+        item.get("product_code")
+        or item.get("matched_product_code")
+        or item.get("normalized_campaign_code")
+        or ""
+    ).strip().lower()
+    if code:
+        keys.add(("code", code))
+    return keys
+
+
+def _product_tier_key(item: dict[str, Any], stable_keys: set[tuple[str, str]], potential_keys: set[tuple[str, str]]) -> str:
+    keys = _product_ref_keys(item)
+    if keys & stable_keys:
+        return "stable"
+    if keys & potential_keys:
+        return "potential"
+    return "other"
+
+
+def _empty_order_share_bucket(key: str, label: str) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "order_count": 0,
+        "order_share_pct": 0.0,
+    }
+
+
+def _order_share_row(label: str, date_text: str | None = None) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "label": label,
+        "total_orders": 0,
+        "stable": _empty_order_share_bucket("stable", "稳定品"),
+        "potential": _empty_order_share_bucket("potential", "潜力品"),
+        "other": _empty_order_share_bucket("other", "其他品"),
+    }
+    if date_text is not None:
+        row["date"] = date_text
+    return row
+
+
+def _finalize_order_share_row(row: dict[str, Any]) -> dict[str, Any]:
+    total = _safe_int(row.get("total_orders"))
+    row["total_orders"] = total
+    for key in ("stable", "potential", "other"):
+        bucket = row[key]
+        orders = _safe_int(bucket.get("order_count"))
+        bucket["order_count"] = orders
+        bucket["order_share_pct"] = _round_ratio(orders / total * 100) if total > 0 else 0.0
+    return row
+
+
+def _build_product_tier_order_share(
+    *,
+    daily_overviews: list[tuple[date, dict[str, Any]]],
+    product_stability: dict[str, Any],
+) -> dict[str, Any]:
+    buckets = product_stability.get("buckets") or {}
+    stable_keys: set[tuple[str, str]] = set()
+    potential_keys: set[tuple[str, str]] = set()
+    for item in buckets.get("stable") or []:
+        if isinstance(item, dict):
+            stable_keys.update(_product_ref_keys(item))
+    for status in ("secondary_stable", "potential"):
+        for item in buckets.get(status) or []:
+            if isinstance(item, dict):
+                potential_keys.update(_product_ref_keys(item))
+    potential_keys -= stable_keys
+
+    weekly = _order_share_row("整周")
+    daily_rows: list[dict[str, Any]] = []
+    for business_day, overview in daily_overviews:
+        daily = _order_share_row(business_day.isoformat(), business_day.isoformat())
+        for product in overview.get("product_sales_stats") or []:
+            if not isinstance(product, dict):
+                continue
+            orders = _safe_int(product.get("order_count"))
+            if orders <= 0:
+                continue
+            tier = _product_tier_key(product, stable_keys, potential_keys)
+            daily["total_orders"] += orders
+            daily[tier]["order_count"] += orders
+            weekly["total_orders"] += orders
+            weekly[tier]["order_count"] += orders
+        daily_rows.append(_finalize_order_share_row(daily))
+
+    return {
+        "weekly": _finalize_order_share_row(weekly),
+        "daily": daily_rows,
+        "tiers": [
+            {"key": "stable", "label": "稳定品"},
+            {"key": "potential", "label": "潜力品"},
+            {"key": "other", "label": "其他品"},
+        ],
+        "source": "product_sales_stats",
+        "notes": [
+            "占比分母为同周期 product_sales_stats 中产品订单量合计。",
+            "潜力品包含 secondary_stable，并兼容历史 potential 桶。",
+        ],
+    }
+
+
 def _load_product_identity_maps(
     product_ids: list[int],
     product_codes: list[str],
@@ -2161,6 +2269,11 @@ def build_weekly_data_package(
         week_end=week_end,
         limit=50,
     )
+    product_stability_for_share, _share_scope, _share_scope_sets = _build_weekly_product_scope(
+        product_stability_raw,
+        week_end=week_end,
+        limit=0,
+    )
     product_ai_notes: list[dict[str, Any]] = []
     stability_product_ids, stability_product_codes = _collect_product_refs(
         _all_stability_items(product_stability)
@@ -2178,6 +2291,10 @@ def build_weekly_data_package(
     if product_ai_notes:
         product_stability = dict(product_stability)
         product_stability["warnings"] = (product_stability.get("warnings") or []) + product_ai_notes
+    product_tier_order_share = _build_product_tier_order_share(
+        daily_overviews=all_overviews,
+        product_stability=product_stability_for_share,
+    )
     analysis_product_rows = _filter_rows_for_scope(
         product_rows,
         product_scope=product_scope,
@@ -2246,6 +2363,7 @@ def build_weekly_data_package(
         "campaign_rows": campaign_rows,
         "analysis_campaign_rows": analysis_campaign_rows,
         "product_stability": product_stability,
+        "product_tier_order_share": product_tier_order_share,
         "product_scope": product_scope,
         "product_supplement_recommendations": supplement_recommendations,
         "product_ai_evaluation_candidates": product_ai_evaluation_candidates,
@@ -2265,6 +2383,7 @@ def _compact_for_prompt(package: dict[str, Any]) -> dict[str, Any]:
         "daily_by_store": package.get("daily_by_store"),
         "segments": package.get("segments"),
         "product_scope": package.get("product_scope"),
+        "product_tier_order_share": package.get("product_tier_order_share"),
         "top_products_by_profit": sorted(
             product_rows,
             key=lambda row: -_safe_float(row.get("profit_usd")),

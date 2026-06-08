@@ -61,6 +61,14 @@ def _fake_overview(date_text, **kwargs):
                 "units": 1 if day_index == 6 else 0,
                 "total_sales": 80 if day_index == 6 else 0,
             },
+            {
+                "product_id": 505,
+                "product_code": "P505",
+                "product_name": "Potential Product",
+                "order_count": 2,
+                "units": 2,
+                "total_sales": 180,
+            },
         ]
         overview["campaigns"] = [
             {
@@ -177,7 +185,7 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
                 "stable_total": 1,
                 "stable_7d": 1,
                 "stable_30d": 0,
-                "secondary_stable": 0,
+                "secondary_stable": 1,
                 "potential": 0,
                 "test": 1,
                 "stopped": 0,
@@ -193,6 +201,14 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
                     "stable_7d": True,
                     "stable_marks": ["7天稳定"],
                     "last_7d_orders": 140,
+                    "details": {"delivery_start_date": "2026-05-20"},
+                }],
+                "secondary_stable": [{
+                    "product_id": 505,
+                    "product_code": "P505",
+                    "product_name": "Potential Product",
+                    "status": "secondary_stable",
+                    "last_7d_orders": 14,
                     "details": {"delivery_start_date": "2026-05-20"},
                 }],
                 "test": [{
@@ -263,8 +279,23 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert package["product_stability"]["counts"]["stable_total"] == 1
     assert package["product_stability"]["counts"]["insufficient_history"] == 1
     assert package["product_stability"]["buckets"]["stable"][0]["product_code"] == "P101"
-    assert package["product_scope"]["evaluated_product_count"] == 2
+    assert package["product_scope"]["evaluated_product_count"] == 3
     assert package["product_scope"]["excluded_under_7d_count"] == 1
+    share = package["product_tier_order_share"]
+    assert share["weekly"]["total_orders"] == 34
+    assert share["weekly"]["stable"]["order_count"] == 19
+    assert share["weekly"]["stable"]["order_share_pct"] == 55.8824
+    assert share["weekly"]["potential"]["order_count"] == 14
+    assert share["weekly"]["potential"]["order_share_pct"] == 41.1765
+    assert share["weekly"]["other"]["order_count"] == 1
+    assert share["weekly"]["other"]["order_share_pct"] == 2.9412
+    assert share["daily"][0]["date"] == "2026-05-31"
+    assert share["daily"][0]["stable"]["order_count"] == 4
+    assert share["daily"][0]["potential"]["order_count"] == 2
+    assert share["daily"][0]["other"]["order_count"] == 0
+    assert share["daily"][5]["stable"]["order_share_pct"] == 25.0
+    assert share["daily"][5]["potential"]["order_share_pct"] == 50.0
+    assert share["daily"][5]["other"]["order_share_pct"] == 25.0
     assert package["product_supplement_recommendations"]["country_expansion"][0]["product_code"] == "P101"
     assert package["product_supplement_recommendations"]["material_fill"][0]["material_key"] == "mk-1"
     assert package["rule_findings"]["ads_pause"]
