@@ -933,6 +933,7 @@ def build_product_video_workbench(
                 "upload_time": _iso(mk_row.get("video_upload_time")) or "",
                 "local_cover_object_key": mk_row.get("local_cover_object_key") or "",
                 "yesterday_spend_delta": _safe_float(mk_row.get("yesterday_spend_delta")),
+                "material_key": mk_row.get("material_key") or "",
             },
             "mk_product_id": mk_row.get("mk_product_id"),
             "mk_product_name": mk_row.get("mk_product_name") or "",
@@ -1487,6 +1488,7 @@ def api_product_supplement(product_id: int):
                 # Local cover URL if cached
                 "local_cover_object_key": mk_row.get("local_cover_object_key") or "",
                 "yesterday_spend_delta": card_yesterday_spend,
+                "material_key": mk_row.get("material_key") or "",
             },
             "mk_product_id": mk_row.get("mk_product_id"),
             "mk_product_name": mk_row.get("mk_product_name") or "",

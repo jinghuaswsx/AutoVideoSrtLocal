@@ -91,7 +91,7 @@
 .vw-local-row { display: flex; justify-content: space-between; gap: 8px; }
 .vw-ad-pills { display: flex; flex-wrap: wrap; gap: 5px; min-height: 22px; }
 .vw-ad-pill { border-radius: 999px; padding: 3px 7px; font-size: 11px; font-weight: 700; }
-.vw-card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
+.vw-card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
 .vw-card-actions .vw-btn { width: 100%; }
 .vw-state { grid-column: 1 / -1; font-size: 12px; color: var(--vw-muted); min-height: 18px; }
 .vw-empty, .vw-error {
@@ -203,6 +203,7 @@
 .vw-card {
   width: 100%; min-height: 0; border-left-width: 3px; padding: 14px;
   display: grid; grid-template-columns: 276px minmax(0, 1fr); gap: 18px;
+  max-width: 50%; min-width: 960px;
 }
 .vw-left-card { position: relative; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
 .vw-right-panel { min-width: 0; border-left: 1px solid var(--vw-border); padding-left: 18px; display: grid; gap: 14px; align-content: start; }
@@ -256,9 +257,12 @@
 .vw-mini-btn { min-height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--vw-border-strong); background: #fff; color: var(--vw-blue); cursor: pointer; font-size: 11px; font-weight: 700; }
 .vw-mini-btn:hover:not(:disabled) { border-color: var(--vw-blue); background: #eef6fb; }
 .vw-mini-btn:disabled { opacity: .55; cursor: not-allowed; }
+@media (max-width: 1024px) {
+  .vw-card { max-width: 100%; min-width: 0; }
+}
 @media (max-width: 720px) {
   .vw-grid { grid-template-columns: 1fr; }
-  .vw-card { min-height: auto; grid-template-columns: 1fr; }
+  .vw-card { min-height: auto; grid-template-columns: 1fr; max-width: 100%; min-width: 0; }
   .vw-right-panel { border-left: 0; padding-left: 0; border-top: 1px solid var(--vw-border); padding-top: 14px; }
   .vw-frame { width: 100%; height: auto; aspect-ratio: 9 / 16; }
   .vw-task-grid, .vw-lang-row { grid-template-columns: 1fr; }
@@ -845,8 +849,9 @@
     const posterAttr = coverUrl ? ` poster="${esc(coverUrl)}"` : '';
     const actions = inLib
       ? `<button type="button" class="vw-btn vw-btn-primary" data-action="task" data-card-id="${esc(card.card_id)}">创建小语种任务</button>
-         <a class="vw-btn" href="/medias/video?keyword=${encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
-         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>`
+         <a class="vw-btn" href="${mk.material_key ? '/xuanpin/mk/videos/' + encodeURIComponent(mk.material_key) : '/medias/video?keyword=' + encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
+         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>
+         <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>`
       : `<button type="button" class="vw-btn vw-btn-primary" data-action="import" data-card-id="${esc(card.card_id)}">加入素材库</button>
          <button type="button" class="vw-btn" disabled title="先加入素材库后才能创建小语种任务">创建小语种任务</button>
          <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>

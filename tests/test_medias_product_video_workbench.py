@@ -329,6 +329,7 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
     assert payload["ai_evaluation"]["evaluated_count"] == 2
     assert payload["ai_evaluation"]["pending_count"] == 6
     card = payload["cards"][0]
+    assert card["mk_video"]["material_key"] == "mk-1"
     assert card["translation_summary"]["translated_country_codes"] == ["DE", "PT"]
     assert "NL" in card["translation_summary"]["missing_country_codes"]
     assert card["translated_versions"][0]["lang"] == "all"
