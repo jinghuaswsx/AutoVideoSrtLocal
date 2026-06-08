@@ -325,7 +325,7 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
         order_report_fn=order_report,
     )
 
-    assert payload["ai_evaluation"]["target_country_codes"] == ["DE", "FR", "IT", "ES", "NL", "PT", "SE", "JP"]
+    assert payload["ai_evaluation"]["target_country_codes"] == ["DE", "FR", "IT", "ES", "JP", "PT", "SE", "NL"]
     assert payload["ai_evaluation"]["evaluated_count"] == 2
     assert payload["ai_evaluation"]["pending_count"] == 6
     card = payload["cards"][0]
