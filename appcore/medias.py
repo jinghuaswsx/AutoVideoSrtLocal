@@ -4,7 +4,12 @@ import re
 import uuid
 from typing import Any
 
-from appcore import media_product_ad_status_cache, product_link_domains, product_roas
+from appcore import (
+    media_product_ad_status_cache,
+    media_product_stability,
+    product_link_domains,
+    product_roas,
+)
 from appcore.db import query, query_one, execute, get_conn
 from appcore.material_filename_rules import validate_video_filename_no_spaces
 from appcore.users import ensure_translation_work_user
@@ -477,12 +482,14 @@ def _media_product_owner_name_expr() -> str:
     return "u.username"
 ROAS_STATUS_FILTERS = ("all", "complete", "missing_estimated", "missing_actual")
 DELIVERY_STATUS_FILTERS = media_product_ad_status_cache.DELIVERY_STATUS_FILTERS
+STABILITY_STATUS_FILTERS = media_product_stability.STABILITY_STATUS_FILTERS
 
 
 def list_products(user_id: int | None, keyword: str = "", archived: bool = False,
                   offset: int = 0, limit: int = 20,
                   roas_status: str = "all",
                   delivery_status: str = "all",
+                  stability_status: str = "all",
                   product_source: str = "all",
                   created_from: str | None = None,
                   created_to: str | None = None) -> tuple[list[dict], int]:
@@ -534,6 +541,31 @@ def list_products(user_id: int | None, keyword: str = "", archived: bool = False
             ")"
         )
         args.append(delivery_status)
+    stability_status = media_product_stability.normalize_stability_status_filter(stability_status)
+    if stability_status == media_product_stability.FILTER_STABLE_7D:
+        where.append(
+            "EXISTS ("
+            "SELECT 1 FROM media_product_stability_snapshots stab "
+            "WHERE stab.product_id = p.id AND stab.status=%s AND stab.stable_7d=1"
+            ")"
+        )
+        args.append(media_product_stability.STATUS_STABLE)
+    elif stability_status == media_product_stability.FILTER_STABLE_30D:
+        where.append(
+            "EXISTS ("
+            "SELECT 1 FROM media_product_stability_snapshots stab "
+            "WHERE stab.product_id = p.id AND stab.status=%s AND stab.stable_30d=1"
+            ")"
+        )
+        args.append(media_product_stability.STATUS_STABLE)
+    elif stability_status != media_product_stability.FILTER_ALL:
+        where.append(
+            "EXISTS ("
+            "SELECT 1 FROM media_product_stability_snapshots stab "
+            "WHERE stab.product_id = p.id AND stab.status=%s"
+            ")"
+        )
+        args.append(stability_status)
     if product_source and product_source != "all":
         where.append("p.source = %s")
         args.append(product_source)

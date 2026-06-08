@@ -562,12 +562,12 @@
       const statusLabel = statusRaw === 'stopped' ? '终' : statusMeta.label;
       const statusPill = `<span class="oc-lang-status-pill ${statusMeta.cls}">${statusLabel}</span>`;
       
-      const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / ROAS ${summary.ad_roas ?? '—'} / 消耗 ${summary.ad_spend_usd ?? '—'} / 状态 ${statusLabel}`;
+      const title = `${langDisplayName(code)}: ${c.items || 0} 视频 / 推送 ${pushed} / 广告ROAS ${summary.ad_roas ?? '—'} / 消耗 ${summary.ad_spend_usd ?? '—'} / 状态 ${statusLabel}`;
       return `<div class="oc-lang-line oc-country-metrics-line" title="${escapeHtml(title)}">`
         + `<span class="oc-lang-name">${escapeHtml(langDisplayName(code))}${statusPill}</span>`
         + `<span class="oc-lang-push">推送 <strong class="${pushedClass}">${pushed}</strong></span>`
         + `<span class="oc-lang-roas">`
-        + `<div class="oc-lang-roas-block"><span class="oc-lang-label">ROAS</span><strong>${roas}</strong></div>`
+        + `<div class="oc-lang-roas-block"><span class="oc-lang-label">广告ROAS</span><strong>${roas}</strong></div>`
         + `<div class="oc-lang-spend-block"><span class="oc-lang-label">消耗</span><strong>${spend}</strong></div>`
         + `</span>`
         + `</div>`;
@@ -575,17 +575,18 @@
     const body = lines.length
       ? lines.join('')
       : '<div class="oc-lang-empty oc-country-metrics-line muted">—</div>';
-    
+
     const btnHtml = productId
       ? `<button type="button" class="oc-btn text sm" data-product-ad-orders-report="${productId}" style="color: var(--oc-accent); font-weight: 600; padding: 0; cursor: pointer;">查看数据</button>`
       : '';
+    const summaryTitle = `订单ROAS: ${productSummary.overall_roas ?? '—'} / 总消耗 ${productSummary.ad_spend_usd ?? '—'} / 口径: 订单销售额+运费 / 产品总广告消耗`;
 
     return `<div class="oc-lang-bar oc-country-metrics-bar">`
-      + `<div class="oc-lang-summary oc-country-metrics-summary">`
+      + `<div class="oc-lang-summary oc-country-metrics-summary" title="${escapeHtml(summaryTitle)}">`
       + `<div style="display: flex; align-items: center;">${btnHtml}</div>`
       + `<div></div>`
       + `<div class="oc-lang-roas">`
-      + `<div class="oc-lang-roas-block"><span class="oc-lang-label">总体ROAS</span><strong style="color: #2563eb;">${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
+      + `<div class="oc-lang-roas-block"><span class="oc-lang-label">订单ROAS</span><strong style="color: #2563eb;">${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
       + `<div class="oc-lang-spend-block"><span class="oc-lang-label">总消耗</span><strong style="color: #2563eb;">${fmtAdSpend(productSummary.ad_spend_usd)}</strong></div>`
       + `</div>`
       + `</div>`
@@ -3079,6 +3080,10 @@
     const deliveryStatusEl = $('filterDeliveryStatus');
     if (deliveryStatusEl && deliveryStatusEl.value && deliveryStatusEl.value !== 'all') {
       params.set('delivery_status', deliveryStatusEl.value);
+    }
+    const stabilityStatusEl = $('filterStabilityStatus');
+    if (stabilityStatusEl && stabilityStatusEl.value && stabilityStatusEl.value !== 'all') {
+      params.set('stability_status', stabilityStatusEl.value);
     }
     const productSourceEl = $('filterProductSource');
     if (productSourceEl && productSourceEl.value && productSourceEl.value !== 'all') {
@@ -9850,6 +9855,8 @@
     if (filterRoas) filterRoas.addEventListener('change', () => runSearchNow());
     const filterDelivery = $('filterDeliveryStatus');
     if (filterDelivery) filterDelivery.addEventListener('change', () => runSearchNow());
+    const filterStability = $('filterStabilityStatus');
+    if (filterStability) filterStability.addEventListener('change', () => runSearchNow());
     const filterSource = $('filterProductSource');
     if (filterSource) filterSource.addEventListener('change', () => runSearchNow());
 

@@ -1131,6 +1131,7 @@ def _build_yesterday_same_time_comparison(
             "profit_with_estimate_usd": _metric_comparison(
                 current_profit_summary.get("profit_with_estimate_usd"),
                 previous_profit_value,
+                use_abs_previous_denominator=True,
             ),
         },
     }
@@ -2957,17 +2958,38 @@ def _empty_yesterday_same_time_comparison() -> dict[str, Any]:
     }
 
 
-def _metric_comparison(current: Any, previous: Any, *, integer: bool = False) -> dict[str, Any]:
+def _compute_pct_change_abs_previous(current: Any, previous: Any) -> float | None:
+    current_value = float(current or 0)
+    previous_value = float(previous or 0)
+    if previous_value == 0 and current_value == 0:
+        return 0.0
+    if previous_value == 0:
+        return None
+    return round((current_value - previous_value) / abs(previous_value) * 100, 2)
+
+
+def _metric_comparison(
+    current: Any,
+    previous: Any,
+    *,
+    integer: bool = False,
+    use_abs_previous_denominator: bool = False,
+) -> dict[str, Any]:
     if integer:
         current_value = int(current or 0)
         previous_value = int(previous or 0)
     else:
         current_value = _money(current)
         previous_value = _money(previous)
+    pct = (
+        _compute_pct_change_abs_previous(current_value, previous_value)
+        if use_abs_previous_denominator
+        else _compute_pct_change(current_value, previous_value)
+    )
     return {
         "current": current_value,
         "previous": previous_value,
-        "pct": _compute_pct_change(current_value, previous_value),
+        "pct": pct,
     }
 
 

@@ -268,7 +268,9 @@ def test_medias_list_keeps_compact_lang_coverage_rows():
     assert "oc-lang-push-zero" in script
     assert "fmtAdSpend" in script
     assert "summary.ad_spend_usd" in script
-    assert "总体ROAS" in script
+    assert "订单ROAS" in script
+    assert "广告ROAS" in script
+    assert "总体ROAS" not in script
     assert ".oc-lang-bar {" in template
     assert "flex-direction:column;" in template
     assert ".oc-lang-line {" in template
