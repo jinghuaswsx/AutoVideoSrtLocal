@@ -1875,7 +1875,10 @@ function renderMkStatusIconHeaderRow(r) {
   const localProductId = Number(materialStatus.media_product_id || r.media_product_id || 0);
   const localItemId = Number(materialStatus.media_item_id || r.media_item_id || 0);
   const existingProductId = Number(productStatus.media_product_id || localProductId || 0);
-  const dataIconHtml = renderMkCardDataButtonFromRecord(r, existingProductId, localItemId);
+  const hasTranslation = Boolean(materialStatus.has_translation);
+  const dataIconHtml = (hasVideoInLibrary && hasTranslation)
+    ? renderMkCardDataButtonFromRecord(r, existingProductId, localItemId)
+    : '';
   
   const videoSearchUrl = (productCodeSearch && existingProductId && localItemId)
     ? `/medias/?q=${encodeURIComponent(productCodeSearch)}&product=${existingProductId}&lang=en&action=video&item=${localItemId}`

@@ -204,7 +204,7 @@
 .vw-card {
   width: 100%; min-height: 0; border-left-width: 3px; padding: 14px;
   display: grid; grid-template-columns: 276px minmax(0, 1fr); gap: 18px;
-  max-width: 50%; min-width: 960px;
+  max-width: 1200px;
 }
 .vw-left-card { position: relative; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
 .vw-right-panel { min-width: 0; border-left: 1px solid var(--vw-border); padding-left: 18px; display: grid; gap: 14px; align-content: start; }
@@ -294,7 +294,7 @@
   margin-top: 2px;
   flex-shrink: 0;
 }
-.vw-panel-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; }
+.vw-panel-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 480px; }
 .vw-panel-table th, .vw-panel-table td { padding: 7px 8px; border-bottom: 1px solid var(--vw-border); text-align: right; vertical-align: top; }
 .vw-panel-table th:first-child, .vw-panel-table td:first-child { text-align: left; }
 .vw-panel-table th { color: var(--vw-muted); background: #f8fafc; font-weight: 800; }
@@ -309,6 +309,16 @@
 .vw-mini-btn { min-height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--vw-border-strong); background: #fff; color: var(--vw-blue); cursor: pointer; font-size: 11px; font-weight: 700; }
 .vw-mini-btn:hover:not(:disabled) { border-color: var(--vw-blue); background: #eef6fb; }
 .vw-mini-btn:disabled { opacity: .55; cursor: not-allowed; }
+@media (min-width: 1500px) {
+  .vw-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  .vw-card {
+    max-width: 100%;
+  }
+}
 @media (max-width: 1024px) {
   .vw-card { max-width: 100%; min-width: 0; }
 }
@@ -1099,7 +1109,7 @@
               <button type="button" class="vw-inline-icon-btn" onclick="copyText('${esc(productCode)}', this)" title="复制产品Code" aria-label="复制产品Code">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               </button>
-              <a href="/medias/?q=${encodeURIComponent(productCode)}" target="_blank" class="vw-inline-icon-btn" title="在素材管理中搜索此产品Code" aria-label="搜索此产品Code">
+              <a href="/medias/?q=${encodeURIComponent(productCode)}" target="_blank" rel="noopener noreferrer" class="vw-inline-icon-btn" title="在素材管理中搜索此产品Code" aria-label="搜索此产品Code">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
               </a>
             </div>

@@ -913,6 +913,7 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
     fine_ai_status_by_product_id = _fine_ai_status_by_product_ids(product_ids)
     fine_ai_status_by_material_key = _fine_ai_status_by_external_cards(items)
 
+    media_item_to_statuses = {}
     for item, media_code, material_key, _product_hash, _material_hash, product_status, material_status in preliminary:
         product_id = _as_int(product_status.get("media_product_id"))
         if product_id in ai_status_by_product_id:
@@ -931,6 +932,7 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
             )
             if legacy_status:
                 material_status = legacy_status
+
         item["media_search_code"] = media_code
         item["media_search_url"] = _media_search_url(media_code)
         item["product_ad_status"] = product_status
@@ -944,6 +946,39 @@ def _enrich_cached_ad_statuses(items: list[dict[str, Any]]) -> list[dict[str, An
         # Backward-compatible alias for older callers/templates. Mingkong videos are
         # raw source materials, so the card icon means local library match only.
         item["has_local_material_running_ad"] = material_in_library
+
+        item_id = material_status.get("media_item_id")
+        if item_id:
+            media_item_to_statuses.setdefault(int(item_id), []).append(material_status)
+        else:
+            material_status["has_translation"] = False
+
+    if media_item_to_statuses:
+        final_media_item_ids = list(media_item_to_statuses.keys())
+        placeholders = ",".join(["%s"] * len(final_media_item_ids))
+        translated_media_item_ids = set()
+        try:
+            trans_rows = query(
+                "SELECT DISTINCT source_raw_id, source_ref_id FROM media_items "
+                f"WHERE (source_raw_id IN ({placeholders}) OR source_ref_id IN ({placeholders})) "
+                "  AND deleted_at IS NULL",
+                tuple(final_media_item_ids + final_media_item_ids),
+            )
+            for row in trans_rows:
+                raw_id = row.get("source_raw_id")
+                ref_id = row.get("source_ref_id")
+                if raw_id:
+                    translated_media_item_ids.add(int(raw_id))
+                if ref_id:
+                    translated_media_item_ids.add(int(ref_id))
+        except Exception:
+            logger.exception("Failed to check translated media items")
+
+        for item_id, statuses in media_item_to_statuses.items():
+            has_trans = int(item_id) in translated_media_item_ids
+            for status in statuses:
+                status["has_translation"] = has_trans or bool(status.get("summary", {}).get("has_translation"))
+
     return items
 
 
@@ -1175,6 +1210,18 @@ def _refresh_material_ad_status(video_path: str) -> dict[str, Any]:
     )
     item_id = int(row["media_item_id"]) if row and row.get("media_item_id") else None
     has_push = bool(row and (row.get("pushed_at") or _as_int(row.get("push_success_count")) > 0))
+    has_translation = False
+    if item_id:
+        try:
+            trans_row = query_one(
+                "SELECT COUNT(*) AS cnt FROM media_items "
+                "WHERE (source_raw_id = %s OR source_ref_id = %s) "
+                "  AND deleted_at IS NULL",
+                (item_id, item_id),
+            )
+            has_translation = bool(trans_row and int(trans_row.get("cnt") or 0) > 0)
+        except Exception:
+            logger.exception("Failed to check if item_id=%s has translations", item_id)
     status = {
         "media_product_id": row.get("media_product_id") if row else None,
         "media_item_id": item_id,
@@ -1183,7 +1230,10 @@ def _refresh_material_ad_status(video_path: str) -> dict[str, Any]:
         "has_running_ad": bool(item_id and has_push),
         "ad_spend_usd": 0.0,
         "latest_activity_at": row.get("pushed_at") if row else None,
-        "summary": {"source": "media_item_mk_bindings+media_push_logs"},
+        "summary": {
+            "source": "media_item_mk_bindings+media_push_logs",
+            "has_translation": has_translation,
+        },
     }
     _upsert_ad_status_cache(
         scope=_AD_STATUS_SCOPE_MATERIAL,
