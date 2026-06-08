@@ -1,5 +1,6 @@
 {% extends "layout.html" %}
 {# Docs-anchor: docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md #}
+{# Docs-anchor: docs/superpowers/specs/2026-06-08-mk-card-data-task-status-design.md #}
 {% block title %}选品中心 - AutoVideoSrt{% endblock %}
 {% block page_title %}
 <span class="selection-center-title">选品中心</span>
@@ -814,7 +815,12 @@
 .mk-card-data-country.is-stopped { border-color:#fecaca; background:#fef2f2; color:#dc2626; }
 .mk-card-data-country.is-missing { border-color:#e2e8f0; background:#fff; color:var(--oc-fg-muted); }
 .mk-card-data-country-title { display:flex; justify-content:space-between; gap:6px; font-weight:800; font-size:12px; }
+.mk-card-data-country-main { min-width:0; display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .mk-card-data-country-sub { flex:1; color:var(--oc-fg-muted); font-size:11px; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-all; }
+.mk-card-data-task-badge { display:inline-flex; align-items:center; width:max-content; max-width:100%; min-height:20px; padding:0 7px; border:1px solid var(--oc-border); border-radius:9999px; background:#fff; color:var(--oc-fg-muted); font-size:11px; line-height:1; font-weight:700; text-decoration:none; white-space:nowrap; vertical-align:middle; }
+.mk-card-data-task-badge--linked { border-color:oklch(80% 0.08 230); background:oklch(97% 0.018 230); color:var(--oc-accent); font-weight:900; }
+.mk-card-data-task-badge--linked:hover { border-color:var(--oc-accent); background:var(--oc-accent-subtle); text-decoration:none; }
+.mk-card-data-task-badge--empty { opacity:.72; }
 .mk-card-data-roas-badge { display:inline-flex; width:max-content; padding:2px 6px; border:1px solid #bbf7d0; border-radius:4px; background:#dcfce7; color:#15803d; font-size:12px; font-weight:800; }
 .mk-card-data-table-scroll { overflow:auto; border:1px solid var(--oc-border); border-radius:7px; }
 .mk-card-data-table { width:100%; min-width:620px; border-collapse:collapse; font-size:12px; }
@@ -1374,6 +1380,35 @@ function mkCardDataOrderMetric(order, prefix) {
   return `<span class="mk-card-data-order-value">${orders}</span><div class="mk-card-data-sub">${mkCardDataMoney(spend)} · <span class="mk-card-data-roas-row"><span class="mk-card-data-roas-label">ROAS</span><span class="mk-card-data-roas-value">${mkCardDataRoas(r)}</span></span></div>`;
 }
 
+function mkCardDataTaskStatusLabel(status) {
+  const labels = {
+    pending: '待处理',
+    raw_in_progress: '待处理',
+    raw_review: '待处理',
+    raw_done: '已完成',
+    all_done: '全部完成',
+    blocked: '阻塞中',
+    assigned: '待处理',
+    review: '待处理',
+    done: '已完成',
+    cancelled: '已取消'
+  };
+  return labels[status] || status || '';
+}
+
+function mkCardDataTaskBadge(task) {
+  const id = Number(task && task.id || 0);
+  if (!id) {
+    return '<span class="mk-card-data-task-badge mk-card-data-task-badge--empty">无任务</span>';
+  }
+  const statusLabel = mkCardDataTaskStatusLabel(task.status);
+  const titleParts = [`任务#${id}`];
+  if (statusLabel) titleParts.push(statusLabel);
+  if (task.archived) titleParts.push('已归档');
+  const href = '/tasks/?task_id=' + encodeURIComponent(id);
+  return `<a class="mk-card-data-task-badge mk-card-data-task-badge--linked" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(titleParts.join(' · '))}">任务#${escapeHtml(id)}</a>`;
+}
+
 function mkCardDataRenderTranslationPanel(card) {
   const targets = card.target_country_versions || [];
   const summary = card.translation_summary || {};
@@ -1389,7 +1424,7 @@ function mkCardDataRenderTranslationPanel(card) {
         </div>`
       : '';
     return `<div class="mk-card-data-country ${cls}">
-      <div class="mk-card-data-country-title"><span>${escapeHtml(row.country_code || '')}</span><span>${escapeHtml(mkCardDataCountryStatusText(row))}</span></div>
+      <div class="mk-card-data-country-title"><span class="mk-card-data-country-main"><span>${escapeHtml(row.country_code || '')}</span>${mkCardDataTaskBadge(row.task)}</span><span>${escapeHtml(mkCardDataCountryStatusText(row))}</span></div>
       <div class="mk-card-data-country-sub" title="${escapeHtml((row.lang_name || row.lang || '') + ' · ' + sub)}">${escapeHtml(row.lang_name || row.lang || '')} · ${escapeHtml(sub)}</div>
       ${roasHtml}
     </div>`;
@@ -1412,7 +1447,7 @@ function mkCardDataRenderAdPanel(card) {
     const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
     const cls = v.delivery_status === 'active' ? 'mk-card-data-row-active' : (v.delivery_status === 'stopped' ? 'mk-card-data-row-stopped' : '');
     return `<tr class="${cls}">
-      <td><strong>${escapeHtml(label)}</strong>${v.media_item_id ? `<div class="mk-card-data-sub">#${v.media_item_id} ${escapeHtml(v.filename || v.display_name || '')}</div>` : ''}</td>
+      <td><strong>${escapeHtml(label)}</strong> ${mkCardDataTaskBadge(v.task)}${v.media_item_id ? `<div class="mk-card-data-sub">#${v.media_item_id} ${escapeHtml(v.filename || v.display_name || '')}</div>` : ''}</td>
       <td>${mkCardDataMetricSpendRoas(perf, 'today')}</td>
       <td>${mkCardDataMetricSpendRoas(perf, 'yesterday')}</td>
       <td>${mkCardDataMetricSpendRoas(perf, 'last_7d')}</td>

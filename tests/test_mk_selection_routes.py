@@ -564,11 +564,18 @@ def test_mk_selection_video_cards_include_workbench_data_modal_entry():
     template = Path("web/templates/mk_selection.html").read_text(encoding="utf-8")
 
     assert "docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md" in template
+    assert "docs/superpowers/specs/2026-06-08-mk-card-data-task-status-design.md" in template
     assert "mk-status-half--data" in template
     assert "mk-status-icon--data" in template
     assert "data-mk-card-data-product-id" in template
     assert "onclick=\"openMkCardDataModal(this)\"" in template
     assert "function openMkCardDataModal(btn)" in template
+    assert "function mkCardDataTaskBadge(task)" in template
+    assert "mk-card-data-task-badge--empty" in template
+    assert "mk-card-data-task-badge--linked" in template
+    assert "'/tasks/?task_id=' + encodeURIComponent(id)" in template
+    assert "任务#${escapeHtml(id)}" in template
+    assert "无任务" in template
     assert "function mkCardDataRenderTranslationPanel(card)" in template
     assert "function mkCardDataRenderAdPanel(card)" in template
     assert "function mkCardDataRenderOrderPanel(card)" in template

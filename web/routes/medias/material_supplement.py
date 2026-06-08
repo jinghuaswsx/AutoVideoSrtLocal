@@ -731,6 +731,107 @@ def _build_translated_versions(
     }, target_rows
 
 
+def _task_payload(row: dict[str, Any]) -> dict[str, Any]:
+    parent_task_id = row.get("parent_task_id")
+    try:
+        task_id = int(row.get("id") or 0)
+    except (TypeError, ValueError):
+        task_id = 0
+    try:
+        media_item_id = int(row.get("media_item_id") or 0)
+    except (TypeError, ValueError):
+        media_item_id = 0
+    return {
+        "id": task_id,
+        "parent_task_id": int(parent_task_id) if parent_task_id is not None else None,
+        "media_item_id": media_item_id,
+        "country_code": str(row.get("country_code") or "").strip().upper(),
+        "status": row.get("status") or "",
+        "is_urgent": bool(row.get("is_urgent")),
+        "archived": bool(row.get("archived_at")),
+        "archived_at": _iso(row.get("archived_at")),
+        "assignee_id": row.get("assignee_id"),
+        "assignee_name": row.get("assignee_name") or row.get("assignee_username") or "",
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+    }
+
+
+def _empty_task_summary() -> dict[str, Any]:
+    return {
+        "has_task": False,
+        "parent_task": None,
+        "child_tasks_by_country": {},
+    }
+
+
+def _load_item_task_summaries(item_ids: list[int], query_fn=db_query) -> dict[int, dict[str, Any]]:
+    unique_ids = sorted({int(item_id) for item_id in item_ids if int(item_id or 0) > 0})
+    if not unique_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(unique_ids))
+    rows = query_fn(
+        "SELECT t.id, t.parent_task_id, t.media_item_id, t.country_code, t.status, "
+        "       t.is_urgent, t.assignee_id, t.created_at, t.updated_at, t.archived_at, "
+        "       u.username AS assignee_username, "
+        "       COALESCE(NULLIF(u.display_name, ''), u.username) AS assignee_name "
+        "FROM tasks t "
+        "LEFT JOIN users u ON u.id = t.assignee_id "
+        f"WHERE t.media_item_id IN ({placeholders}) "
+        "ORDER BY t.media_item_id ASC, "
+        "         CASE WHEN t.archived_at IS NULL THEN 0 ELSE 1 END ASC, "
+        "         CASE WHEN t.status = 'cancelled' THEN 1 ELSE 0 END ASC, "
+        "         t.created_at DESC, t.id DESC",
+        unique_ids,
+    )
+    summaries: dict[int, dict[str, Any]] = {}
+    for row in rows or []:
+        try:
+            item_id = int(row.get("media_item_id") or 0)
+        except (TypeError, ValueError):
+            item_id = 0
+        if item_id <= 0:
+            continue
+        summary = summaries.setdefault(item_id, _empty_task_summary())
+        payload = _task_payload(row)
+        if payload["parent_task_id"] is None:
+            if summary["parent_task"] is None:
+                summary["parent_task"] = payload
+        else:
+            code = payload["country_code"]
+            if code and code not in summary["child_tasks_by_country"]:
+                summary["child_tasks_by_country"][code] = payload
+    for summary in summaries.values():
+        summary["has_task"] = bool(summary["parent_task"] or summary["child_tasks_by_country"])
+    return summaries
+
+
+def _attach_task_summary_to_versions(
+    translated_versions: list[dict],
+    target_country_versions: list[dict],
+    task_summary: dict[str, Any] | None,
+) -> None:
+    summary = task_summary or _empty_task_summary()
+    parent_task = summary.get("parent_task")
+    child_tasks = summary.get("child_tasks_by_country") or {}
+
+    for version in translated_versions:
+        code = str(version.get("country_code") or "").strip().upper()
+        if version.get("is_summary") or str(version.get("lang") or "").strip().lower() == "en":
+            version["task"] = parent_task
+        elif code:
+            version["task"] = child_tasks.get(code)
+        else:
+            version["task"] = None
+
+    for row in target_country_versions:
+        code = str(row.get("country_code") or "").strip().upper()
+        row["task"] = child_tasks.get(code)
+        version = row.get("version")
+        if isinstance(version, dict):
+            version.setdefault("task", row["task"])
+
+
 def _ai_country_code_from_row(row: dict[str, Any]) -> str:
     raw_code = str(row.get("country_code") or row.get("country") or "").strip().upper()
     if _workbench_country_for_code(raw_code):
@@ -889,6 +990,11 @@ def build_product_video_workbench(
     latest_eval_run = _load_latest_material_evaluation_run(product_id, query_fn=query_fn) if query_fn is _DEFAULT_DB_QUERY else {}
     ai_evaluation = _build_workbench_ai_evaluation(product, latest_eval_run)
     item_ids = [int(item["id"]) for item in library_items]
+    try:
+        task_summaries = _load_item_task_summaries(item_ids, query_fn=query_fn)
+    except Exception:
+        log.exception("Failed to load task summaries for workbench product_id=%s", product_id)
+        task_summaries = {}
     bindings_by_path, _bindings_by_item = _load_mk_bindings(item_ids, query_fn=query_fn)
     ad_by_lang = _load_lang_ad_summary(product_id, query_fn=query_fn)
     product_ad_summary = _load_product_ad_summary(product_id, query_fn=query_fn)
@@ -939,6 +1045,16 @@ def build_product_video_workbench(
             library_items=library_items,
             order_report=order_report,
         )
+        task_summary = (
+            task_summaries.get(int(bound_item_id))
+            if bound_item_id is not None
+            else _empty_task_summary()
+        ) or _empty_task_summary()
+        _attach_task_summary_to_versions(
+            translated_versions,
+            target_country_versions,
+            task_summary,
+        )
         spends = _safe_float(mk_row.get("cumulative_90_spend"))
         cards.append({
             "card_id": _card_id(video_path, bound_item_id),
@@ -973,6 +1089,7 @@ def build_product_video_workbench(
             "main_image": mk_row.get("main_image") or "",
             "lang_ad_summary": deduped_lang_ad_rows if in_library else [],
             "translated_versions": translated_versions if in_library else [],
+            "task_summary": task_summary if in_library else _empty_task_summary(),
             "translation_summary": translation_summary if in_library else {
                 "translated_count": 0,
                 "target_count": len(WORKBENCH_AI_COUNTRIES),

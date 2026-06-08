@@ -302,6 +302,51 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
                 {"id": 11, "product_id": 321, "lang": "de", "filename": "demo-de.mp4", "display_name": "de", "object_key": "items/de.mp4", "task_id": 101, "source_raw_id": 500, "source_ref_id": None, "auto_translated": 0},
                 {"id": 12, "product_id": 321, "lang": "pt", "filename": "demo-pt.mp4", "display_name": "pt", "object_key": "items/pt.mp4", "task_id": 102, "source_raw_id": 500, "source_ref_id": None, "auto_translated": 0},
             ]
+        if "FROM tasks t" in sql:
+            return [
+                {
+                    "id": 9001,
+                    "parent_task_id": None,
+                    "media_item_id": 10,
+                    "country_code": None,
+                    "status": "raw_in_progress",
+                    "is_urgent": 0,
+                    "assignee_id": 7,
+                    "assignee_username": "raw",
+                    "assignee_name": "原视频处理人",
+                    "created_at": datetime(2026, 6, 8, 9, 0, 0),
+                    "updated_at": datetime(2026, 6, 8, 9, 1, 0),
+                    "archived_at": None,
+                },
+                {
+                    "id": 9002,
+                    "parent_task_id": 9001,
+                    "media_item_id": 10,
+                    "country_code": "DE",
+                    "status": "blocked",
+                    "is_urgent": 0,
+                    "assignee_id": 8,
+                    "assignee_username": "de",
+                    "assignee_name": "德语负责人",
+                    "created_at": datetime(2026, 6, 8, 9, 0, 0),
+                    "updated_at": datetime(2026, 6, 8, 9, 1, 0),
+                    "archived_at": None,
+                },
+                {
+                    "id": 9003,
+                    "parent_task_id": 9001,
+                    "media_item_id": 10,
+                    "country_code": "PT",
+                    "status": "assigned",
+                    "is_urgent": 1,
+                    "assignee_id": 9,
+                    "assignee_username": "pt",
+                    "assignee_name": "葡语负责人",
+                    "created_at": datetime(2026, 6, 8, 9, 0, 0),
+                    "updated_at": datetime(2026, 6, 8, 9, 1, 0),
+                    "archived_at": None,
+                },
+            ]
         if "FROM media_item_mk_bindings" in sql:
             return [{"media_item_id": 10, "mk_video_path": "/video/demo.mp4"}]
         if "FROM media_product_lang_ad_summary_cache" in sql:
@@ -346,11 +391,18 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
     assert "NL" in card["translation_summary"]["missing_country_codes"]
     assert card["translated_versions"][0]["lang"] == "all"
     assert card["translated_versions"][0]["ad_performance"]["total_spend_usd"] == 60.0
+    assert card["task_summary"]["has_task"] is True
+    assert card["task_summary"]["parent_task"]["id"] == 9001
+    assert card["translated_versions"][0]["task"]["id"] == 9001
     de_version = next(row for row in card["translated_versions"] if row["lang"] == "de")
     assert de_version["country_code"] == "DE"
     assert de_version["order_stats"]["today_orders"] == 2
+    assert de_version["task"]["id"] == 9002
     pt_target = next(row for row in card["target_country_versions"] if row["country_code"] == "PT")
     assert pt_target["status"] == "translated"
+    assert pt_target["task"]["id"] == 9003
+    nl_target = next(row for row in card["target_country_versions"] if row["country_code"] == "NL")
+    assert nl_target["task"] is None
 
 
 def test_translated_versions_do_not_merge_broad_supplement_keywords():
