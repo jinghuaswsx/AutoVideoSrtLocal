@@ -44,6 +44,8 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert 'data-action="ai-start"' in html
     assert "translated_versions" in html
     assert "target_country_versions" in html
+    assert 'data-action="ad-country"' in html
+    assert "currentAdCountryCode" in html
 
 
 def test_video_workbench_import_flow_matches_mk_progress_contract():
@@ -492,3 +494,55 @@ def test_video_workbench_ad_detail_rejects_too_wide_date_range():
             query_fn=lambda sql, params=None: [{"id": 321, "name": "Demo", "product_code": "demo-rjc"}],
             today=date(2026, 6, 6),
         )
+
+
+def test_build_video_workbench_ad_detail_with_country_filter():
+    from web.routes.medias import material_supplement as route
+
+    captured = {}
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            return [{"id": 321, "name": "Demo", "product_code": "demo-rjc"}]
+        if "FROM media_items" in sql:
+            return [{"id": 10, "filename": "demo.mp4", "display_name": "Demo Display"}]
+        if "FROM mingkong_material_daily_snapshots" in sql:
+            return [{"video_name": "demo.mp4"}]
+        if "FROM meta_ad_daily_ad_metrics m" in sql:
+            captured["sql"] = sql
+            captured["params"] = params
+            return [
+                {
+                    "id": 1,
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "Meta",
+                    "activity_date": date(2026, 6, 5),
+                    "report_date": date(2026, 6, 5),
+                    "campaign_name": "demo-rjc",
+                    "normalized_ad_code": "demo.mp4-de",
+                    "ad_name": "Demo Ad demo.mp4",
+                    "market_country": "DE",
+                    "spend_usd": "100.00",
+                    "purchase_value_usd": "150.00",
+                    "result_count": 3,
+                }
+            ]
+        raise AssertionError(sql)
+
+    payload = route.build_video_workbench_ad_detail(
+        321,
+        {
+            "media_item_id": "10",
+            "video_path": "/video/demo.mp4",
+            "date_from": "2026-06-01",
+            "date_to": "2026-06-06",
+            "country": "DE",
+        },
+        query_fn=fake_query,
+        today=date(2026, 6, 6),
+    )
+
+    assert "AND UPPER(COALESCE(m.market_country, '')) = %s" in captured["sql"]
+    assert captured["params"][-1] == "DE"
+    assert len(payload["rows"]) == 1
+    assert payload["rows"][0]["market_country"] == "DE"

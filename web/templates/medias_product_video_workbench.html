@@ -539,6 +539,7 @@
   ];
   let currentData = null;
   let currentAdCard = null;
+  let currentAdCountryCode = null;
   let activeUsersCache = null;
   let productOwnerCache = new Map();
   let fineAiCache = new Map();
@@ -815,7 +816,12 @@
         cls = version.delivery_status === 'active' ? 'state-active' : 'state-stopped';
         const rVal = version.roas;
         const formattedRoas = rVal == null ? '-' : Number(rVal).toFixed(2);
-        roasHtml = `<div class="vw-chip-roas-badge">ROAS: ${formattedRoas}</div>`;
+        roasHtml = `
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: auto; gap: 4px; width: 100%;">
+            <div class="vw-chip-roas-badge" style="margin-top: 0;">ROAS: ${formattedRoas}</div>
+            <button type="button" class="vw-mini-btn" data-action="ad-country" data-card-id="${esc(card.card_id)}" data-country-code="${esc(row.country_code || '')}" style="padding: 2px 6px; font-size: 11px; line-height: 1; min-height: 20px; height: 20px;">广告</button>
+          </div>
+        `;
       }
       const hasMaterial = row.status === 'translated' && version && (version.filename || version.display_name);
       return `<div class="vw-country-chip ${cls}">
@@ -1504,10 +1510,16 @@
     openXiaoModal({card: importCard, productId: importProductId, itemId: importItemId, fromImport: true});
   }
 
-  function openAdModal(card) {
+  function openAdModal(card, countryCode = null) {
     currentAdCard = card;
+    currentAdCountryCode = countryCode;
     const mk = card.mk_video || {};
-    document.getElementById('vwAdTitle').textContent = '广告数据';
+    const countryMap = {
+      'DE': '德国', 'FR': '法国', 'ES': '西班牙', 'IT': '意大利',
+      'JP': '日本', 'PT': '葡萄牙', 'NL': '荷兰', 'SE': '瑞典', 'EN': '英国/通用'
+    };
+    const countryName = countryCode ? (countryMap[countryCode.toUpperCase()] || countryCode) : '';
+    document.getElementById('vwAdTitle').textContent = countryName ? `广告数据 (${countryName})` : '广告数据';
     document.getElementById('vwAdSub').textContent = mk.name || '';
     document.getElementById('vwAdFrom').value = todayIso(-29);
     document.getElementById('vwAdTo').value = todayIso(0);
@@ -1520,6 +1532,7 @@
     const params = new URLSearchParams();
     if (mk.path) params.set('video_path', mk.path);
     if (currentAdCard.media_item_id) params.set('media_item_id', currentAdCard.media_item_id);
+    if (currentAdCountryCode) params.set('country', currentAdCountryCode);
     params.set('date_from', document.getElementById('vwAdFrom').value || todayIso(-29));
     params.set('date_to', document.getElementById('vwAdTo').value || todayIso(0));
     document.getElementById('vwAdState').textContent = '加载中...';
@@ -2051,6 +2064,7 @@
     if (!card) return;
     if (action === 'import') startImport(card);
     if (action === 'ad') openAdModal(card);
+    if (action === 'ad-country') openAdModal(card, actionEl.dataset.countryCode);
     if (action === 'task') openXiaoModal({card, productId, itemId: card.media_item_id, sourceButton: actionEl});
     if (action === 'ai-start') startAiEvaluation(card, '');
     if (action === 'ai-country') startAiEvaluation(card, actionEl.dataset.countryLang || '');
