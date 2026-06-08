@@ -584,8 +584,8 @@
   font-weight: 700;
   line-height: 1;
 }
-.mk-heat-badge.heat-high { background: #fee2e2; color: #ef4444; }
-.mk-heat-badge.heat-medium { background: #fef3c7; color: #d97706; }
+.mk-heat-badge.heat-high { background: #fee2e2; color: #dc2626; }
+.mk-heat-badge.heat-medium { background: #fef3c7; color: #b45309; }
 .mk-heat-badge.heat-low { background: #f1f5f9; color: #64748b; }
 
 /* Supplement Data Card (Split view for delivery data) */
@@ -1271,7 +1271,7 @@
   function heatLevel(adsCount) {
     const count = Number(adsCount || 0);
     if (count >= 10) return {label:'高', cls:'heat-high'};
-    if (count >= 5) return {label:'中', cls:'heat-medium'};
+    if (count >= 3) return {label:'中', cls:'heat-medium'};
     return {label:'低', cls:'heat-low'};
   }
 

@@ -367,8 +367,8 @@ def test_xuanpin_mk_video_material_detail_page_renders_preview_and_history(
     assert ".mk-detail-heat-panel { display:flex; justify-content:center; margin:-4px 0 16px; }" in body
     assert ".mk-detail-heat-card { display:inline-flex; align-items:center; justify-content:center; gap:14px; min-width:260px; max-width:100%; border:1px solid var(--mkd-border); border-radius:var(--mkd-radius); background:#fff; padding:12px 16px; }" in body
     assert "mk-detail-heat-badge high" in body
-    assert ".mk-detail-heat-badge.high { background:var(--oc-success-bg); color:var(--oc-success-fg); }" in body
-    assert ".mk-detail-heat-badge.med { background:var(--oc-warning-bg); color:var(--oc-warning-fg); }" in body
+    assert ".mk-detail-heat-badge.high { background:#fee2e2; color:#dc2626; }" in body
+    assert ".mk-detail-heat-badge.med { background:#fef3c7; color:#b45309; }" in body
     assert ".mk-detail-heat-badge.low { background:var(--oc-bg-muted); color:var(--oc-fg-muted); }" in body
     assert "广告数 16" in body
     assert "90天消耗 1.28万" in body
