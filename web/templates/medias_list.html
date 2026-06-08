@@ -5168,55 +5168,72 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 
 
 <style>
-/* 补素材 数量药丸 */
-.supplement-count-pill {
-  display: block !important;
-  width: 60px;
-  margin: 0 auto !important;
+/* 补素材 单元格容器 */
+.supplement-cell-container {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+/* 统一三个框的尺寸与布局 */
+.supplement-count-pill,
+.supplement-btn,
+.material-workbench-btn {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 80px !important;
+  height: 28px !important;
+  padding: 0 !important;
   box-sizing: border-box;
+  border-radius: 6px !important;
   text-align: center;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* 素材数数字样式 (加粗, 显眼, 大一点点) */
+.supplement-count-pill {
+  font-weight: 800 !important;
+  font-size: 15px !important;
+  color: #2563eb !important;
+  background-color: #eff6ff !important;
+  border: 1.5px solid #bfdbfe !important;
 }
 
 /* 补素材 Button */
-.supplement-action-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-}
-.supplement-btn,
-.material-workbench-btn {
-  display: block;
-  width: 60px;
-  margin: 0 auto;
-  padding: 2px 0;
-  font-size: 11px;
-  line-height: 20px;
+.supplement-btn {
   font-weight: 600;
-  color: #fff;
-  background: #2196F3;
-  border: none;
-  border-radius: 999px;
+  color: #fff !important;
+  background: #3b82f6 !important;
+  border: none !important;
   cursor: pointer;
   transition: background 0.2s, transform 0.15s;
-  white-space: nowrap;
-  box-sizing: border-box;
-  text-align: center;
-}
-.material-workbench-btn {
-  width: 72px;
-  background: #0f766e;
 }
 .supplement-btn:hover {
-  background: #1976D2;
+  background: #2563eb !important;
   transform: scale(1.05);
+}
+.supplement-btn:active {
+  transform: scale(0.97);
+}
+
+/* 素材工作台 Button */
+.material-workbench-btn {
+  font-weight: 600;
+  color: #fff !important;
+  background: #0f766e !important;
+  border: none !important;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
 }
 .material-workbench-btn:hover {
-  background: #0d5f59;
+  background: #0d5f59 !important;
   transform: scale(1.05);
 }
-.supplement-btn:active,
 .material-workbench-btn:active {
   transform: scale(0.97);
 }
