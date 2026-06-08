@@ -204,37 +204,53 @@ def _split_block_text_balanced(text: str, min_words: int = 5, max_words: int = 1
     words = text.split()
     if not words:
         return []
-    if len(words) <= max_words:
+    total_word_count = _subtitle_word_count(text)
+    if total_word_count <= max_words:
         return [text.strip()]
 
     weak_starters = {"and", "or", "but", "to", "for", "with", "of", "the", "a", "an"}
-    chunk_count = max(1, (len(words) + max_words - 1) // max_words)
-    base_size = len(words) // chunk_count
-    remainder = len(words) % chunk_count
-    target_sizes = [base_size + (1 if index < remainder else 0) for index in range(chunk_count)]
+    chunk_count = max(1, (total_word_count + max_words - 1) // max_words)
+    base_size = total_word_count // chunk_count
+    remainder = total_word_count % chunk_count
+    target_sizes = [
+        base_size + (1 if index < remainder else 0)
+        for index in range(chunk_count)
+    ]
+
+    def _word_count_range(start: int, end: int) -> int:
+        return _subtitle_word_count(" ".join(words[start:end]))
 
     chunks: list[str] = []
     cursor = 0
 
     for chunk_index in range(chunk_count):
-        remaining_words = len(words) - cursor
         remaining_chunks = chunk_count - chunk_index
         if remaining_chunks == 1:
             chunks.append(" ".join(words[cursor:]).strip())
             break
 
-        min_size = max(min_words, remaining_words - max_words * (remaining_chunks - 1))
-        max_size = min(max_words, remaining_words - min_words * (remaining_chunks - 1))
+        min_end = cursor + 1
+        max_end = len(words) - remaining_chunks + 1
         target_size = target_sizes[chunk_index]
 
-        best_end = cursor + min_size
+        best_end = min_end
         best_score = None
-        for size in range(min_size, max_size + 1):
-            end = cursor + size
+        for end in range(min_end, max_end + 1):
+            current_count = _word_count_range(cursor, end)
+            remaining_count = _word_count_range(end, len(words))
+            if current_count > max_words:
+                break
+            if remaining_count > max_words * (remaining_chunks - 1):
+                continue
             previous_token = words[end - 1]
             next_token = words[end] if end < len(words) else ""
 
-            score = abs(size - target_size)
+            score = abs(current_count - target_size)
+            if current_count < min_words:
+                score += (min_words - current_count) * 1.5
+            remaining_min = min_words * (remaining_chunks - 1)
+            if remaining_count < remaining_min:
+                score += (remaining_min - remaining_count) * 1.5
             if previous_token.endswith((",", ";", ":", ".", "!", "?")):
                 score -= 1.2
             if next_token.strip(",.;:!?").lower() in weak_starters:

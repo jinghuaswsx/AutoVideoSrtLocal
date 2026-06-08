@@ -150,6 +150,36 @@ def test_validate_tts_script_splits_subtitle_chunk_longer_than_ten_words():
     assert _subtitle_word_signature(" ".join(chunk["text"] for chunk in validated["subtitle_chunks"])) == _subtitle_word_signature(validated["full_text"])
 
 
+def test_validate_tts_script_splits_timestamp_chunks_by_validation_word_count():
+    text = "Son las 14:45 y voy a recoger a mi hija."
+    payload = {
+        "full_text": text,
+        "blocks": [
+            {
+                "index": 0,
+                "text": text,
+                "sentence_indices": [0],
+                "source_segment_indices": [0],
+            }
+        ],
+        "subtitle_chunks": [],
+    }
+
+    validated = validate_tts_script(payload)
+
+    assert len(validated["subtitle_chunks"]) == 2
+    assert all(
+        len(_subtitle_word_signature(chunk["text"])) <= 10
+        for chunk in validated["subtitle_chunks"]
+    )
+    assert (
+        _subtitle_word_signature(
+            " ".join(chunk["text"] for chunk in validated["subtitle_chunks"])
+        )
+        == _subtitle_word_signature(validated["full_text"])
+    )
+
+
 def test_validate_tts_script_rebuilds_subtitle_chunks_when_model_drops_words():
     payload = {
         "full_text": "Keep every word exactly the same for subtitles.",

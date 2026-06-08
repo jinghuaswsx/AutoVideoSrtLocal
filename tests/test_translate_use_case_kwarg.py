@@ -151,3 +151,50 @@ def test_generate_localized_rewrite_requires_use_case():
             messages_builder=_builder,
             provider="openrouter", user_id=7,
         )
+
+
+def test_batched_localized_rewrite_patches_checkpoint_missing_source_indices(monkeypatch):
+    prev = {
+        "full_text": "first sentence second sentence",
+        "sentences": [
+            {"index": 0, "text": "first sentence", "source_segment_indices": [5]},
+            {"index": 1, "text": "second sentence", "source_segment_indices": [6]},
+        ],
+    }
+
+    monkeypatch.setattr(
+        translate_mod,
+        "_read_batch_checkpoint",
+        lambda project_id, key: {
+            "completed_batches": 1,
+            "all_sentences": [{"index": 0, "text": "shortened sentence"}],
+        },
+    )
+    cleared = {}
+    monkeypatch.setattr(
+        translate_mod,
+        "_clear_batch_checkpoint",
+        lambda project_id, key: cleared.setdefault("called", (project_id, key)),
+    )
+
+    def _builder(**kwargs):
+        raise AssertionError("checkpoint should skip LLM calls")
+
+    result = translate_mod._generate_localized_rewrite_batched(
+        "source",
+        prev,
+        target_words=3,
+        direction="shrink",
+        source_language="en",
+        messages_builder=_builder,
+        use_case="video_translate.rewrite",
+        user_id=7,
+        temperature=0.4,
+        feedback_notes=None,
+        batch_size=10,
+        project_id="task-x",
+        checkpoint_key="rewrite.r1",
+    )
+
+    assert result["sentences"][0]["source_segment_indices"] == [5]
+    assert cleared["called"] == ("task-x", "rewrite.r1")

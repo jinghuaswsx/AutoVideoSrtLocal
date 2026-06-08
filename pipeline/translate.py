@@ -803,6 +803,7 @@ def _generate_localized_rewrite_batched(
 
     for i, s in enumerate(all_sentences):
         s["index"] = i
+    _patch_missing_source_indices_from_prev(all_sentences, sentences)
     full_text = " ".join(
         (s.get("text") or "").strip()
         for s in all_sentences if (s.get("text") or "").strip()
