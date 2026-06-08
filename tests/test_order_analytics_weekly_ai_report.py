@@ -152,6 +152,42 @@ def _fake_product_profit(*, date_from, date_to):
     }
 
 
+def _fake_order_fallback_overview(date_text, **kwargs):
+    overview = _fake_overview(date_text, **kwargs)
+    store = (kwargs.get("site_codes") or ["all"])[0]
+    if store == "all":
+        business_day = date.fromisoformat(date_text[:10])
+        day_index = (business_day - date(2026, 5, 31)).days + 1
+        overview["product_sales_stats"] = [
+            {
+                "product_id": 101,
+                "product_code": "P101",
+                "product_name": "Order Stable Product",
+                "order_count": 30,
+                "units": 30,
+                "total_sales": 3000,
+            },
+            {
+                "product_id": 505,
+                "product_code": "P505",
+                "product_name": "Order Secondary Product",
+                "order_count": 11,
+                "units": 11,
+                "total_sales": 1100,
+            },
+            {
+                "product_id": 202,
+                "product_code": "P202",
+                "product_name": "Long Tail Product",
+                "order_count": 3 if day_index == 1 else 0,
+                "units": 3 if day_index == 1 else 0,
+                "total_sales": 240 if day_index == 1 else 0,
+            },
+        ]
+        overview["campaigns"] = []
+    return overview
+
+
 def test_previous_complete_business_week_uses_sunday_to_saturday():
     week_start, week_end = war.previous_complete_business_week(datetime(2026, 6, 7, 12, 0, 0))
 
@@ -315,6 +351,55 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert package["product_supplement_recommendations"]["country_expansion"][0]["product_code"] == "P101"
     assert package["product_supplement_recommendations"]["material_fill"][0]["material_key"] == "mk-1"
     assert not any(row.get("matched_product_code") == "P202" for row in package["rule_findings"]["ads_pause"])
+
+
+def test_build_weekly_data_package_fallback_classifies_orders_when_stability_cache_empty(monkeypatch):
+    monkeypatch.setattr(war, "get_realtime_roas_overview", _fake_order_fallback_overview)
+    monkeypatch.setattr(war, "generate_product_profit_list", lambda **kwargs: {"summary": {}, "rows": []})
+    monkeypatch.setattr(
+        war,
+        "load_product_stability_summary",
+        lambda limit=50: {
+            "counts": {"total": 0},
+            "buckets": {
+                "stable": [],
+                "secondary_stable": [],
+                "potential": [],
+                "test": [],
+                "stopped": [],
+                "never": [],
+                "insufficient_history": [],
+            },
+            "warnings": [],
+            "computed_at": None,
+        },
+    )
+    monkeypatch.setattr(war, "load_product_lang_ad_summary_cache", lambda pids: {})
+
+    package = war.build_weekly_data_package(
+        date(2026, 5, 31),
+        date(2026, 6, 6),
+        now=datetime(2026, 6, 7, 12, 0, 0),
+    )
+
+    stability = package["product_stability"]
+    assert stability["source"] == "product_sales_stats_order_fallback"
+    assert stability["counts"]["stable_total"] == 1
+    assert stability["counts"]["secondary_stable"] == 1
+    assert stability["counts"]["test"] == 1
+    assert stability["buckets"]["stable"][0]["product_code"] == "P101"
+    assert stability["buckets"]["secondary_stable"][0]["product_code"] == "P505"
+    assert stability["warnings"][0]["code"] == "product_stability_order_fallback"
+    assert package["product_scope"]["fallback_applied"] is True
+
+    share = package["product_tier_order_share"]["weekly"]
+    assert share["total_orders"] == 290
+    assert share["stable"]["order_count"] == 210
+    assert share["stable"]["order_share_pct"] == 72.4138
+    assert share["potential"]["order_count"] == 77
+    assert share["potential"]["order_share_pct"] == 26.5517
+    assert share["other"]["order_count"] == 3
+    assert share["other"]["order_share_pct"] == 1.0345
 
 
 def test_existing_report_backfills_missing_product_tier_order_share(monkeypatch):
