@@ -295,11 +295,10 @@ def test_medias_product_table_renders_stability_column():
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     template = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
-    assert "<th>稳定分级</th>" in script
-    assert "function renderProductStabilityBadge(p)" in script
-    assert "stability.status !== 'stable'" in script
-    assert "renderProductStabilityBadge(p)" in script
-    assert ".oc-stability-pill" in template
+    assert "<th>稳定分级</th>" not in script
+    assert "oc-stability-badge" in script
+    assert "secondary-stable" in script
+    assert ".oc-stability-badge" in template
     assert "稳定品" in script
 
 

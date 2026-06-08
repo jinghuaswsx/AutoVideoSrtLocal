@@ -246,6 +246,22 @@ def classify_product(
     else:
         status = STATUS_TEST
 
+    # 动态判定并升级潜力品 (potential)
+    potential = False
+    if has_ad_data and is_active and status not in {STATUS_STABLE, STATUS_SECONDARY_STABLE}:
+        roas_val = ad_summary.get("overall_roas")
+        if not eligible_for_weekly_analysis:
+            # 1. 潜力新品（未满7天）：单量 >= 5 或者 ROAS >= 1.2（有单）
+            if last_7d_orders >= 5 or (roas_val is not None and _safe_float(roas_val) >= 1.2 and last_7d_orders >= 1):
+                potential = True
+        else:
+            # 2. 潜力旧品（已满7天）：单量 >= 35 或者 ROAS >= 1.2 且单量 >= 3
+            if last_7d_orders >= 35 or (roas_val is not None and _safe_float(roas_val) >= 1.2 and last_7d_orders >= 3):
+                potential = True
+
+    if potential:
+        status = STATUS_POTENTIAL
+
     stable_marks: list[str] = []
     if stable_7d:
         stable_marks.append("7天稳定")
@@ -253,6 +269,8 @@ def classify_product(
         stable_marks.append("30天稳定")
     if status == STATUS_SECONDARY_STABLE:
         stable_marks.append("二级稳定")
+    if status == STATUS_POTENTIAL:
+        stable_marks.append("潜力品")
 
     reasons: list[str] = []
     if stable_7d:
@@ -261,6 +279,8 @@ def classify_product(
         reasons.append("最近 30 天达到稳定品阈值")
     if status == STATUS_SECONDARY_STABLE:
         reasons.append("最近 7 天每日不少于 5 单且日均超过 10 单，未达稳定品阈值")
+    elif status == STATUS_POTENTIAL:
+        reasons.append("达到潜力品判定标准")
     elif status == STATUS_TEST:
         reasons.append("已满 7 天但未达到稳定品或二级稳定品阈值")
     elif status == STATUS_STOPPED:

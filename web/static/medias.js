@@ -658,12 +658,12 @@
     const meta = DELIVERY_STATUS_META[raw] || DELIVERY_STATUS_META.never;
     
     let detailsHtml = '';
+    const parts = [];
     if (raw !== 'never') {
       const startTime = summary.delivery_start_time || '';
       const endTime = summary.delivery_end_time || '';
       const activeDays = Number(summary.active_days || 0) || 0;
       
-      const parts = [];
       if (startTime) {
         parts.push(`<div title="开始投放时间" style="white-space: nowrap;"><span style="color: var(--oc-fg-subtle, #64748b); font-size: 11px;">开投：</span><span style="font-family: monospace; font-size: 11px; font-weight: 500;">${escapeHtml(fmtDeliveryTime(startTime))}</span></div>`);
       }
@@ -673,9 +673,37 @@
       if (activeDays > 0) {
         parts.push(`<div title="投放活跃天数" style="margin-top: 4px; display: inline-block; background: var(--oc-bg-subtle, #f1f5f9); border: 1px solid var(--oc-border, #e2e8f0); color: var(--oc-fg, #1e293b); padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; line-height: 1.2;">活跃: ${activeDays}天</div>`);
       }
-      if (parts.length > 0) {
-        detailsHtml = `<div class="oc-delivery-details" style="font-size: 11px; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; align-items: center;">${parts.join('')}</div>`;
+    }
+
+    const stability = (p || {}).stability || {};
+    const stabStatus = String(stability.status || '').toLowerCase();
+    if (stabStatus === 'stable' || stabStatus === 'secondary_stable' || stabStatus === 'potential') {
+      let cls = '';
+      let label = '';
+      if (stabStatus === 'stable') {
+        cls = 'stable';
+        label = '稳定品';
+      } else if (stabStatus === 'secondary_stable') {
+        cls = 'secondary-stable';
+        label = '二级稳定';
+      } else if (stabStatus === 'potential') {
+        cls = 'potential';
+        label = '潜力品';
       }
+      const titleParts = [
+        `7天单量 ${Number(stability.last_7d_orders || 0)}`,
+        `30天单量 ${Number(stability.last_30d_orders || 0)}`,
+        `7天日均 ${Number(stability.avg_7d_orders || 0).toFixed(2)}`,
+        `30天日均 ${Number(stability.avg_30d_orders || 0).toFixed(2)}`,
+        `7天最低日单 ${Number(stability.min_daily_orders_7d || 0)}`,
+        `ROAS ${stability.overall_roas === null || stability.overall_roas === undefined ? '—' : Number(stability.overall_roas).toFixed(2)}`
+      ];
+      const tooltip = titleParts.join(' / ');
+      parts.push(`<div style="margin-top: 4px;" title="${escapeHtml(tooltip)}"><span class="oc-stability-badge ${cls}">${label}</span></div>`);
+    }
+    
+    if (parts.length > 0) {
+      detailsHtml = `<div class="oc-delivery-details" style="font-size: 11px; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; align-items: center;">${parts.join('')}</div>`;
     }
     
     return `<div style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%;">`
@@ -3212,7 +3240,6 @@
         <col style="width:70px">
         <col style="width:290px">
         <col style="width:320px">
-        <col style="width:112px">
         <col style="width:92px">
         <col style="width:112px">
         <col style="width:104px">
@@ -3231,7 +3258,6 @@
           <th>素材数</th>
           <th>语种和投放情况</th>
           <th>单量情况</th>
-          <th>稳定分级</th>
           <th>投放情况</th>
           <th>创建时间</th>
           <th>投放推送</th>
@@ -3923,7 +3949,6 @@
         </td>
         <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary, p.id)}</td>
         <td>${renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)}</td>
-        <td class="product-stability-cell">${renderProductStabilityBadge(p)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
         <td class="muted mono product-time-cell">${timeCell}</td>
         <td class="product-push-cell">
