@@ -946,6 +946,24 @@ def _detail_url_filename(url: str) -> str:
     return Path(urlparse(str(url or "")).path).name
 
 
+def _detail_url_token(url: str) -> str:
+    return ez_cdp.md5_token(str(url or "")) or ""
+
+
+def _is_shopify_cdn_detail_src(src: str) -> bool:
+    return "cdn.shopify.com/s/files/" in str(src or "").lower()
+
+
+def _has_shopify_cdn_token(srcs: list[str], token: str) -> bool:
+    normalized_token = str(token or "").strip().lower()
+    if not normalized_token:
+        return False
+    return any(
+        _is_shopify_cdn_detail_src(src) and normalized_token in str(src or "").lower()
+        for src in srcs
+    )
+
+
 def _material_link_urls_for_verification(
     bootstrap: dict[str, Any],
     *,
@@ -1027,11 +1045,23 @@ def verify_product_link_detail_images(
 ) -> dict[str, Any]:
     html, final_url = _fetch_product_link_html(link_url)
     expected_files = [_detail_url_filename(url) for url in expected_urls if _detail_url_filename(url)]
+    expected_tokens = []
+    for url in expected_urls:
+        token = _detail_url_token(url)
+        if token and token not in expected_tokens:
+            expected_tokens.append(token)
     srcs = taa_cdp.extract_image_srcs(html)
     expected_present = sum(
         1
         for url, filename in zip(expected_urls, expected_files)
         if (url and url in html) or (filename and filename in html)
+    )
+    localized_token_present = sum(1 for token in expected_tokens if _has_shopify_cdn_token(srcs, token))
+    old_exact_count = sum(1 for old in old_urls if old and old in html)
+    old_non_shopify_exact_count = sum(
+        1
+        for old in old_urls
+        if old and old in html and not _is_shopify_cdn_detail_src(old)
     )
     return {
         "url": link_url,
@@ -1039,18 +1069,30 @@ def verify_product_link_detail_images(
         "image_count": len(srcs),
         "expected_total": len(expected_files),
         "expected_present": expected_present,
-        "old_exact_count": sum(1 for old in old_urls if old and old in html),
+        "localized_token_total": len(expected_tokens),
+        "localized_token_present": localized_token_present,
+        "old_exact_count": old_exact_count,
+        "old_non_shopify_exact_count": old_non_shopify_exact_count,
         "old_wxalbum_count": sum(1 for src in srcs if "wxalbum" in src),
         "expected_files": expected_files,
+        "expected_tokens": expected_tokens,
     }
 
 
 def _product_link_verification_passed(result: dict[str, Any]) -> bool:
     expected_total = int(result.get("expected_total") or 0)
     expected_present = int(result.get("expected_present") or 0)
-    old_exact_count = int(result.get("old_exact_count") or 0)
+    localized_token_total = int(result.get("localized_token_total") or 0)
+    localized_token_present = int(result.get("localized_token_present") or 0)
+    old_non_shopify_exact_count = int(result.get("old_non_shopify_exact_count") or 0)
     old_wxalbum_count = int(result.get("old_wxalbum_count") or 0)
-    return bool(expected_total and expected_present >= expected_total and old_exact_count == 0 and old_wxalbum_count == 0)
+    exact_urls_pass = bool(expected_total and expected_present >= expected_total)
+    localized_tokens_pass = bool(localized_token_total and localized_token_present >= localized_token_total)
+    return bool(
+        (exact_urls_pass or localized_tokens_pass)
+        and old_non_shopify_exact_count == 0
+        and old_wxalbum_count == 0
+    )
 
 
 def verify_product_link_detail_images_with_retry(
@@ -1081,6 +1123,7 @@ def verify_product_link_detail_images_with_retry(
                 "详情图：产品链接校验暂未同步，"
                 f"link={link_url} attempt={attempt}/{PRODUCT_LINK_VERIFY_ATTEMPTS} "
                 f"expected={last_result.get('expected_present')}/{last_result.get('expected_total')} "
+                f"tokens={last_result.get('localized_token_present')}/{last_result.get('localized_token_total')} "
                 f"old={last_result.get('old_exact_count')} wxalbum={last_result.get('old_wxalbum_count')}"
             )
             cancellation.cancellable_sleep(cancel_token, PRODUCT_LINK_VERIFY_DELAY_S)
@@ -1125,7 +1168,9 @@ def assert_product_link_detail_contract(result: dict[str, Any]) -> None:
         "product link detail verification failed: "
         f"url={result.get('url')} "
         f"expected={result.get('expected_present')}/{result.get('expected_total')} "
+        f"tokens={result.get('localized_token_present')}/{result.get('localized_token_total')} "
         f"old={result.get('old_exact_count')} "
+        f"old_non_shopify={result.get('old_non_shopify_exact_count')} "
         f"wxalbum={result.get('old_wxalbum_count')}"
     )
 

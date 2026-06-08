@@ -1121,6 +1121,63 @@ def test_run_fails_when_material_product_link_keeps_old_detail_images(monkeypatc
         run_product_cdp.run(args, visual_pair_confirm_cb=lambda _pairs: True)
 
 
+def test_product_link_verification_accepts_cached_shopify_cdn_token(monkeypatch):
+    token = "cc30c4d60392850c58dbbfc183785185"
+    latest_url = (
+        "https://cdn.shopify.com/s/files/1/0727/files/"
+        f"20260608_it_from_url_en_08_{token}_latest.png?v=2"
+    )
+    cached_url = (
+        "https://cdn.shopify.com/s/files/1/0727/files/"
+        f"20260608_it_from_url_en_08_{token}.png?v=1"
+    )
+    html = f'<section class="product-detail-container"><img src="{cached_url}"></section>'
+
+    monkeypatch.setattr(
+        run_product_cdp,
+        "_fetch_product_link_html",
+        lambda url: (html, url),
+    )
+
+    result = run_product_cdp.verify_product_link_detail_images(
+        "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc?variant=46081369309357",
+        expected_urls=[latest_url],
+        old_urls=[cached_url],
+    )
+
+    assert result["expected_present"] == 0
+    assert result["localized_token_present"] == 1
+    assert result["old_exact_count"] == 1
+    assert result["old_non_shopify_exact_count"] == 0
+    assert run_product_cdp._product_link_verification_passed(result)
+
+
+def test_product_link_verification_rejects_cached_wxalbum_token(monkeypatch):
+    token = "cc30c4d60392850c58dbbfc183785185"
+    latest_url = (
+        "https://cdn.shopify.com/s/files/1/0727/files/"
+        f"20260608_it_from_url_en_08_{token}_latest.png?v=2"
+    )
+    old_url = f"https://wxalbum.example.com/{token}.jpg"
+    html = f'<section class="product-detail-container"><img src="{old_url}"></section>'
+
+    monkeypatch.setattr(
+        run_product_cdp,
+        "_fetch_product_link_html",
+        lambda url: (html, url),
+    )
+
+    result = run_product_cdp.verify_product_link_detail_images(
+        "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc",
+        expected_urls=[latest_url],
+        old_urls=[old_url],
+    )
+
+    assert result["localized_token_present"] == 0
+    assert result["old_wxalbum_count"] == 1
+    assert not run_product_cdp._product_link_verification_passed(result)
+
+
 def test_run_repairs_material_product_link_to_default_variant_when_variant_passes(monkeypatch, tmp_path):
     workspace = run_product_cdp.storage.Workspace(
         root=tmp_path,
@@ -1176,8 +1233,26 @@ def test_run_repairs_material_product_link_to_default_variant_when_variant_passe
 
     def fake_verify_link(url, **_kwargs):
         if "variant=46081369309357" in url:
-            return {"url": url, "expected_total": 1, "expected_present": 1, "old_exact_count": 0, "old_wxalbum_count": 0}
-        return {"url": url, "expected_total": 1, "expected_present": 0, "old_exact_count": 1, "old_wxalbum_count": 1}
+            return {
+                "url": url,
+                "expected_total": 1,
+                "expected_present": 0,
+                "localized_token_total": 1,
+                "localized_token_present": 1,
+                "old_exact_count": 1,
+                "old_non_shopify_exact_count": 0,
+                "old_wxalbum_count": 0,
+            }
+        return {
+            "url": url,
+            "expected_total": 1,
+            "expected_present": 0,
+            "localized_token_total": 1,
+            "localized_token_present": 0,
+            "old_exact_count": 1,
+            "old_non_shopify_exact_count": 1,
+            "old_wxalbum_count": 1,
+        }
 
     monkeypatch.setattr(run_product_cdp, "verify_product_link_detail_images", fake_verify_link)
     monkeypatch.setattr(
@@ -1232,7 +1307,7 @@ def test_run_repairs_material_product_link_to_default_variant_when_variant_passe
         "link_url": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc?variant=46081369309357",
     }]
     assert result["product_links"][0]["repaired_from"] == link_url
-    assert result["product_links"][0]["expected_present"] == 1
+    assert result["product_links"][0]["localized_token_present"] == 1
 
 
 def test_build_detail_source_index_map_prefers_detail_side_indices():
