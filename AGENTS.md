@@ -20,11 +20,11 @@
 - Web dev: `python -m web.app`（默认 5000，本地起空闲端口避免撞生产）
 - Link Check Desktop dev: `python -m link_check_desktop.main`
 - Shopify Image Localizer dev: `python -m tools.shopify_image_localizer.main`
-- Test: `pytest -q`
+- Test: 默认 `python3 scripts/pytest_related.py --base origin/master --run`；全量门禁见 targeted pytest spec
 - 测试账号: `admin / 709709@`（[testuser.md](testuser.md)）
 
 ## Verification（每次改动后顺序执行）
-1. 跑相关 `pytest <files> -q` 通过
+1. 跑相关 pytest，通过 `docs/superpowers/specs/2026-06-08-targeted-pytest-verification.md` 选择必要测试
 2. 起 dev server，未登录路由必须 302（不能 500）
 3. 登录后 200；新路由必须 `@login_required + @admin_required`
 4. POST 前端必带 `X-CSRFToken`（从 `layout.html` meta 读）
