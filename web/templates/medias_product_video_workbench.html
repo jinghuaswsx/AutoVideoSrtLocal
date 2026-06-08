@@ -274,6 +274,32 @@
 .vw-row-active { background-color: #f0fdf4 !important; }
 .vw-row-stopped { background-color: #fef2f2 !important; }
 .vw-row-warn { background-color: #fffbeb !important; }
+.vw-roas-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.vw-roas-label {
+  font-size: 8px !important;
+  color: var(--vw-muted) !important;
+  font-weight: normal !important;
+  text-transform: uppercase;
+  position: relative;
+  top: -0.25em;
+  margin-right: 2px;
+}
+.vw-roas-value {
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  color: var(--vw-blue) !important;
+}
+.vw-order-value {
+  font-size: 19px !important;
+  font-weight: 800 !important;
+  color: var(--vw-green) !important;
+  display: block;
+  margin-bottom: 2px;
+}
 </style>
 {% endblock %}
 
@@ -706,14 +732,14 @@
   function metricSpendRoas(perf, prefix) {
     const spend = Number((perf || {})[`${prefix}_spend_usd`] || 0);
     const r = (perf || {})[`${prefix}_roas`];
-    return `${money(spend, 2)}<div class="vw-sub">ROAS ${roas(r)}</div>`;
+    return `${money(spend, 2)}<div class="vw-sub"><span class="vw-roas-row"><span class="vw-roas-label">ROAS</span><span class="vw-roas-value">${roas(r)}</span></span></div>`;
   }
   function orderMetric(order, prefix) {
     const row = order || {};
     const orders = Number(row[`${prefix}_orders`] || 0);
     const spend = Number(row[`${prefix}_spend`] || 0);
     const r = row[`${prefix}_roas`];
-    return `${orders}<div class="vw-sub">${money(spend, 2)} · ROAS ${roas(r)}</div>`;
+    return `<span class="vw-order-value">${orders}</span><div class="vw-sub">${money(spend, 2)} · <span class="vw-roas-row"><span class="vw-roas-label">ROAS</span><span class="vw-roas-value">${roas(r)}</span></span></div>`;
   }
   function renderTranslationPanel(card) {
     const targets = card.target_country_versions || [];
