@@ -27,14 +27,54 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "/medias/api/product/${productId}/video-workbench" in html
     assert "/medias/api/product/${productId}/video-workbench/ad-detail" in html
     assert "fetchJson('/mk-import/video'" in html
-    assert "fetchJson('/tasks/api/parent'" in html
-    assert 'data-action="supplement-task"' in html
-    assert "补素材任务" in html
-    assert "media_product_id: productId" in html
+    assert "const endpoint = '/tasks/api/parent';" in html
+    assert "fetchJson(endpoint" in html
+    assert "先加入素材库后才能创建小语种任务" in html
+    assert "media_product_id: xiaoContext.productId" in html
+    assert "media_item_id: xiaoContext.itemId" in html
     assert "X-CSRFToken" in html
     assert "vwAdModal" in html
-    assert "vwTaskModal" in html
+    assert "vwImportProgressModal" in html
+    assert "vwXiaoModal" in html
     assert "历史匹配本地素材" in html
+
+
+def test_video_workbench_import_flow_matches_mk_progress_contract():
+    template = (ROOT / "web" / "templates" / "medias_product_video_workbench.html").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/2026-06-08-medias-workbench-mk-card-flow-alignment.md" in template
+    assert "{key: 'productOwner', title: '选择产品负责人'" in template
+    assert "{key: 'domains', title: '选择发布域名'" in template
+    assert "{key: 'next', title: '后续任务入口'" in template
+    assert "product_owner_id" in template
+    assert "data-vw-import-domain-save" in template
+    assert "enabled_domain_ids" in template
+    assert "下一步：创建小语种任务" in template
+    assert "发布域名已确认，可以创建小语种任务" in template
+    assert "发布域名确认后创建小语种任务" in template
+    assert "setImportActionVisible('next', true)" in template
+
+
+def test_video_workbench_small_language_modal_matches_mk_contract():
+    template = (ROOT / "web" / "templates" / "medias_product_video_workbench.html").read_text(encoding="utf-8")
+
+    assert 'id="vwXiaoProductImage"' in template
+    assert 'id="vwXiaoProductLinkStatus"' in template
+    assert 'id="vwXiaoProductCode"' in template
+    assert 'id="vwXiaoSpends"' in template
+    assert "产品负责人用于素材归属" in template
+    assert "小语种翻译负责人用于当前语言任务，可与产品负责人不同" in template
+    assert "data-vw-force-lang" in template
+    assert "强制创建" in template
+    assert "紧急任务" in template
+    assert "language_assignments: languageAssignments(selection)" in template
+    assert "translator_id: selection.translatorId" in template
+    assert "raw_processor_id: selection.rawProcessorId" in template
+    assert "force: !!selection.force" in template
+    assert "is_urgent: !!selection.isUrgent" in template
+    assert "任务已创建，父任务 #" in template
+    assert "请求失败" in template
+    assert "打开任务 #" in template
 
 
 def test_video_workbench_page_requires_login(authed_client_no_db):
