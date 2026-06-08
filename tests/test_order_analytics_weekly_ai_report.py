@@ -863,7 +863,11 @@ def test_generate_ai_report_success_upserts(monkeypatch):
     monkeypatch.setattr(
         war,
         "_generate_product_action_evaluations",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("sync product evaluations should be skipped")),
+        lambda *a, **k: [{
+            "status": "success",
+            "primary_action": "hold",
+            "product_code": "P101",
+        }],
     )
     monkeypatch.setattr(
         war.llm_client,
@@ -889,17 +893,17 @@ def test_generate_ai_report_success_upserts(monkeypatch):
     assert params[0] == date(2026, 5, 31)
     assert params[4] == "success"
     saved_report = json.loads(params[6])
-    assert saved_report["product_action_evaluations"] == []
-    assert saved_report["product_action_evaluation_summary"]["total"] == 0
+    assert saved_report["product_action_evaluations"][0]["product_code"] == "P101"
+    assert saved_report["product_action_evaluation_summary"]["total"] == 1
     assert saved_report["product_action_evaluation_summary"]["candidate_count"] == 1
-    assert saved_report["product_action_evaluation_summary"]["skipped"] == 1
-    assert saved_report["product_action_evaluation_summary"]["mode"] == "skipped_sync"
+    assert saved_report["product_action_evaluation_summary"]["skipped"] == 0
+    assert saved_report["product_action_evaluation_summary"]["mode"] == "generated"
     assert params[9] == 9
     assert report["workflow_debug"]["llm_calls"]["weekly_ai_chat"]["system_prompt"].startswith("你是电商经营数据分析师")
     assert report["workflow_debug"]["llm_calls"]["weekly_ai_chat"]["request_payload"]["response_format"] == {"type": "json_object"}
 
 
-def test_generate_ai_report_defaults_to_skip_product_action_evaluations(monkeypatch):
+def test_generate_ai_report_defaults_to_run_product_action_evaluations(monkeypatch):
     package = {
         "period": {"week_start": date(2026, 5, 31), "week_end": date(2026, 6, 6)},
         "data_quality": {"status": "ok"},
@@ -927,19 +931,47 @@ def test_generate_ai_report_defaults_to_skip_product_action_evaluations(monkeypa
         },
     )
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError("manual sync generation must not call product action evaluations")
+    calls = []
 
-    monkeypatch.setattr(war, "_generate_product_action_evaluations", fail_if_called)
+    def fake_generate_product_actions(*args, **kwargs):
+        calls.append((args, kwargs))
+        return [{"status": "success", "primary_action": "hold", "product_code": "P101"}]
+
+    monkeypatch.setattr(war, "_generate_product_action_evaluations", fake_generate_product_actions)
 
     report = war.generate_ai_report(date(2026, 5, 31), user_id=7, force=True)
 
     summary = report["report"]["product_action_evaluation_summary"]
-    assert summary["mode"] == "skipped_sync"
+    assert calls
+    assert summary["mode"] == "generated"
     assert summary["candidate_count"] == 1
-    assert summary["skipped"] == 1
+    assert summary["skipped"] == 0
     saved_report = json.loads(writes[0][0][1][6])
-    assert saved_report["product_action_evaluation_summary"]["mode"] == "skipped_sync"
+    assert saved_report["product_action_evaluation_summary"]["mode"] == "generated"
+
+
+def test_completion_status_marks_skipped_product_actions_incomplete():
+    payload = {
+        "period": {"week_start": date(2026, 5, 31), "week_end": date(2026, 6, 6)},
+        "status": "success",
+        "data_package": {"product_ai_evaluation_candidates": [_minimal_product_candidate()]},
+        "report": {
+            "business_health": {"status": "ok"},
+            "product_action_evaluations": [],
+            "product_action_evaluation_summary": {
+                "mode": "skipped_sync",
+                "candidate_count": 1,
+                "total": 0,
+                "skipped": 1,
+            },
+        },
+    }
+
+    completion = war._report_completion_status(payload)
+
+    assert completion["complete"] is False
+    assert completion["can_auto_run"] is True
+    assert completion["pending_steps"] == ["product_action_ai"]
 
 
 def _minimal_product_candidate(product_id=101, product_code="P101"):

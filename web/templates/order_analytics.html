@@ -1348,6 +1348,10 @@
   border-top: 1px solid var(--border);
   background: var(--bg-card);
 }
+.oam-modal-actions {
+  display: flex; justify-content: flex-end; gap: var(--space-2);
+  margin-top: var(--space-4);
+}
 .oam-modal-loading, .oam-modal-error {
   text-align: center; padding: var(--space-7) var(--space-4);
   color: var(--fg-muted); font-size: var(--text-sm);
@@ -3823,6 +3827,34 @@
     </div>
     <div class="oam-modal-body" id="orderProfitModalBody">
       <div class="oam-modal-loading">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- 每周 AI 生成弹窗 -->
+<div class="oam-modal-overlay" id="weeklyAiGenerateModal" hidden>
+  <div class="oam-modal-card oam-modal-card--narrow" role="dialog" aria-labelledby="weeklyAiGenerateModalTitle">
+    <div class="oam-modal-header">
+      <div>
+        <div class="oam-modal-title" id="weeklyAiGenerateModalTitle">生成 AI 报告</div>
+        <div class="oam-modal-subtitle" id="weeklyAiGenerateModalSubtitle">选择一个完整业务周，系统将跑完整评估并缓存结果</div>
+      </div>
+      <button type="button" class="oam-modal-close" id="weeklyAiGenerateModalClose" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="oam-modal-body">
+      <div class="oad-toolbar-row">
+        <button type="button" class="oad-btn-secondary" id="weeklyAiGeneratePrev" aria-label="上一周">←</button>
+        <input type="date" id="weeklyAiGenerateWeekStart" aria-label="选择周日日期">
+        <button type="button" class="oad-btn-secondary" id="weeklyAiGenerateNext" aria-label="下一周">→</button>
+      </div>
+      <div class="oar-note" id="weeklyAiGenerateRange">周日 ~ 周六</div>
+      <div class="oar-note" id="weeklyAiGenerateModalStatus">默认选择最近一个完整业务周。</div>
+      <div class="oam-modal-actions">
+        <button type="button" class="oad-btn-secondary" id="weeklyAiGenerateCancel">取消</button>
+        <button type="button" class="oad-btn-primary" id="weeklyAiGenerateConfirm">开始完整评估</button>
+      </div>
     </div>
   </div>
 </div>
@@ -7276,6 +7308,8 @@
 
   var weeklyAiInited = false;
   var weeklyAiWorkflowDebug = null;
+  var weeklyAiAutoRunActive = false;
+  var weeklyAiPollTimer = null;
 
   function startOfSundayWeek(date) {
     var d = new Date(date);
@@ -7303,6 +7337,7 @@
       var generate = document.getElementById('weeklyAiGenerate');
       if (generate) generate.addEventListener('click', generateWeeklyAiReport);
       bindWeeklyAiPromptModal();
+      bindWeeklyAiGenerateModal();
       var panel = document.getElementById('panelWeeklyAiAnalysis');
       if (panel && panel.dataset.weeklyAiCopyBound !== '1') {
         panel.dataset.weeklyAiCopyBound = '1';
@@ -7341,6 +7376,133 @@
     var base = input.value ? new Date(input.value + 'T00:00:00') : previousCompletedSundayWeekStart();
     input.value = formatDateInput(addDays(base, days));
     loadWeeklyAiReport();
+  }
+
+  function weeklyAiNormalizeWeekStart(value) {
+    var fallback = previousCompletedSundayWeekStart();
+    var base = value ? new Date(value + 'T00:00:00') : fallback;
+    if (Number.isNaN(base.getTime())) base = fallback;
+    var normalized = startOfSundayWeek(base);
+    var latest = previousCompletedSundayWeekStart();
+    if (normalized > latest) normalized = latest;
+    return normalized;
+  }
+
+  function weeklyAiSetGenerateRunning(running, text) {
+    var btn = document.getElementById('weeklyAiGenerate');
+    if (btn) {
+      btn.disabled = !!running;
+      btn.textContent = text || (running ? '完整评估中...' : '生成 AI 报告');
+    }
+    var confirm = document.getElementById('weeklyAiGenerateConfirm');
+    if (confirm) {
+      confirm.disabled = !!running;
+      confirm.textContent = running ? '完整评估中...' : '开始完整评估';
+    }
+  }
+
+  function weeklyAiStopPolling() {
+    if (weeklyAiPollTimer) {
+      clearTimeout(weeklyAiPollTimer);
+      weeklyAiPollTimer = null;
+    }
+  }
+
+  function weeklyAiSchedulePoll() {
+    weeklyAiStopPolling();
+    weeklyAiPollTimer = setTimeout(function() {
+      loadWeeklyAiReport({suppressLoading: true, autoEnsure: true});
+    }, 8000);
+  }
+
+  function weeklyAiPostJson(url, payload) {
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfMeta ? csrfMeta.content : ''
+      },
+      body: JSON.stringify(payload || {})
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '请求失败'); });
+      return r.json();
+    });
+  }
+
+  function weeklyAiEnsureComplete(weekStart, force) {
+    weeklyAiAutoRunActive = true;
+    weeklyAiSetGenerateRunning(true);
+    var status = document.getElementById('weeklyAiReportStatus');
+    if (status) status.textContent = '完整评估执行中...';
+    return weeklyAiPostJson('/order-analytics/weekly-ai-analysis/ensure', {
+      week_start: weekStart || '',
+      force: !!force
+    })
+      .then(function(data) {
+        renderWeeklyAiReport(data, {fromEnsure: true});
+        return data;
+      })
+      .catch(function(err) {
+        weeklyAiAutoRunActive = false;
+        weeklyAiSetGenerateRunning(false);
+        weeklyAiRenderError(err.message);
+      });
+  }
+
+  function weeklyAiUpdateGenerateRange() {
+    var input = document.getElementById('weeklyAiGenerateWeekStart');
+    var range = document.getElementById('weeklyAiGenerateRange');
+    if (!input) return;
+    var start = weeklyAiNormalizeWeekStart(input.value);
+    input.value = formatDateInput(start);
+    var end = addDays(start, 6);
+    if (range) range.textContent = formatDateInput(start) + ' ~ ' + formatDateInput(end);
+  }
+
+  function openWeeklyAiGenerateModal() {
+    var modal = document.getElementById('weeklyAiGenerateModal');
+    var input = document.getElementById('weeklyAiGenerateWeekStart');
+    var status = document.getElementById('weeklyAiGenerateModalStatus');
+    if (input) input.value = formatDateInput(previousCompletedSundayWeekStart());
+    weeklyAiUpdateGenerateRange();
+    if (status) status.textContent = '默认选择最近一个完整业务周。';
+    if (modal) modal.hidden = false;
+  }
+
+  function closeWeeklyAiGenerateModal() {
+    var modal = document.getElementById('weeklyAiGenerateModal');
+    if (modal) modal.hidden = true;
+  }
+
+  function bindWeeklyAiGenerateModal() {
+    var closeBtn = document.getElementById('weeklyAiGenerateModalClose');
+    var cancelBtn = document.getElementById('weeklyAiGenerateCancel');
+    var input = document.getElementById('weeklyAiGenerateWeekStart');
+    var prev = document.getElementById('weeklyAiGeneratePrev');
+    var next = document.getElementById('weeklyAiGenerateNext');
+    var confirm = document.getElementById('weeklyAiGenerateConfirm');
+    if (closeBtn) closeBtn.addEventListener('click', closeWeeklyAiGenerateModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeWeeklyAiGenerateModal);
+    if (input) input.addEventListener('change', weeklyAiUpdateGenerateRange);
+    if (prev) prev.addEventListener('click', function() {
+      var base = input && input.value ? new Date(input.value + 'T00:00:00') : previousCompletedSundayWeekStart();
+      if (input) input.value = formatDateInput(addDays(base, -7));
+      weeklyAiUpdateGenerateRange();
+    });
+    if (next) next.addEventListener('click', function() {
+      var base = input && input.value ? new Date(input.value + 'T00:00:00') : previousCompletedSundayWeekStart();
+      if (input) input.value = formatDateInput(addDays(base, 7));
+      weeklyAiUpdateGenerateRange();
+    });
+    if (confirm) confirm.addEventListener('click', function() {
+      var start = weeklyAiNormalizeWeekStart(input ? input.value : '');
+      var mainInput = document.getElementById('weeklyAiWeekStart');
+      if (mainInput) mainInput.value = formatDateInput(start);
+      closeWeeklyAiGenerateModal();
+      weeklyAiSetLoading('完整评估启动中...');
+      weeklyAiEnsureComplete(formatDateInput(start), true);
+    });
   }
 
   function weeklyAiSetLoading(message) {
@@ -7384,52 +7546,26 @@
     });
   }
 
-  function loadWeeklyAiReport() {
+  function loadWeeklyAiReport(options) {
+    options = options || {};
     var weekStart = (document.getElementById('weeklyAiWeekStart') || {}).value || '';
-    weeklyAiSetLoading('加载中...');
+    if (!options.suppressLoading) weeklyAiSetLoading('加载中...');
     var url = '/order-analytics/weekly-ai-analysis/report' + (weekStart ? '?week_start=' + encodeURIComponent(weekStart) : '');
     fetch(url)
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
         return r.json();
       })
-      .then(renderWeeklyAiReport)
+      .then(function(data) {
+        renderWeeklyAiReport(data, {autoEnsure: options.autoEnsure !== false});
+      })
       .catch(function(err) {
         weeklyAiRenderError(err.message);
       });
   }
 
   function generateWeeklyAiReport() {
-    var input = document.getElementById('weeklyAiWeekStart');
-    var btn = document.getElementById('weeklyAiGenerate');
-    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = '生成中...';
-    }
-    weeklyAiSetLoading('AI 生成中...');
-    fetch('/order-analytics/weekly-ai-analysis/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': csrfMeta ? csrfMeta.content : ''
-      },
-      body: JSON.stringify({week_start: input ? input.value : '', force: true})
-    })
-      .then(function(r) {
-        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '生成失败'); });
-        return r.json();
-      })
-      .then(renderWeeklyAiReport)
-      .catch(function(err) {
-        weeklyAiRenderError(err.message);
-      })
-      .finally(function() {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = '生成 AI 报告';
-        }
-      });
+    openWeeklyAiGenerateModal();
   }
 
   function weeklyAiRenderError(message) {
@@ -7463,7 +7599,8 @@
     });
   }
 
-  function renderWeeklyAiReport(data) {
+  function renderWeeklyAiReport(data, options) {
+    options = options || {};
     var pkg = data.data_package || {};
     var period = data.period || pkg.period || {};
     var ws = period.week_start ? String(period.week_start).slice(0, 10) : '';
@@ -7478,10 +7615,17 @@
         ? '报告 · ' + formatShortDateTime(data.snapshot.generated_at) + ' (' + (data.snapshot.generated_by || '') + ')'
         : '数据预览';
     }
+    var completion = data.completion_status || {};
     var status = document.getElementById('weeklyAiReportStatus');
     if (status) {
       if (data.status === 'failed') {
         status.textContent = '生成失败：' + (data.error_message || 'AI 返回异常');
+      } else if (completion.running) {
+        status.textContent = '完整评估执行中...';
+      } else if (completion.complete) {
+        status.textContent = 'AI 报告已完整生成';
+      } else if (completion.reason) {
+        status.textContent = '评估数据不完整：' + completion.reason;
       } else if (data.report) {
         status.textContent = 'AI 报告已生成';
       } else {
@@ -7489,7 +7633,7 @@
       }
     }
     weeklyAiWorkflowDebug = data.workflow_debug || null;
-    renderWeeklyAiWorkflow(weeklyAiWorkflowDebug);
+    renderWeeklyAiWorkflow(weeklyAiWorkflowDebug, completion);
     renderWeeklyAiDataQuality(data.data_quality || pkg.data_quality || {});
     renderWeeklyAiSummary(pkg.summary || {});
     renderWeeklyAiInsights(data.report || null, pkg);
@@ -7504,6 +7648,17 @@
     renderWeeklyAiProductActions(data.report || null, pkg.rule_findings || {});
     renderWeeklyAiAdActions(data.report || null, pkg.rule_findings || {});
     renderWeeklyAiLowOrders(pkg.low_order_products || {});
+    if (completion.complete) {
+      weeklyAiAutoRunActive = false;
+      weeklyAiSetGenerateRunning(false);
+      weeklyAiStopPolling();
+    } else if (completion.running) {
+      weeklyAiAutoRunActive = true;
+      weeklyAiSetGenerateRunning(true);
+      weeklyAiSchedulePoll();
+    } else if (options.autoEnsure !== false && completion.can_auto_run && !weeklyAiAutoRunActive) {
+      weeklyAiEnsureComplete(ws, false);
+    }
   }
 
   function renderWeeklyAiDataQuality(dq) {
@@ -7555,7 +7710,7 @@
   }
 
   function weeklyAiStatusLabel(status) {
-    var map = {success: '完成', ready: '待执行', failed: '失败', skipped: '跳过', preview: '预览'};
+    var map = {success: '完成', ready: '待执行', running: '执行中', failed: '失败', skipped: '跳过', preview: '预览'};
     return map[status] || status || '待执行';
   }
 
@@ -7563,6 +7718,7 @@
     if (status === 'success') return 'is-success';
     if (status === 'failed') return 'is-failed';
     if (status === 'skipped') return 'is-skipped';
+    if (status === 'running') return 'is-ready';
     return 'is-ready';
   }
 
@@ -7572,7 +7728,7 @@
       (keys.length > 6 ? ' / ...' : '');
   }
 
-  function renderWeeklyAiWorkflow(debug) {
+  function renderWeeklyAiWorkflow(debug, completion) {
     var body = document.getElementById('weeklyAiWorkflowBody');
     var summary = document.getElementById('weeklyAiWorkflowSummary');
     if (!body) return;
@@ -7590,8 +7746,13 @@
       body.innerHTML = '<div class="oam-modal-loading">暂无流程数据</div>';
       return;
     }
+    var runningSteps = {};
+    if (completion && completion.running && Array.isArray(completion.pending_steps)) {
+      completion.pending_steps.forEach(function(step) { runningSteps[String(step || '')] = true; });
+    }
     body.innerHTML = nodes.map(function(node, index) {
       var status = String(node.status || 'ready');
+      if (runningSteps[node.id] && status !== 'success' && status !== 'failed') status = 'running';
       var classes = ['weekly-ai-flow-node', 'is-' + escapeHtml(String(node.kind || 'step')), weeklyAiStatusClass(status)];
       if (node.kind === 'llm') classes.push('is-llm');
       if (status === 'failed') classes.push('is-failed');
@@ -8116,11 +8277,11 @@
     if (!rows.length) {
       var candidateCount = ((pkg || {}).product_ai_evaluation_candidates || []).length;
       var summary = ((report || {}).product_action_evaluation_summary || {});
-      var skippedSync = summary.mode === 'skipped_sync' && candidateCount;
+      var generatedEmpty = summary.mode === 'generated' && !candidateCount;
       body.innerHTML = '<tr><td colspan="8">' +
-        (skippedSync
-          ? ('本次同步生成已跳过逐产品 AI，候选 ' + candidateCount + ' 个，避免请求超时；整体周报已生成')
-          : (candidateCount ? '生成 AI 报告后展示稳定品 / 潜力品逐产品推进建议' : '暂无稳定品 / 潜力品逐产品评估候选')) +
+        (candidateCount
+          ? '完整评估完成后展示稳定品 / 潜力品逐产品推进建议'
+          : (generatedEmpty ? '暂无稳定品 / 潜力品逐产品评估候选' : '完整评估完成后展示逐产品推进建议')) +
         '</td></tr>';
       return;
     }

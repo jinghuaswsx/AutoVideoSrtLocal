@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import sys
+import threading
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -35,7 +36,10 @@ PRODUCT_EVALUATION_PROVIDER = "openrouter"
 PRODUCT_EVALUATION_MODEL = "google/gemini-3.5-flash"
 MAX_PRODUCT_ACTION_EVALUATIONS = 80
 MAX_PRODUCT_ACTION_DEBUG_SAMPLES = 5
-RUN_PRODUCT_ACTION_EVALUATIONS_SYNC = False
+RUN_PRODUCT_ACTION_EVALUATIONS_SYNC = True
+_COMPLETE_REPORT_STATUS_VERSION = "2026-06-08-full-week-product-actions"
+_GENERATION_RUN_LOCK = threading.Lock()
+_GENERATION_RUNS: dict[str, dict[str, Any]] = {}
 _PRODUCT_EVALUATION_STATUSES = ("stable", "secondary_stable", "potential")
 _PRODUCT_EVALUATION_STATUS_LABELS = {
     "stable": "稳定品",
@@ -3846,14 +3850,77 @@ def list_recent_reports(limit: int = 12) -> list[dict[str, Any]]:
     ]
 
 
+def _generation_key(week_start: date) -> str:
+    return normalize_week_start(week_start).isoformat()
+
+
+def _running_generation_state(week_start: date) -> dict[str, Any] | None:
+    key = _generation_key(week_start)
+    with _GENERATION_RUN_LOCK:
+        state = _GENERATION_RUNS.get(key)
+        return dict(state) if state else None
+
+
+def _expected_product_action_evaluation_count(candidate_count: int) -> int:
+    return min(max(_safe_int(candidate_count), 0), MAX_PRODUCT_ACTION_EVALUATIONS)
+
+
+def _report_completion_status(payload: dict[str, Any]) -> dict[str, Any]:
+    period = payload.get("period") or (payload.get("data_package") or {}).get("period") or {}
+    week_start = _date_value(period.get("week_start"))
+    running = _running_generation_state(week_start) if week_start else None
+    report = payload.get("report") if isinstance(payload.get("report"), dict) else None
+    package = payload.get("data_package") if isinstance(payload.get("data_package"), dict) else {}
+    candidates = package.get("product_ai_evaluation_candidates") if isinstance(package, dict) else []
+    package_candidate_count = len(candidates) if isinstance(candidates, list) else 0
+    summary = (report or {}).get("product_action_evaluation_summary") if report else None
+    summary = summary if isinstance(summary, dict) else {}
+    candidate_count = _safe_int(summary.get("candidate_count")) if summary else package_candidate_count
+    if candidate_count <= 0:
+        candidate_count = package_candidate_count
+    expected_product_count = _expected_product_action_evaluation_count(candidate_count)
+    evaluated_count = _safe_int(summary.get("total")) if summary else 0
+    mode = str(summary.get("mode") or "").strip()
+    pending_steps: list[str] = []
+    reason = ""
+    status = str(payload.get("status") or "").strip()
+    if status != "success" or not report:
+        pending_steps.extend(["weekly_ai_chat", "parse_store"])
+        reason = "尚未生成并保存整体周报 AI。"
+    if expected_product_count > 0:
+        if not summary or mode != "generated" or evaluated_count < expected_product_count:
+            pending_steps.append("product_action_ai")
+            reason = reason or "逐产品推进 AI 尚未完整执行。"
+    complete = bool(status == "success" and report and not pending_steps)
+    return {
+        "version": _COMPLETE_REPORT_STATUS_VERSION,
+        "complete": complete,
+        "running": bool(running),
+        "can_auto_run": bool(not complete and not running and status != "failed"),
+        "reason": "" if complete else (reason or "周报评估数据不完整。"),
+        "pending_steps": pending_steps,
+        "candidate_count": candidate_count,
+        "expected_product_action_evaluations": expected_product_count,
+        "completed_product_action_evaluations": evaluated_count,
+        "product_action_mode": mode or None,
+        "running_generation": running,
+    }
+
+
+def _attach_completion_status(payload: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(payload)
+    enriched["completion_status"] = _report_completion_status(enriched)
+    return enriched
+
+
 def get_or_build_report_payload(week_start: date, week_end: date | None = None) -> dict[str, Any]:
     normalized = normalize_week_start(week_start)
     existing = get_report(normalized)
     if existing:
         existing["recent_weeks"] = list_recent_reports(limit=12)
-        return existing
+        return _attach_completion_status(existing)
     package = build_weekly_data_package(normalized, week_end or normalized + timedelta(days=6))
-    return {
+    return _attach_completion_status({
         "period": package["period"],
         "status": "preview",
         "snapshot": None,
@@ -3864,7 +3931,63 @@ def get_or_build_report_payload(week_start: date, week_end: date | None = None) 
         "error_message": None,
         "workflow_debug": build_workflow_debug(package, status="preview"),
         "recent_weeks": list_recent_reports(limit=12),
-    }
+    })
+
+
+def ensure_complete_report_async(
+    week_start: date,
+    week_end: date | None = None,
+    *,
+    user_id: int | None = None,
+    generated_by: str = "manual_auto",
+    force: bool = False,
+) -> dict[str, Any]:
+    normalized = normalize_week_start(week_start)
+    resolved_week_end = week_end or normalized + timedelta(days=6)
+    if not force:
+        existing = get_or_build_report_payload(normalized, resolved_week_end)
+        completion = existing.get("completion_status") or {}
+        if completion.get("complete") or completion.get("running"):
+            return existing
+
+    key = _generation_key(normalized)
+    with _GENERATION_RUN_LOCK:
+        if key not in _GENERATION_RUNS:
+            _GENERATION_RUNS[key] = {
+                "week_start": normalized.isoformat(),
+                "week_end": resolved_week_end.isoformat(),
+                "started_at": datetime.now(_CST).replace(microsecond=0).isoformat(sep=" "),
+                "generated_by": generated_by,
+                "status": "running",
+            }
+            should_start = True
+        else:
+            should_start = False
+
+    def _worker() -> None:
+        try:
+            generate_ai_report(
+                normalized,
+                resolved_week_end,
+                user_id=user_id,
+                force=True,
+                generated_by=generated_by,
+                run_product_action_evaluations=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("weekly ai async complete generation failed week_start=%s: %s", normalized, exc, exc_info=True)
+        finally:
+            with _GENERATION_RUN_LOCK:
+                _GENERATION_RUNS.pop(key, None)
+
+    if should_start:
+        thread = threading.Thread(
+            target=_worker,
+            name=f"weekly-ai-complete-{key}",
+            daemon=True,
+        )
+        thread.start()
+    return get_or_build_report_payload(normalized, resolved_week_end)
 
 
 def generate_ai_report(
@@ -3883,7 +4006,9 @@ def generate_ai_report(
         existing = get_report(normalized)
         if existing and existing.get("status") == "success":
             existing["recent_weeks"] = list_recent_reports(limit=12)
-            return existing
+            existing = _attach_completion_status(existing)
+            if (existing.get("completion_status") or {}).get("complete"):
+                return existing
     package: dict[str, Any] | None = None
     raw_text: str | None = None
     try:
@@ -3942,8 +4067,8 @@ def generate_ai_report(
         report = get_report(normalized)
         if report:
             report["recent_weeks"] = list_recent_reports(limit=12)
-            return report
-        return {
+            return _attach_completion_status(report)
+        return _attach_completion_status({
             "period": package["period"],
             "status": "success",
             "snapshot": None,
@@ -3954,7 +4079,7 @@ def generate_ai_report(
             "error_message": None,
             "workflow_debug": build_workflow_debug(package, ai_report=ai_report, status="success"),
             "recent_weeks": list_recent_reports(limit=12),
-        }
+        })
     except Exception as exc:  # noqa: BLE001
         log.warning("weekly_ai_report generation failed: %s", exc, exc_info=True)
         if package is None:
@@ -3993,8 +4118,8 @@ def generate_ai_report(
         report = get_report(normalized)
         if report:
             report["recent_weeks"] = list_recent_reports(limit=12)
-            return report
-        return {
+            return _attach_completion_status(report)
+        return _attach_completion_status({
             "period": package["period"],
             "status": "failed",
             "snapshot": None,
@@ -4009,7 +4134,7 @@ def generate_ai_report(
                 error_message=str(exc),
             ),
             "recent_weeks": list_recent_reports(limit=12),
-        }
+        })
 
 
 def run_scheduled_report(
@@ -4028,7 +4153,7 @@ def run_scheduled_report(
             force=True,
             generated_by="scheduler",
             raise_on_error=True,
-            run_product_action_evaluations=False,
+            run_product_action_evaluations=True,
         )
     except Exception as exc:
         scheduled_tasks.finish_run(run_id, status="failed", error_message=str(exc))

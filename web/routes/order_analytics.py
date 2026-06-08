@@ -1111,7 +1111,7 @@ def weekly_ai_analysis_generate():
             user_id=getattr(current_user, "id", None),
             force=bool(payload.get("force")),
             generated_by="manual",
-            run_product_action_evaluations=False,
+            run_product_action_evaluations=True,
         )
         product_eval_summary = ((report.get("report") or {}).get("product_action_evaluation_summary") or {})
         _audit_order_analytics_action(
@@ -1132,6 +1132,42 @@ def weekly_ai_analysis_generate():
         return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
         log.exception("weekly ai analysis generation failed: %s", exc)
+        return _json_response(error="internal_error", detail=str(exc)), 500
+
+
+@bp.route("/order-analytics/weekly-ai-analysis/ensure", methods=["POST"])
+@login_required
+@permission_required("data_analytics")
+def weekly_ai_analysis_ensure():
+    payload = request.get_json(silent=True) or {}
+    try:
+        week_start, week_end = _parse_weekly_ai_week_start(payload.get("week_start"))
+        report = wai.ensure_complete_report_async(
+            week_start,
+            week_end,
+            user_id=getattr(current_user, "id", None),
+            generated_by="manual_auto",
+            force=bool(payload.get("force")),
+        )
+        completion = report.get("completion_status") or {}
+        _audit_order_analytics_action(
+            "order_analytics_weekly_ai_analysis_ensure",
+            target_type="weekly_ai_analysis_report",
+            target_label=f"{week_start.isoformat()}~{week_end.isoformat()}",
+            status="success",
+            detail={
+                "week_start": week_start.isoformat(),
+                "week_end": week_end.isoformat(),
+                "complete": completion.get("complete"),
+                "running": completion.get("running"),
+                "pending_steps": completion.get("pending_steps"),
+            },
+        )
+        return _json_response(_json_safe(report))
+    except ValueError as exc:
+        return _json_response(error="invalid_date", detail=str(exc)), 400
+    except Exception as exc:
+        log.exception("weekly ai analysis ensure failed: %s", exc)
         return _json_response(error="internal_error", detail=str(exc)), 500
 
 

@@ -14,8 +14,11 @@ def test_weekly_ai_data_quality_warnings_are_visible_in_template():
     assert "weeklyAiCandidateQualityNotes" in source
 
 
-def test_weekly_ai_manual_generation_skip_message_is_rendered():
+def test_weekly_ai_complete_generation_modal_and_auto_run_are_rendered():
     source = TEMPLATE.read_text(encoding="utf-8")
 
-    assert "skipped_sync" in source
-    assert "本次同步生成已跳过逐产品 AI" in source
+    assert "weeklyAiGenerateModal" in source
+    assert "weeklyAiEnsureComplete" in source
+    assert "/order-analytics/weekly-ai-analysis/ensure" in source
+    assert "开始完整评估" in source
+    assert "完整评估完成后展示稳定品 / 潜力品逐产品推进建议" in source
