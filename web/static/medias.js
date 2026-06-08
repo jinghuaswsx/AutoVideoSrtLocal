@@ -3240,7 +3240,7 @@
         <col style="width:100px">
         <col style="width:70px">
         <col style="width:80px">
-        <col style="width:70px">
+        <col style="width:96px">
         <col style="width:290px">
         <col style="width:320px">
         <col style="width:92px">
@@ -3258,7 +3258,7 @@
           <th>AI评估</th>
           <th>上架</th>
           <th>负责人</th>
-          <th>素材数</th>
+          <th>素材</th>
           <th>语种和投放情况</th>
           <th>单量情况</th>
           <th>投放情况</th>
@@ -3944,8 +3944,8 @@
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>
         <td class="${ownerCellCls}" data-pid="${p.id}" data-owner-uid="${escapeHtml(ownerUid)}" data-owner-name="${escapeHtml(ownerName)}" title="${escapeHtml(ownerCellTitle)}">${ownerName ? escapeHtml(ownerName) : '<span class="muted">—</span>'}</td>
         <td style="text-align: center; vertical-align: middle;">
-          <span class="oc-pill supplement-count-pill">${count}</span>
-          <div class="supplement-action-stack">
+          <div class="supplement-cell-container">
+            <span class="supplement-count-pill">${count}</span>
             <button type="button" class="supplement-btn" data-supplement="${p.id}" data-product-code="${escapeHtml(productCode)}" data-product-name="${escapeHtml(p.name || '')}" title="补素材">补素材</button>
             <button type="button" class="material-workbench-btn" data-material-workbench="${p.id}" title="素材工作台">素材工作台</button>
           </div>
