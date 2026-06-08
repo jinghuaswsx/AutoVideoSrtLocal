@@ -413,7 +413,17 @@
         <button type="button" class="vw-btn vw-btn-primary" id="vwAdLoadBtn">查询</button>
         <span class="vw-sub" id="vwAdState"></span>
       </div>
-      <div class="vw-kpis" id="vwAdSummary"></div>
+      <div class="vw-kpis-wrapper" style="display: flex; align-items: flex-start; gap: 40px; margin-top: 12px; margin-bottom: 12px;">
+        <div>
+          <div style="font-size: 13px; color: var(--vw-text-muted); margin-bottom: 6px; font-weight: 600;">广告数据 (系统匹配)</div>
+          <div class="vw-kpis" id="vwAdSummary"></div>
+        </div>
+        <div id="vwAdOrderSummaryBox" hidden>
+          <div style="font-size: 13px; color: var(--vw-text-muted); margin-bottom: 6px; font-weight: 600;">订单数据 (所选国家)</div>
+          <div class="vw-kpis" id="vwAdOrderSummary"></div>
+        </div>
+      </div>
+
       <div id="vwAdRows" class="vw-ad-country-cards" style="display: flex; flex-direction: column; gap: 16px; margin-top: 12px;">
         <div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">请选择视频</div>
       </div>
@@ -1573,6 +1583,23 @@
       <div class="vw-kpi"><span>ROAS</span><strong>${roas(s.roas)}</strong></div>
       <div class="vw-kpi"><span>购买数</span><strong>${Number(s.result_count || 0)}</strong></div>
     `;
+
+    const oBox = document.getElementById('vwAdOrderSummaryBox');
+    const oSummary = document.getElementById('vwAdOrderSummary');
+    if (oBox && oSummary) {
+      if (currentAdCountryCode && data.order_summary) {
+        const o = data.order_summary;
+        oSummary.innerHTML = `
+          <div class="vw-kpi"><span>消耗广告费</span><strong>${money(o.spend || 0, 2)}</strong></div>
+          <div class="vw-kpi"><span>订单销售金额</span><strong>${money(o.purchase_value || 0, 2)}</strong></div>
+          <div class="vw-kpi"><span>订单ROAS</span><strong>${roas(o.roas)}</strong></div>
+          <div class="vw-kpi"><span>订单量</span><strong>${Number(o.orders || 0)}</strong></div>
+        `;
+        oBox.hidden = false;
+      } else {
+        oBox.hidden = true;
+      }
+    }
     const countryMap = {
       'DE': '德',
       'FR': '法',

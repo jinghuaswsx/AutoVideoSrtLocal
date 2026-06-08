@@ -1133,13 +1133,34 @@ def build_video_workbench_ad_detail(
     if not product:
         raise LookupError("product_not_found")
     date_from, date_to = _ad_detail_date_range(args, today=today)
-    terms = _load_ad_detail_match_terms(product_id, args, query_fn=query_fn)
-    if not terms:
-        return _empty_ad_detail_result(date_from, date_to, [])
 
     country = args.get("country") or args.get("country_code")
     if country:
         country = str(country).strip()
+
+    from appcore.media_product_ad_orders_report import get_product_ad_orders_report_for_range
+    order_summary = {
+        "spend": 0.0,
+        "purchase_value": 0.0,
+        "roas": None,
+        "orders": 0
+    }
+    try:
+        order_summary = get_product_ad_orders_report_for_range(
+            product_id,
+            date_from,
+            date_to,
+            country_code=country,
+            query_fn=query_fn
+        )
+    except Exception:
+        log.exception("Failed to query order summary for range")
+
+    terms = _load_ad_detail_match_terms(product_id, args, query_fn=query_fn)
+    if not terms:
+        res = _empty_ad_detail_result(date_from, date_to, [])
+        res["order_summary"] = order_summary
+        return res
 
     match_clauses = []
     match_args: list[Any] = []
@@ -1175,14 +1196,18 @@ def build_video_workbench_ad_detail(
                 match_reason_override = _AD_DETAIL_COUNTRY_FALLBACK_REASON
 
     if not rows:
-        return _empty_ad_detail_result(date_from, date_to, terms)
-    return _build_ad_detail_result(
-        date_from=date_from,
-        date_to=date_to,
-        terms=terms,
-        rows=rows,
-        match_reason_override=match_reason_override,
-    )
+        res = _empty_ad_detail_result(date_from, date_to, terms)
+    else:
+        res = _build_ad_detail_result(
+            date_from=date_from,
+            date_to=date_to,
+            terms=terms,
+            rows=rows,
+            match_reason_override=match_reason_override,
+        )
+    res["order_summary"] = order_summary
+    return res
+
 
 
 # ------------------------------------------------------------------

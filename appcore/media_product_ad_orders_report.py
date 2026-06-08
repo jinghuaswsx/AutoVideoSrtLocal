@@ -291,3 +291,134 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
         "by_lang": final_by_lang,
         "computed_at": datetime.now().isoformat(),
     }
+
+
+def get_product_ad_orders_report_for_range(
+    product_id: int,
+    date_from: date,
+    date_to: date,
+    country_code: str | None = None,
+    query_fn=query,
+) -> dict[str, Any]:
+    """Retrieve spend, orders, purchase value, and calculated ROAS for a product
+    specifically for a date range and optionally filtered by a buyer/market country.
+    """
+    # 1. Fetch product
+    rows = query_fn(
+        "SELECT id, product_code, name FROM media_products WHERE id = %s AND deleted_at IS NULL",
+        [product_id],
+    )
+    if not rows:
+        return {"spend": 0.0, "purchase_value": 0.0, "roas": None, "orders": 0}
+    product = rows[0]
+    product_code = str(product.get("product_code") or "").strip()
+
+    # 2. Fetch Orders (order_count)
+    sql_orders = """
+        SELECT COUNT(DISTINCT NULLIF(TRIM(dol.dxm_package_id), '')) AS order_count 
+        FROM order_profit_lines opl 
+        JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id 
+        WHERE opl.product_id = %s 
+          AND DATE(dol.meta_business_date) BETWEEN %s AND %s
+    """
+    params_orders = [product_id, date_from.isoformat(), date_to.isoformat()]
+    if country_code:
+        sql_orders += " AND UPPER(TRIM(COALESCE(NULLIF(TRIM(opl.buyer_country), ''), NULLIF(TRIM(dol.buyer_country), ''), ''))) = %s"
+        params_orders.append(country_code.upper())
+    
+    orders = 0
+    try:
+        order_rows = query_fn(sql_orders, params_orders)
+        if order_rows:
+            orders = int(order_rows[0].get("order_count") or 0)
+    except Exception:
+        pass
+
+    # 3. Fetch Ad metrics (Historical)
+    sql_daily = """
+        SELECT SUM(COALESCE(m.spend_usd, 0)) AS spend, SUM(COALESCE(m.purchase_value_usd, 0)) AS pvalue
+        FROM meta_ad_daily_ad_metrics m
+        WHERE m.product_id = %s
+          AND DATE(COALESCE(m.meta_business_date, m.report_date)) BETWEEN %s AND %s
+    """
+    params_daily = [product_id, date_from.isoformat(), date_to.isoformat()]
+    if country_code:
+        sql_daily += " AND UPPER(COALESCE(m.market_country, '')) = %s"
+        params_daily.append(country_code.upper())
+
+    spend = 0.0
+    purchase_value = 0.0
+    try:
+        daily_rows = query_fn(sql_daily, params_daily)
+        if daily_rows and daily_rows[0]:
+            spend += _float_value(daily_rows[0].get("spend"))
+            purchase_value += _float_value(daily_rows[0].get("pvalue"))
+    except Exception:
+        pass
+
+    # 4. Fetch Ad metrics (Realtime)
+    has_realtime = False
+    try:
+        test_row = query_fn(
+            "SELECT 1 AS ok FROM information_schema.TABLES "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s LIMIT 1",
+            ["meta_ad_realtime_daily_ad_metrics"],
+        )
+        has_realtime = bool(test_row and test_row[0].get("ok"))
+    except Exception:
+        has_realtime = False
+
+    if has_realtime and product_code:
+        sql_rt = """
+            SELECT SUM(COALESCE(m.spend_usd, 0)) AS spend, SUM(COALESCE(m.purchase_value_usd, 0)) AS pvalue
+            FROM (
+              SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at
+              FROM meta_ad_realtime_daily_ad_metrics rt
+              INNER JOIN (
+                SELECT ad_account_id, MAX(business_date) AS business_date
+                FROM meta_ad_realtime_daily_ad_metrics
+                WHERE data_completeness = 'realtime_partial'
+                GROUP BY ad_account_id
+              ) latest_day
+                ON rt.business_date = latest_day.business_date
+               AND (rt.ad_account_id <=> latest_day.ad_account_id)
+              WHERE rt.data_completeness = 'realtime_partial'
+              GROUP BY latest_day.business_date, latest_day.ad_account_id
+            ) latest
+            STRAIGHT_JOIN meta_ad_realtime_daily_ad_metrics m
+              ON m.business_date = latest.business_date
+             AND (m.ad_account_id <=> latest.ad_account_id)
+             AND m.snapshot_at = latest.max_snapshot_at
+            WHERE m.data_completeness = 'realtime_partial'
+              AND m.business_date BETWEEN %s AND %s
+              AND (
+                LOWER(COALESCE(m.normalized_campaign_code, '')) LIKE CONCAT(LOWER(%s), '%%')
+                OR LOWER(COALESCE(m.campaign_name, '')) LIKE CONCAT(LOWER(%s), '%%')
+                OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE CONCAT(LOWER(%s), '%%')
+                OR LOWER(COALESCE(m.ad_name, '')) LIKE CONCAT(LOWER(%s), '%%')
+              )
+        """
+        params_rt = [date_from.isoformat(), date_to.isoformat(), product_code, product_code, product_code, product_code]
+        if country_code:
+            sql_rt += " AND UPPER(COALESCE(m.country_code, '')) = %s"
+            params_rt.append(country_code.upper())
+
+        try:
+            rt_rows = query_fn(sql_rt, params_rt)
+            if rt_rows and rt_rows[0]:
+                spend += _float_value(rt_rows[0].get("spend"))
+                purchase_value += _float_value(rt_rows[0].get("pvalue"))
+        except Exception:
+            pass
+
+    spend = round(spend, 2)
+    purchase_value = round(purchase_value, 2)
+    roas = round(purchase_value / spend, 2) if spend > 0 else None
+
+    return {
+        "spend": spend,
+        "purchase_value": purchase_value,
+        "roas": roas,
+        "orders": orders,
+    }
+
