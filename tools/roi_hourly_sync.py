@@ -1851,6 +1851,7 @@ def run_sync(
         "meta_hours_upserted": 0,
         "overview_hours_upserted": 0,
     }
+    dxm_import_error: Exception | None = None
     try:
         business_date = _meta_business_date(snapshot_at)
         business_window_start = _meta_business_window_start(business_date)
@@ -1884,6 +1885,13 @@ def run_sync(
                     timeout_seconds=dxm_order_import_lock.ROI_LOCK_TIMEOUT_SECONDS,
                     error_message=str(exc),
                 )
+            except Exception as exc:
+                dxm_import_error = exc
+                summary["dxm_report"] = {
+                    "status": "failed",
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                }
         if not scheduled_tasks.is_task_enabled("meta_realtime_import"):
             summary["meta_realtime_report"] = {
                 "business_date": business_date,
@@ -1912,9 +1920,17 @@ def run_sync(
         # Current requirement: only keep the real-time day-level board fresh.
         # We retain node snapshots every 10 minutes, so hourly deltas can be
         # derived later without changing the ingestion contract.
-        status = "success"
-        _finish_run(run_id, status, summary)
-        return {**summary, "status": status}
+        if dxm_import_error is not None:
+            status = "failed"
+            error = str(dxm_import_error)
+        else:
+            status = "success"
+            error = None
+        _finish_run(run_id, status, summary, error)
+        result = {**summary, "status": status}
+        if error:
+            result["error_message"] = error
+        return result
     except Exception as exc:
         _finish_run(run_id, "failed", summary, str(exc))
         raise
@@ -1947,7 +1963,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     report["duration_seconds"] = round(time.time() - started, 2)
     print(json.dumps(report, ensure_ascii=False, indent=2, default=_json_default))
-    return 0
+    return 1 if report.get("status") == "failed" else 0
 
 
 if __name__ == "__main__":
