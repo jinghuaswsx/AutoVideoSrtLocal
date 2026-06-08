@@ -276,8 +276,6 @@ def test_data_analysis_page_has_true_roas_tab(authed_client_no_db):
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "真实 ROAS" in body
-    assert 'data-tab="trueRoas"' in body
     assert 'id="panelTrueRoas"' in body
 
 

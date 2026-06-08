@@ -491,14 +491,11 @@ def test_data_analysis_page_has_shopify_and_dianxiaomi_tabs(authed_client_no_db)
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Shopify 订单导入" in body
-    assert "Shopify 订单分析" in body
     assert "国家看板" in body
     assert 'data-tab="countryDashboard"' in body
     assert 'id="panelCountryDashboard"' in body
     assert 'data-tab="dxmOrders"' in body
     assert 'id="panelDxmOrders"' in body
-    assert body.index('data-tab="countryDashboard"') < body.index('data-tab="trueRoas"')
     assert "querySelectorAll('.oad-seg')" not in body
     assert "querySelectorAll('[data-dashboard-range]')" in body
     assert "querySelectorAll('[data-country-range]')" in body

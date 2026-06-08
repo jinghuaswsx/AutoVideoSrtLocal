@@ -18,9 +18,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
-  <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
-  <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </span>
 {% endblock %}
 {% block topbar_actions %}
@@ -32,15 +30,6 @@
       <line x1="12" y1="3" x2="12" y2="15"/>
     </svg>
     <span>Payments 导入</span>
-  </button>
-  <button type="button" class="ppr-btn ppr-btn-primary" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18"/>
-      <rect x="7" y="13" width="3" height="5"/>
-      <rect x="12" y="9" width="3" height="9"/>
-      <rect x="17" y="5" width="3" height="13"/>
-    </svg>
-    <span>产品盈亏报表</span>
   </button>
 </span>
 {% endblock %}
@@ -2007,15 +1996,6 @@
     </svg>
     <span>Payments 导入</span>
   </button>
-  <button type="button" class="ppr-btn ppr-btn-primary" data-ppr="open-report" title="下载产品盈亏 Excel 报表">
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18"/>
-      <rect x="7" y="13" width="3" height="5"/>
-      <rect x="12" y="9" width="3" height="9"/>
-      <rect x="17" y="5" width="3" height="13"/>
-    </svg>
-    <span>盈亏报表</span>
-  </button>
 </div>
 
 {% include "_data_quality_bar.html" %}
@@ -2026,9 +2006,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
-  <button type="button" class="oa-tab {% if active_tab == 'trueRoas' %}active{% endif %}" data-tab="trueRoas" role="tab" aria-selected="{% if active_tab == 'trueRoas' %}true{% else %}false{% endif %}">真实 ROAS</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
-  <button type="button" class="oa-tab {% if active_tab == 'analytics' %}active{% endif %}" data-tab="analytics" role="tab" aria-selected="{% if active_tab == 'analytics' %}true{% else %}false{% endif %}">Shopify 订单分析</button>
 </nav>
 
 
