@@ -43,8 +43,10 @@ _TARGET_EVALUATION_LANGUAGES = (
     {"code": "fr", "name": "法语", "country": "法国"},
     {"code": "it", "name": "意大利语", "country": "意大利"},
     {"code": "es", "name": "西班牙语", "country": "西班牙"},
+    {"code": "nl", "name": "荷兰语", "country": "荷兰"},
+    {"code": "pt", "name": "葡萄牙语", "country": "葡萄牙"},
+    {"code": "sv", "name": "瑞典语", "country": "瑞典"},
     {"code": "ja", "name": "日语", "country": "日本"},
-    {"code": "en", "name": "英语", "country": "美国"},
 )
 
 

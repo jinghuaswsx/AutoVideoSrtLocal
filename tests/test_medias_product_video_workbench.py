@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,6 +38,12 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "vwImportProgressModal" in html
     assert "vwXiaoModal" in html
     assert "历史匹配本地素材" in html
+    assert "翻译版本" in html
+    assert "订单量情况" in html
+    assert "AI 8国评估建议" in html
+    assert 'data-action="ai-start"' in html
+    assert "translated_versions" in html
+    assert "target_country_versions" in html
 
 
 def test_video_workbench_import_flow_matches_mk_progress_contract():
@@ -231,6 +238,107 @@ def test_build_product_video_workbench_matches_legacy_library_item_by_exact_file
     assert card["library_match_source"] == "media_items_legacy_product_scope"
     assert card["library_match_reason"] == "video_name:filename"
     assert card["bound_item"]["match_source"] == "media_items_legacy_product_scope"
+
+
+def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(monkeypatch):
+    from web.routes.medias import material_supplement as route
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials._enrich_material_yesterday_delta",
+        lambda rows, **kwargs: None,
+    )
+
+    detail = {
+        "evaluated_at": "2026-06-08T08:00:00Z",
+        "countries": [
+            {"lang": "de", "country": "德国", "is_suitable": True, "score": 86, "recommendation": "做", "summary": "德国建议做"},
+            {"lang": "ja", "country": "日本", "is_suitable": False, "score": 58, "recommendation": "不做", "summary": "日本谨慎"},
+        ],
+    }
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            return [{
+                "id": 321,
+                "name": "Demo",
+                "product_code": "demo-rjc",
+                "ai_score": "72",
+                "ai_evaluation_result": "部分适合推广",
+                "ai_evaluation_detail": json.dumps(detail, ensure_ascii=False),
+            }]
+        if "FROM mingkong_material_daily_snapshots s" in sql:
+            return [{
+                "material_key": "mk-1",
+                "video_path": "/video/demo.mp4",
+                "video_name": "demo.mp4",
+                "video_image_path": "/cover/demo.jpg",
+                "cumulative_90_spend": "120.00",
+                "video_ads_count": 3,
+                "video_author": "maker",
+                "video_upload_time": "2026-06-01",
+                "yesterday_spend_delta": "12.00",
+                "snapshot_date": "2026-06-06",
+                "snapshot_at": datetime(2026, 6, 6, 10, 0, 0),
+                "mk_product_id": 7,
+                "mk_product_name": "Demo CN",
+                "mk_product_link": "https://example.test/products/demo",
+                "main_image": "",
+            }]
+        if "FROM media_items" in sql and "WHERE product_id = %s" in sql:
+            return [
+                {"id": 10, "product_id": 321, "lang": "en", "filename": "demo.mp4", "display_name": "demo.mp4", "object_key": "items/demo.mp4", "task_id": None, "source_raw_id": 500, "source_ref_id": None, "auto_translated": 0},
+                {"id": 11, "product_id": 321, "lang": "de", "filename": "demo-de.mp4", "display_name": "de", "object_key": "items/de.mp4", "task_id": 101, "source_raw_id": 500, "source_ref_id": None, "auto_translated": 0},
+                {"id": 12, "product_id": 321, "lang": "pt", "filename": "demo-pt.mp4", "display_name": "pt", "object_key": "items/pt.mp4", "task_id": 102, "source_raw_id": 500, "source_ref_id": None, "auto_translated": 0},
+            ]
+        if "FROM media_item_mk_bindings" in sql:
+            return [{"media_item_id": 10, "mk_video_path": "/video/demo.mp4"}]
+        if "FROM media_product_lang_ad_summary_cache" in sql:
+            return []
+        if "FROM media_product_ad_summary_cache" in sql:
+            return [{"ad_spend_usd": "0", "active_7d_ad_spend_usd": "0", "overall_roas": None, "delivery_status": "never"}]
+        raise AssertionError(sql)
+
+    def attach(rows):
+        for row in rows:
+            perf = route._empty_ad_performance()
+            if row["lang"] == "de":
+                perf.update({"total_spend_usd": 40.0, "last_7d_spend_usd": 10.0, "purchase_value_usd": 80.0, "roas": 2.0})
+            if row["lang"] == "pt":
+                perf.update({"total_spend_usd": 20.0, "last_30d_spend_usd": 20.0, "purchase_value_usd": 10.0, "roas": 0.5})
+            row["ad_performance"] = perf
+
+    def order_report(product_id):
+        empty = route._empty_order_stats_row()
+        return {
+            "product_id": product_id,
+            "total": {**empty, "today_orders": 3, "last_30d_orders": 21},
+            "by_lang": {
+                "de": {**empty, "today_orders": 2, "last_7d_orders": 7},
+                "pt": {**empty, "yesterday_orders": 1, "last_30d_orders": 5},
+            },
+        }
+
+    payload = route.build_product_video_workbench(
+        321,
+        query_fn=fake_query,
+        attach_ad_plan_details_fn=attach,
+        order_report_fn=order_report,
+    )
+
+    assert payload["ai_evaluation"]["target_country_codes"] == ["DE", "FR", "IT", "ES", "JP", "PT", "SE", "NL"]
+    assert payload["ai_evaluation"]["evaluated_count"] == 2
+    assert payload["ai_evaluation"]["pending_count"] == 6
+    card = payload["cards"][0]
+    assert card["mk_video"]["material_key"] == "mk-1"
+    assert card["translation_summary"]["translated_country_codes"] == ["DE", "PT"]
+    assert "NL" in card["translation_summary"]["missing_country_codes"]
+    assert card["translated_versions"][0]["lang"] == "all"
+    assert card["translated_versions"][0]["ad_performance"]["total_spend_usd"] == 60.0
+    de_version = next(row for row in card["translated_versions"] if row["lang"] == "de")
+    assert de_version["country_code"] == "DE"
+    assert de_version["order_stats"]["today_orders"] == 2
+    pt_target = next(row for row in card["target_country_versions"] if row["country_code"] == "PT")
+    assert pt_target["status"] == "translated"
 
 
 def test_build_video_workbench_ad_detail_summarizes_date_range():

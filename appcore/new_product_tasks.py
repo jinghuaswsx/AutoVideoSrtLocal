@@ -54,11 +54,13 @@ def create_from_upload(
     if not _validate_video_extension(original_filename):
         raise NewProductTaskError("unsupported video file type")
 
-    norm_countries, assignment_map = _validate_task_assignment(
-        countries=countries,
-        language_assignments=language_assignments,
-        raw_processor_id=raw_processor_id,
-    )
+    is_import_only = not countries
+    if not is_import_only:
+        norm_countries, assignment_map = _validate_task_assignment(
+            countries=countries,
+            language_assignments=language_assignments,
+            raw_processor_id=raw_processor_id,
+        )
     if kind == TASK_KIND_SUPPLEMENT:
         product_id, product_owner_id, name = _resolve_existing_product_for_supplement(
             target_product_id=target_product_id,
@@ -88,6 +90,16 @@ def create_from_upload(
         video_file=video_file,
         original_filename=original_filename,
     )
+    if is_import_only:
+        return {
+            "ok": True,
+            "task_kind": kind,
+            "media_product_id": int(product_id),
+            "media_item_id": int(item_id),
+            "is_new_product": is_new_product,
+            "product_detail_url": _product_detail_url(product_id),
+            "imported_only": True,
+        }
     return _create_task_for_item(
         product_id=product_id,
         item_id=item_id,

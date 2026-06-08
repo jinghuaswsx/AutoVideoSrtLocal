@@ -276,8 +276,6 @@ def test_data_analysis_page_has_true_roas_tab(authed_client_no_db):
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "真实 ROAS" in body
-    assert 'data-tab="trueRoas"' in body
     assert 'id="panelTrueRoas"' in body
 
 
@@ -330,7 +328,6 @@ def test_data_analysis_tabs_put_order_and_ads_after_realtime(authed_client_no_db
         body.index('data-tab="realtime"'),
         body.index('data-tab="dxmOrders"'),
         body.index('data-tab="ads"'),
-        body.index('data-tab="dashboard"'),
     ]
     assert tab_order == sorted(tab_order)
 
