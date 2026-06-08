@@ -1,0 +1,3077 @@
+{% extends "layout.html" %}
+{% block title %}选品中心 - Meta热帖详情 - ID: {{ post.id }}{% endblock %}
+{% block page_title %}
+<span class="selection-center-title">选品中心</span>
+<span class="selection-center-title-note">Meta热帖详情 - ID: {{ post.id }}</span>
+{% endblock %}
+{% block extra_style %}
+/* 详情页居中与精美化 */
+.meta-hot-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 10px 10px 30px;
+}
+.meta-hot-card-grid {
+  grid-template-columns: 1fr !important;
+  max-width: 500px;
+  margin: 0 auto !important;
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+}
+.mh-card {
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--mh-line);
+}
+
+{% include "_xuanpin_tabs_style.html" %}
+:root {
+  --mh-bg:#f8fafc; --mh-panel:#fff; --mh-line:#dbe3ef; --mh-strong:#c6d3e1;
+  --mh-text:#1f2937; --mh-muted:#64748b; --mh-subtle:#94a3b8;
+  --mh-accent:#0f766e; --mh-soft:#ecfdf5; --mh-danger:#dc2626; --mh-radius:8px;
+}
+.meta-hot-page { color:var(--mh-text); }
+.mh-subtabs { display:flex; gap:6px; margin:0 0 12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#fff; }
+.mh-subtab { min-width:96px; height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
+.mh-subtab.active { background:#0f766e; color:#fff; }
+.mh-tool-row { display:flex; justify-content:space-between; align-items:center; gap:6px; min-height:32px; margin-bottom:6px; padding:4px 8px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
+.mh-tool-title { color:#475569; font-size:12px; font-weight:700; }
+.mh-tool-buttons { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+.mh-toolbar { display:grid; grid-template-columns:repeat(auto-fit, minmax(124px, 1fr)); gap:10px; align-items:end; margin-bottom:14px; padding:14px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
+.mh-field label { display:block; margin-bottom:5px; color:var(--mh-muted); font-size:12px; font-weight:700; }
+.mh-input, .mh-select { width:100%; height:34px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:var(--mh-text); font-size:14px; }
+.mh-range { display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:center; }
+.mh-actions { display:flex; gap:8px; }
+.mh-btn { height:34px; padding:0 13px; border:1px solid var(--mh-accent); border-radius:6px; background:var(--mh-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
+.mh-btn.secondary { border-color:var(--mh-strong); background:#fff; color:#334155; }
+.mh-sticky-controls { position:sticky; top:68px; z-index:35; display:grid; gap:8px; margin:0 0 14px; padding:10px 12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#f8fafc; }
+.mh-sticky-controls .mh-status { margin-bottom:0; }
+.mh-sticky-controls .mh-pager { margin:0; }
+.mh-status { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; color:var(--mh-muted); font-size:13px; }
+.mh-status-actions { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.mh-zoom-btn { min-width:104px; }
+.mh-ai-analysis-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.mh-ai-analysis-toggle { min-width:126px; border-color:#99f6e4; color:#0f766e; }
+.mh-ai-analysis-toggle.active { border-color:var(--mh-accent); background:var(--mh-accent); color:#fff; }
+.mh-pager { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap; margin:10px 0 12px; color:var(--mh-muted); font-size:13px; }
+.mh-pager button { height:32px; min-width:32px; padding:0 10px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:#334155; font-size:13px; font-weight:700; cursor:pointer; }
+.mh-pager button.active { border-color:var(--mh-accent); background:var(--mh-accent); color:#fff; }
+.mh-pager button:disabled { opacity:.45; cursor:not-allowed; }
+.mh-pager-info { min-width:190px; text-align:center; }
+.mh-pager-goto { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.mh-pager-goto input { width:68px; height:32px; padding:0 8px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:var(--mh-text); font-size:13px; font-weight:700; text-align:center; outline:none; }
+.mh-pager-goto input:focus { border-color:var(--mh-accent); box-shadow:0 0 0 2px rgba(15,118,110,.16); }
+.meta-hot-card-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:16px; padding:16px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#eef2f7; }
+.mh-product-list-panel { padding:12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#fff; }
+.mh-product-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.mh-product-table th, .mh-product-table td { padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; font-size:13px; }
+.mh-product-table th { color:#475569; background:#f8fafc; font-weight:800; }
+.mh-product-table tr:last-child td { border-bottom:0; }
+.mh-product-image-cell { width:224px; }
+.mh-product-image-link, .mh-product-main-image-placeholder { display:block; width:200px; height:200px; border-radius:6px; background:#e2e8f0; overflow:hidden; }
+.mh-product-main-image { display:block; width:200px; height:200px; object-fit:cover; background:#e2e8f0; }
+.mh-product-theme { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:#0f766e; font-size:12px; font-weight:800; }
+.mh-product-name-cell { display:flex; align-items:flex-start; gap:8px; min-width:0; }
+.mh-product-name-link { color:#0f766e; font-weight:800; text-decoration:none; word-break:break-word; }
+.mh-product-name-link:hover { text-decoration:underline; }
+.mh-product-copy-link { margin-top:-2px; }
+.mh-product-count { width:96px; color:#111827; font-weight:900; text-align:right; }
+.mh-product-material-button { height:28px; min-width:44px; padding:0 8px; border:1px solid transparent; border-radius:5px; background:transparent; color:#111827; font-size:13px; font-weight:900; cursor:pointer; }
+.mh-product-material-button:hover { border-color:#99f6e4; background:#f0fdfa; color:#0f766e; }
+.mh-card { min-width:0; border:1px solid #e5e7eb; border-radius:8px; background:#fff; overflow:hidden; }
+.mh-post-id-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:34px; padding:6px 14px 2px; color:#64748b; font-size:12px; font-weight:700; }
+.mh-post-id-main { display:flex; align-items:center; gap:6px; min-width:0; }
+.mh-post-id-main .mh-favorite-heart { flex:0 0 auto; width:26px; height:26px; border-radius:5px; font-size:16px; margin-right:1ch; }
+.mh-post-id-value { min-width:0; max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#334155; font-family:ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-weight:800; }
+.mh-post-copy-btn { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; width:24px; height:24px; padding:0; border:1px solid #cbd5e1; border-radius:5px; background:#fff; color:#0f766e; cursor:pointer; }
+.mh-post-copy-btn:hover { border-color:#0f766e; background:#f0fdfa; }
+.mh-post-copy-btn svg { width:14px; height:14px; stroke:currentColor; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+.mh-post-copy-done { color:#0f766e; font-size:13px; font-weight:900; line-height:1; }
+.mh-card-head { display:grid; gap:8px; padding:10px 14px 12px; border-bottom:1px solid #edf2f7; }
+.mh-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; font-size:15px; font-weight:800; line-height:1.35; }
+.mh-product-title-block { display:flex; align-items:flex-start; gap:8px; flex:1 1 auto; min-width:0; min-height:calc(1.35em * 2); }
+.mh-product-title-text { flex:1 1 auto; min-width:0; min-height:calc(1.35em * 2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word; }
+.mh-product-title-toggle { flex:0 0 auto; margin-left:auto; height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#fff; color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.mh-product-title-toggle:disabled { opacity:.6; cursor:not-allowed; }
+.mh-card-side { display:flex; flex-direction:column; align-items:flex-end; gap:8px; min-width:0; }
+.mh-tags { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-start; }
+.mh-tag { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #e2e8f0; border-radius:4px; color:#475569; background:#f8fafc; font-size:12px; }
+.mh-card-flags { display:inline-flex; align-items:center; justify-content:flex-end; gap:6px; min-height:22px; }
+.mh-push-badge { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #86efac; border-radius:4px; background:#dcfce7; color:#15803d; font-size:12px; font-weight:800; white-space:nowrap; }
+.mh-mark-options { display:flex; align-items:center; gap:10px; min-height:28px; }
+.mh-mark-option { display:inline-flex; align-items:center; gap:5px; min-width:0; height:24px; padding:0; border:0; background:transparent; color:#334155; font-size:13px; font-weight:700; cursor:pointer; }
+.mh-mark-option.bad { color:var(--mh-danger); }
+.mh-mark-option:disabled { opacity:.65; cursor:wait; }
+.mh-mark-box { width:17px; height:17px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #94a3b8; border-radius:3px; background:#fff; color:#fff; line-height:1; }
+.mh-mark-option.is-marked .mh-mark-box { border-color:#0f72d9; background:#0f72d9; }
+.mh-mark-option.is-marked .mh-mark-box::after { content:"✓"; color:#fff; font-size:13px; font-weight:800; }
+.mh-card-body { padding:12px 14px; }
+.mh-time, .mh-metric { margin-bottom:7px; color:#64748b; font-size:13px; }
+.mh-metric b { color:#334155; }
+.mh-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.mh-ratio { color:var(--mh-danger); font-weight:800; }
+.mh-media { position:relative; width:267px; max-width:100%; aspect-ratio:267 / 476; margin:0 auto 10px; background:#e2e8f0; overflow:hidden; border-radius:6px; }
+.mh-media img, .mh-media iframe, .mh-media video { width:100%; height:100%; border:0; object-fit:cover; display:block; }
+.mh-video-shell { position:relative; width:100%; height:100%; cursor:pointer; background:#dbe3ee; outline:none; }
+.mh-video-shell:focus-visible { box-shadow:0 0 0 3px rgba(15,118,110,.24) inset; }
+.mh-video-cover { width:100%; height:100%; object-fit:cover; display:block; background:#dbe3ee; pointer-events:none; }
+.mh-video-placeholder { display:flex; align-items:center; justify-content:center; width:100%; height:100%; color:#64748b; font-size:13px; font-weight:800; }
+.mh-video-badges { position:absolute; left:8px; bottom:8px; z-index:2; display:flex; align-items:center; gap:5px; }
+.mh-video-duration-badge { min-width:34px; min-height:20px; padding:0 7px; border:1px solid rgba(220,38,38,.38); border-radius:4px; background:#fee2e2; color:var(--mh-danger); font-size:12px; font-weight:900; line-height:20px; text-align:center; box-shadow:0 1px 3px rgba(15,23,42,.16); }
+.mh-favorite-btn { cursor:pointer; }
+.mh-favorite-btn:disabled { opacity:.7; cursor:wait; }
+.mh-favorite-heart { display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; padding:0; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#94a3b8; font-size:22px; line-height:1; }
+.mh-favorite-heart.is-favorited { border-color:#fecaca; background:#fef2f2; color:#dc2626; }
+.mh-favorite-text.is-favorited { border-color:#fecaca; background:#fef2f2; color:#dc2626; font-weight:800; }
+.mh-play-button { position:absolute; z-index:3; display:flex; align-items:center; justify-content:center; border:0; background:rgba(15,23,42,.72); box-shadow:0 2px 10px rgba(15,23,42,.25); pointer-events:none; }
+.mh-play-button::before { content:""; width:0; height:0; margin-left:3px; border-top:11px solid transparent; border-bottom:11px solid transparent; border-left:16px solid #fff; }
+.mh-play-button.center { left:50%; top:50%; width:58px; height:58px; border-radius:999px; transform:translate(-50%, -50%); }
+.mh-play-button.bottom { right:8px; bottom:8px; width:34px; height:24px; border-radius:5px; }
+.mh-play-button.bottom::before { border-top-width:7px; border-bottom-width:7px; border-left-width:10px; }
+.mh-message-wrap { display:grid; gap:8px; margin-bottom:2px; }
+.mh-message { max-height:178px; overflow:auto; line-height:1.45; font-size:14px; color:#334155; word-break:break-word; }
+.mh-message-toggle { justify-self:start; height:28px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:5px; background:#fff; color:#334155; font-size:12px; font-weight:700; cursor:pointer; }
+.mh-message-toggle:hover { border-color:var(--mh-accent); color:var(--mh-accent); }
+.mh-links { display:flex; gap:8px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid #edf2f7; }
+.mh-link-btn { display:inline-flex; align-items:center; height:30px; padding:0 10px; border:1px solid #d8dee8; border-radius:5px; color:#334155; background:#fff; text-decoration:none; font-size:13px; }
+button.mh-link-btn { cursor:pointer; }
+.mh-ai-link { border-color:#99f6e4; color:#0f766e; font-weight:800; }
+.mh-analysis { margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+.mh-analysis-clickable { display:block; text-decoration:none; color:inherit; transition:all 0.2s ease; cursor:pointer; }
+.mh-analysis-clickable:hover { border-color:var(--mh-accent); background:var(--mh-soft); transform:translateY(-1px); box-shadow:0 4px 12px rgba(15,118,110,0.08); }
+.mh-analysis-clickable:active { transform:translateY(0); }
+.mh-europe-panel, .mh-copyability { margin-top:10px; padding:10px; border:1px solid #bae6fd; border-radius:6px; background:#f0f9ff; }
+.mh-ai-card--pass { border-color:#bbf7d0; background:#f0fdf4; }
+.mh-ai-card--warn { border-color:#fde68a; background:#fffbeb; }
+.mh-ai-card--reject { border-color:#fecaca; background:#fef2f2; }
+.mh-ai-card--pass .mh-analysis-category, .mh-ai-card--pass .mh-europe-head { color:#166534; }
+.mh-ai-card--warn .mh-analysis-category, .mh-ai-card--warn .mh-europe-head { color:#854d0e; }
+.mh-ai-card--reject .mh-analysis-category, .mh-ai-card--reject .mh-europe-head { color:#991b1b; }
+.mh-ai-card--pass .mh-score { border-color:#86efac; color:#166534; }
+.mh-ai-card--warn .mh-score { border-color:#facc15; color:#854d0e; }
+.mh-ai-card--reject .mh-score { border-color:#fca5a5; color:#991b1b; }
+.mh-europe-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; font-size:13px; font-weight:800; color:#166534; }
+.mh-score { display:inline-flex; align-items:center; justify-content:center; min-width:44px; height:26px; padding:0 8px; border-radius:6px; background:#166534; color:#fff; font-size:14px; }
+.mh-europe-list { margin:5px 0 0; padding-left:18px; color:#365349; font-size:12px; line-height:1.45; }
+.mh-product { display:grid; grid-template-columns:108px minmax(0, 1fr); gap:9px; align-items:start; }
+.mh-product img, .mh-product-empty { width:108px; height:108px; border-radius:6px; object-fit:cover; background:#e2e8f0; }
+.mh-product-title { font-size:13px; font-weight:700; line-height:1.35; word-break:break-word; }
+.mh-mini { margin-top:4px; color:#64748b; font-size:12px; }
+.mh-analysis-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.mh-analysis-category { margin-bottom:6px; color:#64748b; font-size:12px; font-weight:800; }
+.mh-analysis-head .mh-analysis-category { margin-bottom:0; }
+.mh-ai-translate-zh-btn { flex:0 0 auto; height:24px; padding:0 8px; border:1px solid #67e8f9; border-radius:5px; background:#fff; color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; }
+.mh-ai-translate-zh-btn:disabled { opacity:.6; cursor:not-allowed; }
+.mh-score-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:7px; }
+.mh-score { display:inline-flex; align-items:center; min-height:22px; padding:0 7px; border:1px solid #7dd3fc; border-radius:4px; color:#075985; background:#fff; font-size:12px; font-weight:700; }
+.mh-copy-summary { color:#334155; font-size:13px; line-height:1.45; }
+.mh-empty { grid-column:1/-1; padding:48px 16px; text-align:center; color:#64748b; }
+.mh-modal[hidden] { display:none; }
+.mh-modal { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15,23,42,.42); }
+.mh-modal-panel { width:min(980px, 96vw); max-height:86vh; overflow:hidden; border-radius:8px; background:#fff; box-shadow:0 24px 70px rgba(15,23,42,.22); }
+.mh-modal-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--mh-line); }
+.mh-modal-head h3 { margin:0; font-size:16px; }
+.mh-modal-body { max-height:calc(86vh - 58px); overflow:auto; padding:14px 16px; }
+.mh-pre { margin:0 0 12px; padding:12px; border:1px solid #e2e8f0; border-radius:6px; background:#0f172a; color:#e2e8f0; white-space:pre-wrap; word-break:break-word; font-size:12px; line-height:1.55; }
+.mh-modal-actions { display:flex; align-items:center; gap:8px; }
+.mh-ai-tabs { display:flex; gap:6px; margin-bottom:12px; padding:3px; width:max-content; border:1px solid var(--mh-line); border-radius:8px; background:#f8fafc; }
+.mh-ai-tab { height:30px; padding:0 12px; border:0; border-radius:6px; background:transparent; color:#475569; font-size:13px; font-weight:800; cursor:pointer; }
+.mh-ai-tab.active { background:var(--mh-accent); color:#fff; }
+.mh-ai-panel[hidden] { display:none; }
+.mh-ai-grid { display:grid; grid-template-columns:minmax(220px, 300px) minmax(0, 1fr); gap:14px; align-items:start; }
+.mh-ai-media { display:grid; gap:10px; }
+.mh-ai-image { width:100%; aspect-ratio:1/1; border:1px solid #e2e8f0; border-radius:6px; object-fit:cover; background:#e2e8f0; }
+.mh-ai-video { width:100%; max-height:420px; border:1px solid #e2e8f0; border-radius:6px; background:#0f172a; }
+.mh-ai-kv { display:grid; grid-template-columns:120px minmax(0, 1fr); gap:6px 10px; margin-bottom:12px; color:#334155; font-size:13px; }
+.mh-ai-kv b { color:#64748b; }
+.mh-ai-section { margin-bottom:12px; padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+.mh-ai-section h4 { margin:0 0 8px; font-size:13px; color:#334155; }
+.mh-ai-chip-list { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.mh-ai-chip { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border:1px solid #99f6e4; border-radius:5px; background:#f0fdfa; color:#0f766e; font-size:12px; font-weight:800; }
+.mh-ai-summary-head { display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:8px; margin-bottom:8px; }
+.mh-ai-summary-head h4 { margin:0; text-align:center; }
+.mh-ai-summary-switch { height:26px; padding:0 9px; border:1px solid #99f6e4; border-radius:5px; background:#fff; color:#0f766e; font-size:12px; font-weight:800; cursor:pointer; }
+.mh-ai-summary-switch.active { background:#0f766e; color:#fff; }
+.mh-ai-summary-text { color:#334155; font-size:15px; line-height:1.55; }
+.mh-ai-error { color:#b91c1c; font-size:13px; white-space:pre-wrap; word-break:break-word; }
+.mh-favorite-sort { width:150px; }
+.mh-favorite-sort[hidden] { display:none; }
+.mh-category-list { display:flex; gap:6px; flex-wrap:wrap; }
+.mh-failure-list { display:grid; gap:10px; }
+.mh-failure-item { padding:10px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; }
+.mh-failure-url { color:#0f766e; font-weight:700; word-break:break-all; }
+.mh-failure-error { margin-top:6px; color:#b91c1c; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+@media (max-width: 980px) { .mh-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); } .mh-actions { grid-column:1/-1; } }
+@media (min-width: 769px) {
+  .meta-hot-page.mh-zoomed .meta-hot-card-grid { grid-template-columns:repeat(auto-fill, minmax(min(720px, 100%), 1fr)); gap:20px; }
+  .meta-hot-page.mh-zoomed .mh-card-head { padding:16px 18px; }
+  .meta-hot-page.mh-zoomed .mh-card-title { font-size:22px; }
+  .meta-hot-page.mh-zoomed .mh-card-body { padding:16px 18px; }
+  .meta-hot-page.mh-zoomed .mh-media { width:min(534px, 100%); }
+  .meta-hot-page.mh-zoomed .mh-message { max-height:300px; font-size:15px; }
+  .meta-hot-page.mh-zoomed .mh-analysis,
+  .meta-hot-page.mh-zoomed .mh-copyability,
+  .meta-hot-page.mh-zoomed .mh-europe-panel { padding:12px; }
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  /* 工具行更紧凑 */
+  .mh-tool-row {
+    gap: 4px;
+    min-height: 28px;
+    margin-bottom: 4px;
+    padding: 2px 4px;
+  }
+  .mh-tool-title {
+    display: none; /* 隐藏工具标题，给按钮更多空间 */
+  }
+  /* 子导航横向滚动 */
+  .mh-subtabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding: 4px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-subtabs::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-subtab {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 80px;
+  }
+
+  /* 工具按钮区横向滚动 */
+  .mh-tool-buttons {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 4px;
+    padding: 2px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .mh-tool-buttons::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-tool-buttons .mh-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+    border-radius: 4px;
+  }
+
+  /* 卡片网格适配 */
+  .meta-hot-card-grid {
+    grid-template-columns: 1fr;
+    padding: 8px;
+  }
+
+  /* 工具条适配 */
+  .mh-toolbar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  /* 分页器横向滚动 */
+  .mh-pager {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding: 8px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .mh-pager::-webkit-scrollbar {
+    display: none;
+  }
+  .mh-pager button {
+    flex-shrink: 0;
+    min-width: 40px;
+  }
+  .mh-zoom-btn {
+    display: none;
+  }
+  .mh-status-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .mh-ai-analysis-actions {
+    width: 100%;
+  }
+  .mh-ai-analysis-toggle {
+    flex: 1;
+  }
+  .mh-sticky-controls {
+    top:60px;
+    gap:6px;
+    padding:8px;
+  }
+}
+
+/* 移动端视频源切换开关 */
+.mh-video-source-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--mh-line);
+  border-radius: var(--mh-radius);
+  background: var(--mh-panel);
+}
+.mh-video-source-toggle .label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--mh-text);
+}
+.mh-video-source-switch {
+  display: inline-flex;
+  background: var(--mh-line);
+  border-radius: 999px;
+  padding: 4px;
+  gap: 4px;
+}
+.mh-video-source-option {
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--mh-muted);
+  background: transparent;
+  border: none;
+}
+.mh-video-source-option.active {
+  background: var(--mh-accent);
+  color: #fff;
+}
+@media (max-width: 768px) {
+  .mh-video-source-toggle {
+    display: flex;
+  }
+}
+
+:root {
+  --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
+  --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
+  --oc-border-strong: oklch(84% 0.015 230); --oc-fg: oklch(22% 0.020 235);
+  --oc-fg-muted: oklch(48% 0.018 230); --oc-fg-subtle: oklch(62% 0.015 230);
+  --oc-accent: oklch(56% 0.16 230); --oc-accent-hover: oklch(50% 0.17 230);
+  --oc-accent-subtle: oklch(94% 0.04 225); --oc-danger: oklch(58% 0.18 25);
+  --oc-success: oklch(62% 0.13 165);
+  --oc-success-bg: oklch(95% 0.04 165); --oc-success-fg: oklch(38% 0.09 165);
+  --oc-warning-bg: oklch(96% 0.05 85); --oc-warning-fg: oklch(42% 0.10 60);
+  --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
+}
+.mki-btn:disabled, .mki-btn--disabled {
+  background: var(--oc-bg-muted); color: var(--oc-fg-muted);
+  cursor: not-allowed; border-color: var(--oc-border);
+}
+.mki-toast {
+  position: fixed; bottom: 24px; right: 24px; padding: 12px 16px;
+  border-radius: var(--oc-r-md); font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 2000; max-width: 400px;
+}
+.mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+.mki-toast--warning { background: var(--oc-warning-bg); color: var(--oc-warning-fg); }
+.mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
+
+.mki-xiao-backdrop {
+  position: fixed; inset: 0; z-index: 2200; display: none; align-items: center; justify-content: center;
+  padding: 24px; background: rgba(15, 23, 42, .42);
+}
+.mki-xiao-dialog {
+  width: min(1040px, 94vw); max-height: 86vh; overflow: auto; padding: 28px;
+  border: 1px solid var(--oc-border); border-radius: var(--oc-r-lg); background: #fff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
+}
+.mki-xiao-title { margin: 0 0 18px; font-size: 20px; line-height: 1.35; font-weight: 800; }
+.mki-xiao-fine-ai { margin-bottom: 18px; }
+.mki-xiao-field { margin-bottom: 18px; }
+.mki-xiao-label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--oc-fg); }
+.mki-xiao-lang-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.mki-xiao-lang-pill { display: inline-flex; cursor: pointer; user-select: none; }
+.mki-xiao-lang-card--disabled,
+.mki-xiao-lang-pill:has(.mki-xiao-lang-card--disabled) {
+  cursor: not-allowed !important;
+}
+.mki-xiao-lang-card--disabled {
+  opacity: 0.65;
+  background: var(--oc-bg-muted) !important;
+  border-color: var(--oc-border) !important;
+}
+.mki-xiao-lang-card--disabled .mki-xiao-lang-pill-box {
+  background: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+  color: #9ca3af !important;
+  cursor: not-allowed !important;
+}
+.mki-xiao-lang-card--disabled .mki-xiao-ai-suggestion {
+  color: #9ca3af !important;
+}
+.mki-xiao-lang-pill:hover .mki-xiao-lang-card--disabled .mki-xiao-lang-pill-box {
+  border-color: #d1d5db !important;
+  color: #9ca3af !important;
+}
+.mki-xiao-lang-card {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 5px; border: 1px solid transparent; border-radius: var(--oc-r-lg);
+  background: var(--oc-bg); transition: background 120ms, border-color 120ms;
+}
+.mki-xiao-lang-card--high { border-color: oklch(83% 0.06 165); background: var(--oc-success-bg); }
+.mki-xiao-lang-card--medium { border-color: oklch(86% 0.08 85); background: var(--oc-warning-bg); }
+.mki-xiao-lang-card--low { border-color: oklch(86% 0.07 25); background: oklch(97% 0.04 25); }
+.mki-xiao-lang-check {
+  position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+.mki-xiao-lang-pill-box {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-width: 74px; min-height: 50px; padding: 7px 14px; border: 1.5px solid var(--oc-border-strong);
+  border-radius: 9999px; background: #fff; color: var(--oc-fg);
+  transition: background 120ms, border-color 120ms, color 120ms;
+}
+.mki-xiao-lang-main { font-size: 14px; font-weight: 800; line-height: 1.1; }
+.mki-xiao-ai-suggestion { font-size: 10px; font-weight: 700; line-height: 1.1; color: var(--oc-fg-muted); white-space: nowrap; }
+.mki-xiao-lang-owner { width: 190px; max-width: 100%; min-height: 30px; font-size: 12px; padding: 4px 8px; }
+.mki-xiao-lang-card--high .mki-xiao-ai-suggestion { color: var(--oc-success-fg); }
+.mki-xiao-lang-card--medium .mki-xiao-ai-suggestion { color: var(--oc-warning-fg); }
+.mki-xiao-lang-card--low .mki-xiao-ai-suggestion { color: var(--oc-danger); }
+.mki-xiao-lang-pill:hover .mki-xiao-lang-pill-box { border-color: var(--oc-accent); color: var(--oc-accent); }
+.mki-xiao-lang-check:checked + span,
+.mki-xiao-lang-check:checked + .mki-xiao-lang-pill-box {
+  background: var(--oc-accent); border-color: var(--oc-accent); color: #fff;
+}
+.mki-xiao-lang-check:focus-visible + .mki-xiao-lang-pill-box {
+  outline: 2px solid var(--oc-accent-subtle); outline-offset: 2px;
+}
+.mki-xiao-status {
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--oc-r-md);
+  border: 1px solid var(--oc-border); font-size: 13px; line-height: 1.55;
+}
+.mki-xiao-status--running {
+  border-color: #bfdbfe; background: #eff6ff; color: #1e3a8a;
+}
+.mki-xiao-status--success {
+  border-color: #bbf7d0; background: #f0fdf4; color: #14532d;
+}
+.mki-xiao-status--error {
+  border-color: #fecaca; background: #fef2f2; color: #7f1d1d;
+}
+.mki-xiao-status-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mki-xiao-options { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 4px; }
+.mki-xiao-option { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--oc-fg); cursor: pointer; }
+.mki-xiao-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 22px; }
+.mki-ai-reevaluate-btn {
+  height: 32px; padding: 0 14px; border: 1.5px solid var(--oc-accent); border-radius: 8px;
+  background: #fff; color: var(--oc-accent); cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: all 120ms; margin-left: 12px;
+}
+.mki-ai-reevaluate-btn:hover:not(:disabled) { background: var(--oc-accent-subtle); }
+.mki-ai-reevaluate-btn:disabled { border-color: var(--oc-border); color: var(--oc-fg-muted); background: var(--oc-bg-muted); cursor: not-allowed; }
+.ect-modal-header-actions { display: flex; align-items: center; margin-left: auto; }
+{% endblock %}
+{% block content %}
+<div class="meta-hot-page">
+  {% set active = "meta-hot-posts" %}
+  {% include "_xuanpin_tabs.html" %}
+
+  <div class="mh-sticky-controls">
+    <div class="mh-status">
+      <a href="/xuanpin/meta-hot-posts" class="mh-btn secondary" style="display: inline-flex; align-items: center; justify-content: center; text-decoration: none; font-weight: 700; height: 34px; padding: 0 16px; border-radius: 6px;">
+        ← 返回热帖列表
+      </a>
+      <div class="mh-status-actions">
+        <div class="mh-ai-analysis-actions" aria-label="AI分析显示设置">
+          <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhUsAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('us')">显示美国AI分析</button>
+          <button class="mh-btn secondary mh-ai-analysis-toggle" id="mhEuropeAiAnalysisToggle" type="button" aria-pressed="false" onclick="toggleMetaHotAiAnalysis('europe')">显示欧洲AI分析</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="metaHotCardGrid" class="meta-hot-card-grid">
+    <div class="mh-empty">加载中...</div>
+  </div>
+
+  <div class="mh-modal" id="mhPromptModal" hidden>
+    <div class="mh-modal-panel">
+      <div class="mh-modal-head">
+        <h3>类目分析提示词</h3>
+        <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhPromptModal')">关闭</button>
+      </div>
+      <div class="mh-modal-body">
+        <pre class="mh-pre" id="mhPromptText">Loading...</pre>
+        <div class="mh-category-list" id="mhPromptCategories"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mh-modal" id="mhFailuresModal" hidden>
+    <div class="mh-modal-panel">
+      <div class="mh-modal-head">
+        <h3>商品分析失败记录</h3>
+        <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhFailuresModal')">关闭</button>
+      </div>
+      <div class="mh-modal-body">
+        <div class="mh-failure-list" id="mhFailureList">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mh-modal" id="mhAiAnalysisModal" hidden>
+    <div class="mh-modal-panel">
+      <div class="mh-modal-head">
+        <h3 id="mhAiAnalysisTitle">AI 分析</h3>
+        <div class="mh-modal-actions">
+          <button class="mh-btn secondary" id="mhAiForceButton" type="button" onclick="forceMetaHotAiAnalysis()">强制重新分析</button>
+          <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhAiAnalysisModal')">关闭</button>
+        </div>
+      </div>
+      <div class="mh-modal-body">
+        <div class="mh-ai-tabs" role="tablist" aria-label="AI 分析数据">
+          <button class="mh-ai-tab active" id="mhAiRequestTab" type="button" onclick="switchMetaHotAiTab('request')">请求数据</button>
+          <button class="mh-ai-tab" id="mhAiResultTab" type="button" onclick="switchMetaHotAiTab('result')">结果数据</button>
+        </div>
+        <div class="mh-ai-panel" id="mhAiRequestPanel">Loading...</div>
+        <div class="mh-ai-panel" id="mhAiResultPanel" hidden>暂无结果</div>
+      </div>
+    </div>
+  </div>
+  <div class="mh-modal" id="mhImportOwnerModal" hidden>
+    <div class="mh-modal-panel" style="width: 420px;">
+      <div class="mh-modal-head">
+        <h3>选择产品负责人</h3>
+        <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhImportOwnerModal')">关闭</button>
+      </div>
+      <div class="mh-modal-body">
+        <div style="margin-bottom: 15px;">
+          <label for="mhImportOwnerSelect" style="display:block; margin-bottom:6px; font-weight:bold; font-size:13px;">指派负责人：</label>
+          <select id="mhImportOwnerSelect" class="mh-select" style="width:100%; height:36px;"></select>
+        </div>
+        <div class="mh-modal-actions" style="justify-content: flex-end;">
+          <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhImportOwnerModal')">取消</button>
+          <button id="mhImportOwnerConfirm" class="mh-btn" type="button">确认导入</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 创建小语种翻译任务 modal -->
+  <div id="mkiXiaoModal" class="mki-xiao-backdrop">
+    <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
+      <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
+      <div id="mkiXiaoTaskKindWrap" class="mki-xiao-field" hidden>
+        <span class="mki-xiao-label">任务类型：</span>
+        <div class="mki-xiao-options">
+          <label class="mki-xiao-option"><input type="radio" name="mkiXiaoTaskKind" value="new_product" checked> 新品任务</label>
+          <label class="mki-xiao-option"><input type="radio" name="mkiXiaoTaskKind" value="supplement"> 补充素材</label>
+        </div>
+      </div>
+      <div id="mkiXiaoProductSearchWrap" class="mki-xiao-field" hidden>
+        <label class="mki-xiao-label" for="mkiXiaoProductSearch">选择目标产品：</label>
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px;">
+          <input id="mkiXiaoProductSearch" class="mh-select" type="search" placeholder="产品名 / Product Code / 产品 ID" style="height:36px;">
+          <button id="mkiXiaoProductSearchBtn" class="mh-btn secondary" type="button">搜索</button>
+        </div>
+        <div id="mkiXiaoSelectedProduct" class="mki-xiao-status" hidden></div>
+        <div id="mkiXiaoProductResults" style="display:grid; gap:6px; margin-top:8px; max-height:220px; overflow:auto;"></div>
+      </div>
+      <div class="mki-xiao-field">
+        <label class="mki-xiao-label" for="mkiXiaoTranslator">产品负责人 / 默认翻译负责人：</label>
+        <select id="mkiXiaoTranslator" class="mh-select" style="width:100%; height:36px;"></select>
+        <div class="mki-progress-domain-subtitle" style="font-size:11px; color:var(--mh-muted); margin-top:4px;">新品任务中用于产品归属；补充素材沿用目标产品负责人。每个目标语种可单独改负责人。</div>
+      </div>
+      <div class="mki-xiao-field">
+        <label class="mki-xiao-label" for="mkiXiaoRawProcessor">原视频处理人：</label>
+        <select id="mkiXiaoRawProcessor" class="mh-select" style="width:100%; height:36px;"></select>
+      </div>
+      <div class="mki-xiao-field">
+        <span class="mki-xiao-label">目标国家（至少勾选一个）：</span>
+        <div id="mkiXiaoLangs" class="mki-xiao-lang-pills"></div>
+      </div>
+      <div class="mki-xiao-field">
+        <div class="mki-xiao-options">
+          <label class="mki-xiao-option" for="mkiXiaoUrgent">
+            <input id="mkiXiaoUrgent" type="checkbox">
+            紧急任务
+          </label>
+        </div>
+      </div>
+      <div id="mkiXiaoStatus" class="mki-xiao-status" hidden></div>
+      <div class="mki-xiao-actions">
+        <button id="mkiXiaoCancel" class="mh-btn secondary" onclick="mkiXiaoCancel()">取消</button>
+        <button id="mkiXiaoConfirm" class="mh-btn" onclick="mkiXiaoOK()">确认创建</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
+<script>
+function safeMetaHotPage(value) {
+  const page = Number.parseInt(value || '1', 10);
+  return Number.isFinite(page) && page > 0 ? page : 1;
+}
+let mhPage = safeMetaHotPage(new URLSearchParams(window.location.search).get('page'));
+let mhSubtab = 'library';
+let mhVideoSource = 'local'; // 默认为本地，可选 'tos'
+let mhCardZoomed = false;
+const MH_CARD_ZOOM_STORAGE_KEY = 'mhCardZoomed';
+const MH_INITIAL_AI_ANALYSIS_VISIBILITY = {{ (meta_hot_posts_ai_visibility or {'us': false, 'europe': false}) | tojson }};
+const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID = (() => {
+  const key = 'mhAiAnalysisVisibilityClientId';
+  let saved = localStorage.getItem(key);
+  if (!saved) {
+    saved = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    localStorage.setItem(key, saved);
+  }
+  return saved;
+})();
+let mhAiAnalysisVisibility = {us: false, europe: false};
+let mhAiAnalysisVisibilitySaveVersion = Date.now();
+let mhItemsById = new Map();
+let mhAiState = {postId: null, mode: null, request: null, result: null};
+let mhProductPostHash = '';
+const mhPageSize = 50;
+const mhProductPageSize = 100;
+const MH_AI_MODES = {
+  us_copyability: {label: '美国AI分析'},
+  europe_translation: {label: '欧洲AI分析'}
+};
+const qs = id => document.getElementById(id);
+function metaHotCsrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  return meta ? (meta.getAttribute('content') || '') : '';
+}
+function metaHotJsonHeaders() {
+  const headers = {'Content-Type': 'application/json'};
+  const token = metaHotCsrfToken();
+  if (token) headers['X-CSRFToken'] = token;
+  return headers;
+}
+const mhFilterBindings = [
+  {param: 'category', inputId: 'mhCategory'},
+  {param: 'mark_status', inputId: 'mhMarkStatus'},
+  {param: 'push_status', inputId: 'mhPushStatus'},
+  {param: 'min_price', inputId: 'mhMinPrice'},
+  {param: 'max_price', inputId: 'mhMaxPrice'},
+  {param: 'min_interactions', inputId: 'mhMinInteractions'},
+  {param: 'min_comments', inputId: 'mhMinComments'},
+  {param: 'created_from', inputId: 'mhCreatedFrom'},
+  {param: 'created_to', inputId: 'mhCreatedTo'},
+];
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function fmt(v) { return v === null || v === undefined || v === '' ? '-' : esc(v); }
+function fmtMoney(min, max, currency) {
+  if (min === null || min === undefined || min === '') return '-';
+  const prefix = currency && currency !== 'USD' ? currency + ' ' : '$';
+  if (max && Number(max) !== Number(min)) return `${prefix}${Number(min).toFixed(2)} - ${prefix}${Number(max).toFixed(2)}`;
+  return `${prefix}${Number(min).toFixed(2)}`;
+}
+function pauseOtherMetaHotVideos(activeVideo) {
+  document.querySelectorAll('.meta-hot-page video').forEach(video => {
+    if (video !== activeVideo && !video.paused && !video.ended) {
+      video.pause();
+    }
+  });
+}
+function pauseMetaHotVideos() {
+  document.querySelectorAll('.meta-hot-page video').forEach(video => {
+    if (!video.paused && !video.ended) {
+      video.pause();
+    }
+  });
+}
+function handleMetaHotVideoPlay(event) {
+  const video = event.target;
+  if (!video || video.tagName !== 'VIDEO' || !video.closest('.meta-hot-page')) return;
+  pauseOtherMetaHotVideos(video);
+}
+document.addEventListener('play', handleMetaHotVideoPlay, true);
+function videoDurationSeconds(row) {
+  const seconds = row.video_duration_seconds ?? row.duration_seconds ?? row.video_duration;
+  const parsedSeconds = Number(seconds || 0);
+  if (Number.isFinite(parsedSeconds) && parsedSeconds > 0) return parsedSeconds;
+  const milliseconds = row.video_duration_ms ?? row.videoDuration ?? row.duration_ms;
+  const parsedMilliseconds = Number(milliseconds || 0);
+  return Number.isFinite(parsedMilliseconds) && parsedMilliseconds > 0 ? parsedMilliseconds / 1000 : 0;
+}
+function formatVideoDuration(value) {
+  const seconds = Math.round(Number(value || 0));
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = String(seconds % 60).padStart(2, '0');
+  if (minutes < 60) return `${minutes}:${rest}`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}:${String(minutes % 60).padStart(2, '0')}:${rest}`;
+}
+function playbackVideoHtml(row) {
+  if (mhVideoSource === 'tos' && row.tos_video_url) {
+    return `<video controls autoplay preload="metadata" playsinline src="${esc(row.tos_video_url)}"></video>`;
+  }
+  if (row.local_video_url) {
+    return `<video controls autoplay preload="metadata" playsinline src="${esc(row.local_video_url)}"></video>`;
+  }
+  if (row.video_url) {
+    const src = row.invisible && row.invisible_region === 'usa'
+      ? `/api/spy/video/${encodeURIComponent(row.page_id || '')}/${encodeURIComponent(row.post_id || '')}`
+      : `https://www.facebook.com/plugins/video.php?height=476&href=${encodeURIComponent(row.video_url)}&show_text=false&width=267&t=0`;
+    return `<iframe loading="lazy" src="${esc(src)}" allowfullscreen allow="clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe>`;
+  }
+  return '';
+}
+function previewCoverUrl(row) {
+  if (mhVideoSource === 'tos' && row.tos_video_cover_url) return row.tos_video_cover_url;
+  return row.local_video_cover_url || row.tos_video_cover_url || row.image_url || '';
+}
+function renderVideoShell(row, videoHtml) {
+  const coverUrl = previewCoverUrl(row);
+  const duration = formatVideoDuration(videoDurationSeconds(row));
+  const cover = coverUrl
+    ? `<img class="mh-video-cover" src="${esc(coverUrl)}" alt="" loading="lazy">`
+    : '<span class="mh-video-placeholder">Video</span>';
+  const durationBadge = duration ? `<span class="mh-video-duration-badge">${esc(duration)}</span>` : '';
+  return `<div class="mh-video-shell" role="button" tabindex="0" data-video-html="${esc(videoHtml)}" onclick="loadMetaHotPostVideo(event)" onkeydown="handleMetaHotPostVideoKey(event)">
+    ${cover}
+    <span class="mh-play-button center" aria-hidden="true"></span>
+    <span class="mh-play-button bottom" aria-hidden="true"></span>
+    <span class="mh-video-badges">${durationBadge}</span>
+  </div>`;
+}
+function loadMetaHotPostVideo(event) {
+  const shell = event.currentTarget;
+  const media = shell && shell.closest ? shell.closest('.mh-media') : null;
+  const videoHtml = shell && shell.dataset ? shell.dataset.videoHtml : '';
+  if (media && videoHtml) media.innerHTML = videoHtml;
+}
+function handleMetaHotPostVideoKey(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  loadMetaHotPostVideo(event);
+}
+
+// 视频源切换逻辑
+function setVideoSource(source) {
+  mhVideoSource = source;
+  // 更新按钮状态
+  qs('mhSourceLocal').classList.toggle('active', source === 'local');
+  qs('mhSourceTOS').classList.toggle('active', source === 'tos');
+  // 保存到 localStorage
+  localStorage.setItem('mhVideoSource', source);
+  pauseMetaHotVideos();
+  // 重新加载当前页面以应用新设置
+  if (mhSubtab === 'library') {
+    loadMetaHotPosts(mhPage);
+  } else if (mhSubtab === 'today') {
+    loadTodayNewMaterials(mhPage);
+  } else if (mhSubtab === 'europe') {
+    loadEuropeTopMaterials();
+  } else if (mhSubtab === 'us') {
+    loadUsTopMaterials();
+  } else if (mhSubtab === 'favorites') {
+    loadFavoriteMetaHotPosts(mhPage);
+  } else if (mhSubtab === 'products') {
+    if (mhProductPostHash) {
+      loadCurrentMetaHotProductPosts(mhPage);
+    } else {
+      loadMetaHotProductList(mhPage);
+    }
+  }
+}
+
+// 从 localStorage 恢复视频源设置
+function restoreVideoSource() {
+  const saved = localStorage.getItem('mhVideoSource');
+  if (saved === 'tos') {
+    setVideoSource('tos');
+  } else {
+    setVideoSource('local');
+  }
+}
+function applyMetaHotCardZoom(zoomed) {
+  mhCardZoomed = Boolean(zoomed);
+  const page = document.querySelector('.meta-hot-page');
+  if (page) page.classList.toggle('mh-zoomed', mhCardZoomed);
+  const button = qs('mhCardZoomButton');
+  if (button) {
+    button.textContent = mhCardZoomed ? '恢复卡片' : '卡片放大 2x';
+    button.setAttribute('aria-pressed', mhCardZoomed ? 'true' : 'false');
+  }
+  localStorage.setItem(MH_CARD_ZOOM_STORAGE_KEY, mhCardZoomed ? '1' : '0');
+}
+function toggleMetaHotCardZoom() {
+  applyMetaHotCardZoom(!mhCardZoomed);
+}
+function restoreMetaHotCardZoom() {
+  applyMetaHotCardZoom(localStorage.getItem(MH_CARD_ZOOM_STORAGE_KEY) === '1');
+}
+const MH_AI_ANALYSIS_TOGGLES = {
+  us: {buttonId: 'mhUsAiAnalysisToggle', showText: '显示美国AI分析', hideText: '隐藏美国AI分析'},
+  europe: {buttonId: 'mhEuropeAiAnalysisToggle', showText: '显示欧洲AI分析', hideText: '隐藏欧洲AI分析'}
+};
+function normalizeMetaHotAiAnalysisVisibility(value) {
+  return {
+    us: Boolean(value && value.us),
+    europe: Boolean(value && value.europe)
+  };
+}
+function updateMetaHotAiAnalysisToggle(kind) {
+  const config = MH_AI_ANALYSIS_TOGGLES[kind];
+  if (!config) return;
+  const button = qs(config.buttonId);
+  if (!button) return;
+  const enabled = Boolean(mhAiAnalysisVisibility[kind]);
+  button.textContent = enabled ? config.hideText : config.showText;
+  button.classList.toggle('active', enabled);
+  button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+}
+function applyMetaHotAiAnalysisVisibility(kind, show, options = {}) {
+  if (!Object.prototype.hasOwnProperty.call(MH_AI_ANALYSIS_TOGGLES, kind)) return;
+  mhAiAnalysisVisibility[kind] = Boolean(show);
+  updateMetaHotAiAnalysisToggle(kind);
+  if (options.rerender !== false) rerenderMetaHotCards();
+}
+async function persistMetaHotAiAnalysisVisibility(saveVersion, preferences) {
+  const res = await fetch('/xuanpin/api/meta-hot-posts/ai-analysis-visibility', {
+    method: 'POST',
+    headers: metaHotJsonHeaders(),
+    body: JSON.stringify({
+      preferences,
+      client_id: MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID,
+      save_version: saveVersion
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'visibility_save_failed');
+  if (saveVersion !== mhAiAnalysisVisibilitySaveVersion) return;
+  mhAiAnalysisVisibility = normalizeMetaHotAiAnalysisVisibility(data.preferences);
+  updateMetaHotAiAnalysisToggle('us');
+  updateMetaHotAiAnalysisToggle('europe');
+}
+function setMetaHotAiAnalysisVisibility(kind, show) {
+  const previous = {...mhAiAnalysisVisibility};
+  applyMetaHotAiAnalysisVisibility(kind, show);
+  const saveVersion = ++mhAiAnalysisVisibilitySaveVersion;
+  const preferences = {...mhAiAnalysisVisibility};
+  persistMetaHotAiAnalysisVisibility(saveVersion, preferences).catch(() => {
+    if (saveVersion !== mhAiAnalysisVisibilitySaveVersion) return;
+    mhAiAnalysisVisibility = previous;
+    updateMetaHotAiAnalysisToggle('us');
+    updateMetaHotAiAnalysisToggle('europe');
+    rerenderMetaHotCards();
+    qs('mhStatus').textContent = 'AI分析显示设置保存失败';
+  });
+}
+function toggleMetaHotAiAnalysis(kind) {
+  setMetaHotAiAnalysisVisibility(kind, !mhAiAnalysisVisibility[kind]);
+}
+function restoreMetaHotAiAnalysisVisibility() {
+  mhAiAnalysisVisibility = normalizeMetaHotAiAnalysisVisibility(MH_INITIAL_AI_ANALYSIS_VISIBILITY);
+  updateMetaHotAiAnalysisToggle('us');
+  updateMetaHotAiAnalysisToggle('europe');
+}
+
+function isMetaHotPostFavorited(row) {
+  return row.is_favorited === true || row.is_favorited === 1 || row.is_favorited === '1';
+}
+function favoriteButtonLabel(favorited, variant) {
+  if (variant === 'heart') return favorited ? '♥' : '♡';
+  return favorited ? '取消收藏' : '收藏';
+}
+function favoriteButtonTitle(favorited) {
+  return favorited ? '取消收藏' : '收藏';
+}
+function renderFavoriteButton(row, variant = 'text') {
+  const postId = Number(row.id || 0);
+  if (!postId) return '';
+  const favorited = isMetaHotPostFavorited(row);
+  const safeVariant = variant === 'heart' ? 'heart' : 'text';
+  const classes = safeVariant === 'heart'
+    ? `mh-favorite-btn mh-favorite-heart${favorited ? ' is-favorited' : ''}`
+    : `mh-link-btn mh-favorite-btn mh-favorite-text${favorited ? ' is-favorited' : ''}`;
+  return `<button class="${classes}" type="button" data-post-id="${postId}" data-favorited="${favorited ? '1' : '0'}" data-favorite-variant="${safeVariant}" aria-label="${favoriteButtonTitle(favorited)}" title="${favoriteButtonTitle(favorited)}" aria-pressed="${favorited ? 'true' : 'false'}" onclick="toggleMetaHotPostFavorite(event, ${postId})">${favoriteButtonLabel(favorited, safeVariant)}</button>`;
+}
+function metaHotPostDisplayId(row) {
+  const value = row.post_id || row.wedev_post_id || row.id || '';
+  return String(value).trim();
+}
+function metaHotPostLink(row) {
+  const direct = String(row.post_url || '').trim();
+  if (direct) return direct;
+  const pageId = String(row.page_id || '').trim();
+  const postId = String(row.post_id || '').trim();
+  if (!pageId || !postId) return '';
+  return `https://facebook.com/${encodeURIComponent(pageId)}/posts/${encodeURIComponent(postId)}`;
+}
+function metaHotPostIcon(name) {
+  const icons = {
+    copy: '<path d="M8 8h8v8H8z"></path><path d="M5 12H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1"></path>',
+    link: '<path d="M10 13a5 5 0 0 1-7 0 5 5 0 0 1 0-7l2-2a5 5 0 0 1 7 0"></path><path d="M8 7a5 5 0 0 1 7 0 5 5 0 0 1 0 7l-2 2a5 5 0 0 1-7 0"></path><path d="M7 10h6"></path>'
+  };
+  return `<svg viewBox="0 0 18 18" aria-hidden="true">${icons[name] || icons.copy}</svg>`;
+}
+function fallbackCopyMetaHotPostId(value) {
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try { document.execCommand('copy'); } catch (err) {}
+  textarea.remove();
+}
+function copyMetaHotPostId(event, value) {
+  event.preventDefault();
+  event.stopPropagation();
+  const text = String(value || '').trim();
+  if (!text) return;
+  const button = event.currentTarget;
+  const done = () => {
+    if (!button) return;
+    const originalHtml = button.innerHTML;
+    const originalTitle = button.getAttribute('title') || '';
+    button.innerHTML = '<span class="mh-post-copy-done" aria-hidden="true">&#10003;</span>';
+    button.setAttribute('title', '已复制');
+    window.setTimeout(() => {
+      button.innerHTML = originalHtml;
+      button.setAttribute('title', originalTitle);
+    }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {
+      fallbackCopyMetaHotPostId(text);
+      done();
+    });
+    return;
+  }
+  fallbackCopyMetaHotPostId(text);
+  done();
+}
+function renderMetaHotPostId(row) {
+  const displayId = metaHotPostDisplayId(row);
+  if (!displayId) return '';
+  const postLink = metaHotPostLink(row);
+  const postId = Number(row.id || 0);
+  const linkButton = postLink
+    ? `<button class="mh-post-copy-btn mh-post-link-copy" type="button" data-copy-value="${esc(postLink)}" title="复制帖子链接" aria-label="复制帖子链接" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('link')}</button>`
+    : '';
+  return `<div class="mh-post-id-bar">
+    <div class="mh-post-id-main">
+      ${postId ? renderFavoriteButton(row, 'heart') : ''}
+      <span class="mh-post-id-value" title="${esc(displayId)}">${esc(displayId)}</span>
+      <button class="mh-post-copy-btn mh-post-id-copy" type="button" data-copy-value="${esc(displayId)}" title="复制帖子ID" aria-label="复制帖子ID" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('copy')}</button>
+      ${linkButton}
+    </div>
+    ${postId ? renderMarkOptions(row) : ''}
+  </div>`;
+}
+function renderMetaHotPushedBadge(row) {
+  return row.is_pushed ? '<span class="mh-push-badge">已推送</span>' : '';
+}
+function cardMedia(row) {
+  const videoHtml = playbackVideoHtml(row);
+  if (videoHtml) return `<div class="mh-media">${renderVideoShell(row, videoHtml)}</div>`;
+  if (row.image_url) return `<div class="mh-media"><img src="${esc(row.image_url)}" alt="" loading="lazy"></div>`;
+  return `<div class="mh-media"></div>`;
+}
+function isMetaHotPostMarked(row) {
+  return row.is_marked === true || row.is_marked === 1 || row.is_marked === '1';
+}
+function metaHotPostMarkStatus(row) {
+  const status = String(row.mark_status || '').toLowerCase();
+  if (status === 'ok' || status === 'bad') return status;
+  return isMetaHotPostMarked(row) ? 'bad' : '';
+}
+function renderMarkOption(postId, currentStatus, status, label) {
+  const marked = currentStatus === status;
+  const toneClass = status === 'bad' ? ' bad' : '';
+  const stateClass = marked ? ' is-marked' : '';
+  return `<button class="mh-mark-option${toneClass}${stateClass}" type="button" data-post-id="${postId}" data-mark-status="${status}" aria-pressed="${marked ? 'true' : 'false'}" onclick="toggleMetaHotPostMark(event, ${postId}, '${status}')"><span class="mh-mark-box" aria-hidden="true"></span><span>${label}</span></button>`;
+}
+function renderMarkOptions(row) {
+  const currentStatus = metaHotPostMarkStatus(row);
+  const postId = Number(row.id || 0);
+  return `<div class="mh-mark-options" data-post-id="${postId}" data-mark-status="${currentStatus}" aria-label="标注结果">${renderMarkOption(postId, currentStatus, 'ok', '行')}${renderMarkOption(postId, currentStatus, 'bad', '不行')}</div>`;
+}
+function listItems(items) {
+  return (items || []).filter(Boolean).slice(0, 4).map(item => `<li>${esc(item)}</li>`).join('');
+}
+function metaHotHasText(value) {
+  return Boolean(String(value || '').trim());
+}
+function metaHotListHasText(items) {
+  if (Array.isArray(items)) return items.some(metaHotHasText);
+  return metaHotHasText(items);
+}
+function recommendationLabel(value) {
+  if (value === 'translate_and_launch') return '翻译后可投';
+  if (value === 'adapt_before_translation') return '先改素材再翻译';
+  if (value === 'direct_reuse') return '可直接搬运';
+  if (value === 'adapt_before_use') return '本土化后投放';
+  if (value === 'not_recommended') return '不建议';
+  return fmt(value || '-');
+}
+function metaHotAiAnalysisHasChinese(row, mode) {
+  if (!row) return false;
+  if (mode === 'us_copyability') {
+    const data = row.video_copyability || {};
+    return metaHotHasText(data.summary_zh);
+  }
+  if (mode === 'europe_translation') {
+    return metaHotHasText(row.europe_fit_reasoning_zh)
+      || metaHotListHasText(row.europe_fit_strengths_zh)
+      || metaHotListHasText(row.europe_fit_risks_zh)
+      || metaHotListHasText(row.europe_fit_required_changes_zh);
+  }
+  return false;
+}
+function aiAnalysisToneClass(tone) {
+  if (tone === 'pass') return ' mh-ai-card--pass';
+  if (tone === 'warn') return ' mh-ai-card--warn';
+  if (tone === 'reject') return ' mh-ai-card--reject';
+  return '';
+}
+function usAiAnalysisTone(recommendation) {
+  const value = String(recommendation || '').trim().toLowerCase();
+  if (value === 'copy') return 'pass';
+  if (value === 'adapt') return 'warn';
+  if (value === 'avoid') return 'reject';
+  return '';
+}
+function europeAiAnalysisTone(recommendation) {
+  const value = String(recommendation || '').trim().toLowerCase();
+  if (value === 'translate_and_launch' || value === 'direct_reuse') return 'pass';
+  if (value === 'adapt_before_translation' || value === 'adapt_before_use') return 'warn';
+  if (value === 'not_recommended') return 'reject';
+  return '';
+}
+function renderAiTranslateZhButton(postId, mode, hasChinese) {
+  const safeId = Number(postId || 0);
+  if (hasChinese) return '';
+  if (!safeId || !mode) return '';
+  return `<button class="mh-ai-translate-zh-btn" type="button" onclick="translateMetaHotAiAnalysisToChinese(event, ${safeId}, '${mode}')">翻译中文</button>`;
+}
+function renderEuropeFitPanel(row) {
+  if (!mhAiAnalysisVisibility.europe) return '';
+  if (row.europe_fit_score === undefined || row.europe_fit_score === null || row.europe_fit_score === '') return '';
+  const countries = (row.europe_fit_best_countries || []).join(', ') || '-';
+  const strengths = listItems(row.europe_fit_strengths_zh || row.europe_fit_strengths);
+  const risks = listItems(row.europe_fit_risks_zh || row.europe_fit_risks);
+  const changes = listItems(row.europe_fit_required_changes_zh || row.europe_fit_required_changes);
+  const toneClass = aiAnalysisToneClass(europeAiAnalysisTone(row.europe_fit_recommendation));
+  return `<div class="mh-europe-panel${toneClass}">
+    <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.europe_translation.label}</div>${renderAiTranslateZhButton(row.id, 'europe_translation', metaHotAiAnalysisHasChinese(row, 'europe_translation'))}</div>
+    <div class="mh-europe-head"><span>欧洲评估 · ${recommendationLabel(row.europe_fit_recommendation)}</span><span class="mh-score">${fmt(row.europe_fit_score)}</span></div>
+    <div class="mh-mini">适合国家：${esc(countries)} · 模型：${fmt(row.europe_fit_model || '')}</div>
+    ${strengths ? `<ul class="mh-europe-list">${strengths}</ul>` : ''}
+    ${risks ? `<div class="mh-mini">风险</div><ul class="mh-europe-list">${risks}</ul>` : ''}
+    ${changes ? `<div class="mh-mini">需要调整</div><ul class="mh-europe-list">${changes}</ul>` : ''}
+  </div>`;
+}
+function copyabilityBlock(row) {
+  if (!mhAiAnalysisVisibility.us) return '';
+  const data = row.video_copyability || null;
+  if (!data) return '';
+  const summary = data.summary_zh || data.summary || '';
+  const toneClass = aiAnalysisToneClass(usAiAnalysisTone(data.recommendation));
+  return `<div class="mh-copyability${toneClass}">
+    <div class="mh-analysis-head"><div class="mh-analysis-category">${MH_AI_MODES.us_copyability.label}</div>${renderAiTranslateZhButton(row.id, 'us_copyability', metaHotAiAnalysisHasChinese(row, 'us_copyability'))}</div>
+    <div class="mh-score-list">
+      <span class="mh-score">总分 ${fmt(data.overall_score)}</span>
+      <span class="mh-score">可抄 ${fmt(data.copyability_score)}</span>
+      <span class="mh-score">Meta ${fmt(data.meta_us_ad_fit_score)}</span>
+      <span class="mh-score">风险 ${fmt(data.compliance_risk_score)}</span>
+      <span class="mh-score">${fmt(data.recommendation || '-')}</span>
+    </div>
+    <div class="mh-copy-summary">${esc(summary)}</div>
+  </div>`;
+}
+function renderMessageBlock(row) {
+  const translated = row.message_html || '';
+  const original = row.message_source_html || '';
+  const canToggleOriginal = Boolean(row.message_is_translated && original);
+  const attrs = canToggleOriginal
+    ? ` data-message-showing="translated" data-message-translated="${esc(translated)}" data-message-original="${esc(original)}"`
+    : '';
+  const toggle = canToggleOriginal
+    ? '<button class="mh-message-toggle" type="button" onclick="toggleMetaHotPostSourceMessage(event)">显示原文案</button>'
+    : '';
+  return `<div class="mh-message-wrap"${attrs}><div class="mh-message">${translated}</div>${toggle}</div>`;
+}
+function toggleMetaHotPostSourceMessage(event) {
+  const button = event.currentTarget;
+  const wrap = button && button.closest ? button.closest('.mh-message-wrap') : null;
+  const message = wrap ? wrap.querySelector('.mh-message') : null;
+  if (!wrap || !message) return;
+  const showingOriginal = wrap.dataset.messageShowing === 'original';
+  message.innerHTML = showingOriginal
+    ? (wrap.dataset.messageTranslated || '')
+    : (wrap.dataset.messageOriginal || '');
+  wrap.dataset.messageShowing = showingOriginal ? 'translated' : 'original';
+  button.textContent = showingOriginal ? '显示原文案' : '显示翻译文案';
+}
+function productTitleButtonLabel(mode, hasChinese) {
+  if (mode === 'zh') return '英文';
+  return hasChinese ? '中文' : '翻译';
+}
+function setMetaHotProductTitleMode(wrap, mode) {
+  const textNode = wrap ? wrap.querySelector('.mh-product-title-text') : null;
+  const button = wrap ? wrap.querySelector('.mh-product-title-toggle') : null;
+  if (!wrap || !textNode || !button) return;
+  const english = String(wrap.dataset.titleEn || '').trim();
+  const chinese = String(wrap.dataset.titleZh || '').trim();
+  const safeMode = mode === 'zh' && chinese ? 'zh' : 'en';
+  wrap.dataset.titleMode = safeMode;
+  textNode.textContent = safeMode === 'zh' ? chinese : english;
+  button.textContent = productTitleButtonLabel(safeMode, Boolean(chinese));
+}
+function renderProductTitleBlock(row) {
+  const postId = Number(row.id || 0);
+  const english = String(row.product_title || '').trim();
+  const chinese = String(row.product_title_zh || '').trim();
+  const mode = chinese ? 'zh' : 'en';
+  const text = chinese || english || '';
+  const button = postId && english
+    ? `<button class="mh-product-title-toggle" type="button" onclick="toggleMetaHotProductTitle(event, ${postId})">${productTitleButtonLabel(mode, Boolean(chinese))}</button>`
+    : '';
+  return `<div class="mh-product-title-block" data-title-mode="${mode}" data-title-en="${esc(english)}" data-title-zh="${esc(chinese)}">
+    <div class="mh-product-title-text" title="${esc(text)}">${esc(text)}</div>
+    ${button}
+  </div>`;
+}
+function toggleMetaHotProductTitle(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const wrap = button && button.closest ? button.closest('.mh-product-title-block') : null;
+  if (!wrap || !postId || button.disabled) return;
+  const mode = wrap.dataset.titleMode || 'en';
+  const hasChinese = Boolean(String(wrap.dataset.titleZh || '').trim());
+  if (mode === 'zh') {
+    setMetaHotProductTitleMode(wrap, 'en');
+    return;
+  }
+  if (hasChinese) {
+    setMetaHotProductTitleMode(wrap, 'zh');
+    return;
+  }
+  translateMetaHotProductTitleToChinese(event, postId);
+}
+async function translateMetaHotProductTitleToChinese(event, postId) {
+  const button = event.currentTarget;
+  const originalText = button ? button.textContent : '翻译';
+  if (!postId || (button && button.disabled)) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = '翻译中...';
+  }
+  qs('mhStatus').textContent = '商品标题翻译中...';
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/product-title/translate-zh`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders()
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'translate_failed');
+    if (data.item) updateMetaHotCard(data.item);
+    qs('mhStatus').textContent = data.cached ? '已有商品标题中文缓存' : '商品标题翻译完成';
+  } catch (err) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+    qs('mhStatus').textContent = '商品标题翻译失败';
+  }
+}
+function renderCard(row) {
+  const ratio = Number(row.sync_period_likes || 0) > 0 ? (Number(row.latest_likes || 0) / Number(row.sync_period_likes)).toFixed(2) : '-';
+  const productImg = row.product_main_image_url ? `<img src="${esc(row.product_main_image_url)}" alt="" loading="lazy">` : '<div class="mh-product-empty"></div>';
+  const postId = Number(row.id || 0);
+  const cardFlags = `${row.copycat ? '<span>产品观察</span>' : ''}${renderMetaHotPushedBadge(row)}`;
+
+  const localProductId = Number(row.local_product_id || 0);
+  const localItemId = Number(row.local_media_item_id || 0);
+  const isImported = localProductId > 0 && localItemId > 0;
+  const newProductTaskId = Number(row.new_product_parent_task_id || 0);
+
+  const importBtn = isImported
+    ? `<button class="mh-link-btn mki-btn--disabled" type="button" disabled>已入库</button>`
+    : `<button class="mh-link-btn mki-import-btn" type="button" onclick="mkiImportMetaHotPost(this, ${postId})">加入素材库</button>`;
+
+  const canCreateNewProductTask = String(row.local_video_status || '').toLowerCase() === 'downloaded' && !!row.local_video_url;
+  const newProductTaskBtn = newProductTaskId
+    ? `<button class="mh-link-btn mki-btn--disabled" type="button" disabled>任务 #${newProductTaskId}</button>`
+    : canCreateNewProductTask
+    ? `<button class="mh-link-btn" type="button" onclick="mkiCreateNewProductTaskFromMetaHot(this, ${postId})">新素材任务</button>`
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先完成本地视频入库">新素材任务</button>`;
+
+  const smallLangBtn = isImported
+    ? `<button class="mh-link-btn" type="button" onclick="mkiCreateSmallLangTaskFromMetaHot(this, ${postId})" data-mki-local-product-id="${localProductId}" data-mki-local-item-id="${localItemId}">创建小语种任务</button>`
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先加入素材库">创建小语种任务</button>`;
+
+  const fineAiBtn = isImported
+    ? `<button class="mh-link-btn" type="button" onclick="mkiFineAiEvaluateFromMetaHot(this, ${postId})" data-mki-local-product-id="${localProductId}" data-mki-local-item-id="${localItemId}">AI精细评估</button>`
+    : `<button class="mh-link-btn mki-btn--disabled" type="button" disabled title="请先加入素材库">AI精细评估</button>`;
+
+  return `<article class="mh-card" data-post-id="${postId}">
+    ${renderMetaHotPostId(row)}
+    <div class="mh-card-head">
+      <div class="mh-card-title">${renderProductTitleBlock(row)}</div>
+      <div class="mh-tags"><span class="mh-tag">互动变化: ${fmt(row.sync_period_likes)}</span><span class="mh-tag">变化周期: ${fmt(row.sync_period_hours)}h</span></div>
+    </div>
+    <div class="mh-card-body">
+      <div class="mh-time">创建：${fmt(row.creation_time)}，抓取：${fmt(row.first_seen_at)}，更新：${fmt(row.last_synced_at)}</div>
+      <div class="mh-metric">交互数：<b>${fmt(row.likes)}</b>，评论数：<b>${fmt(row.comments)}</b>，分享数：<b>${fmt(row.shares)}</b></div>
+      <div class="mh-metric">交互数：<b>${fmt(row.latest_likes)}</b>，评论数：<b>${fmt(row.latest_comments)}</b>，分享数：<b>${fmt(row.latest_shares)}</b></div>
+      <div class="mh-row"><span class="mh-ratio">${ratio}</span><span class="mh-card-flags">${cardFlags}</span></div>
+      ${cardMedia(row)}
+      ${renderMessageBlock(row)}
+      ${copyabilityBlock(row)}
+      ${row.product_url ? `
+        <a class="mh-analysis mh-analysis-clickable" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">
+          <div class="mh-product">${productImg}<div>
+            <div class="mh-product-title">${fmt(row.product_title_display || row.product_title || '待分析商品')}</div>
+            <div class="mh-mini">类目：${fmt(row.category_l1_zh || row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
+            <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
+          </div></div>
+        </a>
+      ` : `
+        <div class="mh-analysis">
+          <div class="mh-product">${productImg}<div>
+            <div class="mh-product-title">${fmt(row.product_title_display || row.product_title || '待分析商品')}</div>
+            <div class="mh-mini">类目：${fmt(row.category_l1_zh || row.category_l1)} · 价格：${fmtMoney(row.price_min, row.price_max, row.currency)} · SKU：${fmt(row.sku_count || 0)}</div>
+            <div class="mh-mini">状态：${fmt(row.analysis_status || 'pending')}</div>
+          </div></div>
+        </div>
+      `}
+      ${renderEuropeFitPanel(row)}
+    </div>
+    <div class="mh-links">
+      ${renderFavoriteButton(row, 'text')}
+      <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'us_copyability')">${MH_AI_MODES.us_copyability.label}</button>
+      <button class="mh-link-btn mh-ai-link" type="button" onclick="openMetaHotAiAnalysis(${postId}, 'europe_translation')">${MH_AI_MODES.europe_translation.label}</button>
+      ${row.product_url ? `<button class="mh-link-btn" type="button" style="background:var(--primary-blue,#2563eb);color:#fff;border-color:var(--primary-blue,#2563eb)" onclick="quickCreateAiListingTask(event, '${esc(row.product_url)}')">🛒 AI上品</button>` : ''}
+      ${importBtn}
+      ${newProductTaskBtn}
+      ${smallLangBtn}
+      ${fineAiBtn}
+      ${row.post_url ? `<a class="mh-link-btn" href="${esc(row.post_url)}" target="_blank" rel="noopener noreferrer">去帖子页</a>` : ''}
+      ${row.ad_library_url ? `<a class="mh-link-btn" href="${esc(row.ad_library_url)}" target="_blank" rel="noopener noreferrer">去主页广告</a>` : ''}
+      ${row.product_url ? `<a class="mh-link-btn" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">去商品页</a>` : ''}
+    </div>
+  </article>`;
+}
+function appendMetaHotFilterParams(params) {
+  mhFilterBindings.forEach(binding => {
+    const input = qs(binding.inputId);
+    if (input && input.value) params.set(binding.param, input.value);
+  });
+}
+function cacheMetaHotItems(items) {
+  mhItemsById = new Map();
+  (items || []).forEach(item => {
+    if (item && item.id) mhItemsById.set(Number(item.id), item);
+  });
+}
+function rerenderMetaHotCards() {
+  const grid = qs('metaHotCardGrid');
+  if (!grid || mhItemsById.size === 0) return;
+  pauseMetaHotVideos();
+  grid.innerHTML = Array.from(mhItemsById.values()).map(renderCard).join('');
+}
+function updateMetaHotCard(item) {
+  if (!item || !item.id) return;
+  mhItemsById.set(Number(item.id), item);
+  const card = document.querySelector(`.mh-card[data-post-id="${Number(item.id)}"]`);
+  if (card) {
+    const video = card.querySelector('video');
+    if (video && !video.paused && !video.ended) video.pause();
+    card.outerHTML = renderCard(item);
+  }
+}
+function quickCreateAiListingTask(event, productUrl) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (!confirm('确定要将该商品一键加入 AI 自动上品排队中吗？系统将自动解析引流博客，生成爆款 HTML 详情页及商品生图资产。')) return;
+  
+  const formData = new FormData();
+  formData.append('source_link', productUrl);
+  formData.append('target_store_domain', 'premium-deals.myshopify.com');
+  formData.append('pricing_ratio', '1.5');
+  formData.append('pricing_offset', '0.00');
+  formData.append('source_type', 'meta_hot_post');
+  
+  fetch('/ai-listing/create', {
+    method: "POST",
+    body: formData,
+    headers: {
+      "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+    }
+  })
+  .then(resp => resp.json())
+  .then(data => {
+    if (data.ok) {
+      alert('一键 AI 上品任务创建成功！正在后台解析中，您可以点击左侧菜单“AI自动上品”进入工作台查看。');
+    } else {
+      alert('创建失败: ' + data.error);
+    }
+  })
+  .catch(err => {
+    console.error(err);
+    alert('请求出错');
+  });
+}
+async function translateMetaHotAiAnalysisToChinese(event, postId, mode) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  if (!postId || !mode || (button && button.disabled)) return;
+  const originalText = button ? button.textContent : '翻译中文';
+  if (button) {
+    button.disabled = true;
+    button.textContent = '翻译中...';
+  }
+  qs('mhStatus').textContent = 'AI分析翻译中...';
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/ai-analysis/${mode}/translate-zh`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders()
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'translate_failed');
+    if (data.item) updateMetaHotCard(data.item);
+    if (mhAiState.postId === Number(postId) && mhAiState.mode === mode) {
+      mhAiState.result = data;
+      qs('mhAiResultPanel').innerHTML = renderMetaHotAiResult(data);
+    }
+    qs('mhStatus').textContent = data.cached ? '已有中文翻译' : 'AI分析翻译完成';
+  } catch (err) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+    qs('mhStatus').textContent = 'AI分析翻译失败';
+  }
+}
+function buildParams(page) {
+  const params = new URLSearchParams({page, page_size: mhPageSize});
+  appendMetaHotFilterParams(params);
+  return params;
+}
+function buildMetaHotPageParams(page) {
+  const params = new URLSearchParams();
+  const safePage = safeMetaHotPage(page);
+  if (safePage > 1) params.set('page', String(safePage));
+  appendMetaHotFilterParams(params);
+  return params;
+}
+function syncMetaHotFiltersToUrl(page) {
+  if (!window.history || !window.history.replaceState) return;
+  const url = new URL(window.location.href);
+  const params = buildMetaHotPageParams(page);
+  url.search = params.toString();
+  history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
+function setMetaHotSubtabState(tab) {
+  const ids = {
+    library: 'mhLibrarySubtab',
+    today: 'mhTodayNewSubtab',
+    europe: 'mhEuropeSubtab',
+    us: 'mhUsSubtab',
+    favorites: 'mhFavoritesSubtab',
+    products: 'mhProductsSubtab'
+  };
+  Object.keys(ids).forEach(key => {
+    const node = qs(ids[key]);
+    if (node) node.classList.toggle('active', tab === key);
+  });
+  const favoriteSort = qs('mhFavoriteSort');
+  if (favoriteSort) favoriteSort.hidden = tab !== 'favorites';
+  const productPanel = qs('mhProductListPanel');
+  const cardGrid = qs('metaHotCardGrid');
+  if (productPanel) productPanel.hidden = tab !== 'products';
+  if (cardGrid) cardGrid.hidden = tab === 'products';
+}
+function switchMetaHotSubtab(tab, options = {}) {
+  // 详情页锁定不切换子 Tab
+}
+function normalizeMetaHotGotoPage(raw, totalPages) {
+  const total = Number(totalPages);
+  const last = Number.isFinite(total) && total > 0 ? Math.floor(total) : 1;
+  const page = Number(String(raw ?? '').trim());
+  if (!Number.isFinite(page) || page < 1) return 1;
+  return Math.min(last, Math.floor(page));
+}
+function handleMetaHotGotoPage(event, loaderName, totalPages) {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  const page = normalizeMetaHotGotoPage(event.currentTarget.value, totalPages);
+  const loader = window[loaderName];
+  if (typeof loader === 'function') loader(page);
+}
+function renderMetaHotPager(data, loaderName = 'loadMetaHotPosts') {
+  const total = Number(data.total || 0);
+  const pageSize = Math.max(1, Number(data.page_size || mhPageSize));
+  const rawPage = Math.max(1, Number(data.page || mhPage || 1));
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  const safeLastPage = Math.max(1, totalPages);
+  const page = totalPages > 0 ? Math.min(rawPage, totalPages) : 1;
+  const disabledPrev = totalPages <= 0 || page <= 1 ? ' disabled' : '';
+  const disabledNext = totalPages <= 0 || page >= totalPages ? ' disabled' : '';
+  const buttons = [
+    `<button type="button"${disabledPrev} onclick="${loaderName}(1)">首页</button>`,
+    `<button type="button"${disabledPrev} onclick="${loaderName}(${Math.max(1, page - 1)})">上一页</button>`,
+  ];
+  let start = Math.max(1, page - 2);
+  let end = Math.min(safeLastPage, page + 2);
+  if (safeLastPage > 5) {
+    if (start === 1) {
+      end = 5;
+    } else if (end === safeLastPage) {
+      start = safeLastPage - 4;
+    }
+  }
+  for (let i = start; i <= end; i += 1) {
+    const active = i === page ? ' active' : '';
+    buttons.push(`<button type="button" class="${active.trim()}" onclick="${loaderName}(${i})">${i}</button>`);
+  }
+  buttons.push(
+    `<button type="button"${disabledNext} onclick="${loaderName}(${Math.min(safeLastPage, page + 1)})">下一页</button>`,
+    `<button type="button"${disabledNext} onclick="${loaderName}(${safeLastPage})">末页</button>`,
+    `<span class="mh-pager-info">第 ${totalPages ? page : 0} / ${totalPages} 页 · 共 ${total} 条 · 每页 ${pageSize} 条</span>`,
+    `<label class="mh-pager-goto">去 <input type="number" min="1" max="${safeLastPage}" value="${page}" onkeydown="handleMetaHotGotoPage(event, '${loaderName}', ${totalPages})"> 页</label>`
+  );
+  ['mhPagerTop', 'mhPagerBottom'].forEach(id => {
+    qs(id).innerHTML = buttons.join('');
+  });
+}
+function renderMetaHotPageSummary(data, items, label = '') {
+  const currentCount = Array.isArray(items) ? items.length : 0;
+  const total = Number(data.total || 0);
+  const pageSize = Math.max(1, Number(data.page_size || mhPageSize));
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  const prefix = label ? `${label} · ` : '';
+  return `${prefix}当前页 ${currentCount} 条视频 · 共 ${totalPages} 页 · 总 ${total} 条视频素材`;
+}
+async function loadMetaHotPosts(page = 1, options = {}) {
+  mhSubtab = 'library';
+  mhProductPostHash = '';
+  setMetaHotSubtabState('library');
+  mhPage = safeMetaHotPage(page);
+  qs('mhStatus').textContent = 'Loading...';
+  if (options.syncUrl !== false) syncMetaHotFiltersToUrl(mhPage);
+  const res = await fetch(`/xuanpin/api/meta-hot-posts?${buildParams(mhPage)}`);
+  const data = await res.json();
+  cacheMetaHotItems(data.items || []);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">暂无结果</div>';
+  mhPage = safeMetaHotPage(data.page || page || 1);
+  renderMetaHotPager(data);
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || []);
+}
+async function loadTodayNewMaterials(page = 1) {
+  mhSubtab = 'today';
+  setMetaHotSubtabState('today');
+  mhPage = page;
+  qs('mhStatus').textContent = 'Loading today new...';
+  const res = await fetch(`/xuanpin/api/meta-hot-posts/today-new?page=${page}&page_size=${mhPageSize}`);
+  const data = await res.json();
+  cacheMetaHotItems(data.items || []);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">今日暂无新抓到的帖子</div>';
+  mhPage = Number(data.page || page || 1);
+  renderMetaHotPager(data, 'loadTodayNewMaterials');
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '今日新增');
+}
+async function loadEuropeTopMaterials() {
+  mhSubtab = 'europe';
+  setMetaHotSubtabState('europe');
+  qs('mhStatus').textContent = 'Loading Europe Top50...';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/europe-top?limit=50');
+  const data = await res.json();
+  cacheMetaHotItems(data.items || []);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">暂无欧洲评估结果</div>';
+  ['mhPagerTop', 'mhPagerBottom'].forEach(id => { qs(id).innerHTML = ''; });
+  qs('mhStatus').textContent = `欧洲Top50 · 当前 ${(data.items || []).length} 条视频素材`;
+}
+async function loadUsTopMaterials() {
+  mhSubtab = 'us';
+  setMetaHotSubtabState('us');
+  qs('mhStatus').textContent = 'Loading US Top50...';
+  qs('mhPagerTop').innerHTML = '';
+  qs('mhPagerBottom').innerHTML = '';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/video-copyability/top50?limit=50');
+  const data = await res.json();
+  cacheMetaHotItems(data.items || []);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">暂无已完成的视频可抄分析结果</div>';
+  qs('mhStatus').textContent = `美国Top50 · 当前 ${(data.items || []).length} 条视频素材`;
+}
+function favoriteSortValue() {
+  const select = qs('mhFavoriteSort');
+  return select && select.value ? select.value : 'favorited_at';
+}
+async function loadFavoriteMetaHotPosts(page = 1) {
+  mhSubtab = 'favorites';
+  setMetaHotSubtabState('favorites');
+  mhPage = safeMetaHotPage(page);
+  qs('mhStatus').textContent = 'Loading favorites...';
+  const params = new URLSearchParams({
+    page: mhPage,
+    page_size: mhPageSize,
+    sort: favoriteSortValue()
+  });
+  const res = await fetch(`/xuanpin/api/meta-hot-posts/favorites?${params.toString()}`);
+  const data = await res.json();
+  cacheMetaHotItems(data.items || []);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">收藏夹暂无视频</div>';
+  mhPage = safeMetaHotPage(data.page || page || 1);
+  renderMetaHotPager(data, 'loadFavoriteMetaHotPosts');
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '我的收藏夹');
+}
+function renderMetaHotProductRow(row) {
+  const theme = row.category_l1_zh || row.category_l1 || '未分类';
+  const name = row.product_title_display || row.product_title_zh || row.product_title || row.product_url || '未命名产品';
+  const imageHtml = row.product_main_image_url
+    ? `<img class="mh-product-main-image" src="${esc(row.product_main_image_url)}" alt="" loading="lazy" onerror="this.remove()">`
+    : '<span class="mh-product-main-image-placeholder" aria-hidden="true"></span>';
+  const imageCell = row.product_url && row.product_main_image_url
+    ? `<a class="mh-product-image-link" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">${imageHtml}</a>`
+    : imageHtml;
+  const nameHtml = row.product_url
+    ? `<a class="mh-product-name-link" href="${esc(row.product_url)}" target="_blank" rel="noopener noreferrer">${esc(name)}</a>`
+    : esc(name);
+  const copyButton = row.product_url
+    ? `<button class="mh-post-copy-btn mh-product-copy-link" type="button" data-copy-value="${esc(row.product_url)}" title="复制产品链接" aria-label="复制产品链接" onclick="copyMetaHotPostId(event, this.dataset.copyValue)">${metaHotPostIcon('link')}</button>`
+    : '';
+  const countHtml = row.product_url_hash
+    ? `<button class="mh-product-material-button" type="button" data-product-hash="${esc(row.product_url_hash)}" onclick="loadMetaHotProductPosts(this.dataset.productHash, 1)">${fmt(row.material_count || 0)}</button>`
+    : fmt(row.material_count || 0);
+  return `<tr>
+    <td><span class="mh-product-theme">${esc(theme)}</span></td>
+    <td class="mh-product-image-cell">${imageCell}</td>
+    <td><div class="mh-product-name-cell">${nameHtml}${copyButton}</div></td>
+    <td class="mh-product-count">${countHtml}</td>
+  </tr>`;
+}
+function renderMetaHotProductList(items) {
+  if (!items.length) return '<div class="mh-empty">暂无产品</div>';
+  return `<table class="mh-product-table">
+    <thead><tr><th style="width:180px">产品主题</th><th style="width:224px">产品主图</th><th>产品名称</th><th class="mh-product-count">素材数</th></tr></thead>
+    <tbody>${items.map(renderMetaHotProductRow).join('')}</tbody>
+  </table>`;
+}
+function renderMetaHotProductSummary(data, items) {
+  const total = Number(data.total || 0);
+  const currentCount = (items || []).length;
+  const pageSize = Math.max(1, Number(data.page_size || mhProductPageSize));
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
+  return `产品列表 · 当前页 ${currentCount} 个产品 · 共 ${totalPages} 页 · 总 ${total} 个产品`;
+}
+async function loadMetaHotProductList(page = 1) {
+  mhSubtab = 'products';
+  mhProductPostHash = '';
+  setMetaHotSubtabState('products');
+  mhPage = safeMetaHotPage(page);
+  qs('mhStatus').textContent = 'Loading products...';
+  const params = new URLSearchParams({page: mhPage, page_size: mhProductPageSize});
+  const res = await fetch(`/xuanpin/api/meta-hot-posts/products?${params.toString()}`);
+  const data = await res.json();
+  cacheMetaHotItems([]);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('mhProductListPanel').innerHTML = renderMetaHotProductList(data.items || []);
+  mhPage = safeMetaHotPage(data.page || page || 1);
+  renderMetaHotPager(data, 'loadMetaHotProductList');
+  qs('mhStatus').textContent = renderMetaHotProductSummary(data, data.items || []);
+}
+function loadCurrentMetaHotProductPosts(page = 1) {
+  return loadMetaHotProductPosts(mhProductPostHash, page);
+}
+async function loadMetaHotProductPosts(productHash, page = 1) {
+  const hash = String(productHash || '').trim();
+  if (!hash) {
+    return loadMetaHotProductList(1);
+  }
+  mhSubtab = 'products';
+  mhProductPostHash = hash;
+  setMetaHotSubtabState('products');
+  qs('mhProductListPanel').hidden = true;
+  qs('metaHotCardGrid').hidden = false;
+  mhPage = safeMetaHotPage(page);
+  qs('mhStatus').textContent = 'Loading product materials...';
+  const params = new URLSearchParams({page: mhPage, page_size: mhPageSize, product_url_hash: productHash});
+  const res = await fetch(`/xuanpin/api/meta-hot-posts?${params.toString()}`);
+  const data = await res.json();
+  cacheMetaHotItems(data.items || []);
+  qs('mhCount').textContent = data.total ?? 0;
+  pauseMetaHotVideos();
+  qs('metaHotCardGrid').innerHTML = (data.items || []).length
+    ? data.items.map(renderCard).join('')
+    : '<div class="mh-empty">该产品暂无视频素材</div>';
+  mhPage = safeMetaHotPage(data.page || page || 1);
+  renderMetaHotPager(data, 'loadCurrentMetaHotProductPosts');
+  qs('mhStatus').textContent = renderMetaHotPageSummary(data, data.items || [], '产品帖子');
+}
+function resetMetaHotPosts() {
+  ['mhCategory','mhMarkStatus','mhPushStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
+  loadMetaHotPosts(1);
+}
+async function refreshMetaHotPosts() {
+  qs('mhStatus').textContent = 'Syncing...';
+  await fetch('/xuanpin/api/meta-hot-posts/refresh', {method:'POST', headers:metaHotJsonHeaders()});
+  loadMetaHotPosts(1);
+}
+async function analyzeMetaHotPosts() {
+  qs('mhStatus').textContent = 'Analyzing...';
+  await fetch('/xuanpin/api/meta-hot-posts/analyze', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:30, per_item_delay_seconds:20})});
+  loadMetaHotPosts(mhPage);
+}
+async function translateMetaHotPostMessages() {
+  qs('mhStatus').textContent = '翻译中...';
+  await fetch('/xuanpin/api/meta-hot-posts/translate-messages', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:50, per_item_delay_seconds:3})});
+  loadMetaHotPosts(mhPage);
+}
+async function localizeMetaHotPostVideos() {
+  qs('mhStatus').textContent = '视频本地化中...';
+  await fetch('/xuanpin/api/meta-hot-posts/localize-videos', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:30, min_delay_seconds:30})});
+  loadMetaHotPosts(mhPage);
+}
+async function assessEuropeFitMaterials() {
+  qs('mhStatus').textContent = '欧洲评估中...';
+  await fetch('/xuanpin/api/meta-hot-posts/europe-fit', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:10})});
+  loadEuropeTopMaterials();
+}
+async function analyzeMetaHotPostVideos() {
+  qs('mhStatus').textContent = 'Analyzing video...';
+  await fetch('/xuanpin/api/meta-hot-posts/analyze-videos', {method:'POST', headers:metaHotJsonHeaders(), body:JSON.stringify({limit:10})});
+  await loadUsTopMaterials();
+}
+async function showVideoCopyabilityTop50() {
+  return loadUsTopMaterials();
+}
+function setMetaHotFavoriteDisabled(postId, disabled) {
+  document.querySelectorAll(`.mh-favorite-btn[data-post-id="${postId}"]`).forEach(button => {
+    button.disabled = Boolean(disabled);
+  });
+}
+function setMetaHotFavoriteState(postId, favorited) {
+  document.querySelectorAll(`.mh-favorite-btn[data-post-id="${postId}"]`).forEach(button => {
+    button.classList.toggle('is-favorited', Boolean(favorited));
+    button.dataset.favorited = favorited ? '1' : '0';
+    button.setAttribute('aria-pressed', favorited ? 'true' : 'false');
+    button.setAttribute('aria-label', favoriteButtonTitle(favorited));
+    button.setAttribute('title', favoriteButtonTitle(favorited));
+    button.textContent = favoriteButtonLabel(
+      favorited,
+      button.dataset.favoriteVariant === 'heart' ? 'heart' : 'text'
+    );
+  });
+  const item = mhItemsById.get(Number(postId));
+  if (item) item.is_favorited = Boolean(favorited);
+}
+function removeFavoriteCardFromCurrentList(postId) {
+  if (mhSubtab !== 'favorites') return;
+  const card = document.querySelector(`.mh-card[data-post-id="${Number(postId)}"]`);
+  if (card) card.remove();
+  mhItemsById.delete(Number(postId));
+  const remaining = document.querySelectorAll('.mh-card').length;
+  if (!remaining) qs('metaHotCardGrid').innerHTML = '<div class="mh-empty">收藏夹暂无视频</div>';
+  qs('mhStatus').textContent = `我的收藏夹 · 当前页 ${remaining} 条视频素材`;
+}
+async function toggleMetaHotPostFavorite(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  if (!postId || button.disabled) return;
+  const previous = button.dataset.favorited === '1';
+  const next = !previous;
+  setMetaHotFavoriteDisabled(postId, true);
+  setMetaHotFavoriteState(postId, next);
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/favorite`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders(),
+      body: JSON.stringify({favorited: next})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'favorite_failed');
+    const serverFavorited = Boolean(data.is_favorited);
+    setMetaHotFavoriteState(postId, serverFavorited);
+    if (!serverFavorited) removeFavoriteCardFromCurrentList(postId);
+    qs('mhStatus').textContent = serverFavorited ? '已收藏' : '已取消收藏';
+  } catch (err) {
+    setMetaHotFavoriteState(postId, previous);
+    qs('mhStatus').textContent = '收藏夹操作失败';
+  } finally {
+    setMetaHotFavoriteDisabled(postId, false);
+  }
+}
+function markStatusLabel(markStatus) {
+  if (markStatus === 'ok') return '行';
+  if (markStatus === 'bad') return '不行';
+  return '';
+}
+function setMetaHotMarkState(postId, markStatus) {
+  document.querySelectorAll(`.mh-mark-options[data-post-id="${postId}"]`).forEach(group => {
+    group.setAttribute('data-mark-status', markStatus || '');
+  });
+  document.querySelectorAll(`.mh-mark-option[data-post-id="${postId}"]`).forEach(button => {
+    const selected = button.getAttribute('data-mark-status') === markStatus;
+    button.classList.toggle('is-marked', Boolean(selected));
+    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
+}
+function setMetaHotMarkDisabled(postId, disabled) {
+  document.querySelectorAll(`.mh-mark-option[data-post-id="${postId}"]`).forEach(button => {
+    button.disabled = Boolean(disabled);
+  });
+}
+async function toggleMetaHotPostMark(event, postId, requestedStatus) {
+  const button = event.currentTarget;
+  if (!postId || button.disabled) return;
+  const group = button.closest('.mh-mark-options');
+  const previousStatus = group ? group.getAttribute('data-mark-status') || '' : '';
+  const nextStatus = previousStatus === requestedStatus ? '' : requestedStatus;
+  setMetaHotMarkDisabled(postId, true);
+  setMetaHotMarkState(postId, nextStatus);
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/mark`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders(),
+      body: JSON.stringify({mark_status: nextStatus || null})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'mark_failed');
+    const serverStatus = data.mark_status || '';
+    setMetaHotMarkState(postId, serverStatus);
+    const label = markStatusLabel(serverStatus);
+    qs('mhStatus').textContent = label ? `已标注：${label}` : '已取消标注';
+  } catch (err) {
+    setMetaHotMarkState(postId, previousStatus);
+    qs('mhStatus').textContent = '标注失败';
+  } finally {
+    setMetaHotMarkDisabled(postId, false);
+  }
+}
+function metaHotAiEndpoint(postId, mode) {
+  return `/xuanpin/api/meta-hot-posts/${postId}/ai-analysis/${mode}`;
+}
+function hasMetaHotCardAiResult(row, mode) {
+  if (!row) return false;
+  if (mode === 'us_copyability') return Boolean(row.video_copyability);
+  if (mode === 'europe_translation') {
+    return row.europe_fit_score !== undefined && row.europe_fit_score !== null && row.europe_fit_score !== '';
+  }
+  return false;
+}
+function switchMetaHotAiTab(tab) {
+  const isResult = tab === 'result';
+  qs('mhAiRequestTab').classList.toggle('active', !isResult);
+  qs('mhAiResultTab').classList.toggle('active', isResult);
+  qs('mhAiRequestPanel').hidden = isResult;
+  qs('mhAiResultPanel').hidden = !isResult;
+}
+function renderAiJsonBlock(payload) {
+  return `<pre class="mh-pre">${esc(JSON.stringify(payload || {}, null, 2))}</pre>`;
+}
+function renderAiRequestPreview(payload) {
+  if (!payload) return '<div class="mh-empty">暂无请求数据</div>';
+  const product = payload.product || {};
+  const post = payload.post || {};
+  const image = (payload.media || []).find(item => item.role === 'product_main_image') || {};
+  const video = (payload.media || []).find(item => item.role === 'video') || {};
+  const imageHtml = image.url
+    ? `<img class="mh-ai-image" src="${esc(image.url)}" alt="" loading="lazy">`
+    : '<div class="mh-ai-image"></div>';
+  const videoHtml = video.url
+    ? `<video class="mh-ai-video" controls preload="metadata" playsinline src="${esc(video.url)}" poster="${esc(video.cover_url || '')}"></video>`
+    : '<div class="mh-ai-section">暂无可展示视频</div>';
+  return `<div class="mh-ai-grid">
+    <div class="mh-ai-media">
+      ${imageHtml}
+      ${videoHtml}
+    </div>
+    <div>
+      <div class="mh-ai-kv">
+        <b>分析类型</b><span>${esc(payload.label || payload.mode || '')}</span>
+        <b>Use case</b><span>${esc(payload.use_case || '')}</span>
+        <b>模型</b><span>${esc((payload.provider || '') + ' / ' + (payload.model || ''))}</span>
+        <b>商品标题</b><span>${esc(product.title || '-')}</span>
+        <b>商品链接</b><span>${product.url ? `<a href="${esc(product.url)}" target="_blank" rel="noopener noreferrer">${esc(product.url)}</a>` : '-'}</span>
+        <b>帖子链接</b><span>${post.post_url ? `<a href="${esc(post.post_url)}" target="_blank" rel="noopener noreferrer">${esc(post.post_url)}</a>` : '-'}</span>
+      </div>
+      <div class="mh-ai-section">
+        <h4>System Prompt</h4>
+        <pre class="mh-pre">${esc((payload.prompts || {}).system || '')}</pre>
+      </div>
+      <div class="mh-ai-section">
+        <h4>User Prompt</h4>
+        <pre class="mh-pre">${esc((payload.prompts || {}).user || '')}</pre>
+      </div>
+      <div class="mh-ai-section">
+        <h4>请求报文结构</h4>
+        <button class="mh-btn secondary" type="button" onclick="openMetaHotAiFullPayload()">完整请求报文</button>
+        ${renderAiJsonBlock(payload.request || {})}
+      </div>
+      <div class="mh-ai-section">
+        <h4>Response Schema</h4>
+        ${renderAiJsonBlock(payload.response_schema || {})}
+      </div>
+    </div>
+  </div>`;
+}
+function renderAiSummarySection(result, payload) {
+  const summaryZh = result.summary_zh || result.summary || '';
+  const summaryEn = result.summary || summaryZh;
+  if (!summaryZh && !summaryEn) return '';
+  return `<div class="mh-ai-section mh-ai-summary" data-summary-zh="${esc(summaryZh)}" data-summary-en="${esc(summaryEn)}" data-summary-lang="zh">
+    <div class="mh-ai-summary-head">
+      <button class="mh-ai-summary-switch active" type="button" onclick="setMetaHotAiSummaryLanguage(event, 'zh')">中文</button>
+      <h4>摘要</h4>
+      <button class="mh-ai-summary-switch" type="button" onclick="setMetaHotAiSummaryLanguage(event, 'en')">English</button>
+      ${renderAiTranslateZhButton((payload.item || {}).id, payload.mode, Boolean(String(result.summary_zh || '').trim()))}
+    </div>
+    <div class="mh-ai-summary-text">${esc(summaryZh || summaryEn)}</div>
+  </div>`;
+}
+function setMetaHotAiSummaryLanguage(event, lang) {
+  const section = event.currentTarget.closest('.mh-ai-summary');
+  if (!section) return;
+  const text = section.querySelector('.mh-ai-summary-text');
+  const nextLang = lang === 'en' ? 'en' : 'zh';
+  const nextText = nextLang === 'en' ? section.dataset.summaryEn : section.dataset.summaryZh;
+  if (text) text.textContent = nextText || '';
+  section.dataset.summaryLang = nextLang;
+  section.querySelectorAll('.mh-ai-summary-switch').forEach(button => {
+    const isActive = button.textContent === (nextLang === 'en' ? 'English' : '中文');
+    button.classList.toggle('active', isActive);
+  });
+}
+function renderMetaHotAiResult(payload) {
+  if (!payload || !payload.has_result) return '<div class="mh-empty">暂无结果</div>';
+  const result = payload.result || {};
+  const chips = [];
+  ['overall_score','copyability_score','meta_us_ad_fit_score','suitability_score','translation_fit_score','recommendation','localization_difficulty'].forEach(key => {
+    if (result[key] !== undefined && result[key] !== null && result[key] !== '') chips.push(`<span class="mh-ai-chip">${esc(key)}: ${esc(result[key])}</span>`);
+  });
+  const list = (label, items) => Array.isArray(items) && items.length
+    ? `<div class="mh-ai-section"><h4>${label}</h4><ul class="mh-europe-list">${items.slice(0, 8).map(item => `<li>${esc(typeof item === 'string' ? item : JSON.stringify(item))}</li>`).join('')}</ul></div>`
+    : '';
+  return `<div>
+    <div class="mh-ai-chip-list">${chips.join('')}</div>
+    ${renderAiSummarySection(result, payload)}
+    ${(result.reasoning_zh || result.reasoning) ? `<div class="mh-ai-section"><h4>判断理由</h4><div>${esc(result.reasoning_zh || result.reasoning)}</div></div>` : ''}
+    ${list('优势', result.strengths_zh || result.strengths)}
+    ${list('风险', result.risks_zh || result.risks || result.risk_notes)}
+    ${list('需要调整', result.required_changes_zh || result.required_changes || result.copy_notes)}
+    ${list('适合语言市场', result.best_language_markets)}
+    <div class="mh-ai-section">
+      <h4>完整返回报文</h4>
+      ${renderAiJsonBlock(payload.raw_response || result.raw || result)}
+    </div>
+  </div>`;
+}
+async function fetchMetaHotAiJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const error = new Error(data.error || `HTTP ${res.status}`);
+    error.status = res.status;
+    error.payload = data;
+    throw error;
+  }
+  return data;
+}
+async function loadMetaHotAiResult(postId, mode) {
+  const data = await fetchMetaHotAiJson(`${metaHotAiEndpoint(postId, mode)}/result`);
+  mhAiState.result = data;
+  if (data.item) updateMetaHotCard(data.item);
+  qs('mhAiResultPanel').innerHTML = renderMetaHotAiResult(data);
+  switchMetaHotAiTab('result');
+}
+async function runMetaHotAiAnalysis(force = false) {
+  const {postId, mode} = mhAiState;
+  if (!postId || !mode) return;
+  qs('mhAiForceButton').disabled = true;
+  qs('mhAiResultPanel').innerHTML = '<div class="mh-empty">分析中...</div>';
+  try {
+    const data = await fetchMetaHotAiJson(metaHotAiEndpoint(postId, mode), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({force: Boolean(force)})
+    });
+    mhAiState.result = data;
+    if (data.item) updateMetaHotCard(data.item);
+    qs('mhAiResultPanel').innerHTML = renderMetaHotAiResult(data);
+    switchMetaHotAiTab('result');
+    qs('mhStatus').textContent = `${MH_AI_MODES[mode]?.label || 'AI分析'}完成`;
+  } catch (err) {
+    qs('mhAiRequestPanel').innerHTML += `<div class="mh-ai-error">分析失败：${esc(err.message || err)}</div>`;
+    qs('mhStatus').textContent = 'AI 分析失败';
+  } finally {
+    qs('mhAiForceButton').disabled = false;
+  }
+}
+async function openMetaHotAiAnalysis(postId, mode) {
+  mhAiState = {postId, mode, request: null, result: null};
+  qs('mhAiAnalysisTitle').textContent = MH_AI_MODES[mode]?.label || 'AI 分析';
+  qs('mhAiAnalysisModal').hidden = false;
+  const cachedItem = mhItemsById.get(Number(postId));
+  if (hasMetaHotCardAiResult(cachedItem, mode)) {
+    switchMetaHotAiTab('result');
+    qs('mhAiResultPanel').innerHTML = '<div class="mh-empty">Loading...</div>';
+    await loadMetaHotAiResult(postId, mode);
+    return;
+  }
+  switchMetaHotAiTab('request');
+  qs('mhAiRequestPanel').innerHTML = '<div class="mh-empty">Loading...</div>';
+  qs('mhAiResultPanel').innerHTML = '<div class="mh-empty">暂无结果</div>';
+  try {
+    const data = await fetchMetaHotAiJson(`${metaHotAiEndpoint(postId, mode)}/request-preview`);
+    mhAiState.request = data.payload || null;
+    qs('mhAiRequestPanel').innerHTML = renderAiRequestPreview(mhAiState.request);
+    if (mhAiState.request && mhAiState.request.has_result) {
+      await loadMetaHotAiResult(postId, mode);
+      return;
+    }
+    await runMetaHotAiAnalysis(false);
+  } catch (err) {
+    qs('mhAiRequestPanel').innerHTML = `<div class="mh-ai-error">加载失败：${esc(err.message || err)}</div>`;
+  }
+}
+async function forceMetaHotAiAnalysis() {
+  if (!mhAiState.postId || !mhAiState.mode) return;
+  switchMetaHotAiTab('request');
+  await runMetaHotAiAnalysis(true);
+}
+async function openMetaHotAiFullPayload() {
+  const request = mhAiState.request || {};
+  const url = request.full_payload_url || (mhAiState.postId && mhAiState.mode ? `${metaHotAiEndpoint(mhAiState.postId, mhAiState.mode)}/request-payload` : '');
+  if (!url) return;
+  try {
+    const data = await fetchMetaHotAiJson(url);
+    qs('mhAiRequestPanel').innerHTML += `<div class="mh-ai-section"><h4>完整请求报文</h4>${renderAiJsonBlock(data.payload || data)}</div>`;
+  } catch (err) {
+    qs('mhAiRequestPanel').innerHTML += `<div class="mh-ai-error">完整报文加载失败：${esc(err.message || err)}</div>`;
+  }
+}
+function closeMetaHotModal(id) {
+  qs(id).hidden = true;
+}
+async function showCategoryPrompt() {
+  qs('mhPromptModal').hidden = false;
+  qs('mhPromptText').textContent = 'Loading...';
+  qs('mhPromptCategories').innerHTML = '';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/category-prompt');
+  const data = await res.json();
+  qs('mhPromptText').textContent = data.prompt || '';
+  qs('mhPromptCategories').innerHTML = (data.categories || [])
+    .map(item => `<span class="mh-tag">${esc(item)}</span>`)
+    .join('');
+}
+function renderFailure(item) {
+  const url = item.product_url || '';
+  return `<div class="mh-failure-item">
+    <a class="mh-failure-url" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url || '-')}</a>
+    <div class="mh-mini">失败次数：${fmt(item.attempts)} · 更新时间：${fmt(item.updated_at)} · 标题：${fmt(item.product_title || '-')}</div>
+    <div class="mh-failure-error">${esc(item.last_error || '-')}</div>
+  </div>`;
+}
+async function showFailureRecords() {
+  qs('mhFailuresModal').hidden = false;
+  qs('mhFailureList').textContent = 'Loading...';
+  const res = await fetch('/xuanpin/api/meta-hot-posts/failures?limit=100');
+  const data = await res.json();
+  qs('mhFailureList').innerHTML = (data.items || []).length
+    ? data.items.map(renderFailure).join('')
+    : '<div class="mh-empty">暂无失败记录</div>';
+}
+restoreVideoSource();
+restoreMetaHotCardZoom();
+restoreMetaHotAiAnalysisVisibility();
+// 根据 URL hash 初始化子 tab（支持 #library / #today / #europe / #us / #favorites / #products）
+function initMetaHotSubtabFromHash() {
+  const post = {{ post | tojson }};
+  cacheMetaHotItems([post]);
+  
+  // 强制默认隐藏所有分页和多余控制元素
+  ['mhPagerTop', 'mhPagerBottom'].forEach(id => {
+    const el = qs(id);
+    if (el) el.style.display = 'none';
+  });
+  
+  rerenderMetaHotCards();
+  qs('mhStatus').textContent = 'Ready';
+}
+window.addEventListener('hashchange', () => {
+  const tab = location.hash.replace('#', '') || 'library';
+  if (tab !== mhSubtab) switchMetaHotSubtab(tab);
+});
+// ==================== METADATA MATERIAL IMPORT & EVALUATION INTEGRATION ====================
+
+let mkiTranslatorsCache = null;
+let mkiImportingPostId = null;
+
+function mkiToast(kind, msg) {
+  const old = document.querySelectorAll('.mki-toast');
+  old.forEach(t => t.remove());
+  const t = document.createElement('div');
+  t.className = 'mki-toast mki-toast--' + kind;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+async function mkiFetchActiveUsers() {
+  const r = await fetch('/tasks/api/translation-work-users');
+  const data = await r.json();
+  return data.users || [];
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function mkiUserLabel(user) {
+  const fallback = user && user.id ? `用户 #${user.id}` : '';
+  const baseName = String((user && (user.display_name || user.username)) || fallback).trim();
+  if (user && user.todo_count !== undefined && user.urgent_count !== undefined && user.completed_today_count !== undefined) {
+    return `${baseName}  待处理 ${user.todo_count}  紧急 ${user.urgent_count}  今天已完成 ${user.completed_today_count}`;
+  }
+  return baseName;
+}
+
+function mkiUserOption(user) {
+  return `<option value="${escapeHtml(user.id)}">${escapeHtml(mkiUserLabel(user))}</option>`;
+}
+
+function mkiUserOptions(selectedId, includeEmpty) {
+  const selectedText = String(selectedId || '');
+  return (includeEmpty ? '<option value="">请选择负责人</option>' : '') + (mkiXiaoTranslatorsCache || []).map(function(user) {
+    const value = String(user && user.id || '');
+    const selected = value && value === selectedText ? ' selected' : '';
+    return '<option value="' + escapeHtml(value) + '"' + selected + '>' + escapeHtml(mkiUserLabel(user)) + '</option>';
+  }).join('');
+}
+
+async function mkiImportMetaHotPost(btn, postId) {
+  mkiImportingPostId = Number(postId);
+  const modal = document.getElementById('mhImportOwnerModal');
+  const select = document.getElementById('mhImportOwnerSelect');
+  const confirmBtn = document.getElementById('mhImportOwnerConfirm');
+  
+  if (!modal || !select || !confirmBtn) return;
+  
+  select.innerHTML = '<option value="">加载中...</option>';
+  confirmBtn.disabled = true;
+  modal.hidden = false;
+  
+  try {
+    mkiTranslatorsCache = await mkiFetchActiveUsers();
+  } catch (e) {
+    mkiTranslatorsCache = [];
+  }
+  
+  if (!mkiTranslatorsCache.length) {
+    select.innerHTML = '<option value="">没有可用产品负责人</option>';
+    return;
+  }
+  
+  select.innerHTML = '<option value="">请选择产品负责人</option>' + mkiTranslatorsCache.map(mkiUserOption).join('');
+  confirmBtn.disabled = false;
+  
+  confirmBtn.onclick = async function() {
+    const ownerId = Number(select.value || 0);
+    if (!ownerId) {
+      alert('请选择产品负责人');
+      return;
+    }
+    
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '导入中...';
+    qs('mhStatus').textContent = '正在导入至英文素材库并启动AI评估...';
+    
+    try {
+      const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/import`, {
+        method: 'POST',
+        headers: metaHotJsonHeaders(),
+        body: JSON.stringify({ translator_id: ownerId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error(data.error || 'import_failed');
+      
+      const cached = mhItemsById.get(Number(postId));
+      if (cached) {
+        cached.local_product_id = data.media_product_id;
+        cached.local_media_item_id = data.media_item_id;
+        updateMetaHotCard(cached);
+      }
+      
+      modal.hidden = false;
+      closeMetaHotModal('mhImportOwnerModal');
+      qs('mhStatus').textContent = '素材已成功加入素材库！AI 评估已在后台自动触发。';
+      mkiToast('success', '加入素材库成功！');
+    } catch (err) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = '确认导入';
+      alert('导入失败：' + (err.message || '网络错误'));
+      qs('mhStatus').textContent = '加入素材库失败';
+    }
+  };
+}
+
+// ---- 创建小语种翻译任务 modal ----
+function mkiXiaoForceUnlock(event, btn, code) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  var card = btn.closest('.mki-xiao-lang-card');
+  if (!card) return;
+  var cb = card.querySelector('.mki-xiao-lang-check');
+    if (cb) {
+      cb.removeAttribute('disabled');
+      cb.setAttribute('data-mki-force', '1');
+      cb.checked = true;
+      card.classList.remove('mki-xiao-lang-card--disabled');
+    card.style.borderColor = '#d9534f';
+    card.style.boxShadow = '0 0 4px rgba(217, 83, 79, 0.4)';
+    btn.style.display = 'none';
+    var small = card.querySelector('.mki-xiao-ai-suggestion');
+    if (small) {
+      small.innerHTML = '<span style="color: #d9534f; font-weight: bold;">已强选</span>';
+    }
+    var mainTextEl = card.querySelector('.mki-xiao-lang-main');
+    if (mainTextEl) {
+      mainTextEl.textContent = mainTextEl.textContent.replace(' (已有任务)', ' (强创)');
+    }
+    var ownerSelect = card.querySelector('[data-mki-lang-owner]');
+    if (ownerSelect) ownerSelect.disabled = false;
+  }
+}
+
+function mkiXiaoIsForce() {
+  var cbs = document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]');
+  for (var i = 0; i < cbs.length; i++) {
+    if (cbs[i].checked && cbs[i].getAttribute('data-mki-force') === '1') {
+      return true;
+    }
+  }
+  return false;
+}
+
+let mkiXiaoResolve = null;
+let mkiXiaoTranslatorsCache = null;
+let mkiXiaoRawProcessorsCache = null;
+let mkiXiaoLangsCache = null;
+let mkiXiaoLockTranslator = false;
+let mkiXiaoCurrentEndpoint = '/tasks/api/parent';
+let mkiXiaoAiProductId = null;
+let mkiXiaoFineAiSourceButton = null;
+let mkiXiaoEnableTaskKind = false;
+let mkiXiaoSelectedProduct = null;
+
+function mkiXiaoLangCode(lang) {
+  if (lang && typeof lang === 'object') {
+    return String(lang.code || '').trim().toUpperCase();
+  }
+  return String(lang || '').trim().toUpperCase();
+}
+
+function mkiXiaoLangLabel(lang) {
+  var code = mkiXiaoLangCode(lang);
+  if (!code) return '';
+  if (lang && typeof lang === 'object') {
+    var directLabel = String(lang.label || '').trim();
+    if (directLabel) return directLabel;
+    var name = String(lang.name_zh || lang.name || '').trim();
+    if (name) return name + ' (' + code + ')';
+  }
+  var fallback = {
+    DE: '德语',
+    FR: '法语',
+    ES: '西班牙语',
+    IT: '意大利语',
+    JA: '日语',
+    PT: '葡萄牙语',
+    NL: '荷兰语',
+    SV: '瑞典语',
+    FI: '芬兰语'
+  }[code];
+  return fallback ? fallback + ' (' + code + ')' : code;
+}
+
+function mkiXiaoSetStatus(kind, html) {
+  var statusEl = document.getElementById('mkiXiaoStatus');
+  if (!statusEl) return;
+  statusEl.hidden = false;
+  statusEl.className = 'mki-xiao-status mki-xiao-status--' + kind;
+  statusEl.innerHTML = html;
+}
+
+function mkiXiaoHideStatus() {
+  var statusEl = document.getElementById('mkiXiaoStatus');
+  if (!statusEl) return;
+  statusEl.hidden = true;
+  statusEl.innerHTML = '';
+}
+
+function mkiXiaoSetControlsDisabled(disabled) {
+  var translator = document.getElementById('mkiXiaoTranslator');
+  var raw = document.getElementById('mkiXiaoRawProcessor');
+  var urgent = document.getElementById('mkiXiaoUrgent');
+  var productSearch = document.getElementById('mkiXiaoProductSearch');
+  var productSearchBtn = document.getElementById('mkiXiaoProductSearchBtn');
+  if (translator) translator.disabled = !!disabled || !!mkiXiaoLockTranslator;
+  if (raw) raw.disabled = !!disabled;
+  if (urgent) urgent.disabled = !!disabled;
+  if (productSearch) productSearch.disabled = !!disabled;
+  if (productSearchBtn) productSearchBtn.disabled = !!disabled;
+  document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+    radio.disabled = !!disabled;
+  });
+  document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]').forEach(function(cb) {
+    var isExisting = cb.getAttribute('data-mki-existing') === '1';
+    cb.disabled = !!disabled || isExisting;
+  });
+  document.querySelectorAll('#mkiXiaoLangs [data-mki-lang-owner]').forEach(function(sel) {
+    var card = sel.closest('.mki-xiao-lang-card');
+    var cb = card ? card.querySelector('.mki-xiao-lang-check') : null;
+    var isExisting = cb && cb.getAttribute('data-mki-existing') === '1' && cb.getAttribute('data-mki-force') !== '1';
+    sel.disabled = !!disabled || !!isExisting;
+  });
+}
+
+function mkiXiaoSetBusy(isBusy) {
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(isBusy);
+  if (confirmBtn) {
+    confirmBtn.disabled = !!isBusy;
+    confirmBtn.textContent = isBusy ? '创建中...' : '确认创建';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = !!isBusy;
+    cancelBtn.textContent = '取消';
+  }
+}
+
+function mkiXiaoTaskHref(taskId) {
+  return '/tasks/?task_id=' + encodeURIComponent(taskId);
+}
+
+function mkiXiaoShowCreateSuccess(taskId) {
+  var href = mkiXiaoTaskHref(taskId);
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(true);
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '已创建';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = '关闭';
+  }
+  mkiXiaoSetStatus('success',
+    '<strong>任务已创建，父任务 #' + escapeHtml(taskId) + '</strong>'
+    + '<div>下一步：进入任务中心处理这个任务。</div>'
+    + '<div class="mki-xiao-status-actions"><a class="mh-btn" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(href) + '">打开任务 #' + escapeHtml(taskId) + '</a></div>'
+  );
+}
+
+function mkiXiaoShowCreateFailure(endpoint, error) {
+  var message = error && error.message ? error.message : String(error || '未知错误');
+  var confirmBtn = document.getElementById('mkiXiaoConfirm');
+  var cancelBtn = document.getElementById('mkiXiaoCancel');
+  mkiXiaoSetControlsDisabled(true);
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '创建失败';
+  }
+  if (cancelBtn) {
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = '关闭';
+  }
+  mkiXiaoSetStatus('error',
+    '<strong>请求失败</strong>'
+    + '<div>请求：' + escapeHtml(endpoint || mkiXiaoCurrentEndpoint) + '</div>'
+    + '<div>原因：' + escapeHtml(message) + '</div>'
+    + '<div>关闭后可回到当前卡片重新发起创建。</div>'
+  );
+}
+
+function mkiXiaoRequestError(endpoint, rsp, data) {
+  var statusText = rsp ? (rsp.status + (rsp.statusText ? ' ' + rsp.statusText : '')) : 'unknown';
+  var detail = data && (data.error || data.detail || data.message);
+  return new Error('请求 ' + endpoint + ' 返回 ' + statusText + '：' + (detail || '无错误详情'));
+}
+
+function mkiXiaoCurrentTaskKind() {
+  if (!mkiXiaoEnableTaskKind) return 'new_product';
+  var checked = document.querySelector('input[name="mkiXiaoTaskKind"]:checked');
+  return checked && checked.value === 'supplement' ? 'supplement' : 'new_product';
+}
+
+function mkiXiaoRenderSelectedProduct(product) {
+  var box = document.getElementById('mkiXiaoSelectedProduct');
+  if (!box) return;
+  if (!product) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  box.hidden = false;
+  box.className = 'mki-xiao-status mki-xiao-status--success';
+  box.innerHTML = '<strong>已选择产品 #' + escapeHtml(product.id) + '</strong>'
+    + '<div>' + escapeHtml(product.name || '') + '</div>'
+    + '<div>Product Code: ' + escapeHtml(product.product_code || '-')
+    + ' · 负责人: ' + escapeHtml(product.owner_name || product.owner_id || '-') + '</div>';
+}
+
+function mkiXiaoSelectProduct(product) {
+  mkiXiaoSelectedProduct = product || null;
+  mkiXiaoRenderSelectedProduct(mkiXiaoSelectedProduct);
+  var input = document.getElementById('mkiXiaoProductSearch');
+  var results = document.getElementById('mkiXiaoProductResults');
+  if (input && product) input.value = product.name || product.product_code || product.id || '';
+  if (results && product) results.innerHTML = '';
+}
+
+function mkiXiaoRenderProductResults(items) {
+  var results = document.getElementById('mkiXiaoProductResults');
+  if (!results) return;
+  if (!items.length) {
+    results.innerHTML = '<div class="mki-xiao-status">没有匹配产品</div>';
+    return;
+  }
+  results.innerHTML = items.map(function(product) {
+    return '<div class="mki-xiao-status" style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center;">'
+      + '<div><strong>#' + escapeHtml(product.id) + ' ' + escapeHtml(product.name || '') + '</strong>'
+      + '<div>Product Code: ' + escapeHtml(product.product_code || '-')
+      + ' · 负责人: ' + escapeHtml(product.owner_name || product.owner_id || '-') + '</div></div>'
+      + '<button class="mh-btn secondary" type="button" data-mki-xiao-product="' + escapeHtml(product.id) + '">选择</button>'
+      + '</div>';
+  }).join('');
+  results.querySelectorAll('[data-mki-xiao-product]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = Number(btn.dataset.mkiXiaoProduct || 0);
+      mkiXiaoSelectProduct(items.find(function(item) { return Number(item.id) === id; }) || null);
+    });
+  });
+}
+
+async function mkiXiaoSearchProducts(productId) {
+  var input = document.getElementById('mkiXiaoProductSearch');
+  var results = document.getElementById('mkiXiaoProductResults');
+  var url = productId
+    ? '/tasks/api/material-products?product_id=' + encodeURIComponent(productId)
+    : '/tasks/api/material-products?q=' + encodeURIComponent(input ? input.value || '' : '');
+  if (results) results.innerHTML = '<div class="mki-xiao-status">搜索中...</div>';
+  var resp = await fetch(url);
+  var data = await resp.json().catch(function() { return {}; });
+  if (!resp.ok) throw new Error(data.error || '产品搜索失败');
+  var items = data.items || [];
+  if (productId && items.length) mkiXiaoSelectProduct(items[0]);
+  else mkiXiaoRenderProductResults(items);
+}
+
+function mkiXiaoSyncTaskKindUI() {
+  var wrap = document.getElementById('mkiXiaoProductSearchWrap');
+  if (!wrap) return;
+  wrap.hidden = !mkiXiaoEnableTaskKind || mkiXiaoCurrentTaskKind() !== 'supplement';
+}
+
+async function mkiXiaoOpenModal(options = {}) {
+  mkiXiaoLockTranslator = !!options.lockTranslator;
+  mkiXiaoCurrentEndpoint = options.endpoint || '/tasks/api/parent';
+  mkiXiaoAiProductId = Number(options.productId || 0) || null;
+  mkiXiaoFineAiSourceButton = options.sourceButton || null;
+  mkiXiaoEnableTaskKind = !!options.enableTaskKind;
+  mkiXiaoSelectedProduct = null;
+
+  var kindWrap = document.getElementById('mkiXiaoTaskKindWrap');
+  var searchWrap = document.getElementById('mkiXiaoProductSearchWrap');
+  var searchInput = document.getElementById('mkiXiaoProductSearch');
+  var searchBtn = document.getElementById('mkiXiaoProductSearchBtn');
+  var results = document.getElementById('mkiXiaoProductResults');
+  if (kindWrap) kindWrap.hidden = !mkiXiaoEnableTaskKind;
+  if (searchWrap) searchWrap.hidden = true;
+  if (searchInput) searchInput.value = '';
+  if (results) results.innerHTML = '';
+  mkiXiaoRenderSelectedProduct(null);
+  document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+    radio.checked = radio.value === (options.defaultTaskKind || 'new_product');
+    radio.onchange = function() { mkiXiaoSyncTaskKindUI(); };
+  });
+  if (searchBtn) {
+    searchBtn.onclick = function() {
+      mkiXiaoSearchProducts().catch(function(error) {
+        var productResults = document.getElementById('mkiXiaoProductResults');
+        if (productResults) productResults.innerHTML = '<div class="mki-xiao-status mki-xiao-status--error">搜索失败：' + escapeHtml(error.message || error) + '</div>';
+      });
+    };
+  }
+  if (searchInput) {
+    searchInput.onkeydown = function(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (searchBtn) searchBtn.click();
+      }
+    };
+  }
+  mkiXiaoSyncTaskKindUI();
+  if (mkiXiaoEnableTaskKind && options.targetProductId) {
+    document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+      radio.checked = radio.value === 'supplement';
+    });
+    mkiXiaoSyncTaskKindUI();
+    mkiXiaoSearchProducts(Number(options.targetProductId)).catch(function(error) {
+      var productResults = document.getElementById('mkiXiaoProductResults');
+      if (productResults) productResults.innerHTML = '<div class="mki-xiao-status mki-xiao-status--error">预选产品失败：' + escapeHtml(error.message || error) + '</div>';
+    });
+  }
+
+  try {
+    mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
+  } catch (e) { mkiXiaoTranslatorsCache = []; }
+  mkiXiaoRawProcessorsCache = mkiXiaoTranslatorsCache;
+  if (!mkiXiaoTranslatorsCache.length) {
+    alert('没有可用翻译工作用户');
+    return null;
+  }
+  
+  const sel = document.getElementById('mkiXiaoTranslator');
+  sel.innerHTML = mkiXiaoTranslatorsCache.map(mkiUserOption).join('');
+  if (options.translatorId) sel.value = String(options.translatorId);
+  const rawSel = document.getElementById('mkiXiaoRawProcessor');
+  rawSel.innerHTML = '<option value="">请选择原视频处理人</option>' + mkiXiaoRawProcessorsCache.map(mkiUserOption).join('');
+  const rawDefault = options.rawProcessorId || (
+    options.translatorId && mkiXiaoRawProcessorsCache.some(function(u) { return Number(u.id) === Number(options.translatorId); })
+      ? options.translatorId
+      : null
+  );
+  if (rawDefault) rawSel.value = String(rawDefault);
+  const titleEl = document.getElementById('mkiXiaoTitle');
+  if (titleEl) titleEl.textContent = options.title || '创建小语种翻译任务';
+  const urgentEl = document.getElementById('mkiXiaoUrgent');
+  if (urgentEl) {
+    urgentEl.checked = !!options.isUrgent;
+  }
+  const defaultLangOwnerId = String(sel.value || options.translatorId || '');
+
+  let langs = [];
+  try {
+    const url = options.itemId 
+      ? '/tasks/api/languages?media_item_id=' + encodeURIComponent(options.itemId)
+      : '/tasks/api/languages';
+    const r = await fetch(url);
+    const data = await r.json();
+    langs = data.languages || [];
+  } catch (e) { 
+    langs = []; 
+  }
+  var langsDiv = document.getElementById('mkiXiaoLangs');
+  langsDiv.innerHTML = langs.map(function(l) {
+    var code = mkiXiaoLangCode(l);
+    var label = mkiXiaoLangLabel(l);
+    if (!code) return '';
+    var isExisting = !!l.existing;
+    var disabledAttr = isExisting ? ' disabled data-mki-existing="1"' : '';
+    var ownerDisabledAttr = isExisting ? ' disabled' : '';
+    var labelText = isExisting ? label + ' (已有任务)' : label;
+    var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
+    var forceBtnHtml = isExisting
+      ? '<button type="button" class="mki-xiao-force-btn" onclick="mkiXiaoForceUnlock(event, this, \'' + escapeHtml(code) + '\')" style="margin-top: 4px; padding: 2px 4px; font-size: 10px; line-height: 1; border: 1px solid #d9534f; color: #d9534f; background: transparent; border-radius: 3px; cursor: pointer; scale: 0.9; transform-origin: center; pointer-events: auto !important;">强制创建</button>'
+      : '';
+    return '<label class="mki-xiao-lang-pill">'
+      + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
+      + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + disabledAttr + '>'
+      + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
+      + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
+      + '</span>'
+      + '<select class="mh-select mki-xiao-lang-owner" data-mki-lang-owner="' + escapeHtml(code) + '"' + ownerDisabledAttr + '>'
+      + mkiUserOptions(defaultLangOwnerId, true)
+      + '</select>'
+      + '<small class="mki-xiao-ai-suggestion" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">'
+      + '<span class="mki-xiao-ai-suggestion-text">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</span>'
+      + forceBtnHtml
+      + '</small>'
+      + '</span></label>';
+  }).join('');
+  document.querySelectorAll('#mkiXiaoLangs [data-mki-lang-owner]').forEach(function(ownerSelect) {
+    ownerSelect.addEventListener('mousedown', function(event) {
+      event.stopPropagation();
+    });
+    ownerSelect.addEventListener('click', function(event) {
+      event.stopPropagation();
+    });
+    ownerSelect.addEventListener('change', function() {
+      ownerSelect.setAttribute('data-mki-owner-touched', '1');
+    });
+  });
+  sel.onchange = function() {
+    var nextValue = String(sel.value || '');
+    document.querySelectorAll('#mkiXiaoLangs [data-mki-lang-owner]').forEach(function(ownerSelect) {
+      if (ownerSelect.getAttribute('data-mki-owner-touched') === '1') return;
+      ownerSelect.value = nextValue;
+    });
+  };
+
+  mkiXiaoHideStatus();
+  mkiXiaoSetBusy(false);
+  document.getElementById('mkiXiaoModal').style.display = 'flex';
+  return new Promise(function(resolve) { mkiXiaoResolve = resolve; });
+}
+
+function mkiXiaoSelectedCountries() {
+  var cbs = document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]');
+  var checked = [];
+  for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) checked.push(cbs[i].value); }
+  return checked;
+}
+
+function mkiXiaoOK() {
+  var translatorId = parseInt(document.getElementById('mkiXiaoTranslator').value);
+  var rawProcessorId = parseInt(document.getElementById('mkiXiaoRawProcessor').value);
+  var countries = mkiXiaoSelectedCountries();
+  var urgentEl = document.getElementById('mkiXiaoUrgent');
+  var currentTaskKind = mkiXiaoCurrentTaskKind();
+  var languageAssignments = {};
+  if (!translatorId) { alert('请选择小语种翻译负责人'); return; }
+  if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
+  if (mkiXiaoEnableTaskKind && currentTaskKind === 'supplement' && (!mkiXiaoSelectedProduct || !mkiXiaoSelectedProduct.id)) {
+    alert('请先搜索并选择要补充素材的目标产品');
+    return;
+  }
+  if (!countries.length) { alert('请选择目标国家'); return; }
+  for (var i = 0; i < countries.length; i++) {
+    var code = String(countries[i] || '').trim().toUpperCase();
+    var ownerSelect = document.querySelector('#mkiXiaoLangs [data-mki-lang-owner="' + code + '"]');
+    var ownerId = ownerSelect && ownerSelect.value ? parseInt(ownerSelect.value, 10) : translatorId;
+    if (!ownerId) { alert('请为 ' + code + ' 选择翻译负责人'); return; }
+    languageAssignments[code] = ownerId;
+  }
+  mkiXiaoSetBusy(true);
+  mkiXiaoSetStatus('running', '<strong>正在创建任务</strong><div>正在请求 ' + escapeHtml(mkiXiaoCurrentEndpoint) + '</div>');
+  if (mkiXiaoResolve) {
+    mkiXiaoResolve({
+      translatorId: translatorId,
+      rawProcessorId: rawProcessorId,
+      countries: countries,
+      languageAssignments: languageAssignments,
+      force: mkiXiaoIsForce(),
+      isUrgent: !!(urgentEl && urgentEl.checked),
+      taskKind: currentTaskKind,
+      targetProductId: mkiXiaoSelectedProduct && mkiXiaoSelectedProduct.id ? Number(mkiXiaoSelectedProduct.id) : null
+    });
+    mkiXiaoResolve = null;
+  }
+}
+
+function mkiXiaoCancel() {
+  document.getElementById('mkiXiaoModal').style.display = 'none';
+  if (mkiXiaoResolve) { mkiXiaoResolve(null); mkiXiaoResolve = null; }
+}
+
+function mkiXiaoLanguageAssignments(selection) {
+  if (selection && selection.languageAssignments && typeof selection.languageAssignments === 'object') {
+    return selection.languageAssignments;
+  }
+  var assignments = {};
+  var translatorId = Number(selection && selection.translatorId || 0);
+  var countries = selection && Array.isArray(selection.countries) ? selection.countries : [];
+  countries.forEach(function(country) {
+    var code = String(country || '').trim().toUpperCase();
+    if (code && translatorId) assignments[code] = translatorId;
+  });
+  return assignments;
+}
+
+async function mkiCreateSmallLangTaskFromMetaHot(btn, postId) {
+  const productId = Number(btn.dataset.mkiLocalProductId || 0);
+  const itemId = Number(btn.dataset.mkiLocalItemId || 0);
+  if (!productId || !itemId) {
+    mkiToast('warning', '请先加入素材库后才能创建小语种任务');
+    return;
+  }
+  const endpoint = '/tasks/api/parent';
+  const selection = await mkiXiaoOpenModal({
+    title: '创建小语种翻译任务',
+    endpoint: endpoint,
+    productId: productId,
+    itemId: itemId,
+    sourceButton: btn
+  });
+  if (!selection) return;
+  if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
+  if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }
+  if (!selection.rawProcessorId) { mkiToast('error', '请选择原视频处理人'); return; }
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '创建中...';
+  try {
+    const cachedItem = mhItemsById.get(Number(postId));
+    const productLink = cachedItem ? (cachedItem.product_url || '') : '';
+    const rsp = await fetch(endpoint, {
+      method: 'POST',
+      headers: metaHotJsonHeaders(),
+      body: JSON.stringify({
+        media_product_id: productId,
+        media_item_id: itemId,
+        product_link: productLink || null,
+        translator_id: selection.translatorId,
+        raw_processor_id: selection.rawProcessorId,
+        is_urgent: !!selection.isUrgent,
+        language_assignments: mkiXiaoLanguageAssignments(selection),
+        countries: selection.countries,
+        force: !!selection.force
+      })
+    });
+    const data = await rsp.json().catch(() => ({}));
+    if (!rsp.ok) throw mkiXiaoRequestError(endpoint, rsp, data);
+    const taskId = Number(data.parent_task_id || 0);
+    if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+    btn.textContent = '任务 #' + taskId;
+    btn.classList.add('mki-btn--disabled');
+    btn.disabled = true;
+    mkiXiaoShowCreateSuccess(taskId);
+    mkiToast('success', '任务已创建 #' + taskId);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = original;
+    mkiXiaoShowCreateFailure(endpoint, e);
+    mkiToast('error', '创建失败：' + e.message);
+  }
+}
+
+async function mkiCreateNewProductTaskFromMetaHot(btn, postId) {
+  const endpoint = '/tasks/api/new-product';
+  const cachedItem = mhItemsById.get(Number(postId));
+  if (
+    !cachedItem
+    || String(cachedItem.local_video_status || '').toLowerCase() !== 'downloaded'
+    || !cachedItem.local_video_url
+  ) {
+    mkiToast('warning', '请先完成本地视频入库');
+    return;
+  }
+  const itemId = Number(cachedItem.local_media_item_id || 0);
+  const productId = Number(cachedItem.local_product_id || 0);
+  const selection = await mkiXiaoOpenModal({
+    title: '创建新素材任务',
+    endpoint: endpoint,
+    productId: productId,
+    itemId: itemId,
+    sourceButton: btn,
+    enableTaskKind: true,
+    defaultTaskKind: 'new_product'
+  });
+  if (!selection) return;
+  if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
+  if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }
+  if (!selection.rawProcessorId) { mkiToast('error', '请选择原视频处理人'); return; }
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '创建中...';
+  try {
+    const rsp = await fetch(endpoint, {
+      method: 'POST',
+      headers: metaHotJsonHeaders(),
+      body: JSON.stringify({
+        source: 'meta_hot_post',
+        task_kind: selection.taskKind || 'new_product',
+        post_id: Number(postId),
+        owner_id: selection.translatorId,
+        target_product_id: selection.taskKind === 'supplement' ? selection.targetProductId : null,
+        raw_processor_id: selection.rawProcessorId,
+        countries: selection.countries,
+        language_assignments: mkiXiaoLanguageAssignments(selection),
+        is_urgent: !!selection.isUrgent,
+        force: !!selection.force
+      })
+    });
+    const data = await rsp.json().catch(() => ({}));
+    if (!rsp.ok) throw mkiXiaoRequestError(endpoint, rsp, data);
+    const taskId = Number(data.parent_task_id || 0);
+    if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+    if (data.media_product_id) cachedItem.local_product_id = data.media_product_id;
+    if (data.media_item_id) cachedItem.local_media_item_id = data.media_item_id;
+    cachedItem.new_product_parent_task_id = taskId;
+    updateMetaHotCard(cachedItem);
+    btn.textContent = '任务 #' + taskId;
+    btn.classList.add('mki-btn--disabled');
+    btn.disabled = true;
+    mkiXiaoShowCreateSuccess(taskId);
+    mkiToast('success', (selection.taskKind === 'supplement' ? '补充素材任务' : '新品任务') + '已创建 #' + taskId);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = original;
+    mkiXiaoShowCreateFailure(endpoint, e);
+    mkiToast('error', '创建失败：' + e.message);
+  }
+}
+
+// ---- AI 精细评估 Logic ----
+
+async function mkiFetchJson(url, options = {}) {
+  const resp = await fetch(url, options);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || data.success === false) {
+    const err = data && data.error;
+    const message = (err && typeof err === 'object' ? err.message : err)
+      || (data && (data.message || data.detail))
+      || resp.statusText
+      || '请求失败';
+    const error = new Error(message);
+    if (err && typeof err === 'object' && err.details) error.details = err.details;
+    if (err && typeof err === 'object' && err.code) error.code = err.code;
+    error.status = resp.status;
+    throw error;
+  }
+  return data;
+}
+
+function mkiAiProductEndpoint(productId, suffix, itemId, productLink) {
+  let url = `/medias/api/products/${encodeURIComponent(productId)}${suffix || ''}`;
+  const params = new URLSearchParams();
+  const numericItemId = Number(itemId || 0);
+  if (numericItemId > 0) params.set('media_item_id', String(numericItemId));
+  const sourceProductLink = String(productLink || '').trim();
+  if (sourceProductLink) params.set('product_link', sourceProductLink);
+  const query = params.toString();
+  if (query) url += `?${query}`;
+  return url;
+}
+
+function mkiAiParseDetail(raw) {
+  if (!raw) return null;
+  if (window.EvalCountryTable && typeof window.EvalCountryTable.parse === 'function') {
+    return window.EvalCountryTable.parse(raw);
+  }
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch (_) { return null; }
+  }
+  return raw && typeof raw === 'object' ? raw : null;
+}
+
+function mkiAiEvaluationResultFromStatus(status) {
+  return String((status && status.ai_evaluation_result) || '').trim();
+}
+
+function mkiAiButtonLabel(r) {
+  const productStatus = (r && r.product_ad_status) || {};
+  return mkiAiEvaluationResultFromStatus(productStatus) ? 'AI评估结果' : 'AI评估';
+}
+
+function mkiAiCountryRows(raw) {
+  const detail = mkiAiParseDetail(raw);
+  const countries = detail && Array.isArray(detail.countries) ? detail.countries : [];
+  return countries.filter(row => row && typeof row === 'object');
+}
+
+function mkiAiVideoProcessingText(video) {
+  const info = video && video.processing || {};
+  const parts = [];
+  if (video && video.clip_seconds) parts.push(`${video.clip_seconds}秒短片`);
+  if (info.max_height) parts.push(`${info.max_height}P`);
+  if (info.fps) parts.push(`${info.fps}帧`);
+  if (info.video_bitrate) parts.push(`${String(info.video_bitrate).toUpperCase()}码率`);
+  if (info.drop_audio === false && info.audio_bitrate) parts.push(`音频${info.audio_bitrate}`);
+  return parts.join(' / ') || '-';
+}
+
+function mkiAiRenderRequestPreview(panel, preview, fullPayloadUrl) {
+  if (!panel) return;
+  if (!preview) {
+    panel.innerHTML = '<div class="ect-empty">正在加载请求数据、商品主图和视频素材...</div>';
+    return;
+  }
+  const media = preview.media || [];
+  const cover = media.find(item => item.role === 'product_cover') || {};
+  const video = media.find(item => item.role === 'english_video') || {};
+  const product = preview.product || {};
+  const llm = preview.llm || {};
+  const coverUrl = String(cover.preview_url || '').startsWith('/') ? cover.preview_url : '';
+  const videoUrl = String(video.preview_url || '').startsWith('/') ? video.preview_url : '';
+  const originalVideoUrl = String(video.original_preview_url || '').startsWith('/') ? video.original_preview_url : '';
+  const videoDisplayName = video.submitted_filename || video.filename || video.object_key || '';
+  const productUrl = String(product.product_url || '');
+  const safeProductUrl = /^https?:\/\//i.test(productUrl) ? productUrl : '';
+  panel.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+      <button type="button" class="mh-btn" data-mki-ai-full-payload>完整请求报文</button>
+    </div>
+    <div style="display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:16px;align-items:start;">
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;">
+        <h4 style="margin:0 0 10px;font-size:14px;">请求素材</h4>
+        <div style="width:180px;height:180px;border:1px solid var(--oc-border);border-radius:8px;overflow:hidden;background:var(--oc-bg-muted);display:flex;align-items:center;justify-content:center;">
+          ${coverUrl ? `<img src="${escapeHtml(coverUrl)}" alt="商品主图" style="width:100%;height:100%;object-fit:contain;">` : '暂无主图'}
+        </div>
+        <div style="width:180px;margin-top:10px;color:var(--oc-fg-muted);font-size:12px;line-height:1.4;word-break:break-word;">${escapeHtml(videoDisplayName || '暂无视频')}</div>
+        <div style="width:180px;height:320px;margin-top:8px;border:1px solid var(--oc-border);border-radius:8px;overflow:hidden;background:var(--oc-bg-muted);display:flex;align-items:center;justify-content:center;">
+          ${videoUrl ? `<video controls preload="metadata" src="${escapeHtml(videoUrl)}" style="width:100%;height:100%;object-fit:contain;"></video>` : '暂无视频'}
+        </div>
+      </div>
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;">
+        <h4 style="margin:0 0 10px;font-size:14px;">请求关键字段</h4>
+        <dl style="display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px 10px;margin:0;font-size:13px;line-height:1.5;">
+          <dt style="color:var(--oc-fg-muted);">商品链接</dt><dd style="margin:0;word-break:break-word;">${safeProductUrl ? `<a href="${escapeHtml(safeProductUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(productUrl)}</a>` : escapeHtml(productUrl || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">商品主图</dt><dd style="margin:0;word-break:break-word;">${escapeHtml(cover.object_key || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">AI请求短片</dt><dd style="margin:0;word-break:break-word;">${escapeHtml(mkiAiVideoProcessingText(video))}</dd>
+          <dt style="color:var(--oc-fg-muted);">短片预览</dt><dd style="margin:0;word-break:break-word;">${videoUrl ? `<a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(videoUrl)}</a>` : '-'}</dd>
+          <dt style="color:var(--oc-fg-muted);">原始视频</dt><dd style="margin:0;word-break:break-word;">${originalVideoUrl ? `<a href="${escapeHtml(originalVideoUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(video.object_key || originalVideoUrl)}</a>` : escapeHtml(video.object_key || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">语种国家</dt><dd style="margin:0;">${escapeHtml((preview.languages || []).map(lang => `${lang.country || lang.name}(${String(lang.code || '').toUpperCase()})`).join('、') || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">Provider</dt><dd style="margin:0;">${escapeHtml(llm.provider || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">Model</dt><dd style="margin:0;">${escapeHtml(llm.model || '-')}</dd>
+          <dt style="color:var(--oc-fg-muted);">UseCase</dt><dd style="margin:0;">${escapeHtml(llm.use_case || '-')}</dd>
+        </dl>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;"><h4 style="margin:0 0 8px;font-size:14px;">User Prompt</h4><pre class="ect-modal-json" style="max-height:260px;">${escapeHtml((preview.prompts || {}).user || '')}</pre></div>
+      <div style="border:1px solid var(--oc-border);border-radius:8px;padding:12px;background:#fff;"><h4 style="margin:0 0 8px;font-size:14px;">Response Schema / Request JSON</h4><pre class="ect-modal-json" style="max-height:260px;">${escapeHtml(JSON.stringify({schema: preview.response_schema || {}, request: preview.request || {}}, null, 2))}</pre></div>
+    </div>`;
+  if (fullPayloadUrl) {
+    const fullBtn = panel.querySelector('[data-mki-ai-full-payload]');
+    if (fullBtn) fullBtn.onclick = () => mkiAiOpenFullPayload(fullPayloadUrl);
+  }
+}
+
+async function mkiAiOpenFullPayload(url) {
+  if (!url || !window.EvalCountryTable) return;
+  const shell = window.EvalCountryTable.openModal('', {title: '完整请求报文'});
+  const body = shell.body;
+  body.innerHTML = '<div class="ect-empty">正在加载完整请求报文...</div>';
+  try {
+    const data = await mkiFetchJson(url);
+    body.innerHTML = `<pre class="ect-modal-json">${escapeHtml(JSON.stringify(data.payload || data, null, 2))}</pre>`;
+  } catch (e) {
+    body.innerHTML = `<div class="ect-empty">完整报文加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+function mkiAiRenderDetailHtml(detail) {
+  const parsed = mkiAiParseDetail(detail);
+  if (parsed && Array.isArray(parsed.countries) && parsed.countries.length) {
+    return window.EvalCountryTable.render(parsed);
+  }
+  const fallback = parsed || detail || {};
+  const text = typeof fallback === 'string' ? fallback : JSON.stringify(fallback, null, 2);
+  return `<pre class="ect-modal-json">${escapeHtml(text)}</pre>`;
+}
+
+function mkiAiSetResultPanel(shell, detail) {
+  if (!shell || !shell.resultPanel) return;
+  shell.resultPanel.innerHTML = mkiAiRenderDetailHtml(detail);
+  if (shell.setActiveTab) shell.setActiveTab('result');
+}
+
+function mkiAiSetButtonResultState(btn) {
+  if (!btn) return;
+  btn.dataset.mkiAiHasResult = '1';
+  btn.disabled = false;
+  btn.textContent = 'AI精细评估';
+}
+
+function mkiAiSetReevaluateBusy(button, busy) {
+  if (!button) return;
+  button.disabled = !!busy;
+  button.textContent = busy ? '评估中...' : '重新评估';
+}
+
+function mkiAiAttachReevaluateButton(shell, context) {
+  const header = shell && shell.modal && shell.modal.querySelector('.ect-modal-header');
+  if (!header) return null;
+  let actions = header.querySelector('.ect-modal-header-actions');
+  if (!actions) {
+    actions = document.createElement('div');
+    actions.className = 'ect-modal-header-actions';
+    const closeButton = header.querySelector('.ect-modal-close');
+    header.insertBefore(actions, closeButton || null);
+  }
+  let button = actions.querySelector('[data-mki-ai-reevaluate]');
+  if (!button) {
+    button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mki-ai-reevaluate-btn';
+    button.dataset.mkiAiReevaluate = '1';
+    button.textContent = '重新评估';
+    actions.appendChild(button);
+  }
+  context.reevaluateButton = button;
+  button.onclick = () => mkiAiRunEvaluation(context, { forceTab: true });
+  return button;
+}
+
+async function mkiAiLoadRequestPreview(context) {
+  const shell = context.shell;
+  try {
+    mkiAiRenderRequestPreview(shell.requestPanel, null, '');
+    const preview = await mkiFetchJson(context.previewUrl);
+    mkiAiRenderRequestPreview(shell.requestPanel, preview.payload || null, (preview.payload || {}).full_payload_url);
+  } catch (e) {
+    if (shell.requestPanel) shell.requestPanel.innerHTML = `<div class="ect-empty">请求数据加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+async function mkiAiShowExistingResult(context) {
+  const shell = context.shell;
+  if (shell.resultPanel) shell.resultPanel.innerHTML = '<div class="ect-empty">正在加载 AI 评估结果...</div>';
+  if (shell.setActiveTab) shell.setActiveTab('result');
+  try {
+    const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(context.productId)}`);
+    const product = fresh.product || null;
+    const detail = product && product.ai_evaluation_detail;
+    if (detail) {
+      mkiAiSetResultPanel(shell, detail);
+      return;
+    }
+    if (shell.resultPanel) {
+      shell.resultPanel.innerHTML = '<div class="ect-empty">暂无评估详情，可点击右上角“重新评估”。</div>';
+    }
+  } catch (e) {
+    if (shell.resultPanel) shell.resultPanel.innerHTML = `<div class="ect-empty">结果加载失败：${escapeHtml(e.message || e)}</div>`;
+  }
+}
+
+async function mkiAiRunEvaluation(context, options = {}) {
+  if (context.running) return;
+  context.running = true;
+  const btn = context.button;
+  const shell = context.shell;
+  const original = btn ? btn.textContent : '';
+  if (options.forceTab && shell.setActiveTab) shell.setActiveTab('result');
+  if (shell.resultPanel) shell.resultPanel.innerHTML = '<div class="ect-empty">正在等待大模型结构化评估结果...</div>';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '请求中...';
+  }
+  mkiAiSetReevaluateBusy(context.reevaluateButton, true);
+  try {
+    const data = await mkiFetchJson(context.runUrl, {
+      method: 'POST',
+      headers: metaHotJsonHeaders(),
+      body: JSON.stringify({
+        ...(context.itemId > 0 ? {media_item_id: context.itemId} : {}),
+        ...(context.productLink ? {product_link: context.productLink} : {}),
+      }),
+    });
+    let product = null;
+    try {
+      const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(context.productId)}`);
+      product = fresh.product || null;
+    } catch (_) {}
+    const detail = product && product.ai_evaluation_detail
+      || data?.result?.detail
+      || data?.result?.ai_evaluation_detail
+      || data?.detail
+      || data?.result
+      || data;
+    mkiAiSetResultPanel(shell, detail);
+    mkiAiSetButtonResultState(btn);
+  } catch (e) {
+    if (shell.resultPanel) shell.resultPanel.innerHTML = `<div class="ect-empty">评估失败：${escapeHtml(e.message || e)}</div>`;
+    if (shell.setActiveTab) shell.setActiveTab('result');
+    if (btn) {
+      btn.textContent = original || (context.hasExistingResult ? 'AI精细评估' : 'AI精细评估');
+      btn.disabled = false;
+    }
+  } finally {
+    context.running = false;
+    mkiAiSetReevaluateBusy(context.reevaluateButton, false);
+  }
+}
+
+async function mkiFineAiEvaluateFromMetaHot(btn, postId) {
+  const productId = Number(btn.dataset.mkiLocalProductId || 0);
+  const itemId = Number(btn.dataset.mkiLocalItemId || 0);
+  if (!productId) {
+    mkiToast('warning', '先加入素材库后才能进行 AI 评估');
+    return;
+  }
+  if (!window.EvalCountryTable || typeof window.EvalCountryTable.openModal !== 'function') {
+    mkiToast('error', 'AI 评估弹窗组件未加载');
+    return;
+  }
+  const cachedItem = mhItemsById.get(Number(postId));
+  const productLink = cachedItem ? (cachedItem.product_url || '') : '';
+  const title = cachedItem && cachedItem.product_title ? `AI评估 - ${cachedItem.product_title}` : 'AI评估';
+  
+  const shell = window.EvalCountryTable.openModal('', {title, withRequestTab: true});
+  if (shell.setActiveTab) shell.setActiveTab('request');
+  
+  const context = {
+    button: btn,
+    shell,
+    productId,
+    itemId,
+    productLink,
+    hasExistingResult: btn.dataset.mkiAiHasResult === '1',
+    previewUrl: mkiAiProductEndpoint(productId, '/evaluate/request-preview', itemId, productLink),
+    runUrl: mkiAiProductEndpoint(productId, '/evaluate', 0, ''),
+    running: false,
+    reevaluateButton: null,
+  };
+  mkiAiAttachReevaluateButton(shell, context);
+  mkiAiLoadRequestPreview(context);
+  
+  try {
+    const fresh = await mkiFetchJson(`/medias/api/products/${encodeURIComponent(productId)}`);
+    const product = fresh.product || null;
+    const detail = product && product.ai_evaluation_detail;
+    if (detail) {
+      context.hasExistingResult = true;
+      btn.dataset.mkiAiHasResult = '1';
+      mkiAiSetResultPanel(shell, detail);
+      return;
+    }
+  } catch (_) {}
+  
+  await mkiAiRunEvaluation(context);
+}
+
+// ==================== END INTEGRATION ====================
+
+initMetaHotSubtabFromHash();
+</script>
+{% endblock %}

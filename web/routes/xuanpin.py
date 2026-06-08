@@ -340,6 +340,23 @@ def meta_hot_posts_page():
     )
 
 
+@bp.route("/meta-hot-posts/<int:post_id>", methods=["GET"])
+@login_required
+def meta_hot_post_detail_page(post_id: int):
+    if not _can_access_meta_hot_posts():
+        abort(403)
+    post = _meta_hot_posts().get_hot_post_detail(post_id, user_id=getattr(current_user, "id", None))
+    if not post:
+        abort(404)
+    return render_template(
+        "meta_hot_post_detail.html",
+        post=post,
+        meta_hot_posts_ai_visibility=_meta_hot_posts().ai_analysis_visibility_for_user(
+            getattr(current_user, "id", None)
+        ),
+    )
+
+
 @bp.route("/new-products", methods=["GET"])
 @login_required
 def new_products_page():
