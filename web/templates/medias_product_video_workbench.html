@@ -358,15 +358,8 @@
         <span class="vw-sub" id="vwAdState"></span>
       </div>
       <div class="vw-kpis" id="vwAdSummary"></div>
-      <div class="vw-table-wrap">
-        <table class="vw-table">
-          <thead>
-            <tr>
-              <th>日期</th><th>账户</th><th>广告名</th><th>国家</th><th>花费</th><th>购买金额</th><th>ROAS</th><th>购买数</th><th>匹配</th>
-            </tr>
-          </thead>
-          <tbody id="vwAdRows"><tr><td colspan="9">请选择视频</td></tr></tbody>
-        </table>
+      <div id="vwAdRows" class="vw-ad-country-cards" style="display: flex; flex-direction: column; gap: 16px; margin-top: 12px;">
+        <div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">请选择视频</div>
       </div>
     </div>
   </div>
@@ -1436,7 +1429,7 @@
       renderAdDetail(data);
       document.getElementById('vwAdState').textContent = `匹配 ${data.summary.matched_ad_count || 0} 条`;
     } catch (err) {
-      document.getElementById('vwAdRows').innerHTML = `<tr><td colspan="9">加载失败：${esc(err.message)}</td></tr>`;
+      document.getElementById('vwAdRows').innerHTML = `<div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">加载失败：${esc(err.message)}</div>`;
       document.getElementById('vwAdState').textContent = '加载失败';
     }
   }
@@ -1479,24 +1472,86 @@
       }
     }
     const rows = data.rows || [];
-    document.getElementById('vwAdRows').innerHTML = rows.length ? rows.map(row => {
-      const marketCode = String(row.market_country || '').trim().toUpperCase();
+    if (!rows.length) {
+      document.getElementById('vwAdRows').innerHTML = '<div style="text-align: center; color: var(--vw-text-muted); padding: 20px;">当前日期范围没有匹配广告</div>';
+      return;
+    }
+
+    const groups = [];
+    const groupsMap = {};
+    rows.forEach(row => {
+      const code = String(row.market_country || '').trim().toUpperCase() || 'UNKNOWN';
+      if (!groupsMap[code]) {
+        groupsMap[code] = {
+          code: code,
+          rows: [],
+          spend: 0,
+          purchase_value: 0,
+          result_count: 0
+        };
+        groups.push(groupsMap[code]);
+      }
+      const g = groupsMap[code];
+      g.rows.push(row);
+      g.spend += Number(row.spend_usd || 0);
+      g.purchase_value += Number(row.purchase_value_usd || 0);
+      g.result_count += Number(row.result_count || 0);
+    });
+
+    document.getElementById('vwAdRows').innerHTML = groups.map(group => {
+      const marketCode = group.code;
       const countryPrefix = countryMap[marketCode] || '';
-      const countryText = countryPrefix ? `${countryPrefix}${marketCode}` : (row.market_country || '-');
-      return `
-        <tr>
-          <td>${esc(row.activity_date || '')}</td>
-          <td>${esc(row.ad_account_name || row.ad_account_id || '-')}</td>
-          <td>${esc(row.ad_name || '-')}<div class="vw-sub">${esc(row.normalized_ad_code || '')}</div></td>
-          <td>${esc(countryText)}</td>
-          <td>${money(row.spend_usd || 0, 2)}</td>
-          <td>${money(row.purchase_value_usd || 0, 2)}</td>
-          <td>${formatAdRoas(row.roas)}</td>
-          <td>${Number(row.result_count || 0)}</td>
-          <td>${esc(row.match_reason || '-')}</td>
-        </tr>
+      const countryText = countryPrefix ? `${countryPrefix}${marketCode}` : marketCode;
+      
+      const countryRoas = group.spend > 0 ? (group.purchase_value / group.spend) : null;
+      
+      const headerKpiHtml = `
+        <div style="display: flex; gap: 16px; align-items: center;">
+          <div style="font-size: 13px; color: var(--vw-muted);">花费: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">$${money(group.spend || 0, 2)}</strong></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">购买金额: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">$${money(group.purchase_value || 0, 2)}</strong></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">ROAS: <span style="margin-left: 2px;">${formatAdRoas(countryRoas)}</span></div>
+          <div style="font-size: 13px; color: var(--vw-muted);">购买数: <strong style="color: var(--vw-text); font-size: 14px; margin-left: 2px;">${Number(group.result_count || 0)}</strong></div>
+        </div>
       `;
-    }).join('') : '<tr><td colspan="9">当前日期范围没有匹配广告</td></tr>';
+
+      const tbodyRowsHtml = group.rows.map(row => {
+        return `
+          <tr>
+            <td>${esc(row.activity_date || '')}</td>
+            <td>${esc(row.ad_account_name || row.ad_account_id || '-')}</td>
+            <td>${esc(row.ad_name || '-')}<div class="vw-sub">${esc(row.normalized_ad_code || '')}</div></td>
+            <td>${money(row.spend_usd || 0, 2)}</td>
+            <td>${money(row.purchase_value_usd || 0, 2)}</td>
+            <td>${formatAdRoas(row.roas)}</td>
+            <td>${Number(row.result_count || 0)}</td>
+            <td>${esc(row.match_reason || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <section class="vw-section">
+          <div class="vw-section-head">
+            <div class="vw-section-title" style="font-size: 15px; color: var(--vw-blue);">国家：${esc(countryText)}</div>
+            ${headerKpiHtml}
+          </div>
+          <div class="vw-section-body" style="padding: 0;">
+            <div class="vw-table-wrap">
+              <table class="vw-table">
+                <thead>
+                  <tr>
+                    <th>日期</th><th>账户</th><th>广告名</th><th>花费</th><th>购买金额</th><th>ROAS</th><th>购买数</th><th>匹配</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${tbodyRowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      `;
+    }).join('');
   }
 
   function langCode(lang) {
