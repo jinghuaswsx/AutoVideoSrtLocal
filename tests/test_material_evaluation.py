@@ -30,13 +30,15 @@ def _fixed_target_country_rows(*, score: int = 88, suitable: bool = True) -> lis
             ("fr", "France"),
             ("it", "Italy"),
             ("es", "Spain"),
+            ("nl", "Netherlands"),
+            ("pt", "Portugal"),
+            ("sv", "Sweden"),
             ("ja", "Japan"),
-            ("en", "United States"),
         ]
     ]
 
 
-def test_response_schema_requires_fixed_xuanpin_target_countries():
+def test_response_schema_requires_fixed_workbench_target_countries():
     from appcore import material_evaluation
 
     languages = material_evaluation.evaluation_target_languages()
@@ -45,9 +47,9 @@ def test_response_schema_requires_fixed_xuanpin_target_countries():
 
     countries = schema["properties"]["countries"]
     item_props = countries["items"]["properties"]
-    assert countries["minItems"] == 6
-    assert countries["maxItems"] == 6
-    assert item_props["lang"]["enum"] == ["de", "fr", "it", "es", "ja", "en"]
+    assert countries["minItems"] == 8
+    assert countries["maxItems"] == 8
+    assert item_props["lang"]["enum"] == ["de", "fr", "it", "es", "nl", "pt", "sv", "ja"]
     assert item_props["recommendation"]["enum"] == ["做", "不做"]
     assert "summary" in item_props
     assert item_props["reason"]["maxLength"] == 100
@@ -329,7 +331,7 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert updates["ai_evaluation_result"] == "适合推广"
     assert "listing_status" not in updates
     assert "listing_status" not in result
-    assert len(llm_calls) == 6
+    assert len(llm_calls) == 8
     assert all(call[1]["provider_override"] == "openrouter" for call in llm_calls)
     assert all(call[1]["model_override"] == "google/gemini-3-flash-preview" for call in llm_calls)
     assert all(call[1]["google_search"] is False for call in llm_calls)
@@ -341,9 +343,9 @@ def test_evaluate_ready_product_invokes_llm_and_updates_product(monkeypatch, tmp
     assert detail["search_enabled"] is False
     assert detail["search_tools"] == []
     assert detail["evaluation_mode"] == "per_country"
-    assert detail["country_call_count"] == 6
+    assert detail["country_call_count"] == 8
     assert detail["countries"][0]["lang"] == "de"
-    assert [row["lang"] for row in detail["countries"]] == ["de", "fr", "it", "es", "ja", "en"]
+    assert [row["lang"] for row in detail["countries"]] == ["de", "fr", "it", "es", "nl", "pt", "sv", "ja"]
 
 
 def test_evaluate_ready_product_uses_configured_gemini_aistudio_binding(monkeypatch, tmp_path):
