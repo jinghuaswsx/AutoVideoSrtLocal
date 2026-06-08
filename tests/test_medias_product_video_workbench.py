@@ -48,7 +48,6 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "currentAdCountryCode" in html
     assert "vwAdOrderRoasBox" in html
     assert "vwAdOrderRoasVal" in html
-    assert "docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md" in html
     assert "vwDataModal" in html
     assert "function renderCardDataPanel(card)" in html
     assert "function openCardDataModal(card)" in html
@@ -61,6 +60,7 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
 def test_video_workbench_import_flow_matches_mk_progress_contract():
     template = (ROOT / "web" / "templates" / "medias_product_video_workbench.html").read_text(encoding="utf-8")
 
+    assert "docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md" in template
     assert "docs/superpowers/specs/2026-06-08-medias-workbench-mk-card-flow-alignment.md" in template
     assert "{key: 'productOwner', title: '选择产品负责人'" in template
     assert "{key: 'domains', title: '选择发布域名'" in template
