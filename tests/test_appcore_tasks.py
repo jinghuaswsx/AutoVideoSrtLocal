@@ -2121,6 +2121,64 @@ def test_submit_child_moves_ready_task_to_review(monkeypatch):
     )
 
 
+def test_submit_child_rejects_oversize_push_video_after_submit(monkeypatch):
+    from appcore import tasks
+    from appcore import video_size_limits
+
+    rejected = []
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "parent_task_id": 10,
+            "media_product_id": 9,
+            "country_code": "DE",
+            "status": tasks.CHILD_ASSIGNED,
+            "assignee_id": 2,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "complete_child_if_ready",
+        lambda **kwargs: {
+            "completed": False,
+            "submitted": True,
+            "status": tasks.CHILD_REVIEW,
+            "missing": [],
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "_find_child_task_target_lang_item",
+        lambda **kwargs: {
+            "id": 302,
+            "file_size": video_size_limits.PUSH_VIDEO_MAX_BYTES + 1024 * 1024,
+            "filename": "de-video.mp4",
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "reject_child",
+        lambda **kwargs: rejected.append(kwargs),
+    )
+
+    with pytest.raises(tasks.NotReadyError) as exc:
+        tasks.submit_child(task_id=44, actor_user_id=2)
+
+    assert exc.value.missing == ["video_size"]
+    assert "101.0 MB" in str(exc.value)
+    assert "码率改到 3000" in str(exc.value)
+    assert rejected == [
+        {
+            "task_id": 44,
+            "actor_user_id": 2,
+            "reason": str(exc.value),
+        }
+    ]
+
+
 def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(monkeypatch):
     import json
 

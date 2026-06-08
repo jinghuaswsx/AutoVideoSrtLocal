@@ -10,7 +10,12 @@ from datetime import datetime
 from pathlib import Path
 
 from config import OUTPUT_DIR
-from appcore import local_media_storage, subtitle_removal_source_storage, task_state
+from appcore import (
+    local_media_storage,
+    subtitle_removal_source_storage,
+    task_state,
+    video_size_limits,
+)
 from appcore.db import execute, query_all, query_one
 from pipeline.ffutil import ensure_h264_video, extract_thumbnail, probe_media_info
 
@@ -391,6 +396,13 @@ def attach_niuma_result_to_parent_task(
 
     if payload.get("status") == PARENT_RAW_IN_PROGRESS:
         tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
+        size_check = video_size_limits.push_video_size_check(new_size)
+        if size_check["over_limit"]:
+            tasks_svc.reject_raw(
+                task_id=parent_task_id,
+                actor_user_id=actor_user_id,
+                reason=video_size_limits.build_push_video_oversize_reason(new_size),
+            )
 
 
 

@@ -390,6 +390,55 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
     assert marked == [{"task_id": 5, "actor_user_id": 9}]
 
 
+def test_attach_niuma_result_rejects_oversize_push_video(monkeypatch, tmp_path):
+    from appcore import task_raw_video_processing as processing
+    from appcore import tasks
+
+    result_path = tmp_path / "result.mp4"
+    result_path.write_bytes(b"cleaned")
+    destination = tmp_path / "media.mp4"
+    destination.write_bytes(b"old")
+    marked = []
+    rejected = []
+
+    monkeypatch.setattr(processing.video_size_limits, "PUSH_VIDEO_MAX_BYTES", 3)
+    monkeypatch.setattr(
+        processing,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_product_id": 7,
+            "item_user_id": 9,
+            "media_item_id": 11,
+            "assignee_id": 9,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+            "status": "raw_in_progress",
+        },
+    )
+    monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
+    monkeypatch.setattr(processing, "_write_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
+    monkeypatch.setattr(tasks, "reject_raw", lambda **kwargs: rejected.append(kwargs))
+    monkeypatch.setattr(
+        processing.local_media_storage,
+        "write_stream",
+        lambda key, stream: stream.read(),
+    )
+
+    processing.attach_niuma_result_to_parent_task(
+        parent_task_id=5,
+        subtitle_task_id="tcraw-5",
+        actor_user_id=9,
+        result_video_path=str(result_path),
+    )
+
+    assert marked == [{"task_id": 5, "actor_user_id": 9}]
+    assert rejected[0]["task_id"] == 5
+    assert rejected[0]["actor_user_id"] == 9
+    assert "码率改到 3000" in rejected[0]["reason"]
+
+
 def test_watch_niuma_records_attach_failure(monkeypatch):
     from appcore import task_raw_video_processing as processing
 
