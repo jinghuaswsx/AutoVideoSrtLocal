@@ -242,11 +242,34 @@
 .vw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--vw-border); background: #f8fafc; }
 .vw-section-title { font-weight: 800; font-size: 14px; }
 .vw-section-body { padding: 12px; }
-.vw-country-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 8px; }
-.vw-country-chip { min-width: 0; border: 1px solid var(--vw-border); border-radius: 8px; padding: 8px; background: #fff; display: grid; gap: 4px; }
-.vw-country-chip.is-done { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
-.vw-country-chip.is-missing { border-color: #e2e8f0; background: #f8fafc; color: #475569; }
-.vw-country-chip.is-warn { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+.vw-country-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.vw-country-chip { min-width: 0; border: 1px solid var(--vw-border); border-radius: 8px; padding: 8px; background: #fff; display: flex; flex-direction: column; gap: 4px; }
+.vw-country-chip.state-active { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
+.vw-country-chip.state-stopped { border-color: #fecaca; background: #fef2f2; color: #dc2626; }
+.vw-country-chip.state-missing { border-color: #e2e8f0; background: #fff; color: #64748b; }
+.vw-country-chip.state-active .vw-chip-sub { color: #166534; opacity: 0.85; }
+.vw-country-chip.state-stopped .vw-chip-sub { color: #991b1b; opacity: 0.85; }
+.vw-country-chip .vw-chip-roas-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  width: fit-content;
+  margin-top: auto;
+}
+.vw-country-chip.state-active .vw-chip-roas-badge {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+.vw-country-chip.state-stopped .vw-chip-roas-badge {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
 .vw-chip-main { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 800; font-size: 12px; }
 .vw-chip-sub { color: var(--vw-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-panel-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; }
@@ -748,7 +771,9 @@
   }
   function countryStatusText(row) {
     if (!row || row.status === 'missing') return '未翻译';
-    return '已翻译';
+    const version = row.version || {};
+    if (version.delivery_status === 'active') return '投放中';
+    return '未投放';
   }
   function metricSpendRoas(perf, prefix) {
     const spend = Number((perf || {})[`${prefix}_spend_usd`] || 0);
@@ -766,14 +791,22 @@
     const targets = card.target_country_versions || [];
     const summary = card.translation_summary || {};
     const chips = targets.map(row => {
-      const cls = row.status === 'translated' ? 'is-done' : 'is-missing';
-      const version = row.version || {};
-      const sub = row.status === 'translated'
+      const version = row.version;
+      let cls = 'state-missing';
+      let roasHtml = '';
+      const sub = row.status === 'translated' && version
         ? `#${version.media_item_id || '-'} ${version.filename || version.display_name || ''}`
         : '暂无对应翻译素材';
+      if (row.status === 'translated' && version) {
+        cls = version.delivery_status === 'active' ? 'state-active' : 'state-stopped';
+        const rVal = version.roas;
+        const formattedRoas = rVal == null ? '-' : Number(rVal).toFixed(2);
+        roasHtml = `<div class="vw-chip-roas-badge">ROAS: ${formattedRoas}</div>`;
+      }
       return `<div class="vw-country-chip ${cls}">
         <div class="vw-chip-main"><span>${esc(row.country_code || '')}</span><span>${countryStatusText(row)}</span></div>
         <div class="vw-chip-sub" title="${esc(sub)}">${esc(row.lang_name || row.lang || '')} · ${esc(sub)}</div>
+        ${roasHtml}
       </div>`;
     }).join('');
     return `<section class="vw-section">

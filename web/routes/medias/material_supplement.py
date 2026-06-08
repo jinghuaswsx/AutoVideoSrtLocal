@@ -71,10 +71,10 @@ WORKBENCH_AI_COUNTRIES: tuple[dict[str, str], ...] = (
     {"country_code": "FR", "country_name": "法国", "lang": "fr", "lang_name": "法语"},
     {"country_code": "IT", "country_name": "意大利", "lang": "it", "lang_name": "意大利语"},
     {"country_code": "ES", "country_name": "西班牙", "lang": "es", "lang_name": "西班牙语"},
-    {"country_code": "NL", "country_name": "荷兰", "lang": "nl", "lang_name": "荷兰语"},
+    {"country_code": "JP", "country_name": "日本", "lang": "ja", "lang_name": "日语"},
     {"country_code": "PT", "country_name": "葡萄牙", "lang": "pt", "lang_name": "葡萄牙语"},
     {"country_code": "SE", "country_name": "瑞典", "lang": "sv", "lang_name": "瑞典语"},
-    {"country_code": "JP", "country_name": "日本", "lang": "ja", "lang_name": "日语"},
+    {"country_code": "NL", "country_name": "荷兰", "lang": "nl", "lang_name": "荷兰语"},
 )
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
