@@ -288,6 +288,22 @@ def test_xuanpin_mk_video_cards_link_to_material_detail_page(authed_client_no_db
     assert 'class="mk-video-detail-link"' in body
     assert 'target="_blank" rel="noopener noreferrer"' in body
     assert ".mk-video-title-actions { display:inline-flex; flex-direction:column;" in body
+
+
+def test_xuanpin_mk_video_cards_render_data_icon_and_modal(authed_client_no_db):
+    resp = authed_client_no_db.get("/xuanpin/mk")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "mkCardDataModal" in body
+    assert "mkCardAdModal" in body
+    assert "查看视频数据" in body
+    assert "data-mk-card-data-video-path" in body
+    assert "data-mk-card-data-material-key" in body
+    assert "翻译版本" in body
+    assert "投放消耗 / ROAS" in body
+    assert "订单量情况" in body
+    assert "AI 8国评估建议" in body
     assert "${detailLinkHtml}${filenameCopyHtml}</span>" in body
 
 
