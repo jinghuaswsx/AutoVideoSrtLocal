@@ -123,9 +123,29 @@
 .oa-tabs-topbar {
   max-width: 58vw;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }
-.oa-tabs-topbar::-webkit-scrollbar { display: none; }
+.oa-tabs-topbar::-webkit-scrollbar {
+  height: 4px;
+}
+.oa-tabs-topbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.oa-tabs-topbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-full);
+}
+.oa-tabs-topbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
+}
+
+[data-theme="dark"] .oa-tabs-topbar {
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+[data-theme="dark"] .oa-tabs-topbar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+}
 .oa-tab,
 .oa-pill,
 .oad-row-action {
@@ -1862,6 +1882,21 @@
   /* 4. 物理隐藏可能在 layout 里面由于媒体查询误触发而显现的移动端品牌标志 */
   .topbar-mobile-brand {
     display: none !important;
+  }
+}
+
+/* ── 副屏幕及中等屏幕自适应缩进 ────────────────────────── */
+@media (min-width: 769px) and (max-width: 1400px) {
+  .ppr-actions {
+    margin-left: 20px !important;
+  }
+  .oa-tab {
+    font-size: calc(var(--text-sm) * 1.15) !important;
+    padding: 0 var(--space-2) !important;
+    height: 32px !important;
+  }
+  .oa-tabs {
+    gap: 2px !important;
   }
 }
 
@@ -4410,6 +4445,17 @@
       window.location.href = url;
     });
   });
+
+  // ── 顶部 Tab 横向滚轮事件 ──────────────────────────
+  var tabsContainer = document.querySelector('.oa-tabs-topbar');
+  if (tabsContainer) {
+    tabsContainer.addEventListener('wheel', function(e) {
+      if (e.deltaY !== 0) {
+        tabsContainer.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    }, { passive: false });
+  }
 
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
