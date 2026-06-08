@@ -305,6 +305,75 @@ def test_build_video_workbench_ad_detail_summarizes_date_range():
     assert payload["rows"][0]["roas"] == 1.5
 
 
+def test_build_video_workbench_ad_detail_falls_back_to_country_when_name_terms_do_not_match():
+    from web.routes.medias import material_supplement as route
+
+    ad_queries = []
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            return [{"id": 704, "name": "Instant Snap Iodine Swabs", "product_code": "instant-snap-iodine-swabs-rjc"}]
+        if "FROM media_items" in sql:
+            return [
+                {
+                    "id": 1913,
+                    "filename": "2026.05.26--一次性碘伏棉片-原素材-陈兆阳.mp4",
+                    "display_name": "2026.05.26--一次性碘伏棉片-原素材-陈兆阳.mp4",
+                }
+            ]
+        if "FROM mingkong_material_daily_snapshots" in sql:
+            return [{"video_name": "2026.05.26--一次性碘伏棉片-原素材-陈兆阳.mp4"}]
+        if "FROM media_product_lang_ad_summary_cache" in sql:
+            return [{"lang": "de", "ad_spend_usd": "143.00"}]
+        if "FROM meta_ad_daily_ad_metrics m" in sql:
+            ad_queries.append((sql, params))
+            if "UPPER(COALESCE(m.market_country" not in sql:
+                return []
+            return [
+                {
+                    "id": 77,
+                    "ad_account_id": "act_de",
+                    "ad_account_name": "Meta DE",
+                    "activity_date": date(2026, 6, 5),
+                    "report_date": date(2026, 6, 5),
+                    "campaign_name": "instant-snap-iodine-swabs-rjc",
+                    "normalized_ad_code": "instant-snap-iodine-swabs-rjc-de",
+                    "ad_name": "Instant Snap Iodine Swabs DE",
+                    "market_country": "DE",
+                    "spend_usd": "143.00",
+                    "purchase_value_usd": "386.10",
+                    "result_count": 6,
+                }
+            ]
+        raise AssertionError(sql)
+
+    payload = route.build_video_workbench_ad_detail(
+        704,
+        {
+            "media_item_id": "1913",
+            "video_path": "/video/iodine-swabs.mp4",
+            "date_from": "2026-05-10",
+            "date_to": "2026-06-08",
+        },
+        query_fn=fake_query,
+        today=date(2026, 6, 8),
+    )
+
+    assert len(ad_queries) == 2
+    assert "LIKE %s" in ad_queries[0][0]
+    assert "UPPER(COALESCE(m.market_country" in ad_queries[1][0]
+    assert "DE" in ad_queries[1][1]
+    assert payload["summary"] == {
+        "spend_usd": 143.0,
+        "purchase_value_usd": 386.1,
+        "result_count": 6,
+        "roas": 2.7,
+        "matched_ad_count": 1,
+    }
+    assert payload["rows"][0]["market_country"] == "DE"
+    assert payload["rows"][0]["match_reason"] == "product_lang_country_fallback"
+
+
 def test_video_workbench_ad_detail_rejects_too_wide_date_range():
     from web.routes.medias import material_supplement as route
 

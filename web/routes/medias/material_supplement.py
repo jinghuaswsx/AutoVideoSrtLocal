@@ -36,9 +36,36 @@ LANG_NAMES: dict[str, str] = {
     "pt": "葡萄牙语",
 }
 
+COUNTRY_TO_LANG: dict[str, str] = {
+    "US": "en",
+    "GB": "en",
+    "UK": "en",
+    "AU": "en",
+    "CA": "en",
+    "IE": "en",
+    "NZ": "en",
+    "DE": "de",
+    "AT": "de",
+    "FR": "fr",
+    "ES": "es",
+    "IT": "it",
+    "NL": "nl",
+    "SE": "sv",
+    "FI": "fi",
+    "JP": "ja",
+    "KR": "ko",
+    "BR": "pt-br",
+    "PT": "pt",
+}
+
+LANG_TO_COUNTRIES: dict[str, tuple[str, ...]] = {}
+for _country_code, _lang_code in COUNTRY_TO_LANG.items():
+    LANG_TO_COUNTRIES[_lang_code] = (*LANG_TO_COUNTRIES.get(_lang_code, ()), _country_code)
+
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
 _SPACE_RE = re.compile(r"\s+")
 _MAX_AD_DETAIL_DAYS = 180
+_AD_DETAIL_COUNTRY_FALLBACK_REASON = "product_lang_country_fallback"
 
 
 def _json(payload: dict, status: int = 200):
@@ -155,6 +182,30 @@ def _match_reason(row: dict, terms: list[dict[str, str]]) -> str:
         if _row_matches_term(row, item["term"]):
             return item["reason"]
     return "unknown"
+
+
+def _countries_for_langs(langs: list[str] | set[str] | tuple[str, ...]) -> list[str]:
+    countries: set[str] = set()
+    for lang in langs:
+        normalized = str(lang or "").strip().lower()
+        if not normalized:
+            continue
+        countries.update(LANG_TO_COUNTRIES.get(normalized, ()))
+    return sorted(countries)
+
+
+def _load_ad_detail_fallback_countries(product_id: int, query_fn=db_query) -> list[str]:
+    rows = query_fn(
+        "SELECT lang FROM media_product_lang_ad_summary_cache "
+        "WHERE product_id = %s AND COALESCE(ad_spend_usd, 0) > 0",
+        [product_id],
+    )
+    langs = {
+        str(row.get("lang") or "").strip().lower()
+        for row in rows
+        if str(row.get("lang") or "").strip()
+    }
+    return _countries_for_langs(langs)
 
 
 def _add_match_term(terms: list[dict[str, str]], seen: set[str], value: Any, reason: str) -> None:
@@ -567,40 +618,31 @@ def _load_ad_detail_match_terms(product_id: int, args: Mapping[str, Any], query_
     return terms
 
 
-def build_video_workbench_ad_detail(
-    product_id: int,
-    args: Mapping[str, Any],
-    *,
-    query_fn=db_query,
-    today: date | None = None,
-) -> dict:
-    product = _load_product(product_id, query_fn=query_fn)
-    if not product:
-        raise LookupError("product_not_found")
-    date_from, date_to = _ad_detail_date_range(args, today=today)
-    terms = _load_ad_detail_match_terms(product_id, args, query_fn=query_fn)
-    if not terms:
-        return {
-            "date_from": date_from.isoformat(),
-            "date_to": date_to.isoformat(),
-            "match_terms": [],
-            "summary": {
-                "spend_usd": 0.0,
-                "purchase_value_usd": 0.0,
-                "result_count": 0,
-                "roas": None,
-                "matched_ad_count": 0,
-            },
-            "rows": [],
-        }
+def _empty_ad_detail_result(date_from: date, date_to: date, terms: list[dict[str, str]]) -> dict:
+    return {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "match_terms": terms,
+        "summary": {
+            "spend_usd": 0.0,
+            "purchase_value_usd": 0.0,
+            "result_count": 0,
+            "roas": None,
+            "matched_ad_count": 0,
+        },
+        "rows": [],
+    }
 
-    match_clauses = []
-    match_args: list[Any] = []
-    for item in terms:
-        like = f"%{item['term']}%"
-        match_clauses.append("(LOWER(COALESCE(m.ad_name, '')) LIKE %s OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE %s)")
-        match_args.extend([like, like])
-    rows = query_fn(
+
+def _query_ad_detail_rows(
+    product_id: int,
+    date_from: date,
+    date_to: date,
+    match_sql: str,
+    match_args: list[Any],
+    query_fn=db_query,
+) -> list[dict]:
+    return query_fn(
         "SELECT m.id, m.ad_account_id, m.ad_account_name, "
         "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
         "       m.report_date, m.product_code AS campaign_name, "
@@ -610,11 +652,21 @@ def build_video_workbench_ad_detail(
         "WHERE m.product_id = %s "
         "  AND COALESCE(m.spend_usd, 0) > 0 "
         "  AND DATE(COALESCE(m.meta_business_date, m.report_date)) BETWEEN %s AND %s "
-        f"  AND ({' OR '.join(match_clauses)}) "
+        f"  AND ({match_sql}) "
         "ORDER BY activity_date DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
         "LIMIT 500",
         [product_id, date_from.isoformat(), date_to.isoformat(), *match_args],
     )
+
+
+def _build_ad_detail_result(
+    *,
+    date_from: date,
+    date_to: date,
+    terms: list[dict[str, str]],
+    rows: list[dict],
+    match_reason_override: str | None = None,
+) -> dict:
     out_rows: list[dict] = []
     seen_metric_ids: set[str] = set()
     total_spend = 0.0
@@ -645,7 +697,7 @@ def build_video_workbench_ad_detail(
             "purchase_value_usd": purchase,
             "result_count": results,
             "roas": round(purchase / spend, 4) if spend > 0 else None,
-            "match_reason": _match_reason(row, terms),
+            "match_reason": match_reason_override or _match_reason(row, terms),
         })
     return {
         "date_from": date_from.isoformat(),
@@ -660,6 +712,62 @@ def build_video_workbench_ad_detail(
         },
         "rows": out_rows,
     }
+
+
+def build_video_workbench_ad_detail(
+    product_id: int,
+    args: Mapping[str, Any],
+    *,
+    query_fn=db_query,
+    today: date | None = None,
+) -> dict:
+    product = _load_product(product_id, query_fn=query_fn)
+    if not product:
+        raise LookupError("product_not_found")
+    date_from, date_to = _ad_detail_date_range(args, today=today)
+    terms = _load_ad_detail_match_terms(product_id, args, query_fn=query_fn)
+    if not terms:
+        return _empty_ad_detail_result(date_from, date_to, [])
+
+    match_clauses = []
+    match_args: list[Any] = []
+    for item in terms:
+        like = f"%{item['term']}%"
+        match_clauses.append("(LOWER(COALESCE(m.ad_name, '')) LIKE %s OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE %s)")
+        match_args.extend([like, like])
+    rows = _query_ad_detail_rows(
+        product_id,
+        date_from,
+        date_to,
+        " OR ".join(match_clauses),
+        match_args,
+        query_fn=query_fn,
+    )
+    match_reason_override = None
+    if not rows:
+        fallback_countries = _load_ad_detail_fallback_countries(product_id, query_fn=query_fn)
+        if fallback_countries:
+            placeholders = ",".join(["%s"] * len(fallback_countries))
+            rows = _query_ad_detail_rows(
+                product_id,
+                date_from,
+                date_to,
+                f"UPPER(COALESCE(m.market_country, '')) IN ({placeholders})",
+                fallback_countries,
+                query_fn=query_fn,
+            )
+            if rows:
+                match_reason_override = _AD_DETAIL_COUNTRY_FALLBACK_REASON
+
+    if not rows:
+        return _empty_ad_detail_result(date_from, date_to, terms)
+    return _build_ad_detail_result(
+        date_from=date_from,
+        date_to=date_to,
+        terms=terms,
+        rows=rows,
+        match_reason_override=match_reason_override,
+    )
 
 
 # ------------------------------------------------------------------
