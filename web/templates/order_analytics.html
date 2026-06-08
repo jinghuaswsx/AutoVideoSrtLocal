@@ -2207,14 +2207,14 @@
 
   <div class="oar-note" style="margin-top: var(--space-5); margin-bottom: var(--space-2);">订单明细、订单盈亏明细跟随上方日期范围；产品销量、广告计划和 ROAS 走势按当前实时数据展示</div>
   <div class="oar-subtabs" role="tablist" aria-label="实时大盘明细">
-    <button type="button" class="oar-subtab is-active" data-realtime-subtab="orders">订单明细</button>
-    <button type="button" class="oar-subtab" data-realtime-subtab="profitDetails">订单盈亏明细</button>
-    <button type="button" class="oar-subtab" data-realtime-subtab="products">产品销量</button>
-    <button type="button" class="oar-subtab" data-realtime-subtab="campaigns">广告计划</button>
-    <button type="button" class="oar-subtab" data-realtime-subtab="trend">ROAS 走势</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'orders' %}is-active{% endif %}" data-realtime-subtab="orders">订单明细</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'profitDetails' %}is-active{% endif %}" data-realtime-subtab="profitDetails">订单盈亏明细</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'products' %}is-active{% endif %}" data-realtime-subtab="products">产品销量</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'campaigns' %}is-active{% endif %}" data-realtime-subtab="campaigns">广告计划</button>
+    <button type="button" class="oar-subtab {% if active_subtab == 'trend' %}is-active{% endif %}" data-realtime-subtab="trend">ROAS 走势</button>
   </div>
 
-  <div class="oar-subpanel is-active" id="realtimeSubOrders">
+  <div class="oar-subpanel {% if active_subtab == 'orders' %}is-active{% endif %}" id="realtimeSubOrders">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">今天订单明细 <span class="oar-page-info" id="realtimeOrderPageInfo">加载中...</span></div>
@@ -2244,7 +2244,7 @@
     </div>
   </div>
 
-  <div class="oar-subpanel" id="realtimeSubProfitDetails">
+  <div class="oar-subpanel {% if active_subtab == 'profitDetails' %}is-active{% endif %}" id="realtimeSubProfitDetails">
     <div class="oa-table-wrap">
       <div class="oa-table-header oa-table-header-stack">
         <div class="oar-profit-header-line">
@@ -2331,7 +2331,7 @@
     </div>
   </div>
 
-  <div class="oar-subpanel" id="realtimeSubProducts">
+  <div class="oar-subpanel {% if active_subtab == 'products' %}is-active{% endif %}" id="realtimeSubProducts">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">产品销量统计</div>
@@ -2358,7 +2358,7 @@
     </div>
   </div>
 
-  <div class="oar-subpanel" id="realtimeSubCampaigns">
+  <div class="oar-subpanel {% if active_subtab == 'campaigns' %}is-active{% endif %}" id="realtimeSubCampaigns">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">广告计划实时数据</div>
@@ -2392,7 +2392,7 @@
     </div>
   </div>
 
-  <div class="oar-subpanel" id="realtimeSubTrend">
+  <div class="oar-subpanel {% if active_subtab == 'trend' %}is-active{% endif %}" id="realtimeSubTrend">
     <div class="oa-table-wrap">
       <div class="oa-table-header">
         <div class="oa-table-title">当天 ROAS 走势</div>
@@ -5181,7 +5181,18 @@
   }
   document.querySelectorAll('[data-realtime-subtab]').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      setRealtimeSubtab(btn.dataset.realtimeSubtab);
+      var name = btn.dataset.realtimeSubtab;
+      var routeMapping = {
+        'orders': 'order',
+        'profitDetails': 'profit',
+        'products': 'product',
+        'campaigns': 'campaign',
+        'trend': 'trend'
+      };
+      var subtabRoute = routeMapping[name] || 'order';
+      var params = new URLSearchParams(window.location.search);
+      var queryString = params.toString();
+      window.location.href = '/order-analytics/realtime/' + subtabRoute + (queryString ? '?' + queryString : '');
     });
   });
   var nplRefresh = document.getElementById('nplRefresh');
@@ -5248,6 +5259,51 @@
     } else if (initialTab === 'weeklyAiAnalysis') {
       initWeeklyAiAnalysis();
     } else if (initialTab === 'realtime') {
+      var urlParams = new URLSearchParams(window.location.search);
+      var qRange = urlParams.get('range');
+      var qStart = urlParams.get('start_date');
+      var qEnd = urlParams.get('end_date');
+      var qSiteCode = urlParams.get('site_code');
+      var qLaunchWindow = urlParams.get('launch_window');
+      var qProductId = urlParams.get('product_id');
+      var qProductLabel = urlParams.get('product_label');
+      var qCampaignFilter = urlParams.get('campaign_filter');
+
+      if (qLaunchWindow) {
+        realtimeState.launchWindowDays = qLaunchWindow;
+        syncLaunchWindowSelects();
+      }
+      if (qSiteCode) {
+        realtimeState.siteCode = qSiteCode;
+        var siteFilter = document.getElementById('realtimeSiteFilter');
+        if (siteFilter) siteFilter.value = qSiteCode;
+      }
+      if (qProductId) {
+        realtimeState.productId = parseInt(qProductId, 10);
+        realtimeState.productLabel = qProductLabel || '';
+        var picker = document.getElementById('realtimeProductPicker');
+        var nameSpan = document.getElementById('realtimePickerProductName');
+        if (picker && nameSpan) {
+          nameSpan.textContent = realtimeState.productLabel || ('ID: ' + realtimeState.productId);
+          picker.style.display = 'flex';
+        }
+      }
+      if (qCampaignFilter === 'unallocated') {
+        realtimeState.campaignFilter = 'unallocated';
+        var card = document.getElementById('realtimeProfitUnallocatedAdCard');
+        if (card) card.classList.add('is-active');
+      }
+      if (qStart && qEnd) {
+        realtimeState.range = qRange || 'custom';
+        setInputValue('realtimeStartDate', qStart);
+        setInputValue('realtimeEndDate', qEnd);
+        syncRealtimeRangeSelection();
+        resetRealtimeProfitPage();
+      } else if (qRange) {
+        setRealtimeRange(qRange, true);
+      } else {
+        setRealtimeRange('today', true);
+      }
       loadRealtimeOverview();
     } else if (initialTab === 'newProductLaunch') {
       initNewProductLaunch();
@@ -5285,6 +5341,56 @@
     realtimeState.profitHasMore = true;
   }
 
+  function updateRealtimeUrlState() {
+    var params = new URLSearchParams(window.location.search);
+    var startEl = document.getElementById('realtimeStartDate');
+    var endEl = document.getElementById('realtimeEndDate');
+    if (startEl && startEl.value) params.set('start_date', startEl.value);
+    if (endEl && endEl.value) params.set('end_date', endEl.value);
+
+    var siteFilter = document.getElementById('realtimeSiteFilter');
+    if (siteFilter) {
+      if (siteFilter.value) {
+        params.set('site_code', siteFilter.value);
+      } else {
+        params.delete('site_code');
+      }
+    }
+
+    var launchWindow = document.getElementById('realtimeLaunchWindowDays');
+    if (launchWindow) {
+      if (launchWindow.value) {
+        params.set('launch_window', launchWindow.value);
+      } else {
+        params.delete('launch_window');
+      }
+    }
+
+    if (realtimeState.productId) {
+      params.set('product_id', realtimeState.productId);
+      if (realtimeState.productLabel) params.set('product_label', realtimeState.productLabel);
+    } else {
+      params.delete('product_id');
+      params.delete('product_label');
+    }
+
+    if (realtimeState.range) {
+      params.set('range', realtimeState.range);
+    } else {
+      params.delete('range');
+    }
+
+    if (realtimeState.campaignFilter) {
+      params.set('campaign_filter', realtimeState.campaignFilter);
+    } else {
+      params.delete('campaign_filter');
+    }
+
+    var queryString = params.toString();
+    var newUrl = window.location.pathname + (queryString ? '?' + queryString : '');
+    window.history.replaceState(null, '', newUrl);
+  }
+
   function setRealtimeSubtab(name) {
     document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
       item.classList.toggle('is-active', item.dataset.realtimeSubtab === name);
@@ -5297,10 +5403,9 @@
   function showRealtimeUnallocatedCampaigns() {
     var card = document.getElementById('realtimeProfitUnallocatedAdCard');
     if (card && card.getAttribute('aria-disabled') === 'true') return;
-    realtimeState.campaignFilter = 'unallocated';
-    if (card) card.classList.add('is-active');
-    setRealtimeSubtab('campaigns');
-    renderRealtimeCampaigns(realtimeLastCampaignRows);
+    var params = new URLSearchParams(window.location.search);
+    params.set('campaign_filter', 'unallocated');
+    window.location.href = '/order-analytics/realtime/campaign?' + params.toString();
   }
 
   function clearRealtimeCampaignFilter() {
@@ -5308,6 +5413,11 @@
     var card = document.getElementById('realtimeProfitUnallocatedAdCard');
     if (card) card.classList.remove('is-active');
     renderRealtimeCampaigns(realtimeLastCampaignRows);
+
+    var params = new URLSearchParams(window.location.search);
+    params.delete('campaign_filter');
+    var newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    window.history.replaceState(null, '', newUrl);
   }
 
   function setRealtimeRange(range, skipLoad) {
@@ -5807,6 +5917,7 @@
     updateRealtimeUnmatchedDetailLinks();
     loadRealtimeTopCards();
     loadRealtimeSubTabs();
+    updateRealtimeUrlState();
   }
 
   // ── 顶部卡片：按选择的时间范围聚合 ───────────────

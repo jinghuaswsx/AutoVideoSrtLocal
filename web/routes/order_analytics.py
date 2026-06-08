@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, render_template, request, make_response
+from flask import Blueprint, render_template, request, make_response, redirect
 from flask_login import current_user, login_required
 from web.auth import admin_required, permission_required
 from web.background import start_background_task
@@ -334,6 +334,11 @@ def _realtime_store_options() -> list[dict[str, str]]:
 
 @bp.route("/order-analytics")
 @bp.route("/order-analytics/realtime")
+@bp.route("/order-analytics/realtime/order")
+@bp.route("/order-analytics/realtime/profit")
+@bp.route("/order-analytics/realtime/product")
+@bp.route("/order-analytics/realtime/campaign")
+@bp.route("/order-analytics/realtime/trend")
 @bp.route("/order-analytics/new-product-launch")
 @bp.route("/order-analytics/dxm-orders-view")
 @bp.route("/order-analytics/ads-view")
@@ -349,29 +354,47 @@ def _realtime_store_options() -> list[dict[str, str]]:
 @permission_required("data_analytics")
 def page():
     path = request.path.rstrip('/')
-    if path == "/order-analytics":
-        active_tab = "realtime"
-    else:
-        mapping = {
-            "/order-analytics/realtime": "realtime",
-            "/order-analytics/new-product-launch": "newProductLaunch",
-            "/order-analytics/dxm-orders-view": "dxmOrders",
-            "/order-analytics/ads-view": "ads",
-            "/order-analytics/ad-accounts-view": "ads",
-            "/order-analytics/product-dashboard-view": "realtime",
-            "/order-analytics/country-dashboard-view": "countryDashboard",
-            "/order-analytics/true-roas-view": "trueRoas",
-            "/order-analytics/weekly-roas-view": "realtime",
-            "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
-            "/order-analytics/import-view": "realtime",
-            "/order-analytics/shopify-analytics-view": "analytics",
-        }
-        active_tab = mapping.get(path, "realtime")
+    if path in ("/order-analytics", "/order-analytics/realtime"):
+        query_string = request.query_string.decode("utf-8")
+        target_url = "/order-analytics/realtime/order"
+        if query_string:
+            target_url += f"?{query_string}"
+        return redirect(target_url)
+
+    subtab_mapping = {
+        "/order-analytics/realtime/order": "orders",
+        "/order-analytics/realtime/profit": "profitDetails",
+        "/order-analytics/realtime/product": "products",
+        "/order-analytics/realtime/campaign": "campaigns",
+        "/order-analytics/realtime/trend": "trend",
+    }
+    active_subtab = subtab_mapping.get(path, "orders")
+
+    mapping = {
+        "/order-analytics/realtime/order": "realtime",
+        "/order-analytics/realtime/profit": "realtime",
+        "/order-analytics/realtime/product": "realtime",
+        "/order-analytics/realtime/campaign": "realtime",
+        "/order-analytics/realtime/trend": "realtime",
+        "/order-analytics/new-product-launch": "newProductLaunch",
+        "/order-analytics/dxm-orders-view": "dxmOrders",
+        "/order-analytics/ads-view": "ads",
+        "/order-analytics/ad-accounts-view": "ads",
+        "/order-analytics/product-dashboard-view": "realtime",
+        "/order-analytics/country-dashboard-view": "countryDashboard",
+        "/order-analytics/true-roas-view": "trueRoas",
+        "/order-analytics/weekly-roas-view": "realtime",
+        "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
+        "/order-analytics/import-view": "realtime",
+        "/order-analytics/shopify-analytics-view": "analytics",
+    }
+    active_tab = mapping.get(path, "realtime")
 
     resp = make_response(render_template(
         "order_analytics.html",
         realtime_store_options=_realtime_store_options(),
         active_tab=active_tab,
+        active_subtab=active_subtab,
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
