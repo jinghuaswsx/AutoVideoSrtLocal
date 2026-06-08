@@ -945,6 +945,296 @@ def test_run_skips_detail_visual_fallback_for_non_auto_replace_targets(monkeypat
     assert result["detail"]["visual_confirmation_pairs"] == []
 
 
+def test_run_fails_when_detail_images_exist_but_no_expected_urls(monkeypatch, tmp_path):
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    for path in (
+        workspace.source_en_dir,
+        workspace.source_localized_dir,
+        workspace.classify_ez_dir,
+        workspace.classify_taa_dir,
+        workspace.screenshots_ez_dir,
+        workspace.screenshots_taa_dir,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+    old_src = "https://wxalbum-10001658-file.dianxiaomi.com/wxalbum/1332898/20260526142517/cc30c4d60392850c58dbbfc183785185.jpg"
+    html = f'<section><img src="{old_src}"></section>'
+    product = {"id": "8603069350061", "images": [], "description": html}
+
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda root=None: {"browser_user_data_dir": "C:/chrome", "shopify_domain_store_slugs": {}})
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
+    monkeypatch.setattr(
+        run_product_cdp,
+        "fetch_bootstrap_ready",
+        lambda **_kwargs: {"reference_images": [], "localized_images": []},
+    )
+    monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, []))
+    monkeypatch.setattr(run_product_cdp, "add_original_detail_fallbacks", lambda **_kwargs: [])
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_image_display_sizes", lambda **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "build_detail_source_index_map", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "download_visual_detail_sources", lambda **_kwargs: {"slot_images": [], "reference_images": []})
+
+    def fake_replace_detail_images(**_kwargs):
+        return {
+            "status": "skipped",
+            "image_count": 1,
+            "replacement_count": 0,
+            "skipped_existing_count": 0,
+            "skipped_missing_count": 1,
+            "replacements": [],
+            "verify": {
+                "expected_new_urls_present": 0,
+                "expected_total": 0,
+                "old_non_shopify_count": 1,
+            },
+        }
+
+    monkeypatch.setattr(run_product_cdp.taa_cdp, "replace_detail_images", fake_replace_detail_images)
+
+    args = argparse.Namespace(
+        product_code="instant-snap-iodine-swabs-rjc",
+        lang="it",
+        shop_locale="it",
+        language="Italian",
+        product_id="8603069350061",
+        store_domain="newjoyloo.com",
+        bootstrap_timeout_s=120,
+        port=7777,
+        carousel_limit=0,
+        skip_carousel=True,
+        skip_detail=False,
+        skip_existing_carousel=False,
+        source_index_map="",
+        replace_shopify_cdn=False,
+        no_preserve_detail_size=True,
+        no_original_detail_fallback=True,
+        no_detail_reload_verify=True,
+    )
+
+    with pytest.raises(RuntimeError, match="expected=0/0"):
+        run_product_cdp.run(args, visual_pair_confirm_cb=lambda _pairs: True)
+
+
+def test_run_fails_when_material_product_link_keeps_old_detail_images(monkeypatch, tmp_path):
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    for path in (
+        workspace.source_en_dir,
+        workspace.source_localized_dir,
+        workspace.classify_ez_dir,
+        workspace.classify_taa_dir,
+        workspace.screenshots_ez_dir,
+        workspace.screenshots_taa_dir,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+    old_src = "https://wxalbum-10001658-file.dianxiaomi.com/wxalbum/1332898/20260526142517/cc30c4d60392850c58dbbfc183785185.jpg"
+    new_src = "https://cdn.shopify.com/s/files/1/0727/files/20260608_it_from_url_en_08_cc30c4d60392850c58dbbfc183785185.png?v=1"
+    persisted_html = f'<section><img src="{new_src}"></section>'
+    product = {"id": "8603069350061", "images": [], "description": persisted_html}
+    bootstrap = {
+        "reference_images": [],
+        "localized_images": [],
+        "link_url": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc",
+        "link_urls": [
+            {
+                "domain": "newjoyloo.com",
+                "lang": "it",
+                "url": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc",
+            }
+        ],
+    }
+
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda root=None: {"browser_user_data_dir": "C:/chrome", "shopify_domain_store_slugs": {}})
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
+    monkeypatch.setattr(run_product_cdp, "fetch_bootstrap_ready", lambda **_kwargs: bootstrap)
+    monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, []))
+    monkeypatch.setattr(run_product_cdp, "add_original_detail_fallbacks", lambda **_kwargs: [])
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_image_display_sizes", lambda **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "build_detail_source_index_map", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "PRODUCT_LINK_VERIFY_ATTEMPTS", 1)
+    monkeypatch.setattr(run_product_cdp, "verify_product_link_detail_images", lambda *_args, **_kwargs: {
+        "url": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc",
+        "expected_total": 1,
+        "expected_present": 0,
+        "old_exact_count": 1,
+        "old_wxalbum_count": 1,
+    })
+
+    def fake_replace_detail_images(**_kwargs):
+        return {
+            "status": "done",
+            "image_count": 1,
+            "replacement_count": 1,
+            "skipped_existing_count": 0,
+            "skipped_missing_count": 0,
+            "replacements": [{"old": old_src, "new": new_src}],
+            "verify": {
+                "expected_new_urls_present": 1,
+                "expected_total": 1,
+                "old_non_shopify_count": 0,
+            },
+        }
+
+    monkeypatch.setattr(run_product_cdp.taa_cdp, "replace_detail_images", fake_replace_detail_images)
+
+    args = argparse.Namespace(
+        product_code="instant-snap-iodine-swabs-rjc",
+        lang="it",
+        shop_locale="it",
+        language="Italian",
+        product_id="8603069350061",
+        store_domain="newjoyloo.com",
+        bootstrap_timeout_s=120,
+        port=7777,
+        carousel_limit=0,
+        skip_carousel=True,
+        skip_detail=False,
+        skip_existing_carousel=False,
+        source_index_map="",
+        replace_shopify_cdn=False,
+        no_preserve_detail_size=True,
+        no_original_detail_fallback=True,
+        no_detail_reload_verify=True,
+    )
+
+    with pytest.raises(RuntimeError, match="product link detail verification failed"):
+        run_product_cdp.run(args, visual_pair_confirm_cb=lambda _pairs: True)
+
+
+def test_run_repairs_material_product_link_to_default_variant_when_variant_passes(monkeypatch, tmp_path):
+    workspace = run_product_cdp.storage.Workspace(
+        root=tmp_path,
+        source_en_dir=tmp_path / "source" / "en",
+        source_localized_dir=tmp_path / "source" / "localized",
+        classify_ez_dir=tmp_path / "classify" / "ez",
+        classify_taa_dir=tmp_path / "classify" / "taa",
+        screenshots_ez_dir=tmp_path / "screenshots" / "ez",
+        screenshots_taa_dir=tmp_path / "screenshots" / "taa",
+        manifest_path=tmp_path / "manifest.json",
+        log_path=tmp_path / "run.log",
+    )
+    for path in (
+        workspace.source_en_dir,
+        workspace.source_localized_dir,
+        workspace.classify_ez_dir,
+        workspace.classify_taa_dir,
+        workspace.screenshots_ez_dir,
+        workspace.screenshots_taa_dir,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+    old_src = "https://wxalbum-10001658-file.dianxiaomi.com/wxalbum/1332898/20260526142517/cc30c4d60392850c58dbbfc183785185.jpg"
+    new_src = "https://cdn.shopify.com/s/files/1/0727/files/20260608_it_from_url_en_08_cc30c4d60392850c58dbbfc183785185.png?v=1"
+    product = {
+        "id": "8603069350061",
+        "images": [],
+        "description": f'<section><img src="{new_src}"></section>',
+        "variants": [{"id": 46081369309357}],
+    }
+    link_url = "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc"
+    bootstrap = {
+        "reference_images": [],
+        "localized_images": [],
+        "link_url": link_url,
+        "link_urls": [{"domain": "newjoyloo.com", "lang": "it", "url": link_url}],
+    }
+    saved_links: list[dict] = []
+
+    monkeypatch.setattr(run_product_cdp.settings, "load_runtime_config", lambda root=None: {
+        "base_url": "http://server",
+        "api_key": "key",
+        "browser_user_data_dir": "C:/chrome",
+        "shopify_domain_store_slugs": {},
+    })
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_product", lambda *_args, **_kwargs: product)
+    monkeypatch.setattr(run_product_cdp, "fetch_bootstrap_ready", lambda **_kwargs: bootstrap)
+    monkeypatch.setattr(run_product_cdp, "download_localized", lambda *_args, **_kwargs: (workspace, []))
+    monkeypatch.setattr(run_product_cdp, "add_original_detail_fallbacks", lambda **_kwargs: [])
+    monkeypatch.setattr(run_product_cdp, "fetch_storefront_image_display_sizes", lambda **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "build_detail_source_index_map", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(run_product_cdp, "PRODUCT_LINK_VERIFY_ATTEMPTS", 1)
+
+    def fake_verify_link(url, **_kwargs):
+        if "variant=46081369309357" in url:
+            return {"url": url, "expected_total": 1, "expected_present": 1, "old_exact_count": 0, "old_wxalbum_count": 0}
+        return {"url": url, "expected_total": 1, "expected_present": 0, "old_exact_count": 1, "old_wxalbum_count": 1}
+
+    monkeypatch.setattr(run_product_cdp, "verify_product_link_detail_images", fake_verify_link)
+    monkeypatch.setattr(
+        run_product_cdp.api_client,
+        "save_product_link",
+        lambda *args, **kwargs: saved_links.append(kwargs) or {"ok": True, "link_url": kwargs["link_url"]},
+    )
+
+    def fake_replace_detail_images(**_kwargs):
+        return {
+            "status": "done",
+            "image_count": 1,
+            "replacement_count": 1,
+            "skipped_existing_count": 0,
+            "skipped_missing_count": 0,
+            "replacements": [{"old": old_src, "new": new_src}],
+            "verify": {
+                "expected_new_urls_present": 1,
+                "expected_total": 1,
+                "old_non_shopify_count": 0,
+            },
+        }
+
+    monkeypatch.setattr(run_product_cdp.taa_cdp, "replace_detail_images", fake_replace_detail_images)
+
+    args = argparse.Namespace(
+        product_code="instant-snap-iodine-swabs-rjc",
+        lang="it",
+        shop_locale="it",
+        language="Italian",
+        product_id="8603069350061",
+        store_domain="newjoyloo.com",
+        bootstrap_timeout_s=120,
+        port=7777,
+        carousel_limit=0,
+        skip_carousel=True,
+        skip_detail=False,
+        skip_existing_carousel=False,
+        source_index_map="",
+        replace_shopify_cdn=False,
+        no_preserve_detail_size=True,
+        no_original_detail_fallback=True,
+        no_detail_reload_verify=True,
+    )
+
+    result = run_product_cdp.run(args, visual_pair_confirm_cb=lambda _pairs: True)
+
+    assert saved_links == [{
+        "product_code": "instant-snap-iodine-swabs-rjc",
+        "lang": "it",
+        "domain": "newjoyloo.com",
+        "link_url": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc?variant=46081369309357",
+    }]
+    assert result["product_links"][0]["repaired_from"] == link_url
+    assert result["product_links"][0]["expected_present"] == 1
+
+
 def test_build_detail_source_index_map_prefers_detail_side_indices():
     token = "cccccccccccccccccccccccccccccccc"
     html = f'<section><img src="https://cdn.example.com/{token}.jpg"></section>'
@@ -1715,6 +2005,36 @@ def test_replace_detail_images_keeps_saved_result_when_reload_cdp_refused(monkey
         "exit-success",
     ]
     assert calls.count("enter-reload") >= 1
+
+
+def test_replace_detail_images_fails_when_detail_images_exist_but_no_replacements(monkeypatch):
+    old_src = "https://wxalbum-10001658-file.dianxiaomi.com/wxalbum/1332898/20260526142517/cc30c4d60392850c58dbbfc183785185.jpg"
+    html_before = f'<section><img src="{old_src}"></section>'
+
+    class TaaWithoutCandidates:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def current_body_html(self):
+            return html_before
+
+        def close_modal(self):
+            return None
+
+    monkeypatch.setattr(taa_cdp, "TaaSession", lambda **_kwargs: TaaWithoutCandidates())
+
+    with pytest.raises(RuntimeError, match="no detail image replacements"):
+        taa_cdp.replace_detail_images(
+            product_id="8603069350061",
+            shop_locale="it",
+            user_data_dir="C:/chrome-shopify-image",
+            localized_images=[],
+            replace_shopify_cdn=False,
+            verify_reload=False,
+        )
 
 
 def test_replace_detail_images_reconnects_when_upload_cdp_resets(monkeypatch, tmp_path):

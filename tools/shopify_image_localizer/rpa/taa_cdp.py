@@ -851,6 +851,17 @@ def plan_body_html_replacements(
     }
 
 
+def _is_strict_missing_detail_target(src: str, *, replace_shopify_cdn: bool) -> bool:
+    value = str(src or "").strip()
+    if not value:
+        return False
+    if value.lower().split("?", 1)[0].endswith(".gif"):
+        return False
+    if "cdn.shopify.com/s/files/" in value and not replace_shopify_cdn:
+        return False
+    return True
+
+
 def _set_or_append_style(tag: str, declarations: dict[str, str]) -> str:
     style_match = re.search(r"\bstyle\s*=\s*(['\"])(.*?)\1", tag, re.I | re.S)
     existing: dict[str, str] = {}
@@ -1118,6 +1129,21 @@ def replace_detail_images(
             replace_shopify_cdn=replace_shopify_cdn,
         )
         total = len(plan["replacements"])
+        strict_missing = [
+            row for row in plan["skipped_missing"]
+            if _is_strict_missing_detail_target(str(row.get("src") or ""), replace_shopify_cdn=replace_shopify_cdn)
+        ]
+        if (
+            plan["image_count"] > 0
+            and total == 0
+            and strict_missing
+        ):
+            raise RuntimeError(
+                "no detail image replacements: "
+                f"image_count={plan['image_count']} "
+                f"missing={len(strict_missing)} "
+                f"skipped_existing={len(plan['skipped_existing'])}"
+            )
         uploaded_replacements: list[dict[str, Any]] = []
         for upload_idx, row in enumerate(plan["replacements"], start=1):
             cancellation.throw_if_cancelled(cancel_token)

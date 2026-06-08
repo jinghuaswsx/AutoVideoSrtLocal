@@ -32,6 +32,7 @@ from web.services.openapi_shopify_localizer import (
     build_shopify_localizer_task_complete_response as _build_shopify_localizer_task_complete_response,
     build_shopify_localizer_task_fail_response as _build_shopify_localizer_task_fail_response,
     build_shopify_localizer_task_heartbeat_response as _build_shopify_localizer_task_heartbeat_response,
+    build_shopify_localizer_product_link_save_response as _build_shopify_localizer_product_link_save_response,
 )
 from web.services.openapi_push_items import (
     build_mark_failed_response as _build_mark_failed_response,
@@ -144,6 +145,22 @@ def shopify_localizer_save_shopify_id():
         "domain": domain,
         "shopify_product_id": shopify_product_id,
     })
+
+
+@shopify_localizer_bp.route("/product-link", methods=["POST"])
+def shopify_localizer_save_product_link():
+    if not _api_key_valid():
+        return _openapi_error_response("invalid api key", 401)
+
+    body = request.get_json(silent=True) or {}
+    try:
+        payload = _build_shopify_localizer_product_link_save_response(body)
+    except _ShopifyLocalizerBootstrapError as exc:
+        error_payload = {"error": exc.error}
+        if exc.message:
+            error_payload["message"] = exc.message
+        return _openapi_payload_response(error_payload, exc.status_code)
+    return _openapi_payload_response(payload)
 
 
 @shopify_localizer_bp.route("/tasks/claim", methods=["POST"])
