@@ -94,7 +94,7 @@
       if (nameZh.length > 0) {
         nameZh = nameZh.charAt(0);
       }
-      return `${nameZh} (${upper})`;
+      return `${nameZh}${upper}`;
     }
     return upper || raw;
   }

@@ -353,11 +353,11 @@ def test_medias_order_stats_bar_uses_lang_order_and_four_windows():
     assert "昨<strong>8</strong>" in html
     assert "7天<strong>27</strong>" in html
     assert "30天<strong>101</strong>" in html
-    assert "德 (DE)" in html
-    assert "法 (FR)" in html
-    assert "英 (EN)" not in html
+    assert "德DE" in html
+    assert "法FR" in html
+    assert "英EN" not in html
     assert "今<strong>2</strong>" in html
-    assert html.index("德 (DE)") < html.index("法 (FR)")
+    assert html.index("德DE") < html.index("法FR")
 
 
 def test_medias_ad_and_order_columns_share_country_row_alignment_classes():
@@ -410,8 +410,8 @@ def test_medias_product_lang_ad_bar_hides_english_without_pushed_materials():
         }
     )
 
-    assert "英 (EN)" not in html
-    assert "德 (DE)" in html
+    assert "英EN" not in html
+    assert "德DE" in html
 
     html = _run_medias_lang_ad_bar_harness(
         {
@@ -424,7 +424,7 @@ def test_medias_product_lang_ad_bar_hides_english_without_pushed_materials():
         }
     )
 
-    assert "英 (EN)" in html
+    assert "英EN" in html
     assert '推送 <strong class="oc-lang-push-count">2</strong>' in html
 
 
