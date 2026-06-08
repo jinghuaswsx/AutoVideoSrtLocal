@@ -72,6 +72,7 @@ list_recent_reports(limit: int = 12) -> list[dict]
 - `segments`：周日、周一到周三、周四到周六、周五到周六等分段对比。
 - `product_rows`：产品维度收入、订单、销量、广告费、ROAS、利润、利润率、活跃天数、每日订单分布。
 - `product_tier_order_share`：按稳定品、潜力品、其他品汇总订单量占比，包含每周汇总和每天明细。稳定品读取 `product_stability.buckets.stable`；潜力品读取 `secondary_stable` 和历史兼容 `potential`；其他品为本周有订单但不属于前两类的所有产品。占比分母使用同一周期内 `product_sales_stats` 的产品订单量合计。
+- `potential_new_products`：统计所选业务周内 `media_products.created_at` 落在 `week_start` 到 `week_end` 的新品，并只从周报分级为 `测试中` 的产品里选出表现最好的 10 个。排序仅使用本周日均单量和 ROAS，不读取上广告时间、产品位置或产品属性。
 - `campaign_rows`：账户、campaign、匹配产品、每日 spend / purchase value / ROAS、周累计、首个出量日、活跃天数。
 - `low_order_products`：1-2 单、3-5 单产品汇总，标记是否有广告消耗。
 - `rule_findings`：后端规则先产出的确定性异常，如预算放大 ROAS 下滑、店铺亏损集中、数据质量 mismatch。
@@ -209,6 +210,12 @@ AI 必须输出 JSON：
   - 第一行展示整周汇总订单量和稳定品 / 潜力品 / 其他品订单占比。
   - 后续行展示每天的同口径订单量和占比。
   - 该数据进入 LLM prompt，用于判断增长或下滑是否由稳定品、潜力品还是长尾其他品驱动。
+- `每周 AI 分析` 增加 `潜力新品情况` 可视化区：
+  - 只统计所选业务周内上线的新品；上线以 `media_products.created_at` 为准，不使用 `product_ad_launch_dates` 的上广告时间。
+  - 候选必须属于周报分级中的 `测试中`，避免稳定品 / 潜力稳定品重复进入该卡片。
+  - 判断表现只看同一周的本周订单、7 天日均单量和 ROAS；不考虑投放时间、产品位置、上架状态、产品属性等额外维度。
+  - 默认展示前 10 个，按日均单量降序、ROAS 降序排序。
+  - 展示形式与稳定产品分级保持一致，包含产品主图、产品名 / Code、标签和产品分级；标签固定为 `潜力新品`，产品分级固定显示 `测试中`。
 
 ## 稳定 / 潜力品逐产品 AI 推进评估（2026-06-07 追加）
 

@@ -272,6 +272,44 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
             "ads_count": 6,
         }],
     )
+    monkeypatch.setattr(
+        war,
+        "_load_weekly_created_products",
+        lambda week_start, week_end, notes: [
+            {
+                "product_id": 101,
+                "product_code": "P101",
+                "product_name": "Scale Product",
+                "name": "Scale Product",
+                "main_image": "",
+                "created_at": "2026-06-01 10:00:00",
+            },
+            {
+                "product_id": 202,
+                "product_code": "P202",
+                "product_name": "Low Order Product",
+                "name": "Low Order Product",
+                "main_image": "",
+                "created_at": "2026-06-02 10:00:00",
+            },
+            {
+                "product_id": 303,
+                "product_code": "P303",
+                "product_name": "New Product",
+                "name": "New Product",
+                "main_image": "",
+                "created_at": "2026-06-03 10:00:00",
+            },
+            {
+                "product_id": 505,
+                "product_code": "P505",
+                "product_name": "Potential Product",
+                "name": "Potential Product",
+                "main_image": "",
+                "created_at": "2026-06-04 10:00:00",
+            },
+        ],
+    )
 
     package = war.build_weekly_data_package(
         date(2026, 5, 31),
@@ -315,6 +353,14 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert package["product_supplement_recommendations"]["country_expansion"][0]["product_code"] == "P101"
     assert package["product_supplement_recommendations"]["material_fill"][0]["material_key"] == "mk-1"
     assert not any(row.get("matched_product_code") == "P202" for row in package["rule_findings"]["ads_pause"])
+    potential_new = package["potential_new_products"]
+    assert potential_new["summary"]["weekly_created_product_count"] == 4
+    assert potential_new["summary"]["testing_candidate_count"] == 2
+    assert potential_new["rows"][0]["product_code"] == "P202"
+    assert potential_new["rows"][0]["label"] == "潜力新品"
+    assert potential_new["rows"][0]["product_grade"] == "测试中"
+    assert potential_new["rows"][0]["avg_daily_orders"] == 0.14
+    assert not any(row["product_code"] in {"P101", "P505"} for row in potential_new["rows"])
 
 
 def test_generate_ai_report_success_upserts(monkeypatch):
