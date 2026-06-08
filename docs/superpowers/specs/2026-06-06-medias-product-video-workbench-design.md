@@ -70,6 +70,13 @@ Date: 2026-06-06
 
 弹窗明细返回 `match_reason`，用于区分 `filename`、`display_name`、`mk_video_name` 等匹配来源。若未来加入国家兜底匹配，必须显式标注，避免把产品级广告误认为视频级广告。
 
+2026-06-08 修订：如果素材名 / 明空视频名精确匹配返回 0 条，但 `media_product_lang_ad_summary_cache` 已经存在该产品的语种广告消耗，则弹窗允许按缓存一致口径兜底读取产品国家广告明细：
+
+1. 兜底仍必须限制 `product_id`、`spend_usd > 0` 和日期范围。
+2. 兜底国家来自有广告消耗的缓存语种，使用与产品语种 ROAS 缓存一致的国家到语种映射；当前弹窗读取日终明细表时按 `market_country` 过滤。
+3. 返回行的 `match_reason` 必须标记为 `product_lang_country_fallback`，前端明细可看出这是产品语种国家兜底，不是素材名命中。
+4. 仅在素材名匹配为空时启用兜底，不能覆盖已有的素材级精确匹配结果。
+
 ### Task
 
 - 任务创建使用 `POST /tasks/api/parent`。
