@@ -7966,6 +7966,8 @@
     if (explicitType) return explicitType;
     var grade = String(item.weekly_display_status || item.status || '测试中').trim();
     if (grade === 'test') grade = '测试中';
+    if (grade === 'insufficient_history') grade = '投放未满7天';
+    if (grade === 'weekly_observation' || grade === 'never') grade = '周度观察';
     return '潜力新品 · ' + (grade || '测试中');
   }
 
@@ -7977,13 +7979,14 @@
     if (summaryEl) {
       summaryEl.innerHTML =
         statCard('上线新品', summary.weekly_created_product_count || 0) +
-        statCard('测试中候选', summary.testing_candidate_count || 0) +
+        statCard('7天有数据', summary.weekly_signal_product_count || 0) +
+        statCard('7天候选', summary.weekly_candidate_count || summary.testing_candidate_count || 0) +
         statCard('展示数量', summary.display_count || 0) +
         statCard('候选订单', summary.total_orders || 0) +
         statCard('Top10订单', summary.top_10_orders || 0);
     }
     if (note) {
-      note.textContent = '按本周日均单量降序、ROAS 降序取前 10';
+      note.textContent = '按周日到周六 7 天日均单量降序、ROAS 降序取前 10';
     }
     if (!body) return;
     body.innerHTML = '';
@@ -8000,7 +8003,7 @@
         escapeHtml(formatShortDateTime(item.created_at))
       ]);
     });
-    if (!body.children.length) body.innerHTML = '<tr><td colspan="9">暂无潜力新品数据</td></tr>';
+    if (!body.children.length) body.innerHTML = '<tr><td colspan="9">暂无符合完整周 7 天口径的潜力新品数据</td></tr>';
   }
 
   function weeklyAiStableTypeLabel(groupLabel, item) {

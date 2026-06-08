@@ -42,6 +42,13 @@ _PRODUCT_EVALUATION_STATUS_LABELS = {
     "secondary_stable": "二级稳定品",
     "potential": "潜力品",
 }
+_POTENTIAL_NEW_EXCLUDED_STATUSES = {"stable", "secondary_stable", "potential", "stopped"}
+_POTENTIAL_NEW_STATUS_LABELS = {
+    "test": "测试中",
+    "insufficient_history": "投放未满7天",
+    "never": "周度观察",
+    "weekly_observation": "周度观察",
+}
 _TARGET_COUNTRY_TIER_CODES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("tier1", "第一阶梯", ("DE", "FR")),
     ("tier2", "第二阶梯", ("ES", "IT", "JP")),
@@ -1269,13 +1276,65 @@ def _load_weekly_created_products(
     return out
 
 
-def _testing_product_keys(product_stability: dict[str, Any]) -> set[tuple[str, str]]:
-    keys: set[tuple[str, str]] = set()
+def _potential_new_status_meta(
+    item: dict[str, Any],
+    *,
+    bucket_status: str,
+) -> dict[str, str]:
+    status = str(
+        item.get("weekly_display_status")
+        or item.get("status")
+        or bucket_status
+        or "weekly_observation"
+    ).strip().lower()
+    label = str(item.get("display_label") or "").strip()
+    if not label:
+        if status in _PRODUCT_EVALUATION_STATUS_LABELS:
+            label = "潜力品" if status in {"secondary_stable", "potential"} else _PRODUCT_EVALUATION_STATUS_LABELS[status]
+        else:
+            label = _POTENTIAL_NEW_STATUS_LABELS.get(status, "周度观察")
+    return {
+        "status": status or "weekly_observation",
+        "label": label or "周度观察",
+    }
+
+
+def _potential_new_product_scope(
+    product_stability: dict[str, Any],
+) -> tuple[dict[tuple[str, str], dict[str, str]], set[tuple[str, str]]]:
+    status_by_key: dict[tuple[str, str], dict[str, str]] = {}
+    excluded_keys: set[tuple[str, str]] = set()
     buckets = (product_stability or {}).get("buckets") or {}
-    for item in buckets.get("test") or []:
-        if isinstance(item, dict):
-            keys.update(_product_ref_keys(item))
-    return keys
+    ordered_statuses = (
+        "stable",
+        "secondary_stable",
+        "potential",
+        "stopped",
+        "test",
+        "insufficient_history",
+        "never",
+    )
+    all_statuses = list(ordered_statuses) + [
+        str(status)
+        for status in buckets
+        if str(status) not in ordered_statuses
+    ]
+    for bucket_status in all_statuses:
+        for raw in buckets.get(bucket_status) or []:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            keys = _product_ref_keys(item)
+            if not keys:
+                continue
+            raw_status = str(item.get("status") or bucket_status or "").strip().lower()
+            display_status = str(item.get("weekly_display_status") or "").strip().lower()
+            if raw_status in _POTENTIAL_NEW_EXCLUDED_STATUSES or display_status in _POTENTIAL_NEW_EXCLUDED_STATUSES:
+                excluded_keys.update(keys)
+            meta = _potential_new_status_meta(item, bucket_status=str(bucket_status))
+            for key in keys:
+                status_by_key.setdefault(key, meta)
+    return status_by_key, excluded_keys
 
 
 def _product_daily_orders_for_week(
@@ -1346,15 +1405,16 @@ def _build_potential_new_products(
 ) -> dict[str, Any]:
     notes: list[dict[str, Any]] = []
     weekly_created_products = _load_weekly_created_products(week_start, week_end, notes)
-    testing_keys = _testing_product_keys(product_stability)
+    status_by_key, excluded_keys = _potential_new_product_scope(product_stability)
     product_index = _build_product_index(product_rows)
     day_count = max(len(_dates_between(week_start, week_end)), 1)
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    weekly_signal_product_count = 0
+    excluded_existing_tier_count = 0
 
     for product in weekly_created_products:
-        if not (_product_ref_keys(product) & testing_keys):
-            continue
+        product_keys = _product_ref_keys(product)
         pid = _safe_int(product.get("product_id"))
         code = str(product.get("product_code") or "").strip()
         key = (str(pid or ""), code.lower())
@@ -1368,6 +1428,21 @@ def _build_potential_new_products(
         )
         campaign_metrics = _campaign_metrics_for_product(product, campaign_rows)
         order_count = _safe_int(product_row.get("order_count"))
+        campaign_result_count = _safe_int(campaign_metrics.get("result_count"))
+        if order_count <= 0 and campaign_result_count <= 0:
+            continue
+        weekly_signal_product_count += 1
+        if product_keys & excluded_keys:
+            excluded_existing_tier_count += 1
+            continue
+        status_meta = next(
+            (
+                status_by_key.get(scope_key)
+                for scope_key in product_keys
+                if status_by_key.get(scope_key)
+            ),
+            None,
+        ) or {"status": "weekly_observation", "label": "周度观察"}
         roas_value = product_row.get("roas")
         if roas_value is None:
             roas_value = campaign_metrics.get("roas")
@@ -1375,8 +1450,10 @@ def _build_potential_new_products(
         campaign_ad_cost = _safe_float(campaign_metrics.get("ad_cost_usd"))
         ad_cost = _round_money(product_ad_cost if product_ad_cost > 0 else campaign_ad_cost)
         rows.append({
-            "type_label": "潜力新品 · 测试中",
-            "status": "test",
+            "type_label": f"潜力新品 · {status_meta['label']}",
+            "status": status_meta["status"],
+            "weekly_display_status": status_meta["status"],
+            "display_label": status_meta["label"],
             "product_id": pid,
             "product_code": code,
             "product_name": product.get("product_name") or product_row.get("product_name") or product_row.get("name") or "",
@@ -1392,7 +1469,7 @@ def _build_potential_new_products(
             "ad_cost_usd": ad_cost,
             "profit_usd": _round_money(product_row.get("profit_usd")),
             "daily_orders": _product_daily_orders_for_week(product_row, week_start=week_start, week_end=week_end),
-            "campaign_result_count": _safe_int(campaign_metrics.get("result_count")),
+            "campaign_result_count": campaign_result_count,
             "campaign_active_days": _safe_int(campaign_metrics.get("active_days")),
         })
 
@@ -1411,18 +1488,21 @@ def _build_potential_new_products(
         },
         "summary": {
             "weekly_created_product_count": len(weekly_created_products),
+            "weekly_signal_product_count": weekly_signal_product_count,
+            "weekly_candidate_count": len(rows),
             "testing_candidate_count": len(rows),
+            "excluded_existing_tier_count": excluded_existing_tier_count,
             "display_count": len(top_rows),
             "total_orders": sum(_safe_int(row.get("order_count")) for row in rows),
             "top_10_orders": sum(_safe_int(row.get("order_count")) for row in top_rows),
         },
         "rows": top_rows,
         "ranking_rule": "avg_daily_orders_desc_roas_desc",
-        "source": "media_products.created_at + product_stability.buckets.test + weekly product ROAS",
+        "source": "media_products.created_at + weekly product/campaign metrics + product_stability exclusion",
         "notes": notes + [
             {
                 "code": "potential_new_products_scope",
-                "message": "只从所选周上线且周报分级为测试中的产品里，按日均单量和 ROAS 选前 10 个。",
+                "message": "按所选完整业务周的周日到周六 7 天数据评估本周上线新品；稳定品、既有潜力品和停投品不重复进入该卡片。",
             }
         ],
     }
@@ -2666,7 +2746,7 @@ def build_weekly_data_package(
     potential_new_products = _build_potential_new_products(
         week_start=week_start,
         week_end=week_end,
-        product_stability=product_stability,
+        product_stability=product_stability_full,
         product_rows=product_rows,
         campaign_rows=campaign_rows,
     )

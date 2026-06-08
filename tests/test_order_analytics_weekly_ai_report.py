@@ -114,11 +114,11 @@ def _fake_overview(date_text, **kwargs):
 def _fake_product_profit(*, date_from, date_to):
     return {
         "summary": {
-            "product_count": 2,
-            "total_orders": 20,
-            "total_revenue_usd": 2100,
-            "total_profit_usd": 130,
-            "total_ad_spend_usd": 900,
+            "product_count": 3,
+            "total_orders": 40,
+            "total_revenue_usd": 3300,
+            "total_profit_usd": 310,
+            "total_ad_spend_usd": 1120,
             "overall_roas": 2.33,
         },
         "rows": [
@@ -146,6 +146,19 @@ def _fake_product_profit(*, date_from, date_to):
                 "profit_usd": -290,
                 "purchase_usd": 20,
                 "shipping_cost_usd": 10,
+                "cost_completeness": "ok",
+            },
+            {
+                "product_id": 303,
+                "product_code": "P303",
+                "name": "New Product",
+                "order_count": 20,
+                "revenue_usd": 1200,
+                "ad_cost_usd": 220,
+                "roas": 5.45,
+                "profit_usd": 180,
+                "purchase_usd": 180,
+                "shipping_cost_usd": 70,
                 "cost_completeness": "ok",
             },
         ],
@@ -394,12 +407,16 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert not any(row.get("matched_product_code") == "P202" for row in package["rule_findings"]["ads_pause"])
     potential_new = package["potential_new_products"]
     assert potential_new["summary"]["weekly_created_product_count"] == 4
+    assert potential_new["summary"]["weekly_signal_product_count"] == 4
+    assert potential_new["summary"]["weekly_candidate_count"] == 2
     assert potential_new["summary"]["testing_candidate_count"] == 2
-    assert potential_new["rows"][0]["product_code"] == "P202"
-    assert potential_new["rows"][0]["type_label"] == "潜力新品 · 测试中"
+    assert potential_new["summary"]["excluded_existing_tier_count"] == 2
+    assert potential_new["rows"][0]["product_code"] == "P303"
+    assert potential_new["rows"][0]["type_label"] == "潜力新品 · 投放未满7天"
     assert "label" not in potential_new["rows"][0]
     assert "product_grade" not in potential_new["rows"][0]
-    assert potential_new["rows"][0]["avg_daily_orders"] == 0.14
+    assert potential_new["rows"][0]["avg_daily_orders"] == 2.86
+    assert any(row["product_code"] == "P202" for row in potential_new["rows"])
     assert not any(row["product_code"] in {"P101", "P505"} for row in potential_new["rows"])
 
 

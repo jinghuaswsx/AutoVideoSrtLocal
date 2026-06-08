@@ -72,7 +72,7 @@ list_recent_reports(limit: int = 12) -> list[dict]
 - `segments`：周日、周一到周三、周四到周六、周五到周六等分段对比。
 - `product_rows`：产品维度收入、订单、销量、广告费、ROAS、利润、利润率、活跃天数、每日订单分布。
 - `product_tier_order_share`：按稳定品、潜力品、其他品汇总订单量占比，包含每周汇总和每天明细。稳定品读取 `product_stability.buckets.stable`；潜力品读取 `secondary_stable` 和历史兼容 `potential`；其他品为本周有订单但不属于前两类的所有产品。占比分母使用同一周期内 `product_sales_stats` 的产品订单量合计。V1.0 收口口径：普通测试品不得在周报里按周订单量、ROAS 或连续活跃天数临时升级为潜力品；如未达到稳定品 / 二级稳定品阈值，其订单占比仍归入其他品。
-- `potential_new_products`：统计所选业务周内 `media_products.created_at` 落在 `week_start` 到 `week_end` 的新品，并只从周报分级为 `测试中` 的产品里选出表现最好的 10 个。排序仅使用本周日均单量和 ROAS，不读取上广告时间、产品位置或产品属性。
+- `potential_new_products`：统计所选业务周内 `media_products.created_at` 落在 `week_start` 到 `week_end` 的新品，每次评估都只使用该完整业务周（周日到周六）的 7 天订单、购买结果、日均单量和 ROAS。候选不再强制要求属于周报分级 `测试中`；稳定品、二级稳定品 / 潜力品和停投品不重复进入该卡片。排序仅使用本周日均单量和 ROAS，不读取上广告时间、产品位置或产品属性。
 - 兼容旧快照：已有 `weekly_ai_analysis_reports.data_snapshot_json` 如果缺少 `product_tier_order_share`，读取报告时必须按同一周重新计算该字段并补进响应；补算不重新调用 AI、不覆盖旧 AI 结论。
 - 缓存兜底：如果稳定分级缓存为空、但并非稳定分级加载失败，且同周 `product_sales_stats` 有订单，周报必须先按同周订单阈值生成兜底分级，再统计 `product_tier_order_share`；稳定品沿用 7 天订单阈值，二级稳定品沿用最近 7 天每日不少于 5 单且日均超过 10 单的订单阈值，并在 `product_stability.warnings` 和顶层 `data_quality.warnings` 标明该分级来自订单兜底。若稳定分级加载失败并带 `product_stability_unavailable`，不得用全量或订单兜底样本替代稳定分级门禁。
 - `campaign_rows`：账户、campaign、匹配产品、每日 spend / purchase value / ROAS、周累计、首个出量日、活跃天数。
@@ -216,10 +216,10 @@ AI 必须输出 JSON：
   - 该数据进入 LLM prompt，用于判断增长或下滑是否由稳定品、潜力品还是长尾其他品驱动。
 - `每周 AI 分析` 增加 `潜力新品情况` 可视化区：
   - 只统计所选业务周内上线的新品；上线以 `media_products.created_at` 为准，不使用 `product_ad_launch_dates` 的上广告时间。
-  - 候选必须属于周报分级中的 `测试中`，避免稳定品 / 潜力稳定品重复进入该卡片。
+  - 候选使用所选完整业务周（周日到周六）的 7 天订单和购买结果评估，不再要求必须属于周报分级中的 `测试中`；稳定品、二级稳定品 / 潜力品和停投品仍排除，避免重复进入该卡片。
   - 判断表现只看同一周的本周订单、7 天日均单量和 ROAS；不考虑投放时间、产品位置、上架状态、产品属性等额外维度。
   - 默认展示前 10 个，按日均单量降序、ROAS 降序排序。
-  - 展示形式与稳定产品分级保持一致，包含产品主图、产品名 / Code 和单一 `类型` 字段；类型固定显示 `潜力新品 · 测试中`，不再拆成 `标签` 和 `产品分级` 两列。
+  - 展示形式与稳定产品分级保持一致，包含产品主图、产品名 / Code 和单一 `类型` 字段；类型显示 `潜力新品 · 测试中`、`潜力新品 · 投放未满7天` 或 `潜力新品 · 周度观察`，不再拆成 `标签` 和 `产品分级` 两列。
 
 ## 稳定 / 潜力品逐产品 AI 推进评估（2026-06-07 追加）
 
