@@ -142,3 +142,53 @@ def test_create_from_meta_hot_post_supplement_targets_existing_product(monkeypat
     assert captured_task["product_id"] == 88
     assert captured_task["item_id"] == 101
     assert captured_task["is_new_product"] is False
+
+
+def test_create_from_upload_import_only_when_countries_empty(monkeypatch):
+    captured_item = {}
+    sync_calls = []
+
+    monkeypatch.setattr(
+        new_product_tasks.medias,
+        "get_product",
+        lambda product_id: {
+            "id": product_id,
+            "name": "Existing Product",
+            "user_id": 9,
+        },
+    )
+    monkeypatch.setattr(
+        new_product_tasks,
+        "_sync_product_link_fields",
+        lambda *args, **kwargs: sync_calls.append((args, kwargs)),
+    )
+
+    def fake_create_english_item_from_upload(**kwargs):
+        captured_item.update(kwargs)
+        return 101
+
+    monkeypatch.setattr(new_product_tasks, "_create_english_item_from_upload", fake_create_english_item_from_upload)
+
+    result = new_product_tasks.create_from_upload(
+        task_kind="supplement",
+        target_product_id=88,
+        product_name="",
+        product_link="",
+        product_main_image_url="",
+        product_code="",
+        owner_id=0,
+        video_file=SimpleNamespace(filename="demo.mp4"),
+        countries=[],
+        language_assignments={},
+        raw_processor_id=0,
+        created_by=1,
+    )
+
+    assert result["ok"] is True
+    assert result["task_kind"] == "supplement"
+    assert result["media_product_id"] == 88
+    assert result["media_item_id"] == 101
+    assert result["imported_only"] is True
+    assert captured_item["product_id"] == 88
+    assert captured_item["owner_id"] == 9
+
