@@ -120,9 +120,69 @@
 .vw-table th { background: #f8fafc; color: var(--vw-muted); font-weight: 700; position: sticky; top: 0; }
 .vw-task-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .vw-lang-row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
+.vw-grid { display: flex; flex-direction: column; gap: 14px; }
+.vw-card {
+  width: 100%; min-height: 0; border-left-width: 3px; padding: 14px;
+  display: grid; grid-template-columns: 276px minmax(0, 1fr); gap: 18px;
+}
+.vw-left-card { position: relative; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.vw-right-panel { min-width: 0; border-left: 1px solid var(--vw-border); padding-left: 18px; display: grid; gap: 14px; align-content: start; }
+.vw-product-line { display: grid; gap: 3px; margin-top: 18px; }
+.vw-product-name { font-size: 15px; font-weight: 800; color: var(--vw-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+.vw-product-name:hover { color: var(--vw-blue); text-decoration: underline; }
+.vw-product-en { font-size: 12px; color: var(--vw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-product-code { font: 11px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--vw-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-copy-btn { width: 20px; height: 20px; border: 0; background: transparent; color: var(--vw-muted); cursor: pointer; padding: 0; }
+.vw-copy-btn:hover { color: var(--vw-blue); }
+.vw-title-row { display: grid; gap: 4px; }
+.vw-title { margin-top: 0; min-height: 0; font-size: 14px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vw-link-row { display: flex; gap: 4px; align-items: center; border-top: 1px solid var(--vw-border); padding-top: 8px; font-size: 11px; }
+.vw-heat { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: 4px; font-size: 10px; font-weight: 800; }
+.vw-heat-high { background: #fee2e2; color: #dc2626; }
+.vw-heat-mid { background: #fef3c7; color: #b45309; }
+.vw-heat-low { background: #f1f5f9; color: #64748b; }
+.vw-frame { width: 216px; height: 384px; }
+.vw-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--vw-border); margin-top: 2px; }
+.vw-tab { height: 28px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--vw-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.vw-tab.active { color: var(--vw-blue); border-bottom-color: var(--vw-blue); }
+.vw-tab:disabled { opacity: .45; cursor: not-allowed; }
+.vw-pane { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; }
+.vw-pane.active { display: flex; }
+.vw-play-btn {
+  position: absolute; inset: 0; margin: auto; width: 48px; height: 48px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.9); background: rgba(15,23,42,.68); color: #fff; cursor: pointer; z-index: 2;
+}
+.vw-play-btn::before { content: ""; display: block; margin: 15px 0 0 18px; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 14px solid currentColor; }
+.vw-section { border: 1px solid var(--vw-border); border-radius: 8px; background: #fff; overflow: hidden; }
+.vw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--vw-border); background: #f8fafc; }
+.vw-section-title { font-weight: 800; font-size: 14px; }
+.vw-section-body { padding: 12px; }
+.vw-country-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 8px; }
+.vw-country-chip { min-width: 0; border: 1px solid var(--vw-border); border-radius: 8px; padding: 8px; background: #fff; display: grid; gap: 4px; }
+.vw-country-chip.is-done { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+.vw-country-chip.is-missing { border-color: #e2e8f0; background: #f8fafc; color: #475569; }
+.vw-country-chip.is-warn { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+.vw-chip-main { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 800; font-size: 12px; }
+.vw-chip-sub { color: var(--vw-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vw-panel-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; }
+.vw-panel-table th, .vw-panel-table td { padding: 7px 8px; border-bottom: 1px solid var(--vw-border); text-align: right; vertical-align: top; }
+.vw-panel-table th:first-child, .vw-panel-table td:first-child { text-align: left; }
+.vw-panel-table th { color: var(--vw-muted); background: #f8fafc; font-weight: 800; }
+.vw-panel-scroll { overflow: auto; border: 1px solid var(--vw-border); border-radius: 7px; }
+.vw-ai-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(142px, 1fr)); gap: 8px; }
+.vw-ai-card { border: 1px solid var(--vw-border); border-radius: 8px; padding: 9px; display: grid; gap: 6px; background: #fff; min-width: 0; }
+.vw-ai-card.is-good { border-color: #bbf7d0; background: #f0fdf4; }
+.vw-ai-card.is-risk { border-color: #fecaca; background: #fef2f2; }
+.vw-ai-card.is-pending { border-color: #e2e8f0; background: #f8fafc; }
+.vw-ai-title { display: flex; justify-content: space-between; gap: 8px; font-weight: 800; font-size: 12px; }
+.vw-ai-summary { color: var(--vw-muted); font-size: 11px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vw-mini-btn { min-height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--vw-border-strong); background: #fff; color: var(--vw-blue); cursor: pointer; font-size: 11px; font-weight: 700; }
+.vw-mini-btn:hover:not(:disabled) { border-color: var(--vw-blue); background: #eef6fb; }
+.vw-mini-btn:disabled { opacity: .55; cursor: not-allowed; }
 @media (max-width: 720px) {
   .vw-grid { grid-template-columns: 1fr; }
-  .vw-card { min-height: auto; }
+  .vw-card { min-height: auto; grid-template-columns: 1fr; }
+  .vw-right-panel { border-left: 0; padding-left: 0; border-top: 1px solid var(--vw-border); padding-top: 14px; }
   .vw-frame { width: 100%; height: auto; aspect-ratio: 9 / 16; }
   .vw-task-grid, .vw-lang-row { grid-template-columns: 1fr; }
 }
@@ -323,6 +383,149 @@
     grid.innerHTML = cards.map(renderCard).join('');
   }
 
+  function heatLevel(adsCount) {
+    const n = Number(adsCount || 0);
+    if (n >= 10) return {label: '高', cls: 'vw-heat-high'};
+    if (n >= 3) return {label: '中', cls: 'vw-heat-mid'};
+    return {label: '低', cls: 'vw-heat-low'};
+  }
+  function englishNameFromFilename(name) {
+    const text = String(name || '').replace(/\.[a-z0-9]+$/i, '');
+    const parts = text.split(/[-_—]+/).map(s => s.trim()).filter(Boolean);
+    const english = parts.find(part => /^[A-Za-z0-9][A-Za-z0-9\s'&]+$/.test(part));
+    return english || 'Natural Product';
+  }
+  function countryStatusText(row) {
+    if (!row || row.status === 'missing') return '未翻译';
+    return '已翻译';
+  }
+  function metricSpendRoas(perf, prefix) {
+    const spend = Number((perf || {})[`${prefix}_spend_usd`] || 0);
+    const r = (perf || {})[`${prefix}_roas`];
+    return `${money(spend, 2)}<div class="vw-sub">ROAS ${roas(r)}</div>`;
+  }
+  function orderMetric(order, prefix) {
+    const row = order || {};
+    const orders = Number(row[`${prefix}_orders`] || 0);
+    const spend = Number(row[`${prefix}_spend`] || 0);
+    const r = row[`${prefix}_roas`];
+    return `${orders}<div class="vw-sub">${money(spend, 2)} · ROAS ${roas(r)}</div>`;
+  }
+  function renderTranslationPanel(card) {
+    const targets = card.target_country_versions || [];
+    const summary = card.translation_summary || {};
+    const chips = targets.map(row => {
+      const cls = row.status === 'translated' ? 'is-done' : 'is-missing';
+      const version = row.version || {};
+      const sub = row.status === 'translated'
+        ? `#${version.media_item_id || '-'} ${version.filename || version.display_name || ''}`
+        : '暂无对应翻译素材';
+      return `<div class="vw-country-chip ${cls}">
+        <div class="vw-chip-main"><span>${esc(row.country_code || '')}</span><span>${countryStatusText(row)}</span></div>
+        <div class="vw-chip-sub" title="${esc(sub)}">${esc(row.lang_name || row.lang || '')} · ${esc(sub)}</div>
+      </div>`;
+    }).join('');
+    return `<section class="vw-section">
+      <div class="vw-section-head">
+        <div class="vw-section-title">翻译版本</div>
+        <div class="vw-sub">${Number(summary.translated_count || 0)} / ${Number(summary.target_count || 8)} 国已翻译</div>
+      </div>
+      <div class="vw-section-body">
+        <div class="vw-country-grid">${chips || '<div class="vw-sub">暂无翻译版本</div>'}</div>
+      </div>
+    </section>`;
+  }
+  function renderAdPanel(card) {
+    const versions = card.translated_versions || [];
+    const rows = versions.map(v => {
+      const perf = v.ad_performance || {};
+      const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
+      return `<tr>
+        <td><strong>${esc(label)}</strong>${v.media_item_id ? `<div class="vw-sub">#${v.media_item_id} ${esc(v.filename || v.display_name || '')}</div>` : ''}</td>
+        <td>${metricSpendRoas(perf, 'today')}</td>
+        <td>${metricSpendRoas(perf, 'yesterday')}</td>
+        <td>${metricSpendRoas(perf, 'last_7d')}</td>
+        <td>${metricSpendRoas(perf, 'last_30d')}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="vw-section">
+      <div class="vw-section-head">
+        <div class="vw-section-title">投放消耗 / ROAS</div>
+        <button type="button" class="vw-mini-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告明细</button>
+      </div>
+      <div class="vw-section-body">
+        <div class="vw-panel-scroll">
+          <table class="vw-panel-table">
+            <thead><tr><th>版本</th><th>今天</th><th>昨天</th><th>7天</th><th>30天</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="5">暂无投放数据</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+  }
+  function renderOrderPanel(card) {
+    const versions = card.translated_versions || [];
+    const rows = versions.map(v => {
+      const order = v.order_stats || {};
+      const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;
+      return `<tr>
+        <td><strong>${esc(label)}</strong></td>
+        <td>${orderMetric(order, 'today')}</td>
+        <td>${orderMetric(order, 'yesterday')}</td>
+        <td>${orderMetric(order, 'last_7d')}</td>
+        <td>${orderMetric(order, 'last_30d')}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="vw-section">
+      <div class="vw-section-head">
+        <div class="vw-section-title">订单量情况</div>
+        <div class="vw-sub">今天 / 昨天 / 7天 / 30天</div>
+      </div>
+      <div class="vw-section-body">
+        <div class="vw-panel-scroll">
+          <table class="vw-panel-table">
+            <thead><tr><th>版本</th><th>今天</th><th>昨天</th><th>7天</th><th>30天</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="5">暂无订单数据</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>`;
+  }
+  function aiCountryClass(row) {
+    if (!row || !row.evaluated) return 'is-pending';
+    return row.is_suitable ? 'is-good' : 'is-risk';
+  }
+  function aiCountryLabel(row) {
+    if (!row || !row.evaluated) return row && row.status === 'running' ? '评估中' : '待评估';
+    return row.is_suitable ? '建议做' : '谨慎';
+  }
+  function renderAiPanel(card) {
+    const ai = (currentData && currentData.ai_evaluation) || {};
+    const countries = ai.countries || [];
+    const canEvaluate = Boolean(card.media_item_id);
+    const cards = countries.map(row => {
+      const score = row.score == null ? '-' : Number(row.score).toFixed(0);
+      const btnText = row.evaluated ? '重评' : '评估';
+      return `<div class="vw-ai-card ${aiCountryClass(row)}">
+        <div class="vw-ai-title"><span>${esc(row.country_code)} ${esc(row.country_name || '')}</span><span>${score}</span></div>
+        <div class="vw-ai-summary" title="${esc(row.summary || row.reason || '')}">${esc(row.summary || row.reason || aiCountryLabel(row))}</div>
+        <button type="button" class="vw-mini-btn" data-action="ai-country" data-card-id="${esc(card.card_id)}" data-country-lang="${esc(row.rerun_lang || row.lang || '')}" ${canEvaluate ? '' : 'disabled'}>${btnText}</button>
+      </div>`;
+    }).join('');
+    return `<section class="vw-section">
+      <div class="vw-section-head">
+        <div>
+          <div class="vw-section-title">AI 8国评估建议</div>
+          <div class="vw-sub">已评估 ${Number(ai.evaluated_count || 0)} / ${Number(ai.target_country_count || 8)} · ${esc(ai.ai_evaluation_result || '暂无结论')}</div>
+        </div>
+        <button type="button" class="vw-btn vw-btn-primary" data-action="ai-start" data-card-id="${esc(card.card_id)}" ${canEvaluate ? '' : 'disabled title="先加入素材库后评估"'}>补评8国</button>
+      </div>
+      <div class="vw-section-body">
+        <div class="vw-ai-grid">${cards || '<div class="vw-sub">暂无 AI 评估数据</div>'}</div>
+      </div>
+    </section>`;
+  }
+
   function renderCard(card) {
     const mk = card.mk_video || {};
     const inLib = Boolean(card.in_library);
@@ -330,12 +533,6 @@
       ? `/medias/object?object_key=${encodeURIComponent(mk.local_cover_object_key)}`
       : (mk.image_path ? `/xuanpin/api/mk-media?path=${encodeURIComponent(mk.image_path)}` : '');
     const videoUrl = mk.path ? `/xuanpin/api/mk-video?path=${encodeURIComponent(mk.path)}` : '';
-    const langRows = (card.lang_ad_summary || []).map(row => {
-      const cls = `vw-status-${row.delivery_status || 'never'}`;
-      return `<span class="vw-ad-pill ${cls}" title="${esc(row.item_count || 0)} 条本地素材">
-        ${esc(String(row.lang || '').toUpperCase())} ${statusText(row.delivery_status)} ${money(row.ad_spend || 0)} ROAS ${roas(row.roas)}
-      </span>`;
-    }).join('');
     const bound = card.bound_item || {};
     const matchSource = card.library_match_source || bound.match_source || '';
     const isLegacyMatch = matchSource === 'media_items_legacy_product_scope';
@@ -343,40 +540,65 @@
     const state = inLib
       ? `${isLegacyMatch ? '历史匹配本地素材' : '已绑定本地素材'} #${bound.id || card.media_item_id || '-'} ${bound.filename ? ' / ' + esc(bound.filename) : ''}`
       : '尚未加入素材库';
-    const link = card.mk_product_link ? `<a class="vw-link" href="${esc(card.mk_product_link)}" target="_blank" rel="noopener noreferrer">${esc(card.mk_product_link)}</a>` : '<span class="vw-sub">无产品链接</span>';
-    const media = coverUrl
-      ? `<img src="${esc(coverUrl)}" loading="lazy" alt="${esc(mk.name || '')}">`
-      : '<div class="vw-empty-media">无封面</div>';
+    const rawLink = String(card.mk_product_link || '').trim();
+    const link = rawLink ? `<a class="vw-link" href="${esc(rawLink)}" target="_blank" rel="noopener noreferrer">${esc(rawLink)}</a>` : '<span class="vw-sub">无产品链接</span>';
+    const heat = heatLevel(mk.ads_count);
+    const cnName = card.mk_product_name || productName || '无中文产品名';
+    const enName = englishNameFromFilename(mk.name);
+    const productCodeClean = productCode.replace(/-rjc$/i, '');
+    const posterAttr = coverUrl ? ` poster="${esc(coverUrl)}"` : '';
     const actions = inLib
       ? `<button type="button" class="vw-btn vw-btn-primary" data-action="task" data-card-id="${esc(card.card_id)}">创建小语种任务</button>
-         <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>
          <a class="vw-btn" href="/medias/video?keyword=${encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
-         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`
+         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>`
       : `<button type="button" class="vw-btn vw-btn-primary" data-action="import" data-card-id="${esc(card.card_id)}">加入素材库</button>
          <button type="button" class="vw-btn" data-action="supplement-task" data-card-id="${esc(card.card_id)}">补素材任务</button>
-         <button type="button" class="vw-btn" data-action="ad" data-card-id="${esc(card.card_id)}">广告数据</button>
-         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCode.replace(/-rjc$/i, ''))}">明空查看</button>`;
+         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>`;
     return `
       <div class="vw-card ${inLib ? 'is-in' : ''}" data-card-id="${esc(card.card_id)}">
-        <div class="vw-tag" title="${esc(isLegacyMatch ? '产品内文件名/路径精确匹配，未写入绑定表' : '')}">${tagText}</div>
-        <div class="vw-title" title="${esc(mk.name || '')}">${esc(mk.name || '未命名素材')}</div>
-        <div class="vw-sub">${esc(card.mk_product_name || productName || '无产品名')}</div>
-        <div class="vw-sub">${link}</div>
-        <div class="vw-metrics">
-          <div class="vw-metric"><span>90天消耗</span><strong>${money(mk.spends || 0)}</strong></div>
-          <div class="vw-metric"><span>昨日消耗</span><strong>${money(mk.yesterday_spend_delta || 0)}</strong></div>
-          <div class="vw-metric"><span>广告数</span><strong>${Number(mk.ads_count || 0)}</strong></div>
+        <div class="vw-left-card">
+          <div class="vw-tag" title="${esc(isLegacyMatch ? '产品内文件名/路径精确匹配，未写入绑定表' : '')}">${tagText}</div>
+          <div class="vw-product-line">
+            ${rawLink ? `<a class="vw-product-name" href="${esc(rawLink)}" target="_blank" rel="noopener noreferrer" title="${esc(cnName)}">${esc(cnName)}</a>` : `<div class="vw-product-name" title="${esc(cnName)}">${esc(cnName)}</div>`}
+            <div class="vw-product-en" title="${esc(enName)}">${esc(enName)}</div>
+            <div class="vw-product-code" title="${esc(productCode)}">${esc(productCode)}</div>
+          </div>
+          <div class="vw-title-row">
+            <div class="vw-title" title="${esc(mk.name || '')}">${esc(mk.name || '未命名素材')}</div>
+            <div class="vw-link-row">${link}</div>
+          </div>
+          <div class="vw-metrics">
+            <div class="vw-metric"><span>投放热度</span><strong><span class="vw-heat ${heat.cls}">${heat.label}</span></strong></div>
+            <div class="vw-metric"><span>90天消耗</span><strong>${money(mk.spends || 0, 2)}</strong></div>
+            <div class="vw-metric"><span>昨日消耗</span><strong>${money(mk.yesterday_spend_delta || 0, 2)}</strong></div>
+          </div>
+          <div class="vw-tabs" role="tablist" aria-label="素材预览">
+            <button type="button" class="vw-tab active" data-vw-tab="cover">图片</button>
+            <button type="button" class="vw-tab" data-vw-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
+          </div>
+          <div class="vw-frame">
+            <div class="vw-pane active" data-vw-pane="cover">
+              ${coverUrl ? `<img src="${esc(coverUrl)}" loading="lazy" decoding="async" alt="${esc(mk.name || '')}">` : '<div class="vw-empty-media">无封面</div>'}
+              ${videoUrl ? '<button type="button" class="vw-play-btn" data-vw-play aria-label="播放视频"></button>' : ''}
+            </div>
+            <div class="vw-pane" data-vw-pane="video">
+              ${videoUrl ? `<video class="vw-video-source" controls preload="none" playsinline data-src="${esc(videoUrl)}"${posterAttr}></video>` : '<div class="vw-empty-media">无视频</div>'}
+            </div>
+          </div>
+          <div class="vw-local">
+            <div class="vw-local-row"><span>广告数</span><strong>${Number(mk.ads_count || 0)}</strong></div>
+            <div class="vw-local-row"><span>上传者</span><strong>${esc(mk.author || '-')}</strong></div>
+            <div class="vw-local-row"><span>上传时间</span><strong>${esc(String(mk.upload_time || '-').slice(0, 10))}</strong></div>
+            <div class="vw-sub">${state}</div>
+          </div>
+          <div class="vw-card-actions">${actions}<div class="vw-state" id="vwState_${esc(card.card_id)}"></div></div>
         </div>
-        <div class="vw-frame">
-          ${videoUrl ? `<video controls preload="none" poster="${esc(coverUrl)}" src="${esc(videoUrl)}"></video>` : media}
+        <div class="vw-right-panel">
+          ${renderTranslationPanel(card)}
+          ${renderAdPanel(card)}
+          ${renderOrderPanel(card)}
+          ${renderAiPanel(card)}
         </div>
-        <div class="vw-local">
-          <div class="vw-local-row"><span>上传者</span><strong>${esc(mk.author || '-')}</strong></div>
-          <div class="vw-local-row"><span>上传时间</span><strong>${esc(String(mk.upload_time || '-').slice(0, 10))}</strong></div>
-          <div class="vw-sub">${state}</div>
-          <div class="vw-ad-pills">${langRows || '<span class="vw-sub">暂无语种投放数据</span>'}</div>
-        </div>
-        <div class="vw-card-actions">${actions}<div class="vw-state" id="vwState_${esc(card.card_id)}"></div></div>
       </div>
     `;
   }
@@ -568,10 +790,87 @@
     }
   }
 
+  function activateVideoTab(tab, options = {}) {
+    if (!tab || tab.disabled) return;
+    const card = tab.closest('.vw-card');
+    if (!card) return;
+    const target = tab.dataset.vwTab || 'cover';
+    card.querySelectorAll('[data-vw-tab]').forEach(btn => btn.classList.toggle('active', btn === tab));
+    card.querySelectorAll('[data-vw-pane]').forEach(pane => pane.classList.toggle('active', pane.dataset.vwPane === target));
+    if (target === 'video') {
+      const video = card.querySelector('.vw-video-source');
+      const src = video && video.dataset.src;
+      if (video && src && !video.getAttribute('src')) video.setAttribute('src', src);
+      if (options.play && video && typeof video.play === 'function') {
+        const result = video.play();
+        if (result && typeof result.catch === 'function') result.catch(() => {});
+      }
+    }
+  }
+
+  function playVideoFromButton(button) {
+    const card = button && button.closest('.vw-card');
+    const tab = card && card.querySelector('[data-vw-tab="video"]');
+    activateVideoTab(tab, {play: true});
+  }
+
+  async function startAiEvaluation(card, countryLang) {
+    const lang = String(countryLang || '').trim();
+    const ai = (currentData && currentData.ai_evaluation) || {};
+    const runId = ai.run_id || '';
+    const canRerunCountry = Boolean(lang && runId);
+    const endpoint = canRerunCountry
+      ? `/medias/api/products/${productId}/evaluate/${encodeURIComponent(runId)}/countries/${encodeURIComponent(lang)}/rerun`
+      : `/medias/api/products/${productId}/evaluate`;
+    const body = {};
+    if (card.media_item_id) body.media_item_id = Number(card.media_item_id);
+    setCardState(card, canRerunCountry ? `${lang.toUpperCase()} 评估中...` : 'AI 8国评估中...');
+    try {
+      const result = await fetchJson(endpoint, {
+        method: 'POST',
+        headers: csrfHeaders(),
+        body: JSON.stringify(body)
+      });
+      const nextRunId = result.run_id || runId;
+      setCardState(card, 'AI 评估已启动');
+      if (nextRunId) pollAiStatus(card, nextRunId, 0);
+    } catch (err) {
+      setCardState(card, 'AI 评估失败：' + err.message);
+    }
+  }
+
+  async function pollAiStatus(card, runId, attempt) {
+    if (!runId || attempt > 120) return;
+    try {
+      const data = await fetchJson(`/medias/api/products/${productId}/evaluate/status?run_id=${encodeURIComponent(runId)}`);
+      const progress = data.progress || {};
+      const done = Number(progress.completed_count || 0);
+      const total = Number(progress.total_count || 8);
+      setCardState(card, `AI 评估进度 ${done}/${total}`);
+      if (['completed', 'partially_completed', 'failed'].includes(String(data.status || '').toLowerCase())) {
+        await loadWorkbench(document.getElementById('vwSort').value);
+        return;
+      }
+      window.setTimeout(() => pollAiStatus(card, runId, attempt + 1), 3000);
+    } catch (err) {
+      setCardState(card, 'AI 进度查询失败：' + err.message);
+    }
+  }
+
   document.addEventListener('click', event => {
     const close = event.target.closest('[data-close-modal]');
     if (close) {
       document.getElementById(close.dataset.closeModal).style.display = 'none';
+      return;
+    }
+    const tab = event.target.closest('[data-vw-tab]');
+    if (tab) {
+      activateVideoTab(tab);
+      return;
+    }
+    const playBtn = event.target.closest('[data-vw-play]');
+    if (playBtn) {
+      playVideoFromButton(playBtn);
       return;
     }
     const actionEl = event.target.closest('[data-action]');
@@ -586,6 +885,8 @@
     if (action === 'import') importMaterial(card);
     if (action === 'ad') openAdModal(card);
     if (action === 'task' || action === 'supplement-task') openTaskModal(card);
+    if (action === 'ai-start') startAiEvaluation(card, '');
+    if (action === 'ai-country') startAiEvaluation(card, actionEl.dataset.countryLang || '');
   });
   document.getElementById('vwSort').addEventListener('change', event => loadWorkbench(event.target.value));
   document.getElementById('vwAdLoadBtn').addEventListener('click', loadAdDetail);
