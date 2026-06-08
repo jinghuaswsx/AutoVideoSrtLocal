@@ -54,6 +54,7 @@ CHILD_PUSH_REWORK_REJECTED_EVENT = "push_rework_rejected"
 CHILD_PUSH_MATERIAL_APPROVED_EVENT = "push_material_approved"
 CHILD_PUSH_MATERIAL_SKIPPED_EVENT = "push_material_skipped"
 TASK_ARCHIVED_EVENT = "archived"
+TASK_UNARCHIVED_EVENT = "unarchived"
 TASK_AUTO_ARCHIVED_EVENT = "auto_archived"
 TASK_AUTO_ARCHIVE_SOURCE = "task_center_auto_archive"
 TASK_PENDING_PUSH = "pending_push"
@@ -1226,6 +1227,44 @@ def archive_task(*, task_id: int, actor_user_id: int, is_admin: bool) -> bool:
         "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
         "VALUES (%s, %s, %s, %s)",
         (int(task_id), TASK_ARCHIVED_EVENT, int(actor_user_id), None),
+    )
+    return True
+
+
+def unarchive_task(*, task_id: int, actor_user_id: int, is_admin: bool) -> bool:
+    """Restore an archived task to normal task-center lists without changing status."""
+    if not is_admin:
+        raise PermissionError("only admin can unarchive tasks")
+    row = query_one(
+        "SELECT id, status, archived_at, archived_by FROM tasks WHERE id=%s",
+        (int(task_id),),
+    )
+    if not row:
+        raise StateError("task not found")
+    if not row.get("archived_at"):
+        return False
+
+    affected = execute(
+        "UPDATE tasks SET archived_at=NULL, archived_by=NULL, updated_at=NOW() "
+        "WHERE id=%s AND archived_at IS NOT NULL",
+        (int(task_id),),
+    )
+    if not affected:
+        return False
+    payload = {
+        "previous_archived_at": _auto_archive_value(row.get("archived_at")),
+        "previous_archived_by": row.get("archived_by"),
+        "task_status": row.get("status"),
+    }
+    execute(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json) "
+        "VALUES (%s, %s, %s, %s)",
+        (
+            int(task_id),
+            TASK_UNARCHIVED_EVENT,
+            int(actor_user_id),
+            json.dumps(payload, ensure_ascii=False),
+        ),
     )
     return True
 

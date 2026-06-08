@@ -1,4 +1,4 @@
-def test_task_center_auto_archive_scheduler_registers_daily_six_oclock_job(monkeypatch):
+def test_task_center_auto_archive_scheduler_registers_hourly_job(monkeypatch):
     from appcore import task_center_auto_archive_scheduler as scheduler
 
     calls = []
@@ -16,10 +16,9 @@ def test_task_center_auto_archive_scheduler_registers_daily_six_oclock_job(monke
             fake_scheduler,
             "task_center_auto_archive",
             scheduler.tick_once,
-            "cron",
+            "interval",
             {
-                "hour": 6,
-                "minute": 0,
+                "hours": 1,
                 "id": "task_center_auto_archive",
                 "replace_existing": True,
                 "max_instances": 1,

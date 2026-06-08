@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 import pytest
@@ -738,6 +739,72 @@ def test_archive_task_marks_unfinished_task_and_records_event(monkeypatch):
         (7, 44),
     )
     assert calls[1][1] == (44, "archived", 7, None)
+
+
+def test_unarchive_task_restores_archived_task_and_records_event(monkeypatch):
+    from appcore import tasks
+
+    calls = []
+    archived_at = datetime(2026, 6, 8, 6, 0, 0)
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "status": tasks.CHILD_REVIEW,
+            "archived_at": archived_at,
+            "archived_by": 7,
+        },
+    )
+
+    def fake_execute(sql, args=()):
+        calls.append((sql, args))
+        if sql.startswith("UPDATE tasks SET archived_at=NULL"):
+            return 1
+        return 99
+
+    monkeypatch.setattr(tasks, "execute", fake_execute)
+
+    assert tasks.unarchive_task(task_id=44, actor_user_id=9, is_admin=True) is True
+    assert calls[0] == (
+        "UPDATE tasks SET archived_at=NULL, archived_by=NULL, updated_at=NOW() "
+        "WHERE id=%s AND archived_at IS NOT NULL",
+        (44,),
+    )
+    assert calls[1][0].startswith(
+        "INSERT INTO task_events (task_id, event_type, actor_user_id, payload_json)"
+    )
+    task_id, event_type, actor_id, payload_json = calls[1][1]
+    assert (task_id, event_type, actor_id) == (44, "unarchived", 9)
+    payload = json.loads(payload_json)
+    assert payload == {
+        "previous_archived_at": "2026-06-08T06:00:00",
+        "previous_archived_by": 7,
+        "task_status": tasks.CHILD_REVIEW,
+    }
+
+
+def test_unarchive_task_is_idempotent_for_unarchived_task(monkeypatch):
+    from appcore import tasks
+
+    monkeypatch.setattr(
+        tasks,
+        "query_one",
+        lambda sql, args=(): {
+            "id": 44,
+            "status": tasks.CHILD_REVIEW,
+            "archived_at": None,
+            "archived_by": None,
+        },
+    )
+    monkeypatch.setattr(
+        tasks,
+        "execute",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no write expected")),
+    )
+
+    assert tasks.unarchive_task(task_id=44, actor_user_id=9, is_admin=True) is False
 
 
 def _install_auto_archive_conn(monkeypatch, tasks, status_by_task):

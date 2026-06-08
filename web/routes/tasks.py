@@ -442,6 +442,24 @@ def api_archive_task(tid: int):
     return _json_response({"ok": True})
 
 
+@bp.route("/api/<int:tid>/unarchive", methods=["POST"])
+@login_required
+@admin_required
+def api_unarchive_task(tid: int):
+    try:
+        tasks_svc.unarchive_task(
+            task_id=tid,
+            actor_user_id=int(current_user.id),
+            is_admin=_is_admin(),
+        )
+    except PermissionError as e:
+        return _json_response({"error": str(e)}, 403)
+    except tasks_svc.StateError as e:
+        return _json_response({"error": str(e)}, 400)
+    _audit_task_action(tid, "task_unarchived")
+    return _json_response({"ok": True})
+
+
 @bp.route("/api/dispatch_pool", methods=["GET"])
 @login_required
 @admin_required

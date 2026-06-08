@@ -665,11 +665,11 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "task_center_auto_archive",
         "name": "任务中心自动归档",
         "description": (
-            "每天 06:00 扫描已完成且对应素材已推送成功的任务，"
+            "每小时扫描已完成且对应素材已推送成功的任务，"
             "自动写入 archived_at 并保留原任务状态与 auto_archived 事件。Docs-anchor: "
-            "docs/superpowers/specs/2026-06-01-task-center-auto-archive-design.md"
+            "docs/superpowers/specs/2026-06-08-task-center-unarchive-hourly-archive-design.md"
         ),
-        "schedule": "每天 06:00",
+        "schedule": "每小时",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "task_center_auto_archive",

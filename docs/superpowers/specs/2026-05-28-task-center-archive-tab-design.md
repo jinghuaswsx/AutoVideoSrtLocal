@@ -9,6 +9,8 @@
   - `web/templates/CLAUDE.md`
   - `web/static/CLAUDE.md`
 
+> 2026-06-08 更新：本规格原“不新增取消归档/恢复”的限制已由 `docs/superpowers/specs/2026-06-08-task-center-unarchive-hourly-archive-design.md` 覆盖。当前任务中心已归档任务需要提供管理员“取消归档”入口。
+
 ## 背景
 
 任务中心当前状态子 TAB 包含任务总览、待处理任务、待审核任务、已完成任务。长期无需继续处理的任务留在默认总览和各状态列表里，会干扰日常处理视图。用户需要把任意状态任务手动归档：归档后不再出现在任务总览、待处理、待审核、已完成，仅出现在新的已归档 TAB。
