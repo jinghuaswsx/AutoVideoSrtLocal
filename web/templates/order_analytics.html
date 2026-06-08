@@ -639,7 +639,35 @@
   padding: 9px var(--space-3); vertical-align: top;
 }
 .oar-hour-cell {
-  min-width: 220px;
+  min-width: 380px;
+  white-space: nowrap;
+}
+.oar-hour-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: var(--space-4);
+  line-height: 1.4;
+}
+.oar-hour-time {
+  display: inline-block;
+  width: 210px;
+  flex-shrink: 0;
+  text-align: left;
+  font-family: var(--font-mono);
+}
+.oar-hour-time.oar-hour-main {
+  font-weight: 600;
+  color: var(--fg);
+}
+.oar-hour-time.oar-hour-sub {
+  font-weight: 500;
+  color: var(--fg-subtle);
+}
+.oar-hour-label {
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
+  font-weight: 500;
   white-space: nowrap;
 }
 .oar-hour-main {
@@ -7109,16 +7137,51 @@
 
   function formatRealtimeHourCell(row) {
     row = row || {};
-    var main = formatRealtimeBusinessHour(row.hour);
-    var bjRange = row.window_start_at && row.window_end_at
-      ? '北京时间（UTC+8） ' + formatRoasWindow(row.window_start_at, row.window_end_at)
+    var mainTime = '';
+    if (typeof row.hour === 'number') {
+      var startHour = String(row.hour).padStart(2, '0');
+      var endHour = String(row.hour + 1).padStart(2, '0');
+      mainTime = startHour + ':00-' + endHour + ':00';
+    } else {
+      mainTime = row.hour || '-';
+    }
+    var mainLabel = '广告日小时';
+
+    var bjTime = row.window_start_at && row.window_end_at
+      ? formatRoasWindow(row.window_start_at, row.window_end_at)
       : '';
-    var berlinRange = row.berlin_window_start_at && row.berlin_window_end_at
-      ? '德国柏林时间（Europe/Berlin） ' + formatRoasWindow(row.berlin_window_start_at, row.berlin_window_end_at)
+    var bjLabel = bjTime ? '北京时间（UTC+8） ' : '';
+
+    var berlinTime = row.berlin_window_start_at && row.berlin_window_end_at
+      ? formatRoasWindow(row.berlin_window_start_at, row.berlin_window_end_at)
       : '';
-    return '<div class="oar-hour-main">' + escapeHtml(main) + '</div>' +
-      (bjRange ? '<div class="oar-hour-sub">' + escapeHtml(bjRange) + '</div>' : '') +
-      (berlinRange ? '<div class="oar-hour-sub">' + escapeHtml(berlinRange) + '</div>' : '');
+    var berlinLabel = berlinTime ? '德国柏林时间（Europe/Berlin） ' : '';
+
+    var html = '';
+
+    // Row 1: 广告日小时
+    html += '<div class="oar-hour-row">';
+    html += '<span class="oar-hour-time oar-hour-main">' + escapeHtml(mainTime) + '</span>';
+    html += '<span class="oar-hour-label">' + escapeHtml(mainLabel) + '</span>';
+    html += '</div>';
+
+    // Row 2: 北京时间
+    if (bjTime) {
+      html += '<div class="oar-hour-row">';
+      html += '<span class="oar-hour-time oar-hour-sub">' + escapeHtml(bjTime) + '</span>';
+      html += '<span class="oar-hour-label">' + escapeHtml(bjLabel) + '</span>';
+      html += '</div>';
+    }
+
+    // Row 3: 德国柏林时间
+    if (berlinTime) {
+      html += '<div class="oar-hour-row">';
+      html += '<span class="oar-hour-time oar-hour-sub">' + escapeHtml(berlinTime) + '</span>';
+      html += '<span class="oar-hour-label">' + escapeHtml(berlinLabel) + '</span>';
+      html += '</div>';
+    }
+
+    return html;
   }
 
   function formatTimeRule(period, points) {

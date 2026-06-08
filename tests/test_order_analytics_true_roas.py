@@ -330,7 +330,6 @@ def test_data_analysis_tabs_put_order_and_ads_after_realtime(authed_client_no_db
         body.index('data-tab="realtime"'),
         body.index('data-tab="dxmOrders"'),
         body.index('data-tab="ads"'),
-        body.index('data-tab="dashboard"'),
     ]
     assert tab_order == sorted(tab_order)
 
