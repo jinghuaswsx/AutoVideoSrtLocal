@@ -1178,6 +1178,15 @@ def test_product_link_verification_rejects_cached_wxalbum_token(monkeypatch):
     assert not run_product_cdp._product_link_verification_passed(result)
 
 
+def test_product_link_accept_language_follows_url_locale():
+    assert run_product_cdp._product_link_accept_language(
+        "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc"
+    ).startswith("it-IT")
+    assert run_product_cdp._product_link_accept_language(
+        "https://newjoyloo.com/products/instant-snap-iodine-swabs-rjc"
+    ) == "en-US,en;q=0.9"
+
+
 def test_run_repairs_material_product_link_to_default_variant_when_variant_passes(monkeypatch, tmp_path):
     workspace = run_product_cdp.storage.Workspace(
         root=tmp_path,

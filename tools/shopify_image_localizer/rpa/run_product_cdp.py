@@ -46,6 +46,10 @@ STOREFRONT_FETCH_ATTEMPTS = 3
 STOREFRONT_FETCH_RETRY_DELAY_S = 1.0
 PRODUCT_LINK_VERIFY_ATTEMPTS = 4
 PRODUCT_LINK_VERIFY_DELAY_S = 10.0
+PRODUCT_LINK_ACCEPT_LANGUAGE_BY_LOCALE = {
+    "it": "it-IT,it;q=0.9,en;q=0.8",
+    "pt": "pt-PT,pt;q=0.9,en;q=0.8",
+}
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
 
 
@@ -1017,13 +1021,27 @@ def _with_variant_param(link_url: str, variant_id: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(pairs), parsed.fragment))
 
 
+def _product_link_accept_language(link_url: str) -> str:
+    parsed = urlparse(str(link_url or "").strip())
+    first_segment = (parsed.path or "").strip("/").split("/", 1)[0].strip().lower()
+    if not first_segment or first_segment == "products":
+        return "en-US,en;q=0.9"
+    normalized = first_segment.replace("_", "-")
+    if normalized in PRODUCT_LINK_ACCEPT_LANGUAGE_BY_LOCALE:
+        return PRODUCT_LINK_ACCEPT_LANGUAGE_BY_LOCALE[normalized]
+    primary = normalized.split("-", 1)[0]
+    if not primary.isalpha() or len(primary) < 2:
+        return "en-US,en;q=0.9"
+    return f"{normalized},{primary};q=0.9,en;q=0.8"
+
+
 def _fetch_product_link_html(link_url: str, *, timeout: int = 30) -> tuple[str, str]:
     request = urllib.request.Request(
         link_url,
         headers={
             "User-Agent": STOREFRONT_USER_AGENT,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Language": _product_link_accept_language(link_url),
             "Cache-Control": "no-cache",
             "Pragma": "no-cache",
         },
