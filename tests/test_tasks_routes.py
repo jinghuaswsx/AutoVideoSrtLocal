@@ -316,6 +316,14 @@ def test_task_center_mobile_workload_cards_default_to_collapsed_summary(authed_c
     assert 'id="wlCompactInProgress"' in body
     assert 'id="wlCompactCompleted"' in body
     assert ".tc-workload-container.is-collapsed .tc-workload-cards { display:none !important; }" in body
+    assert 'class="tc-page-heading"' in body
+    assert ".tc .tc-workload-container {" in body
+    assert "flex: 0 0 auto;" in body
+    assert ".tc .tc-workload-toggle {" in body
+    assert "display: flex !important;" in body
+    assert ".tc .tc-pager--top {" in body
+    assert "tc-pager--top" in body
+    assert "tc-pager--bottom" in body
     assert "function tcShouldStartWithCollapsedWorkload" in body
     assert "function tcApplyWorkloadVisibility" in body
     assert "cards.hidden = collapsed;" in body
