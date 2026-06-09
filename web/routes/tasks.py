@@ -337,10 +337,18 @@ def new_product_page():
 @login_required
 def get_item_thumbnail(item_id: int):
     from appcore.db import query_one
+    from config import OUTPUT_DIR
     row = query_one("SELECT thumbnail_path FROM media_items WHERE id=%s", (item_id,))
-    if row and row.get("thumbnail_path") and os.path.exists(row["thumbnail_path"]):
-        return send_file(row["thumbnail_path"])
+    if row and row.get("thumbnail_path"):
+        thumb_path = row["thumbnail_path"]
+        if not os.path.isabs(thumb_path):
+            full_path = os.path.join(OUTPUT_DIR, thumb_path)
+        else:
+            full_path = thumb_path
+        if os.path.exists(full_path):
+            return send_file(full_path)
     abort(404)
+
 
 
 @bp.route("/api/new-product/project/<int:media_item_id>", methods=["DELETE"])
