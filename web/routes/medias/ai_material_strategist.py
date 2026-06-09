@@ -5,7 +5,9 @@ docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md
 """
 from __future__ import annotations
 
-from flask import abort, jsonify, render_template, request
+import re
+
+from flask import abort, jsonify, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import ai_material_strategist as service
@@ -13,6 +15,18 @@ from web.auth import admin_required, permission_required
 from web.background import start_background_task
 
 from . import bp
+
+_SHARE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,100}$")
+_PUBLIC_LINK_KEYS = {
+    "url",
+    "task_url",
+    "video_url",
+    "product_url",
+    "material_url",
+    "detail_url",
+    "payload",
+    "method",
+}
 
 
 def _json(payload: dict, status: int = 200):
@@ -24,6 +38,30 @@ def _current_user_id() -> int | None:
         return int(current_user.id)
     except (TypeError, ValueError):
         return None
+
+
+def _valid_share_token(share_token: str) -> bool:
+    return bool(_SHARE_TOKEN_RE.fullmatch(str(share_token or "")))
+
+
+def _strip_public_links(value):
+    if isinstance(value, list):
+        return [_strip_public_links(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _strip_public_links(item)
+            for key, item in value.items()
+            if key not in _PUBLIC_LINK_KEYS
+        }
+    return value
+
+
+def _public_project_payload(project: dict) -> dict:
+    payload = _strip_public_links(project)
+    payload.pop("ranking_prompt", None)
+    payload.pop("data_snapshot", None)
+    payload["public"] = True
+    return payload
 
 
 @bp.route("/ai-material-strategist", methods=["GET"])
@@ -45,6 +83,19 @@ def ai_material_strategist_project_page(project_id: int):
     return render_template(
         "medias_ai_material_strategist.html",
         initial_project_id=project_id,
+    )
+
+
+@bp.route("/ai-material-strategist/share/<share_token>", methods=["GET"])
+def ai_material_strategist_public_report(share_token: str):
+    if not _valid_share_token(share_token):
+        abort(404)
+    return render_template(
+        "medias_ai_material_strategist.html",
+        initial_project_id=None,
+        public_mode=True,
+        share_token=share_token,
+        aims_layout_template="medias_ai_material_strategist_public_base.html",
     )
 
 
@@ -105,6 +156,32 @@ def api_ai_material_strategist_project(project_id: int):
     if not project:
         abort(404)
     return _json({"success": True, "project": project})
+
+
+@bp.route("/api/ai-material-strategist/projects/<int:project_id>/share", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_ai_material_strategist_share_project(project_id: int):
+    share = service.ensure_project_share(project_id)
+    if not share:
+        abort(404)
+    share["share_url"] = url_for(
+        "medias.ai_material_strategist_public_report",
+        share_token=share["share_token"],
+        _external=True,
+    )
+    return _json({"success": True, "share": share})
+
+
+@bp.route("/api/ai-material-strategist/share/<share_token>", methods=["GET"])
+def api_ai_material_strategist_public_project(share_token: str):
+    if not _valid_share_token(share_token):
+        abort(404)
+    project = service.get_project_by_share_token(share_token)
+    if not project:
+        abort(404)
+    return _json({"success": True, "project": _public_project_payload(project)})
 
 
 @bp.route("/api/ai-material-strategist/preview", methods=["GET"])

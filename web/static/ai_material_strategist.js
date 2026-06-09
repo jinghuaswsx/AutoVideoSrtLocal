@@ -6,6 +6,8 @@
     activeProjectId: window.AIMS_INITIAL_PROJECT_ID || null,
     activeProject: null,
     pollTimer: null,
+    publicMode: Boolean(window.AIMS_PUBLIC_MODE),
+    shareToken: window.AIMS_SHARE_TOKEN || '',
   };
 
   const els = {
@@ -13,6 +15,7 @@
     detail: document.getElementById('aimsDetail'),
     create: document.getElementById('aimsCreateBtn'),
     refresh: document.getElementById('aimsRefreshBtn'),
+    share: document.getElementById('aimsShareBtn'),
     note: document.getElementById('aimsPageNote'),
     count: document.getElementById('aimsProjectCount'),
     windowText: document.getElementById('aimsWindowText'),
@@ -134,6 +137,9 @@
     const url = task.task_url || task.url || ('/tasks/detail/' + id);
     const label = taskStatusLabel(task);
     const text = compact ? ('#' + id) : ('任务 #' + id);
+    if (state.publicMode) {
+      return `<span class="aims-task-link ${esc(task.status_group || '')}">${esc(text)}${label ? ` · ${esc(label)}` : ''}</span>`;
+    }
     return `<a class="aims-task-link ${esc(task.status_group || '')}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(text)}${label ? ` · ${esc(label)}` : ''}</a>`;
   }
 
@@ -155,6 +161,27 @@
     }, 2800);
   }
 
+  function csrfHeaders(extra) {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    return token ? { ...(extra || {}), 'X-CSRFToken': token } : (extra || {});
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  }
+
   async function fetchJson(url, options) {
     const res = await fetch(url, options || {});
     const data = await res.json().catch(() => ({}));
@@ -170,13 +197,18 @@
   function setBusy(isBusy) {
     const activeRunning = runningProject();
     if (els.create) {
-      els.create.disabled = isBusy || Boolean(activeRunning);
+      els.create.disabled = state.publicMode || isBusy || Boolean(activeRunning);
       els.create.title = activeRunning ? '已有 AI素材军师项目正在运行' : '';
     }
     if (els.refresh) els.refresh.disabled = isBusy;
+    if (els.share) els.share.disabled = state.publicMode || isBusy || !state.activeProjectId;
   }
 
   async function loadProjects() {
+    if (state.publicMode) {
+      await loadSharedProject();
+      return;
+    }
     const data = await fetchJson('/medias/api/ai-material-strategist/projects');
     state.projects = data.projects || [];
     if (els.count) els.count.textContent = String(state.projects.length);
@@ -192,7 +224,25 @@
     }
   }
 
+  async function loadSharedProject() {
+    if (!state.shareToken) {
+      renderEmpty();
+      return;
+    }
+    const data = await fetchJson('/medias/api/ai-material-strategist/share/' + encodeURIComponent(state.shareToken));
+    state.activeProject = data.project;
+    state.activeProjectId = data.project && data.project.id;
+    state.projects = data.project ? [data.project] : [];
+    setBusy(false);
+    renderProject(data.project);
+    syncPolling(data.project);
+  }
+
   async function loadProject(projectId) {
+    if (state.publicMode) {
+      await loadSharedProject();
+      return;
+    }
     state.activeProjectId = Number(projectId);
     const data = await fetchJson('/medias/api/ai-material-strategist/projects/' + encodeURIComponent(projectId));
     state.activeProject = data.project;
@@ -211,11 +261,13 @@
       state.pollTimer = null;
     }
     if (project && project.status === 'running') {
-      state.pollTimer = setTimeout(() => loadProject(project.id).catch(console.error), 2000);
+      const loader = state.publicMode ? loadSharedProject : () => loadProject(project.id);
+      state.pollTimer = setTimeout(() => loader().catch(console.error), 2000);
     }
   }
 
   async function createProject() {
+    if (state.publicMode) return;
     const activeRunning = runningProject();
     if (activeRunning) {
       showToast('已有项目正在运行，已切换到运行页');
@@ -227,7 +279,7 @@
       const name = 'AI素材军师 ' + new Date().toLocaleString('zh-CN', { hour12: false });
       const data = await fetchJson('/medias/api/ai-material-strategist/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ project_name: name, run_ai: true }),
       });
       state.activeProjectId = data.project.id;
@@ -241,6 +293,30 @@
         return;
       }
       showToast(err.message || '创建失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function shareProject() {
+    if (state.publicMode || !state.activeProjectId) return;
+    setBusy(true);
+    try {
+      const data = await fetchJson('/medias/api/ai-material-strategist/projects/' + encodeURIComponent(state.activeProjectId) + '/share', {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({}),
+      });
+      const shareUrl = data.share && data.share.share_url;
+      if (!shareUrl) throw new Error('分享链接生成失败');
+      await copyText(shareUrl);
+      showToast('分享链接已复制');
+      if (state.activeProject) {
+        state.activeProject.has_share = true;
+        state.activeProject.share_enabled_at = data.share.share_enabled_at || state.activeProject.share_enabled_at;
+      }
+    } catch (err) {
+      showToast(err.message || '分享失败');
     } finally {
       setBusy(false);
     }
@@ -492,11 +568,15 @@
       const m = item.metrics || {};
       const ai = item.ai_result || {};
       const mk = (item.mingkong_materials || [])[0] || {};
+      const title = item.product_name || item.product_code;
+      const productNode = state.publicMode
+        ? `<span class="aims-product-link plain">${esc(title)}</span>`
+        : `<a class="aims-product-link" href="/medias/${encodeURIComponent(item.product_code || '')}" target="_blank" rel="noopener noreferrer">${esc(title)}</a>`;
       return `
         <tr>
           <td>#${esc(item.rank_no)}</td>
           <td>
-            <a class="aims-product-link" href="/medias/${encodeURIComponent(item.product_code || '')}" target="_blank" rel="noopener noreferrer">${esc(item.product_name || item.product_code)}</a>
+            ${productNode}
             <div>${esc(item.product_code)}</div>
           </td>
           <td>${fmtUsd(m.spend_30d)}</td>
@@ -507,14 +587,15 @@
           <td>${esc(actionLabel(ai.primary_action))}</td>
           <td>${mk.video_name ? `${esc(mk.video_name)}<br><span>${fmtUsd(mk.cumulative_90_spend)} · 广告 ${fmtNumber(mk.video_ads_count)}</span>` : '—'}</td>
           <td>${renderTaskBadges(item, 3)}</td>
-          <td><div class="aims-actions">${renderInlineActions(item)}</div></td>
+          ${state.publicMode ? '' : `<td><div class="aims-actions">${renderInlineActions(item)}</div></td>`}
         </tr>
       `;
     }).join('');
+    const actionHeader = state.publicMode ? '' : '<th>入口</th>';
     return `
       <div class="aims-table-wrap">
         <table class="aims-table">
-          <thead><tr><th>排名</th><th>产品</th><th>30天消耗</th><th>30天订单</th><th>真实ROAS</th><th>昨日消耗</th><th>优先级</th><th>动作</th><th>明空候选</th><th>任务</th><th>入口</th></tr></thead>
+          <thead><tr><th>排名</th><th>产品</th><th>30天消耗</th><th>30天订单</th><th>真实ROAS</th><th>昨日消耗</th><th>优先级</th><th>动作</th><th>明空候选</th><th>任务</th>${actionHeader}</tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -522,6 +603,7 @@
   }
 
   function renderInlineActions(item) {
+    if (state.publicMode) return '';
     const actions = (item.action_items || []).filter((action) => {
       return ['supplement_workbench', 'translation_tasks', 'product_materials'].includes(action.type);
     });
@@ -554,7 +636,7 @@
               <span>ROAS ${fmtRoas(m.true_roas_30d)}</span>
             </div>
           </div>
-          <div class="aims-actions">${renderInlineActions(item)}</div>
+          ${state.publicMode ? '' : `<div class="aims-actions">${renderInlineActions(item)}</div>`}
         </div>
         <div class="aims-product-body">
           <div>
@@ -590,12 +672,18 @@
     const actionIndex = (item.action_items || []).findIndex((action) => {
       return action.type === 'import_mk_video' && action.material_key === material.material_key;
     });
-    const importButton = actionIndex >= 0
+    const importButton = !state.publicMode && actionIndex >= 0
       ? `<button type="button" class="aims-btn teal" data-import-action data-product-index="${productIndex}" data-action-index="${actionIndex}">加入素材库</button>`
+      : '';
+    const videoNode = !state.publicMode && material.video_url
+      ? `<video controls preload="metadata" src="${esc(material.video_url)}"></video>`
+      : '';
+    const videoLink = !state.publicMode && material.video_url
+      ? `<a class="aims-btn" href="${esc(material.video_url)}" target="_blank" rel="noopener noreferrer">看视频</a>`
       : '';
     return `
       <article class="aims-material">
-        ${material.video_url ? `<video controls preload="metadata" src="${esc(material.video_url)}"></video>` : ''}
+        ${videoNode}
         <div class="aims-material-title" title="${esc(material.video_name || material.video_path)}">${esc(material.video_name || material.video_path || '明空素材')}</div>
         <div class="aims-material-meta">
           <span>90天 ${fmtUsd(material.cumulative_90_spend)}</span>
@@ -603,7 +691,7 @@
           <span>昨日 ${fmtUsd(material.yesterday_spend_delta)}</span>
         </div>
         <div class="aims-actions">
-          ${material.video_url ? `<a class="aims-btn" href="${esc(material.video_url)}" target="_blank" rel="noopener noreferrer">看视频</a>` : ''}
+          ${videoLink}
           ${importButton}
         </div>
       </article>
@@ -627,6 +715,7 @@
   }
 
   async function importMaterial(button) {
+    if (state.publicMode) return;
     const productIndex = Number(button.getAttribute('data-product-index'));
     const actionIndex = Number(button.getAttribute('data-action-index'));
     const product = (state.activeProject && state.activeProject.products || [])[productIndex];
@@ -636,7 +725,7 @@
     try {
       await fetchJson(action.url, {
         method: action.method || 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(action.payload),
       });
       showToast('已提交加入素材库');
@@ -663,6 +752,7 @@
   }
   if (els.create) els.create.addEventListener('click', createProject);
   if (els.refresh) els.refresh.addEventListener('click', () => loadProjects().catch((err) => showToast(err.message)));
+  if (els.share) els.share.addEventListener('click', shareProject);
 
   loadProjects().catch((err) => {
     renderEmpty();
