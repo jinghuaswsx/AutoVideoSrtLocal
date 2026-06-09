@@ -160,6 +160,7 @@ def authed_client_no_db(monkeypatch):
     monkeypatch.setattr("appcore.media_product_ad_status_cache.get_product_ad_summary_cache", lambda pids: {})
     monkeypatch.setattr("appcore.media_product_ad_status_cache.get_product_lang_ad_summary_cache", lambda pids: {})
     monkeypatch.setattr("appcore.media_product_order_stats.get_product_order_stats", lambda pids: {})
+    monkeypatch.setattr("appcore.media_product_stability.get_product_stability_cache", lambda pids: {})
     monkeypatch.setattr("appcore.product_roas.get_configured_rmb_per_usd", lambda: 7.2)
     monkeypatch.setattr("appcore.meta_hot_posts.store.list_category_options", lambda: [])
     monkeypatch.setattr(
@@ -229,6 +230,7 @@ def authed_user_client_no_db(monkeypatch):
     monkeypatch.setattr("appcore.media_product_ad_status_cache.get_product_ad_summary_cache", lambda pids: {})
     monkeypatch.setattr("appcore.media_product_ad_status_cache.get_product_lang_ad_summary_cache", lambda pids: {})
     monkeypatch.setattr("appcore.media_product_order_stats.get_product_order_stats", lambda pids: {})
+    monkeypatch.setattr("appcore.media_product_stability.get_product_stability_cache", lambda pids: {})
     monkeypatch.setattr("appcore.product_roas.get_configured_rmb_per_usd", lambda: 7.2)
     monkeypatch.setattr("appcore.meta_hot_posts.store.list_category_options", lambda: [])
     from web.app import create_app

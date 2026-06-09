@@ -88,7 +88,7 @@ def test_omni_av_sync_assess_uses_gemini_3_flash():
     assess = USE_CASES["omni_av_sync.assess"]
 
     assert assess["default_provider"] == "openrouter"
-    assert assess["default_model"] == "google/gemini-3-flash-preview"
+    assert assess["default_model"] == "google/gemini-3.5-flash"
     assert assess["usage_log_service"] == "openrouter"
 
 
@@ -128,8 +128,21 @@ def test_order_analytics_weekly_ai_analysis_use_case_registered():
     assert product_uc["units_type"] == "tokens"
 
 
+def test_ai_material_strategist_use_cases_use_googlewj_gemini_35_flash():
+    for code in (
+        "medias.ai_material_strategist_rank_products",
+        "medias.ai_material_strategist_product_analysis",
+    ):
+        uc = USE_CASES[code]
+        assert uc["module"] == "material"
+        assert uc["default_provider"] == "google_wj"
+        assert uc["default_model"] == "gemini-3.5-flash"
+        assert uc["usage_log_service"] == "google_wj"
+        assert uc["units_type"] == "tokens"
+
+
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 67
+    assert len(USE_CASES) == 69
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -408,14 +421,14 @@ def test_omni_av_sync_audit_use_cases_defaults():
     assess = USE_CASES["omni_av_sync.assess"]
     assert assess["module"] == "omni_translate"
     assert assess["default_provider"] == "openrouter"
-    assert assess["default_model"] == "google/gemini-3-flash-preview"
+    assert assess["default_model"] == "google/gemini-3.5-flash"
     assert assess["usage_log_service"] == "openrouter"
     assert assess["units_type"] == "tokens"
 
     verify = USE_CASES["omni_av_sync.verify"]
     assert verify["module"] == "omni_translate"
     assert verify["default_provider"] == "openrouter"
-    assert verify["default_model"] == "google/gemini-3-flash-preview"
+    assert verify["default_model"] == "google/gemini-3.5-flash"
     assert verify["usage_log_service"] == "openrouter"
     assert verify["units_type"] == "tokens"
 
