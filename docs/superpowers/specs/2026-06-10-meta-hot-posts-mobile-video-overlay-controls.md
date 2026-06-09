@@ -20,6 +20,9 @@
 4. 浮层右上角提供透明关闭按钮，用户可退出全屏播放效果。
 5. 关闭浮层时暂停并移除浮层内视频，避免继续占用播放源。
 6. 列表页和详情页保持同一套交互。
+7. 移动端全屏浮层内支持上下滑切换前后视频。
+8. 上滑播放当前渲染卡片顺序里的下一个可直接播放 MP4 视频，下滑播放上一个。
+9. 关闭浮层回到页面时，定位到当前正在播放的视频卡片，而不是最初打开浮层的卡片。
 
 ## 设计
 
@@ -39,6 +42,15 @@
   - 点击浮层背景。
   - 按 `Escape`。
 - 打开浮层前先调用现有 `pauseMetaHotVideos()`，保持单播放源行为。
+- 浮层维护当前播放卡片 ID：
+  - 全屏按钮写入 `data-post-id`，打开浮层时记录当前卡片。
+  - 切换视频时从 `mhItemsById` 的当前渲染顺序中选择前后可直接播放 MP4 的卡片。
+  - 切换后同步下载链接、播放器 `src`、浮层 `data-current-post-id` 和内部状态。
+- 移动端滑动：
+  - 监听浮层 `touchstart` / `touchend`，仅当垂直位移明显大于水平位移且超过阈值时触发切换。
+  - 上滑为下一个视频，下滑为上一个视频。
+  - 到达首尾时不循环，保持当前视频。
+- 关闭浮层后读取当前播放卡片 ID，并调用对应 `.mh-card[data-post-id]` 的 `scrollIntoView({behavior: 'smooth', block: 'center'})`。
 
 ## 非目标
 
@@ -47,9 +59,10 @@
 - 不改变数据库 schema。
 - 不为 Facebook iframe 生成下载入口。
 - 不改变 PC 端卡片 2x 放大逻辑。
+- 不新增可见滑动说明文案，避免遮挡移动端视频主体。
 
 ## 验证
 
 - `pytest tests/test_meta_hot_posts_routes.py tests/test_xuanpin_routes.py -q`
 - 未登录 `/xuanpin/meta-hot-posts` 继续 302。
-- 登录后 `/xuanpin/meta-hot-posts` 和 `/xuanpin/meta-hot-posts/<post_id>` 模板包含全屏入口、下载入口、关闭逻辑、Esc 关闭逻辑。
+- 登录后 `/xuanpin/meta-hot-posts` 和 `/xuanpin/meta-hot-posts/<post_id>` 模板包含全屏入口、下载入口、关闭逻辑、Esc 关闭逻辑、上下滑切换逻辑、关闭定位当前卡片逻辑。

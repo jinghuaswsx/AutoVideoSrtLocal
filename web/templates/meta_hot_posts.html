@@ -116,8 +116,8 @@
 .mh-video-control-icon { width:18px; height:18px; stroke:currentColor; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
 body.mh-video-overlay-open { overflow:hidden; }
 .mh-video-overlay[hidden] { display:none; }
-.mh-video-overlay { position:fixed; inset:0; z-index:1400; display:flex; align-items:center; justify-content:center; padding:calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); background:rgba(15,23,42,.9); }
-.mh-video-overlay-panel { position:relative; display:flex; align-items:center; justify-content:center; width:min(100%, 820px); height:100%; }
+.mh-video-overlay { position:fixed; inset:0; z-index:1400; display:flex; align-items:center; justify-content:center; padding:calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); background:rgba(15,23,42,.9); touch-action:pan-y; overscroll-behavior:contain; }
+.mh-video-overlay-panel { position:relative; display:flex; align-items:center; justify-content:center; width:min(100%, 820px); height:100%; touch-action:pan-y; }
 .mh-video-overlay-player { display:block; width:100%; max-width:100%; max-height:100%; border:0; border-radius:6px; background:#020617; object-fit:contain; }
 .mh-video-overlay-toolbar { position:absolute; top:10px; right:10px; z-index:2; display:flex; align-items:center; gap:8px; }
 .mh-video-overlay-download,
@@ -770,6 +770,7 @@ const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID = (() => {
 let mhAiAnalysisVisibility = {us: false, europe: false};
 let mhAiAnalysisVisibilitySaveVersion = Date.now();
 let mhItemsById = new Map();
+let mhVideoOverlayState = {postId: null, touchStartX: null, touchStartY: null};
 let mhAiState = {postId: null, mode: null, request: null, result: null};
 let mhProductPostHash = '';
 const mhPageSize = 50;
@@ -864,6 +865,9 @@ function directMetaHotVideoUrl(row) {
   if (mhVideoSource === 'tos' && row.tos_video_url) return String(row.tos_video_url || '').trim();
   return String(row.local_video_url || '').trim();
 }
+function metaHotVideoPostId(row) {
+  return Number((row && (row.id || row.post_id || row.wedev_post_id)) || 0);
+}
 function metaHotVideoDownloadName(row) {
   const rawId = String(row.post_id || row.wedev_post_id || row.id || 'video').trim();
   const safeId = rawId.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'video';
@@ -900,12 +904,13 @@ function renderVideoShell(row, videoHtml) {
   const coverUrl = previewCoverUrl(row);
   const duration = formatVideoDuration(videoDurationSeconds(row));
   const fullscreenUrl = directMetaHotVideoUrl(row);
+  const postId = metaHotVideoPostId(row);
   const cover = coverUrl
     ? `<img class="mh-video-cover" src="${esc(coverUrl)}" alt="" loading="lazy">`
     : '<span class="mh-video-placeholder">Video</span>';
   const durationBadge = duration ? `<span class="mh-video-duration-badge">${esc(duration)}</span>` : '';
   const fullscreenButton = fullscreenUrl
-    ? `<span class="mh-video-card-actions"><button class="mh-video-action mh-video-fullscreen" type="button" data-video-src="${esc(fullscreenUrl)}" data-download-name="${esc(metaHotVideoDownloadName(row))}" onclick="openMetaHotVideoOverlay(event, this.dataset.videoSrc, this.dataset.downloadName)" aria-label="全屏播放视频" title="全屏播放视频">${metaHotVideoIcon('expand')}</button></span>`
+    ? `<span class="mh-video-card-actions"><button class="mh-video-action mh-video-fullscreen" type="button" data-post-id="${postId}" data-video-src="${esc(fullscreenUrl)}" data-download-name="${esc(metaHotVideoDownloadName(row))}" onclick="openMetaHotVideoOverlay(event, this.dataset.postId, this.dataset.videoSrc, this.dataset.downloadName)" aria-label="全屏播放视频" title="全屏播放视频">${metaHotVideoIcon('expand')}</button></span>`
     : '';
   return `<div class="mh-video-shell" role="button" tabindex="0" data-video-html="${esc(videoHtml)}" onclick="loadMetaHotPostVideo(event)" onkeydown="handleMetaHotPostVideoKey(event)">
     ${cover}
@@ -935,22 +940,46 @@ function ensureMetaHotVideoOverlay() {
   overlay.className = 'mh-video-overlay';
   overlay.hidden = true;
   overlay.addEventListener('click', handleMetaHotVideoOverlayBackdropClick);
+  overlay.addEventListener('touchstart', handleMetaHotVideoOverlayTouchStart, {passive: true});
+  overlay.addEventListener('touchend', handleMetaHotVideoOverlayTouchEnd, {passive: true});
   document.body.appendChild(overlay);
   return overlay;
 }
-function openMetaHotVideoOverlay(event, videoSrc, downloadName) {
-  if (event) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  const src = String(videoSrc || '').trim();
+function metaHotPlayableVideoItems() {
+  return Array.from(mhItemsById.values()).map(row => {
+    const videoSrc = directMetaHotVideoUrl(row);
+    return {
+      postId: metaHotVideoPostId(row),
+      videoSrc,
+      downloadName: metaHotVideoDownloadName(row)
+    };
+  }).filter(item => item.postId && item.videoSrc);
+}
+function metaHotAdjacentPlayableVideo(postId, direction) {
+  const items = metaHotPlayableVideoItems();
+  const currentIndex = items.findIndex(item => item.postId === Number(postId || 0));
+  if (currentIndex < 0) return null;
+  const nextIndex = currentIndex + (direction > 0 ? 1 : -1);
+  if (nextIndex < 0 || nextIndex >= items.length) return null;
+  return items[nextIndex];
+}
+function renderMetaHotVideoOverlayPlayer(item, options = {}) {
+  const src = String((item && item.videoSrc) || '').trim();
   if (!src) return;
-  pauseMetaHotVideos();
   const overlay = ensureMetaHotVideoOverlay();
-  const safeDownloadName = String(downloadName || 'meta-hot-post-video.mp4').trim() || 'meta-hot-post-video.mp4';
+  const activeVideo = overlay.querySelector('video');
+  if (activeVideo) {
+    activeVideo.pause();
+    activeVideo.removeAttribute('src');
+    activeVideo.load();
+  }
+  const postId = Number((item && item.postId) || 0);
+  const safeDownloadName = String((item && item.downloadName) || 'meta-hot-post-video.mp4').trim() || 'meta-hot-post-video.mp4';
+  mhVideoOverlayState.postId = postId || null;
+  overlay.dataset.currentPostId = postId ? String(postId) : '';
   overlay.innerHTML = `<div class="mh-video-overlay-panel" role="dialog" aria-modal="true" aria-label="全屏播放视频">
     <div class="mh-video-overlay-toolbar">
-      <a class="mh-video-overlay-download" href="${esc(src)}" download="${esc(safeDownloadName)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" aria-label="下载视频" title="下载视频">${metaHotVideoIcon('download')}<span>下载</span></a>
+      <a class="mh-video-overlay-download" href="${esc(src)}" download="${esc(safeDownloadName)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" aria-label="下载视频" title="下载视频">${metaHotVideoIcon('download')}<span>下载</span></a>
       <button class="mh-video-overlay-close" type="button" onclick="closeMetaHotVideoOverlay(event)" aria-label="关闭全屏播放" title="关闭">${metaHotVideoIcon('close')}</button>
     </div>
     <video class="mh-video-overlay-player" controls autoplay playsinline preload="metadata" src="${esc(src)}"></video>
@@ -959,8 +988,53 @@ function openMetaHotVideoOverlay(event, videoSrc, downloadName) {
   document.body.classList.add('mh-video-overlay-open');
   const video = overlay.querySelector('video');
   if (video) video.play().catch(() => {});
+  if (options.focusClose === false) return;
   const closeButton = overlay.querySelector('.mh-video-overlay-close');
   if (closeButton && closeButton.focus) closeButton.focus({preventScroll: true});
+}
+function openMetaHotVideoOverlay(event, postId, videoSrc, downloadName) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const src = String(videoSrc || '').trim();
+  if (!src) return;
+  pauseMetaHotVideos();
+  renderMetaHotVideoOverlayPlayer({
+    postId: Number(postId || 0),
+    videoSrc: src,
+    downloadName
+  });
+}
+function switchMetaHotVideoOverlay(direction) {
+  const overlay = qs('mhVideoOverlay');
+  if (!overlay || overlay.hidden) return;
+  const next = metaHotAdjacentPlayableVideo(mhVideoOverlayState.postId, Number(direction || 0));
+  if (!next) return;
+  pauseMetaHotVideos();
+  renderMetaHotVideoOverlayPlayer(next, {focusClose: false});
+}
+function handleMetaHotVideoOverlayTouchStart(event) {
+  const touch = event.touches && event.touches[0];
+  if (!touch) return;
+  mhVideoOverlayState.touchStartX = touch.clientX;
+  mhVideoOverlayState.touchStartY = touch.clientY;
+}
+function handleMetaHotVideoOverlayTouchEnd(event) {
+  const touch = event.changedTouches && event.changedTouches[0];
+  if (!touch || mhVideoOverlayState.touchStartY === null) return;
+  const deltaX = touch.clientX - mhVideoOverlayState.touchStartX;
+  const deltaY = touch.clientY - mhVideoOverlayState.touchStartY;
+  mhVideoOverlayState.touchStartX = null;
+  mhVideoOverlayState.touchStartY = null;
+  if (Math.abs(deltaY) < 56 || Math.abs(deltaY) < Math.abs(deltaX) * 1.2) return;
+  switchMetaHotVideoOverlay(deltaY < 0 ? 1 : -1);
+}
+function scrollMetaHotCardIntoView(postId) {
+  const id = Number(postId || 0);
+  if (!id) return;
+  const card = document.querySelector(`.mh-card[data-post-id="${id}"]`);
+  if (card && card.scrollIntoView) card.scrollIntoView({behavior: 'smooth', block: 'center'});
 }
 function closeMetaHotVideoOverlay(event) {
   if (event) {
@@ -969,6 +1043,7 @@ function closeMetaHotVideoOverlay(event) {
   }
   const overlay = qs('mhVideoOverlay');
   if (!overlay) return;
+  const currentPostId = Number(overlay.dataset.currentPostId || mhVideoOverlayState.postId || 0);
   const video = overlay.querySelector('video');
   if (video) {
     video.pause();
@@ -977,7 +1052,12 @@ function closeMetaHotVideoOverlay(event) {
   }
   overlay.hidden = true;
   overlay.innerHTML = '';
+  overlay.dataset.currentPostId = '';
+  mhVideoOverlayState.postId = null;
+  mhVideoOverlayState.touchStartX = null;
+  mhVideoOverlayState.touchStartY = null;
   document.body.classList.remove('mh-video-overlay-open');
+  scrollMetaHotCardIntoView(currentPostId);
 }
 function handleMetaHotVideoOverlayBackdropClick(event) {
   if (event.target === event.currentTarget) closeMetaHotVideoOverlay(event);

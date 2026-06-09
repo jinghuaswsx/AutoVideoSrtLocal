@@ -401,15 +401,24 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function loadMetaHotPostVideo" in body
     assert "function renderVideoShell" in body
     assert "function directMetaHotVideoUrl(row)" in body
-    assert "function openMetaHotVideoOverlay(event, videoSrc, downloadName)" in body
+    assert "function openMetaHotVideoOverlay(event, postId, videoSrc, downloadName)" in body
     assert "function closeMetaHotVideoOverlay(event)" in body
     assert "function handleMetaHotVideoOverlayKey(event)" in body
+    assert "function handleMetaHotVideoOverlayTouchStart(event)" in body
+    assert "function handleMetaHotVideoOverlayTouchEnd(event)" in body
+    assert "function switchMetaHotVideoOverlay(direction)" in body
+    assert "function scrollMetaHotCardIntoView(postId)" in body
     assert "mh-video-duration-badge" in body
     assert "mh-play-button bottom" in body
     assert "mh-video-fullscreen" in body
+    assert 'data-post-id="${postId}"' in body
     assert "mh-video-overlay-download" in body
     assert 'aria-label="下载视频"' in body
     assert 'aria-label="关闭全屏播放"' in body
+    assert "overlay.addEventListener('touchstart', handleMetaHotVideoOverlayTouchStart, {passive: true})" in body
+    assert "overlay.addEventListener('touchend', handleMetaHotVideoOverlayTouchEnd, {passive: true})" in body
+    assert "overlay.dataset.currentPostId" in body
+    assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in body
     assert "document.body.classList.add('mh-video-overlay-open')" in body
     assert "document.body.classList.remove('mh-video-overlay-open')" in body
     assert "event.key !== 'Escape'" in body
@@ -1052,10 +1061,17 @@ def test_meta_hot_post_detail_page_renders_post(authed_client_no_db, monkeypatch
     assert "Meta热帖详情 - ID: 123" in body
     assert "meta-hot-card-grid" in body
     assert "cacheMetaHotItems" in body
-    assert "function openMetaHotVideoOverlay(event, videoSrc, downloadName)" in body
+    assert "function openMetaHotVideoOverlay(event, postId, videoSrc, downloadName)" in body
+    assert "function handleMetaHotVideoOverlayTouchStart(event)" in body
+    assert "function handleMetaHotVideoOverlayTouchEnd(event)" in body
+    assert "function switchMetaHotVideoOverlay(direction)" in body
+    assert "function scrollMetaHotCardIntoView(postId)" in body
     assert "mh-video-fullscreen" in body
+    assert 'data-post-id="${postId}"' in body
     assert "mh-video-overlay-download" in body
     assert 'aria-label="关闭全屏播放"' in body
+    assert "overlay.dataset.currentPostId" in body
+    assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in body
     assert "只入素材库" in body
     assert "创建新品任务" in body
     assert "body: JSON.stringify({ owner_id: ownerId })" in body

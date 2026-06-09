@@ -1005,9 +1005,16 @@ def test_xuanpin_meta_hot_posts_keeps_single_video_playback_guard(authed_client_
     assert "document.querySelectorAll('.meta-hot-page video').forEach(video => {" in body
     assert "function handleMetaHotVideoPlay(event)" in body
     assert "document.addEventListener('play', handleMetaHotVideoPlay, true);" in body
-    assert "function openMetaHotVideoOverlay(event, videoSrc, downloadName)" in body
+    assert "function openMetaHotVideoOverlay(event, postId, videoSrc, downloadName)" in body
+    assert "function handleMetaHotVideoOverlayTouchStart(event)" in body
+    assert "function handleMetaHotVideoOverlayTouchEnd(event)" in body
+    assert "function switchMetaHotVideoOverlay(direction)" in body
+    assert "function scrollMetaHotCardIntoView(postId)" in body
     assert "mh-video-fullscreen" in body
+    assert 'data-post-id="${postId}"' in body
     assert "mh-video-overlay-download" in body
+    assert "overlay.dataset.currentPostId" in body
+    assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in body
 
 
 def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
