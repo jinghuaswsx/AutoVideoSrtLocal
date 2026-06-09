@@ -358,6 +358,57 @@ DXM03 写入仍遵守：
    - 未完成配对时，先用 DXM03 商品管理接口确认/更新采购链接，再触发 DXM03 1688 商品同步，最后用 DXM03 自己的 `pairProductId` 调用确认配对接口。
 5. `adjustable-claw-clippers-rjc` 的首版工作台数据源允许使用已人工确认并写入本地的 `source=mingkong_pair` SKU 行；后续明空产品库上线后，工作台候选区改为读取明空产品库，而不是每次实时访问 DXM02。
 
+## 2026-06-09 追加：明空 SKU 同步与页面标注
+
+针对本地产品没有任何 `media_product_skus` 行、但明空产品库已有同款 SKU 的场景，工作台提供管理员手动触发的“同步明空 SKU 到我们系统”动作：
+
+1. 后端先读本地 `media_product_skus`；如果已经存在 SKU 行，默认不覆盖，返回“本地已有 SKU”。
+2. 本地 SKU 为空时，按当前产品 code / 链接 / Shopify 商品 ID 读取 `mingkong_product_library.sku_rows_from_library()`。
+3. 明空本地库仍未命中时，允许定向调用 `refresh_product_from_dxm02()` 补采 DXM02-MK，并重新读取明空本地库。
+4. 写入 `media_product_skus` 时只落 Shopify variant、明空店小秘 SKU、明空 ERP 编码、明空商品名等候选字段，`source='mingkong_library'`，用于我们系统后续可见和人工核对。
+5. 该同步动作不代表 DXM03 已有 ERP SKU / 采购配对；确认写入 DXM03 时仍必须实时核验 DXM03 自己的商品管理 SKU 和待配对行。DXM03 找不到 SKU 时继续阻断，不用明空侧 `pairing_row_id` 跨账号写入。
+
+页面展示必须明确区分数据归属：
+
+1. 左侧区域展示“我们系统 / DXM03”维度：我们系统 Shopify variant、我们系统 SKU、DXM03 ERP 状态、DXM03 供应商、DXM03 1688 商品 ID、DXM03 1688 SKU ID、写入状态。
+2. 右侧区域展示“明空店小秘”维度：明空店小秘 SKU、明空店小秘 ERP 编码、明空店小秘商品名、明空供应商、明空 1688 商品 ID、明空 1688 SKU ID、明空组合组件。
+3. 页面中所有明空维度字段必须加“明空”前缀；所有 DXM03 维度字段必须加“DXM03”前缀；本地字段用“我们系统”前缀，避免混淆来源。
+
+## DXM02 到 DXM03 SKU 复刻规则
+
+当明空产品库或人工确认候选已经能定位到明空 DXM02 的 ERP 商品行，但 DXM03 商品管理中找不到同一个 SKU 时，工作台不能直接停在“缺 ERP SKU”。它应提供管理员确认的“创建/补齐 DXM03 SKU”动作，先把明空 SKU 设置复刻到 DXM03，再继续 1688 采购配对确认。
+
+复刻字段分三类处理：
+
+1. 可复刻字段：
+   - 商品 SKU：优先保持明空 `dxmCommodityProduct.sku` 不变。
+   - 店小秘商品编码 / SKUID：优先保持明空 `skuCode` 不变。
+   - 商品名、英文名、SPU、价格、重量、体积、图片、属性、报关信息等非账号身份字段。
+   - 采购来源 URL：优先使用工作台确认的 1688 采购链接；缺失时才沿用明空商品详情里的 `sourceUrl`。
+2. 必须重置字段：
+   - DXM02 账号身份与主键：`id`、`idStr`、`puid`、`parentId`、`productId`、`developmentId`。
+   - 明空仓库、货架、供应商主键：`warehouseId` / `warehoseId`、`goodsShelfId`、`supplierId`。
+   - 创建时间、更新时间、审核/同步状态等由 DXM03 重新生成的字段。
+3. 暂不跨账号复刻字段：
+   - 明空仓库库存、仓位、供货商 ID、采购关系 ID。
+   - 这些关系要在 DXM03 商品行存在后，通过 DXM03 1688 商品配对和 DXM03 自己的仓库/供应商数据生成。
+
+冲突避让规则：
+
+1. 复刻前先在 DXM03 商品管理用 SKU 精确搜索。
+   - 如同 SKU 已存在，视为 DXM03 已有商品，不重复创建；后续直接用该 DXM03 商品继续采购配对。
+2. SKU 不存在时，再用明空 `skuCode` / SKUID 精确搜索 DXM03。
+   - 如 `skuCode` 未冲突，原样复刻。
+   - 如 `skuCode` 已被其它 DXM03 商品占用，保持商品 SKU 不变，将 `skuCode` 改为 `{原 skuCode}-MK`；仍冲突时依次使用 `{原 skuCode}-MK2`、`{原 skuCode}-MK3`，最多尝试 20 次。
+3. 避让后的最终 `skuCode` 必须写回本地 `media_product_skus.dianxiaomi_sku_code`，并在工作台结果中展示“原明空 SKUID”和“DXM03 实际 SKUID”。
+4. 复刻完成后重新搜索 DXM03 商品管理，以 DXM03 返回的 `id`、`sku`、`skuCode` 为准，不使用 DXM02 的商品 ID。
+
+组合 SKU 的复刻顺序：
+
+1. 先复刻所有组件普通 SKU；组件缺失或冲突无法解决时，不创建外层组合 SKU。
+2. 组件在 DXM03 均存在后，再按 DXM02 外层组合 SKU 的 `childIds` / `childNums` 关系，在 DXM03 使用组件自己的商品 ID 组装组合 SKU。
+3. 首版如果缺少可验证的组合保存 payload，只在工作台展示组件复刻缺口，不自动提交外层组合保存。
+
 ## 验收
 
 1. 数据表迁移存在并可重复执行。

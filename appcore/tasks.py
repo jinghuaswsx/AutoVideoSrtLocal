@@ -4153,7 +4153,7 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE tasks SET status=%s, last_reason=NULL, "
-                    "updated_at=NOW() "
+                    "completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
                     "WHERE id=%s AND parent_task_id IS NOT NULL AND status=%s",
                     (CHILD_REVIEW, int(task_id), CHILD_ASSIGNED),
                 )
@@ -4253,13 +4253,36 @@ def confirm_child_step(
     finally:
         conn.close()
     _refresh_push_status_cache_for_child_task(int(task_id), row)
+    completion = complete_child_if_ready(
+        task_id=int(task_id),
+        actor_user_id=int(actor_user_id),
+    )
+    from appcore import pushes
+    updated_row = query_one(
+        "SELECT status, media_product_id, completed_at FROM tasks WHERE id=%s",
+        (int(task_id),),
+    )
+    if updated_row:
+        item = _find_child_task_target_lang_item(
+            task_id=int(task_id),
+            row=updated_row,
+            allow_source_fallback=True,
+        )
+        if item:
+            product = _find_product(updated_row["media_product_id"])
+            readiness = pushes.compute_readiness(item, product)
+            if pushes.is_ready(readiness) and not updated_row.get("completed_at"):
+                execute(
+                    "UPDATE tasks SET completed_at=NOW(), updated_at=NOW() WHERE id=%s",
+                    (int(task_id),),
+                )
     if normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY:
         return {
             "step_key": normalized_key,
-            "completed": False,
-            "status": row["status"],
+            "completed": completion.get("completed", False),
+            "status": completion.get("status", row["status"]),
         }
-    return {"step_key": normalized_key}
+    return {"step_key": normalized_key, "completion": completion}
 
 
 def unconfirm_child_step(
@@ -4629,6 +4652,25 @@ def submit_child_step_manual_output(
         task_id=int(task_id),
         actor_user_id=int(actor_user_id),
     )
+    from appcore import pushes
+    updated_row = query_one(
+        "SELECT status, media_product_id, completed_at FROM tasks WHERE id=%s",
+        (int(task_id),),
+    )
+    if updated_row:
+        item = _find_child_task_target_lang_item(
+            task_id=int(task_id),
+            row=updated_row,
+            allow_source_fallback=True,
+        )
+        if item:
+            product = _find_product(updated_row["media_product_id"])
+            readiness = pushes.compute_readiness(item, product)
+            if pushes.is_ready(readiness) and not updated_row.get("completed_at"):
+                execute(
+                    "UPDATE tasks SET completed_at=NOW(), updated_at=NOW() WHERE id=%s",
+                    (int(task_id),),
+                )
     return result
 
 
@@ -5118,7 +5160,13 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
         f"  {expr} AS employee_name, "
         "  SUM(CASE WHEN DATE(t.completed_at) BETWEEN %s AND %s AND ("
         "      (t.parent_task_id IS NULL AND t.status IN ('raw_done', 'all_done')) OR "
-        "      (t.parent_task_id IS NOT NULL AND t.status = 'done')"
+        "      (t.parent_task_id IS NOT NULL AND ("
+        "          t.status = 'done' OR "
+        "          (t.status IN ('assigned', 'review') AND EXISTS ("
+        "              SELECT 1 FROM media_push_status_cache psc "
+        "              WHERE psc.task_id = t.id AND psc.status = 'pending'"
+        "          ))"
+        "      ))"
         "  ) THEN 1 ELSE 0 END) AS today_completed, "
         "  SUM(CASE WHEN ("
         "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
@@ -5220,8 +5268,13 @@ def get_user_workload_stats(user_id: int) -> dict:
             
         # B. 今日已完成
         completed_today = False
-        if is_done_status and is_dt_today(t.get("completed_at")):
-            completed_today = True
+        if is_dt_today(t.get("completed_at")):
+            if parent_id is None:
+                if status in (PARENT_RAW_DONE, PARENT_ALL_DONE):
+                    completed_today = True
+            else:
+                if status == CHILD_DONE or is_pending_push:
+                    completed_today = True
         elif is_pending_push and tid in today_event_task_ids:
             completed_today = True
             

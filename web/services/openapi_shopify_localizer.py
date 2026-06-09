@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+from pathlib import PurePosixPath
+import re
 from typing import Callable
+from urllib.parse import unquote, urlparse
 
 from appcore import medias, product_link_domains, shopify_image_tasks
 from web.services.openapi_materials_serializers import media_download_url, serialize_shopify_image_task
@@ -24,6 +27,9 @@ CompleteTaskFn = Callable[[int, dict], dict]
 FailTaskFn = Callable[[int, str, str, dict], dict]
 SerializeShopifyImageTaskFn = Callable[[dict | None], dict | None]
 UpdateProductFn = Callable[..., int]
+SOURCE_INDEX_RE = re.compile(r"from_url_en_(\d+)_", re.I)
+SOURCE_TOKEN_RE = re.compile(r"([0-9a-f]{28,})", re.I)
+SOURCE_IMAGE_EXTENSIONS = ("webp", "jpg", "jpeg", "png", "gif", "avif")
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,58 @@ class ShopifyLocalizerBootstrapError(Exception):
     error: str
     status_code: int
     message: str | None = None
+
+
+def _source_index_from_filename(value: str | None) -> int | None:
+    match = SOURCE_INDEX_RE.search(str(value or ""))
+    return int(match.group(1)) if match else None
+
+
+def _source_token_from_filename(value: str | None) -> str | None:
+    match = SOURCE_TOKEN_RE.search(str(value or ""))
+    return match.group(1).lower() if match else None
+
+
+def _strip_wrapped_source_image_extension(stem: str) -> str:
+    normalized = str(stem or "").strip()
+    while normalized:
+        lowered = normalized.lower()
+        for ext in SOURCE_IMAGE_EXTENSIONS:
+            dot_suffix = f".{ext}"
+            underscore_suffix = f"_{ext}"
+            if lowered.endswith(dot_suffix):
+                normalized = normalized[: -len(dot_suffix)]
+                break
+            if lowered.endswith(underscore_suffix):
+                normalized = normalized[: -len(underscore_suffix)]
+                break
+        else:
+            break
+    return normalized
+
+
+def _source_name_key(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    path = urlparse(raw).path if "://" in raw or raw.startswith("//") else raw.split("?", 1)[0]
+    name = PurePosixPath(unquote(path).replace("\\", "/")).name
+    if not name:
+        return None
+    match = SOURCE_INDEX_RE.search(name)
+    if match:
+        name = name[match.end():]
+    stem = PurePosixPath(name).stem
+    normalized = _strip_wrapped_source_image_extension(stem).strip().lower()
+    return f"name:{normalized}" if normalized else None
+
+
+def _is_gif_candidate(filename: str | None, object_key: str | None) -> bool:
+    for value in (filename, object_key):
+        lowered = str(value or "").strip().lower().split("?", 1)[0]
+        if lowered.endswith(".gif"):
+            return True
+    return False
 
 
 def build_shopify_localizer_domains_response(
@@ -57,17 +115,33 @@ def _serialize_detail_images(
     *,
     media_download_url_fn: MediaDownloadUrlFn,
 ) -> list[dict]:
-    images = []
+    images: list[dict] = []
     for item in rows or []:
         object_key = (item.get("object_key") or "").strip()
+        filename = item.get("filename")
         if item.get("kind") != "detail" or not object_key:
+            continue
+        if _is_gif_candidate(filename, object_key):
             continue
         images.append({
             "id": item.get("id"),
             "kind": item.get("kind"),
-            "filename": item.get("filename"),
+            "filename": filename,
             "url": media_download_url_fn(object_key),
+            "source_index": _source_index_from_filename(filename),
+            "source_name_key": _source_name_key(filename),
+            "source_token": _source_token_from_filename(filename),
         })
+    token_counts: dict[str, int] = {}
+    for image in images:
+        token = image.get("source_token")
+        if token:
+            token_counts[token] = token_counts.get(token, 0) + 1
+    for image in images:
+        token = image.get("source_token")
+        duplicate_count = token_counts.get(token or "", 0)
+        image["source_duplicate_count"] = duplicate_count
+        image["source_duplicate"] = duplicate_count > 1
     return images
 
 
@@ -99,7 +173,7 @@ def build_shopify_localizer_bootstrap_response(
     is_valid_language_fn = is_valid_language_fn or medias.is_valid_language
     get_product_by_code_fn = get_product_by_code_fn or medias.get_product_by_code
     resolve_shopify_product_id_fn = resolve_shopify_product_id_fn or medias.resolve_shopify_product_id
-    list_reference_images_for_lang_fn = list_reference_images_for_lang_fn or medias.list_reference_images_for_lang
+    list_reference_images_for_lang_fn = list_reference_images_for_lang_fn or medias.list_shopify_localizer_images
     get_language_name_fn = get_language_name_fn or medias.get_language_name
     resolve_link_urls_fn = resolve_link_urls_fn or shopify_image_tasks.resolve_link_urls
 
