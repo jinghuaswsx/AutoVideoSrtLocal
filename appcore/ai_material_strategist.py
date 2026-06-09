@@ -9,6 +9,7 @@ import json
 import logging
 import math
 import re
+import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -52,6 +53,7 @@ _TASK_STATUS_LABELS = {
     "cancelled": "已取消",
 }
 _PROJECT_LOCK_NAME = "ai_material_strategist_single_running_project"
+_SHARE_TOKEN_BYTES = 24
 _PROGRESS_LOG_LIMIT = 12
 PROGRESS_STEPS: tuple[dict[str, str], ...] = (
     {"key": "snapshot", "label": "读取数据窗口", "description": "读取产品、广告、订单、明空素材新鲜度。"},
@@ -1619,8 +1621,8 @@ def _load_project_row(project_id: int) -> dict | None:
         """
         SELECT id, project_name, status, user_id, provider_code, model_id,
                data_window_json, data_snapshot_json, ranking_prompt_json,
-               ranking_result_json, summary_json, progress_json, error_message,
-               started_at, finished_at, created_at, updated_at
+               ranking_result_json, summary_json, progress_json, share_token,
+               share_enabled_at, error_message, started_at, finished_at, created_at, updated_at
         FROM ai_material_strategist_projects
         WHERE id = %s
         """,
@@ -1721,7 +1723,16 @@ def _select_products(candidates: list[dict], ranking: Mapping[str, Any]) -> list
 
 
 def _load_existing_product_results(project_id: int) -> dict[int, dict]:
-    rows = db.query(
+    rows = _load_project_product_rows(project_id)
+    return {
+        _safe_int(row.get("product_id")): _serialize_product_result(row)
+        for row in rows
+        if _safe_int(row.get("product_id"))
+    }
+
+
+def _load_project_product_rows(project_id: int) -> list[dict]:
+    return db.query(
         """
         SELECT id, project_id, rank_no, product_id, product_code, product_name, score,
                metrics_json, country_summary_json, local_materials_json,
@@ -1733,11 +1744,6 @@ def _load_existing_product_results(project_id: int) -> dict[int, dict]:
         """,
         (project_id,),
     )
-    return {
-        _safe_int(row.get("product_id")): _serialize_product_result(row)
-        for row in rows
-        if _safe_int(row.get("product_id"))
-    }
 
 
 def _runtime_result_from_stored(row: Mapping[str, Any]) -> dict:
@@ -1810,7 +1816,8 @@ def get_running_project() -> dict | None:
     row = db.query_one(
         """
         SELECT id, project_name, status, user_id, provider_code, model_id,
-               summary_json, progress_json, error_message, started_at, finished_at, created_at, updated_at
+               summary_json, progress_json, share_token, share_enabled_at,
+               error_message, started_at, finished_at, created_at, updated_at
         FROM ai_material_strategist_projects
         WHERE status = 'running'
         ORDER BY started_at DESC, id DESC
@@ -1835,7 +1842,8 @@ def create_project_record(user_id: int | None, project_name: str | None = None) 
             cur.execute(
                 """
                 SELECT id, project_name, status, user_id, provider_code, model_id,
-                       summary_json, progress_json, error_message, started_at, finished_at, created_at, updated_at
+                       summary_json, progress_json, share_token, share_enabled_at,
+                       error_message, started_at, finished_at, created_at, updated_at
                 FROM ai_material_strategist_projects
                 WHERE status = 'running'
                 ORDER BY started_at DESC, id DESC
@@ -2124,7 +2132,8 @@ def list_projects(limit: int = 30) -> list[dict]:
     rows = db.query(
         """
         SELECT id, project_name, status, user_id, provider_code, model_id,
-               summary_json, progress_json, error_message, started_at, finished_at, created_at, updated_at
+               summary_json, progress_json, share_token, share_enabled_at,
+               error_message, started_at, finished_at, created_at, updated_at
         FROM ai_material_strategist_projects
         ORDER BY id DESC
         LIMIT %s
@@ -2139,7 +2148,8 @@ def get_project(project_id: int) -> dict | None:
         """
         SELECT id, project_name, status, user_id, provider_code, model_id,
                data_window_json, data_snapshot_json, ranking_prompt_json,
-               ranking_result_json, summary_json, progress_json, error_message,
+               ranking_result_json, summary_json, progress_json, share_token,
+               share_enabled_at, error_message,
                started_at, finished_at, created_at, updated_at
         FROM ai_material_strategist_projects
         WHERE id = %s
@@ -2149,19 +2159,79 @@ def get_project(project_id: int) -> dict | None:
     if not row:
         return None
     project = _serialize_project_row(row, include_products=True)
-    product_rows = db.query(
+    product_rows = _load_project_product_rows(project_id)
+    project["products"] = [_serialize_product_result(row) for row in product_rows]
+    return project
+
+
+def ensure_project_share(project_id: int) -> dict | None:
+    project_id = _safe_int(project_id)
+    if not project_id:
+        return None
+    row = db.query_one(
         """
-        SELECT id, project_id, rank_no, product_id, product_code, product_name, score,
-               metrics_json, country_summary_json, local_materials_json,
-               mingkong_materials_json, ai_result_json, action_items_json,
-               created_at, updated_at
-        FROM ai_material_strategist_product_results
-        WHERE project_id = %s
-        ORDER BY rank_no ASC, id ASC
+        SELECT id, share_token, share_enabled_at
+        FROM ai_material_strategist_projects
+        WHERE id = %s
         """,
         (project_id,),
     )
-    project["products"] = [_serialize_product_result(row) for row in product_rows]
+    if not row:
+        return None
+    if row.get("share_token"):
+        return _serialize_share_row(row)
+
+    for _ in range(5):
+        token = secrets.token_urlsafe(_SHARE_TOKEN_BYTES)
+        try:
+            db.execute(
+                """
+                UPDATE ai_material_strategist_projects
+                SET share_token = %s,
+                    share_enabled_at = COALESCE(share_enabled_at, NOW()),
+                    updated_at = NOW()
+                WHERE id = %s AND (share_token IS NULL OR share_token = '')
+                """,
+                (token, project_id),
+            )
+        except Exception as exc:
+            if _is_duplicate_key_error(exc):
+                continue
+            raise
+        row = db.query_one(
+            """
+            SELECT id, share_token, share_enabled_at
+            FROM ai_material_strategist_projects
+            WHERE id = %s
+            """,
+            (project_id,),
+        )
+        if row and row.get("share_token"):
+            return _serialize_share_row(row)
+    raise RuntimeError("生成 AI素材军师分享链接失败，请重试")
+
+
+def get_project_by_share_token(share_token: str) -> dict | None:
+    token = str(share_token or "").strip()
+    if not token:
+        return None
+    row = db.query_one(
+        """
+        SELECT id, project_name, status, user_id, provider_code, model_id,
+               data_window_json, data_snapshot_json, ranking_prompt_json,
+               ranking_result_json, summary_json, progress_json, share_token,
+               share_enabled_at, error_message,
+               started_at, finished_at, created_at, updated_at
+        FROM ai_material_strategist_projects
+        WHERE share_token = %s
+        """,
+        (token,),
+    )
+    if not row:
+        return None
+    project = _serialize_project_row(row, include_products=True)
+    product_rows = _load_project_product_rows(_safe_int(row.get("id")))
+    project["products"] = [_serialize_product_result(item) for item in product_rows]
     return project
 
 
@@ -2177,6 +2247,8 @@ def _serialize_project_row(row: Mapping[str, Any], *, include_products: bool) ->
         "user_id": row.get("user_id"),
         "provider_code": row.get("provider_code") or PROVIDER_CODE,
         "model_id": row.get("model_id") or MODEL_ID,
+        "has_share": bool(row.get("share_token")),
+        "share_enabled_at": _iso(row.get("share_enabled_at")),
         "summary": _json_loads(row.get("summary_json"), {}) or {},
         "progress": progress,
         "error_message": row.get("error_message") or "",
@@ -2193,6 +2265,19 @@ def _serialize_project_row(row: Mapping[str, Any], *, include_products: bool) ->
             "ranking_result": _json_loads(row.get("ranking_result_json"), {}) or {},
         })
     return out
+
+
+def _serialize_share_row(row: Mapping[str, Any]) -> dict:
+    return {
+        "project_id": _safe_int(row.get("id")),
+        "share_token": row.get("share_token") or "",
+        "share_enabled_at": _iso(row.get("share_enabled_at")),
+    }
+
+
+def _is_duplicate_key_error(exc: Exception) -> bool:
+    args = getattr(exc, "args", ())
+    return bool(args and args[0] == 1062)
 
 
 def _serialize_product_result(row: Mapping[str, Any]) -> dict:

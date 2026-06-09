@@ -464,6 +464,17 @@ def test_replace_product_skus_preserves_manual_override_rows(monkeypatch):
     assert delete_calls == [(103, 104)]
 
 
+def test_normalize_sku_pair_drops_out_of_range_shopify_weight():
+    from appcore import medias
+
+    normalized = medias._normalize_sku_pair({
+        "shopify_variant_id": "variant-1",
+        "shopify_weight_grams": "1000000000",
+    })
+
+    assert normalized["shopify_weight_grams"] is None
+
+
 def test_build_pair_rows_keeps_dianxiaomi_product_sku_separate_from_pair_key():
     from tools.dianxiaomi_sku_sync import build_pair_rows
 

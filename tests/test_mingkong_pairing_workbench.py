@@ -387,6 +387,68 @@ def test_build_workbench_payload_uses_full_shopify_base_then_fills_mingkong(monk
     assert payload["items"][1]["mingkong"]["sku_id_alibaba"] == "1688-purple"
 
 
+def test_full_shopify_base_prefers_informative_mingkong_title_match_over_empty_variant_match(monkeypatch):
+    product = {
+        "id": 769,
+        "product_code": "wall-repair-cream-rjc",
+        "product_link": "https://example.test/products/wall-repair-cream-rjc",
+    }
+    full_base = [
+        {
+            "shopify_product_id": "our-shopify-product",
+            "shopify_variant_id": "empty-mk-variant",
+            "shopify_variant_title": "1x Wall Repair Cream",
+            "source": "shopify_public",
+        }
+    ]
+    mingkong_rows = [
+        {
+            "shopify_product_id": "empty-mk-product",
+            "shopify_variant_id": "empty-mk-variant",
+            "shopify_variant_title": "1x Wall Repair Cream",
+            "source": "mingkong_library",
+        },
+        {
+            "shopify_product_id": "configured-mk-product",
+            "shopify_variant_id": "configured-mk-variant",
+            "shopify_variant_title": "1x Wall Repair Cream",
+            "dianxiaomi_sku": "49211474542878",
+            "dianxiaomi_sku_code": "98008768",
+            "dianxiaomi_name": "补墙膏 1 件",
+            "source": "mingkong_library",
+            "purchase_1688_url": "https://detail.1688.com/offer/624802943115.html",
+            "mingkong_procurement": {
+                "alibaba_product_id": "624802943115",
+                "sku_id_alibaba": "1688-sku-1",
+            },
+        },
+    ]
+
+    monkeypatch.setattr(
+        pairing.mingkong_product_library,
+        "public_shopify_sku_rows_from_product",
+        lambda _product: full_base,
+    )
+    monkeypatch.setattr(
+        pairing.mingkong_product_library,
+        "sku_rows_from_library",
+        lambda _product: mingkong_rows,
+    )
+
+    payload = pairing.build_workbench_payload(
+        product,
+        [],
+        include_live=False,
+        include_mingkong_reference=True,
+    )
+
+    assert payload["items"][0]["shopify_variant_id"] == "empty-mk-variant"
+    assert payload["items"][0]["dianxiaomi_sku"] == "49211474542878"
+    assert payload["items"][0]["dianxiaomi_sku_code"] == "98008768"
+    assert payload["items"][0]["purchase_1688_url"] == "https://detail.1688.com/offer/624802943115.html"
+    assert payload["items"][0]["mingkong"]["sku_id_alibaba"] == "1688-sku-1"
+
+
 def test_build_mingkong_library_sku_import_payload_refreshes_and_converts(monkeypatch):
     product = {"id": 747, "product_code": "sample-rjc", "shopifyid": "shopify-product"}
     calls = {"library": 0, "refresh": 0}
@@ -1057,6 +1119,86 @@ def test_confirm_dxm03_pairing_preserves_existing_configured_single_sku(monkeypa
     assert result["logs"][1]["level"] == "ok"
 
 
+def test_confirm_dxm03_pairing_can_overwrite_existing_configured_single_sku(monkeypatch):
+    calls = {"update": [], "check": [], "confirm": [], "search_pair": 0}
+
+    @contextmanager
+    def fake_lock(**_kwargs):
+        yield
+
+    def fake_search_pair(_ctx, _sku):
+        calls["search_pair"] += 1
+        if calls["search_pair"] == 1:
+            return {
+                "pair_row_id": "pair-row",
+                "is_paired": True,
+                "alibaba_product_id": "123",
+                "sku_id_alibaba": "old-sku-id",
+            }
+        return {
+            "pair_row_id": "pair-row",
+            "is_paired": True,
+            "alibaba_product_id": "456",
+            "sku_id_alibaba": "new-sku-id",
+        }
+
+    monkeypatch.setattr(pairing, "browser_automation_lock", fake_lock)
+    monkeypatch.setattr(pairing, "_open_dxm03_context", lambda _url: ("pw", "browser", "ctx"))
+    monkeypatch.setattr(pairing, "_close_dxm03_context", lambda _playwright, _browser: None)
+    monkeypatch.setattr(
+        pairing,
+        "_search_commodity",
+        lambda _ctx, _sku: {
+            "id": "single-product",
+            "is_combo": False,
+            "source_url": "https://detail.1688.com/offer/old.html",
+        },
+    )
+    monkeypatch.setattr(pairing, "_search_pair", fake_search_pair)
+    monkeypatch.setattr(
+        pairing,
+        "_update_source_url",
+        lambda _ctx, commodity_id, purchase_url: calls["update"].append((commodity_id, purchase_url)) or {},
+    )
+    monkeypatch.setattr(
+        pairing,
+        "_check_pair",
+        lambda _ctx, product_id, sku_id: calls["check"].append((product_id, sku_id)) or {},
+    )
+    monkeypatch.setattr(
+        pairing,
+        "_confirm_pair",
+        lambda _ctx, **kwargs: calls["confirm"].append(kwargs) or {},
+    )
+
+    result = pairing.confirm_dxm03_pairing(
+        {"id": 1, "product_code": "sample-rjc", "purchase_1688_url": ""},
+        [{
+            "shopify_variant_id": "variant-1",
+            "dianxiaomi_sku": "sku-1",
+            "purchase_1688_url": "https://detail.1688.com/offer/456.html",
+        }],
+        selections=[{
+            "shopify_variant_id": "variant-1",
+            "dianxiaomi_sku": "sku-1",
+            "purchase_1688_url": "https://detail.1688.com/offer/456.html",
+            "product_id_alibaba": "456",
+            "sku_id_alibaba": "new-sku-id",
+        }],
+        preserve_existing_pairing=False,
+    )
+
+    assert result["ok"] is True
+    assert result["items"][0]["status"] == "confirmed"
+    assert calls["update"] == [("single-product", "https://detail.1688.com/offer/456.html")]
+    assert calls["check"] == [("456", "new-sku-id")]
+    assert calls["confirm"] == [{
+        "pair_row_id": "pair-row",
+        "product_id_alibaba": "456",
+        "sku_id_alibaba": "new-sku-id",
+    }]
+
+
 def test_replicated_commodity_form_clears_account_bound_fields():
     detail = {
         "productDTO": {
@@ -1405,3 +1547,85 @@ def test_replicate_mingkong_sku_creates_combo_from_target_components(monkeypatch
     assert created_product["childNums"] == "2"
     assert added["payload"]["shopId"] == "-1"
     assert replaced["pairs"][0]["dianxiaomi_sku_code"] == "combo-code"
+
+
+def test_replicate_mingkong_sku_creates_components_before_combo(monkeypatch):
+    @contextmanager
+    def fake_lock(**_kwargs):
+        yield
+
+    created = {"child": False}
+    add_calls = []
+
+    def fake_search(ctx, sku):
+        if ctx == "source" and sku == "combo-sku":
+            return {"id": "mk-combo", "sku": sku, "sku_code": "combo-code", "is_combo": True}
+        if ctx == "source" and sku == "child-sku":
+            return {"id": "mk-child", "sku": sku, "sku_code": "child-code", "is_combo": False}
+        if ctx == "target" and sku == "child-sku" and created["child"]:
+            return {"id": "dxm03-child", "sku": sku, "sku_code": "child-code", "name": "组件"}
+        return None
+
+    def fake_wait(_ctx, sku):
+        if sku == "child-sku":
+            created["child"] = True
+            return {"id": "dxm03-child", "sku": sku, "sku_code": "child-code", "name": "组件"}
+        if sku == "combo-sku":
+            return {"id": "dxm03-combo", "sku": sku, "sku_code": "combo-code", "name": "组合"}
+        return None
+
+    monkeypatch.setattr(pairing, "browser_automation_lock", fake_lock)
+    monkeypatch.setattr(pairing, "_open_dxm02_context", lambda _url: ("spw", "sbrowser", "source"))
+    monkeypatch.setattr(pairing, "_connect_dxm_context", lambda _playwright, _url: ("tbrowser", "target"))
+    monkeypatch.setattr(pairing, "_close_dxm03_context", lambda _playwright, _browser: None)
+    monkeypatch.setattr(pairing, "_search_commodity", fake_search)
+    monkeypatch.setattr(
+        pairing,
+        "_search_child_sku_info",
+        lambda _ctx, _product_id: [{"sku": "child-sku", "quantity": 1}],
+    )
+    monkeypatch.setattr(
+        pairing,
+        "_view_commodity_detail",
+        lambda _ctx, product_id, **_kwargs: {
+            "productDTO": {
+                "dxmCommodityProduct": {
+                    "id": product_id,
+                    "name": "商品",
+                    "sku": "combo-sku" if product_id == "mk-combo" else "child-sku",
+                    "skuCode": "combo-code" if product_id == "mk-combo" else "child-code",
+                    "groupState": 1 if product_id == "mk-combo" else 0,
+                    "productType": "100",
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(pairing, "_target_sku_code", lambda _ctx, sku_code, **_kwargs: (sku_code, "preserved"))
+    monkeypatch.setattr(pairing, "_add_replicated_commodity", lambda *_args, **_kwargs: add_calls.append("child") or {})
+    monkeypatch.setattr(pairing, "_add_replicated_combo_commodity", lambda *_args, **_kwargs: add_calls.append("combo") or {})
+    monkeypatch.setattr(pairing, "_wait_for_commodity", fake_wait)
+
+    result = pairing.replicate_mingkong_skus_to_dxm03(
+        {"id": 747, "product_code": "combo-rjc", "purchase_1688_url": ""},
+        [
+            {
+                "shopify_variant_id": "combo-variant",
+                "shopify_variant_title": "Combo",
+                "dianxiaomi_sku": "combo-sku",
+                "dianxiaomi_sku_code": "combo-code",
+                "is_combo": True,
+            },
+            {
+                "shopify_variant_id": "child-variant",
+                "shopify_variant_title": "Child",
+                "dianxiaomi_sku": "child-sku",
+                "dianxiaomi_sku_code": "child-code",
+            },
+        ],
+        replace_product_skus_fn=lambda *_args, **_kwargs: {"inserted": 0, "updated": 2, "deleted": 0, "preserved": 0},
+        update_product_fn=lambda *_args, **_kwargs: 1,
+    )
+
+    assert result["ok"] is True
+    assert [item["status"] for item in result["items"]] == ["created", "created"]
+    assert add_calls == ["child", "combo"]
