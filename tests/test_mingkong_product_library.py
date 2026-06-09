@@ -33,6 +33,25 @@ def test_mingkong_product_library_migration_declares_tables_and_indexes():
         assert key in body
 
 
+def test_mingkong_product_library_migration_keeps_long_source_urls_as_text():
+    body = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "2026_06_09_mingkong_product_library.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "source_url TEXT NULL" in body
+    assert "dxm_source_url TEXT NULL" in body
+    assert "purchase_1688_url TEXT NULL" in body
+    assert "ALTER TABLE mingkong_products" in body
+    assert "MODIFY source_url TEXT NULL" in body
+    assert "ALTER TABLE mingkong_product_variants" in body
+    assert "MODIFY dxm_source_url TEXT NULL" in body
+    assert "ALTER TABLE mingkong_procurement_links" in body
+    assert "MODIFY purchase_1688_url TEXT NULL" in body
+
+
 def test_mingkong_product_library_scheduler_registered():
     from appcore import scheduled_tasks
 

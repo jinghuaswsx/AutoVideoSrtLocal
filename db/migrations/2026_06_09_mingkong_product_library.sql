@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS mingkong_products (
   mk_title VARCHAR(512) DEFAULT NULL,
   mk_title_cn VARCHAR(512) DEFAULT NULL,
   mk_main_image_url VARCHAR(1000) DEFAULT NULL,
-  source_url VARCHAR(1000) DEFAULT NULL,
+  source_url TEXT NULL,
   shopify_created_at DATETIME DEFAULT NULL,
   shopify_updated_at DATETIME DEFAULT NULL,
   first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS mingkong_product_variants (
   dxm_name VARCHAR(512) DEFAULT NULL,
   dxm_name_en VARCHAR(512) DEFAULT NULL,
   dxm_img_url VARCHAR(1000) DEFAULT NULL,
-  dxm_source_url VARCHAR(1000) DEFAULT NULL,
+  dxm_source_url TEXT NULL,
   relation_flag TINYINT(1) NOT NULL DEFAULT 0,
   group_state INT NOT NULL DEFAULT 0,
   is_combo TINYINT(1) NOT NULL DEFAULT 0,
@@ -103,8 +103,8 @@ CREATE TABLE IF NOT EXISTS mingkong_procurement_links (
   sku_code VARCHAR(64) DEFAULT NULL,
   dxm_product_id VARCHAR(64) DEFAULT NULL,
   dxm_name VARCHAR(512) DEFAULT NULL,
-  purchase_1688_url VARCHAR(1000) DEFAULT NULL,
-  source_url VARCHAR(1000) DEFAULT NULL,
+  purchase_1688_url TEXT NULL,
+  source_url TEXT NULL,
   alibaba_product_id VARCHAR(64) DEFAULT NULL,
   sku_id_alibaba VARCHAR(64) DEFAULT NULL,
   supplier_id VARCHAR(64) DEFAULT NULL,
@@ -119,3 +119,13 @@ CREATE TABLE IF NOT EXISTS mingkong_procurement_links (
   KEY idx_mk_proc_variant (mingkong_variant_id),
   KEY idx_mk_proc_state (pairing_state)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE mingkong_products
+  MODIFY source_url TEXT NULL;
+
+ALTER TABLE mingkong_product_variants
+  MODIFY dxm_source_url TEXT NULL;
+
+ALTER TABLE mingkong_procurement_links
+  MODIFY purchase_1688_url TEXT NULL,
+  MODIFY source_url TEXT NULL;

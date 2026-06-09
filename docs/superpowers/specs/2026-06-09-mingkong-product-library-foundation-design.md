@@ -300,6 +300,12 @@ DXM03 写入仍遵守：
 5. 每个候选行继续实时核验 DXM03 商品管理和 DXM03 采购配对状态。
 6. 明空采购候选只作为人工确认默认值；写入 DXM03 时仍必须使用 DXM03 自己的待配对行。
 
+首轮全量同步修正：
+
+- DXM02-MK 全量 Shopify 商品里存在超过 1000 字符的来源 URL，`source_url` 不应使用 `VARCHAR(1000)`。
+- `mingkong_products.source_url`、`mingkong_product_variants.dxm_source_url`、`mingkong_procurement_links.purchase_1688_url/source_url` 使用 `TEXT`。
+- 迁移文件必须同时包含 `CREATE TABLE` 的 `TEXT` 定义和对既有表的 `ALTER TABLE ... MODIFY ... TEXT NULL`，确保线上已创建表后重新执行同步也能自愈。
+
 ## adjustable-claw-clippers-rjc 当前预期
 
 本地产品：
