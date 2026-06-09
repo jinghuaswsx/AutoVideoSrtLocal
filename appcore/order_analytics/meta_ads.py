@@ -1420,6 +1420,7 @@ def get_ads_level_list(
     for row in rows or []:
         name = row.get("name")
         country_code = extract_market_country(name)
+        row["country_code"] = country_code
         if country_code:
             country_name = _CODE_TO_NAME.get(country_code, country_code)
             available_countries_set.add((country_code, country_name))
@@ -1443,6 +1444,7 @@ def get_ads_level_list(
         out.append({
             "code": row.get("code"),
             "name": row.get("name"),
+            "country_code": row.get("country_code"),
             "ad_account_id": row.get("ad_account_id"),
             "ad_account_name": row.get("ad_account_name"),
             "matched_product_code": row.get("matched_product_code"),
