@@ -51,6 +51,23 @@ _TASK_STATUS_LABELS = {
     "completed": "已完成",
     "cancelled": "已取消",
 }
+_PROJECT_LOCK_NAME = "ai_material_strategist_single_running_project"
+_PROGRESS_LOG_LIMIT = 12
+PROGRESS_STEPS: tuple[dict[str, str], ...] = (
+    {"key": "snapshot", "label": "读取数据窗口", "description": "读取产品、广告、订单、明空素材新鲜度。"},
+    {"key": "candidate_score", "label": "规则预筛打分", "description": "按消耗、订单、ROAS、广告数筛选候选品。"},
+    {"key": "ai_ranking", "label": "Top 20 AI 复评", "description": "分批调用 GOOGLEWJ Gemini 复评候选产品。"},
+    {"key": "material_context", "label": "补齐素材上下文", "description": "读取国家反馈、本地素材、明空素材和任务中心排程。"},
+    {"key": "product_analysis", "label": "逐产品分析", "description": "逐个产品分析国家、素材、任务去重和补素材建议。"},
+    {"key": "persist", "label": "保存结果", "description": "写入 Top 产品、AI 建议和操作入口。"},
+    {"key": "summary", "label": "汇总结论", "description": "生成项目级统计和完成状态。"},
+)
+
+
+class ProjectAlreadyRunningError(RuntimeError):
+    def __init__(self, project: Mapping[str, Any] | None = None):
+        super().__init__("已有 AI素材军师项目正在运行")
+        self.project = dict(project or {})
 
 
 def _json_default(value: Any) -> Any:
@@ -74,6 +91,111 @@ def _json_loads(value: Any, default: Any = None) -> Any:
         return json.loads(value)
     except (TypeError, ValueError):
         return default
+
+
+def _now_iso() -> str:
+    return datetime.now().isoformat(sep=" ", timespec="seconds")
+
+
+def _initial_progress(*, message: str = "已创建，等待后台任务启动。") -> dict[str, Any]:
+    now = _now_iso()
+    return {
+        "status": "running",
+        "percent": 0,
+        "current_step": "queued",
+        "current_step_label": "等待启动",
+        "message": message,
+        "steps": [
+            {
+                "key": step["key"],
+                "label": step["label"],
+                "description": step["description"],
+                "status": "pending",
+                "message": "",
+                "started_at": None,
+                "finished_at": None,
+            }
+            for step in PROGRESS_STEPS
+        ],
+        "product_progress": {
+            "current_index": 0,
+            "total": 0,
+            "current_product_id": None,
+            "current_product_code": "",
+            "current_product_name": "",
+        },
+        "logs": [{"time": now, "level": "info", "message": message}],
+        "updated_at": now,
+    }
+
+
+def _step_label(step_key: str) -> str:
+    return next((step["label"] for step in PROGRESS_STEPS if step["key"] == step_key), step_key)
+
+
+def _progress_step_index(step_key: str) -> int:
+    for index, step in enumerate(PROGRESS_STEPS):
+        if step["key"] == step_key:
+            return index
+    return -1
+
+
+def _progress_update(
+    progress: dict[str, Any],
+    *,
+    step_key: str,
+    step_status: str,
+    percent: float,
+    message: str,
+    project_status: str = "running",
+    product_progress: Mapping[str, Any] | None = None,
+    level: str = "info",
+) -> dict[str, Any]:
+    now = _now_iso()
+    step_index = _progress_step_index(step_key)
+    for index, step in enumerate(progress.get("steps") or []):
+        if step.get("key") == step_key:
+            step["status"] = step_status
+            step["message"] = message
+            if step_status == "running" and not step.get("started_at"):
+                step["started_at"] = now
+            if step_status in {"done", "failed"}:
+                step["finished_at"] = now
+                if not step.get("started_at"):
+                    step["started_at"] = now
+        elif step_index >= 0:
+            if index < step_index and step.get("status") in {"pending", "running"}:
+                step["status"] = "done"
+                if not step.get("started_at"):
+                    step["started_at"] = now
+                step["finished_at"] = step.get("finished_at") or now
+            if step_status == "failed" and index > step_index and step.get("status") == "pending":
+                step["status"] = "skipped"
+
+    if product_progress is not None:
+        current_product = dict(progress.get("product_progress") or {})
+        current_product.update(dict(product_progress))
+        progress["product_progress"] = current_product
+
+    logs = list(progress.get("logs") or [])
+    logs.append({"time": now, "level": level, "message": message})
+    progress.update({
+        "status": project_status,
+        "percent": int(round(_clamp(float(percent), 0, 100))),
+        "current_step": step_key,
+        "current_step_label": _step_label(step_key),
+        "message": message,
+        "logs": logs[-_PROGRESS_LOG_LIMIT:],
+        "updated_at": now,
+    })
+    return progress
+
+
+def _save_progress(project_id: int, progress: Mapping[str, Any]) -> None:
+    db.execute(
+        "UPDATE ai_material_strategist_projects SET progress_json=%s, updated_at=NOW() WHERE id=%s",
+        (_json_dumps(progress), project_id),
+    )
 
 
 def _safe_float(value: Any) -> float:
@@ -1353,23 +1475,109 @@ def _summarize_project(products: list[dict], ranking: dict, snapshot: dict) -> d
     }
 
 
+def get_running_project() -> dict | None:
+    row = db.query_one(
+        """
+        SELECT id, project_name, status, user_id, provider_code, model_id,
+               summary_json, progress_json, error_message, started_at, finished_at, created_at, updated_at
+        FROM ai_material_strategist_projects
+        WHERE status = 'running'
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1
+        """
+    )
+    return _serialize_project_row(row, include_products=False) if row else None
+
+
 def create_project_record(user_id: int | None, project_name: str | None = None) -> dict:
     name = (project_name or "").strip() or f"AI素材军师 {datetime.now():%Y-%m-%d %H:%M}"
-    project_id = db.execute(
-        """
-        INSERT INTO ai_material_strategist_projects
-          (project_name, status, user_id, provider_code, model_id, started_at)
-        VALUES (%s, 'running', %s, %s, %s, NOW())
-        """,
-        (name, user_id, PROVIDER_CODE, MODEL_ID),
-    )
+    initial_progress = _initial_progress()
+    conn = db.get_conn()
+    locked = False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT GET_LOCK(%s, 3) AS lock_ok", (_PROJECT_LOCK_NAME,))
+            lock_row = cur.fetchone() or {}
+            locked = _safe_int(lock_row.get("lock_ok")) == 1
+            if not locked:
+                raise ProjectAlreadyRunningError(get_running_project())
+            cur.execute(
+                """
+                SELECT id, project_name, status, user_id, provider_code, model_id,
+                       summary_json, progress_json, error_message, started_at, finished_at, created_at, updated_at
+                FROM ai_material_strategist_projects
+                WHERE status = 'running'
+                ORDER BY started_at DESC, id DESC
+                LIMIT 1
+                """
+            )
+            running = cur.fetchone()
+            if running:
+                raise ProjectAlreadyRunningError(_serialize_project_row(running, include_products=False))
+            cur.execute(
+                """
+                INSERT INTO ai_material_strategist_projects
+                  (project_name, status, user_id, provider_code, model_id, progress_json, started_at)
+                VALUES (%s, 'running', %s, %s, %s, %s, NOW())
+                """,
+                (name, user_id, PROVIDER_CODE, MODEL_ID, _json_dumps(initial_progress)),
+            )
+            project_id = cur.lastrowid
+    finally:
+        try:
+            if locked:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT RELEASE_LOCK(%s)", (_PROJECT_LOCK_NAME,))
+        finally:
+            conn.close()
     return get_project(project_id) or {"id": project_id, "project_name": name, "status": "running"}
 
 
 def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
+    progress = _initial_progress(message="后台任务已启动。")
+
+    def checkpoint(
+        step_key: str,
+        step_status: str,
+        percent: float,
+        message: str,
+        *,
+        product_progress: Mapping[str, Any] | None = None,
+        project_status: str = "running",
+        level: str = "info",
+    ) -> None:
+        nonlocal progress
+        progress = _progress_update(
+            progress,
+            step_key=step_key,
+            step_status=step_status,
+            percent=percent,
+            message=message,
+            product_progress=product_progress,
+            project_status=project_status,
+            level=level,
+        )
+        _save_progress(project_id, progress)
+
     try:
+        checkpoint("snapshot", "running", 4, "读取数据窗口、产品、广告、订单和数据新鲜度。")
         snapshot = build_data_snapshot()
+        product_count = len(snapshot.get("products") or [])
+        checkpoint(
+            "snapshot",
+            "done",
+            14,
+            f"数据快照完成，读取到 {product_count} 个产品。",
+        )
+        checkpoint("candidate_score", "running", 18, "按量级、ROAS、订单和广告数做规则预筛。")
         candidates = score_product_rows(snapshot["products"], limit=_MAX_AI_CANDIDATES)
+        checkpoint(
+            "candidate_score",
+            "done",
+            28,
+            f"规则预筛完成，{len(candidates)} 个候选进入 AI 复评。",
+        )
+        checkpoint("ai_ranking", "running", 32, "调用 GOOGLEWJ Gemini 分批复评 Top 20。")
         ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
         candidate_by_id = {_safe_int(item.get("product_id")): item for item in candidates}
         selected = [candidate_by_id[pid] for pid in ranking["selected_product_ids"] if pid in candidate_by_id]
@@ -1377,17 +1585,36 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
             seen = {_safe_int(item.get("product_id")) for item in selected}
             selected.extend(item for item in candidates if _safe_int(item.get("product_id")) not in seen)
             selected = selected[:_PROJECT_TOP_N]
+        checkpoint("ai_ranking", "done", 42, f"Top 产品选择完成，进入逐产品分析 {len(selected)} 个。")
 
         product_ids = [_safe_int(item.get("product_id")) for item in selected]
+        checkpoint("material_context", "running", 46, "读取国家反馈、本地素材、明空素材和任务中心排程。")
         countries_by_product = _load_country_summaries(product_ids)
         local_by_product = _load_local_materials(product_ids)
         tasks_by_product = _load_task_assignments(product_ids)
         mk_by_code = _load_mingkong_materials([str(item.get("product_code") or "") for item in selected])
+        checkpoint("material_context", "done", 54, "素材上下文读取完成，开始逐产品 AI 分析。")
 
         results: list[dict] = []
+        total_products = len(selected)
         for rank_no, product in enumerate(selected, start=1):
             code_key = str(product.get("product_code") or "").strip().lower()
             product_id = _safe_int(product.get("product_id"))
+            product_progress = {
+                "current_index": rank_no,
+                "total": total_products,
+                "current_product_id": product_id,
+                "current_product_code": product.get("product_code") or "",
+                "current_product_name": product.get("product_name") or "",
+            }
+            start_percent = 54 + ((rank_no - 1) / max(total_products, 1)) * 30
+            checkpoint(
+                "product_analysis",
+                "running",
+                start_percent,
+                f"分析第 {rank_no}/{total_products} 个产品：{product.get('product_code') or product.get('product_name') or product_id}",
+                product_progress=product_progress,
+            )
             task_assignments = tasks_by_product.get(product_id) or []
             countries = _enrich_country_summaries_with_tasks(
                 countries_by_product.get(product_id) or [],
@@ -1415,7 +1642,16 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
                 "ai_result": ai_result,
                 "action_items": action_items,
             })
+            done_percent = 54 + (rank_no / max(total_products, 1)) * 30
+            checkpoint(
+                "product_analysis",
+                "running" if rank_no < total_products else "done",
+                done_percent,
+                f"已完成第 {rank_no}/{total_products} 个产品分析。",
+                product_progress=product_progress,
+            )
 
+        checkpoint("persist", "running", 88, "保存 Top 产品、AI 建议、任务去重结果和操作入口。")
         db.execute("DELETE FROM ai_material_strategist_product_results WHERE project_id = %s", (project_id,))
         for item in results:
             product = item["product"]
@@ -1443,7 +1679,17 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
                 ),
             )
 
+        checkpoint("persist", "done", 94, "产品结果保存完成，开始汇总结论。")
+        checkpoint("summary", "running", 96, "汇总 P0/P1、主动作和数据质量。")
         summary = _summarize_project(results, ranking, snapshot)
+        progress = _progress_update(
+            progress,
+            step_key="summary",
+            step_status="done",
+            percent=100,
+            message="项目运行完成。",
+            project_status="success",
+        )
         db.execute(
             """
             UPDATE ai_material_strategist_projects
@@ -1453,6 +1699,7 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
                 ranking_prompt_json = %s,
                 ranking_result_json = %s,
                 summary_json = %s,
+                progress_json = %s,
                 error_message = NULL,
                 finished_at = NOW()
             WHERE id = %s
@@ -1469,18 +1716,29 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
                 _json_dumps(ranking.get("prompt_debug") or {}),
                 _json_dumps(ranking.get("ranking_result") or {}),
                 _json_dumps(summary),
+                _json_dumps(progress),
                 project_id,
             ),
         )
     except Exception as exc:
         log.exception("AI material strategist project failed project_id=%s", project_id)
+        failed_step = str(progress.get("current_step") or "snapshot")
+        progress = _progress_update(
+            progress,
+            step_key=failed_step if failed_step != "queued" else "snapshot",
+            step_status="failed",
+            percent=_safe_float(progress.get("percent")),
+            message=f"项目运行失败：{exc}",
+            project_status="failed",
+            level="error",
+        )
         db.execute(
             """
             UPDATE ai_material_strategist_projects
-            SET status = 'failed', error_message = %s, finished_at = NOW()
+            SET status = 'failed', error_message = %s, progress_json = %s, finished_at = NOW()
             WHERE id = %s
             """,
-            (str(exc), project_id),
+            (str(exc), _json_dumps(progress), project_id),
         )
     return get_project(project_id) or {"id": project_id, "status": "failed"}
 
@@ -1499,7 +1757,7 @@ def list_projects(limit: int = 30) -> list[dict]:
     rows = db.query(
         """
         SELECT id, project_name, status, user_id, provider_code, model_id,
-               summary_json, error_message, started_at, finished_at, created_at, updated_at
+               summary_json, progress_json, error_message, started_at, finished_at, created_at, updated_at
         FROM ai_material_strategist_projects
         ORDER BY id DESC
         LIMIT %s
@@ -1514,7 +1772,7 @@ def get_project(project_id: int) -> dict | None:
         """
         SELECT id, project_name, status, user_id, provider_code, model_id,
                data_window_json, data_snapshot_json, ranking_prompt_json,
-               ranking_result_json, summary_json, error_message,
+               ranking_result_json, summary_json, progress_json, error_message,
                started_at, finished_at, created_at, updated_at
         FROM ai_material_strategist_projects
         WHERE id = %s
@@ -1541,14 +1799,19 @@ def get_project(project_id: int) -> dict | None:
 
 
 def _serialize_project_row(row: Mapping[str, Any], *, include_products: bool) -> dict:
+    status = row.get("status") or "running"
+    progress = _json_loads(row.get("progress_json"), {}) or {}
+    if not progress and status == "running":
+        progress = _initial_progress(message="项目正在运行，等待后台写入详细进度。")
     out = {
         "id": _safe_int(row.get("id")),
         "project_name": row.get("project_name") or "",
-        "status": row.get("status") or "running",
+        "status": status,
         "user_id": row.get("user_id"),
         "provider_code": row.get("provider_code") or PROVIDER_CODE,
         "model_id": row.get("model_id") or MODEL_ID,
         "summary": _json_loads(row.get("summary_json"), {}) or {},
+        "progress": progress,
         "error_message": row.get("error_message") or "",
         "started_at": _iso(row.get("started_at")),
         "finished_at": _iso(row.get("finished_at")),

@@ -69,10 +69,19 @@ def api_ai_material_strategist_create_project():
     payload = request.get_json(silent=True) or {}
     run_ai = payload.get("run_ai", True) is not False
     sync = bool(payload.get("sync"))
-    project = service.create_project_record(
-        _current_user_id(),
-        project_name=payload.get("project_name"),
-    )
+    try:
+        project = service.create_project_record(
+            _current_user_id(),
+            project_name=payload.get("project_name"),
+        )
+    except service.ProjectAlreadyRunningError as exc:
+        running = exc.project or service.get_running_project() or {}
+        return _json({
+            "success": False,
+            "message": "已有 AI素材军师项目正在运行，同一时间只能运行一个项目。",
+            "running_project": running,
+            "project": running,
+        }, 409)
     project_id = int(project["id"])
     if sync:
         project = service.run_project(project_id, user_id=_current_user_id(), run_ai=run_ai)

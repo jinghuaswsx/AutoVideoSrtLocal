@@ -149,6 +149,19 @@
     color: var(--aims-muted);
     font-size: 12px;
   }
+  .aims-mini-progress {
+    display: block;
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e5e7eb;
+  }
+  .aims-mini-progress span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--aims-blue), #0ea5e9);
+  }
   .aims-status {
     display: inline-flex;
     align-items: center;
@@ -187,6 +200,146 @@
     margin: 0 0 6px;
     font-size: 22px;
     line-height: 1.25;
+  }
+  .aims-run-card {
+    position: sticky;
+    top: 72px;
+    z-index: 3;
+    margin-bottom: 14px;
+    padding: 14px;
+    border: 1px solid var(--aims-border-strong);
+    border-radius: var(--aims-radius);
+    background: #f8fafc;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+  }
+  .aims-run-card.running { border-color: #93c5fd; background: #eff6ff; }
+  .aims-run-card.success { border-color: #86efac; background: #f0fdf4; }
+  .aims-run-card.failed { border-color: #fca5a5; background: #fef2f2; }
+  .aims-run-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .aims-run-title {
+    font-size: 15px;
+    font-weight: 900;
+  }
+  .aims-run-message {
+    margin-top: 4px;
+    color: var(--aims-muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .aims-run-progress {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .aims-run-track {
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, .10);
+  }
+  .aims-run-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--aims-blue), #0ea5e9);
+    transition: width .35s ease;
+  }
+  .aims-run-card.success .aims-run-fill { background: linear-gradient(90deg, #16a34a, #4ade80); }
+  .aims-run-card.failed .aims-run-fill { background: linear-gradient(90deg, #dc2626, #f87171); }
+  .aims-run-progress strong {
+    color: var(--aims-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .aims-run-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: var(--aims-muted);
+    font-size: 12px;
+  }
+  .aims-step-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .aims-step-card {
+    min-height: 88px;
+    padding: 10px;
+    border: 1px solid var(--aims-border);
+    border-radius: 7px;
+    background: #fff;
+  }
+  .aims-step-card.running { border-color: #93c5fd; background: #eff6ff; }
+  .aims-step-card.done { border-color: #bbf7d0; background: #f0fdf4; }
+  .aims-step-card.failed { border-color: #fecaca; background: #fff1f2; }
+  .aims-step-card.skipped { opacity: .72; }
+  .aims-step-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 7px;
+  }
+  .aims-step-top strong {
+    font-size: 13px;
+  }
+  .aims-step-top span {
+    flex-shrink: 0;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .aims-step-card.running .aims-step-top span { background: #dbeafe; color: #1d4ed8; }
+  .aims-step-card.done .aims-step-top span { background: #dcfce7; color: var(--aims-green); }
+  .aims-step-card.failed .aims-step-top span { background: #fee2e2; color: var(--aims-red); }
+  .aims-step-card p {
+    margin: 0;
+    color: var(--aims-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .aims-progress-logs {
+    display: grid;
+    gap: 5px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--aims-border);
+  }
+  .aims-progress-log {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 8px;
+    color: var(--aims-muted);
+    font-size: 12px;
+  }
+  .aims-progress-log strong {
+    color: #334155;
+    font-weight: 700;
+  }
+  .aims-progress-log.error strong { color: var(--aims-red); }
+  .aims-error-box {
+    margin-bottom: 14px;
+    padding: 12px;
+    border: 1px solid #fecaca;
+    border-radius: var(--aims-radius);
+    background: #fff1f2;
+    color: var(--aims-red);
+    font-size: 13px;
+    font-weight: 800;
   }
   .aims-subline {
     display: flex;

@@ -87,6 +87,25 @@ def test_mk_search_codes_include_stripped_code_first():
     assert mapping["demo-product-rjc"] == ["demo-product", "demo-product-rjc"]
 
 
+def test_progress_payload_marks_current_step_and_keeps_logs():
+    progress = svc._initial_progress(message="queued")
+
+    updated = svc._progress_update(
+        progress,
+        step_key="candidate_score",
+        step_status="running",
+        percent=22,
+        message="正在预筛",
+    )
+
+    assert updated["percent"] == 22
+    assert updated["current_step"] == "candidate_score"
+    assert updated["current_step_label"] == "规则预筛打分"
+    assert updated["steps"][0]["status"] == "done"
+    assert updated["steps"][1]["status"] == "running"
+    assert updated["logs"][-1]["message"] == "正在预筛"
+
+
 def test_task_status_group_matches_strategist_dedup_policy():
     assert svc._task_status_group({"status": "blocked"}) == "pending"
     assert svc._task_status_group({"status": "assigned"}) == "in_progress"

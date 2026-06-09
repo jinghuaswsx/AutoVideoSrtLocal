@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS ai_material_strategist_projects (
   ranking_prompt_json JSON NULL,
   ranking_result_json JSON NULL,
   summary_json JSON NULL,
+  progress_json JSON NULL,
   error_message MEDIUMTEXT NULL,
   started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   finished_at DATETIME NULL,

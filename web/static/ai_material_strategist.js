@@ -55,6 +55,21 @@
     return '运行中';
   }
 
+  function progressStepLabel(status) {
+    const map = {
+      pending: '等待中',
+      running: '运行中',
+      done: '已完成',
+      failed: '失败',
+      skipped: '已跳过',
+    };
+    return map[status] || status || '等待中';
+  }
+
+  function runningProject() {
+    return (state.projects || []).find((project) => project.status === 'running') || null;
+  }
+
   function actionLabel(action) {
     const map = {
       expand_country: '扩国家',
@@ -144,13 +159,20 @@
     const res = await fetch(url, options || {});
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.success === false) {
-      throw new Error(data.message || data.error_message || data.error || ('HTTP ' + res.status));
+      const err = new Error(data.message || data.error_message || data.error || ('HTTP ' + res.status));
+      err.status = res.status;
+      err.data = data;
+      throw err;
     }
     return data;
   }
 
   function setBusy(isBusy) {
-    if (els.create) els.create.disabled = isBusy;
+    const activeRunning = runningProject();
+    if (els.create) {
+      els.create.disabled = isBusy || Boolean(activeRunning);
+      els.create.title = activeRunning ? '已有 AI素材军师项目正在运行' : '';
+    }
     if (els.refresh) els.refresh.disabled = isBusy;
   }
 
@@ -161,6 +183,7 @@
     if (!state.activeProjectId && state.projects.length) {
       state.activeProjectId = state.projects[0].id;
     }
+    setBusy(false);
     renderProjects();
     if (state.activeProjectId) {
       await loadProject(state.activeProjectId);
@@ -188,11 +211,17 @@
       state.pollTimer = null;
     }
     if (project && project.status === 'running') {
-      state.pollTimer = setTimeout(() => loadProject(project.id).catch(console.error), 5000);
+      state.pollTimer = setTimeout(() => loadProject(project.id).catch(console.error), 2000);
     }
   }
 
   async function createProject() {
+    const activeRunning = runningProject();
+    if (activeRunning) {
+      showToast('已有项目正在运行，已切换到运行页');
+      await loadProject(activeRunning.id);
+      return;
+    }
     setBusy(true);
     try {
       const name = 'AI素材军师 ' + new Date().toLocaleString('zh-CN', { hour12: false });
@@ -205,6 +234,12 @@
       showToast('项目已开始运行');
       await loadProjects();
     } catch (err) {
+      const running = err && err.status === 409 && err.data && (err.data.running_project || err.data.project);
+      if (running && running.id) {
+        showToast(err.message || '已有项目正在运行');
+        await loadProject(running.id);
+        return;
+      }
       showToast(err.message || '创建失败');
     } finally {
       setBusy(false);
@@ -221,14 +256,18 @@
       const active = Number(project.id) === Number(state.activeProjectId) ? ' active' : '';
       const summary = project.summary || {};
       const topCount = summary.top_product_count || 0;
+      const progress = project.progress || {};
+      const pct = Number(progress.percent || 0);
       return `
         <button type="button" class="aims-project-item${active}" data-project-id="${esc(project.id)}">
           <span class="aims-project-name">${esc(project.project_name || ('项目 #' + project.id))}</span>
           <span class="aims-project-meta">
             <span class="aims-status ${esc(project.status)}">${statusLabel(project.status)}</span>
             <span>Top ${esc(topCount)}</span>
+            ${project.status === 'running' ? `<span>${esc(pct)}%</span>` : ''}
             <span>${esc((project.created_at || '').slice(0, 16))}</span>
           </span>
+          ${project.status === 'running' ? `<span class="aims-mini-progress"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></span>` : ''}
         </button>
       `;
     }).join('');
@@ -254,22 +293,89 @@
     if (els.qualityText) {
       els.qualityText.textContent = `数据新鲜度：广告 ${quality.meta_realtime_max_snapshot_at || quality.meta_daily_max_business_date || '—'}，明空 ${quality.mingkong_max_snapshot_at || '—'}`;
     }
-    if (project.status === 'running' && !products.length) {
-      els.detail.innerHTML = '<div class="aims-loading">运行中...</div>';
+    if (project.status === 'running') {
+      els.detail.innerHTML = `
+        ${renderHeader(project, products)}
+        ${renderRunProgress(project)}
+      `;
       return;
     }
-    if (project.status === 'failed') {
-      els.detail.innerHTML = `<div class="aims-empty">项目失败：${esc(project.error_message || '')}</div>`;
-      return;
-    }
+    const failedNotice = project.status === 'failed'
+      ? `<div class="aims-error-box">项目失败：${esc(project.error_message || '')}</div>`
+      : '';
 
     els.detail.innerHTML = `
       ${renderHeader(project, products)}
+      ${renderRunProgress(project)}
+      ${failedNotice}
       ${renderMetrics(project, products)}
       ${renderVisuals(products)}
       ${renderCountryMatrix(products)}
       ${renderProductsTable(products)}
       ${renderProductSections(products)}
+    `;
+  }
+
+  function renderRunProgress(project) {
+    const progress = project.progress || {};
+    const steps = progress.steps || [];
+    if (!Object.keys(progress).length && project.status === 'success') return '';
+    const pct = Math.max(0, Math.min(100, Number(progress.percent || (project.status === 'success' ? 100 : 0))));
+    const pp = progress.product_progress || {};
+    const currentProduct = pp.current_product_code || pp.current_product_name || '';
+    const productLine = Number(pp.total || 0) > 0
+      ? `产品 ${esc(pp.current_index || 0)} / ${esc(pp.total)}${currentProduct ? ` · ${esc(currentProduct)}` : ''}`
+      : '产品分析待开始';
+    return `
+      <section class="aims-run-card ${esc(project.status)}">
+        <div class="aims-run-head">
+          <div>
+            <div class="aims-run-title">${esc(progress.current_step_label || statusLabel(project.status))}</div>
+            <div class="aims-run-message">${esc(progress.message || '')}</div>
+          </div>
+          <span class="aims-status ${esc(project.status)}">${statusLabel(project.status)}</span>
+        </div>
+        <div class="aims-run-progress">
+          <span class="aims-run-track"><span class="aims-run-fill" style="width:${pct}%"></span></span>
+          <strong>${esc(pct)}%</strong>
+        </div>
+        <div class="aims-run-meta">
+          <span>${productLine}</span>
+          <span>更新 ${esc((progress.updated_at || project.updated_at || '').slice(0, 19))}</span>
+        </div>
+        ${steps.length ? renderProgressSteps(steps) : ''}
+        ${renderProgressLogs(progress.logs || [])}
+      </section>
+    `;
+  }
+
+  function renderProgressSteps(steps) {
+    return `
+      <div class="aims-step-grid">
+        ${steps.map((step) => `
+          <article class="aims-step-card ${esc(step.status || 'pending')}">
+            <div class="aims-step-top">
+              <strong>${esc(step.label || step.key)}</strong>
+              <span>${esc(progressStepLabel(step.status))}</span>
+            </div>
+            <p>${esc(step.message || step.description || '')}</p>
+          </article>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderProgressLogs(logs) {
+    if (!logs.length) return '';
+    return `
+      <div class="aims-progress-logs">
+        ${logs.slice(-6).map((log) => `
+          <div class="aims-progress-log ${esc(log.level || 'info')}">
+            <span>${esc((log.time || '').slice(11, 19) || '')}</span>
+            <strong>${esc(log.message || '')}</strong>
+          </div>
+        `).join('')}
+      </div>
     `;
   }
 

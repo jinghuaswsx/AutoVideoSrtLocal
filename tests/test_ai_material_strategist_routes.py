@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from appcore.ai_material_strategist import ProjectAlreadyRunningError
+
 
 def test_ai_material_strategist_page_requires_login(authed_client_no_db):
     raw_client = authed_client_no_db.application.test_client()
@@ -66,3 +68,28 @@ def test_ai_material_strategist_create_project_starts_background_job(
     assert calls["args"] == (9,)
     assert calls["kwargs"]["user_id"] == 1
     assert calls["kwargs"]["run_ai"] is False
+
+
+def test_ai_material_strategist_create_project_rejects_when_running(
+    authed_client_no_db,
+    monkeypatch,
+):
+    running = {"id": 8, "project_name": "running", "status": "running"}
+
+    def fake_create_project_record(user_id, project_name=None):
+        raise ProjectAlreadyRunningError(running)
+
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.create_project_record",
+        fake_create_project_record,
+    )
+
+    response = authed_client_no_db.post(
+        "/medias/api/ai-material-strategist/projects",
+        json={"project_name": "demo run"},
+    )
+
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["running_project"]["id"] == 8
