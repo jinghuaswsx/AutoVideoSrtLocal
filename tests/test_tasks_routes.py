@@ -306,6 +306,25 @@ def test_task_center_mobile_filters_can_collapse_and_table_scrolls(authed_client
     assert ".tc-table th { position: static !important; }" in body
 
 
+def test_task_center_mobile_workload_cards_default_to_collapsed_summary(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "2026-06-09-task-center-mobile-filter-collapse-design.md" in body
+    assert 'id="tcWorkloadToggle"' in body
+    assert 'aria-controls="tcWorkloadCards"' in body
+    assert 'id="wlCompactInProgress"' in body
+    assert 'id="wlCompactCompleted"' in body
+    assert ".tc-workload-container.is-collapsed .tc-workload-cards { display:none !important; }" in body
+    assert "function tcShouldStartWithCollapsedWorkload" in body
+    assert "function tcApplyWorkloadVisibility" in body
+    assert "cards.hidden = collapsed;" in body
+    assert "tcSetWorkloadCollapsed(!TC_WORKLOAD_COLLAPSED)" in body
+    assert "tcSetWorkloadCollapsed(tcShouldStartWithCollapsedWorkload())" in body
+    assert "if (wlCompactInProgressEl) wlCompactInProgressEl.textContent = data.in_progress ?? 0;" in body
+    assert "if (wlCompactCompletedEl) wlCompactCompletedEl.textContent = data.today_completed ?? 0;" in body
+
+
 def test_task_center_rows_expose_archive_action_for_any_unarchived_task(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -2945,4 +2964,3 @@ def test_api_user_workload_admin_returns_others_stats(authed_client_no_db, monke
     
     # Check that workload stats were fetched for self (id 1) and others (101, 102, 103)
     assert workload_calls == [1, 101, 102, 103]
-

@@ -459,6 +459,15 @@
 /* ── 移动端适配 ── */
 @media (max-width: 768px) {
   .tc-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .tc-workload-container { width:100%; margin-left:0; align-items:stretch; gap:6px; }
+  .tc-workload-toggle { display:flex; align-items:center; gap:8px; }
+  .tc-workload-container.is-collapsed .tc-workload-cards { display:none !important; }
+  .tc-workload-cards { flex-direction:column; gap:8px; justify-content:flex-start; }
+  .tc-workload-card { width:100%; min-width:0; max-width:none; padding:8px 10px; box-shadow:none; }
+  .tc-workload-card:hover { transform:none; box-shadow:none; }
+  .tc-workload-content { gap:8px; }
+  .tc-workload-metric-group { gap:6px; }
+  .tc-workload-metric-item { min-width:0; padding:4px 6px; }
   .tc-overview-head { align-items:flex-start; }
   .tc-overview-actions { width:100%; justify-content:flex-start; margin-left:0; }
   .tc-filter-toggle { width:100%; }
@@ -586,9 +595,64 @@
 /* ── 我的今日工作量卡片 ── */
 .tc-workload-container {
   display: flex;
+  flex-direction: column;
+  flex: 1 1 320px;
+  min-width: 0;
+  gap: 12px;
+  margin-left: auto;
+  align-items: flex-end;
+}
+.tc-workload-toggle {
+  display: none;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--tc-border-strong);
+  border-radius: var(--tc-r);
+  background: var(--tc-bg);
+  color: var(--tc-fg);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.tc-workload-toggle svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  transition: transform 180ms ease-out;
+}
+.tc-workload-toggle[aria-expanded="false"] svg {
+  transform: rotate(180deg);
+}
+.tc-workload-toggle-title {
+  flex: 0 0 auto;
+  color: var(--tc-fg);
+}
+.tc-workload-toggle-metrics {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 0;
+  color: var(--tc-fg-muted);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.tc-workload-toggle-metrics strong {
+  color: var(--tc-accent);
+  font-weight: 800;
+}
+.tc-workload-toggle-action {
+  margin-left: auto;
+  color: var(--tc-accent);
+  white-space: nowrap;
+}
+.tc-workload-cards {
+  display: flex;
+  width: 100%;
   gap: 12px;
   flex-wrap: wrap;
-  margin-left: auto;
   justify-content: flex-end;
 }
 .tc-workload-card {
@@ -710,32 +774,45 @@
       </div>
       <!-- 用户今日工作量看板 -->
       <div id="tcWorkloadContainer" class="tc-workload-container">
-        <div id="tcUserWorkloadCard" class="tc-workload-card">
-          <div class="tc-workload-title">我的今日工作量</div>
-          <div class="tc-workload-content">
-            <div class="tc-workload-metric-group">
-              <div class="tc-workload-metric-item in-progress" title="当前进行中的非待推送任务">
-                <div class="tc-workload-metric-value" id="wlInProgress">-</div>
-                <div class="tc-workload-metric-label">进行中任务</div>
+        <button class="tc-workload-toggle" id="tcWorkloadToggle" type="button" aria-controls="tcWorkloadCards" aria-expanded="true">
+          <span class="tc-workload-toggle-title">今日工作量</span>
+          <span class="tc-workload-toggle-metrics">
+            <span>进行中 <strong id="wlCompactInProgress">-</strong></span>
+            <span>完成 <strong id="wlCompactCompleted">-</strong></span>
+          </span>
+          <span class="tc-workload-toggle-action" id="tcWorkloadToggleText">收起</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="6 15 12 9 18 15"></polyline>
+          </svg>
+        </button>
+        <div id="tcWorkloadCards" class="tc-workload-cards">
+          <div id="tcUserWorkloadCard" class="tc-workload-card">
+            <div class="tc-workload-title">我的今日工作量</div>
+            <div class="tc-workload-content">
+              <div class="tc-workload-metric-group">
+                <div class="tc-workload-metric-item in-progress" title="当前进行中的非待推送任务">
+                  <div class="tc-workload-metric-value" id="wlInProgress">-</div>
+                  <div class="tc-workload-metric-label">进行中任务</div>
+                </div>
+                <div class="tc-workload-metric-item completed" title="今日已完成或已提交待推送的任务">
+                  <div class="tc-workload-metric-value" id="wlCompleted">-</div>
+                  <div class="tc-workload-metric-label">今日已完成</div>
+                </div>
               </div>
-              <div class="tc-workload-metric-item completed" title="今日已完成或已提交待推送的任务">
-                <div class="tc-workload-metric-value" id="wlCompleted">-</div>
-                <div class="tc-workload-metric-label">今日已完成</div>
-              </div>
-            </div>
-            <div class="tc-workload-divider"></div>
-            <div class="tc-workload-details">
-              <div class="tc-workload-detail-item">
-                <span class="tc-workload-detail-label">已完成产品：</span>
-                <span class="tc-workload-detail-value" id="wlProducts">-</span>
-              </div>
-              <div class="tc-workload-detail-item">
-                <span class="tc-workload-detail-label">翻译任务：</span>
-                <span class="tc-workload-detail-value" id="wlTranslations">-</span>
-              </div>
-              <div class="tc-workload-detail-item">
-                <span class="tc-workload-detail-label">去字幕任务：</span>
-                <span class="tc-workload-detail-value" id="wlRaws">-</span>
+              <div class="tc-workload-divider"></div>
+              <div class="tc-workload-details">
+                <div class="tc-workload-detail-item">
+                  <span class="tc-workload-detail-label">已完成产品：</span>
+                  <span class="tc-workload-detail-value" id="wlProducts">-</span>
+                </div>
+                <div class="tc-workload-detail-item">
+                  <span class="tc-workload-detail-label">翻译任务：</span>
+                  <span class="tc-workload-detail-value" id="wlTranslations">-</span>
+                </div>
+                <div class="tc-workload-detail-item">
+                  <span class="tc-workload-detail-label">去字幕任务：</span>
+                  <span class="tc-workload-detail-value" id="wlRaws">-</span>
+                </div>
               </div>
             </div>
           </div>
@@ -922,6 +999,7 @@ let TC_TARGET_LANGUAGES = [];
 let TC_DETAIL_CURRENT_TASK = null;
 let TC_PRODUCT_LINK_MANAGER_DATA = { productId: 0, lang: '', items: [], product: null };
 let TC_FILTERS_COLLAPSED = false;
+let TC_WORKLOAD_COLLAPSED = false;
 const TC_SHOPIFY_IMAGE_REPLACE_LABELS = {
   none: '未替换',
   confirmed: '图片正常',
@@ -2739,11 +2817,51 @@ function tcSetFilterCollapsed(collapsed) {
   tcApplyFilterVisibility();
 }
 
+function tcShouldStartWithCollapsedWorkload() {
+  return !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+}
+
+function tcApplyWorkloadVisibility() {
+  const container = document.getElementById('tcWorkloadContainer');
+  const cards = document.getElementById('tcWorkloadCards');
+  const toggle = document.getElementById('tcWorkloadToggle');
+  const toggleText = document.getElementById('tcWorkloadToggleText');
+  const isMobile = !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+  const collapsed = isMobile && TC_WORKLOAD_COLLAPSED;
+
+  if (container) {
+    container.classList.toggle('is-collapsed', collapsed);
+  }
+  if (cards) {
+    cards.hidden = collapsed;
+  }
+  if (toggle) {
+    toggle.hidden = !isMobile;
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+  }
+  if (toggleText) {
+    toggleText.textContent = collapsed ? '展开' : '收起';
+  }
+}
+
+function tcSetWorkloadCollapsed(collapsed) {
+  TC_WORKLOAD_COLLAPSED = Boolean(collapsed);
+  tcApplyWorkloadVisibility();
+}
+
 const tcFilterToggle = document.getElementById('tcFilterToggle');
 if (tcFilterToggle) {
   tcFilterToggle.addEventListener('click', () => {
     tcSetFilterCollapsed(!TC_FILTERS_COLLAPSED);
   });
+}
+
+const tcWorkloadToggle = document.getElementById('tcWorkloadToggle');
+if (tcWorkloadToggle) {
+  tcWorkloadToggle.addEventListener('click', () => {
+    tcSetWorkloadCollapsed(!TC_WORKLOAD_COLLAPSED);
+  });
+  window.addEventListener('resize', tcApplyWorkloadVisibility);
 }
 
 document.querySelectorAll('[data-section-tab]').forEach(btn => {
@@ -2781,8 +2899,9 @@ tcLoadAssigneeFilterUsers();
 async function tcLoadUserWorkload() {
   const container = document.getElementById('tcWorkloadContainer');
   if (!container) return;
+  const cards = document.getElementById('tcWorkloadCards') || container;
   // Remove existing dynamic cards
-  const existingOthers = container.querySelectorAll('.tc-workload-card-other');
+  const existingOthers = cards.querySelectorAll('.tc-workload-card-other');
   existingOthers.forEach(el => el.remove());
 
   try {
@@ -2796,12 +2915,16 @@ async function tcLoadUserWorkload() {
     const wlProductsEl = document.getElementById('wlProducts');
     const wlTranslationsEl = document.getElementById('wlTranslations');
     const wlRawsEl = document.getElementById('wlRaws');
+    const wlCompactInProgressEl = document.getElementById('wlCompactInProgress');
+    const wlCompactCompletedEl = document.getElementById('wlCompactCompleted');
     
     if (wlInProgressEl) wlInProgressEl.textContent = data.in_progress ?? 0;
     if (wlCompletedEl) wlCompletedEl.textContent = data.today_completed ?? 0;
     if (wlProductsEl) wlProductsEl.textContent = data.today_completed_products ?? 0;
     if (wlTranslationsEl) wlTranslationsEl.textContent = data.today_completed_translate_tasks ?? 0;
     if (wlRawsEl) wlRawsEl.textContent = data.today_completed_raw_tasks ?? 0;
+    if (wlCompactInProgressEl) wlCompactInProgressEl.textContent = data.in_progress ?? 0;
+    if (wlCompactCompletedEl) wlCompactCompletedEl.textContent = data.today_completed ?? 0;
 
     // Render other users' cards if admin
     if (data.is_admin && data.others && data.others.length > 0) {
@@ -2838,7 +2961,7 @@ async function tcLoadUserWorkload() {
             </div>
           </div>
         `;
-        container.appendChild(otherCard);
+        cards.appendChild(otherCard);
       });
     }
   } catch (e) {
@@ -4065,6 +4188,7 @@ function tcRestoreFiltersFromUrl() {
 
 async function tcInitialRender() {
   tcSetFilterCollapsed(tcShouldStartWithCollapsedFilters());
+  tcSetWorkloadCollapsed(tcShouldStartWithCollapsedWorkload());
   tcRestoreFiltersFromUrl();
   await tcRender();
   tcSetupStickyHeader();
