@@ -490,6 +490,24 @@
     border-top: 1px solid #e2e8f0;
     background: #fff;
   }
+  .mkp-ai-review {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #0f172a;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .mkp-ai-review strong {
+    font-size: 13px;
+  }
+  .mkp-ai-review ul {
+    margin: 0;
+    padding-left: 18px;
+  }
   .mkp-modal-status {
     display: flex;
     flex-wrap: wrap;
@@ -648,6 +666,11 @@
     border-color: #334155;
     background: #111827;
   }
+  [data-theme='dark'] .mkp-ai-review {
+    border-color: #1d4ed8;
+    background: #0f1d36;
+    color: #e2e8f0;
+  }
   @media (max-width: 900px) {
     .mkp-head {
       flex-direction: column;
@@ -791,10 +814,12 @@
           </div>
           <div class="mkp-progress" aria-hidden="true"><span></span></div>
           <ul class="mkp-modal-log" id="mkpSyncLog"></ul>
+          <div class="mkp-ai-review" id="mkpSyncAiReviewBox" hidden></div>
         </div>
         <div class="mkp-sync-rows" id="mkpSyncRows"></div>
       </div>
       <div class="mkp-sync-footer">
+        <button type="button" class="mkp-btn" id="mkpSyncAiReview">AI辅助判断</button>
         <button type="button" class="mkp-btn" id="mkpSyncCancel">取消</button>
         <button type="button" class="mkp-btn primary" id="mkpSyncRun">确认并执行同步</button>
       </div>
@@ -1309,6 +1334,10 @@
     $('mkpSyncLog').innerHTML = '';
     $('mkpSyncRun').textContent = '确认并执行同步';
     $('mkpSyncRun').disabled = false;
+    $('mkpSyncAiReview').disabled = false;
+    $('mkpSyncAiReview').textContent = 'AI辅助判断';
+    $('mkpSyncAiReviewBox').hidden = true;
+    $('mkpSyncAiReviewBox').innerHTML = '';
     $('mkpSyncCancel').disabled = false;
     $('mkpSyncClose').disabled = false;
     setSyncState('info', '待确认');
@@ -1320,6 +1349,7 @@
     syncProgress.running = true;
     $('mkpSyncRun').disabled = true;
     $('mkpSyncRun').textContent = '执行中';
+    $('mkpSyncAiReview').disabled = true;
     $('mkpSyncCancel').disabled = true;
     $('mkpSyncClose').disabled = true;
     setSyncState('running', '执行中');
@@ -1337,6 +1367,7 @@
     }
     $('mkpSyncRun').textContent = '确认并执行同步';
     $('mkpSyncRun').disabled = !document.querySelector('[data-sync-row="1"]');
+    $('mkpSyncAiReview').disabled = false;
     $('mkpSyncCancel').disabled = false;
     $('mkpSyncClose').disabled = false;
     setSyncState(level, text);
@@ -1376,6 +1407,58 @@
         image_url: get('image_url')
       };
     }).filter((item) => item.shopify_variant_id && item.dianxiaomi_sku);
+  }
+
+  function renderAiReview(review) {
+    const box = $('mkpSyncAiReviewBox');
+    const risks = Array.isArray(review?.risks) ? review.risks : [];
+    const rankings = Array.isArray(review?.candidate_rankings) ? review.candidate_rankings.slice(0, 3) : [];
+    const riskHtml = risks.length
+      ? `<div><strong>风险</strong><ul>${risks.map((item) => `<li>${esc(item)}</li>`).join('')}</ul></div>`
+      : '';
+    const rankingHtml = rankings.length
+      ? `<div><strong>候选排序</strong><ul>${rankings.map((item) => `<li>${esc(item.candidate_key || '—')} · ${esc(item.score ?? '—')} · ${esc(item.reason || '')}</li>`).join('')}</ul></div>`
+      : '';
+    box.innerHTML = `<div><strong>AI建议</strong>：${esc(review?.recommended_candidate_key || '—')} · 置信度 ${esc(review?.confidence ?? '—')} · ${esc(review?.requires_manual_review ? '需要人工复核' : '可作为默认候选')}</div>
+      <div>${esc(review?.reason || '')}</div>
+      ${riskHtml}
+      ${rankingHtml}
+      <div>${esc(review?.variant_mapping_notes || '')}</div>`;
+    box.hidden = false;
+  }
+
+  async function runAiReview() {
+    const btn = $('mkpSyncAiReview');
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '判断中';
+    appendSyncLog('info', '正在调用 AI 辅助判断明空候选，仅输出建议，不会写入 DXM03');
+    try {
+      const result = await fetchJson(`/medias/api/products/${productId}/mingkong-pairing/ai-review`, {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          items: collectSyncTargets(),
+          workbench_items: (state.payload || {}).items || []
+        })
+      });
+      payloadLogs(result).forEach((entry) => appendSyncLog(entry.level, entry.message));
+      renderAiReview(result.review || {});
+      if (result.usage_log_id) {
+        appendSyncLog('info', `AI 调用已记录 usage_log_id=${result.usage_log_id}`);
+      }
+    } catch (err) {
+      const payload = err.payload || {};
+      const logs = payloadLogs(payload);
+      if (logs.length) {
+        logs.forEach((entry) => appendSyncLog(entry.level, entry.message));
+      } else {
+        appendSyncLog('error', err.message || String(err));
+      }
+    } finally {
+      btn.textContent = original;
+      btn.disabled = false;
+    }
   }
 
   async function executeSyncTargets() {
@@ -1453,6 +1536,9 @@
       appendSyncLog('error', err.message || String(err));
       finishSyncProgress('error', '同步失败');
     });
+  });
+  $('mkpSyncAiReview').addEventListener('click', () => {
+    runAiReview().catch((err) => appendSyncLog('error', err.message || String(err)));
   });
   $('mkpSyncCancel').addEventListener('click', closeSyncModal);
   $('mkpSyncClose').addEventListener('click', closeSyncModal);

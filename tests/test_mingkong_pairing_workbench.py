@@ -394,6 +394,148 @@ def test_build_target_sku_import_pairs_uses_editable_target_values():
     assert purchase_url == "https://detail.1688.com/offer/987654321.html"
 
 
+def test_build_target_sku_import_pairs_dedupes_repeated_target_skus():
+    product = {"id": 772, "product_code": "hygienic-silicone-back-scrub-rjc"}
+    library_items = [
+        {
+            "shopify_product_id": "shop-a",
+            "shopify_variant_id": "variant-a",
+            "shopify_variant_title": "Blue",
+            "dianxiaomi_sku": "0422-14563244",
+            "dianxiaomi_sku_code": "98036085",
+            "dianxiaomi_name": "硅胶搓背巾 蓝色",
+        },
+        {
+            "shopify_product_id": "shop-b",
+            "shopify_variant_id": "variant-b",
+            "shopify_variant_title": "Blue",
+            "dianxiaomi_sku": "0422-14563244",
+            "dianxiaomi_sku_code": "98036085",
+            "dianxiaomi_name": "硅胶搓背巾 蓝色",
+        },
+    ]
+    targets = [
+        {
+            "shopify_product_id": "shop-a",
+            "shopify_variant_id": "variant-a",
+            "variant_title": "Blue",
+            "dianxiaomi_sku": "0422-14563244",
+            "dianxiaomi_sku_code": "98036085",
+        },
+        {
+            "shopify_product_id": "shop-b",
+            "shopify_variant_id": "variant-b",
+            "variant_title": "Blue",
+            "dianxiaomi_sku": "0422-14563244",
+            "dianxiaomi_sku_code": "98036085",
+        },
+    ]
+
+    pairs = pairing.build_target_sku_import_pairs(product, library_items, targets)
+
+    assert len(pairs) == 1
+    assert pairs[0]["shopify_product_id"] == "shop-a"
+    assert pairs[0]["shopify_variant_id"] == "variant-a"
+    assert pairs[0]["dianxiaomi_sku"] == "0422-14563244"
+
+
+def test_mingkong_pairing_ai_review_uses_openrouter_use_case_with_images():
+    from appcore import mingkong_pairing_ai
+    from appcore.llm_use_cases import get_use_case
+
+    use_case = get_use_case("mingkong_pairing.match_candidate")
+    assert use_case["default_provider"] == "openrouter"
+    assert use_case["default_model"] == "google/gemini-3-flash-preview"
+
+    captured = {}
+
+    def fake_invoke(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured["kwargs"] = kwargs
+        return {
+            "json": {
+                "is_same_product": True,
+                "confidence": 0.91,
+                "recommended_candidate_key": "shop-1",
+                "requires_manual_review": False,
+                "reason": "标题和 SKU 规格一致",
+                "risks": [],
+                "variant_mapping_notes": "5 个 SKU 一一对应",
+                "candidate_rankings": [
+                    {
+                        "candidate_key": "shop-1",
+                        "score": 0.91,
+                        "reason": "采购配对完整",
+                        "matched_sku_count": 5,
+                        "risks": [],
+                    }
+                ],
+            },
+            "usage_log_id": 99,
+        }
+
+    result = mingkong_pairing_ai.review_pairing_candidates(
+        {
+            "id": 772,
+            "product_code": "hygienic-silicone-back-scrub-rjc",
+            "name": "硅胶搓澡巾",
+            "shopify_title": "Hygienic Silicone Back Scrub",
+            "main_image": "https://example.test/product.jpg",
+        },
+        [
+            {
+                "shopify_product_id": "shop-1",
+                "shopify_variant_id": "variant-1",
+                "variant_title": "Blue",
+                "dianxiaomi_sku": "0422-14563244",
+                "image_url": "https://example.test/sku.jpg",
+                "mingkong": {
+                    "shopify_product_id": "shop-1",
+                    "sku": "0422-14563244",
+                    "image_url": "https://example.test/sku.jpg",
+                    "purchase_1688_url": "https://detail.1688.com/offer/921703756878.html",
+                },
+            }
+        ],
+        user_id=7,
+        invoke_chat_fn=fake_invoke,
+    )
+
+    assert result["ok"] is True
+    assert result["usage_log_id"] == 99
+    assert captured["use_case_code"] == "mingkong_pairing.match_candidate"
+    assert captured["kwargs"]["user_id"] == 7
+    assert captured["kwargs"]["temperature"] == 0.1
+    assert captured["kwargs"]["response_format"]["type"] == "json_schema"
+    content = captured["kwargs"]["messages"][1]["content"]
+    assert any(part.get("type") == "image_url" for part in content)
+    assert "Hygienic Silicone Back Scrub" in content[0]["text"]
+
+
+def test_mingkong_pairing_ai_review_route_uses_posted_workbench_items(monkeypatch):
+    product = {"id": 772, "product_code": "sample-rjc"}
+    items = [{"shopify_variant_id": "variant-1", "dianxiaomi_sku": "sku-1"}]
+    calls = {}
+
+    def fake_review(product_arg, items_arg, *, user_id):
+        calls["product"] = product_arg
+        calls["items"] = items_arg
+        calls["user_id"] = user_id
+        return {"ok": True, "review": {"confidence": 0.9}, "logs": []}
+
+    monkeypatch.setattr(products_route.mingkong_pairing_ai, "review_pairing_candidates", fake_review)
+
+    result = products_route._build_mingkong_pairing_ai_review_response(
+        772,
+        product,
+        {"workbench_items": items},
+        user_id=8,
+    )
+
+    assert result["ok"] is True
+    assert calls == {"product": product, "items": items, "user_id": 8}
+
+
 def test_mingkong_pairing_import_skus_refuses_to_overwrite_existing(monkeypatch):
     monkeypatch.setattr(
         products_route.medias,
@@ -575,6 +717,8 @@ def test_mingkong_pairing_template_has_review_modal_and_single_sync_entry():
     assert 'id="mkpImportSkus"' not in source
     assert 'id="mkpReplicate"' not in source
     assert "/mingkong-pairing/sync" in source
+    assert "AI辅助判断" in source
+    assert "/mingkong-pairing/ai-review" in source
     assert "non_json_response" in source
 
 

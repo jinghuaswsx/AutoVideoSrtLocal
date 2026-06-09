@@ -257,6 +257,13 @@
 3. 本地中文名匹配 `mingkong_products.mk_title_cn` 或采购链接候选 `dxm_name`。
 4. 仍无匹配时提供手动搜索 DXM02 并回写明空产品库。
 
+如果明空库里同一个 product code 在多个明空店铺或多个 Shopify 商品 ID 下重复出现，工作台不得把重复商品的 variant 直接相加。候选选择规则：
+
+1. 本地产品有明确 Shopify ID 或素材/资产表能解析出 Shopify ID 时，优先只使用这些 Shopify ID 对应的明空商品。
+2. 没有明确 Shopify ID 时，优先使用采购配对完整的明空商品。
+3. 如果仍有多个候选，按 DXM 商品 SKU 去重，保留排序最靠前的一条；同一 DXM SKU 的多条明空 Shopify variant 只是同款重复，不代表 DXM03 要创建多条商品 SKU。
+4. 确认弹窗提交的目标计划也要按目标店小秘 SKU 去重，避免历史重复候选把本地 `media_product_skus` 写成多份相同 DXM SKU。
+
 DXM03 写入仍遵守：
 
 - 必须用户人工确认。

@@ -142,7 +142,7 @@
 
 - `mingkong_pairing.match_candidate`
 - 默认 provider：`openrouter`
-- 默认 model：`google/gemini-3.1-flash-lite`
+- 默认 model：`google/gemini-3-flash-preview`
 - 输入：我们产品标题、产品 code、产品链接、主图 URL、明空候选标题、SKU 图片、采购商品标题、1688 规格文本。
 - 输出 JSON：
   - `is_same_product`
@@ -157,6 +157,7 @@
 - product code 精确命中且 SKU 数量、变体文本、采购链接都完整时，不调用 AI。
 - AI 置信度低于 0.85 或 `requires_manual_review=true` 时，只展示建议，不自动执行。
 - AI 不参与 DXM03 写入参数生成，只给计划阶段打分。
+- 工作台首版提供“AI辅助判断”按钮，由人工主动触发；模型输出候选排序、置信度、风险和变体映射说明，只展示在确认弹窗中，最终仍以右侧目标字段和人工确认按钮为准。
 
 ## 验收
 

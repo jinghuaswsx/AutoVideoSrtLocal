@@ -100,3 +100,30 @@ def test_mingkong_product_library_systemd_timer_is_weekly():
 
     assert "OnCalendar=Mon *-*-* 04:00:00" in body
     assert "OnCalendar=*-*-* 04:00:00" not in body
+
+
+def test_mingkong_product_library_prefers_procurement_candidate_without_shopify_id():
+    from appcore import mingkong_product_library as library
+
+    candidates = [
+        {"id": 1, "mk_shopify_product_id": "shop-1", "procurement_count": 0},
+        {"id": 2, "mk_shopify_product_id": "shop-2", "procurement_count": 5},
+        {"id": 3, "mk_shopify_product_id": "shop-3", "procurement_count": 0},
+    ]
+
+    assert library._selected_candidate_product_ids(candidates, set()) == [2]
+
+
+def test_mingkong_product_library_dedupes_repeated_shopify_products_by_dxm_sku():
+    from appcore import mingkong_product_library as library
+
+    rows = [
+        {"id": 10, "dxm_sku": "0422-14563244", "mk_shopify_product_id": "shop-a"},
+        {"id": 11, "dxm_sku": "0422-14568837", "mk_shopify_product_id": "shop-a"},
+        {"id": 20, "dxm_sku": "0422-14563244", "mk_shopify_product_id": "shop-b"},
+        {"id": 21, "dxm_sku": "0422-14568837", "mk_shopify_product_id": "shop-b"},
+    ]
+
+    deduped = library._dedupe_variant_rows_by_dxm_sku(rows)
+
+    assert [row["id"] for row in deduped] == [10, 11]

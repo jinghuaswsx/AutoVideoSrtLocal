@@ -5,6 +5,7 @@ from flask_login import current_user, login_required
 
 from appcore import (
     dianxiaomi_mingkong_pairing,
+    mingkong_pairing_ai,
     medias,
     parcel_cost_suggest,
     product_link_domains,
@@ -360,6 +361,20 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
         library_items,
         targets,
     )
+    pair_skus = {
+        str(pair.get("dianxiaomi_sku") or "").strip()
+        for pair in pairs
+        if str(pair.get("dianxiaomi_sku") or "").strip()
+    }
+    effective_targets: list[dict] = []
+    seen_target_skus: set[str] = set()
+    for target in targets:
+        if not isinstance(target, dict):
+            continue
+        sku = str(target.get("dianxiaomi_sku") or "").strip()
+        if sku and sku in pair_skus and sku not in seen_target_skus:
+            effective_targets.append(target)
+            seen_target_skus.add(sku)
     if not pairs:
         message = import_payload.get("message") or "目标计划中没有可写入的 SKU 行"
         return {
@@ -377,7 +392,7 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
     purchase_url = dianxiaomi_mingkong_pairing.first_purchase_url_from_targets(
         product,
         library_items,
-        targets,
+        effective_targets,
     )
     if purchase_url:
         medias.update_product(pid, purchase_1688_url=purchase_url)
@@ -398,7 +413,7 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
         replicate_result = dianxiaomi_mingkong_pairing.replicate_mingkong_skus_to_dxm03(
             product_after_import,
             local_rows,
-            selections=targets,
+            selections=effective_targets,
             replace_product_skus_fn=medias.replace_product_skus,
             update_product_fn=medias.update_product,
         )
@@ -434,7 +449,7 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
         confirm_result = dianxiaomi_mingkong_pairing.confirm_dxm03_pairing(
             product_after_replicate,
             local_rows,
-            selections=targets,
+            selections=effective_targets,
         )
     except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
         current_app.logger.exception("mingkong pairing full sync confirm failed product_id=%s", pid)
@@ -464,6 +479,30 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
         "confirm": confirm_result,
         "realtime_refresh": import_payload.get("realtime_refresh"),
     }
+
+
+def _build_mingkong_pairing_ai_review_response(
+    pid: int,
+    product: dict,
+    body: dict,
+    *,
+    user_id: int | None,
+):
+    items = body.get("workbench_items") if isinstance(body, dict) else None
+    if not isinstance(items, list) or not items:
+        sku_rows = medias.list_product_skus(pid)
+        payload = dianxiaomi_mingkong_pairing.build_workbench_payload(
+            product,
+            sku_rows,
+            include_live=False,
+            include_mingkong_reference=True,
+        )
+        items = payload.get("items") or []
+    return mingkong_pairing_ai.review_pairing_candidates(
+        product,
+        items,
+        user_id=user_id,
+    )
 
 
 def _build_roas_page_context(product: dict):
@@ -773,6 +812,26 @@ def api_mingkong_pairing_sync(pid: int):
         abort(404)
     body = request.get_json(silent=True) or {}
     result = routes._build_mingkong_pairing_sync_response(pid, p, body)
+    status = 200 if result.get("ok") else 409
+    return result, status
+
+
+@bp.route("/api/products/<int:pid>/mingkong-pairing/ai-review", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_mingkong_pairing_ai_review(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    result = routes._build_mingkong_pairing_ai_review_response(
+        pid,
+        p,
+        body,
+        user_id=int(current_user.id) if getattr(current_user, "id", None) else None,
+    )
     status = 200 if result.get("ok") else 409
     return result, status
 

@@ -554,19 +554,45 @@ def _procurement_for_skus(skus: list[str]) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _selected_candidate_product_ids(
+    candidates: list[dict[str, Any]],
+    shopify_ids: set[str],
+) -> list[int]:
+    if not candidates:
+        return []
+    matched_shopify = [
+        row for row in candidates
+        if str(row.get("mk_shopify_product_id") or "").strip() in shopify_ids
+    ]
+    if matched_shopify:
+        return [int(row["id"]) for row in matched_shopify]
+    with_procurement = [
+        row for row in candidates
+        if int(row.get("procurement_count") or 0) > 0
+    ]
+    selected = with_procurement or candidates
+    return [int(row["id"]) for row in selected]
+
+
+def _dedupe_variant_rows_by_dxm_sku(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        sku = str(row.get("dxm_sku") or row.get("pair_key") or "").strip()
+        key = sku or f"variant:{row.get('id')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
 def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
     candidates = list_library_candidates_for_product(product, limit=10)
     if not candidates:
         return []
     shopify_ids = _candidate_shopify_ids(product)
-    strong_candidates = [
-        row for row in candidates
-        if str(row.get("mk_shopify_product_id") or "").strip() in shopify_ids
-        or int(row.get("procurement_count") or 0) > 0
-        or int(row.get("relation_count") or 0) > 0
-        or int(row.get("combo_count") or 0) > 0
-    ]
-    product_ids = [int(row["id"]) for row in (strong_candidates or candidates)]
+    product_ids = _selected_candidate_product_ids(candidates, shopify_ids)
     placeholders = ",".join(["%s"] * len(product_ids))
     variants = query(
         f"""
@@ -578,6 +604,7 @@ def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
         """,
         tuple(product_ids + product_ids),
     )
+    variants = _dedupe_variant_rows_by_dxm_sku([dict(row) for row in variants])
     skus = [
         str(row.get("dxm_sku") or row.get("pair_key") or "").strip()
         for row in variants

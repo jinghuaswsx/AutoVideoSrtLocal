@@ -1073,6 +1073,7 @@ def build_target_sku_import_pairs(
     by_variant, by_sku = _target_source_indexes(library_items)
     pairs: list[dict[str, Any]] = []
     seen_variants: set[str] = set()
+    seen_skus: set[str] = set()
     for raw_target in targets or []:
         if not isinstance(raw_target, dict):
             continue
@@ -1089,7 +1090,12 @@ def build_target_sku_import_pairs(
         ).strip()
         if not variant_id or variant_id in seen_variants:
             continue
+        target_sku = str(_target_value(target, source, "dianxiaomi_sku") or "").strip()
+        if target_sku and target_sku in seen_skus:
+            continue
         seen_variants.add(variant_id)
+        if target_sku:
+            seen_skus.add(target_sku)
         pairs.append({
             "shopify_product_id": _target_value(
                 target,
@@ -1125,7 +1131,7 @@ def build_target_sku_import_pairs(
                 "variant_title",
                 "shopify_variant_title",
             ),
-            "dianxiaomi_sku": _target_value(target, source, "dianxiaomi_sku") or None,
+            "dianxiaomi_sku": target_sku or None,
             "dianxiaomi_product_sku": (
                 _target_value(target, source, "dianxiaomi_product_sku") or None
             ),

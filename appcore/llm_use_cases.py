@@ -734,6 +734,16 @@ USE_CASES: dict[str, UseCase] = {
         "google_wj",
         "tokens",
     ),
+    "mingkong_pairing.match_candidate": _uc(
+        "mingkong_pairing.match_candidate",
+        "material",
+        "明空配对候选 AI 判断",
+        "使用 OpenRouter Gemini 3 Flash Preview 判断明空候选商品、图片、标题和 SKU 是否与我们新品匹配，只输出人工确认建议",
+        "openrouter",
+        "google/gemini-3-flash-preview",
+        "openrouter",
+        "tokens",
+    ),
     # 数据分析
     "order_analytics.weekly_ai_analysis": _uc(
         "order_analytics.weekly_ai_analysis",
