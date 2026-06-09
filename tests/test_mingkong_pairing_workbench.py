@@ -425,6 +425,36 @@ def test_mingkong_pairing_action_error_payload_is_json_readable():
     assert payload["logs"][1]["level"] == "error"
 
 
+def test_replicate_mingkong_sku_uses_subprocess_by_default(monkeypatch):
+    calls = {}
+    product = {"id": 736, "product_code": "sample-rjc"}
+    sku_rows = [{"dianxiaomi_sku": "sku-1"}]
+    selections = [{"dianxiaomi_sku": "sku-1", "product_id_alibaba": "1688-product"}]
+
+    def fake_subprocess(operation, payload):
+        calls["operation"] = operation
+        calls["payload"] = payload
+        return {"ok": True, "logs": [{"level": "ok", "message": "done"}], "items": []}
+
+    def fail_impl(*_args, **_kwargs):
+        raise AssertionError("default replicate path should run in a subprocess")
+
+    monkeypatch.setattr(pairing, "_run_pairing_subprocess", fake_subprocess)
+    monkeypatch.setattr(pairing, "_replicate_mingkong_skus_to_dxm03_impl", fail_impl)
+
+    result = pairing.replicate_mingkong_skus_to_dxm03(
+        product,
+        sku_rows,
+        selections=selections,
+    )
+
+    assert result["ok"] is True
+    assert calls["operation"] == "replicate"
+    assert calls["payload"]["product"] == product
+    assert calls["payload"]["sku_rows"] == sku_rows
+    assert calls["payload"]["selections"] == selections
+
+
 def test_replicate_mingkong_sku_runs_impl_on_isolated_thread_when_forced(monkeypatch):
     thread_names = []
 

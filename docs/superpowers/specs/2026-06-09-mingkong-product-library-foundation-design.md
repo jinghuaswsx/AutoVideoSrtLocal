@@ -386,6 +386,8 @@ DXM03 写入仍遵守：
 
 当明空产品库或人工确认候选已经能定位到明空 DXM02 的 ERP 商品行，但 DXM03 商品管理中找不到同一个 SKU 时，工作台不能直接停在“缺 ERP SKU”。它应提供管理员确认的“创建/补齐 DXM03 SKU”动作，先把明空 SKU 设置复刻到 DXM03，再继续 1688 采购配对确认。
 
+线上验收要求：`复刻明空 SKU` 按钮必须完成真实 DXM02 -> DXM03 复刻或返回逐 SKU 业务缺口，不能只把后端异常包装成可读错误。由于 Web 路由运行环境可能已有 asyncio loop，复刻动作中的 Playwright Sync API 必须脱离 Flask / gunicorn worker 运行环境执行，避免 `Playwright Sync API inside the asyncio loop` 阻断真实写入。
+
 复刻字段分三类处理：
 
 1. 可复刻字段：

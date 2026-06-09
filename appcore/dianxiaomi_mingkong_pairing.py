@@ -6,8 +6,12 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Callable
 
 from appcore.browser_automation_lock import browser_automation_lock
@@ -20,6 +24,7 @@ DXM_BASE_URL = "https://www.dianxiaomi.com"
 DEFAULT_DXM02_CDP_URL = "http://127.0.0.1:9223"
 DEFAULT_DXM03_CDP_URL = "http://127.0.0.1:9225"
 DEFAULT_DXM03_FULL_CID = "1750880-"
+DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = 420
 
 DXM_PRODUCT_API = "/api/dxmCommodityProduct/pageList.json"
 DXM_VIEW_COMMODITY_API = "/api/dxmCommodityProduct/viewDxmCommodityProduct.json"
@@ -35,6 +40,89 @@ PAIR_CONFIRM_API = "/api/dxmAlibabaProductPair/confirmPairOpt.json"
 
 class DianxiaomiPairingError(RuntimeError):
     """Raised when DXM03 cannot be reached or returns an unexpected response."""
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _subprocess_timeout_seconds() -> int:
+    raw = os.getenv("MINGKONG_PAIRING_SUBPROCESS_TIMEOUT_SECONDS") or ""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
+
+
+def _run_pairing_subprocess(operation: str, payload: dict[str, Any]) -> Any:
+    project_root = _project_root()
+    timeout_seconds = _subprocess_timeout_seconds()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = (
+        str(project_root)
+        if not env.get("PYTHONPATH")
+        else f"{project_root}{os.pathsep}{env['PYTHONPATH']}"
+    )
+    with tempfile.TemporaryDirectory(prefix="mingkong-pairing-") as tmpdir:
+        output_path = Path(tmpdir) / "result.json"
+        command = [
+            sys.executable,
+            "-m",
+            "appcore.dianxiaomi_mingkong_pairing",
+            "--operation",
+            operation,
+            "--output",
+            str(output_path),
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                input=json.dumps(payload, ensure_ascii=False),
+                text=True,
+                capture_output=True,
+                cwd=project_root,
+                env=env,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise DianxiaomiPairingError(
+                f"{operation} subprocess timed out after {timeout_seconds}s"
+            ) from exc
+
+        envelope: dict[str, Any] = {}
+        if output_path.exists():
+            try:
+                envelope = json.loads(output_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise DianxiaomiPairingError(
+                    f"{operation} subprocess returned invalid JSON"
+                ) from exc
+
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()
+            detail = envelope.get("error") or stderr or f"exit {completed.returncode}"
+            raise DianxiaomiPairingError(f"{operation} subprocess failed: {detail}")
+        if not envelope:
+            stdout = (completed.stdout or "").strip()
+            detail = stdout or "empty subprocess result"
+            raise DianxiaomiPairingError(f"{operation} subprocess failed: {detail}")
+        if not envelope.get("ok"):
+            detail = envelope.get("error") or envelope.get("message") or "unknown error"
+            raise DianxiaomiPairingError(f"{operation} subprocess failed: {detail}")
+        return envelope.get("result")
+
+
+def _pairing_subprocess_entrypoint(operation: str, payload: dict[str, Any]) -> Any:
+    if operation == "replicate":
+        return _replicate_mingkong_skus_to_dxm03_impl(
+            payload.get("product") or {},
+            payload.get("sku_rows") or [],
+            selections=payload.get("selections"),
+            cdp_url=payload.get("cdp_url"),
+            source_cdp_url=payload.get("source_cdp_url"),
+        )
+    raise DianxiaomiPairingError(f"unsupported pairing subprocess operation: {operation}")
 
 
 def _run_playwright_operation(
@@ -1051,6 +1139,21 @@ def replicate_mingkong_skus_to_dxm03(
     update_product_fn=None,
     force_isolated_thread: bool | None = None,
 ) -> dict[str, Any]:
+    if (
+        force_isolated_thread is None
+        and replace_product_skus_fn is None
+        and update_product_fn is None
+    ):
+        return _run_pairing_subprocess(
+            "replicate",
+            {
+                "product": product,
+                "sku_rows": sku_rows,
+                "selections": selections,
+                "cdp_url": cdp_url,
+                "source_cdp_url": source_cdp_url,
+            },
+        )
     return _run_playwright_operation(
         "dxm03_mingkong_sku_replicate",
         lambda: _replicate_mingkong_skus_to_dxm03_impl(
@@ -1512,3 +1615,36 @@ def _confirm_dxm03_pairing_impl(
         "items": results,
         "summary": summary,
     }
+
+
+def _main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run Mingkong pairing Playwright operations.")
+    parser.add_argument("--operation", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args(argv)
+
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+        result = _pairing_subprocess_entrypoint(args.operation, payload)
+        envelope = {"ok": True, "result": result}
+        exit_code = 0
+    except Exception as exc:  # noqa: BLE001 - subprocess must preserve error text
+        log.exception("mingkong pairing subprocess failed operation=%s", args.operation)
+        envelope = {
+            "ok": False,
+            "error": str(exc),
+            "error_type": exc.__class__.__name__,
+        }
+        exit_code = 1
+
+    Path(args.output).write_text(
+        json.dumps(envelope, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
