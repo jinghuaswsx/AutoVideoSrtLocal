@@ -2737,7 +2737,7 @@ def test_realtime_order_profit_has_summary_and_pagination_controls(authed_client
 
 
 def test_realtime_unallocated_ad_card_is_clickable_and_campaign_filter_is_wired(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
@@ -2745,7 +2745,7 @@ def test_realtime_unallocated_ad_card_is_clickable_and_campaign_filter_is_wired(
     assert 'id="realtimeProfitUnallocatedAdCard"' in panel
     assert 'data-realtime-campaign-filter="unallocated"' in panel
     assert "function showRealtimeUnallocatedCampaigns()" in body
-    assert "setRealtimeSubtab('campaigns')" in body
+    assert "switchRealtimeSubtab('campaigns', true)" in body
     assert "realtimeState.campaignFilter = 'unallocated'" in body
     assert "renderRealtimeCampaigns(realtimeLastCampaignRows)" in body
 
@@ -2773,6 +2773,30 @@ def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     assert "params.set('start_date', range.start)" in subtab_js
     assert "params.set('end_date', range.end)" in subtab_js
     assert "params.set('include_details', '1')" in subtab_js
+
+
+def test_realtime_subtab_click_refreshes_details_without_top_cards(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    handler_start = body.index("document.querySelectorAll('[data-realtime-subtab]')")
+    handler_end = body.index("var nplRefresh", handler_start)
+    handler_js = body[handler_start:handler_end]
+    assert "switchRealtimeSubtab(btn.dataset.realtimeSubtab, true)" in handler_js
+    assert "window.location.href" not in handler_js
+
+    switch_start = body.index("function switchRealtimeSubtab(name, refreshDetails)")
+    switch_end = body.index("var realtimeRefresh", switch_start)
+    switch_js = body[switch_start:switch_end]
+    assert "setRealtimeSubtab(subtab)" in switch_js
+    assert "loadRealtimeSubTabs()" in switch_js
+    assert "loadRealtimeTopCards()" not in switch_js
+
+    url_start = body.index("function updateRealtimeSubtabUrl(name)")
+    url_end = body.index("function switchRealtimeSubtab", url_start)
+    url_js = body[url_start:url_end]
+    assert "window.history.pushState" in url_js
 
 
 def test_order_analytics_daily_detail_escapes_country_headers(authed_client_no_db):

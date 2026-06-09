@@ -357,7 +357,7 @@ def page():
     path = request.path.rstrip('/')
     if path in ("/order-analytics", "/order-analytics/realtime"):
         query_string = request.query_string.decode("utf-8")
-        target_url = "/order-analytics/realtime/order"
+        target_url = "/order-analytics/realtime/trend"
         if query_string:
             target_url += f"?{query_string}"
         return redirect(target_url)
@@ -369,7 +369,7 @@ def page():
         "/order-analytics/realtime/campaign": "campaigns",
         "/order-analytics/realtime/trend": "trend",
     }
-    active_subtab = subtab_mapping.get(path, "orders")
+    active_subtab = subtab_mapping.get(path, "trend")
 
     mapping = {
         "/order-analytics/realtime/order": "realtime",
