@@ -2,6 +2,7 @@
 
 Docs-anchor: docs/analytics-data-quality-guardrails.md
 Docs-anchor: docs/superpowers/specs/2026-05-29-data-quality-bar-compact-disclosure.md
+Docs-anchor: docs/superpowers/specs/2026-06-09-data-quality-bar-human-readable-baseline.md
 """
 from pathlib import Path
 
@@ -56,6 +57,22 @@ def test_data_quality_bar_defaults_to_compact_disclosure(bar_template: str) -> N
     assert 'data-dq-toggle-icon' in bar_template
     assert 'data-dq-sub' not in bar_template
     assert 'details.hidden = false' not in bar_template
+
+
+def test_data_quality_bar_explains_baselines_without_watermark_jargon(bar_template: str) -> None:
+    assert "水位" not in bar_template
+    for text in (
+        "订单数据基准",
+        "日终广告数据基准",
+        "实时广告数据基准",
+        "利润计算数据基准",
+        "数据日期：",
+        "这批同步",
+        "同步维度：",
+        "广告数据：实时同步版",
+        "统计业务日",
+    ):
+        assert text in bar_template
 
 
 def test_pages_invoke_render_data_quality_bar() -> None:

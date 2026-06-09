@@ -1,6 +1,7 @@
 {# 数据质量状态条共享组件
    Docs-anchor: docs/analytics-data-quality-guardrails.md
    Docs-anchor: docs/superpowers/specs/2026-05-29-data-quality-bar-compact-disclosure.md
+   Docs-anchor: docs/superpowers/specs/2026-06-09-data-quality-bar-human-readable-baseline.md
 
    用法：
    1. 在页面里 ``{% include "_data_quality_bar.html" %}``。
@@ -77,8 +78,14 @@
     font-size: var(--text-xs);
     color: var(--fg-muted);
   }
+  .dq-bar__details div { min-width: 0; }
   .dq-bar__details dt { font-weight: 500; }
-  .dq-bar__details dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .dq-bar__details dd {
+    margin: 2px 0 0;
+    font-variant-numeric: tabular-nums;
+    line-height: var(--leading-normal);
+  }
+  .dq-bar__detail-line { display: block; }
   .dq-bar__toggle {
     display: inline-flex; align-items: center; gap: 4px;
     flex: 0 0 auto; background: rgba(255,255,255,0.5);
@@ -127,18 +134,18 @@
 (function () {
   const STATUS_LABELS = {
     ok: '数据已校验',
-    warning: '数据提示',
-    stale: '数据滞后',
+    warning: '数据说明',
+    stale: '数据不是最新',
     mismatch: '对账失败',
-    error: '校验异常',
-    unknown: '数据质量未知',
+    error: '数据检查异常',
+    unknown: '数据来源未知',
   };
   const SOURCE_LABELS = {
-    daily_final: '日终广告表',
-    realtime_snapshot: '实时快照兜底',
-    mixed: '混合（部分日终 / 部分实时）',
-    derived_cache: '派生缓存（已新鲜度校验）',
-    unknown: '数据源未知',
+    daily_final: '广告数据：日终确认版',
+    realtime_snapshot: '广告数据：实时同步版',
+    mixed: '广告数据：日终+实时混用',
+    derived_cache: '利润数据：已重算缓存',
+    unknown: '数据来源未确认',
   };
 
   function safeStatus(value) {
@@ -148,23 +155,61 @@
     if (!value) return '—';
     return String(value).replace('T', ' ').slice(0, 19);
   }
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[ch]));
+  }
 
   function summarizeWatermarks(watermarks) {
     if (!watermarks || typeof watermarks !== 'object') return [];
     const map = [
-      ['orders',           '订单',     'latest_business_date', 'latest_updated_at'],
-      ['meta_daily_ads',   '广告日终', 'latest_business_date', 'latest_import_finished_at'],
-      ['meta_realtime_ads','广告实时', 'latest_business_date', 'latest_snapshot_at'],
-      ['derived_profit',   '派生利润', 'latest_business_date', 'latest_run_finished_at'],
+      {
+        key: 'orders',
+        title: '订单数据基准',
+        dimension: '同步维度：店铺 + 订单行（按 Meta 业务日归属）',
+        dateKey: 'latest_business_date',
+        tsKey: 'latest_updated_at',
+        syncPrefix: '这批同步：最近一次订单入库 / 更新 ',
+      },
+      {
+        key: 'meta_daily_ads',
+        title: '日终广告数据基准',
+        dimension: '同步维度：Meta 业务日 + 广告账户 + Campaign',
+        dateKey: 'latest_business_date',
+        tsKey: 'latest_import_finished_at',
+        syncPrefix: '这批同步：最近一次日终广告导入 ',
+      },
+      {
+        key: 'meta_realtime_ads',
+        title: '实时广告数据基准',
+        dimension: '同步维度：Meta 业务日 + 广告账户 + Campaign 实时快照',
+        dateKey: 'latest_business_date',
+        tsKey: 'latest_snapshot_at',
+        syncPrefix: '这批同步：实时快照时间 ',
+      },
+      {
+        key: 'derived_profit',
+        title: '利润计算数据基准',
+        dimension: '同步维度：订单行 / 包裹 + 广告费分摊',
+        dateKey: 'latest_business_date',
+        tsKey: 'latest_run_finished_at',
+        syncPrefix: '这批同步：最近一次利润重算 ',
+      },
     ];
     const out = [];
-    for (const [key, label, dateKey, tsKey] of map) {
-      const entry = watermarks[key];
+    for (const item of map) {
+      const entry = watermarks[item.key];
       if (!entry || typeof entry !== 'object') continue;
       out.push({
-        label,
-        date: entry[dateKey] || '—',
-        ts: fmtTime(entry[tsKey]),
+        title: item.title,
+        date: entry[item.dateKey] || '—',
+        syncText: item.syncPrefix + fmtTime(entry[item.tsKey]),
+        dimension: item.dimension,
       });
     }
     return out;
@@ -184,7 +229,7 @@
     }
     if (parts.length === 0) {
       const generated = fmtTime(payload.generated_at);
-      parts.push(`检验完成于 ${generated}`);
+      parts.push(`数据检查时间 ${generated}`);
     }
     return parts.join('；');
   }
@@ -221,8 +266,8 @@
     if (dateFrom && dateTo) {
       rangeChip.hidden = false;
       rangeChip.textContent = dateFrom === dateTo
-        ? `业务日 ${dateFrom}`
-        : `业务日 ${dateFrom} ~ ${dateTo}`;
+        ? `统计业务日 ${dateFrom}`
+        : `统计业务日 ${dateFrom} ~ ${dateTo}`;
     } else {
       rangeChip.hidden = true;
     }
@@ -233,8 +278,12 @@
     const watermarkRows = summarizeWatermarks(dq.watermarks);
     if (watermarkRows.length) {
       details.innerHTML = watermarkRows.map(
-        (row) => `<div><dt>${row.label} 水位</dt>`
-          + `<dd>${row.date} <span style="opacity:.7">/ ${row.ts}</span></dd></div>`
+        (row) => `<div><dt>${escapeHtml(row.title)}</dt>`
+          + '<dd>'
+          + `<span class="dq-bar__detail-line">数据日期：业务日 ${escapeHtml(row.date)}</span>`
+          + `<span class="dq-bar__detail-line">${escapeHtml(row.syncText)}</span>`
+          + `<span class="dq-bar__detail-line">${escapeHtml(row.dimension)}</span>`
+          + '</dd></div>'
       ).join('');
       toggle.hidden = false;
       details.hidden = true;
