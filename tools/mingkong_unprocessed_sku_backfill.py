@@ -152,6 +152,84 @@ def delete_local_product_skus(product_id: int, *, execute_fn: Callable[..., Any]
     return int(execute_fn("DELETE FROM media_product_skus WHERE product_id=%s", (int(product_id),)) or 0)
 
 
+def configured_variant_ids(rows: list[dict[str, Any]]) -> set[str]:
+    return {
+        _clean_text(row.get("shopify_variant_id"))
+        for row in rows or []
+        if _clean_text(row.get("shopify_variant_id")) and is_configured_local_sku_row(row)
+    }
+
+
+def preserve_configured_pair_fields(
+    pairs: list[dict[str, Any]],
+    existing_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], set[str]]:
+    existing_by_variant = {
+        _clean_text(row.get("shopify_variant_id")): row
+        for row in existing_rows or []
+        if _clean_text(row.get("shopify_variant_id"))
+    }
+    protected = configured_variant_ids(existing_rows)
+    out: list[dict[str, Any]] = []
+    for pair in pairs or []:
+        variant_id = _clean_text(pair.get("shopify_variant_id"))
+        if variant_id not in protected:
+            out.append(pair)
+            continue
+        existing = existing_by_variant.get(variant_id) or {}
+        merged = dict(pair)
+        for key in (
+            "dianxiaomi_sku",
+            "dianxiaomi_product_sku",
+            "dianxiaomi_sku_code",
+            "dianxiaomi_name",
+        ):
+            if key in existing:
+                merged[key] = existing.get(key)
+        out.append(merged)
+    return out, protected
+
+
+def _sku_pair_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "shopify_product_id": row.get("shopify_product_id"),
+        "shopify_variant_id": row.get("shopify_variant_id"),
+        "shopify_sku": row.get("shopify_sku"),
+        "shopify_price": row.get("shopify_price"),
+        "shopify_compare_at_price": row.get("shopify_compare_at_price"),
+        "shopify_currency": row.get("shopify_currency") or "USD",
+        "shopify_inventory_quantity": row.get("shopify_inventory_quantity"),
+        "shopify_weight_grams": row.get("shopify_weight_grams"),
+        "shopify_variant_title": row.get("shopify_variant_title") or row.get("variant_title"),
+        "dianxiaomi_sku": row.get("dianxiaomi_sku"),
+        "dianxiaomi_product_sku": row.get("dianxiaomi_product_sku"),
+        "dianxiaomi_sku_code": row.get("dianxiaomi_sku_code"),
+        "dianxiaomi_name": row.get("dianxiaomi_name"),
+    }
+
+
+def protective_replace_product_skus(product_id: int, action_pairs: list[dict[str, Any]], *, source: str) -> dict[str, int]:
+    current_rows = medias.list_product_skus(int(product_id))
+    merged_by_variant = {
+        _clean_text(row.get("shopify_variant_id")): _sku_pair_from_row(row)
+        for row in current_rows
+        if _clean_text(row.get("shopify_variant_id"))
+    }
+    for pair in action_pairs or []:
+        variant_id = _clean_text(pair.get("shopify_variant_id"))
+        if not variant_id:
+            continue
+        merged = dict(merged_by_variant.get(variant_id) or {})
+        merged.update(_sku_pair_from_row(pair))
+        merged["shopify_variant_id"] = variant_id
+        merged_by_variant[variant_id] = merged
+    return medias.replace_product_skus(
+        int(product_id),
+        list(merged_by_variant.values()),
+        source=source,
+    )
+
+
 def find_unprocessed_products(
     *,
     limit: int = 0,
@@ -325,6 +403,7 @@ def run_product_sync(
     force_reset_no_orders: bool = False,
     force_refresh_mingkong: bool = False,
     overwrite_existing_pairing: bool = False,
+    protect_configured_local_skus: bool = False,
 ) -> dict[str, Any]:
     product_id = int(product["id"])
     existing_rows = medias.list_product_skus(product_id)
@@ -338,7 +417,7 @@ def run_product_sync(
         result["order_summary"] = order_summary
         return result
     configured_count = configured_local_sku_row_count(existing_rows)
-    if configured_count and not force_reset_no_orders:
+    if configured_count and not force_reset_no_orders and not protect_configured_local_skus:
         return _empty_product_result(
             product,
             "skipped_configured_local_skus",
@@ -361,6 +440,16 @@ def run_product_sync(
         payload.get("items") or [],
         targets,
     )
+    protected_variant_ids: set[str] = set()
+    if protect_configured_local_skus:
+        pairs, protected_variant_ids = preserve_configured_pair_fields(pairs, existing_rows)
+    action_variant_ids = {
+        _clean_text(pair.get("shopify_variant_id"))
+        for pair in pairs
+        if _clean_text(pair.get("shopify_variant_id"))
+        and _clean_text(pair.get("shopify_variant_id")) not in protected_variant_ids
+        and _clean_text(pair.get("dianxiaomi_sku"))
+    }
     result: dict[str, Any] = {
         "product_id": product_id,
         "product_code": product.get("product_code") or "",
@@ -370,6 +459,8 @@ def run_product_sync(
         "local_sku_count": len(pairs),
         "existing_empty_base_count": len(existing_rows),
         "configured_local_sku_count": configured_count,
+        "protected_local_sku_count": len(protected_variant_ids),
+        "new_fillable_sku_count": len(action_variant_ids),
         "order_summary": order_summary,
         "mingkong_refresh": refresh_summary,
         "workbench_source": (payload.get("summary") or {}).get("source") or "",
@@ -392,6 +483,12 @@ def run_product_sync(
         result["force_deleted_local_skus"] = delete_local_product_skus(product_id)
     stats = medias.replace_product_skus(product_id, pairs, source="mingkong_batch_sync")
     result["import"] = {"stats": stats}
+    if protect_configured_local_skus and not action_variant_ids:
+        result.update({
+            "status": "ok",
+            "message": "保护性同步完成：没有新增可写入 DXM03 的明空 SKU，已有配置已保留",
+        })
+        return result
     if not any(pair.get("dianxiaomi_sku") for pair in pairs):
         result.update({
             "status": "blocked_no_mingkong_skus",
@@ -404,11 +501,24 @@ def run_product_sync(
 
     product_after_import = medias.get_product(product_id) or product
     local_rows = medias.list_product_skus(product_id)
+    if protect_configured_local_skus:
+        local_rows = [
+            row for row in local_rows
+            if _clean_text(row.get("shopify_variant_id")) in action_variant_ids
+        ]
+        targets = [
+            target for target in targets
+            if _clean_text(target.get("shopify_variant_id")) in action_variant_ids
+        ]
     replicate_result = pairing.replicate_mingkong_skus_to_dxm03(
         product_after_import,
         local_rows,
         selections=targets,
-        replace_product_skus_fn=medias.replace_product_skus,
+        replace_product_skus_fn=(
+            protective_replace_product_skus
+            if protect_configured_local_skus
+            else medias.replace_product_skus
+        ),
         update_product_fn=medias.update_product,
         force_isolated_thread=False,
     )
@@ -427,6 +537,11 @@ def run_product_sync(
 
     product_after_replicate = medias.get_product(product_id) or product_after_import
     local_rows = medias.list_product_skus(product_id)
+    if protect_configured_local_skus:
+        local_rows = [
+            row for row in local_rows
+            if _clean_text(row.get("shopify_variant_id")) in action_variant_ids
+        ]
     confirm_result = pairing.confirm_dxm03_pairing(
         product_after_replicate,
         local_rows,
@@ -457,6 +572,7 @@ def run_batch(
     force_reset_no_orders: bool = False,
     force_refresh_mingkong: bool = False,
     overwrite_existing_pairing: bool = False,
+    protect_configured_local_skus: bool = False,
     progress_fn: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     started_at = datetime.now().isoformat(timespec="seconds")
@@ -483,6 +599,7 @@ def run_batch(
                 force_reset_no_orders=force_reset_no_orders,
                 force_refresh_mingkong=force_refresh_mingkong,
                 overwrite_existing_pairing=overwrite_existing_pairing,
+                protect_configured_local_skus=protect_configured_local_skus,
             )
         except Exception as exc:  # noqa: BLE001 - batch report must continue
             result = _empty_product_result(
@@ -538,6 +655,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force-reset-no-orders", action="store_true")
     parser.add_argument("--force-refresh-mingkong", action="store_true")
     parser.add_argument("--overwrite-existing-pairing", action="store_true")
+    parser.add_argument("--protect-configured-local-skus", action="store_true")
     args = parser.parse_args(argv)
     product_ids = [
         int(part.strip())
@@ -567,6 +685,7 @@ def main(argv: list[str] | None = None) -> int:
         force_reset_no_orders=bool(args.force_reset_no_orders),
         force_refresh_mingkong=bool(args.force_refresh_mingkong),
         overwrite_existing_pairing=bool(args.overwrite_existing_pairing),
+        protect_configured_local_skus=bool(args.protect_configured_local_skus),
         progress_fn=print_progress,
     )
     path = write_report(report)
