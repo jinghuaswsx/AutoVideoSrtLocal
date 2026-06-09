@@ -268,6 +268,7 @@ AI素材军师每次运行都是一个项目任务，必须像全能视频翻译
 - `progress_json` 至少包含 `percent`、`current_step`、`current_step_label`、`message`、`steps[]`、`logs[]`、`product_progress`。
 - `status=running` 时，页面首屏必须显示 sticky 运行状态卡：状态、进度条、百分比、当前动作、当前产品进度。
 - 移动端或项目已完成/失败时，运行状态卡不能 sticky 遮挡后续数据；只允许桌面端 `running` 项目使用 sticky 运行卡。
+- 移动端成功态项目应优先展示报告主体，可隐藏已完成步骤卡片和日志明细，避免完成进度信息占满首屏。
 - 步骤卡片展示 `等待中 / 运行中 / 已完成 / 失败` 四类状态，失败时显示错误信息。
 - 同一时间只能有一个 AI素材军师项目运行。创建新项目前必须检查是否已有 `status='running'` 项目：
   - 如果有，API 返回 `409`，payload 带 `running_project` 和其详情路由。
