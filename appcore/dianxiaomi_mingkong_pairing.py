@@ -714,12 +714,17 @@ def _open_dxm_context(cdp_url: str):
 
     playwright = sync_playwright().start()
     try:
-        browser = playwright.chromium.connect_over_cdp(cdp_url)
-        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        browser, ctx = _connect_dxm_context(playwright, cdp_url)
         return playwright, browser, ctx
     except Exception:
         playwright.stop()
         raise
+
+
+def _connect_dxm_context(playwright, cdp_url: str):
+    browser = playwright.chromium.connect_over_cdp(cdp_url)
+    ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+    return browser, ctx
 
 
 def _open_dxm03_context(cdp_url: str):
@@ -1204,9 +1209,9 @@ def _replicate_mingkong_skus_to_dxm03_impl(
         command=str(product.get("product_code") or product.get("id") or ""),
     ):
         source_playwright, source_browser, source_ctx = _open_dxm02_context(source_url)
-        target_playwright = target_browser = None
+        target_browser = None
         try:
-            target_playwright, target_browser, target_ctx = _open_dxm03_context(target_url)
+            target_browser, target_ctx = _connect_dxm_context(source_playwright, target_url)
             for row in rows_with_sku:
                 sku = str(row.get("dianxiaomi_sku") or "").strip()
                 variant_id = str(row.get("shopify_variant_id") or "").strip()
@@ -1316,8 +1321,6 @@ def _replicate_mingkong_skus_to_dxm03_impl(
                     results.append(item_result)
         finally:
             _close_dxm03_context(source_playwright, source_browser)
-            if target_playwright is not None and target_browser is not None:
-                _close_dxm03_context(target_playwright, target_browser)
 
     if successful_by_sku:
         medias_module = None

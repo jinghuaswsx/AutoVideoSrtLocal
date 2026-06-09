@@ -388,6 +388,8 @@ DXM03 写入仍遵守：
 
 线上验收要求：`复刻明空 SKU` 按钮必须完成真实 DXM02 -> DXM03 复刻或返回逐 SKU 业务缺口，不能只把后端异常包装成可读错误。由于 Web 路由运行环境可能已有 asyncio loop，复刻动作中的 Playwright Sync API 必须脱离 Flask / gunicorn worker 运行环境执行，避免 `Playwright Sync API inside the asyncio loop` 阻断真实写入。
 
+复刻动作需要同时访问 DXM02-MK 与 DXM03-RJC CDP。实现上只能启动一个 `sync_playwright()` 实例，再用同一个 Playwright 分别 `connect_over_cdp` 两个账号浏览器；不能在同一线程里连续启动两个 Playwright Sync context。
+
 复刻字段分三类处理：
 
 1. 可复刻字段：

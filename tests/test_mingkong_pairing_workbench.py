@@ -689,7 +689,7 @@ def test_replicate_mingkong_sku_reuses_existing_dxm03_commodity(monkeypatch):
 
     monkeypatch.setattr(pairing, "browser_automation_lock", fake_lock)
     monkeypatch.setattr(pairing, "_open_dxm02_context", lambda _url: ("spw", "sbrowser", "source"))
-    monkeypatch.setattr(pairing, "_open_dxm03_context", lambda _url: ("tpw", "tbrowser", "target"))
+    monkeypatch.setattr(pairing, "_connect_dxm_context", lambda _playwright, _url: ("tbrowser", "target"))
     monkeypatch.setattr(pairing, "_close_dxm03_context", lambda _playwright, _browser: None)
 
     def fake_search(ctx, sku):
@@ -761,7 +761,7 @@ def test_replicate_mingkong_sku_creates_missing_dxm03_commodity(monkeypatch):
 
     monkeypatch.setattr(pairing, "browser_automation_lock", fake_lock)
     monkeypatch.setattr(pairing, "_open_dxm02_context", lambda _url: ("spw", "sbrowser", "source"))
-    monkeypatch.setattr(pairing, "_open_dxm03_context", lambda _url: ("tpw", "tbrowser", "target"))
+    monkeypatch.setattr(pairing, "_connect_dxm_context", lambda _playwright, _url: ("tbrowser", "target"))
     monkeypatch.setattr(pairing, "_close_dxm03_context", lambda _playwright, _browser: None)
 
     def fake_search(ctx, sku):
