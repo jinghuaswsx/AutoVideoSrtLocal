@@ -87,6 +87,11 @@ def test_task_workbench_renders_video_size_adjustment_card_and_renderer():
     assert "视频大小调整" in template
     assert 'video_size_adjustment: "视频大小调整"' in script
     assert 'artifact.layout === "video_size_adjustment"' in script
+    assert "buildVideoSizeAdjustmentArtifactFromTask" in script
+    assert 'step === "video_size_adjustment"' in script
+    assert "task.video_size_adjustment" in script
+    assert "variants.av?.video_size_adjustment" in script
+    assert "已检查，无需调整" in script
     assert "renderVideoSizeAdjustmentArtifact" in script
     assert "总码率" in script
     assert "视频码率" in script

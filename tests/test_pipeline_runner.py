@@ -767,10 +767,55 @@ def test_step_video_size_adjustment_updates_hard_video_result(tmp_path, monkeypa
     assert saved["preview_files"]["hard_video"] == str(adjusted_video)
     assert saved["variants"]["normal"]["result"]["hard_video"] == str(adjusted_video)
     assert saved["variants"]["normal"]["video_size_adjustment"]["status"] == "adjusted"
+    assert saved["variants"]["normal"]["artifacts"]["video_size_adjustment"]["layout"] == "video_size_adjustment"
     artifact = saved["artifacts"]["video_size_adjustment"]
     assert artifact["title"] == "视频大小调整"
     assert artifact["layout"] == "video_size_adjustment"
     assert artifact["summary"]["target_total_bitrate_bps"] == 5_000_000
+
+
+def test_step_video_size_adjustment_records_card_when_no_reencode_needed(tmp_path, monkeypatch):
+    task_id = "task-video-size-adjustment-skipped"
+    task = store.create(task_id, "video.mp4", str(tmp_path))
+    hard_video = tmp_path / "hard.normal.mp4"
+    hard_video.write_bytes(b"small")
+    task["result"] = {"hard_video": str(hard_video)}
+    task["preview_files"]["hard_video"] = str(hard_video)
+    task["variants"]["normal"].update({
+        "result": {"hard_video": str(hard_video)},
+        "preview_files": {"hard_video": str(hard_video)},
+    })
+
+    def fake_adjust(path, **kwargs):
+        assert path == str(hard_video)
+        assert kwargs["variant"] == "normal"
+        return {
+            "status": "skipped",
+            "variant": "normal",
+            "input_path": str(hard_video),
+            "output_path": str(hard_video),
+            "input_size_bytes": 56_969_100,
+            "output_size_bytes": 56_969_100,
+            "original_total_bitrate_bps": 12_754_276,
+            "target_total_bitrate_bps": 12_754_276,
+            "attempts": [],
+            "message": "视频大小 54.3 MB，未超过 100.0 MB，无需调整。",
+        }
+
+    monkeypatch.setattr("pipeline.compose.adjust_video_size_to_limit", fake_adjust)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_video_size_adjustment(task_id, "video.mp4", str(tmp_path))
+
+    saved = store.get(task_id)
+    assert saved["steps"]["video_size_adjustment"] == "done"
+    assert saved["step_messages"]["video_size_adjustment"] == "视频大小 54.3 MB，未超过 100.0 MB，无需调整。"
+    assert saved["result"]["hard_video"] == str(hard_video)
+    assert "pre_size_adjustment_hard_video" not in saved["result"]
+    assert saved["video_size_adjustment"]["status"] == "skipped"
+    assert saved["artifacts"]["video_size_adjustment"]["layout"] == "video_size_adjustment"
+    assert saved["artifacts"]["video_size_adjustment"]["summary"]["status"] == "skipped"
+    assert saved["variants"]["normal"]["artifacts"]["video_size_adjustment"]["summary"]["status"] == "skipped"
 
 
 def test_step_export_uses_adjusted_hard_video_for_capcut_after_size_adjustment(tmp_path, monkeypatch):

@@ -1581,6 +1581,10 @@
         const fallbackArtifact = synthesizeAsrCleanArtifact(currentTask);
         if (fallbackArtifact) artifact = fallbackArtifact;
       }
+      if (step === "video_size_adjustment" && (!artifact || !artifact.summary)) {
+        const fallbackArtifact = buildVideoSizeAdjustmentArtifactFromTask(currentTask);
+        if (fallbackArtifact) artifact = fallbackArtifact;
+      }
       const status = currentTask?.steps?.[step] || "pending";
       const displayStatus = visualStepStatus(status);
       let html;
@@ -1621,6 +1625,28 @@
         delete previewEl.dataset.terminalFrozen;
       }
     });
+  }
+
+  function buildVideoSizeAdjustmentArtifactFromTask(task) {
+    if (!task) return null;
+    const variants = task.variants || {};
+    const preferredVariant = task.video_size_adjustment?.variant || "";
+    const preferredSummary = preferredVariant && variants[preferredVariant]?.video_size_adjustment
+      ? variants[preferredVariant].video_size_adjustment
+      : null;
+    const summary = task.video_size_adjustment
+      || preferredSummary
+      || variants.av?.video_size_adjustment
+      || variants.normal?.video_size_adjustment
+      || variants.hook_cta?.video_size_adjustment
+      || null;
+    if (!summary || !Object.keys(summary).length) return null;
+    return {
+      title: "视频大小调整",
+      layout: "video_size_adjustment",
+      summary,
+      items: [],
+    };
   }
 
   function renderVideoSizeAdjustmentArtifact(artifact) {
@@ -1682,7 +1708,7 @@
     const normalized = String(status || "").toLowerCase();
     if (normalized === "adjusted") return { label: "已调整", className: "is-adjusted" };
     if (normalized === "failed") return { label: "失败", className: "is-failed" };
-    return { label: "无需调整", className: "is-skipped" };
+    return { label: "已检查，无需调整", className: "is-skipped" };
   }
 
   function formatFileSizeMb(bytes) {
