@@ -299,6 +299,16 @@
    - DXM03 确认采购配对时允许覆盖已有 1688 配对，不再走 `already_configured_preserved`。
 4. 激进模式仍不得伪造明空 SKU。强制刷新后如果仍没有真实 `dianxiaomi_sku`，只能保留空 SKU 基底并输出 `blocked_no_mingkong_skus`，等待后续人工或更强匹配逻辑处理。
 
+## 已有 SKU 产品保护性补缺模式
+
+针对“已经有一部分 SKU 信息、但可能只维护了一两个”的产品，批量工具需要提供保护性补缺模式：
+
+1. 候选可以来自最近新增产品中已经存在真实店小秘 SKU / Product SKU / SKUID / 人工配置的产品；这类产品不得因为已有配置而整品跳过。
+2. 本地已有配置的 `shopify_variant_id` 行必须保护：不得覆盖 `dianxiaomi_sku`、`dianxiaomi_product_sku`、`dianxiaomi_sku_code`、`dianxiaomi_name` 等已配置字段。
+3. 本地未配置的 variant 行按全量 Shopify 基底 + 明空产品库填充；明空有 SKU 就同步，明空没有 SKU 就保留空值。
+4. DXM03 复刻和采购配对只处理“本轮由空变为有明空 SKU”的行；已有配置行不进入本轮 DXM03 写入/确认动作。
+5. DXM03 采购确认仍使用保护策略：如果目标 SKU 已有配对，只标记已存在/已保护，不覆盖采购链接或 1688 SKU。
+
 ## 组合 SKU 接口实测补充
 
 2026-06-09 在 DXM02-MK 明空账号实测：
