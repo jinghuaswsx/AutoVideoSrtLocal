@@ -248,7 +248,8 @@
 1. 单品 SKU：确认 1688 采购配对前，先查询 DXM03 当前 SKU 的配对状态；如果已经 `is_paired=1`，本轮只标记 `already_configured_preserved`，不得改 `sourceUrl`，不得重新勾选/确认 1688 SKU，即使明空候选与现有配置不同。
 2. 组合 SKU：如果 DXM03 已存在组合商品，并且所有组件 SKU 的采购配对都完整，只标记已存在/已配对，不重新复刻组合结构。
 3. 本地 `media_product_skus.manual_override=1` 的人工行继续由 `replace_product_skus()` 原有逻辑保护，不被自动同步覆盖或删除。
-4. 批量同步只处理本地完全没有 SKU 行的产品；只要 `media_product_skus` 中已有任意行，就视为已处理或人工介入过，批量任务跳过该产品。
+4. 批量同步不得把“空 SKU 基底”误判为已处理。`media_product_skus` 只有 Shopify variant/title/price/weight 等前台字段，或者只有商品标题类 `dianxiaomi_name`，但 `dianxiaomi_sku` / `dianxiaomi_product_sku` / `dianxiaomi_sku_code` / 人工字段为空时，只表示基底已建立，仍应继续尝试同步明空 SKU。
+5. 批量同步跳过的“已处理数据”只包括：存在 `manual_override=1`、人工价格/商品名，或已经有真实店小秘 SKU/Product SKU/SKUID 的本地 SKU 行。DXM03 后台已经配置过的 SKU 则在执行阶段实时查询并以 `already_configured_preserved` 保护。
 
 ## 未处理产品批量同步
 
@@ -258,13 +259,17 @@
    - `media_products.deleted_at IS NULL`
    - 默认排除已归档产品。
    - 默认只处理上架产品：`listing_status IS NULL OR listing_status='上架'`。
-   - `media_product_skus` 没有任何行。
+   - 不存在已处理 SKU 行；空 SKU 基底产品仍然要进入批量同步。
 2. 单产品流程：
    - 构建 Shopify 全量 variant 基底。
    - 从本地明空产品库读取 SKU、采购链接、采购价/供应商等可用字段；本地缺失时按现有逻辑实时补采 DXM02。
+   - 当同一个明空 product code 下存在多个 Shopify 副本时，合并 SKU 基底不能让“同 variant 但无 DXM SKU”的空候选压过“同规格标题且有 DXM SKU/采购信息”的候选；同规格候选必须按真实 DXM SKU、SKUID、采购链接、1688 SKU ID 的信息量择优。
+   - Shopify 公开 JSON 或 DXM02 返回的重量字段如果超过本地数据库可保存范围，写入本地明空库和 `media_product_skus` 前必须置空，不得中断整品同步。
    - 写入本地 `media_product_skus`。
    - 在 DXM03 小秘云仓/商品管理中补缺 SKU；已存在且已配置的 SKU 保持不动。
-   - 对未配置的单品 SKU 执行 1688 采购配对；组合 SKU 只在组件关系完整时视为完成。
+   - DXM03 复刻顺序必须先普通组件 SKU、后组合 SKU，避免组合商品先执行时因为组件还没创建而被误判为缺组件；如果组合组件不在当前 Shopify variant 基底里，但 DXM02 组合关系返回了组件 SKU，也允许先把该组件从 DXM02 复刻到 DXM03。
+   - 对未配置的单品 SKU 执行 1688 采购配对；触发 1688 来源同步后必须轮询等待配对行生成，不能只做一次即时查询；`confirm` 接口报错后要复查实际配对状态，避免接口返回异常但已成功写入的误判。
+   - 组合 SKU 只在组件关系完整时视为完成；组件未配对时，可用本地明空采购库中的组件采购链接与 1688 SKU ID 自动补配组件，再重新判断组合是否完整。
 3. 输出报告：
    - `product_id`
    - `product_code`
@@ -273,6 +278,26 @@
    - 本地写入 SKU 数
    - DXM03 新建/已存在/已保护/阻断/失败数量
    - 逐 SKU 状态、采购链接、SKU ID、错误信息
+
+## 无订单产品激进重置模式
+
+当产品在本地已同步订单系统中查不到任何订单时，可以进入激进模式，允许重置本地 SKU 状态并强制同步明空 SKU：
+
+1. 订单安全判断必须只读执行，至少检查：
+   - `dianxiaomi_order_lines.product_id`
+   - `dianxiaomi_order_lines.product_code`
+   - `dianxiaomi_order_lines.shopify_product_id`
+   - `dianxiaomi_order_lines.product_sku` / `product_sub_sku` / `product_display_sku`
+   - `dianxiaomi_order_lines.raw_line_json` / `raw_order_json` 中的 product code
+   - `shopify_orders.product_id`
+   - `shopify_orders.lineitem_sku`
+2. 如果任一订单计数大于 0，激进模式也必须跳过该产品，不执行本地删除或 DXM03 写入。
+3. 如果订单计数全部为 0，允许：
+   - 删除本地 `media_product_skus` 该产品全部行，包括历史自动基底和人工行。
+   - 强制实时刷新 DXM02 明空产品库数据。
+   - 重新按全量 Shopify variant 基底 + 明空 SKU 填充写入本地。
+   - DXM03 确认采购配对时允许覆盖已有 1688 配对，不再走 `already_configured_preserved`。
+4. 激进模式仍不得伪造明空 SKU。强制刷新后如果仍没有真实 `dianxiaomi_sku`，只能保留空 SKU 基底并输出 `blocked_no_mingkong_skus`，等待后续人工或更强匹配逻辑处理。
 
 ## 组合 SKU 接口实测补充
 
