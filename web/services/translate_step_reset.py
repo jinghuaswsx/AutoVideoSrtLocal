@@ -15,6 +15,7 @@ _PREVIEW_KEYS_BY_STEP: dict[str, set[str]] = {
     "tts": {"tts_full_audio"},
     "subtitle": {"srt"},
     "compose": {"soft_video", "hard_video"},
+    "video_size_adjustment": {"hard_video"},
 }
 
 _TOP_DEFAULTS_BY_STEP: dict[str, dict[str, Any]] = {
@@ -91,6 +92,9 @@ _TOP_DEFAULTS_BY_STEP: dict[str, dict[str, Any]] = {
         "result": {},
         "final_compose_summary": {},
     },
+    "video_size_adjustment": {
+        "video_size_adjustment": {},
+    },
     "export": {
         "exports": {},
     },
@@ -122,6 +126,9 @@ _VARIANT_DEFAULTS_BY_STEP: dict[str, dict[str, Any]] = {
     "compose": {
         "result": {},
         "final_compose_summary": {},
+    },
+    "video_size_adjustment": {
+        "video_size_adjustment": {},
     },
     "export": {
         "exports": {},

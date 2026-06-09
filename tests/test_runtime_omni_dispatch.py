@@ -106,7 +106,7 @@ def test_pipeline_steps_for_omni_current(monkeypatch, omni_runner):
         "asr_clean",
         "voice_match", "alignment",
         "translate", "tts", "loudness_match", "subtitle",
-        "compose", "export",
+        "compose", "video_size_adjustment", "export",
     ]
 
 
@@ -158,7 +158,7 @@ def test_pipeline_steps_for_multi_like(monkeypatch, omni_runner):
         "asr_normalize",
         "voice_match", "alignment",
         "translate", "tts", "loudness_match", "subtitle",
-        "compose", "export",
+        "compose", "video_size_adjustment", "export",
     ]
 
 
@@ -172,7 +172,7 @@ def test_pipeline_steps_for_av_sync_current(monkeypatch, omni_runner):
         "asr_normalize",
         "voice_match", "alignment",
         "translate", "tts", "loudness_match", "subtitle",
-        "compose", "export",
+        "compose", "video_size_adjustment", "export",
     ]
     assert "alignment" in names
 
@@ -189,7 +189,7 @@ def test_pipeline_inserts_av_sync_audit_after_tts_when_enabled(
         "asr_normalize",
         "voice_match", "alignment",
         "translate", "tts", "av_sync_audit", "loudness_match", "subtitle",
-        "compose", "export",
+        "compose", "video_size_adjustment", "export",
     ]
     assert names.index("tts") < names.index("av_sync_audit") < names.index("subtitle")
 
@@ -209,7 +209,7 @@ def test_pipeline_steps_for_lab_current(monkeypatch, omni_runner):
         "voice_match", "alignment",
         "shot_decompose",
         "translate", "tts", "loudness_match", "subtitle",
-        "compose", "export",
+        "compose", "video_size_adjustment", "export",
     ]
 
 

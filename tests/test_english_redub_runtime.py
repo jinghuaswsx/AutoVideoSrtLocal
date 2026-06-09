@@ -99,6 +99,7 @@ def test_get_pipeline_steps_dispatches_original_translate(monkeypatch):
 
     assert names[:5] == ["extract", "asr", "separate", "asr_clean", "voice_match"]
     assert "translate" in names
+    assert names.index("video_size_adjustment") == names.index("compose") + 1
     assert names[-1] == "export"
 
 

@@ -148,10 +148,12 @@ def clear_av_compose_outputs(
     tos_uploads = dict(task.get("tos_uploads") or {})
 
     result.pop("hard_video", None)
+    result.pop("pre_size_adjustment_hard_video", None)
     exports.pop("capcut_archive", None)
     exports.pop("capcut_project", None)
     exports.pop("jianying_project_dir", None)
     artifacts.pop("compose", None)
+    artifacts.pop("video_size_adjustment", None)
     artifacts.pop("export", None)
     preview_files.pop("hard_video", None)
 
@@ -168,6 +170,7 @@ def clear_av_compose_outputs(
     variant_result.clear()
     variant_exports.clear()
     variant_artifacts.pop("compose", None)
+    variant_artifacts.pop("video_size_adjustment", None)
     variant_artifacts.pop("export", None)
     variant_preview_files.pop("hard_video", None)
 
@@ -370,6 +373,7 @@ def rewrite_task_av_sentence(
             "exports": variant_exports,
             "artifacts": variant_artifacts,
             "preview_files": variant_preview_files,
+            "video_size_adjustment": {},
         }
     )
     variants = dict(task.get("variants") or {})
@@ -392,6 +396,7 @@ def rewrite_task_av_sentence(
         artifacts=artifacts,
         preview_files=preview_files,
         tos_uploads=tos_uploads,
+        video_size_adjustment={},
         voice_id=resolved_voice_id or task.get("voice_id"),
     )
     refresh = refresh_task or refresh_task_state

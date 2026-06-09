@@ -7,7 +7,11 @@ def test_clear_av_compose_outputs_removes_stale_compose_and_export_state_without
     from web.services.task_av_rewrite import clear_av_compose_outputs
 
     task = {
-        "result": {"hard_video": "/task/hard.mp4", "soft_video": "/task/soft.mp4"},
+        "result": {
+            "hard_video": "/task/hard.mp4",
+            "pre_size_adjustment_hard_video": "/task/pre-size.mp4",
+            "soft_video": "/task/soft.mp4",
+        },
         "exports": {
             "capcut_archive": "/task/capcut.zip",
             "capcut_project": "/task/project",
@@ -16,6 +20,7 @@ def test_clear_av_compose_outputs_removes_stale_compose_and_export_state_without
         },
         "artifacts": {
             "compose": {"items": []},
+            "video_size_adjustment": {"summary": {"status": "adjusted"}},
             "export": {"items": []},
             "tts": {"items": ["keep"]},
         },
@@ -34,7 +39,12 @@ def test_clear_av_compose_outputs_removes_stale_compose_and_export_state_without
     variant_state = {
         "result": {"hard_video": "/task/av-hard.mp4", "soft_video": "/task/av-soft.mp4"},
         "exports": {"capcut_archive": "/task/av-capcut.zip"},
-        "artifacts": {"compose": {}, "export": {}, "tts": {"items": ["keep"]}},
+        "artifacts": {
+            "compose": {},
+            "video_size_adjustment": {"summary": {"status": "adjusted"}},
+            "export": {},
+            "tts": {"items": ["keep"]},
+        },
         "preview_files": {"hard_video": "/task/av-hard.mp4", "tts_full_audio": "/task/av-tts.mp3"},
     }
 

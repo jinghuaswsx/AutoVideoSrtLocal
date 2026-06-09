@@ -106,12 +106,12 @@ def test_omni_js_step_order_tracks_dynamic_pipeline_steps():
     assert (
         'const STEP_ORDER = ["extract", "asr", "separate", '
         '"asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", '
-        '"av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];'
+        '"av_sync_audit", "loudness_match", "subtitle", "compose", "video_size_adjustment", "export", "analysis"];'
     ) in scripts
     assert (
         'const MAIN_STEPS = ["extract", "asr", "separate", '
         '"asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", '
-        '"av_sync_audit", "loudness_match", "subtitle", "compose", "export"];'
+        '"av_sync_audit", "loudness_match", "subtitle", "compose", "video_size_adjustment", "export"];'
     ) in scripts
 
 

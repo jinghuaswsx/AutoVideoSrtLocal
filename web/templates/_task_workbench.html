@@ -529,6 +529,7 @@
   {% set show_voice_match_ab_step = 'voice_match_ab' in pipeline_steps %}
   {% set show_av_sync_audit_step = 'av_sync_audit' in pipeline_steps %}
   {% set show_loudness_step = (extended_pipeline and not pipeline_steps) or ('loudness_match' in pipeline_steps) %}
+  {% set show_video_size_adjustment_step = 'video_size_adjustment' in pipeline_steps %}
   {% macro step_icon(name, fallback) -%}
     {%- if pipeline_steps and name in pipeline_steps -%}
       {{ pipeline_steps.index(name) + 1 }}
@@ -928,6 +929,21 @@
       </div>
       <div class="step-preview" id="preview-compose"></div>
     </div>
+    {% if show_video_size_adjustment_step %}
+    <div class="step" id="step-video_size_adjustment">
+      <div class="step-main">
+        <div class="step-icon" id="icon-video_size_adjustment">{{ step_icon('video_size_adjustment', 11 if extended_pipeline else 8) }}</div>
+        <div style="flex:1">
+          <div class="step-name-row">
+            <span class="step-name">视频大小调整</span>
+            <button class="resume-btn hidden" id="resume-video_size_adjustment" data-step="video_size_adjustment">从此步继续</button>
+          </div>
+          <div class="step-msg" id="msg-video_size_adjustment">等待中...<span class="step-model-tag hidden" id="model-tag-video_size_adjustment"></span></div>
+        </div>
+      </div>
+      <div class="step-preview" id="preview-video_size_adjustment"></div>
+    </div>
+    {% endif %}
     {% if show_av_sync_audit_step %}
     <div class="step" id="step-av_sync_audit">
       <div class="step-main">

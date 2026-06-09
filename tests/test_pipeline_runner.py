@@ -723,6 +723,118 @@ def test_step_compose_falls_back_to_preview_srt_when_variant_srt_blank(tmp_path,
     assert saved["variants"]["normal"]["srt_path"] == str(srt_path)
 
 
+def test_step_video_size_adjustment_updates_hard_video_result(tmp_path, monkeypatch):
+    task_id = "task-video-size-adjustment"
+    task = store.create(task_id, "video.mp4", str(tmp_path))
+    hard_video = tmp_path / "hard.normal.mp4"
+    adjusted_video = tmp_path / "hard.normal_size_adjusted.mp4"
+    hard_video.write_bytes(b"oversized")
+    adjusted_video.write_bytes(b"adjusted")
+    task["result"] = {"hard_video": str(hard_video)}
+    task["preview_files"]["hard_video"] = str(hard_video)
+    task["variants"]["normal"].update({
+        "result": {"hard_video": str(hard_video)},
+        "preview_files": {"hard_video": str(hard_video)},
+    })
+
+    def fake_adjust(path, **kwargs):
+        assert path == str(hard_video)
+        assert kwargs["variant"] == "normal"
+        return {
+            "status": "adjusted",
+            "variant": "normal",
+            "input_path": str(hard_video),
+            "output_path": str(adjusted_video),
+            "input_size_bytes": 200_000_000,
+            "output_size_bytes": 99_000_000,
+            "original_total_bitrate_bps": 10_000_000,
+            "target_total_bitrate_bps": 5_000_000,
+            "target_video_bitrate_bps": 4_872_000,
+            "target_audio_bitrate_bps": 128_000,
+            "attempts": [{"attempt": 1}],
+            "message": "视频大小 190.7 MB，已按码率 10.00 Mbps -> 5.00 Mbps 重编码，最终 94.4 MB。",
+        }
+
+    monkeypatch.setattr("pipeline.compose.adjust_video_size_to_limit", fake_adjust)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_video_size_adjustment(task_id, "video.mp4", str(tmp_path))
+
+    saved = store.get(task_id)
+    assert saved["steps"]["video_size_adjustment"] == "done"
+    assert saved["result"]["hard_video"] == str(adjusted_video)
+    assert saved["result"]["pre_size_adjustment_hard_video"] == str(hard_video)
+    assert saved["preview_files"]["hard_video"] == str(adjusted_video)
+    assert saved["variants"]["normal"]["result"]["hard_video"] == str(adjusted_video)
+    assert saved["variants"]["normal"]["video_size_adjustment"]["status"] == "adjusted"
+    artifact = saved["artifacts"]["video_size_adjustment"]
+    assert artifact["title"] == "视频大小调整"
+    assert artifact["layout"] == "video_size_adjustment"
+    assert artifact["summary"]["target_total_bitrate_bps"] == 5_000_000
+
+
+def test_step_export_uses_adjusted_hard_video_for_capcut_after_size_adjustment(tmp_path, monkeypatch):
+    task_id = "task-export-adjusted-capcut-video"
+    task = store.create(task_id, "video.mp4", str(tmp_path))
+    task["video_path"] = "video.mp4"
+    task["subtitle_position"] = "bottom"
+
+    audio_path = tmp_path / "tts_full.normal.mp3"
+    audio_path.write_bytes(b"fake-audio")
+    srt_path = tmp_path / "subtitle.normal.srt"
+    srt_path.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    adjusted_video = tmp_path / "hard.normal_size_adjusted.mp4"
+    adjusted_video.write_bytes(b"adjusted-video")
+    task["video_size_adjustment"] = {
+        "status": "adjusted",
+        "output_path": str(adjusted_video),
+    }
+    task["result"] = {"hard_video": str(adjusted_video)}
+    task["preview_files"]["hard_video"] = str(adjusted_video)
+    task["variants"]["normal"].update(
+        {
+            "tts_audio_path": str(audio_path),
+            "srt_path": str(srt_path),
+            "timeline_manifest": {"segments": [{"video_ranges": [{"start": 1, "end": 2}]}]},
+            "result": {"hard_video": str(adjusted_video)},
+            "preview_files": {"hard_video": str(adjusted_video)},
+            "video_size_adjustment": {
+                "status": "adjusted",
+                "output_path": str(adjusted_video),
+            },
+        }
+    )
+
+    captured = {}
+
+    def fake_export_capcut_project(**kwargs):
+        captured.update(kwargs)
+        manifest_path = tmp_path / "manifest.normal.json"
+        manifest_path.write_text('{"final_video_mode": true}', encoding="utf-8")
+        return {
+            "project_dir": str(tmp_path / "capcut_normal"),
+            "archive_path": str(tmp_path / "capcut_normal.zip"),
+            "manifest_path": str(manifest_path),
+            "jianying_project_dir": "",
+        }
+
+    monkeypatch.setattr("pipeline.capcut.export_capcut_project", fake_export_capcut_project)
+    monkeypatch.setattr("appcore.runtime._pipeline_runner.resolve_jianying_project_root", lambda user_id: "")
+    monkeypatch.setattr("appcore.task_state.set_expires_at", lambda *args, **kwargs: None)
+
+    runner = runtime.PipelineRunner(bus=_silent_bus())
+    runner._step_export(task_id, "video.mp4", str(tmp_path))
+
+    saved = store.get(task_id)
+    assert captured["video_path"] == str(adjusted_video)
+    assert captured["final_video_mode"] is True
+    assert captured["video_source"] == "video_size_adjustment"
+    assert captured["timeline_manifest"] == {}
+    assert captured["accompaniment_audio_path"] is None
+    assert saved["exports"]["capcut_video_path"] == str(adjusted_video)
+    assert saved["exports"]["capcut_final_video_mode"] is True
+
+
 def test_step_export_falls_back_to_preview_srt_when_variant_srt_blank(tmp_path, monkeypatch):
     task_id = "task-export-preview-srt-fallback"
     task = store.create(task_id, "video.mp4", str(tmp_path))

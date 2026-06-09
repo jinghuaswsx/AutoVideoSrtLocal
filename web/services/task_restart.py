@@ -57,6 +57,7 @@ _STEPS = (
     "loudness_match",
     "subtitle",
     "compose",
+    "video_size_adjustment",
     "export",
 )
 
@@ -106,6 +107,7 @@ def _build_reset_fields() -> dict[str, Any]:
         "timeline_manifest": {},
         "srt_path": "",
         "result": {},
+        "video_size_adjustment": {},
         "exports": {},
         "artifacts": {},
         "preview_files": {},

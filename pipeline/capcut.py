@@ -2,6 +2,7 @@ from copy import deepcopy
 import importlib
 import json
 import shutil
+import subprocess
 import time
 import uuid
 from os import name as os_name
@@ -27,6 +28,8 @@ def export_capcut_project(
     subtitle_size=None,
     subtitle_position_y: float | None = None,
     accompaniment_audio_path: str | None = None,
+    final_video_mode: bool = False,
+    video_source: str = "",
 ) -> dict:
     if not isinstance(timeline_manifest, dict):
         timeline_manifest = {}
@@ -57,7 +60,8 @@ def export_capcut_project(
             subtitle_font=subtitle_font,
             subtitle_size=subtitle_size,
             subtitle_position_y=subtitle_position_y,
-            accompaniment_audio_path=accompaniment_path_obj,
+            accompaniment_audio_path=None if final_video_mode else accompaniment_path_obj,
+            final_video_mode=final_video_mode,
         )
         export_backend = "pyJianYingDraft"
     except Exception as exc:
@@ -71,7 +75,8 @@ def export_capcut_project(
             srt_path=Path(srt_path),
             timeline_manifest=timeline_manifest,
             subtitle_position=subtitle_position,
-            accompaniment_audio_path=accompaniment_path_obj,
+            accompaniment_audio_path=None if final_video_mode else accompaniment_path_obj,
+            final_video_mode=final_video_mode,
         )
 
     manifest_path = project_dir / "codex_export_manifest.json"
@@ -79,12 +84,15 @@ def export_capcut_project(
         "backend": export_backend,
         "draft_name": draft_name,
         "video": "Resources/auto_generated/" + Path(video_path).name,
-        "audio": "Resources/auto_generated/" + Path(tts_audio_path).name,
-        "subtitle": "Resources/auto_generated/" + Path(srt_path).name,
+        "final_video_mode": bool(final_video_mode),
+        "video_source": video_source or ("video_size_adjustment" if final_video_mode else "source_timeline"),
         "subtitle_position": subtitle_position,
-        "timeline_manifest": timeline_manifest,
+        "timeline_manifest": {} if final_video_mode else timeline_manifest,
     }
-    if accompaniment_path_obj is not None:
+    if not final_video_mode:
+        export_manifest["audio"] = "Resources/auto_generated/" + Path(tts_audio_path).name
+        export_manifest["subtitle"] = "Resources/auto_generated/" + Path(srt_path).name
+    if accompaniment_path_obj is not None and not final_video_mode:
         export_manifest["accompaniment_audio"] = (
             "Resources/auto_generated/" + accompaniment_path_obj.name
         )
@@ -279,15 +287,34 @@ def _export_with_pyjianyingdraft(
     subtitle_size=None,
     subtitle_position_y: float | None = None,
     accompaniment_audio_path: Path | None = None,
+    final_video_mode: bool = False,
 ):
     draft = importlib.import_module("pyJianYingDraft")
     output_dir = project_dir.parent
     draft_name = project_dir.name
     media_duration = _probe_media_duration(video_path) or float(timeline_manifest.get("video_duration", 0.0) or 0.0)
-    audio_duration = _probe_media_duration(tts_audio_path)
 
     draft_folder = draft.DraftFolder(str(output_dir))
     script = draft_folder.create_draft(draft_name, 1080, 1920, allow_replace=True)
+
+    if final_video_mode:
+        copied_video = _copy_video_resource(project_dir, video_path)
+        script.add_track(draft.TrackType.video, track_name="video")
+        final_duration = media_duration or _probe_media_duration(copied_video)
+        if final_duration > 0:
+            segment_duration = round(_truncate_milliseconds(final_duration), 3)
+            script.add_segment(
+                draft.VideoSegment(
+                    str(copied_video),
+                    draft.trange("0s", f"{segment_duration}s"),
+                    source_timerange=draft.trange("0s", f"{segment_duration}s"),
+                ),
+                track_name="video",
+            )
+        script.save()
+        return
+
+    audio_duration = _probe_media_duration(tts_audio_path)
 
     resources_dir, copied_video, copied_audio, copied_srt = _copy_resources(
         project_dir, video_path, tts_audio_path, srt_path
@@ -511,6 +538,7 @@ def _export_with_template_scaffold(
     timeline_manifest: dict,
     subtitle_position: str,
     accompaniment_audio_path: Path | None = None,
+    final_video_mode: bool = False,
 ):
     # template_scaffold 是 pyJianYingDraft 不可用时的兜底实现，目前只复制资源
     # 不构造完整 draft；accompaniment_audio_path 在这里只参与资源拷贝，让上层
@@ -522,9 +550,10 @@ def _export_with_template_scaffold(
     else:
         project_dir.mkdir(parents=True, exist_ok=True)
 
-    resources_dir, copied_video, copied_audio, copied_srt = _copy_resources(
-        project_dir, video_path, tts_audio_path, srt_path
-    )
+    if final_video_mode:
+        _copy_video_resource(project_dir, video_path)
+    else:
+        _copy_resources(project_dir, video_path, tts_audio_path, srt_path)
 
     timeline_id = str(uuid.uuid4()).upper()
     now = int(time.time() * 1_000_000)
@@ -562,6 +591,14 @@ def _copy_resources(project_dir: Path, video_path: Path, tts_audio_path: Path, s
     shutil.copy2(tts_audio_path, copied_audio)
     shutil.copy2(srt_path, copied_srt)
     return resources_dir, copied_video, copied_audio, copied_srt
+
+
+def _copy_video_resource(project_dir: Path, video_path: Path) -> Path:
+    resources_dir = project_dir / "Resources" / "auto_generated"
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    copied_video = resources_dir / video_path.name
+    shutil.copy2(video_path, copied_video)
+    return copied_video
 
 
 def _subtitle_transform_y(position: str) -> float:
@@ -682,28 +719,47 @@ def _probe_media_duration(video_path: Path) -> float:
     try:
         media_info = importlib.import_module("pymediainfo").MediaInfo
     except ModuleNotFoundError:
-        return 0.0
+        media_info = None
 
+    if media_info is not None:
+        try:
+            info = media_info.parse(str(video_path))
+        except Exception:
+            info = None
+
+        if info is not None:
+            for track in getattr(info, "video_tracks", []) or []:
+                duration_ms = getattr(track, "duration", None)
+                try:
+                    if duration_ms is not None:
+                        return float(duration_ms) / 1000.0
+                except (TypeError, ValueError):
+                    continue
+
+            for track in getattr(info, "audio_tracks", []) or []:
+                duration_ms = getattr(track, "duration", None)
+                try:
+                    if duration_ms is not None:
+                        return float(duration_ms) / 1000.0
+                except (TypeError, ValueError):
+                    continue
+
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(video_path),
+    ]
     try:
-        info = media_info.parse(str(video_path))
+        result = subprocess.run(cmd, capture_output=True, text=True)
     except Exception:
         return 0.0
-
-    for track in getattr(info, "video_tracks", []) or []:
-        duration_ms = getattr(track, "duration", None)
-        try:
-            if duration_ms is not None:
-                return float(duration_ms) / 1000.0
-        except (TypeError, ValueError):
-            continue
-
-    for track in getattr(info, "audio_tracks", []) or []:
-        duration_ms = getattr(track, "duration", None)
-        try:
-            if duration_ms is not None:
-                return float(duration_ms) / 1000.0
-        except (TypeError, ValueError):
-            continue
+    if result.returncode != 0:
+        return 0.0
+    try:
+        return float((result.stdout or "").strip())
+    except (TypeError, ValueError):
+        return 0.0
 
     return 0.0
 

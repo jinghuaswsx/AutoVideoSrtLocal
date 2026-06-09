@@ -57,24 +57,24 @@ CFG_LAB_CURRENT = {
 EXPECTED_MULTI_LIKE_STEPS = [
     "extract", "asr", "separate", "asr_normalize",
     "voice_match", "alignment", "translate", "tts",
-    "loudness_match", "subtitle", "compose", "export",
+    "loudness_match", "subtitle", "compose", "video_size_adjustment", "export",
 ]
 EXPECTED_OMNI_CURRENT_STEPS = [
     "extract", "asr", "separate", "asr_clean",
     "voice_match", "alignment", "translate", "tts",
-    "loudness_match", "subtitle", "compose", "export",
+    "loudness_match", "subtitle", "compose", "video_size_adjustment", "export",
 ]
 EXPECTED_AV_SYNC_CURRENT_STEPS = [
     # 2026-05-07 fix: av_sentence translate 也依赖 alignment 产出的
     # script_segments，alignment 不能跳过。
     "extract", "asr", "separate", "asr_normalize",
     "voice_match", "alignment", "translate", "tts",
-    "loudness_match", "subtitle", "compose", "export",
+    "loudness_match", "subtitle", "compose", "video_size_adjustment", "export",
 ]
 EXPECTED_LAB_CURRENT_STEPS = [
     "extract", "asr", "separate", "asr_normalize",
     "voice_match", "alignment", "shot_decompose", "translate", "tts",
-    "loudness_match", "subtitle", "compose", "export",
+    "loudness_match", "subtitle", "compose", "video_size_adjustment", "export",
 ]
 
 

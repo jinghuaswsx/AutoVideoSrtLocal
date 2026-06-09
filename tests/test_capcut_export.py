@@ -36,6 +36,45 @@ def test_capcut_export_creates_project_directory_and_archive(tmp_path):
     assert manifest["backend"] in {"pyJianYingDraft", "template_scaffold"}
 
 
+def test_capcut_export_final_video_mode_uses_adjusted_video_manifest(tmp_path, monkeypatch):
+    def fake_import_module(name):
+        if name == "pyJianYingDraft":
+            raise ModuleNotFoundError(name)
+        return __import__(name)
+
+    monkeypatch.setattr("pipeline.capcut.importlib.import_module", fake_import_module)
+
+    video = tmp_path / "sample_hard.normal_size_adjusted.mp4"
+    audio = tmp_path / "sample.mp3"
+    srt = tmp_path / "sample.srt"
+    video.write_bytes(b"adjusted-video")
+    audio.write_bytes(b"audio")
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+
+    export = export_capcut_project(
+        video_path=str(video),
+        tts_audio_path=str(audio),
+        srt_path=str(srt),
+        timeline_manifest={"segments": [{"video_ranges": [{"start": 1, "end": 2}]}]},
+        output_dir=str(tmp_path / "output"),
+        subtitle_position="bottom",
+        final_video_mode=True,
+        video_source="video_size_adjustment",
+    )
+
+    manifest = json.loads(Path(export["manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["final_video_mode"] is True
+    assert manifest["video_source"] == "video_size_adjustment"
+    assert manifest["timeline_manifest"] == {}
+    assert manifest["video"].endswith("sample_hard.normal_size_adjusted.mp4")
+    assert "audio" not in manifest
+    assert "subtitle" not in manifest
+    resources = Path(export["project_dir"]) / "Resources" / "auto_generated"
+    assert (resources / video.name).exists()
+    assert not (resources / audio.name).exists()
+    assert not (resources / srt.name).exists()
+
+
 def test_capcut_export_prefers_pyjianyingdraft_backend_when_available(tmp_path, monkeypatch):
     calls = []
 
@@ -1072,3 +1111,18 @@ def test_probe_media_duration_uses_pymediainfo_milliseconds(monkeypatch):
     monkeypatch.setitem(sys.modules, "pymediainfo", fake_module)
 
     assert _probe_media_duration(Path("sample.mp4")) == 29.567
+
+
+def test_probe_media_duration_falls_back_to_ffprobe(monkeypatch):
+    def fake_import_module(name):
+        if name == "pymediainfo":
+            raise ModuleNotFoundError(name)
+        return __import__(name)
+
+    monkeypatch.setattr("pipeline.capcut.importlib.import_module", fake_import_module)
+    monkeypatch.setattr(
+        "pipeline.capcut.subprocess.run",
+        lambda *args, **kwargs: types.SimpleNamespace(returncode=0, stdout="12.345\n"),
+    )
+
+    assert _probe_media_duration(Path("sample.mp4")) == 12.345

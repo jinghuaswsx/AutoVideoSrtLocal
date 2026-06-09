@@ -350,7 +350,7 @@
             </tr>
             <tr>
               <td style="color:#64748b;">链接:</td>
-              <td><a id="detailProdLink" href="#" target="_blank" style="color:#0ea5e9; word-break: break-all;">-</a></td>
+              <td><a id="detailProdLink" href="#" target="_blank" rel="noopener noreferrer" style="color:#0ea5e9; word-break: break-all;">-</a></td>
             </tr>
             <tr>
               <td style="color:#64748b;">Code:</td>
@@ -762,7 +762,7 @@
     if (project.parent_task) {
       detailTasksList.innerHTML += '<div class="task-item-row">'
         + '<span>去字幕父任务 #' + esc(project.parent_task.id) + ' (' + esc(project.parent_task.status) + ')</span>'
-        + '<a href="/tasks/?task_id=' + esc(project.parent_task.id) + '" target="_blank">查看</a>'
+        + '<a href="/tasks/?task_id=' + esc(project.parent_task.id) + '" target="_blank" rel="noopener noreferrer">查看</a>'
         + '</div>';
     }
     
@@ -770,7 +770,7 @@
       project.subtasks.forEach(function(sub) {
         detailTasksList.innerHTML += '<div class="task-item-row">'
           + '<span>小语种翻译子任务 [' + esc(sub.country_code) + '] #' + esc(sub.id) + ' (' + esc(sub.status) + ')</span>'
-          + '<a href="/tasks/?task_id=' + esc(sub.id) + '" target="_blank">查看</a>'
+          + '<a href="/tasks/?task_id=' + esc(sub.id) + '" target="_blank" rel="noopener noreferrer">查看</a>'
           + '</div>';
       });
     } else if (!project.parent_task) {
