@@ -302,7 +302,17 @@ def test_task_center_mobile_filters_can_collapse_and_table_scrolls(authed_client
     assert "filters.hidden = !expanded;" in body
     assert "tcSetFilterCollapsed(!TC_FILTERS_COLLAPSED)" in body
     assert ".tc-filters { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr));" in body
-    assert ".tc-table-scroll { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }" in body
+    assert ".tc-table-scroll { display:block; overflow-x:hidden; -webkit-overflow-scrolling:touch; }" in body
+    assert "grid-template-columns:minmax(82px, 1fr) minmax(82px, 1fr) minmax(78px, .9fr) minmax(76px, .85fr);" in body
+    assert ".tc-table th:nth-child(1)," in body
+    assert ".tc-table td:nth-child(1) { grid-column:1 / span 2; grid-row:1; }" in body
+    assert ".tc-table th:nth-child(3)," in body
+    assert ".tc-table td:nth-child(6) { display:none !important; }" in body
+    assert ".tc-table td:nth-child(7) { grid-column:3 / span 2; grid-row:2; justify-content:flex-start; }" in body
+    assert ".tc-task-created-mobile { display:none; }" in body
+    assert ".tc-task-created-mobile { display:inline; }" in body
+    assert "grid-template-columns:repeat(2, minmax(0, 1fr));" in body
+    assert "-webkit-line-clamp:2;" in body
     assert ".tc-table th { position: static !important; }" in body
 
 
