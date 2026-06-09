@@ -52,6 +52,32 @@ def test_mingkong_product_library_migration_keeps_long_source_urls_as_text():
     assert "MODIFY purchase_1688_url TEXT NULL" in body
 
 
+def test_mingkong_product_library_migration_allows_long_sku_values():
+    body = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "2026_06_09_mingkong_product_library.sql"
+    ).read_text(encoding="utf-8")
+
+    for column in [
+        "shopify_sku",
+        "pair_key",
+        "dxm_sku",
+        "dxm_product_sku",
+        "combo_dxm_sku",
+        "component_sku",
+        "sku",
+    ]:
+        assert f"{column} VARCHAR(512)" in body
+    assert "MODIFY shopify_sku VARCHAR(512)" in body
+    assert "MODIFY pair_key VARCHAR(512)" in body
+    assert "MODIFY dxm_sku VARCHAR(512)" in body
+    assert "MODIFY combo_dxm_sku VARCHAR(512)" in body
+    assert "MODIFY component_sku VARCHAR(512)" in body
+    assert "MODIFY sku VARCHAR(512)" in body
+
+
 def test_mingkong_product_library_scheduler_registered():
     from appcore import scheduled_tasks
 

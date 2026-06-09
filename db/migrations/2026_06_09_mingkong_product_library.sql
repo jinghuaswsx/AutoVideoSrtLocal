@@ -50,17 +50,17 @@ CREATE TABLE IF NOT EXISTS mingkong_product_variants (
   mk_shopify_product_id VARCHAR(64) NOT NULL,
   mk_shopify_variant_id VARCHAR(64) NOT NULL,
   variant_title VARCHAR(512) DEFAULT NULL,
-  shopify_sku VARCHAR(128) DEFAULT NULL,
-  pair_key VARCHAR(128) DEFAULT NULL,
+  shopify_sku VARCHAR(512) DEFAULT NULL,
+  pair_key VARCHAR(512) DEFAULT NULL,
   shopify_price DECIMAL(12,2) DEFAULT NULL,
   shopify_compare_at_price DECIMAL(12,2) DEFAULT NULL,
   shopify_inventory_quantity INT DEFAULT NULL,
   shopify_weight_grams DECIMAL(10,2) DEFAULT NULL,
   dxm_product_id VARCHAR(64) DEFAULT NULL,
   dxm_parent_id VARCHAR(64) DEFAULT NULL,
-  dxm_sku VARCHAR(128) DEFAULT NULL,
+  dxm_sku VARCHAR(512) DEFAULT NULL,
   dxm_sku_code VARCHAR(64) DEFAULT NULL,
-  dxm_product_sku VARCHAR(128) DEFAULT NULL,
+  dxm_product_sku VARCHAR(512) DEFAULT NULL,
   dxm_name VARCHAR(512) DEFAULT NULL,
   dxm_name_en VARCHAR(512) DEFAULT NULL,
   dxm_img_url VARCHAR(1000) DEFAULT NULL,
@@ -81,9 +81,9 @@ CREATE TABLE IF NOT EXISTS mingkong_combo_components (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   mingkong_variant_id BIGINT DEFAULT NULL,
   combo_dxm_product_id VARCHAR(64) NOT NULL,
-  combo_dxm_sku VARCHAR(128) NOT NULL,
+  combo_dxm_sku VARCHAR(512) NOT NULL,
   component_dxm_product_id VARCHAR(64) NOT NULL,
-  component_sku VARCHAR(128) NOT NULL,
+  component_sku VARCHAR(512) NOT NULL,
   component_name VARCHAR(512) DEFAULT NULL,
   component_img_url VARCHAR(1000) DEFAULT NULL,
   component_quantity INT NOT NULL DEFAULT 0,
@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS mingkong_procurement_links (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   mingkong_variant_id BIGINT DEFAULT NULL,
   pairing_row_id VARCHAR(64) NOT NULL,
-  sku VARCHAR(128) NOT NULL,
+  sku VARCHAR(512) NOT NULL,
   sku_code VARCHAR(64) DEFAULT NULL,
   dxm_product_id VARCHAR(64) DEFAULT NULL,
   dxm_name VARCHAR(512) DEFAULT NULL,
@@ -124,8 +124,17 @@ ALTER TABLE mingkong_products
   MODIFY source_url TEXT NULL;
 
 ALTER TABLE mingkong_product_variants
+  MODIFY shopify_sku VARCHAR(512) DEFAULT NULL,
+  MODIFY pair_key VARCHAR(512) DEFAULT NULL,
+  MODIFY dxm_sku VARCHAR(512) DEFAULT NULL,
+  MODIFY dxm_product_sku VARCHAR(512) DEFAULT NULL,
   MODIFY dxm_source_url TEXT NULL;
 
+ALTER TABLE mingkong_combo_components
+  MODIFY combo_dxm_sku VARCHAR(512) NOT NULL,
+  MODIFY component_sku VARCHAR(512) NOT NULL;
+
 ALTER TABLE mingkong_procurement_links
+  MODIFY sku VARCHAR(512) NOT NULL,
   MODIFY purchase_1688_url TEXT NULL,
   MODIFY source_url TEXT NULL;

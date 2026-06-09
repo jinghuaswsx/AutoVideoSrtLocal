@@ -304,6 +304,7 @@ DXM03 写入仍遵守：
 
 - DXM02-MK 全量 Shopify 商品里存在超过 1000 字符的来源 URL，`source_url` 不应使用 `VARCHAR(1000)`。
 - `mingkong_products.source_url`、`mingkong_product_variants.dxm_source_url`、`mingkong_procurement_links.purchase_1688_url/source_url` 使用 `TEXT`。
+- DXM02-MK 全量 Shopify variants 里存在超过 128 字符的 SKU，`shopify_sku`、`pair_key`、`dxm_sku`、`dxm_product_sku`、组合父/子 SKU、采购配对 SKU 统一使用 `VARCHAR(512)`。
 - 迁移文件必须同时包含 `CREATE TABLE` 的 `TEXT` 定义和对既有表的 `ALTER TABLE ... MODIFY ... TEXT NULL`，确保线上已创建表后重新执行同步也能自愈。
 
 ## adjustable-claw-clippers-rjc 当前预期
