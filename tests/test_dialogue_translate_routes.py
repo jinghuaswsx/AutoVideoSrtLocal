@@ -1069,6 +1069,7 @@ def test_dialogue_translate_start_creates_task_and_starts_runner(
         "loudness_match",
         "subtitle",
         "compose",
+        "video_size_adjustment",
         "export",
     ]
     assert task["dialogue_segments"] == []
@@ -1152,6 +1153,7 @@ def test_dialogue_translate_start_accepts_plugin_config_snapshot(
         "tts",
         "subtitle",
         "compose",
+        "video_size_adjustment",
         "export",
     ]
 
@@ -1722,4 +1724,3 @@ def test_dialogue_translate_confirm_speakers_persists_assignment_and_resumes_voi
     assert updated["speaker_aliases"] == {"A": "男声", "B": "女声"}
     assert updated["current_review_step"] == ""
     assert resumed == {"task_id": task_id, "start_step": "voice_match_ab", "user_id": 1}
-

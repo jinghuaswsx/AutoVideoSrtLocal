@@ -10,7 +10,7 @@ def _fake_overview(date_text, **kwargs):
     business_day = date.fromisoformat(date_text[:10])
     store = (kwargs.get("site_codes") or ["all"])[0]
     day_index = (business_day - date(2026, 5, 31)).days + 1
-    store_factor = {"all": 1.0, "newjoy": 0.7, "omurio": 0.3}.get(store, 1.0)
+    store_factor = {"all": 1.0, "newjoy": 0.7, "omurio": 0.3, "cozywint": 0.2}.get(store, 1.0)
     revenue = 1000 * day_index * store_factor
     spend = (500 if day_index <= 4 else 900) * store_factor
     profit = (180 if day_index <= 4 else -120) * store_factor
@@ -371,6 +371,7 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
             },
         ],
     )
+    monkeypatch.setattr(war, "query", lambda *args, **kwargs: [])
 
     package = war.build_weekly_data_package(
         date(2026, 5, 31),
@@ -382,7 +383,7 @@ def test_build_weekly_data_package_aggregates_sources(monkeypatch):
     assert package["period"]["week_start"] == date(2026, 5, 31)
     assert package["period"]["week_end"] == date(2026, 6, 6)
     assert len(package["daily_global"]) == 7
-    assert set(package["daily_by_store"]) == {"all", "newjoy", "omurio"}
+    assert set(package["daily_by_store"]) == {"all", "newjoy", "omurio", "cozywint"}
     assert package["segments"]["thursday_to_saturday"]["profit_usd"] < 0
     assert package["product_rows"][0]["product_code"] == "P101"
     assert not any(row["product_code"] == "P202" for row in package["low_order_products"]["one_to_two"])

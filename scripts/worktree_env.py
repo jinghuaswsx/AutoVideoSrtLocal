@@ -14,8 +14,10 @@ from pathlib import Path
 IMPORT_CHECK = """
 import bs4
 import dbutils
+import fastapi
 import flask
 import pytest
+import uvicorn
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 print("imports ok")
@@ -138,7 +140,7 @@ def bootstrap(args: argparse.Namespace) -> None:
         raise SystemExit(f"requirements file not found: {requirements}")
 
     ensure_base_venv(base_venv)
-    run([str(pip_path(base_venv)), "install", "--upgrade", "pip", "setuptools", "wheel"])
+    run([str(pip_path(base_venv)), "install", "--upgrade", "pip", "wheel"])
     run([str(pip_path(base_venv)), "install", "-r", str(requirements)])
 
     if not args.skip_playwright_install:

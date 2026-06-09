@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from appcore import dianxiaomi_procurement_insights as mod
+from server_config import DEFAULT_SERVER_HOST
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -207,7 +208,7 @@ def test_chrome_extension_manifest_and_assets():
 
     assert manifest["manifest_version"] == 3
     assert "https://*.dianxiaomi.com/*" in manifest["host_permissions"]
-    assert "http://172.16.254.106/*" in manifest["host_permissions"]
+    assert f"http://{DEFAULT_SERVER_HOST}/*" in manifest["host_permissions"]
     assert manifest["background"]["service_worker"] == "background.js"
     assert manifest["content_scripts"][0]["js"] == ["content.js"]
     assert manifest["content_scripts"][0]["all_frames"] is True

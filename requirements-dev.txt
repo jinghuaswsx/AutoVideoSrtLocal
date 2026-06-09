@@ -1,2 +1,3 @@
 -r requirements.txt
+-r AutoPush/requirements.txt
 pytest>=8.2.0,<9.0

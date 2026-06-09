@@ -6,6 +6,7 @@
 - `docs/server-environments.md`: production and test services share `/opt/autovideosrt/venv`; dependency changes there can affect online services.
 - `docs/superpowers/specs/2026-06-08-targeted-pytest-verification.md`: daily development uses focused pytest instead of the full suite by default.
 - `requirements-dev.txt`: development verification dependencies include runtime requirements and pytest.
+- `AutoPush/requirements.txt`: full pytest collects AutoPush route tests, so dev verification must include AutoPush dependencies too.
 - `requirements-browser.txt`: browser automation requires Playwright.
 
 ## Background
@@ -30,7 +31,7 @@ The base venv is per OS user, not per Git worktree. A new worktree only creates 
 
 1. Resolve the repo root with `git rev-parse --show-toplevel`.
 2. Create the base development venv if it does not exist.
-3. Install or refresh `requirements-dev.txt` inside the base venv.
+3. Install or refresh `requirements-dev.txt` inside the base venv, including the root runtime requirements and AutoPush requirements.
 4. Install Playwright Chromium into the shared browser cache.
 5. Create `<worktree>/.venv` as a symlink to the base development venv.
 6. Run `scripts/worktree_env.py check` before pytest or browser verification.

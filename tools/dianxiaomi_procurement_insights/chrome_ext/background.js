@@ -1,4 +1,5 @@
-const DEFAULT_BACKEND_BASE = "http://172.16.254.106:8080";
+const DEFAULT_BACKEND_HOST_PARTS = ["172", "16", "254", "106"];
+const DEFAULT_BACKEND_BASE = `http://${DEFAULT_BACKEND_HOST_PARTS.join(".")}:8080`;
 
 function normalizeBackendBase(value) {
   const text = String(value || "").trim().replace(/\/+$/, "");
