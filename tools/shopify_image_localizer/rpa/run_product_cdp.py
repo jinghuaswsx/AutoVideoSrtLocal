@@ -206,6 +206,17 @@ def _latest_carousel_candidate(candidates: list[dict[str, Any]]) -> dict[str, An
     return max(candidates, key=_candidate_recency_key)
 
 
+def _stable_carousel_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    return min(
+        candidates,
+        key=lambda row: (
+            row.get("source_index") is None,
+            row.get("source_index") if row.get("source_index") is not None else 9999,
+            str(row.get("filename") or ""),
+        ),
+    )
+
+
 def _choose_carousel_name_candidate(
     *,
     slot_idx: int,
@@ -261,8 +272,7 @@ def _choose_carousel_candidate(
             no_index = [row for row in candidates if row.get("source_index") is None]
             if len(no_index) == 1:
                 return no_index[0]
-            options = [f"{row.get('source_index')}:{row.get('filename')}" for row in candidates]
-            raise ValueError(f"ambiguous carousel source for slot {slot_idx} token {token}: {options}")
+            return _stable_carousel_candidate(candidates)
         canonical_token = (
             domain_mapping.carousel_canonical_token_for(src)
             if domain_mapping is not None else ""
