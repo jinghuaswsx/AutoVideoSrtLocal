@@ -413,7 +413,7 @@ def test_scoped_roas_points_read_realtime_campaign_rows_once(monkeypatch):
         data_until=day_start + timedelta(hours=2),
         orders_by_hour={},
         product_ids=(101,),
-        site_codes=("newjoy", "omurio"),
+        site_codes=("newjoy", "omurio", "cozywint"),
     )
 
     assert query_counts["campaign_rows"] == 1

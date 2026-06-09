@@ -18,7 +18,7 @@ def test_build_yesterday_same_time_comparison_for_current_global(monkeypatch):
         calls["order_summary"] = (day, data_until, kwargs)
         assert day == date(2026, 6, 4)
         assert data_until == previous_until
-        assert kwargs["site_codes"] == ("newjoy", "omurio")
+        assert kwargs["site_codes"] == ("newjoy", "omurio", "cozywint")
         return {
             "order_count": 50,
             "line_count": 55,
@@ -65,7 +65,7 @@ def test_build_yesterday_same_time_comparison_for_current_global(monkeypatch):
         product_ids=None,
         unmatched_ads=False,
         product_launch_scope=None,
-        site_codes=("newjoy", "omurio"),
+        site_codes=("newjoy", "omurio", "cozywint"),
     )
 
     assert comparison["enabled"] is True
@@ -134,7 +134,7 @@ def test_build_yesterday_same_time_comparison_profit_uses_absolute_negative_base
         product_ids=None,
         unmatched_ads=False,
         product_launch_scope=None,
-        site_codes=("newjoy", "omurio"),
+        site_codes=("newjoy", "omurio", "cozywint"),
     )
 
     assert comparison["summary"]["profit_with_estimate_usd"] == {
@@ -147,10 +147,10 @@ def test_build_yesterday_same_time_comparison_profit_uses_absolute_negative_base
 @pytest.mark.parametrize(
     "target, product_id, product_ids, unmatched_ads, product_launch_scope, site_codes",
     [
-        (date(2026, 6, 4), None, None, False, None, ("newjoy", "omurio")),
-        (date(2026, 6, 5), 42, None, False, None, ("newjoy", "omurio")),
-        (date(2026, 6, 5), None, (42,), False, "new", ("newjoy", "omurio")),
-        (date(2026, 6, 5), None, None, True, "unmatched", ("newjoy", "omurio")),
+        (date(2026, 6, 4), None, None, False, None, ("newjoy", "omurio", "cozywint")),
+        (date(2026, 6, 5), 42, None, False, None, ("newjoy", "omurio", "cozywint")),
+        (date(2026, 6, 5), None, (42,), False, "new", ("newjoy", "omurio", "cozywint")),
+        (date(2026, 6, 5), None, None, True, "unmatched", ("newjoy", "omurio", "cozywint")),
         (date(2026, 6, 5), None, None, False, None, ("newjoy",)),
     ],
 )
@@ -293,7 +293,7 @@ def test_load_realtime_ad_cost_adjustments_until_caps_snapshot_and_units(monkeyp
         target,
         snapshot_until,
         product_id=None,
-        site_codes=("newjoy", "omurio"),
+        site_codes=("newjoy", "omurio", "cozywint"),
     )
 
     assert result["package_deltas"] == {"PKG-1": 8.0, "PKG-2": 16.0}

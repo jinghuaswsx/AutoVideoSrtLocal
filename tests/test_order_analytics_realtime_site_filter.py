@@ -45,9 +45,9 @@ def test_default_site_codes_render_legacy_sql(monkeypatch):
         now=datetime(2026, 5, 9, 14, 0),
     )
 
-    # 默认仍走双店字面量，向后兼容现有快照测试期望
-    assert any("site_code IN ('newjoy', 'omurio')" in sql for sql, _ in calls)
-    assert result["scope"]["stores"] == ["newjoy", "omurio"]
+    # 默认仍走双店/多店字面量，向后兼容现有快照测试期望
+    assert any("site_code IN ('newjoy', 'omurio', 'cozywint')" in sql for sql, _ in calls)
+    assert result["scope"]["stores"] == ["newjoy", "omurio", "cozywint"]
 
 
 def test_single_site_filter_narrows_sql_and_scope(monkeypatch):
@@ -177,8 +177,8 @@ def test_invalid_site_code_falls_back_to_default(monkeypatch):
         site_codes=["__not_a_real_store__"],
     )
 
-    assert result["scope"]["stores"] == ["newjoy", "omurio"]
-    assert any("site_code IN ('newjoy', 'omurio')" in sql for sql, _ in calls)
+    assert result["scope"]["stores"] == ["newjoy", "omurio", "cozywint"]
+    assert any("site_code IN ('newjoy', 'omurio', 'cozywint')" in sql for sql, _ in calls)
 
 
 # ── 路由层：site_code 白名单 ────────────────────────────────────────

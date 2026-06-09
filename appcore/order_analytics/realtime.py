@@ -3841,10 +3841,10 @@ def get_realtime_roas_overview(
             "SELECT node_hour, node_at, order_count, units, order_revenue_usd, "
             "shipping_revenue_usd, ad_spend_usd, true_roas, order_data_status, ad_data_status "
             "FROM roi_daily_roas_nodes "
-            "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+            "WHERE business_date=%s AND store_scope=%s AND ad_platform_scope='meta' "
             "AND node_at <= %s "
             "ORDER BY node_hour",
-            (target, data_until),
+            (target, _DEFAULT_STORE_SCOPE, data_until),
         )
     roas_points = _build_roas_points_from_nodes(roas_node_rows)
 
@@ -3866,10 +3866,10 @@ def get_realtime_roas_overview(
     snapshot_filter_until = now if target == current_business_date else day_end
     latest_snapshot = query(
         "SELECT * FROM roi_realtime_daily_snapshots "
-        "WHERE business_date=%s AND store_scope='newjoy,omurio' AND ad_platform_scope='meta' "
+        "WHERE business_date=%s AND store_scope=%s AND ad_platform_scope='meta' "
         "AND snapshot_at <= %s "
         "ORDER BY snapshot_at DESC, id DESC LIMIT 1",
-        (target, snapshot_filter_until),
+        (target, _DEFAULT_STORE_SCOPE, snapshot_filter_until),
     ) if should_try_snapshot else []
     if latest_snapshot:
         snap = latest_snapshot[0]

@@ -33,7 +33,7 @@ from tools import roi_hourly_sync as realtime_sync
 TIMEZONE = "Asia/Shanghai"
 META_CUTOVER_HOUR_BJ = 16
 TASK_CODE = "meta_daily_final"
-STORE_SCOPE = "newjoy,omurio"
+STORE_SCOPE = "newjoy,omurio,cozywint"
 AD_PLATFORM_SCOPE = "meta"
 META_AD_EXPORT_ACCOUNT_ID = os.environ.get("META_AD_EXPORT_ACCOUNT_ID", realtime_sync.META_AD_EXPORT_ACCOUNT_ID)
 META_AD_EXPORT_BUSINESS_ID = os.environ.get("META_AD_EXPORT_BUSINESS_ID", realtime_sync.META_AD_EXPORT_BUSINESS_ID)
