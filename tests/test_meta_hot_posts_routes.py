@@ -396,8 +396,20 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function formatVideoDuration" in body
     assert "function loadMetaHotPostVideo" in body
     assert "function renderVideoShell" in body
+    assert "function directMetaHotVideoUrl(row)" in body
+    assert "function openMetaHotVideoOverlay(event, videoSrc, downloadName)" in body
+    assert "function closeMetaHotVideoOverlay(event)" in body
+    assert "function handleMetaHotVideoOverlayKey(event)" in body
     assert "mh-video-duration-badge" in body
     assert "mh-play-button bottom" in body
+    assert "mh-video-fullscreen" in body
+    assert "mh-video-overlay-download" in body
+    assert 'aria-label="下载视频"' in body
+    assert 'aria-label="关闭全屏播放"' in body
+    assert "document.body.classList.add('mh-video-overlay-open')" in body
+    assert "document.body.classList.remove('mh-video-overlay-open')" in body
+    assert "event.key !== 'Escape'" in body
+    assert "event.target.closest('.mh-video-action')" in body
     assert "data-video-html" in body
     assert "local_video_cover_url" in body
     assert "tos_video_cover_url" in body
@@ -1015,6 +1027,10 @@ def test_meta_hot_post_detail_page_renders_post(authed_client_no_db, monkeypatch
     assert "Meta热帖详情 - ID: 123" in body
     assert "meta-hot-card-grid" in body
     assert "cacheMetaHotItems" in body
+    assert "function openMetaHotVideoOverlay(event, videoSrc, downloadName)" in body
+    assert "mh-video-fullscreen" in body
+    assert "mh-video-overlay-download" in body
+    assert 'aria-label="关闭全屏播放"' in body
     assert "只入素材库" in body
     assert "创建新品任务" in body
     assert "body: JSON.stringify({ owner_id: ownerId })" in body
