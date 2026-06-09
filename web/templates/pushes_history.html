@@ -18,6 +18,14 @@
       <option value="">全部语种</option>
     </select>
   </div>
+  <div class="filter-group filter-group-video-size">
+    <label for="f-video-size">视频大小</label>
+    <select id="f-video-size">
+      <option value="">全部大小</option>
+      <option value="large">大于等于100M</option>
+      <option value="small">小于100M</option>
+    </select>
+  </div>
   <div class="filter-group filter-group-capsules">
     <label>广告投放计划筛选</label>
     <div class="ad-plan-capsules" style="display: flex; gap: 6px; background: var(--oc-bg-subtle, #f3f4f6); padding: 4px; border-radius: 9999px; border: 1px solid var(--oc-border, #e5e7eb); width: fit-content;">
@@ -1134,6 +1142,7 @@
     const params = new URLSearchParams();
     params.set('keyword', document.getElementById('f-keyword').value.trim());
     params.set('lang', document.getElementById('f-lang').value);
+    params.set('video_size', document.getElementById('f-video-size').value);
     params.set('date_from', document.getElementById('f-date-from').value);
     params.set('date_to', document.getElementById('f-date-to').value);
     params.set('ad_plan', selectedAdPlan);
@@ -1416,9 +1425,29 @@
     load();
   });
 
+  let keywordTimeout = null;
+  const keywordInput = document.getElementById('f-keyword');
+  if (keywordInput) {
+    keywordInput.addEventListener('input', () => {
+      if (keywordTimeout) clearTimeout(keywordTimeout);
+      keywordTimeout = setTimeout(() => {
+        state.page = 1;
+        load();
+      }, 500);
+    });
+    keywordInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        if (keywordTimeout) clearTimeout(keywordTimeout);
+        state.page = 1;
+        load();
+      }
+    });
+  }
+
   document.getElementById('btn-reset').addEventListener('click', () => {
     document.getElementById('f-keyword').value = '';
     document.getElementById('f-lang').value = '';
+    document.getElementById('f-video-size').value = '';
     
     const todayStr = getTodayString();
     document.getElementById('f-date-from').value = todayStr;

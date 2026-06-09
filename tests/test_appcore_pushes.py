@@ -84,6 +84,24 @@ def test_post_json_payload_network_error(monkeypatch):
     assert result["response_body_full"] is None
 
 
+def test_merge_video_size_quality_check_marks_oversize_failed():
+    item = {"id": 10, "file_size": 101 * 1024 * 1024}
+    quality = {
+        "status": "passed",
+        "summary": "LLM checks passed",
+        "video_result": {"status": "passed", "summary": "video ok"},
+        "failed_reasons": [],
+    }
+
+    result = pushes.merge_video_size_quality_check(quality, item)
+
+    assert result["status"] == "failed"
+    assert result["video_size_check"]["size_mb"] == "101.0 MB"
+    assert result["video_size_check"]["over_limit"] is True
+    assert result["video_result"]["status"] == "failed"
+    assert "101.0 MB" in result["failed_reasons"][0]
+
+
 @pytest.fixture
 def user_id():
     row = query_one("SELECT id FROM users ORDER BY id ASC LIMIT 1")

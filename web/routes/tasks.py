@@ -11,7 +11,7 @@ from flask import Blueprint, current_app, render_template, request, send_file, a
 from flask_login import current_user, login_required
 
 from web.auth import permission_required
-from appcore import local_media_storage, medias, new_product_tasks, object_keys
+from appcore import local_media_storage, medias, new_product_tasks, object_keys, video_size_limits
 from appcore import raw_video_pool as rvp_svc
 from appcore import system_audit
 from appcore import tasks as tasks_svc
@@ -495,6 +495,17 @@ def api_stats():
     return _json_response({"stats": stats})
 
 
+@bp.route("/api/user-workload", methods=["GET"])
+@login_required
+def api_user_workload():
+    try:
+        stats = tasks_svc.get_user_workload_stats(int(current_user.id))
+        return _json_response(stats)
+    except Exception as exc:
+        current_app.logger.exception("get user workload stats failed")
+        return _json_response({"error": str(exc)}, 500)
+
+
 @bp.route("/api/<int:tid>/archive", methods=["POST"])
 @login_required
 @admin_required
@@ -876,6 +887,45 @@ def api_parent_manual_result(tid: int):
         elif status in (tasks_svc.PARENT_RAW_DONE, tasks_svc.PARENT_ALL_DONE):
             tasks_svc.reset_to_raw_review(task_id=tid, actor_user_id=int(current_user.id))
 
+        duration_seconds = 0.0
+        media_item_id = task_row.get("media_item_id")
+        if media_item_id:
+            from appcore.db import query_one
+            item_row = query_one("SELECT duration_seconds FROM media_items WHERE id=%s", (media_item_id,))
+            if item_row and item_row.get("duration_seconds"):
+                try:
+                    duration_seconds = float(item_row["duration_seconds"])
+                except (ValueError, TypeError):
+                    pass
+
+        size_check = video_size_limits.push_video_size_check(new_size, duration_seconds=duration_seconds)
+        if size_check["over_limit"]:
+            reason = video_size_limits.build_push_video_oversize_reason(new_size, duration_seconds=duration_seconds)
+            tasks_svc.reject_raw(
+                task_id=tid,
+                actor_user_id=int(current_user.id),
+                reason=reason,
+            )
+            _audit_task_action(
+                tid,
+                "task_parent_manual_result_rejected_oversize",
+                {
+                    "new_size": new_size,
+                    "size_mb": size_check["size_mb"],
+                    "max_mb": size_check["max_mb"],
+                },
+            )
+            return _json_response({
+                "ok": False,
+                "error": "video_too_large",
+                "message": reason,
+                "size_bytes": size_check["size_bytes"],
+                "size_mb": size_check["size_mb"],
+                "max_bytes": size_check["max_bytes"],
+                "max_mb": size_check["max_mb"],
+                "suggested_bitrate": size_check["suggested_bitrate"],
+            }, 413)
+
         # 直接执行审核通过，使其自动入库并结束审核流程
         tasks_svc.approve_raw(
             task_id=tid,
@@ -972,7 +1022,10 @@ def api_child_submit(tid: int):
     try:
         tasks_svc.submit_child(task_id=tid, actor_user_id=int(current_user.id))
     except tasks_svc.NotReadyError as e:
-        return _json_response({"error": "readiness_failed", "missing": e.missing}, 422)
+        payload = {"error": "readiness_failed", "missing": e.missing}
+        if e.missing == ["video_size"] and getattr(e, "detail", ""):
+            payload["message"] = e.detail
+        return _json_response(payload, 422)
     except tasks_svc.StateError as e:
         return _json_response({"error": str(e)}, 400)
     _audit_task_action(tid, "task_child_submitted")

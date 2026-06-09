@@ -1622,6 +1622,123 @@ def test_realtime_recent_closed_business_day_uses_snapshot_when_daily_ads_missin
     assert result["snapshots"][0]["id"] == 777
 
 
+def test_realtime_recent_closed_business_day_daily_branch_fills_hourly_from_roas_nodes(monkeypatch):
+    target = oa._parse_meta_date("2026-05-07")
+    day_start = datetime(2026, 5, 7, 16, 0)
+    day_end = datetime(2026, 5, 8, 16, 0)
+    calls = []
+
+    def fake_query(sql, args=()):
+        calls.append((sql, args))
+        if "COUNT(*) AS n" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            assert args == (target,)
+            return [{"n": 2}]
+        if "FROM roi_daily_roas_nodes" in sql:
+            return [
+                {
+                    "node_hour": 0,
+                    "node_at": datetime(2026, 5, 7, 17, 0),
+                    "order_count": 1,
+                    "units": 1,
+                    "order_revenue_usd": 180.0,
+                    "shipping_revenue_usd": 20.0,
+                    "ad_spend_usd": 100.0,
+                    "true_roas": 2.0,
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                },
+                {
+                    "node_hour": 1,
+                    "node_at": datetime(2026, 5, 7, 18, 0),
+                    "order_count": 2,
+                    "units": 2,
+                    "order_revenue_usd": 450.0,
+                    "shipping_revenue_usd": 50.0,
+                    "ad_spend_usd": 250.0,
+                    "true_roas": 2.0,
+                    "order_data_status": "ok",
+                    "ad_data_status": "ok",
+                },
+            ]
+        if "FROM roi_realtime_daily_snapshots" in sql:
+            return []
+        if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY hour" in sql:
+            assert args[0] == day_start
+            assert args[1] == day_start
+            assert args[2] == day_end
+            return [
+                {
+                    "hour": 0,
+                    "order_count": 1,
+                    "line_count": 1,
+                    "units": 1,
+                    "order_revenue": 180.0,
+                    "line_revenue": 180.0,
+                    "shipping_revenue": 20.0,
+                    "first_order_at": datetime(2026, 5, 7, 16, 10),
+                    "last_order_at": datetime(2026, 5, 7, 16, 20),
+                    "last_order_updated_at": datetime(2026, 5, 8, 16, 5),
+                },
+                {
+                    "hour": 1,
+                    "order_count": 1,
+                    "line_count": 1,
+                    "units": 1,
+                    "order_revenue": 270.0,
+                    "line_revenue": 270.0,
+                    "shipping_revenue": 30.0,
+                    "first_order_at": datetime(2026, 5, 7, 17, 10),
+                    "last_order_at": datetime(2026, 5, 7, 17, 20),
+                    "last_order_updated_at": datetime(2026, 5, 8, 16, 5),
+                },
+            ]
+        if "SELECT SUM(spend_usd) AS ad_spend" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [{
+                "ad_spend": 250.0,
+                "meta_purchase_value": 480.0,
+                "meta_purchases": 2,
+                "last_ad_updated_at": datetime(2026, 5, 8, 16, 3),
+            }]
+        if "SELECT meta_business_date, ad_account_id" in sql and "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "meta_business_date": target,
+                    "ad_account_id": "act_newjoy",
+                    "matched_product_code": "demo-rjc",
+                    "product_id": 42,
+                    "campaign_name": "demo-rjc",
+                    "normalized_campaign_code": "demo-rjc",
+                    "spend_usd": 250.0,
+                    "purchase_value_usd": 480.0,
+                    "result_count": 2,
+                    "updated_at": datetime(2026, 5, 8, 16, 3),
+                }
+            ]
+        if "FROM meta_ad_realtime_daily_campaign_metrics" in sql:
+            return []
+        if "FROM dianxiaomi_order_lines" in sql:
+            return []
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        start_date="2026-05-07",
+        end_date="2026-05-07",
+        now=datetime(2026, 5, 8, 19, 0),
+    )
+
+    assert result["scope"]["ad_source"] == "meta_ad_daily_campaign_metrics"
+    assert result["scope"]["hourly_ad_ready"] is True
+    assert result["scope"]["hourly_ad_source"] == "roi_daily_roas_nodes_delta"
+    assert result["summary"]["ad_spend"] == 250.0
+    assert result["hourly"][0]["ad_spend"] == 100.0
+    assert result["hourly"][0]["true_roas"] == 2.0
+    assert result["hourly"][1]["ad_spend"] == 150.0
+    assert result["hourly"][1]["true_roas"] == 2.0
+    assert not any("FROM roi_realtime_daily_snapshots" in sql for sql, _args in calls)
+
+
 def test_realtime_snapshot_freshness_uses_latest_ad_snapshot_before_order_snapshot(monkeypatch):
     target = oa._parse_meta_date("2026-05-07")
     order_snapshot_at = datetime(2026, 5, 8, 16, 0)

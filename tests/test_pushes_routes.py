@@ -952,6 +952,7 @@ def test_api_build_payload_includes_quality_check(authed_client_no_db, monkeypat
         "display_name": "de-demo.mp4",
         "object_key": "79/medias/316/video.mp4",
         "cover_object_key": "79/medias/316/cover.png",
+        "file_size": 101 * 1024 * 1024,
         "pushed_at": None,
     }
     product = {
@@ -1024,11 +1025,18 @@ def test_api_build_payload_includes_quality_check(authed_client_no_db, monkeypat
     quality = resp.get_json()["quality_check"]
     assert quality["status"] == "failed"
     assert quality["copy_result"]["status"] == "failed"
+    assert quality["video_size_check"]["size_mb"] == "101.0 MB"
+    assert quality["video_size_check"]["over_limit"] is True
+    assert quality["video_result"]["status"] == "failed"
 
 
 def test_api_quality_check_retry_runs_manual_evaluation(
     authed_client_no_db, monkeypatch,
 ):
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {"id": item_id, "file_size": 12 * 1024 * 1024},
+    )
     monkeypatch.setattr(
         "web.routes.pushes.push_quality_checks.evaluate_item",
         lambda item_id, source="auto": {
@@ -1208,6 +1216,39 @@ def test_payload_endpoint_includes_product_links_push_preview(
 
     assert resp.status_code == 200
     assert resp.get_json()["product_links_push"] == product_links_preview
+
+
+def test_api_push_rejects_video_over_100mb(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.get_push_target_url",
+        lambda: "http://downstream.invalid/push",
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 11,
+            "lang": "de",
+            "pushed_at": None,
+            "file_size": 101 * 1024 * 1024,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_product",
+        lambda product_id: {"id": product_id, "product_code": "demo-rjc"},
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.build_item_payload",
+        lambda item, product: (_ for _ in ()).throw(AssertionError("oversize video must not build payload")),
+    )
+
+    resp = authed_client_no_db.post("/pushes/api/items/7/push")
+
+    body = resp.get_json()
+    assert resp.status_code == 413
+    assert body["error"] == "video_too_large"
+    assert body["size_mb"] == "101.0 MB"
+    assert body["suggested_bitrate"] == 3000
 
 
 def test_mark_pushed_updates_state(logged_in_client, seeded_item):
@@ -2515,6 +2556,11 @@ def test_pushes_assets_include_quality_check_panel():
     assert "pm-quality-copy-preview" in script
     assert "pm-quality-cover-preview" in script
     assert "pm-quality-video-preview" in script
+    assert "pm-quality-size-check" in script
+    assert "video_size_check" in script
+    assert "视频大小" in script
+    assert "视频超过 100MB" in script
+    assert "item-size-highlight" in script
     assert "renderQualitySummaryRows" in script
     assert "pm-quality-summary-row" in script
     assert "文案：" in script
@@ -2528,6 +2574,8 @@ def test_pushes_assets_include_quality_check_panel():
     assert ".pm-main" in style
     assert ".pm-quality-side" in style
     assert ".pm-quality-detail-block" in style
+    assert ".pm-quality-size-check" in style
+    assert ".item-size-highlight" in style
     assert ".pm-quality-summary-row" in style
     assert "grid-template-columns: 44px minmax(0, 1fr)" in style
     assert "text-overflow: ellipsis" in style

@@ -268,6 +268,8 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
         ],
     }
 
+    captured = {}
+
     def fake_query(sql, params=None):
         if "FROM media_products" in sql:
             return [{
@@ -303,6 +305,7 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
                 {"id": 12, "product_id": 321, "lang": "pt", "filename": "demo-pt.mp4", "display_name": "pt", "object_key": "items/pt.mp4", "task_id": 102, "source_raw_id": 500, "source_ref_id": None, "auto_translated": 0},
             ]
         if "FROM tasks t" in sql:
+            captured["task_sql"] = sql
             return [
                 {
                     "id": 9001,
@@ -386,6 +389,8 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
     assert payload["ai_evaluation"]["evaluated_count"] == 2
     assert payload["ai_evaluation"]["pending_count"] == 6
     card = payload["cards"][0]
+    assert "u.display_name" not in captured["task_sql"]
+    assert "u.username AS assignee_name" in captured["task_sql"]
     assert card["mk_video"]["material_key"] == "mk-1"
     assert card["translation_summary"]["translated_country_codes"] == ["DE", "PT"]
     assert "NL" in card["translation_summary"]["missing_country_codes"]

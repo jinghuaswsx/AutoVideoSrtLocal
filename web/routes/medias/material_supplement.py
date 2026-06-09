@@ -765,16 +765,32 @@ def _empty_task_summary() -> dict[str, Any]:
     }
 
 
+def _task_assignee_name_expr(query_fn=db_query) -> str:
+    if query_fn is _DEFAULT_DB_QUERY:
+        try:
+            rows = query_fn(
+                "SELECT 1 AS found FROM information_schema.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+                "AND COLUMN_NAME = 'xingming' LIMIT 1"
+            )
+            if rows:
+                return "COALESCE(NULLIF(TRIM(u.xingming), ''), u.username)"
+        except Exception:
+            log.debug("users.xingming lookup failed for task assignee display name", exc_info=True)
+    return "u.username"
+
+
 def _load_item_task_summaries(item_ids: list[int], query_fn=db_query) -> dict[int, dict[str, Any]]:
     unique_ids = sorted({int(item_id) for item_id in item_ids if int(item_id or 0) > 0})
     if not unique_ids:
         return {}
     placeholders = ",".join(["%s"] * len(unique_ids))
+    assignee_name_expr = _task_assignee_name_expr(query_fn)
     rows = query_fn(
         "SELECT t.id, t.parent_task_id, t.media_item_id, t.country_code, t.status, "
         "       t.is_urgent, t.assignee_id, t.created_at, t.updated_at, t.archived_at, "
         "       u.username AS assignee_username, "
-        "       COALESCE(NULLIF(u.display_name, ''), u.username) AS assignee_name "
+        f"       {assignee_name_expr} AS assignee_name "
         "FROM tasks t "
         "LEFT JOIN users u ON u.id = t.assignee_id "
         f"WHERE t.media_item_id IN ({placeholders}) "

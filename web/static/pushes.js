@@ -51,6 +51,7 @@
     error: { label: '推送错误 ❌', icon: '', cls: 'is-error' },
   };
   const AI_EVALUATION_TIMEOUT_MS = 5 * 60 * 1000;
+  const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
   const AI_EVAL_REQUEST_PREVIEW_ENDPOINT = (pid) => `/medias/api/products/${pid}/evaluate/request-preview`;
   const AI_EVAL_STATUS_ENDPOINT = (pid, runId) => `/medias/api/products/${pid}/evaluate/status?run_id=${encodeURIComponent(runId || '')}`;
   const AI_EVAL_COUNTRY_RERUN_ENDPOINT = (pid, runId, country) => `/medias/api/products/${pid}/evaluate/${encodeURIComponent(runId || '')}/countries/${encodeURIComponent(country || '')}/rerun`;
@@ -66,6 +67,7 @@
     date_from: '',
     date_to: '',
     sort: 'created_at_desc',
+    video_size: '',
   };
   let LANGUAGES = [];
   let OWNERS = [];
@@ -238,6 +240,41 @@
     }, 1200);
   }
 
+  function formatVideoSizeMb(value) {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes < 0) return '0.0 MB';
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function itemVideoSizeText(item) {
+    const explicit = String((item && item.file_size_mb) || '').trim();
+    if (explicit) return explicit;
+    return formatVideoSizeMb(item && item.file_size);
+  }
+
+  function calculateRecommendedBitrate(fileSize, durationSeconds) {
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const PUSH_VIDEO_SUGGESTED_BITRATE = 3000;
+    const size = Number(fileSize || 0);
+    const dur = Number(durationSeconds || 0);
+    if (!dur || dur <= 0) {
+      return PUSH_VIDEO_SUGGESTED_BITRATE;
+    }
+    const targetBytes = 90 * 1024 * 1024;
+    const targetBitrateKbps = (targetBytes * 8) / (dur * 1000.0);
+    let suggestedBitrate = Math.round(targetBitrateKbps / 1000.0) * 1000;
+
+    const expectedSize = (suggestedBitrate * 1000.0 * dur) / 8.0;
+    if (expectedSize > PUSH_VIDEO_MAX_BYTES) {
+      suggestedBitrate -= 1000;
+    }
+
+    if (suggestedBitrate < 1000) {
+      suggestedBitrate = 1000;
+    }
+    return suggestedBitrate;
+  }
+
   function createCopyButton(value, attrName) {
     const btn = el('button', {
       type: 'button',
@@ -325,6 +362,7 @@
     const ownerSel = document.getElementById('f-owner');
     const auditResultSel = document.getElementById('f-audit-result');
     const newProductSel = document.getElementById('f-new-product');
+    const videoSizeSel = document.getElementById('f-video-size');
     const sortSel = document.getElementById('f-sort');
 
     setSelectValue(statusSel, paramValue(params, 'status', DEFAULT_FILTERS.status), DEFAULT_FILTERS.status);
@@ -332,6 +370,7 @@
     setSelectValue(ownerSel, paramValue(params, 'owner_id', DEFAULT_FILTERS.owner_id), DEFAULT_FILTERS.owner_id);
     setSelectValue(auditResultSel, paramValue(params, 'audit_result', DEFAULT_FILTERS.audit_result), DEFAULT_FILTERS.audit_result);
     setSelectValue(newProductSel, paramValue(params, 'new_product', DEFAULT_FILTERS.new_product), DEFAULT_FILTERS.new_product);
+    setSelectValue(videoSizeSel, paramValue(params, 'video_size', DEFAULT_FILTERS.video_size), DEFAULT_FILTERS.video_size);
     setSelectValue(sortSel, normalizeSort(paramValue(params, 'sort', DEFAULT_FILTERS.sort)), DEFAULT_FILTERS.sort);
     document.getElementById('f-keyword').value = paramValue(params, 'keyword', DEFAULT_FILTERS.keyword);
     document.getElementById('f-date-from').value = paramValue(params, 'date_from', DEFAULT_FILTERS.date_from);
@@ -353,6 +392,8 @@
     params.set('audit_result', auditResultSel ? auditResultSel.value : '');
     const newProductSel = document.getElementById('f-new-product');
     params.set('new_product', newProductSel ? newProductSel.value : '');
+    const videoSizeSel = document.getElementById('f-video-size');
+    params.set('video_size', videoSizeSel ? videoSizeSel.value : '');
     const df = document.getElementById('f-date-from').value;
     params.set('date_from', df);
     const dt = document.getElementById('f-date-to').value;
@@ -1292,7 +1333,14 @@
       : `<div class="thumb thumb-empty"></div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
+    const sizeMbStr = itemVideoSizeText(it);
     const productOwnerName = String(it.product_owner_name || '').trim();
+
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const recommendationHtml = (it.file_size > PUSH_VIDEO_MAX_BYTES)
+      ? `<div class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-top: 2px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</div>`
+      : '';
+
     return `<tr data-id="${escapeAttr(it.id)}">
       <td class="push-thumb-cell">${thumb}</td>
       <td class="push-product-cell">
@@ -1305,6 +1353,8 @@
       <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span>${renderPushTaskLink(it)}</td>
       <td class="push-item-cell">
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
+        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}</div>
+        ${recommendationHtml}
         <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
       </td>
       <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
@@ -1330,7 +1380,14 @@
                       `</div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
+    const sizeMbStr = itemVideoSizeText(it);
     const productPageUrl = safeExternalHref(it.product_page_url);
+
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const recommendationHtml = (it.file_size > PUSH_VIDEO_MAX_BYTES)
+      ? `<div class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-top: 2px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</div>`
+      : '';
+
     const copyProductNameBtn = it.product_name
       ? `<button type="button" class="product-copy-btn" data-copy-product-name="${escapeAttr(it.product_name)}" title="复制产品中文名" style="margin-left: 6px; display: inline-flex; vertical-align: middle; width: 22px; height: 22px; align-items: center; justify-content: center; flex-shrink: 0;">
            <svg class="icon-copy" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1394,6 +1451,8 @@
           <div class="item-name" style="word-break: break-all; min-width: 0; flex-grow: 1;">${escapeHtml(filename)}</div>
           ${copyFilenameBtn}
         </div>
+        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}</div>
+        ${recommendationHtml}
         <div class="item-meta">
           ${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}
         </div>
@@ -1499,9 +1558,43 @@
     document.getElementById('btn-apply').addEventListener('click', () => {
       state.page = 1; load();
     });
-    document.getElementById('f-sort').addEventListener('change', () => {
-      state.page = 1; load();
+
+    const instantTriggerIds = [
+      'f-status', 'f-lang', 'f-owner', 'f-audit-result',
+      'f-new-product', 'f-video-size', 'f-sort', 'f-date-from', 'f-date-to'
+    ];
+    instantTriggerIds.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) {
+        element.addEventListener('change', () => {
+          state.page = 1;
+          load();
+        });
+      }
     });
+
+    let keywordTimeout = null;
+    const keywordInput = document.getElementById('f-keyword');
+    if (keywordInput) {
+      keywordInput.addEventListener('input', () => {
+        if (keywordTimeout) clearTimeout(keywordTimeout);
+        keywordTimeout = setTimeout(() => {
+          state.page = 1;
+          load();
+        }, 500);
+      });
+    }
+
+    document.querySelectorAll('.push-toolbar select, .push-toolbar input').forEach(el => {
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          if (keywordTimeout) clearTimeout(keywordTimeout);
+          state.page = 1;
+          load();
+        }
+      });
+    });
+
     document.getElementById('btn-reset').addEventListener('click', () => {
       document.querySelectorAll('.push-toolbar input').forEach(i => (i.value = ''));
       document.getElementById('f-status').value = 'pending';
@@ -1509,6 +1602,8 @@
       document.getElementById('f-owner').value = '';
       document.getElementById('f-audit-result').value = '';
       document.getElementById('f-new-product').value = '';
+      const videoSize = document.getElementById('f-video-size');
+      if (videoSize) videoSize.value = '';
       document.getElementById('f-sort').value = 'created_at_desc';
       state.page = 1; load();
     });
@@ -1754,11 +1849,13 @@
   function renderQualitySummaryRows(qualityCheck) {
     const data = qualityCheck || {};
     const root = el('div', { class: 'pm-quality-summary-rows' });
-    [
+    const rows = [
       ['文案：', data.copy_result],
       ['封面：', data.cover_result],
       ['视频：', data.video_result],
-    ].forEach(([label, result]) => {
+    ];
+    if (data.video_size_check) rows.push(['大小：', data.video_size_check]);
+    rows.forEach(([label, result]) => {
       const fullText = normalizeQualitySummary(result);
       root.appendChild(el('div', { class: 'pm-quality-summary-row', title: `${label}${fullText}` }, [
         el('span', { class: 'pm-quality-summary-label' }, label),
@@ -1803,6 +1900,8 @@
       onclick: onRetry,
     }, busy ? '评估中...' : '重新评估'));
     root.appendChild(head);
+    const sizeCheckNode = renderQualityVideoSizeCheck(qualityCheck, null);
+    if (sizeCheckNode) root.appendChild(sizeCheckNode);
     root.appendChild(el('div', { class: 'pm-quality-grid' }, [
       renderQualityResultCard('文案', qualityCheck && qualityCheck.copy_result),
       renderQualityResultCard('封面图', qualityCheck && qualityCheck.cover_result),
@@ -1821,6 +1920,65 @@
   function firstPayloadVideo(payload) {
     const videos = payload && Array.isArray(payload.videos) ? payload.videos : [];
     return videos.length ? videos[0] : null;
+  }
+
+  function normalizeVideoSizeCheck(qualityCheck, payload) {
+    const explicit = qualityCheck && qualityCheck.video_size_check;
+    if (explicit && explicit.size_bytes !== undefined) {
+      return {
+        size_bytes: Number(explicit.size_bytes || 0),
+        size_mb: explicit.size_mb || formatVideoSizeMb(explicit.size_bytes),
+        max_bytes: Number(explicit.max_bytes || PUSH_VIDEO_MAX_BYTES),
+        max_mb: explicit.max_mb || formatVideoSizeMb(explicit.max_bytes || PUSH_VIDEO_MAX_BYTES),
+        over_limit: !!explicit.over_limit,
+        status: explicit.status || (explicit.over_limit ? 'failed' : 'passed'),
+        summary: explicit.summary || '',
+        suggested_bitrate: explicit.suggested_bitrate || 3000,
+      };
+    }
+    const video = firstPayloadVideo(payload);
+    if (!video || video.size === undefined) return null;
+    const bytes = Number(video.size || 0);
+    const overLimit = bytes > PUSH_VIDEO_MAX_BYTES;
+    return {
+      size_bytes: bytes,
+      size_mb: formatVideoSizeMb(bytes),
+      max_bytes: PUSH_VIDEO_MAX_BYTES,
+      max_mb: formatVideoSizeMb(PUSH_VIDEO_MAX_BYTES),
+      over_limit: overLimit,
+      status: overLimit ? 'failed' : 'passed',
+      summary: overLimit
+        ? `提醒管理员：视频大小 ${formatVideoSizeMb(bytes)}，超过推送上限 ${formatVideoSizeMb(PUSH_VIDEO_MAX_BYTES)}。`
+        : `视频大小 ${formatVideoSizeMb(bytes)}，未超过推送上限 ${formatVideoSizeMb(PUSH_VIDEO_MAX_BYTES)}。`,
+      suggested_bitrate: 3000,
+    };
+  }
+
+  function renderQualityVideoSizeCheck(qualityCheck, payload) {
+    const check = normalizeVideoSizeCheck(qualityCheck, payload);
+    if (!check) return null;
+    const failed = !!check.over_limit;
+    const root = el('div', { class: `pm-quality-size-check ${failed ? 'is-failed' : 'is-passed'}` });
+    root.appendChild(el('div', { class: 'pm-quality-size-head' }, [
+      el('span', { class: 'pm-quality-size-label' }, '视频大小'),
+      el('strong', { class: 'pm-quality-size-value' }, check.size_mb),
+    ]));
+    root.appendChild(el('p', { class: 'pm-quality-size-summary' },
+      check.summary || (failed
+        ? `提醒管理员：视频大小 ${check.size_mb}，超过推送上限 ${check.max_mb}。`
+        : `视频大小 ${check.size_mb}，未超过推送上限 ${check.max_mb}。`),
+    ));
+    if (failed) {
+      root.appendChild(el('p', { class: 'pm-quality-size-advice' },
+        `请打回重新处理视频，建议将码率改到 ${check.suggested_bitrate || 3000}，确保视频控制在 100 MB 以内。`,
+      ));
+    }
+    return root;
+  }
+
+  function hasVideoSizeViolation(qualityCheck, payload) {
+    const check = normalizeVideoSizeCheck(qualityCheck, payload);
+    return !!(check && check.over_limit);
   }
 
   function renderQualityIssues(result) {
@@ -1933,6 +2091,8 @@
       onclick: onRetry,
     }, busy ? '评估中...' : '重新评估'));
     root.appendChild(head);
+    const sizeCheckNode = renderQualityVideoSizeCheck(qualityCheck, payload);
+    if (sizeCheckNode) root.appendChild(sizeCheckNode);
     root.appendChild(renderQualityDetailBlock(
       '文案',
       qualityCheck && qualityCheck.copy_result,
@@ -2705,8 +2865,11 @@
             : noTexts ? '无可推送文案' : '推送文案';
         return;
       }
-      btnPush.disabled = materialPushed || !payloadData;
-      btnPush.textContent = materialPushed ? '素材已推送' : '推送素材';
+      const sizeViolation = hasVideoSizeViolation(qualityCheck, payloadData);
+      btnPush.disabled = materialPushed || !payloadData || sizeViolation;
+      btnPush.textContent = materialPushed
+        ? '素材已推送'
+        : sizeViolation ? '视频超过 100MB' : '推送素材';
     }
 
     function setMode(mode) {
@@ -2735,6 +2898,7 @@
         previewCoverUrl,
         busy,
       ));
+      syncPushButton();
     }
     setQualityPanel(qualityCheck);
 

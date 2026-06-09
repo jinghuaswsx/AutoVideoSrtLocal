@@ -569,6 +569,116 @@
   border-color: var(--tc-accent);
   color: #fff;
 }
+
+/* ── 我的今日工作量卡片 ── */
+.tc-workload-card {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+  background: color-mix(in oklch, var(--tc-bg-subtle) 90%, var(--tc-bg) 10%);
+  border: 1px solid var(--tc-border-strong);
+  border-radius: var(--tc-r-md);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.03);
+  min-width: 320px;
+  max-width: 420px;
+  font-size: 13px;
+  margin-left: auto;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.tc-workload-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.05);
+}
+.tc-workload-title {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--tc-fg-muted);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tc-workload-title::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 10px;
+  background: var(--tc-accent);
+  border-radius: 999px;
+}
+.tc-workload-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tc-workload-metric-group {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
+.tc-workload-metric-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: var(--tc-r);
+  min-width: 60px;
+  flex: 1;
+  transition: transform 0.2s ease;
+}
+.tc-workload-metric-item:hover {
+  transform: scale(1.03);
+}
+.tc-workload-metric-item.in-progress {
+  background: color-mix(in oklch, var(--tc-accent-subtle) 40%, var(--tc-bg) 60%);
+  border: 1px solid color-mix(in oklch, var(--tc-accent) 20%, transparent);
+}
+.tc-workload-metric-item.completed {
+  background: color-mix(in oklch, var(--tc-success-bg) 40%, var(--tc-bg) 60%);
+  border: 1px solid color-mix(in oklch, var(--tc-success-fg) 20%, transparent);
+}
+.tc-workload-metric-value {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.tc-workload-metric-item.in-progress .tc-workload-metric-value {
+  color: var(--tc-accent);
+}
+.tc-workload-metric-item.completed .tc-workload-metric-value {
+  color: var(--tc-success-fg);
+}
+.tc-workload-metric-label {
+  font-size: 10px;
+  color: var(--tc-fg-muted);
+  margin-top: 1px;
+  white-space: nowrap;
+}
+.tc-workload-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--tc-border-strong);
+}
+.tc-workload-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1.1;
+}
+.tc-workload-detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+.tc-workload-detail-label {
+  color: var(--tc-fg-muted);
+}
+.tc-workload-detail-value {
+  font-weight: 700;
+  color: var(--tc-fg);
+}
 {% endblock %}
 {% block content %}
 <div id="tcRoot" class="tc">
@@ -577,6 +687,37 @@
       <div>
         <h1 style="margin:0; font-size:22px; font-weight:600;">任务中心</h1>
         <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理小语种视频翻译任务及去字幕原始视频处理流程</p>
+      </div>
+      <!-- 用户今日工作量看板 -->
+      <div id="tcUserWorkloadCard" class="tc-workload-card">
+        <div class="tc-workload-title">我的今日工作量</div>
+        <div class="tc-workload-content">
+          <div class="tc-workload-metric-group">
+            <div class="tc-workload-metric-item in-progress" title="当前进行中的非待推送任务">
+              <div class="tc-workload-metric-value" id="wlInProgress">-</div>
+              <div class="tc-workload-metric-label">进行中任务</div>
+            </div>
+            <div class="tc-workload-metric-item completed" title="今日已完成或已提交待推送的任务">
+              <div class="tc-workload-metric-value" id="wlCompleted">-</div>
+              <div class="tc-workload-metric-label">今日已完成</div>
+            </div>
+          </div>
+          <div class="tc-workload-divider"></div>
+          <div class="tc-workload-details">
+            <div class="tc-workload-detail-item">
+              <span class="tc-workload-detail-label">已完成产品：</span>
+              <span class="tc-workload-detail-value" id="wlProducts">-</span>
+            </div>
+            <div class="tc-workload-detail-item">
+              <span class="tc-workload-detail-label">翻译任务：</span>
+              <span class="tc-workload-detail-value" id="wlTranslations">-</span>
+            </div>
+            <div class="tc-workload-detail-item">
+              <span class="tc-workload-detail-label">去字幕任务：</span>
+              <span class="tc-workload-detail-value" id="wlRaws">-</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2554,6 +2695,23 @@ document.getElementById('tcStatusFilter').addEventListener('change', () => { TC_
 document.getElementById('tcStatusFilter').addEventListener('keyup', e => { if (e.key === 'Enter') { TC_TASK_PAGE = 1; tcRender(); } });
 tcLoadAssigneeFilterUsers();
 
+async function tcLoadUserWorkload() {
+  const card = document.getElementById('tcUserWorkloadCard');
+  if (!card) return;
+  try {
+    const res = await fetch('/tasks/api/user-workload');
+    if (!res.ok) throw new Error('Failed to fetch user workload');
+    const data = await res.json();
+    document.getElementById('wlInProgress').textContent = data.in_progress ?? 0;
+    document.getElementById('wlCompleted').textContent = data.today_completed ?? 0;
+    document.getElementById('wlProducts').textContent = data.today_completed_products ?? 0;
+    document.getElementById('wlTranslations').textContent = data.today_completed_translate_tasks ?? 0;
+    document.getElementById('wlRaws').textContent = data.today_completed_raw_tasks ?? 0;
+  } catch (e) {
+    console.error('load user workload failed:', e);
+  }
+}
+
 async function tcRender() {
   const wrap = document.getElementById('tcTableWrap');
   const filters = document.getElementById('tcFilters');
@@ -2567,6 +2725,7 @@ async function tcRender() {
   wrap.innerHTML = '<div class="tc-empty">加载中...</div>';
   try {
     await tcLoadLanguageLabels();
+    tcLoadUserWorkload(); // Non-blocking load of user workload stats
     if (TC_CURRENT_SECTION === 'dispatch') {
       await tcRenderDispatchPool(wrap);
     } else if (TC_CURRENT_SECTION === 'stats') {
@@ -3514,7 +3673,10 @@ async function tcAction(kind, id, action) {
     if (TC_DETAIL_TASK_ID === id) tcOpenDetail(id);
   } catch (e) {
     if (e.message === 'readiness_failed') {
-      alert('未通过产物齐全检查，请去素材管理补齐封面/视频/文案后再提交');
+      const readinessMessage = e.payload && e.payload.message
+        ? e.payload.message
+        : '未通过产物齐全检查，请去素材管理补齐封面/视频/文案后再提交';
+      alert(readinessMessage);
     } else {
       alert(action + ' 失败：' + e.message);
     }
@@ -3601,7 +3763,7 @@ async function tcSubmitManualRawResult() {
     });
     const body = await rsp.json().catch(() => ({}));
     if (!rsp.ok) {
-      throw new Error(body.error || body.detail || rsp.statusText);
+      throw new Error(body.message || body.error || body.detail || rsp.statusText);
     }
     TC_MANUAL_RAW_SUBMITTED = true;
     tcSetManualRawResultStatus('已上传成功，文件大小 ' + tcFormatBytes(body.new_size || file.size) + '。关闭本弹窗后将刷新页面，请在审核流程中预览并点击『确认』通过审核入库。', 'success');
