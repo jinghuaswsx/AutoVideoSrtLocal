@@ -31,6 +31,8 @@ def test_dialogue_step_names_replace_voice_match_with_speaker_detect_and_ab():
     assert names.index("speaker_confirm") < names.index("alignment")
     assert names.index("voice_match_ab") < names.index("alignment")
     assert names.index("alignment") < names.index("translate")
+    assert names.index("compose") < names.index("video_size_adjustment")
+    assert names.index("video_size_adjustment") < names.index("export")
 
 
 def test_get_pipeline_steps_builds_dialogue_steps_from_base_omni_config(monkeypatch):
@@ -47,6 +49,7 @@ def test_get_pipeline_steps_builds_dialogue_steps_from_base_omni_config(monkeypa
     runner = DialogueTranslateRunner(bus=EventBus(), user_id=7)
     steps = runner._get_pipeline_steps("dialogue-parent", "/tmp/demo.mp4", "/tmp/task")
     names = [name for name, _fn in steps]
+    step_fns = dict(steps)
 
     assert "voice_match" not in names
     assert names[names.index("speaker_detect") + 1] == "speaker_confirm"
@@ -55,6 +58,9 @@ def test_get_pipeline_steps_builds_dialogue_steps_from_base_omni_config(monkeypa
     assert names.index("speaker_confirm") < names.index("alignment")
     assert names.index("voice_match_ab") < names.index("alignment")
     assert names.index("alignment") < names.index("translate")
+    assert names.index("compose") < names.index("video_size_adjustment")
+    assert names.index("video_size_adjustment") < names.index("export")
+    assert callable(step_fns["video_size_adjustment"])
 
 
 def test_prepare_tts_segments_for_audio_gen_applies_selected_speaker_voices():
