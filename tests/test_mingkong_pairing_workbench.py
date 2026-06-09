@@ -341,6 +341,58 @@ def test_build_mingkong_library_sku_import_payload_refreshes_and_converts(monkey
     assert payload["pairs"][0]["dianxiaomi_sku_code"] == "mk-erp-1"
 
 
+def test_build_target_sku_import_pairs_uses_editable_target_values():
+    product = {"id": 747, "product_code": "sample-rjc", "shopifyid": "shopify-product"}
+    library_items = [
+        {
+            "shopify_product_id": "mk-shopify-product",
+            "shopify_variant_id": "variant-1",
+            "shopify_variant_title": "Black / S",
+            "shopify_sku": "shopify-sku",
+            "dianxiaomi_sku": "mk-sku-old",
+            "dianxiaomi_product_sku": "mk-product-sku",
+            "dianxiaomi_sku_code": "mk-erp-old",
+            "dianxiaomi_name": "明空原商品名",
+            "purchase_1688_url": "https://detail.1688.com/offer/123456789.html",
+        }
+    ]
+    targets = [
+        {
+            "shopify_variant_id": "variant-1",
+            "variant_title": "Black / S edited",
+            "dianxiaomi_sku": "mk-sku-edited",
+            "dianxiaomi_product_sku": "mk-product-sku-edited",
+            "dianxiaomi_sku_code": "mk-erp-edited",
+            "dianxiaomi_name": "人工确认商品名",
+            "purchase_1688_url": "https://detail.1688.com/offer/987654321.html",
+            "product_id_alibaba": "987654321",
+            "sku_id_alibaba": "1688-sku-edited",
+        }
+    ]
+
+    pairs = pairing.build_target_sku_import_pairs(product, library_items, targets)
+    purchase_url = pairing.first_purchase_url_from_targets(product, library_items, targets)
+
+    assert pairs == [
+        {
+            "shopify_product_id": "mk-shopify-product",
+            "shopify_variant_id": "variant-1",
+            "shopify_sku": "shopify-sku",
+            "shopify_price": None,
+            "shopify_compare_at_price": None,
+            "shopify_currency": "USD",
+            "shopify_inventory_quantity": None,
+            "shopify_weight_grams": None,
+            "shopify_variant_title": "Black / S edited",
+            "dianxiaomi_sku": "mk-sku-edited",
+            "dianxiaomi_product_sku": "mk-product-sku-edited",
+            "dianxiaomi_sku_code": "mk-erp-edited",
+            "dianxiaomi_name": "人工确认商品名",
+        }
+    ]
+    assert purchase_url == "https://detail.1688.com/offer/987654321.html"
+
+
 def test_mingkong_pairing_import_skus_refuses_to_overwrite_existing(monkeypatch):
     monkeypatch.setattr(
         products_route.medias,
@@ -402,14 +454,126 @@ def test_mingkong_pairing_import_skus_writes_mingkong_library_source(monkeypatch
     assert result["logs"][1]["level"] == "ok"
 
 
-def test_mingkong_pairing_template_has_progress_modal_and_renamed_sync_button():
+def test_mingkong_pairing_sync_response_imports_targets_then_replicates_and_confirms(monkeypatch):
+    product = {"id": 747, "product_code": "sample-rjc", "shopifyid": "shopify-product"}
+    library_items = [
+        {
+            "shopify_product_id": "shopify-product",
+            "shopify_variant_id": "variant-1",
+            "shopify_variant_title": "Black",
+            "dianxiaomi_sku": "mk-sku",
+            "dianxiaomi_sku_code": "mk-erp",
+            "dianxiaomi_name": "明空商品名",
+            "purchase_1688_url": "https://detail.1688.com/offer/123456789.html",
+        }
+    ]
+    targets = [
+        {
+            "shopify_variant_id": "variant-1",
+            "variant_title": "Black",
+            "dianxiaomi_sku": "mk-sku",
+            "dianxiaomi_sku_code": "mk-erp",
+            "dianxiaomi_name": "明空商品名",
+            "product_id_alibaba": "123456789",
+            "sku_id_alibaba": "1688-sku",
+        }
+    ]
+    calls = {"replace": [], "update": [], "replicate": None, "confirm": None}
+    local_rows = [
+        {
+            "shopify_product_id": "shopify-product",
+            "shopify_variant_id": "variant-1",
+            "shopify_variant_title": "Black",
+            "dianxiaomi_sku": "mk-sku",
+            "dianxiaomi_sku_code": "mk-erp",
+            "dianxiaomi_name": "明空商品名",
+        }
+    ]
+
+    monkeypatch.setattr(
+        products_route.dianxiaomi_mingkong_pairing,
+        "build_mingkong_library_sku_import_payload",
+        lambda _product: {
+            "ok": True,
+            "pairs": [],
+            "items": library_items,
+            "realtime_refresh": None,
+        },
+    )
+    monkeypatch.setattr(
+        products_route.medias,
+        "replace_product_skus",
+        lambda pid, pairs, *, source: calls["replace"].append((pid, pairs, source))
+        or {"inserted": 1, "updated": 0, "deleted": 0, "preserved": 0},
+    )
+    monkeypatch.setattr(
+        products_route.medias,
+        "update_product",
+        lambda pid, **fields: calls["update"].append((pid, fields)) or 1,
+    )
+    monkeypatch.setattr(products_route.medias, "get_product", lambda _pid: product)
+    monkeypatch.setattr(products_route.medias, "list_product_skus", lambda _pid: local_rows)
+
+    def fake_replicate(product_arg, rows_arg, **kwargs):
+        calls["replicate"] = (product_arg, rows_arg, kwargs)
+        return {
+            "ok": True,
+            "message": "复刻完成",
+            "logs": [{"level": "ok", "message": "复刻完成"}],
+            "items": [{"status": "already_exists", "dianxiaomi_sku": "mk-sku"}],
+        }
+
+    def fake_confirm(product_arg, rows_arg, **kwargs):
+        calls["confirm"] = (product_arg, rows_arg, kwargs)
+        return {
+            "ok": True,
+            "message": "确认完成",
+            "logs": [{"level": "ok", "message": "确认完成"}],
+            "items": [{"status": "confirmed", "dianxiaomi_sku": "mk-sku"}],
+        }
+
+    monkeypatch.setattr(
+        products_route.dianxiaomi_mingkong_pairing,
+        "replicate_mingkong_skus_to_dxm03",
+        fake_replicate,
+    )
+    monkeypatch.setattr(
+        products_route.dianxiaomi_mingkong_pairing,
+        "confirm_dxm03_pairing",
+        fake_confirm,
+    )
+
+    result = products_route._build_mingkong_pairing_sync_response(
+        747,
+        product,
+        {"items": targets},
+    )
+
+    assert result["ok"] is True
+    assert calls["replace"][0][0] == 747
+    assert calls["replace"][0][1][0]["dianxiaomi_sku"] == "mk-sku"
+    assert calls["replace"][0][2] == "mingkong_replicated"
+    assert calls["update"] == [
+        (747, {"purchase_1688_url": "https://detail.1688.com/offer/123456789.html"})
+    ]
+    assert calls["replicate"][2]["selections"] == targets
+    assert calls["confirm"][2]["selections"] == targets
+    assert "确认完成" in result["message"]
+
+
+def test_mingkong_pairing_template_has_review_modal_and_single_sync_entry():
     source = Path("web/templates/medias_mingkong_pairing_workbench.html").read_text(
         encoding="utf-8"
     )
 
     assert 'id="mkpProgressModal"' in source
+    assert 'id="mkpSyncModal"' in source
     assert "同步明空店小秘SKU" in source
+    assert "执行后的目标效果" in source
     assert "明空 SKU 图片" in source
+    assert 'id="mkpImportSkus"' not in source
+    assert 'id="mkpReplicate"' not in source
+    assert "/mingkong-pairing/sync" in source
     assert "non_json_response" in source
 
 

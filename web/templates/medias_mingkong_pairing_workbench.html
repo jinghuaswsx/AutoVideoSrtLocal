@@ -297,6 +297,10 @@
     background: #fff;
     box-shadow: 0 20px 60px rgba(15, 23, 42, .24);
   }
+  .mkp-sync-modal {
+    width: min(1320px, 100%);
+    max-height: min(860px, calc(100vh - 32px));
+  }
   .mkp-modal-head {
     display: flex;
     align-items: flex-start;
@@ -321,6 +325,98 @@
     gap: 12px;
     padding: 14px 18px 18px;
     overflow: auto;
+  }
+  .mkp-sync-body {
+    padding: 0;
+    gap: 0;
+  }
+  .mkp-sync-top {
+    display: grid;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+  .mkp-sync-rows {
+    display: grid;
+    gap: 12px;
+    padding: 16px 18px;
+    overflow: auto;
+  }
+  .mkp-sync-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.05fr);
+    gap: 12px;
+    align-items: stretch;
+  }
+  .mkp-sync-card {
+    min-width: 0;
+    display: grid;
+    gap: 10px;
+    align-content: start;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+  }
+  .mkp-sync-card.target {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+  }
+  .mkp-sync-card h4 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  .mkp-sync-thumb-row {
+    display: grid;
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    min-width: 0;
+  }
+  .mkp-sync-fields {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+  }
+  .mkp-sync-field {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+  .mkp-sync-field label {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+  .mkp-sync-value {
+    min-width: 0;
+    color: #0f172a;
+    font-size: 12px;
+    word-break: break-word;
+  }
+  .mkp-sync-input {
+    width: 100%;
+    min-width: 0;
+    height: 30px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0 8px;
+    color: #0f172a;
+    background: #fff;
+    font: inherit;
+    font-size: 12px;
+  }
+  .mkp-sync-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 18px;
+    border-top: 1px solid #e2e8f0;
+    background: #fff;
   }
   .mkp-modal-status {
     display: flex;
@@ -442,6 +538,28 @@
     background: #111827;
     color: #cbd5e1;
   }
+  [data-theme='dark'] .mkp-sync-top,
+  [data-theme='dark'] .mkp-sync-footer {
+    border-color: #334155;
+    background: #111827;
+  }
+  [data-theme='dark'] .mkp-sync-card {
+    border-color: #334155;
+    background: #0f172a;
+  }
+  [data-theme='dark'] .mkp-sync-card.target {
+    border-color: #1d4ed8;
+    background: #0f1d36;
+  }
+  [data-theme='dark'] .mkp-sync-card h4,
+  [data-theme='dark'] .mkp-sync-value,
+  [data-theme='dark'] .mkp-sync-input {
+    color: #e2e8f0;
+  }
+  [data-theme='dark'] .mkp-sync-input {
+    border-color: #334155;
+    background: #111827;
+  }
   @media (max-width: 900px) {
     .mkp-head {
       flex-direction: column;
@@ -452,6 +570,9 @@
     }
     .mkp-meta,
     .mkp-status {
+      grid-template-columns: 1fr;
+    }
+    .mkp-sync-row {
       grid-template-columns: 1fr;
     }
   }
@@ -467,8 +588,6 @@
     <div class="mkp-actions">
       <a class="mkp-btn" href="{{ url_for('medias.product_detail_page', product_code=product.product_code) if product.product_code else url_for('medias.product_tab_page') }}">返回产品</a>
       <button type="button" id="mkpReload" class="mkp-btn">刷新状态</button>
-      <button type="button" id="mkpImportSkus" class="mkp-btn">同步明空 SKU 到我们系统</button>
-      <button type="button" id="mkpReplicate" class="mkp-btn">复刻明空 SKU</button>
       <button type="button" id="mkpConfirm" class="mkp-btn primary">同步明空店小秘SKU</button>
     </div>
   </div>
@@ -549,6 +668,33 @@
       </div>
     </div>
   </div>
+
+  <div class="mkp-modal-backdrop" id="mkpSyncBackdrop" hidden>
+    <div class="mkp-modal mkp-sync-modal" id="mkpSyncModal" role="dialog" aria-modal="true" aria-labelledby="mkpSyncTitle">
+      <div class="mkp-modal-head">
+        <div>
+          <h3 class="mkp-modal-title" id="mkpSyncTitle">同步明空店小秘SKU</h3>
+          <div class="mkp-modal-sub" id="mkpSyncSub">先确认目标效果，确认后才写入我们系统和 DXM03</div>
+        </div>
+        <button type="button" class="mkp-btn" id="mkpSyncClose">关闭</button>
+      </div>
+      <div class="mkp-modal-body mkp-sync-body">
+        <div class="mkp-sync-top">
+          <div class="mkp-modal-status">
+            <span id="mkpSyncState">待确认</span>
+            <span class="mkp-mono" id="mkpSyncElapsed">00:00</span>
+          </div>
+          <div class="mkp-progress" aria-hidden="true"><span></span></div>
+          <ul class="mkp-modal-log" id="mkpSyncLog"></ul>
+        </div>
+        <div class="mkp-sync-rows" id="mkpSyncRows"></div>
+      </div>
+      <div class="mkp-sync-footer">
+        <button type="button" class="mkp-btn" id="mkpSyncCancel">取消</button>
+        <button type="button" class="mkp-btn primary" id="mkpSyncRun">确认并执行同步</button>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -584,6 +730,11 @@
   const progress = {
     startedAt: 0,
     timer: null
+  };
+  const syncProgress = {
+    startedAt: 0,
+    timer: null,
+    running: false
   };
 
   function esc(value) {
@@ -757,48 +908,6 @@
     return lines.length ? lines.join('\n') : (payload?.message || fallback || '操作完成');
   }
 
-  async function runModalAction(config) {
-    const btn = $(config.buttonId);
-    const original = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = config.busyText || '处理中';
-    openProgressModal(config.title, config.sub || '');
-    appendProgressLog('info', config.startLog || '开始执行');
-    try {
-      appendProgressLog('info', '请求已发送，等待后端返回处理结果');
-      const result = await config.action();
-      payloadLogs(result).forEach((entry) => appendProgressLog(entry.level, entry.message));
-      if (config.afterSuccess) {
-        await config.afterSuccess(result);
-      }
-      const finishLevel = result.ok === false ? 'warn' : 'ok';
-      finishProgress(finishLevel, result.message || config.successText || '处理完成');
-      $('mkpResult').textContent = resultText(result, config.successText);
-      return result;
-    } catch (err) {
-      const payload = err.payload || {};
-      const logs = payloadLogs(payload);
-      if (logs.length) {
-        logs.forEach((entry) => appendProgressLog(entry.level, entry.message));
-      } else {
-        appendProgressLog('error', err.message || String(err));
-      }
-      if (config.afterError) {
-        await config.afterError(payload, err);
-      }
-      const hasErrorLog = logs.some((entry) => entry.level === 'error');
-      finishProgress(hasErrorLog || !logs.length ? 'error' : 'warn', payload.message || err.message || '操作失败');
-      $('mkpResult').textContent = resultText(payload, err.message || String(err));
-      return null;
-    } finally {
-      btn.textContent = original;
-      btn.disabled = false;
-      if (config.afterFinally) {
-        config.afterFinally();
-      }
-    }
-  }
-
   function componentHtml(components, scope) {
     if (!Array.isArray(components) || !components.length) return '';
     const isMingkong = scope === 'mingkong';
@@ -834,7 +943,6 @@
     $('mkpPairedCount').textContent = summary.paired_count || 0;
     $('mkpReadyCount').textContent = summary.ready_count || 0;
     $('mkpMissingCount').textContent = summary.missing_count || 0;
-    $('mkpImportSkus').disabled = false;
     if (summary.live_error) {
       $('mkpResult').textContent = `DXM03 实时核验失败：${summary.live_error}`;
     } else if (summary.mingkong_reference_error) {
@@ -877,8 +985,8 @@
         <td>${chip(item.status)}</td>
         <td>${dxm03NameHtml}</td>
         <td>${esc(pairing.supplier_name || '—')}</td>
-        <td><input class="mkp-input mkp-mono" data-field="product_id_alibaba" value="${esc(productIdAlibaba)}"></td>
-        <td><input class="mkp-input mkp-mono" data-field="sku_id_alibaba" value="${esc(skuIdAlibaba)}"></td>
+        <td class="mkp-mono">${esc(productIdAlibaba || '—')}</td>
+        <td class="mkp-mono">${esc(skuIdAlibaba || '—')}</td>
         <td>${chip(pairing.is_paired ? 'already_paired' : item.status)}</td>
         <td class="mkp-mingkong-col">${imageHtml(mingkongImageUrl)}</td>
         <td class="mkp-mingkong-col mkp-mono">${esc(mingkong.sku || '—')}</td>
@@ -930,104 +1038,270 @@
     }
   }
 
-  async function importMingkongSkus() {
-    await runModalAction({
-      buttonId: 'mkpImportSkus',
-      busyText: '同步中',
-      title: '同步明空 SKU 到我们系统',
-      sub: '仅在我们系统没有 SKU 行时写入本地 SKU 候选',
-      startLog: '准备从明空产品库同步 SKU 到我们系统',
-      successText: '已同步明空 SKU 到我们系统',
-      action: () => fetchJson(`/medias/api/products/${productId}/mingkong-pairing/import-skus`, {
-        method: 'POST',
-        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-        body: '{}'
-      }),
-      afterSuccess: async () => {
-        appendProgressLog('info', '正在刷新页面状态');
-        await load();
-        appendProgressLog('ok', '页面状态已刷新');
-      },
-      afterFinally: () => {
-        $('mkpImportSkus').disabled = false;
-      }
-    });
+  function bestValue() {
+    for (const value of arguments) {
+      const text = String(value === null || value === undefined ? '' : value).trim();
+      if (text) return text;
+    }
+    return '';
   }
 
-  function collectSelections() {
-    return Array.from(document.querySelectorAll('[data-row="1"]')).map((tr) => {
-      const get = (field) => tr.querySelector(`[data-field="${field}"]`)?.value || '';
+  function valueBlock(label, value, options) {
+    const text = String(value || '').trim();
+    const body = options?.link ? linkHtml(text) : `<div class="mkp-sync-value ${options?.mono ? 'mkp-mono' : ''}">${esc(text || '—')}</div>`;
+    return `<div class="mkp-sync-field"><label>${esc(label)}</label>${body}</div>`;
+  }
+
+  function inputBlock(label, field, value, options) {
+    return `<div class="mkp-sync-field">
+      <label for="mkpSync_${esc(field)}_${esc(options?.index || 0)}">${esc(label)}</label>
+      <input id="mkpSync_${esc(field)}_${esc(options?.index || 0)}" class="mkp-sync-input ${options?.mono ? 'mkp-mono' : ''}" data-sync-field="${esc(field)}" value="${esc(value || '')}">
+    </div>`;
+  }
+
+  function targetForItem(item) {
+    const commodity = (item.dxm03 && item.dxm03.commodity) || {};
+    const pairing = (item.dxm03 && item.dxm03.pairing) || {};
+    const mingkong = item.mingkong || {};
+    const purchaseUrl = bestValue(mingkong.purchase_1688_url, item.purchase_1688_url, (state.payload?.product || {}).purchase_1688_url);
+    const productIdAlibaba = bestValue(mingkong.alibaba_product_id, pairing.alibaba_product_id, item.alibaba_product_id);
+    return {
+      shopify_product_id: bestValue(mingkong.shopify_product_id, item.shopify_product_id, (state.payload?.product || {}).shopifyid),
+      shopify_variant_id: bestValue(mingkong.shopify_variant_id, item.shopify_variant_id),
+      shopify_sku: bestValue(item.shopify_sku),
+      shopify_currency: bestValue(item.shopify_currency, 'USD'),
+      variant_title: bestValue(mingkong.variant_title, item.variant_title),
+      dianxiaomi_sku: bestValue(mingkong.sku, item.dianxiaomi_sku),
+      dianxiaomi_product_sku: bestValue(mingkong.product_sku, item.dianxiaomi_product_sku),
+      dianxiaomi_sku_code: bestValue(mingkong.sku_code, item.dianxiaomi_sku_code, commodity.sku_code),
+      dianxiaomi_name: bestValue(mingkong.name, item.dianxiaomi_name, commodity.name),
+      purchase_1688_url: purchaseUrl,
+      product_id_alibaba: productIdAlibaba,
+      sku_id_alibaba: bestValue(mingkong.sku_id_alibaba, pairing.sku_id_alibaba),
+      image_url: bestValue(mingkong.image_url, item.image_url, commodity.image_url)
+    };
+  }
+
+  function syncCardHtml(title, imageUrl, fieldsHtml, extraClass) {
+    return `<div class="mkp-sync-card ${extraClass || ''}">
+      <h4>${esc(title)}</h4>
+      <div class="mkp-sync-thumb-row">
+        ${imageHtml(imageUrl)}
+        <div class="mkp-sync-value">${esc(imageUrl ? 'SKU 图片已加载' : '无 SKU 图片')}</div>
+      </div>
+      <div class="mkp-sync-fields">${fieldsHtml}</div>
+    </div>`;
+  }
+
+  function renderSyncRows(items) {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) {
+      $('mkpSyncRows').innerHTML = '<div class="mkp-empty">暂无可同步的 SKU 数据</div>';
+      $('mkpSyncRun').disabled = true;
+      return;
+    }
+    $('mkpSyncRun').disabled = false;
+    $('mkpSyncRows').innerHTML = rows.map((item, index) => {
+      const commodity = (item.dxm03 && item.dxm03.commodity) || {};
+      const pairing = (item.dxm03 && item.dxm03.pairing) || {};
+      const mingkong = item.mingkong || {};
+      const target = targetForItem(item);
+      const currentImageUrl = bestValue(item.image_url, commodity.image_url, mingkong.image_url);
+      const mingkongFields = [
+        valueBlock('明空变体', mingkong.variant_title || item.variant_title),
+        valueBlock('明空店小秘 SKU', mingkong.sku, { mono: true }),
+        valueBlock('明空 ERP 编码', mingkong.sku_code, { mono: true }),
+        valueBlock('明空商品名', mingkong.name),
+        valueBlock('明空供应商', mingkong.supplier_name),
+        valueBlock('明空采购链接', mingkong.purchase_1688_url, { link: true }),
+        valueBlock('明空 1688 商品 ID', mingkong.alibaba_product_id, { mono: true }),
+        valueBlock('明空 1688 SKU ID', mingkong.sku_id_alibaba, { mono: true })
+      ].join('');
+      const currentFields = [
+        valueBlock('当前变体', item.variant_title),
+        valueBlock('当前我们系统 SKU', item.dianxiaomi_sku, { mono: true }),
+        valueBlock('当前 ERP 编码', item.dianxiaomi_sku_code || commodity.sku_code, { mono: true }),
+        valueBlock('当前商品名', item.dianxiaomi_name || commodity.name),
+        valueBlock('当前采购链接', item.purchase_1688_url || (state.payload?.product || {}).purchase_1688_url, { link: true }),
+        valueBlock('DXM03 状态', statusText(item.status)),
+        valueBlock('DXM03 1688 商品 ID', pairing.alibaba_product_id, { mono: true }),
+        valueBlock('DXM03 1688 SKU ID', pairing.sku_id_alibaba, { mono: true })
+      ].join('');
+      const targetFields = [
+        inputBlock('目标变体', 'variant_title', target.variant_title, { index }),
+        inputBlock('目标店小秘 SKU', 'dianxiaomi_sku', target.dianxiaomi_sku, { index, mono: true }),
+        inputBlock('目标 Product SKU', 'dianxiaomi_product_sku', target.dianxiaomi_product_sku, { index, mono: true }),
+        inputBlock('目标 ERP 编码', 'dianxiaomi_sku_code', target.dianxiaomi_sku_code, { index, mono: true }),
+        inputBlock('目标商品名', 'dianxiaomi_name', target.dianxiaomi_name, { index }),
+        inputBlock('目标采购链接', 'purchase_1688_url', target.purchase_1688_url, { index }),
+        inputBlock('目标 1688 商品 ID', 'product_id_alibaba', target.product_id_alibaba, { index, mono: true }),
+        inputBlock('目标 1688 SKU ID', 'sku_id_alibaba', target.sku_id_alibaba, { index, mono: true }),
+        inputBlock('目标图片 URL', 'image_url', target.image_url, { index })
+      ].join('');
+      return `<div class="mkp-sync-row" data-sync-row="1"
+          data-shopify-product-id="${esc(target.shopify_product_id)}"
+          data-shopify-variant-id="${esc(target.shopify_variant_id)}"
+          data-shopify-sku="${esc(target.shopify_sku)}"
+          data-shopify-currency="${esc(target.shopify_currency)}">
+        ${syncCardHtml('明空 SKU 数据', mingkong.image_url, mingkongFields)}
+        ${syncCardHtml('当前我们系统 / DXM03', currentImageUrl, currentFields)}
+        ${syncCardHtml('执行后的目标效果', target.image_url, targetFields, 'target')}
+      </div>`;
+    }).join('');
+  }
+
+  function setSyncState(level, text) {
+    const status = level === 'ok'
+      ? 'confirmed'
+      : (level === 'error' ? 'error' : (level === 'warn' ? 'warning' : 'pending'));
+    $('mkpSyncState').innerHTML = `${chip(status)} ${esc(text || '')}`;
+    $('mkpSyncModal').classList.toggle('running', level === 'running');
+  }
+
+  function appendSyncLog(level, message) {
+    const safeLevel = ['info', 'ok', 'warn', 'error'].includes(level) ? level : 'info';
+    const li = document.createElement('li');
+    li.className = `mkp-log-line ${safeLevel}`;
+    li.innerHTML = `<span class="mkp-log-level">${esc(LOG_LEVEL_LABELS[safeLevel] || '信息')}</span><span>${esc(message || '')}</span>`;
+    $('mkpSyncLog').appendChild(li);
+    li.scrollIntoView({ block: 'nearest' });
+  }
+
+  function resetSyncModal() {
+    clearInterval(syncProgress.timer);
+    syncProgress.timer = null;
+    syncProgress.startedAt = 0;
+    syncProgress.running = false;
+    $('mkpSyncElapsed').textContent = '00:00';
+    $('mkpSyncLog').innerHTML = '';
+    $('mkpSyncRun').textContent = '确认并执行同步';
+    $('mkpSyncRun').disabled = false;
+    $('mkpSyncCancel').disabled = false;
+    $('mkpSyncClose').disabled = false;
+    setSyncState('info', '待确认');
+  }
+
+  function startSyncProgress() {
+    clearInterval(syncProgress.timer);
+    syncProgress.startedAt = Date.now();
+    syncProgress.running = true;
+    $('mkpSyncRun').disabled = true;
+    $('mkpSyncRun').textContent = '执行中';
+    $('mkpSyncCancel').disabled = true;
+    $('mkpSyncClose').disabled = true;
+    setSyncState('running', '执行中');
+    syncProgress.timer = setInterval(() => {
+      $('mkpSyncElapsed').textContent = elapsedText(Date.now() - syncProgress.startedAt);
+    }, 1000);
+  }
+
+  function finishSyncProgress(level, text) {
+    clearInterval(syncProgress.timer);
+    syncProgress.timer = null;
+    syncProgress.running = false;
+    if (syncProgress.startedAt) {
+      $('mkpSyncElapsed').textContent = elapsedText(Date.now() - syncProgress.startedAt);
+    }
+    $('mkpSyncRun').textContent = '确认并执行同步';
+    $('mkpSyncRun').disabled = !document.querySelector('[data-sync-row="1"]');
+    $('mkpSyncCancel').disabled = false;
+    $('mkpSyncClose').disabled = false;
+    setSyncState(level, text);
+  }
+
+  async function openSyncReviewModal() {
+    if (!state.payload) {
+      await load();
+    }
+    resetSyncModal();
+    renderSyncRows((state.payload || {}).items || []);
+    $('mkpSyncBackdrop').hidden = false;
+    appendSyncLog('info', '请确认三栏数据；右侧目标效果可手动编辑');
+  }
+
+  function closeSyncModal() {
+    if (syncProgress.running) return;
+    $('mkpSyncBackdrop').hidden = true;
+  }
+
+  function collectSyncTargets() {
+    return Array.from(document.querySelectorAll('[data-sync-row="1"]')).map((row) => {
+      const get = (field) => row.querySelector(`[data-sync-field="${field}"]`)?.value || '';
       return {
-        dianxiaomi_sku: tr.dataset.dianxiaomiSku || '',
-        shopify_variant_id: tr.dataset.shopifyVariantId || '',
+        shopify_product_id: row.dataset.shopifyProductId || '',
+        shopify_variant_id: row.dataset.shopifyVariantId || '',
+        shopify_sku: row.dataset.shopifySku || '',
+        shopify_currency: row.dataset.shopifyCurrency || 'USD',
+        variant_title: get('variant_title'),
+        dianxiaomi_sku: get('dianxiaomi_sku'),
+        dianxiaomi_product_sku: get('dianxiaomi_product_sku'),
+        dianxiaomi_sku_code: get('dianxiaomi_sku_code'),
+        dianxiaomi_name: get('dianxiaomi_name'),
+        purchase_1688_url: get('purchase_1688_url'),
         product_id_alibaba: get('product_id_alibaba'),
-        sku_id_alibaba: get('sku_id_alibaba')
+        sku_id_alibaba: get('sku_id_alibaba'),
+        image_url: get('image_url')
       };
-    });
+    }).filter((item) => item.shopify_variant_id && item.dianxiaomi_sku);
   }
 
-  async function confirmPairing() {
-    await runModalAction({
-      buttonId: 'mkpConfirm',
-      busyText: '同步中',
-      title: '同步明空店小秘SKU',
-      sub: '把确认的 1688 商品 ID / SKU ID 写入 DXM03 自己的采购配对',
-      startLog: '准备同步明空店小秘SKU到 DXM03',
-      successText: '同步明空店小秘SKU完成',
-      action: () => fetchJson(`/medias/api/products/${productId}/mingkong-pairing/confirm`, {
+  async function executeSyncTargets() {
+    const items = collectSyncTargets();
+    if (!items.length) {
+      appendSyncLog('error', '目标效果中没有可执行的 SKU 行，请至少保留 Variant ID 和目标 SKU');
+      setSyncState('error', '缺少可执行 SKU');
+      return;
+    }
+    startSyncProgress();
+    appendSyncLog('info', `准备提交 ${items.length} 行目标 SKU`);
+    try {
+      appendSyncLog('info', '后端将先写入我们系统 SKU，再复刻 DXM03，并确认 1688 采购配对');
+      const result = await fetchJson(`/medias/api/products/${productId}/mingkong-pairing/sync`, {
         method: 'POST',
         headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ items: collectSelections() })
-      }),
-      afterSuccess: async () => {
-        appendProgressLog('info', '正在刷新 DXM03 配对状态');
-        await load();
-        appendProgressLog('ok', 'DXM03 配对状态已刷新');
-      },
-      afterError: async (payload) => {
-        if (Array.isArray(payload.items) && payload.items.length) {
-          appendProgressLog('info', '检测到逐 SKU 结果，正在刷新页面状态');
-          await load();
-          appendProgressLog('ok', '页面状态已刷新');
-        }
+        body: JSON.stringify({ items })
+      });
+      payloadLogs(result).forEach((entry) => appendSyncLog(entry.level, entry.message));
+      appendSyncLog('info', '正在刷新工作台状态');
+      await load();
+      appendSyncLog('ok', '工作台状态已刷新');
+      finishSyncProgress(result.ok === false ? 'warn' : 'ok', result.message || '同步完成');
+      $('mkpResult').textContent = resultText(result, '同步明空店小秘SKU完成');
+    } catch (err) {
+      const payload = err.payload || {};
+      const logs = payloadLogs(payload);
+      if (logs.length) {
+        logs.forEach((entry) => appendSyncLog(entry.level, entry.message));
+      } else {
+        appendSyncLog('error', err.message || String(err));
       }
-    });
-  }
-
-  async function replicateSku() {
-    await runModalAction({
-      buttonId: 'mkpReplicate',
-      busyText: '复刻中',
-      title: '复刻明空 SKU',
-      sub: '从明空 DXM02 商品管理复制安全字段到 DXM03',
-      startLog: '准备复刻明空 SKU 设置到 DXM03',
-      successText: '复刻明空 SKU 完成',
-      action: () => fetchJson(`/medias/api/products/${productId}/mingkong-pairing/replicate`, {
-        method: 'POST',
-        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ items: collectSelections() })
-      }),
-      afterSuccess: async () => {
-        appendProgressLog('info', '正在刷新 DXM03 商品状态');
+      if (Array.isArray(payload.items) && payload.items.length) {
+        appendSyncLog('info', '检测到逐 SKU 结果，正在刷新工作台状态');
         await load();
-        appendProgressLog('ok', 'DXM03 商品状态已刷新');
-      },
-      afterError: async (payload) => {
-        if (Array.isArray(payload.items) && payload.items.length) {
-          appendProgressLog('info', '检测到逐 SKU 结果，正在刷新页面状态');
-          await load();
-          appendProgressLog('ok', '页面状态已刷新');
-        }
+        appendSyncLog('ok', '工作台状态已刷新');
       }
-    });
+      const hasErrorLog = logs.some((entry) => entry.level === 'error');
+      finishSyncProgress(hasErrorLog || !logs.length ? 'error' : 'warn', payload.message || err.message || '同步失败');
+      $('mkpResult').textContent = resultText(payload, err.message || String(err));
+    }
   }
 
   $('mkpReload').addEventListener('click', () => {
     load({ modal: true }).catch(() => {});
   });
-  $('mkpImportSkus').addEventListener('click', importMingkongSkus);
-  $('mkpReplicate').addEventListener('click', replicateSku);
-  $('mkpConfirm').addEventListener('click', confirmPairing);
+  $('mkpConfirm').addEventListener('click', () => {
+    openSyncReviewModal().catch((err) => {
+      $('mkpResult').textContent = err.message || String(err);
+    });
+  });
+  $('mkpSyncRun').addEventListener('click', () => {
+    executeSyncTargets().catch((err) => {
+      appendSyncLog('error', err.message || String(err));
+      finishSyncProgress('error', '同步失败');
+    });
+  });
+  $('mkpSyncCancel').addEventListener('click', closeSyncModal);
+  $('mkpSyncClose').addEventListener('click', closeSyncModal);
   $('mkpProgressClose').addEventListener('click', closeProgressModal);
   load();
 })();

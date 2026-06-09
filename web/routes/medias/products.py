@@ -333,6 +333,139 @@ def _build_mingkong_pairing_replicate_response(pid: int, product: dict, body: di
     )
 
 
+def _stage_logs(stage: str, payload: dict) -> list[dict]:
+    logs: list[dict] = [{"level": "info", "message": f"{stage}：开始"}]
+    for entry in payload.get("logs") or []:
+        if isinstance(entry, str):
+            logs.append({"level": "info", "message": entry})
+        elif isinstance(entry, dict):
+            logs.append({
+                "level": entry.get("level") or "info",
+                "message": entry.get("message") or entry.get("text") or "",
+            })
+    return logs
+
+
+def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
+    targets = body.get("items") if isinstance(body, dict) else []
+    targets = targets if isinstance(targets, list) else []
+    logs: list[dict] = [
+        {"level": "info", "message": "同步明空店小秘SKU：已收到人工确认的目标计划"}
+    ]
+
+    import_payload = dianxiaomi_mingkong_pairing.build_mingkong_library_sku_import_payload(product)
+    library_items = import_payload.get("items") or []
+    pairs = dianxiaomi_mingkong_pairing.build_target_sku_import_pairs(
+        product,
+        library_items,
+        targets,
+    )
+    if not pairs:
+        message = import_payload.get("message") or "目标计划中没有可写入的 SKU 行"
+        return {
+            "ok": False,
+            "error": "missing_target_sku_rows",
+            "message": message,
+            "logs": logs + [
+                {"level": "error", "message": message},
+            ],
+            "items": [],
+            "realtime_refresh": import_payload.get("realtime_refresh"),
+        }
+
+    stats = medias.replace_product_skus(pid, pairs, source="mingkong_replicated")
+    purchase_url = dianxiaomi_mingkong_pairing.first_purchase_url_from_targets(
+        product,
+        library_items,
+        targets,
+    )
+    if purchase_url:
+        medias.update_product(pid, purchase_1688_url=purchase_url)
+    logs.append({
+        "level": "ok",
+        "message": (
+            "本地 SKU 已按目标计划写入："
+            f"新增 {stats.get('inserted', 0)}，"
+            f"更新 {stats.get('updated', 0)}，"
+            f"删除 {stats.get('deleted', 0)}，"
+            f"保留人工维护 {stats.get('preserved', 0)}"
+        ),
+    })
+
+    product_after_import = medias.get_product(pid) or product
+    local_rows = medias.list_product_skus(pid)
+    try:
+        replicate_result = dianxiaomi_mingkong_pairing.replicate_mingkong_skus_to_dxm03(
+            product_after_import,
+            local_rows,
+            selections=targets,
+            replace_product_skus_fn=medias.replace_product_skus,
+            update_product_fn=medias.update_product,
+        )
+    except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
+        current_app.logger.exception("mingkong pairing full sync replicate failed product_id=%s", pid)
+        error_payload = _mingkong_pairing_action_error_payload("复刻明空 SKU", exc)
+        return {
+            "ok": False,
+            "error": "replicate_failed",
+            "message": error_payload["message"],
+            "logs": logs + _stage_logs("复刻 DXM03 SKU", error_payload),
+            "items": error_payload.get("items") or [],
+            "import": {"stats": stats},
+            "replicate": error_payload,
+            "realtime_refresh": import_payload.get("realtime_refresh"),
+        }
+    logs.extend(_stage_logs("复刻 DXM03 SKU", replicate_result))
+    if not replicate_result.get("ok"):
+        return {
+            "ok": False,
+            "error": "replicate_blocked",
+            "message": replicate_result.get("message") or "复刻 DXM03 SKU 未完成",
+            "logs": logs,
+            "items": replicate_result.get("items") or [],
+            "import": {"stats": stats},
+            "replicate": replicate_result,
+            "realtime_refresh": import_payload.get("realtime_refresh"),
+        }
+
+    product_after_replicate = medias.get_product(pid) or product_after_import
+    local_rows = medias.list_product_skus(pid)
+    try:
+        confirm_result = dianxiaomi_mingkong_pairing.confirm_dxm03_pairing(
+            product_after_replicate,
+            local_rows,
+            selections=targets,
+        )
+    except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
+        current_app.logger.exception("mingkong pairing full sync confirm failed product_id=%s", pid)
+        error_payload = _mingkong_pairing_action_error_payload("同步明空店小秘SKU", exc)
+        return {
+            "ok": False,
+            "error": "confirm_failed",
+            "message": error_payload["message"],
+            "logs": logs + _stage_logs("确认 DXM03 采购配对", error_payload),
+            "items": error_payload.get("items") or [],
+            "import": {"stats": stats},
+            "replicate": replicate_result,
+            "confirm": error_payload,
+            "realtime_refresh": import_payload.get("realtime_refresh"),
+        }
+    logs.extend(_stage_logs("确认 DXM03 采购配对", confirm_result))
+    ok = bool(confirm_result.get("ok"))
+    return {
+        "ok": ok,
+        "message": confirm_result.get("message") or (
+            "同步明空店小秘SKU完成" if ok else "同步明空店小秘SKU存在阻断"
+        ),
+        "logs": logs,
+        "items": confirm_result.get("items") or replicate_result.get("items") or [],
+        "import": {"stats": stats},
+        "replicate": replicate_result,
+        "confirm": confirm_result,
+        "realtime_refresh": import_payload.get("realtime_refresh"),
+    }
+
+
 def _build_roas_page_context(product: dict):
     return _build_roas_page_context_impl(
         product,
@@ -625,6 +758,21 @@ def api_mingkong_pairing_replicate(pid: int):
         )
         result = _mingkong_pairing_action_error_payload("复刻明空 SKU", exc)
         return result, 500
+    status = 200 if result.get("ok") else 409
+    return result, status
+
+
+@bp.route("/api/products/<int:pid>/mingkong-pairing/sync", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_mingkong_pairing_sync(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    result = routes._build_mingkong_pairing_sync_response(pid, p, body)
     status = 200 if result.get("ok") else 409
     return result, status
 

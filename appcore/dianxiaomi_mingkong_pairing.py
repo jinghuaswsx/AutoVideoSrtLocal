@@ -829,6 +829,147 @@ def build_mingkong_library_sku_import_payload(product: dict[str, Any]) -> dict[s
     }
 
 
+def _target_value(
+    target: dict[str, Any],
+    source: dict[str, Any],
+    *keys: str,
+    default: Any = "",
+) -> Any:
+    for key in keys:
+        value = target.get(key)
+        if value is None or value == "":
+            continue
+        return value
+    for key in keys:
+        value = source.get(key)
+        if value is None or value == "":
+            continue
+        return value
+    return default
+
+
+def _target_source_indexes(
+    rows: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    by_variant: dict[str, dict[str, Any]] = {}
+    by_sku: dict[str, dict[str, Any]] = {}
+    for raw in rows or []:
+        row = _local_sku_payload(raw)
+        variant_id = str(row.get("shopify_variant_id") or "").strip()
+        sku = str(row.get("dianxiaomi_sku") or "").strip()
+        if variant_id:
+            by_variant.setdefault(variant_id, row)
+        if sku:
+            by_sku.setdefault(sku, row)
+    return by_variant, by_sku
+
+
+def build_target_sku_import_pairs(
+    product: dict[str, Any],
+    library_items: list[dict[str, Any]],
+    targets: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Build local media SKU rows from the editable sync-review target column."""
+
+    by_variant, by_sku = _target_source_indexes(library_items)
+    pairs: list[dict[str, Any]] = []
+    seen_variants: set[str] = set()
+    for raw_target in targets or []:
+        if not isinstance(raw_target, dict):
+            continue
+        target = raw_target
+        source = (
+            by_variant.get(str(target.get("shopify_variant_id") or "").strip())
+            or by_sku.get(str(target.get("dianxiaomi_sku") or "").strip())
+            or {}
+        )
+        variant_id = str(
+            target.get("shopify_variant_id")
+            or source.get("shopify_variant_id")
+            or ""
+        ).strip()
+        if not variant_id or variant_id in seen_variants:
+            continue
+        seen_variants.add(variant_id)
+        pairs.append({
+            "shopify_product_id": _target_value(
+                target,
+                source,
+                "shopify_product_id",
+                default=product.get("shopifyid") or "",
+            ),
+            "shopify_variant_id": variant_id,
+            "shopify_sku": _target_value(target, source, "shopify_sku"),
+            "shopify_price": _target_value(target, source, "shopify_price", default=None),
+            "shopify_compare_at_price": _target_value(
+                target,
+                source,
+                "shopify_compare_at_price",
+                default=None,
+            ),
+            "shopify_currency": _target_value(target, source, "shopify_currency", default="USD"),
+            "shopify_inventory_quantity": _target_value(
+                target,
+                source,
+                "shopify_inventory_quantity",
+                default=None,
+            ),
+            "shopify_weight_grams": _target_value(
+                target,
+                source,
+                "shopify_weight_grams",
+                default=None,
+            ),
+            "shopify_variant_title": _target_value(
+                target,
+                source,
+                "variant_title",
+                "shopify_variant_title",
+            ),
+            "dianxiaomi_sku": _target_value(target, source, "dianxiaomi_sku") or None,
+            "dianxiaomi_product_sku": (
+                _target_value(target, source, "dianxiaomi_product_sku") or None
+            ),
+            "dianxiaomi_sku_code": (
+                _target_value(target, source, "dianxiaomi_sku_code") or None
+            ),
+            "dianxiaomi_name": _target_value(target, source, "dianxiaomi_name") or None,
+        })
+    return pairs
+
+
+def first_purchase_url_from_targets(
+    product: dict[str, Any],
+    library_items: list[dict[str, Any]],
+    targets: list[dict[str, Any]] | None,
+) -> str:
+    by_variant, by_sku = _target_source_indexes(library_items)
+    for raw_target in targets or []:
+        if not isinstance(raw_target, dict):
+            continue
+        target = raw_target
+        source = (
+            by_variant.get(str(target.get("shopify_variant_id") or "").strip())
+            or by_sku.get(str(target.get("dianxiaomi_sku") or "").strip())
+            or {}
+        )
+        selected_offer_id = (
+            normalize_1688_offer_id(target.get("product_id_alibaba"))
+            or normalize_1688_offer_id(target.get("purchase_1688_url"))
+            or normalize_1688_offer_id(source.get("purchase_1688_url"))
+        )
+        purchase_url = _purchase_url_for_offer(
+            selected_offer_id,
+            target.get("purchase_1688_url")
+            or source.get("purchase_1688_url")
+            or product.get("purchase_1688_url")
+            or "",
+        )
+        if purchase_url:
+            return purchase_url
+    return str(product.get("purchase_1688_url") or "").strip()
+
+
 def _mingkong_reference_indexes(
     rows: list[dict[str, Any]],
 ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
