@@ -3411,3 +3411,45 @@ def test_is_translation_of_with_guards():
     # g embeds f's date, and 20250605 is in date patterns -> True
     assert _is_translation_of(item_f, item_g) is True
 
+
+def test_load_ad_detail_match_terms_with_translation(monkeypatch):
+    from web.routes.medias import material_supplement
+
+    called_queries = []
+
+    def fake_query(sql, args):
+        called_queries.append((sql, args))
+        sql_lower = sql.lower()
+        if "media_items" in sql_lower:
+            # Second query for related DE translation items
+            if "source_raw_id" in sql_lower and "lang = %s" in sql_lower:
+                return [{
+                    "id": 2171,
+                    "filename": "2026.06.08-plant-watering-de-20250510.mp4",
+                    "display_name": "2026.06.08-plant-watering-de-20250510.mp4"
+                }]
+            # First query for primary media item (2065)
+            else:
+                return [{
+                    "id": 2065,
+                    "filename": "2025.05.10-plant-watering-en.mp4",
+                    "display_name": "2025.05.10-plant-watering-en.mp4",
+                    "source_raw_id": 366,
+                    "source_ref_id": None
+                }]
+        elif "mingkong_material_daily_snapshots" in sql_lower:
+            return []
+        return []
+
+    # Call the target function
+    args = {"media_item_id": 2065, "country": "DE"}
+    terms = material_supplement._load_ad_detail_match_terms(737, args, query_fn=fake_query)
+
+    # Validate results
+    # Mapped 'DE' to 'de', so it should have queried translation items
+    # Check that terms contain both EN (primary) and DE (translation) filenames
+    filenames = [item["term"] for item in terms]
+    assert "2025.05.10-plant-watering-en" in filenames
+    assert "2026.06.08-plant-watering-de-20250510" in filenames
+
+

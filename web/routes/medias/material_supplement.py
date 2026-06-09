@@ -1161,7 +1161,7 @@ def _load_ad_detail_match_terms(product_id: int, args: Mapping[str, Any], query_
             media_item_id = 0
         if media_item_id > 0:
             rows = query_fn(
-                "SELECT id, filename, display_name FROM media_items "
+                "SELECT id, filename, display_name, source_raw_id, source_ref_id FROM media_items "
                 "WHERE id = %s AND product_id = %s AND deleted_at IS NULL",
                 [media_item_id, product_id],
             )
@@ -1169,6 +1169,38 @@ def _load_ad_detail_match_terms(product_id: int, args: Mapping[str, Any], query_
                 item = rows[0]
                 _add_match_term(terms, seen, item.get("filename"), "filename")
                 _add_match_term(terms, seen, item.get("display_name"), "display_name")
+
+                # If country is specified, load translation items for joint matching
+                country = args.get("country") or args.get("country_code")
+                if country:
+                    lang = COUNTRY_TO_LANG.get(str(country).strip().upper())
+                    if lang and lang != "en":
+                        s_raw = item.get("source_raw_id")
+                        s_ref = item.get("source_ref_id")
+                        sql_trans = """
+                            SELECT id, filename, display_name 
+                            FROM media_items 
+                            WHERE product_id = %s 
+                              AND lang = %s 
+                              AND (
+                                id = %s 
+                                OR (source_raw_id IS NOT NULL AND source_raw_id = %s)
+                                OR (source_raw_id IS NOT NULL AND source_raw_id = %s)
+                                OR (source_ref_id IS NOT NULL AND source_ref_id = %s)
+                                OR (source_ref_id IS NOT NULL AND source_ref_id = %s)
+                                OR (source_raw_id = %s)
+                                OR (source_ref_id = %s)
+                              )
+                              AND deleted_at IS NULL
+                        """
+                        trans_rows = query_fn(sql_trans, [
+                            product_id, lang, media_item_id,
+                            s_raw, s_ref, s_raw, s_ref,
+                            media_item_id, media_item_id
+                        ])
+                        for trans_item in trans_rows:
+                            _add_match_term(terms, seen, trans_item.get("filename"), "translation_filename")
+                            _add_match_term(terms, seen, trans_item.get("display_name"), "translation_display_name")
 
     video_path = str(args.get("video_path") or "").strip()
     if video_path:
