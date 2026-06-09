@@ -938,6 +938,7 @@ def _local_sku_payload(row: dict[str, Any]) -> dict[str, Any]:
 
 
 _RESULT_STATUS_LABELS = {
+    "already_configured_preserved": "DXM03 已配置，已保护",
     "already_exists": "DXM03 已存在",
     "already_paired": "DXM03 已配对",
     "already_paired_combo_components": "DXM03 组合组件已配对",
@@ -979,6 +980,7 @@ def _operation_logs(action: str, items: list[dict[str, Any]]) -> list[dict[str, 
         if message:
             suffix = f"{suffix}；{message}"
         level = "ok" if status in {
+            "already_configured_preserved",
             "already_exists",
             "already_paired",
             "already_paired_combo_components",
@@ -1015,6 +1017,15 @@ def _row_sku_key(row: dict[str, Any]) -> str:
         or row.get("dianxiaomi_sku")
         or ""
     ).strip()
+
+
+def _row_title_key(row: dict[str, Any]) -> str:
+    text = str(
+        row.get("variant_title")
+        or row.get("shopify_variant_title")
+        or ""
+    ).strip()
+    return " ".join(text.lower().split())
 
 
 def _overlay_sku_fill(base: dict[str, Any], fill: dict[str, Any]) -> dict[str, Any]:
@@ -1057,15 +1068,19 @@ def merge_full_sku_base_with_fill_rows(
 
     fill_by_variant: dict[str, dict[str, Any]] = {}
     fill_by_sku: dict[str, dict[str, Any]] = {}
+    fill_by_title: dict[str, dict[str, Any]] = {}
     for rows in fill_groups:
         for raw in rows or []:
             row = _local_sku_payload(raw)
             variant_id = str(row.get("shopify_variant_id") or "").strip()
             sku = _row_sku_key(row)
+            title = _row_title_key(row)
             if variant_id:
                 fill_by_variant.setdefault(variant_id, row)
             if sku:
                 fill_by_sku.setdefault(sku, row)
+            if title:
+                fill_by_title.setdefault(title, row)
 
     out: list[dict[str, Any]] = []
     seen_variants: set[str] = set()
@@ -1075,7 +1090,12 @@ def merge_full_sku_base_with_fill_rows(
         if not variant_id or variant_id in seen_variants:
             continue
         seen_variants.add(variant_id)
-        fill = fill_by_variant.get(variant_id) or fill_by_sku.get(_row_sku_key(base)) or {}
+        fill = (
+            fill_by_variant.get(variant_id)
+            or fill_by_sku.get(_row_sku_key(base))
+            or fill_by_title.get(_row_title_key(base))
+            or {}
+        )
         out.append(_overlay_sku_fill(base, fill))
     return out
 
@@ -1942,6 +1962,18 @@ def _confirm_dxm03_pairing_impl(
                             })
                         results.append(item_result)
                         continue
+                    pair = _search_pair(ctx, sku)
+                    item_result["pairing_before"] = pair
+                    existing_sku_id = str((pair or {}).get("sku_id_alibaba") or "").strip()
+                    if pair and pair.get("is_paired"):
+                        item_result.update({
+                            "status": "already_configured_preserved",
+                            "sku_id_alibaba": existing_sku_id,
+                            "pairing_after": pair,
+                            "message": "DXM03 已有采购配对，本轮保留不覆盖",
+                        })
+                        results.append(item_result)
+                        continue
                     if not selected_product_id:
                         item_result.update({
                             "status": "blocked",
@@ -1958,7 +1990,6 @@ def _confirm_dxm03_pairing_impl(
                         _update_source_url(ctx, commodity["id"], selected_purchase_url)
                         commodity = _search_commodity(ctx, sku) or commodity
                         item_result["commodity"] = commodity
-                    pair = _search_pair(ctx, sku)
                     if not pair:
                         _trigger_source_sync(ctx, selected_purchase_url)
                         for _ in range(5):
@@ -1966,23 +1997,20 @@ def _confirm_dxm03_pairing_impl(
                             pair = _search_pair(ctx, sku)
                             if pair:
                                 break
-                    item_result["pairing_before"] = pair
+                    if pair and pair.get("is_paired"):
+                        existing_sku_id = str(pair.get("sku_id_alibaba") or "").strip()
+                        item_result.update({
+                            "status": "already_paired",
+                            "sku_id_alibaba": existing_sku_id,
+                            "pairing_after": pair,
+                        })
+                        results.append(item_result)
+                        continue
                     if not pair or not pair.get("pair_row_id"):
                         item_result.update({
                             "status": "blocked",
                             "error": "missing_pair_row",
                             "message": "DXM03 1688 商品配对列表未生成待配对行",
-                        })
-                        results.append(item_result)
-                        continue
-                    existing_sku_id = str(pair.get("sku_id_alibaba") or "").strip()
-                    if pair.get("is_paired") and (
-                        not selected_sku_id or selected_sku_id == existing_sku_id
-                    ):
-                        item_result.update({
-                            "status": "already_paired",
-                            "sku_id_alibaba": existing_sku_id,
-                            "pairing_after": pair,
                         })
                         results.append(item_result)
                         continue
@@ -2015,6 +2043,7 @@ def _confirm_dxm03_pairing_impl(
             _close_dxm03_context(playwright, browser)
     ok = bool(results) and all(
         item.get("status") in {
+            "already_configured_preserved",
             "already_paired",
             "already_paired_combo_components",
             "confirmed",
@@ -2027,6 +2056,7 @@ def _confirm_dxm03_pairing_impl(
             1
             for item in results
             if item.get("status") in {
+                "already_configured_preserved",
                 "already_paired",
                 "already_paired_combo_components",
             }

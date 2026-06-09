@@ -841,6 +841,7 @@
     missing_local_sku: ['bad', '缺我们系统 SKU'],
     combo_components_paired: ['ok', '组件已配对'],
     combo_components_incomplete: ['warn', '组件待补齐'],
+    already_configured_preserved: ['ok', '已配置保护'],
     already_paired_combo_components: ['ok', '组件已存在'],
     already_paired: ['ok', '已存在'],
     already_exists: ['ok', 'DXM03已存在'],
@@ -1023,7 +1024,7 @@
     if (!logs.length && Array.isArray(payload?.items)) {
       payload.items.forEach((item) => {
         const status = item.status || item.error || '';
-        const level = ['confirmed', 'created', 'already_exists', 'already_paired', 'already_paired_combo_components'].includes(status)
+        const level = ['confirmed', 'created', 'already_configured_preserved', 'already_exists', 'already_paired', 'already_paired_combo_components'].includes(status)
           ? 'ok'
           : (status === 'error' ? 'error' : 'warn');
         logs.push({ level, message: itemLogLine(item) });

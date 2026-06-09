@@ -776,15 +776,15 @@ def _dedupe_variant_rows_by_dxm_sku(rows: list[dict[str, Any]]) -> list[dict[str
     out: list[dict[str, Any]] = []
     best_by_key: dict[str, dict[str, Any]] = {}
     for row in rows:
-        sku = str(row.get("dxm_sku") or row.get("pair_key") or "").strip()
-        key = sku or f"variant:{row.get('id')}"
+        sku = str(row.get("dxm_sku") or "").strip()
+        key = f"sku:{sku}" if sku else f"variant:{row.get('mk_shopify_variant_id') or row.get('id')}"
         existing = best_by_key.get(key)
         if existing is None or score(row) > score(existing):
             best_by_key[key] = row
     seen: set[str] = set()
     for row in rows:
-        sku = str(row.get("dxm_sku") or row.get("pair_key") or "").strip()
-        key = sku or f"variant:{row.get('id')}"
+        sku = str(row.get("dxm_sku") or "").strip()
+        key = f"sku:{sku}" if sku else f"variant:{row.get('mk_shopify_variant_id') or row.get('id')}"
         if key in seen or best_by_key.get(key) is not row:
             continue
         seen.add(key)
@@ -815,7 +815,7 @@ def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
           FROM mingkong_procurement_links
           WHERE sku IS NOT NULL AND sku <> ''
           GROUP BY sku
-        ) proc ON proc.sku = COALESCE(NULLIF(v.dxm_sku, ''), v.pair_key)
+        ) proc ON proc.sku = NULLIF(v.dxm_sku, '')
         LEFT JOIN (
           SELECT mingkong_variant_id, COUNT(*) AS component_count
           FROM mingkong_combo_components
@@ -828,8 +828,9 @@ def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
     )
     variants = _dedupe_variant_rows_by_dxm_sku([dict(row) for row in variants])
     skus = [
-        str(row.get("dxm_sku") or row.get("pair_key") or "").strip()
+        str(row.get("dxm_sku") or "").strip()
         for row in variants
+        if str(row.get("dxm_sku") or "").strip()
     ]
     procurement = _procurement_for_skus(skus)
     combo_rows = query(
@@ -855,7 +856,7 @@ def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in variants:
         item = dict(row)
-        sku = str(item.get("dxm_sku") or item.get("pair_key") or "").strip()
+        sku = str(item.get("dxm_sku") or "").strip()
         proc = procurement.get(sku)
         out.append({
             "shopify_product_id": item.get("mk_shopify_product_id") or "",

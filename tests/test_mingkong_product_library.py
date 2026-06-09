@@ -164,6 +164,60 @@ def test_mingkong_product_library_dedupe_prefers_rows_with_components():
     assert [row["id"] for row in deduped] == [20]
 
 
+def test_mingkong_product_library_does_not_promote_pair_key_to_dxm_sku(monkeypatch):
+    from appcore import mingkong_product_library as library
+
+    variant_sql = {}
+    procurement_calls = []
+
+    monkeypatch.setattr(
+        library,
+        "list_library_candidates_for_product",
+        lambda _product, limit=10: [{"id": 1, "product_code": "sample"}],
+    )
+    monkeypatch.setattr(library, "_candidate_shopify_ids", lambda _product: set())
+    monkeypatch.setattr(library, "_selected_candidate_product_ids", lambda _candidates, _ids: [1])
+
+    def fake_query(sql, _args):
+        if "FROM mingkong_product_variants" in sql:
+            variant_sql["sql"] = sql
+            return [
+                {
+                    "id": 10,
+                    "mingkong_product_id": 1,
+                    "mk_shopify_product_id": "shopify-product",
+                    "mk_shopify_variant_id": "variant-1",
+                    "variant_title": "Blue",
+                    "shopify_sku": "front-sku",
+                    "pair_key": "front-sku",
+                    "dxm_sku": "",
+                    "dxm_sku_code": "",
+                    "dxm_product_sku": "",
+                    "dxm_name": "",
+                    "mk_title": "Sample",
+                    "mk_main_image_url": "",
+                    "is_combo": 0,
+                }
+            ]
+        if "FROM mingkong_combo_components" in sql:
+            return []
+        raise AssertionError(sql)
+
+    def fake_procurement(skus):
+        procurement_calls.append(list(skus))
+        return {}
+
+    monkeypatch.setattr(library, "query", fake_query)
+    monkeypatch.setattr(library, "_procurement_for_skus", fake_procurement)
+
+    rows = library.sku_rows_from_library({"product_code": "sample-rjc"})
+
+    assert "proc.sku = NULLIF(v.dxm_sku, '')" in variant_sql["sql"]
+    assert rows[0]["shopify_sku"] == "front-sku"
+    assert rows[0]["dianxiaomi_sku"] == ""
+    assert procurement_calls[0] == []
+
+
 def test_mingkong_product_library_accepts_public_shopify_variant_payloads():
     from appcore import mingkong_product_library as library
 

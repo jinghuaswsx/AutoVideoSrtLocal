@@ -332,7 +332,7 @@ def test_build_workbench_payload_uses_full_shopify_base_then_fills_mingkong(monk
         {
             "shopify_product_id": "our-shopify-product",
             "shopify_variant_id": "our-variant-purple",
-            "shopify_sku": "0422-14563574",
+            "shopify_sku": "our-front-purple-sku",
             "shopify_variant_title": 'Purple / Standard (23.6") / 1 Pack (Single)',
             "source": "shopify_public",
         },
@@ -341,7 +341,7 @@ def test_build_workbench_payload_uses_full_shopify_base_then_fills_mingkong(monk
         {
             "shopify_product_id": "mk-shopify-product",
             "shopify_variant_id": "mk-variant-purple",
-            "shopify_sku": "0422-14563574",
+            "shopify_sku": "mk-front-purple-sku",
             "shopify_variant_title": 'Purple / Standard (23.6") / 1 Pack (Single)',
             "dianxiaomi_sku": "0422-14563574",
             "dianxiaomi_sku_code": "98036091",
@@ -381,6 +381,7 @@ def test_build_workbench_payload_uses_full_shopify_base_then_fills_mingkong(monk
     ]
     assert payload["items"][0]["dianxiaomi_sku"] == "0422-14563244"
     assert payload["items"][0]["dianxiaomi_sku_code"] == "98036085"
+    assert payload["items"][1]["shopify_sku"] == "our-front-purple-sku"
     assert payload["items"][1]["dianxiaomi_sku"] == "0422-14563574"
     assert payload["items"][1]["dianxiaomi_sku_code"] == "98036091"
     assert payload["items"][1]["mingkong"]["sku_id_alibaba"] == "1688-purple"
@@ -978,6 +979,7 @@ def test_confirm_dxm03_pairing_blocks_single_sku_without_purchase_url(monkeypatc
         "_search_commodity",
         lambda _ctx, _sku: {"id": "single-product", "is_combo": False},
     )
+    monkeypatch.setattr(pairing, "_search_pair", lambda _ctx, _sku: None)
 
     result = pairing.confirm_dxm03_pairing(
         {"id": 1, "product_code": "sample-rjc", "purchase_1688_url": ""},
@@ -987,6 +989,72 @@ def test_confirm_dxm03_pairing_blocks_single_sku_without_purchase_url(monkeypatc
     assert result["ok"] is False
     assert result["items"][0]["error"] == "missing_purchase_url"
     assert result["logs"][1]["level"] == "warn"
+
+
+def test_confirm_dxm03_pairing_preserves_existing_configured_single_sku(monkeypatch):
+    @contextmanager
+    def fake_lock(**_kwargs):
+        yield
+
+    monkeypatch.setattr(pairing, "browser_automation_lock", fake_lock)
+    monkeypatch.setattr(pairing, "_open_dxm03_context", lambda _url: ("pw", "browser", "ctx"))
+    monkeypatch.setattr(pairing, "_close_dxm03_context", lambda _playwright, _browser: None)
+    monkeypatch.setattr(
+        pairing,
+        "_search_commodity",
+        lambda _ctx, _sku: {
+            "id": "single-product",
+            "is_combo": False,
+            "source_url": "https://detail.1688.com/offer/old.html",
+        },
+    )
+    monkeypatch.setattr(
+        pairing,
+        "_search_pair",
+        lambda _ctx, _sku: {
+            "pair_row_id": "pair-row",
+            "is_paired": True,
+            "alibaba_product_id": "old",
+            "sku_id_alibaba": "old-sku-id",
+        },
+    )
+    monkeypatch.setattr(
+        pairing,
+        "_update_source_url",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("sourceUrl must stay unchanged")),
+    )
+    monkeypatch.setattr(
+        pairing,
+        "_check_pair",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("existing pair must not be checked")),
+    )
+    monkeypatch.setattr(
+        pairing,
+        "_confirm_pair",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("existing pair must not be overwritten")),
+    )
+
+    result = pairing.confirm_dxm03_pairing(
+        {"id": 1, "product_code": "sample-rjc", "purchase_1688_url": ""},
+        [{
+            "shopify_variant_id": "variant-1",
+            "dianxiaomi_sku": "sku-1",
+            "purchase_1688_url": "https://detail.1688.com/offer/new.html",
+        }],
+        selections=[{
+            "shopify_variant_id": "variant-1",
+            "dianxiaomi_sku": "sku-1",
+            "purchase_1688_url": "https://detail.1688.com/offer/new.html",
+            "product_id_alibaba": "new",
+            "sku_id_alibaba": "new-sku-id",
+        }],
+    )
+
+    assert result["ok"] is True
+    assert result["items"][0]["status"] == "already_configured_preserved"
+    assert result["items"][0]["sku_id_alibaba"] == "old-sku-id"
+    assert result["summary"]["already_paired_count"] == 1
+    assert result["logs"][1]["level"] == "ok"
 
 
 def test_replicated_commodity_form_clears_account_bound_fields():

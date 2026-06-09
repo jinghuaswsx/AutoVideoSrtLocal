@@ -236,10 +236,43 @@
 明空配对工作台的 SKU 行基底必须来自“我们自己的商品全量 Shopify variants”，不能来自“明空已配采购信息的行数”。流程固定为：
 
 1. 先从当前产品的 `product_link` 或 DXM03 Shopify 在线商品公开 JSON 建全量 variant/SKU 基底，唯一键是 `shopify_variant_id`。
-2. 再按 `shopify_sku` / 明空 `dxm_sku` 从明空产品库填充采购相关字段，包括店小秘 SKU、SKUID、商品名、图片、供应商、1688 商品 ID、1688 SKU ID、采购链接。
+2. 再按 `shopify_variant_id`、`shopify_sku` / 明空 `dxm_sku`、规格标题 `variant_title` 从明空产品库填充采购相关字段，包括店小秘 SKU、SKUID、商品名、图片、供应商、1688 商品 ID、1688 SKU ID、采购链接。搬品后 Shopify variant id 不一致但规格标题一致时，可以用规格标题做保守填充。
 3. 明空库命中的行填充完整后可参与 DXM03 商品复刻和 1688 配对。
-4. 明空库没有命中的行也必须保留在工作台和本地 `media_product_skus`，但采购字段置空，后续运营在真实发货/采购前手动维护。
+4. 明空库没有命中的行也必须保留在工作台和本地 `media_product_skus`，但店小秘 SKU 和采购字段置空，后续运营在真实发货/采购前手动维护；不得把 Shopify 前台 SKU / `pair_key` 兜底写成店小秘 SKU。
 5. 后端不得按 `dianxiaomi_sku` 对目标行去重；同一个采购 SKU 被多个前台 variant 复用时也必须保留所有 `shopify_variant_id` 行。
+
+## 已配置 SKU 保护
+
+同步明空 SKU 到 DXM03 时，必须优先保护我们自己店小秘中已经配置过的 SKU：
+
+1. 单品 SKU：确认 1688 采购配对前，先查询 DXM03 当前 SKU 的配对状态；如果已经 `is_paired=1`，本轮只标记 `already_configured_preserved`，不得改 `sourceUrl`，不得重新勾选/确认 1688 SKU，即使明空候选与现有配置不同。
+2. 组合 SKU：如果 DXM03 已存在组合商品，并且所有组件 SKU 的采购配对都完整，只标记已存在/已配对，不重新复刻组合结构。
+3. 本地 `media_product_skus.manual_override=1` 的人工行继续由 `replace_product_skus()` 原有逻辑保护，不被自动同步覆盖或删除。
+4. 批量同步只处理本地完全没有 SKU 行的产品；只要 `media_product_skus` 中已有任意行，就视为已处理或人工介入过，批量任务跳过该产品。
+
+## 未处理产品批量同步
+
+针对当前系统中还没有 SKU 数据的产品，提供独立 CLI 批量执行完整流程：
+
+1. 候选过滤：
+   - `media_products.deleted_at IS NULL`
+   - 默认排除已归档产品。
+   - 默认只处理上架产品：`listing_status IS NULL OR listing_status='上架'`。
+   - `media_product_skus` 没有任何行。
+2. 单产品流程：
+   - 构建 Shopify 全量 variant 基底。
+   - 从本地明空产品库读取 SKU、采购链接、采购价/供应商等可用字段；本地缺失时按现有逻辑实时补采 DXM02。
+   - 写入本地 `media_product_skus`。
+   - 在 DXM03 小秘云仓/商品管理中补缺 SKU；已存在且已配置的 SKU 保持不动。
+   - 对未配置的单品 SKU 执行 1688 采购配对；组合 SKU 只在组件关系完整时视为完成。
+3. 输出报告：
+   - `product_id`
+   - `product_code`
+   - 产品中文名
+   - 执行结果
+   - 本地写入 SKU 数
+   - DXM03 新建/已存在/已保护/阻断/失败数量
+   - 逐 SKU 状态、采购链接、SKU ID、错误信息
 
 ## 组合 SKU 接口实测补充
 
@@ -281,8 +314,8 @@
 
 1. 本地产品有明确 Shopify ID 或素材/资产表能解析出 Shopify ID 时，优先只使用这些 Shopify ID 对应的明空商品。
 2. 没有明确 Shopify ID 时，优先使用采购配对完整的明空商品。
-3. 如果仍有多个候选，按 DXM 商品 SKU 去重，保留排序最靠前的一条；同一 DXM SKU 的多条明空 Shopify variant 只是同款重复，不代表 DXM03 要创建多条商品 SKU。
-4. 确认弹窗提交的目标计划也要按目标店小秘 SKU 去重，避免历史重复候选把本地 `media_product_skus` 写成多份相同 DXM SKU。
+3. 如果仍有多个明空候选，按采购配对完整度与组件完整度选择填充来源，但最终目标行仍以我们自己的 `shopify_variant_id` 为唯一基底。
+4. 确认弹窗提交的目标计划不得按目标店小秘 SKU 去重；同一个店小秘 SKU 对应多个前台 variant 时，必须保留所有 variant 行。
 
 DXM03 写入仍遵守：
 
