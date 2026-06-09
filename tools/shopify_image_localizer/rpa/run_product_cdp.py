@@ -175,13 +175,13 @@ def _localized_by_source_name_key(localized_images: list[dict]) -> dict[str, lis
     for item in localized_images or []:
         filename = str(item.get("filename") or Path(str(item.get("local_path") or "")).name)
         local_path = str(item.get("local_path") or "")
-        source_name_key = taa_cdp.source_name_key(filename)
+        source_name_key = taa_cdp.source_name_key_from_image_item(item, filename)
         if not source_name_key or not local_path:
             continue
         row = {
             **item,
-            "token": ez_cdp.md5_token(filename),
-            "source_index": taa_cdp.source_index_from_filename(filename),
+            "token": taa_cdp.source_token_from_image_item(item, filename),
+            "source_index": taa_cdp.source_index_from_image_item(item, filename),
             "source_name_key": source_name_key,
             "local_path": local_path,
             "filename": filename,
@@ -261,8 +261,10 @@ def _choose_carousel_candidate(
             no_index = [row for row in candidates if row.get("source_index") is None]
             if len(no_index) == 1:
                 return no_index[0]
-            options = [f"{row.get('source_index')}:{row.get('filename')}" for row in candidates]
-            raise ValueError(f"ambiguous carousel source for slot {slot_idx} token {token}: {options}")
+            source_indices = {row.get("source_index") for row in candidates}
+            if len(source_indices) == 1:
+                return _latest_carousel_candidate(candidates)
+            return None
         canonical_token = (
             domain_mapping.carousel_canonical_token_for(src)
             if domain_mapping is not None else ""
@@ -717,11 +719,11 @@ def build_detail_source_index_map(
     reference_by_name: dict[str, list[int]] = {}
     for item in reference_images:
         filename = str(item.get("filename") or "")
-        token = ez_cdp.md5_token(filename)
-        source_index = taa_cdp.source_index_from_filename(filename)
+        token = taa_cdp.source_token_from_image_item(item, filename)
+        source_index = taa_cdp.source_index_from_image_item(item, filename)
         if token and source_index is not None:
             reference_by_token.setdefault(token, []).append(source_index)
-        name_key = taa_cdp.source_name_key(filename)
+        name_key = taa_cdp.source_name_key_from_image_item(item, filename)
         if name_key and source_index is not None:
             reference_by_name.setdefault(name_key, []).append(source_index)
 
@@ -1599,7 +1601,8 @@ def run(
                 user_data_dir=browser_user_data_dir,
                 pairs=pairs,
                 language=args.language,
-                replace_existing=not args.skip_existing_carousel,
+                replace_existing=bool(getattr(args, "force_existing_carousel", False))
+                and not bool(getattr(args, "skip_existing_carousel", False)),
                 port=args.port,
                 limit=args.carousel_limit if args.carousel_limit > 0 else None,
                 cancel_token=cancel_token,
@@ -1903,6 +1906,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-carousel", action="store_true")
     parser.add_argument("--skip-detail", action="store_true")
     parser.add_argument("--skip-existing-carousel", action="store_true")
+    parser.add_argument("--force-existing-carousel", action="store_true")
     parser.add_argument("--source-index-map", default="")
     parser.add_argument("--replace-shopify-cdn", action="store_true")
     parser.add_argument("--no-preserve-detail-size", action="store_true")

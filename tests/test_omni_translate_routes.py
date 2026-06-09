@@ -1470,6 +1470,7 @@ def test_resume_from_translate_clears_omni_current_and_downstream_state(
         english_asr_result={"utterances": [{"text": "old subtitle asr"}]},
         srt_path="/tmp/old.srt",
         result={"hard_video": "/tmp/old-hard.mp4"},
+        video_size_adjustment={"status": "adjusted", "target_total_bitrate_bps": 5_000_000},
         exports={"normal": {"archive_url": "/old.zip"}},
         final_compose_summary={"compose_completed": True},
         tts_duration_rounds=[{"round": 1}],
@@ -1483,6 +1484,7 @@ def test_resume_from_translate_clears_omni_current_and_downstream_state(
             "tts": {"title": "old tts"},
             "subtitle": {"title": "old subtitle"},
             "compose": {"title": "old compose"},
+            "video_size_adjustment": {"title": "old size"},
             "export": {"title": "old export"},
         },
         preview_files={
@@ -1516,12 +1518,14 @@ def test_resume_from_translate_clears_omni_current_and_downstream_state(
                 "corrected_subtitle": {"chunks": [{"text": "old subtitle"}]},
                 "srt_path": "/tmp/old.srt",
                 "result": {"hard_video": "/tmp/old-hard.mp4"},
+                "video_size_adjustment": {"status": "adjusted", "target_total_bitrate_bps": 5_000_000},
                 "exports": {"archive_url": "/old.zip"},
                 "artifacts": {
                     "translate": {"title": "old translate"},
                     "tts": {"title": "old tts"},
                     "subtitle": {"title": "old subtitle"},
                     "compose": {"title": "old compose"},
+                    "video_size_adjustment": {"title": "old size"},
                     "export": {"title": "old export"},
                 },
                 "preview_files": {
@@ -1552,6 +1556,7 @@ def test_resume_from_translate_clears_omni_current_and_downstream_state(
     assert task["english_asr_result"] == {}
     assert task["srt_path"] == ""
     assert task["result"] == {}
+    assert task["video_size_adjustment"] == {}
     assert task["exports"] == {}
     assert task["tts_duration_rounds"] == []
     assert task["tts_duration_status"] is None
@@ -1570,6 +1575,7 @@ def test_resume_from_translate_clears_omni_current_and_downstream_state(
     assert normal["tts_audio_path"] == ""
     assert normal["corrected_subtitle"] == {}
     assert normal["result"] == {}
+    assert normal["video_size_adjustment"] == {}
     assert normal["exports"] == {}
     assert normal["artifacts"] == {}
     assert normal["preview_files"] == {}

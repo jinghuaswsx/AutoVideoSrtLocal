@@ -3411,3 +3411,114 @@ def test_is_translation_of_with_guards():
     # g embeds f's date, and 20250605 is in date patterns -> True
     assert _is_translation_of(item_f, item_g) is True
 
+
+def test_load_ad_detail_match_terms_with_translation(monkeypatch):
+    from web.routes.medias import material_supplement
+
+    called_queries = []
+
+    def fake_query(sql, args):
+        called_queries.append((sql, args))
+        sql_lower = sql.lower()
+        if "media_items" in sql_lower:
+            # Second query for related DE translation items
+            if "source_raw_id" in sql_lower and "lang = %s" in sql_lower:
+                return [{
+                    "id": 2171,
+                    "filename": "2026.06.08-plant-watering-de-20250510.mp4",
+                    "display_name": "2026.06.08-plant-watering-de-20250510.mp4"
+                }]
+            # First query for primary media item (2065)
+            else:
+                return [{
+                    "id": 2065,
+                    "filename": "2025.05.10-plant-watering-en.mp4",
+                    "display_name": "2025.05.10-plant-watering-en.mp4",
+                    "source_raw_id": 366,
+                    "source_ref_id": None
+                }]
+        elif "mingkong_material_daily_snapshots" in sql_lower:
+            return []
+        return []
+
+    # Call the target function
+    args = {"media_item_id": 2065, "country": "DE"}
+    terms = material_supplement._load_ad_detail_match_terms(737, args, query_fn=fake_query)
+
+    # Validate results
+    # Mapped 'DE' to 'de', so it should have queried translation items
+    # Check that terms contain both EN (primary) and DE (translation) filenames
+    filenames = [item["term"] for item in terms]
+    assert "2025.05.10-plant-watering-en" in filenames
+    assert "2026.06.08-plant-watering-de-20250510" in filenames
+
+
+def test_query_ad_detail_rows_merges_realtime_and_daily(monkeypatch):
+    from web.routes.medias import material_supplement
+    import datetime
+
+    called_queries = []
+
+    def fake_query(sql, args=None):
+        called_queries.append((sql, args))
+        sql_lower = sql.lower()
+        if "show tables like" in sql_lower:
+            return [{"Tables_in_db": "meta_ad_realtime_daily_ad_metrics"}]
+        elif "from media_products" in sql_lower:
+            return [{"product_code": "demo-rjc"}]
+        elif "meta_ad_realtime_daily_ad_metrics" in sql_lower:
+            return [{
+                "id": 201,
+                "ad_account_id": "act_123",
+                "ad_account_name": "RealtimeAccount",
+                "activity_date": datetime.date(2026, 6, 9),
+                "report_date": datetime.date(2026, 6, 9),
+                "campaign_name": "demo-rjc",
+                "normalized_ad_code": "",
+                "ad_name": "demo_ad_realtime",
+                "market_country": "DE",
+                "spend_usd": 15.0,
+                "purchase_value_usd": 30.0,
+                "result_count": 3
+            }]
+        elif "meta_ad_daily_ad_metrics" in sql_lower:
+            return [{
+                "id": 101,
+                "ad_account_id": "act_123",
+                "ad_account_name": "DailyAccount",
+                "activity_date": datetime.date(2026, 6, 8),
+                "report_date": datetime.date(2026, 6, 8),
+                "campaign_name": "demo-rjc",
+                "normalized_ad_code": "",
+                "ad_name": "demo_ad_daily",
+                "market_country": "DE",
+                "spend_usd": 10.0,
+                "purchase_value_usd": 20.0,
+                "result_count": 2
+            }]
+        return []
+
+    # Call _query_ad_detail_rows
+    rows = material_supplement._query_ad_detail_rows(
+        product_id=737,
+        date_from=datetime.date(2026, 6, 8),
+        date_to=datetime.date(2026, 6, 9),
+        match_sql="1=1",
+        match_args=[],
+        query_fn=fake_query,
+        country="DE"
+    )
+
+    # Validate that we got 2 rows, one daily and one realtime, sorted correctly
+    assert len(rows) == 2
+    # Sorted by market_country ASC, activity_date DESC (2026-06-09 first, then 2026-06-08)
+    assert rows[0]["id"] == 201
+    assert rows[0]["metric_source"] == "realtime"
+    assert rows[0]["spend_usd"] == 15.0
+
+    assert rows[1]["id"] == 101
+    assert rows[1]["metric_source"] == "daily"
+    assert rows[1]["spend_usd"] == 10.0
+
+
+

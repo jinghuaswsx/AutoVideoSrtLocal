@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
-from typing import Any
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable
 
 from appcore.browser_automation_lock import browser_automation_lock
+from appcore import mingkong_product_library
 
+
+log = logging.getLogger(__name__)
 
 DXM_BASE_URL = "https://www.dianxiaomi.com"
 DEFAULT_DXM02_CDP_URL = "http://127.0.0.1:9223"
@@ -30,6 +35,31 @@ PAIR_CONFIRM_API = "/api/dxmAlibabaProductPair/confirmPairOpt.json"
 
 class DianxiaomiPairingError(RuntimeError):
     """Raised when DXM03 cannot be reached or returns an unexpected response."""
+
+
+def _run_playwright_operation(
+    label: str,
+    operation: Callable[[], Any],
+    *,
+    force_isolated_thread: bool | None = None,
+) -> Any:
+    if force_isolated_thread is None:
+        use_isolated_thread = True
+    else:
+        use_isolated_thread = bool(force_isolated_thread)
+
+    if not use_isolated_thread:
+        return operation()
+
+    log.info(
+        "%s: running Playwright sync operation on a worker thread",
+        label,
+    )
+    with ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="mingkong-dxm-cdp",
+    ) as executor:
+        return executor.submit(operation).result()
 
 
 def dxm03_cdp_url() -> str:
@@ -626,6 +656,19 @@ def fetch_dxm03_pairing_snapshot(
     skus: list[str],
     *,
     cdp_url: str | None = None,
+    force_isolated_thread: bool | None = None,
+) -> dict[str, dict[str, Any]]:
+    return _run_playwright_operation(
+        "dxm03_mingkong_pairing_snapshot",
+        lambda: _fetch_dxm03_pairing_snapshot_impl(skus, cdp_url=cdp_url),
+        force_isolated_thread=force_isolated_thread,
+    )
+
+
+def _fetch_dxm03_pairing_snapshot_impl(
+    skus: list[str],
+    *,
+    cdp_url: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     clean_skus = [str(sku or "").strip() for sku in skus if str(sku or "").strip()]
     if not clean_skus:
@@ -674,13 +717,159 @@ def _local_sku_payload(row: dict[str, Any]) -> dict[str, Any]:
         "shopify_product_id": row.get("shopify_product_id") or "",
         "shopify_variant_id": row.get("shopify_variant_id") or "",
         "shopify_sku": row.get("shopify_sku") or "",
-        "variant_title": row.get("shopify_variant_title") or "",
+        "variant_title": row.get("shopify_variant_title") or row.get("variant_title") or "",
         "dianxiaomi_sku": row.get("dianxiaomi_sku") or "",
         "dianxiaomi_product_sku": row.get("dianxiaomi_product_sku") or "",
         "dianxiaomi_sku_code": row.get("dianxiaomi_sku_code") or "",
         "dianxiaomi_name": row.get("dianxiaomi_name") or "",
         "source": row.get("source") or "",
         "image_url": row.get("image_url") or "",
+        "purchase_1688_url": row.get("purchase_1688_url") or "",
+        "mingkong_product_id": row.get("mingkong_product_id"),
+        "mingkong_variant_id": row.get("mingkong_variant_id"),
+        "mingkong_procurement": row.get("mingkong_procurement"),
+        "is_combo": bool(row.get("is_combo")),
+        "combo_components": row.get("combo_components") or [],
+    }
+
+
+_RESULT_STATUS_LABELS = {
+    "already_exists": "DXM03 已存在",
+    "already_paired": "DXM03 已配对",
+    "already_paired_combo_components": "DXM03 组合组件已配对",
+    "blocked": "阻断",
+    "confirmed": "已同步",
+    "created": "已复刻",
+    "error": "失败",
+    "pending": "待处理",
+}
+
+
+def _operation_item_label(item: dict[str, Any]) -> str:
+    return (
+        str(item.get("variant_title") or "").strip()
+        or str(item.get("dianxiaomi_sku") or "").strip()
+        or str(item.get("shopify_variant_id") or "").strip()
+        or "SKU"
+    )
+
+
+def _operation_logs(action: str, items: list[dict[str, Any]]) -> list[dict[str, str]]:
+    logs: list[dict[str, str]] = [{
+        "level": "info",
+        "message": f"{action}：后端已返回逐 SKU 处理结果",
+    }]
+    if not items:
+        logs.append({"level": "warn", "message": "没有可处理的 SKU 行"})
+        return logs
+    for item in items:
+        status = str(item.get("status") or item.get("error") or "").strip()
+        label = _operation_item_label(item)
+        readable = _RESULT_STATUS_LABELS.get(status, status or "未知状态")
+        message = str(item.get("message") or "").strip()
+        sku_code = str(item.get("dxm03_sku_code") or "").strip()
+        original_code = str(item.get("original_mingkong_sku_code") or "").strip()
+        suffix = ""
+        if sku_code:
+            suffix = f"；明空 SKUID {original_code or '-'} -> DXM03 SKUID {sku_code}"
+        if message:
+            suffix = f"{suffix}；{message}"
+        level = "ok" if status in {
+            "already_exists",
+            "already_paired",
+            "already_paired_combo_components",
+            "confirmed",
+            "created",
+        } else ("error" if status == "error" else "warn")
+        logs.append({
+            "level": level,
+            "message": f"{label}：{readable}{suffix}",
+        })
+    return logs
+
+
+def load_mingkong_library_sku_rows(product: dict[str, Any]) -> dict[str, Any]:
+    library_rows = mingkong_product_library.sku_rows_from_library(product)
+    realtime_refresh_summary: dict[str, Any] | None = None
+    if not library_rows:
+        realtime_refresh_summary = mingkong_product_library.refresh_product_from_dxm02(product)
+        library_rows = mingkong_product_library.sku_rows_from_library(product)
+    rows = [_local_sku_payload(row) for row in library_rows]
+    return {
+        "rows": rows,
+        "realtime_refresh": realtime_refresh_summary,
+    }
+
+
+def build_mingkong_library_sku_import_payload(product: dict[str, Any]) -> dict[str, Any]:
+    loaded = load_mingkong_library_sku_rows(product)
+    pairs: list[dict[str, Any]] = []
+    for row in loaded["rows"]:
+        variant_id = str(row.get("shopify_variant_id") or "").strip()
+        dianxiaomi_sku = str(row.get("dianxiaomi_sku") or "").strip()
+        if not variant_id:
+            continue
+        pairs.append({
+            "shopify_product_id": row.get("shopify_product_id") or product.get("shopifyid") or "",
+            "shopify_variant_id": variant_id,
+            "shopify_sku": row.get("shopify_sku") or "",
+            "shopify_currency": None,
+            "shopify_variant_title": row.get("variant_title") or "",
+            "dianxiaomi_sku": dianxiaomi_sku or None,
+            "dianxiaomi_product_sku": row.get("dianxiaomi_product_sku") or None,
+            "dianxiaomi_sku_code": row.get("dianxiaomi_sku_code") or None,
+            "dianxiaomi_name": row.get("dianxiaomi_name") or None,
+        })
+    return {
+        "ok": bool(pairs),
+        "pairs": pairs,
+        "items": loaded["rows"],
+        "realtime_refresh": loaded["realtime_refresh"],
+        "message": "" if pairs else "明空产品库未找到可同步的 SKU 行",
+    }
+
+
+def _mingkong_reference_indexes(
+    rows: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    by_variant: dict[str, dict[str, Any]] = {}
+    by_sku: dict[str, dict[str, Any]] = {}
+    for item in rows:
+        row = _local_sku_payload(item)
+        variant_id = str(row.get("shopify_variant_id") or "").strip()
+        sku = str(row.get("dianxiaomi_sku") or "").strip()
+        if variant_id:
+            by_variant.setdefault(variant_id, row)
+        if sku:
+            by_sku.setdefault(sku, row)
+    return by_variant, by_sku
+
+
+def _mingkong_reference_payload(row: dict[str, Any] | None, fallback: dict[str, Any]) -> dict[str, Any]:
+    source = str(fallback.get("source") or "").strip()
+    if row is None and source.startswith("mingkong"):
+        row = fallback
+    if not row:
+        return {}
+    proc = row.get("mingkong_procurement") or {}
+    purchase_url = str(row.get("purchase_1688_url") or proc.get("purchase_1688_url") or "").strip()
+    return {
+        "shopify_product_id": row.get("shopify_product_id") or "",
+        "shopify_variant_id": row.get("shopify_variant_id") or "",
+        "variant_title": row.get("variant_title") or "",
+        "sku": row.get("dianxiaomi_sku") or "",
+        "product_sku": row.get("dianxiaomi_product_sku") or "",
+        "sku_code": row.get("dianxiaomi_sku_code") or "",
+        "name": row.get("dianxiaomi_name") or "",
+        "image_url": row.get("image_url") or "",
+        "supplier_name": proc.get("supplier_name") or "",
+        "purchase_1688_url": purchase_url,
+        "alibaba_product_id": proc.get("alibaba_product_id") or normalize_1688_offer_id(purchase_url),
+        "sku_id_alibaba": proc.get("sku_id_alibaba") or "",
+        "pairing_state": proc.get("pairing_state"),
+        "is_combo": bool(row.get("is_combo")),
+        "combo_components": row.get("combo_components") or [],
+        "source": row.get("source") or source,
     }
 
 
@@ -689,10 +878,35 @@ def build_workbench_payload(
     sku_rows: list[dict[str, Any]],
     *,
     include_live: bool = True,
+    include_mingkong_reference: bool = False,
     fetch_live_fn=fetch_dxm03_pairing_snapshot,
 ) -> dict[str, Any]:
     purchase_url = str(product.get("purchase_1688_url") or "").strip()
-    local_rows = [_local_sku_payload(row) for row in sku_rows or []]
+    source_rows = list(sku_rows or [])
+    library_rows: list[dict[str, Any]] = []
+    realtime_refresh_error = ""
+    mingkong_reference_error = ""
+    realtime_refresh_summary: dict[str, Any] | None = None
+    if not source_rows:
+        try:
+            loaded_library = load_mingkong_library_sku_rows(product)
+            library_rows = loaded_library["rows"]
+            realtime_refresh_summary = loaded_library["realtime_refresh"]
+            source_rows = library_rows
+        except Exception as exc:
+            realtime_refresh_error = str(exc)
+            library_rows = []
+    elif include_mingkong_reference:
+        try:
+            library_rows = [
+                _local_sku_payload(row)
+                for row in mingkong_product_library.sku_rows_from_library(product)
+            ]
+        except Exception as exc:
+            mingkong_reference_error = str(exc)
+            library_rows = []
+    local_rows = [_local_sku_payload(row) for row in source_rows]
+    mingkong_by_variant, mingkong_by_sku = _mingkong_reference_indexes(library_rows)
     sku_values = [row["dianxiaomi_sku"] for row in local_rows if row.get("dianxiaomi_sku")]
     live_error = ""
     snapshot: dict[str, dict[str, Any]] = {}
@@ -710,6 +924,12 @@ def build_workbench_payload(
         commodity = live.get("commodity")
         pairing = live.get("pairing")
         components = live.get("combo_components") or []
+        mingkong_reference = (
+            mingkong_by_variant.get(str(row.get("shopify_variant_id") or "").strip())
+            or mingkong_by_sku.get(sku)
+        )
+        row_purchase_url = str(row.get("purchase_1688_url") or purchase_url).strip()
+        row_alibaba_product_id = normalize_1688_offer_id(row_purchase_url)
         status = "missing_local_sku"
         if sku and commodity and commodity.get("is_combo") and components:
             all_components_paired = all(
@@ -733,11 +953,13 @@ def build_workbench_payload(
             status = "missing_dxm03_commodity"
         items.append({
             **row,
-            "purchase_1688_url": purchase_url,
-            "alibaba_product_id": normalize_1688_offer_id(purchase_url),
+            "purchase_1688_url": row_purchase_url,
+            "alibaba_product_id": row_alibaba_product_id,
             "image_url": row.get("image_url") or (commodity or {}).get("image_url") or "",
-            "is_combo": bool((commodity or {}).get("is_combo")),
+            "is_combo": bool((commodity or {}).get("is_combo") or row.get("is_combo")),
             "combo_components": components,
+            "mingkong_procurement": row.get("mingkong_procurement"),
+            "mingkong": _mingkong_reference_payload(mingkong_reference, row),
             "dxm03": {
                 "commodity": commodity,
                 "pairing": pairing,
@@ -762,7 +984,10 @@ def build_workbench_payload(
             "paired_count": paired_count,
             "missing_count": len(items) - ready_count - paired_count,
             "has_purchase_url": bool(purchase_url),
-            "live_error": live_error,
+            "live_error": live_error or realtime_refresh_error,
+            "mingkong_reference_error": mingkong_reference_error,
+            "source": "media_product_skus" if sku_rows else ("mingkong_library" if library_rows else "empty"),
+            "realtime_refresh": realtime_refresh_summary,
         },
     }
 
@@ -824,16 +1049,44 @@ def replicate_mingkong_skus_to_dxm03(
     source_cdp_url: str | None = None,
     replace_product_skus_fn=None,
     update_product_fn=None,
+    force_isolated_thread: bool | None = None,
+) -> dict[str, Any]:
+    return _run_playwright_operation(
+        "dxm03_mingkong_sku_replicate",
+        lambda: _replicate_mingkong_skus_to_dxm03_impl(
+            product,
+            sku_rows,
+            selections=selections,
+            cdp_url=cdp_url,
+            source_cdp_url=source_cdp_url,
+            replace_product_skus_fn=replace_product_skus_fn,
+            update_product_fn=update_product_fn,
+        ),
+        force_isolated_thread=force_isolated_thread,
+    )
+
+
+def _replicate_mingkong_skus_to_dxm03_impl(
+    product: dict[str, Any],
+    sku_rows: list[dict[str, Any]],
+    *,
+    selections: list[dict[str, Any]] | None = None,
+    cdp_url: str | None = None,
+    source_cdp_url: str | None = None,
+    replace_product_skus_fn=None,
+    update_product_fn=None,
 ) -> dict[str, Any]:
     """Create missing DXM03 commodities by cloning safe SKU settings from DXM02."""
 
     local_rows = [_local_sku_payload(row) for row in sku_rows or []]
     rows_with_sku = [row for row in local_rows if row.get("dianxiaomi_sku")]
     if not rows_with_sku:
+        message = "产品缺少可复刻的明空 SKU 行"
         return {
             "ok": False,
             "error": "missing_sku_rows",
-            "message": "产品缺少可复刻的明空 SKU 行",
+            "message": message,
+            "logs": [{"level": "error", "message": message}],
             "items": [],
         }
     selection_by_key = _selection_map(selections)
@@ -1016,18 +1269,28 @@ def replicate_mingkong_skus_to_dxm03(
         item.get("status") in {"already_exists", "created"}
         for item in results
     )
+    summary = {
+        "created_count": sum(1 for item in results if item.get("status") == "created"),
+        "existing_count": sum(1 for item in results if item.get("status") == "already_exists"),
+        "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
+        "error_count": sum(1 for item in results if item.get("status") == "error"),
+        "local_update": update_summary,
+    }
+    message = (
+        "复刻明空 SKU 完成："
+        f"新建 {summary['created_count']}，"
+        f"DXM03 已存在 {summary['existing_count']}，"
+        f"阻断 {summary['blocked_count']}，"
+        f"失败 {summary['error_count']}"
+    )
     return {
         "ok": ok,
         "product_id": product.get("id"),
         "product_code": product.get("product_code") or "",
+        "message": message,
+        "logs": _operation_logs("复刻明空 SKU 到 DXM03", results),
         "items": results,
-        "summary": {
-            "created_count": sum(1 for item in results if item.get("status") == "created"),
-            "existing_count": sum(1 for item in results if item.get("status") == "already_exists"),
-            "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
-            "error_count": sum(1 for item in results if item.get("status") == "error"),
-            "local_update": update_summary,
-        },
+        "summary": summary,
     }
 
 
@@ -1037,16 +1300,41 @@ def confirm_dxm03_pairing(
     *,
     selections: list[dict[str, Any]] | None = None,
     cdp_url: str | None = None,
+    force_isolated_thread: bool | None = None,
+) -> dict[str, Any]:
+    return _run_playwright_operation(
+        "dxm03_mingkong_pairing_confirm",
+        lambda: _confirm_dxm03_pairing_impl(
+            product,
+            sku_rows,
+            selections=selections,
+            cdp_url=cdp_url,
+        ),
+        force_isolated_thread=force_isolated_thread,
+    )
+
+
+def _confirm_dxm03_pairing_impl(
+    product: dict[str, Any],
+    sku_rows: list[dict[str, Any]],
+    *,
+    selections: list[dict[str, Any]] | None = None,
+    cdp_url: str | None = None,
 ) -> dict[str, Any]:
     purchase_url = str(product.get("purchase_1688_url") or "").strip()
     product_id_alibaba = normalize_1688_offer_id(purchase_url)
-    local_rows = [_local_sku_payload(row) for row in sku_rows or []]
+    source_rows = list(sku_rows or [])
+    if not source_rows:
+        source_rows = load_mingkong_library_sku_rows(product)["rows"]
+    local_rows = [_local_sku_payload(row) for row in source_rows]
     rows_with_sku = [row for row in local_rows if row.get("dianxiaomi_sku")]
     if not rows_with_sku:
+        message = "产品缺少可写入 DXM03 的 SKU 配对行"
         return {
             "ok": False,
             "error": "missing_sku_rows",
-            "message": "产品缺少可写入 DXM03 的 SKU 配对行",
+            "message": message,
+            "logs": [{"level": "error", "message": message}],
             "items": [],
         }
     selection_by_key = _selection_map(selections)
@@ -1069,11 +1357,12 @@ def confirm_dxm03_pairing(
                 selected_product_id = (
                     normalize_1688_offer_id(selection.get("product_id_alibaba"))
                     or normalize_1688_offer_id(selection.get("purchase_1688_url"))
+                    or normalize_1688_offer_id(row.get("purchase_1688_url"))
                     or product_id_alibaba
                 )
                 selected_purchase_url = _purchase_url_for_offer(
                     selected_product_id,
-                    selection.get("purchase_1688_url") or purchase_url,
+                    selection.get("purchase_1688_url") or row.get("purchase_1688_url") or purchase_url,
                 )
                 selected_sku_id = str(selection.get("sku_id_alibaba") or "").strip()
                 item_result = {
@@ -1194,9 +1483,32 @@ def confirm_dxm03_pairing(
         }
         for item in results
     )
+    summary = {
+        "confirmed_count": sum(1 for item in results if item.get("status") == "confirmed"),
+        "already_paired_count": sum(
+            1
+            for item in results
+            if item.get("status") in {
+                "already_paired",
+                "already_paired_combo_components",
+            }
+        ),
+        "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
+        "error_count": sum(1 for item in results if item.get("status") == "error"),
+    }
+    message = (
+        "同步明空店小秘SKU完成："
+        f"写入 {summary['confirmed_count']}，"
+        f"已存在 {summary['already_paired_count']}，"
+        f"阻断 {summary['blocked_count']}，"
+        f"失败 {summary['error_count']}"
+    )
     return {
         "ok": ok,
         "product_id": product.get("id"),
         "product_code": product.get("product_code") or "",
+        "message": message,
+        "logs": _operation_logs("同步明空店小秘SKU", results),
         "items": results,
+        "summary": summary,
     }

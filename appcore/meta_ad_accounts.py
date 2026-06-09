@@ -16,7 +16,7 @@ from appcore import settings as system_settings
 log = logging.getLogger(__name__)
 
 SETTING_KEY = "meta_ad_accounts"
-AVAILABLE_STORE_CODES = ("newjoy", "omurio")
+AVAILABLE_STORE_CODES = ("newjoy", "omurio", "cozywint")
 DEFAULT_NEWJOYLOO_ACCOUNT_ID = "1861285821213497"
 LEGACY_NEWJOYLOO_ACCOUNT_ID = "2110407576446225"
 OMURIO_ACCOUNT_ID = "1253003326160754"
@@ -178,6 +178,8 @@ def _normalize_store_codes(raw: object, *, code: str = "") -> tuple[str, ...]:
         return ("newjoy",)
     if "omurio" in lowered_code:
         return ("omurio",)
+    if "cozywint" in lowered_code:
+        return ("cozywint",)
     return ()
 
 

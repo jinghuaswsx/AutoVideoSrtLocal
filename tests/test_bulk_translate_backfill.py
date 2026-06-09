@@ -304,8 +304,22 @@ def test_sync_video_result_reuses_existing_item_for_same_object_key(monkeypatch)
     assert target_id == 701
     assert executed == [
         (
-            "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s WHERE id=%s",
-            (301, "1/medias/77/es_cover.png", 701),
+            """
+                    UPDATE media_items 
+                       SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s, updated_at=NOW()
+                     WHERE id=%s
+                    """,
+            (
+                "es_result.mp4",
+                "es_result.mp4",
+                "1/medias/77/es_result.mp4",
+                "1/medias/77/es_cover.png",
+                90.0,
+                1234,
+                301,
+                701,
+            ),
         )
     ]
     assert marked == [("media_items", 701, 301, "bt-1")]
@@ -394,8 +408,23 @@ def test_sync_video_result_binds_existing_item_to_task_center_task(monkeypatch):
     assert target_id == 701
     assert executed == [
         (
-            "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s, task_id=%s WHERE id=%s",
-            (301, "1/medias/77/de_cover.png", 456, 701),
+            """
+                    UPDATE media_items 
+                       SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s, updated_at=NOW()
+                     WHERE id=%s
+                    """,
+            (
+                "de_result.mp4",
+                "de_result.mp4",
+                "1/medias/77/de_result.mp4",
+                "1/medias/77/de_cover.png",
+                None,
+                None,
+                301,
+                456,
+                701,
+            ),
         )
     ]
 
@@ -450,8 +479,23 @@ def test_sync_video_result_rebinds_unified_output_to_latest_task_center_task(mon
     assert created == {}
     assert executed == [
         (
-            "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s, task_id=%s WHERE id=%s",
-            (301, "1/medias/77/de_cover.png", 316, 701),
+            """
+                    UPDATE media_items 
+                       SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s, updated_at=NOW()
+                     WHERE id=%s
+                    """,
+            (
+                "de_result.mp4",
+                "de_result.mp4",
+                "1/medias/77/de_result.mp4",
+                "1/medias/77/de_cover.png",
+                90.0,
+                1234,
+                301,
+                316,
+                701,
+            ),
         )
     ]
 

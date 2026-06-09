@@ -162,6 +162,51 @@ def _legacy_translation_fingerprint(value: str | None) -> str:
     return "|".join([date_key, *material_tokens])
 
 
+def _legacy_date_key(value: str | None) -> str:
+    normalized = _term_no_ext(value or "")
+    date_match = re.match(r"^(20\d{2})[.\-_年]?(\d{1,2})[.\-_月]?(\d{1,2})", normalized)
+    if not date_match:
+        return ""
+    return "".join(part.zfill(2) if idx else part for idx, part in enumerate(date_match.groups()))
+
+
+def _legacy_material_terms(value: str | None) -> set[str]:
+    normalized = _term_no_ext(value or "")
+    if not normalized:
+        return set()
+    normalized = re.sub(r"^(20\d{2})[.\-_年]?(\d{1,2})[.\-_月]?(\d{1,2})[-_\s]*", "", normalized)
+    tokens = [
+        token.strip().lower()
+        for token in re.split(r"[-_\s]+", normalized)
+        if token.strip()
+    ]
+    ignored = {
+        "原素材",
+        "补充素材",
+        "小语种翻译素材",
+        "翻译素材",
+        "素材",
+        "de",
+        "fr",
+        "es",
+        "it",
+        "pt",
+        "ja",
+        "nl",
+        "sv",
+        "fi",
+        "en",
+    }
+    return {
+        token
+        for token in tokens
+        if token not in ignored
+        and not re.fullmatch(r"[a-z]{1,3}", token)
+        and not re.fullmatch(r"20\d{6}", token)
+        and len(token) >= 2
+    }
+
+
 def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
     lib_id = _link_value(lib_item.get("id"))
     bound_id = _link_value(bound_item.get("id"))
@@ -182,6 +227,20 @@ def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
     if lib_source_raw or lib_source_ref or bound_source_raw or bound_source_ref:
         if (lib_source_raw or lib_source_ref) and (bound_source_raw or bound_source_ref):
             return False
+
+    lib_name = lib_item.get("filename") or lib_item.get("display_name")
+    bound_name = bound_item.get("filename") or bound_item.get("display_name")
+    lib_date = _legacy_date_key(lib_name)
+    bound_date = _legacy_date_key(bound_name)
+    if lib_date and bound_date and lib_date != bound_date:
+        lib_digits = re.sub(r"\D+", "", _term_no_ext(lib_name or ""))
+        bound_digits = re.sub(r"\D+", "", _term_no_ext(bound_name or ""))
+        if lib_date in bound_digits or bound_date in lib_digits:
+            lib_terms = _legacy_material_terms(lib_name)
+            bound_terms = _legacy_material_terms(bound_name)
+            if lib_terms and bound_terms and lib_terms.intersection(bound_terms):
+                return True
+        return False
 
     lib_fingerprint = _legacy_translation_fingerprint(lib_item.get("filename") or lib_item.get("display_name"))
     bound_fingerprint = _legacy_translation_fingerprint(bound_item.get("filename") or bound_item.get("display_name"))
@@ -1161,7 +1220,7 @@ def _load_ad_detail_match_terms(product_id: int, args: Mapping[str, Any], query_
             media_item_id = 0
         if media_item_id > 0:
             rows = query_fn(
-                "SELECT id, filename, display_name FROM media_items "
+                "SELECT id, filename, display_name, source_raw_id, source_ref_id FROM media_items "
                 "WHERE id = %s AND product_id = %s AND deleted_at IS NULL",
                 [media_item_id, product_id],
             )
@@ -1169,6 +1228,38 @@ def _load_ad_detail_match_terms(product_id: int, args: Mapping[str, Any], query_
                 item = rows[0]
                 _add_match_term(terms, seen, item.get("filename"), "filename")
                 _add_match_term(terms, seen, item.get("display_name"), "display_name")
+
+                # If country is specified, load translation items for joint matching
+                country = args.get("country") or args.get("country_code")
+                if country:
+                    lang = COUNTRY_TO_LANG.get(str(country).strip().upper())
+                    if lang and lang != "en":
+                        s_raw = item.get("source_raw_id")
+                        s_ref = item.get("source_ref_id")
+                        sql_trans = """
+                            SELECT id, filename, display_name 
+                            FROM media_items 
+                            WHERE product_id = %s 
+                              AND lang = %s 
+                              AND (
+                                id = %s 
+                                OR (source_raw_id IS NOT NULL AND source_raw_id = %s)
+                                OR (source_raw_id IS NOT NULL AND source_raw_id = %s)
+                                OR (source_ref_id IS NOT NULL AND source_ref_id = %s)
+                                OR (source_ref_id IS NOT NULL AND source_ref_id = %s)
+                                OR (source_raw_id = %s)
+                                OR (source_ref_id = %s)
+                              )
+                              AND deleted_at IS NULL
+                        """
+                        trans_rows = query_fn(sql_trans, [
+                            product_id, lang, media_item_id,
+                            s_raw, s_ref, s_raw, s_ref,
+                            media_item_id, media_item_id
+                        ])
+                        for trans_item in trans_rows:
+                            _add_match_term(terms, seen, trans_item.get("filename"), "translation_filename")
+                            _add_match_term(terms, seen, trans_item.get("display_name"), "translation_display_name")
 
     video_path = str(args.get("video_path") or "").strip()
     if video_path:
@@ -1214,7 +1305,7 @@ def _query_ad_detail_rows(
         extra_clause = "  AND UPPER(COALESCE(m.market_country, '')) = %s "
         extra_args.append(str(country).strip().upper())
 
-    return query_fn(
+    daily_rows = query_fn(
         "SELECT m.id, m.ad_account_id, m.ad_account_name, "
         "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
         "       m.report_date, m.product_code AS campaign_name, "
@@ -1225,11 +1316,123 @@ def _query_ad_detail_rows(
         "  AND COALESCE(m.spend_usd, 0) > 0 "
         "  AND DATE(COALESCE(m.meta_business_date, m.report_date)) BETWEEN %s AND %s "
         f"  AND ({match_sql}) "
-        f"{extra_clause}"
-        "ORDER BY m.market_country ASC, activity_date DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
-        "LIMIT 500",
+        f"{extra_clause}",
         [product_id, date_from.isoformat(), date_to.isoformat(), *match_args, *extra_args],
     )
+    for r in daily_rows:
+        r["metric_source"] = "daily"
+
+    # Query product_code for realtime campaign match
+    products = query_fn(
+        "SELECT product_code FROM media_products WHERE id = %s AND deleted_at IS NULL",
+        [product_id],
+    )
+    product_code = products[0].get("product_code") if products else None
+
+    def table_exists(tbl_name):
+        try:
+            res = query_fn(f"SHOW TABLES LIKE '{tbl_name}'")
+            return len(res) > 0
+        except Exception:
+            return False
+
+    realtime_rows = []
+    if product_code and table_exists("meta_ad_realtime_daily_ad_metrics"):
+        rt_country_clause = ""
+        rt_country_args = []
+        if country:
+            rt_country_clause = " AND UPPER(COALESCE(m.country_code, '')) = %s "
+            rt_country_args.append(str(country).strip().upper())
+
+        rt_sql = (
+            "SELECT m.id, m.ad_account_id, m.ad_account_name, "
+            "       m.business_date AS activity_date, "
+            "       m.business_date AS report_date, m.campaign_name, "
+            "       m.normalized_ad_code, m.ad_name, m.country_code AS market_country, "
+            "       m.spend_usd, m.purchase_value_usd, m.result_count "
+            "FROM ("
+            "  SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at "
+            "  FROM meta_ad_realtime_daily_ad_metrics rt "
+            "  INNER JOIN ("
+            "    SELECT ad_account_id, MAX(business_date) AS business_date "
+            "    FROM meta_ad_realtime_daily_ad_metrics "
+            "    WHERE data_completeness = 'realtime_partial' "
+            "    GROUP BY ad_account_id"
+            "  ) latest_day "
+            "    ON rt.business_date = latest_day.business_date "
+            "   AND (rt.ad_account_id <=> latest_day.ad_account_id) "
+            "  WHERE rt.data_completeness = 'realtime_partial' "
+            "  GROUP BY latest_day.business_date, latest_day.ad_account_id"
+            ") latest "
+            "STRAIGHT_JOIN meta_ad_realtime_daily_ad_metrics m "
+            "  ON m.business_date = latest.business_date "
+            " AND (m.ad_account_id <=> latest.ad_account_id) "
+            " AND m.snapshot_at = latest.max_snapshot_at "
+            "JOIN media_products p_rt "
+            "  ON p_rt.id = %s "
+            " AND p_rt.deleted_at IS NULL "
+            " AND ( "
+            "   LOWER(COALESCE(m.normalized_campaign_code, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+            "   OR LOWER(COALESCE(m.campaign_name, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+            "   OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+            "   OR LOWER(COALESCE(m.ad_name, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+            " ) "
+            "WHERE m.data_completeness = 'realtime_partial' "
+            "  AND COALESCE(m.spend_usd, 0) > 0 "
+            "  AND m.business_date BETWEEN %s AND %s "
+            f"  AND ({match_sql}) "
+            f"{rt_country_clause}"
+        )
+        try:
+            realtime_rows = query_fn(
+                rt_sql,
+                [product_id, date_from.isoformat(), date_to.isoformat(), *match_args, *rt_country_args],
+            )
+            for r in realtime_rows:
+                r["metric_source"] = "realtime"
+        except Exception:
+            log.exception("Failed to query realtime ad metrics for detail product_id=%s", product_id)
+
+    # Merge and deduplicate by (ad_account_id, ad_name, activity_date)
+    # Realtime rows take precedence
+    merged = {}
+    for r in daily_rows:
+        act_date = str(r.get("activity_date") or "")
+        key = (r.get("ad_account_id"), r.get("ad_name"), act_date)
+        merged[key] = r
+
+    for r in realtime_rows:
+        act_date = str(r.get("activity_date") or "")
+        key = (r.get("ad_account_id"), r.get("ad_name"), act_date)
+        merged[key] = r
+
+    rows = list(merged.values())
+
+    from functools import cmp_to_key
+    def compare_rows(a, b):
+        mca = (a.get("market_country") or "").upper()
+        mcb = (b.get("market_country") or "").upper()
+        if mca != mcb:
+            return -1 if mca < mcb else 1
+
+        ada = str(a.get("activity_date") or "")
+        adb = str(b.get("activity_date") or "")
+        if ada != adb:
+            return 1 if ada < adb else -1
+
+        sa = float(a.get("spend_usd") or 0.0)
+        sb = float(b.get("spend_usd") or 0.0)
+        if sa != sb:
+            return 1 if sa < sb else -1
+
+        ida = a.get("id") or 0
+        idb = b.get("id") or 0
+        if ida != idb:
+            return 1 if ida < idb else -1
+        return 0
+
+    rows.sort(key=cmp_to_key(compare_rows))
+    return rows[:500]
 
 
 def _build_ad_detail_result(
@@ -1246,7 +1449,7 @@ def _build_ad_detail_result(
     total_purchase = 0.0
     total_results = 0
     for row in rows:
-        metric_id = f"daily:{row.get('id')}"
+        metric_id = f"{row.get('metric_source', 'daily')}:{row.get('id')}"
         if metric_id in seen_metric_ids:
             continue
         seen_metric_ids.add(metric_id)

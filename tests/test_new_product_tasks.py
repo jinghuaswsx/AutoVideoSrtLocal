@@ -192,3 +192,77 @@ def test_create_from_upload_import_only_when_countries_empty(monkeypatch):
     assert captured_item["product_id"] == 88
     assert captured_item["owner_id"] == 9
 
+
+def test_create_english_item_from_upload_extracts_thumbnail(monkeypatch, tmp_path):
+    import os
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    dummy_video_path = tmp_path / "dummy_video.mp4"
+    dummy_video_path.write_bytes(b"dummy video content")
+
+    import config
+    monkeypatch.setattr(config, "OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setattr(
+        new_product_tasks.local_media_storage,
+        "write_stream",
+        lambda key, stream: Path(dummy_video_path),
+    )
+    monkeypatch.setattr(
+        new_product_tasks,
+        "get_media_duration",
+        lambda p: 15.5,
+    )
+
+    created_item_args = {}
+    def fake_create_item(**kwargs):
+        created_item_args.update(kwargs)
+        return 999
+    monkeypatch.setattr(new_product_tasks.medias, "create_item", fake_create_item)
+
+    extract_calls = []
+    def fake_extract_thumbnail(video_path, output_dir, scale=None):
+        extract_calls.append((video_path, output_dir, scale))
+        t_path = os.path.join(output_dir, "thumbnail.jpg")
+        with open(t_path, "wb") as f:
+            f.write(b"dummy thumb content")
+        return t_path
+
+    import pipeline.ffutil
+    monkeypatch.setattr(pipeline.ffutil, "extract_thumbnail", fake_extract_thumbnail)
+
+    metadata_calls = []
+    def fake_update_metadata(item_id, relative_path, duration):
+        metadata_calls.append((item_id, relative_path, duration))
+    monkeypatch.setattr(new_product_tasks.medias, "update_item_thumbnail_metadata", fake_update_metadata)
+
+    dummy_file = SimpleNamespace(filename="test_video.mp4", stream=None)
+    item_id = new_product_tasks._create_english_item_from_upload(
+        product_id=88,
+        owner_id=9,
+        product_name="Test Prod",
+        video_file=dummy_file,
+        original_filename="test_video.mp4",
+    )
+
+    assert item_id == 999
+    assert created_item_args["product_id"] == 88
+    assert created_item_args["user_id"] == 9
+    assert created_item_args["thumbnail_path"] == ""
+    assert created_item_args["duration_seconds"] == 15.5
+
+    assert len(extract_calls) == 1
+    assert extract_calls[0][0] == str(dummy_video_path)
+    expected_thumb_dir = os.path.join(str(tmp_path / "output"), "media_thumbs", "88")
+    assert extract_calls[0][1] == expected_thumb_dir
+    assert extract_calls[0][2] == "360:-1"
+
+    expected_final_thumb = os.path.join(expected_thumb_dir, "999.jpg")
+    assert os.path.exists(expected_final_thumb)
+
+    assert len(metadata_calls) == 1
+    assert metadata_calls[0][0] == 999
+    assert metadata_calls[0][1] == "media_thumbs/88/999.jpg"
+    assert metadata_calls[0][2] == 15.5
+
+

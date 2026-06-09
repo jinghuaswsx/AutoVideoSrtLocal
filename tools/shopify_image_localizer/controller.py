@@ -95,6 +95,7 @@ def _build_batch_args(
         skip_carousel=False,
         skip_detail=False,
         skip_existing_carousel=False,
+        force_existing_carousel=False,
         source_index_map="",
         replace_shopify_cdn=True,
         no_preserve_detail_size=False,

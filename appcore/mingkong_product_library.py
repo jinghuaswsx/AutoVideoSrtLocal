@@ -1,0 +1,659 @@
+"""Local Mingkong product library persistence and lookup helpers."""
+
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime, timezone
+from typing import Any
+
+from appcore.db import execute, query, query_one
+
+
+SYNC_TASK_CODE = "mingkong_product_library_sync"
+DEFAULT_DXM02_CDP_URL = "http://127.0.0.1:9223"
+
+
+def normalize_product_code(value: Any) -> str:
+    text = str(value or "").strip().strip("/")
+    if not text:
+        return ""
+    text = re.sub(r"https?://[^/]+/products/", "", text).strip("/")
+    if text.endswith("-rjc"):
+        text = text[:-4]
+    return text
+
+
+def normalize_1688_offer_id(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"offer/(\d+)", text)
+    if match:
+        return match.group(1)
+    return text if text.isdigit() else ""
+
+
+def product_code_from_handle(handle: Any) -> str:
+    return normalize_product_code(handle)
+
+
+def parse_dxm_millis(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    if number <= 0:
+        return None
+    seconds = number / 1000 if number > 10_000_000_000 else number
+    return datetime.fromtimestamp(seconds, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def normalize_image_url(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("//"):
+        return f"https:{text}"
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    if text.startswith("/productimage/"):
+        return f"http://productimage-1251220924.picgz.myqcloud.com{text}"
+    return text
+
+
+def purchase_url_from_pairing(row: dict[str, Any]) -> str:
+    source_url = str(row.get("sourceUrl") or "").strip()
+    offer_id = normalize_1688_offer_id(
+        row.get("alibabaProductId") or row.get("productIdAlibaba") or source_url
+    )
+    if offer_id:
+        return f"https://detail.1688.com/offer/{offer_id}.html"
+    return source_url
+
+
+def _json_dump(value: Any) -> str:
+    return json.dumps(value or {}, ensure_ascii=False)
+
+
+def start_sync_run(*, window_start: str | None = None, window_end: str | None = None) -> int:
+    return int(execute(
+        """
+        INSERT INTO mingkong_product_library_sync_runs
+          (status, started_at, window_start, window_end)
+        VALUES ('running', NOW(), %s, %s)
+        """,
+        (window_start, window_end),
+    ))
+
+
+def finish_sync_run(
+    run_id: int,
+    *,
+    status: str,
+    summary: dict[str, Any] | None = None,
+    error_message: str | None = None,
+) -> None:
+    summary = summary or {}
+    execute(
+        """
+        UPDATE mingkong_product_library_sync_runs
+        SET status=%s,
+            finished_at=NOW(),
+            products_seen=%s,
+            variants_seen=%s,
+            erp_skus_seen=%s,
+            procurement_links_seen=%s,
+            combo_components_seen=%s,
+            summary_json=%s,
+            error_message=%s
+        WHERE id=%s
+        """,
+        (
+            status,
+            int(summary.get("products_seen") or 0),
+            int(summary.get("variants_seen") or 0),
+            int(summary.get("erp_skus_seen") or 0),
+            int(summary.get("procurement_links_seen") or 0),
+            int(summary.get("combo_components_seen") or 0),
+            _json_dump(summary),
+            error_message,
+            int(run_id),
+        ),
+    )
+
+
+def _pick_product_image(row: dict[str, Any]) -> str:
+    for key in ("imgUrl", "imageUrl", "mainImage", "mainImg", "productImage"):
+        image = normalize_image_url(row.get(key))
+        if image:
+            return image
+    for variant in row.get("variants") or []:
+        if isinstance(variant, dict):
+            image = normalize_image_url(variant.get("imgUrl") or variant.get("imageUrl"))
+            if image:
+                return image
+    return ""
+
+
+def product_payload_from_shopify_row(row: dict[str, Any]) -> dict[str, Any]:
+    shopify_product_id = str(row.get("shopifyProductId") or "").strip()
+    handle = str(row.get("handle") or "").strip()
+    return {
+        "product_code": product_code_from_handle(handle),
+        "mk_shopify_product_id": shopify_product_id,
+        "mk_shop_id": str(row.get("shopId") or "").strip(),
+        "mk_handle": handle,
+        "mk_product_url": f"/products/{handle}" if handle else "",
+        "mk_title": str(row.get("title") or "").strip(),
+        "mk_title_cn": str(row.get("titleCn") or row.get("nameCn") or "").strip(),
+        "mk_main_image_url": _pick_product_image(row),
+        "source_url": str(row.get("sourceUrl") or "").strip(),
+        "shopify_created_at": parse_dxm_millis(row.get("shopiyfCreateTime")),
+        "shopify_updated_at": parse_dxm_millis(row.get("shopiyfUpdateTime")),
+        "raw_json": row,
+    }
+
+
+def upsert_product(row: dict[str, Any]) -> int:
+    payload = product_payload_from_shopify_row(row)
+    if not payload["mk_shopify_product_id"]:
+        raise ValueError("missing mk_shopify_product_id")
+    execute(
+        """
+        INSERT INTO mingkong_products
+          (product_code, mk_shopify_product_id, mk_shop_id, mk_handle, mk_product_url,
+           mk_title, mk_title_cn, mk_main_image_url, source_url, shopify_created_at,
+           shopify_updated_at, first_seen_at, last_seen_at, last_synced_at, raw_json)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),NOW(),NOW(),%s)
+        ON DUPLICATE KEY UPDATE
+          product_code=VALUES(product_code),
+          mk_shop_id=VALUES(mk_shop_id),
+          mk_handle=VALUES(mk_handle),
+          mk_product_url=VALUES(mk_product_url),
+          mk_title=VALUES(mk_title),
+          mk_title_cn=VALUES(mk_title_cn),
+          mk_main_image_url=VALUES(mk_main_image_url),
+          source_url=VALUES(source_url),
+          shopify_created_at=VALUES(shopify_created_at),
+          shopify_updated_at=VALUES(shopify_updated_at),
+          last_seen_at=NOW(),
+          last_synced_at=NOW(),
+          raw_json=VALUES(raw_json)
+        """,
+        (
+            payload["product_code"],
+            payload["mk_shopify_product_id"],
+            payload["mk_shop_id"],
+            payload["mk_handle"],
+            payload["mk_product_url"],
+            payload["mk_title"],
+            payload["mk_title_cn"],
+            payload["mk_main_image_url"],
+            payload["source_url"],
+            payload["shopify_created_at"],
+            payload["shopify_updated_at"],
+            _json_dump(payload["raw_json"]),
+        ),
+    )
+    found = query_one(
+        "SELECT id FROM mingkong_products WHERE mk_shopify_product_id=%s",
+        (payload["mk_shopify_product_id"],),
+    )
+    if not found:
+        raise RuntimeError("failed to reload mingkong product")
+    return int(found["id"])
+
+
+def variant_payloads_from_shopify_row(product_row: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    shopify_product_id = str(product_row.get("shopifyProductId") or "").strip()
+    for variant in product_row.get("variants") or []:
+        if not isinstance(variant, dict):
+            continue
+        variant_id = str(variant.get("shopifyVariantId") or variant.get("id") or "").strip()
+        if not variant_id:
+            continue
+        sku = str(variant.get("sku") or "").strip()
+        option_parts: list[str] = []
+        for key in ("option1", "option2", "option3"):
+            text = str(variant.get(key) or "").strip()
+            if text:
+                option_parts.append(text)
+        out.append({
+            "mk_shopify_product_id": shopify_product_id,
+            "mk_shopify_variant_id": variant_id,
+            "variant_title": " / ".join(option_parts) if option_parts else str(variant.get("title") or "").strip(),
+            "shopify_sku": sku,
+            "pair_key": sku or variant_id,
+            "shopify_price": variant.get("price"),
+            "shopify_compare_at_price": variant.get("compareAtPrice"),
+            "shopify_inventory_quantity": variant.get("inventoryQuantity"),
+            "shopify_weight_grams": variant.get("weight"),
+            "raw_json": variant,
+        })
+    return out
+
+
+def erp_payload_from_dxm_item(item: dict[str, Any]) -> dict[str, Any]:
+    sku = str(item.get("sku") or "").strip()
+    return {
+        "dxm_product_id": str(item.get("id") or "").strip(),
+        "dxm_parent_id": str(item.get("parentId") or "").strip(),
+        "dxm_sku": sku,
+        "dxm_sku_code": str(item.get("skuCode") or "").strip(),
+        "dxm_product_sku": str(item.get("productSku") or item.get("goodsSku") or sku).strip(),
+        "dxm_name": str(item.get("name") or "").strip(),
+        "dxm_name_en": str(item.get("nameEn") or "").strip(),
+        "dxm_img_url": normalize_image_url(item.get("imgUrl")),
+        "dxm_source_url": str(item.get("sourceUrl") or "").strip(),
+        "relation_flag": 1 if item.get("relationFlag") else 0,
+        "group_state": int(item.get("groupState") or 0),
+        "is_combo": 1 if int(item.get("groupState") or 0) == 1 else 0,
+    }
+
+
+def upsert_variant(
+    *,
+    mingkong_product_id: int,
+    variant: dict[str, Any],
+    erp_index: dict[str, dict[str, Any]],
+) -> int:
+    pair_key = str(variant.get("pair_key") or "").strip()
+    erp = erp_index.get(pair_key) or {}
+    payload = {**variant, **erp}
+    execute(
+        """
+        INSERT INTO mingkong_product_variants
+          (mingkong_product_id, mk_shopify_product_id, mk_shopify_variant_id,
+           variant_title, shopify_sku, pair_key, shopify_price, shopify_compare_at_price,
+           shopify_inventory_quantity, shopify_weight_grams, dxm_product_id, dxm_parent_id,
+           dxm_sku, dxm_sku_code, dxm_product_sku, dxm_name, dxm_name_en, dxm_img_url,
+           dxm_source_url, relation_flag, group_state, is_combo, raw_json, last_synced_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+        ON DUPLICATE KEY UPDATE
+          mingkong_product_id=VALUES(mingkong_product_id),
+          mk_shopify_product_id=VALUES(mk_shopify_product_id),
+          variant_title=VALUES(variant_title),
+          shopify_sku=VALUES(shopify_sku),
+          pair_key=VALUES(pair_key),
+          shopify_price=VALUES(shopify_price),
+          shopify_compare_at_price=VALUES(shopify_compare_at_price),
+          shopify_inventory_quantity=VALUES(shopify_inventory_quantity),
+          shopify_weight_grams=VALUES(shopify_weight_grams),
+          dxm_product_id=VALUES(dxm_product_id),
+          dxm_parent_id=VALUES(dxm_parent_id),
+          dxm_sku=VALUES(dxm_sku),
+          dxm_sku_code=VALUES(dxm_sku_code),
+          dxm_product_sku=VALUES(dxm_product_sku),
+          dxm_name=VALUES(dxm_name),
+          dxm_name_en=VALUES(dxm_name_en),
+          dxm_img_url=VALUES(dxm_img_url),
+          dxm_source_url=VALUES(dxm_source_url),
+          relation_flag=VALUES(relation_flag),
+          group_state=VALUES(group_state),
+          is_combo=VALUES(is_combo),
+          raw_json=VALUES(raw_json),
+          last_synced_at=NOW()
+        """,
+        (
+            int(mingkong_product_id),
+            payload.get("mk_shopify_product_id"),
+            payload.get("mk_shopify_variant_id"),
+            payload.get("variant_title") or None,
+            payload.get("shopify_sku") or None,
+            payload.get("pair_key") or None,
+            payload.get("shopify_price"),
+            payload.get("shopify_compare_at_price"),
+            payload.get("shopify_inventory_quantity"),
+            payload.get("shopify_weight_grams"),
+            payload.get("dxm_product_id") or None,
+            payload.get("dxm_parent_id") or None,
+            payload.get("dxm_sku") or None,
+            payload.get("dxm_sku_code") or None,
+            payload.get("dxm_product_sku") or None,
+            payload.get("dxm_name") or None,
+            payload.get("dxm_name_en") or None,
+            payload.get("dxm_img_url") or None,
+            payload.get("dxm_source_url") or None,
+            int(payload.get("relation_flag") or 0),
+            int(payload.get("group_state") or 0),
+            int(payload.get("is_combo") or 0),
+            _json_dump(payload.get("raw_json")),
+        ),
+    )
+    found = query_one(
+        "SELECT id FROM mingkong_product_variants WHERE mk_shopify_variant_id=%s",
+        (payload.get("mk_shopify_variant_id"),),
+    )
+    if not found:
+        raise RuntimeError("failed to reload mingkong variant")
+    return int(found["id"])
+
+
+def normalize_pairing_row(row: dict[str, Any]) -> dict[str, Any]:
+    alibaba_product_id = str(
+        row.get("alibabaProductId") or row.get("productIdAlibaba") or ""
+    ).strip() or normalize_1688_offer_id(row.get("sourceUrl"))
+    return {
+        "pairing_row_id": str(row.get("id") or "").strip(),
+        "sku": str(row.get("sku") or "").strip(),
+        "sku_code": str(row.get("skuCode") or "").strip(),
+        "dxm_product_id": str(row.get("productId") or "").strip(),
+        "dxm_name": str(row.get("name") or "").strip(),
+        "purchase_1688_url": purchase_url_from_pairing(row),
+        "source_url": str(row.get("sourceUrl") or "").strip(),
+        "alibaba_product_id": alibaba_product_id,
+        "sku_id_alibaba": str(row.get("skuIdAlibaba") or "").strip(),
+        "supplier_id": str(row.get("supplierId") or "").strip(),
+        "supplier_name": str(row.get("supplierName") or "").strip(),
+        "pairing_state": int(row.get("state")) if str(row.get("state") or "").lstrip("-").isdigit() else None,
+        "raw_json": row,
+    }
+
+
+def upsert_procurement_link(
+    row: dict[str, Any],
+    *,
+    variant_id_by_sku: dict[str, int] | None = None,
+) -> None:
+    payload = normalize_pairing_row(row)
+    if not payload["pairing_row_id"] or not payload["sku"]:
+        return
+    variant_id = (variant_id_by_sku or {}).get(payload["sku"])
+    execute(
+        """
+        INSERT INTO mingkong_procurement_links
+          (mingkong_variant_id, pairing_row_id, sku, sku_code, dxm_product_id, dxm_name,
+           purchase_1688_url, source_url, alibaba_product_id, sku_id_alibaba, supplier_id,
+           supplier_name, pairing_state, confidence, raw_json, last_synced_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'exact_sku',%s,NOW())
+        ON DUPLICATE KEY UPDATE
+          mingkong_variant_id=VALUES(mingkong_variant_id),
+          sku=VALUES(sku),
+          sku_code=VALUES(sku_code),
+          dxm_product_id=VALUES(dxm_product_id),
+          dxm_name=VALUES(dxm_name),
+          purchase_1688_url=VALUES(purchase_1688_url),
+          source_url=VALUES(source_url),
+          alibaba_product_id=VALUES(alibaba_product_id),
+          sku_id_alibaba=VALUES(sku_id_alibaba),
+          supplier_id=VALUES(supplier_id),
+          supplier_name=VALUES(supplier_name),
+          pairing_state=VALUES(pairing_state),
+          raw_json=VALUES(raw_json),
+          last_synced_at=NOW()
+        """,
+        (
+            variant_id,
+            payload["pairing_row_id"],
+            payload["sku"],
+            payload["sku_code"] or None,
+            payload["dxm_product_id"] or None,
+            payload["dxm_name"] or None,
+            payload["purchase_1688_url"] or None,
+            payload["source_url"] or None,
+            payload["alibaba_product_id"] or None,
+            payload["sku_id_alibaba"] or None,
+            payload["supplier_id"] or None,
+            payload["supplier_name"] or None,
+            payload["pairing_state"],
+            _json_dump(payload["raw_json"]),
+        ),
+    )
+
+
+def upsert_combo_component(
+    row: dict[str, Any],
+    *,
+    mingkong_variant_id: int | None,
+    combo_dxm_product_id: str,
+    combo_dxm_sku: str,
+) -> None:
+    component_product_id = str(row.get("productId") or row.get("id") or "").strip()
+    component_sku = str(row.get("sku") or "").strip()
+    if not combo_dxm_product_id or not component_product_id or not component_sku:
+        return
+    execute(
+        """
+        INSERT INTO mingkong_combo_components
+          (mingkong_variant_id, combo_dxm_product_id, combo_dxm_sku,
+           component_dxm_product_id, component_sku, component_name,
+           component_img_url, component_quantity, raw_json, last_synced_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
+        ON DUPLICATE KEY UPDATE
+          mingkong_variant_id=VALUES(mingkong_variant_id),
+          combo_dxm_sku=VALUES(combo_dxm_sku),
+          component_sku=VALUES(component_sku),
+          component_name=VALUES(component_name),
+          component_img_url=VALUES(component_img_url),
+          component_quantity=VALUES(component_quantity),
+          raw_json=VALUES(raw_json),
+          last_synced_at=NOW()
+        """,
+        (
+            mingkong_variant_id,
+            combo_dxm_product_id,
+            combo_dxm_sku,
+            component_product_id,
+            component_sku,
+            str(row.get("name") or "").strip() or None,
+            normalize_image_url(row.get("imgUrl")) or None,
+            int(row.get("num") or row.get("groupNum") or 0),
+            _json_dump(row),
+        ),
+    )
+
+
+def _candidate_shopify_ids(product: dict[str, Any]) -> set[str]:
+    out = {str(product.get("shopifyid") or "").strip()}
+    base_code = normalize_product_code(product.get("product_code"))
+    link = str(product.get("product_link") or "").strip()
+    if base_code:
+        for row in query(
+            """
+            SELECT shopify_product_id
+            FROM mingkong_material_products
+            WHERE product_code=%s
+               OR mk_product_link=%s
+            ORDER BY id DESC
+            LIMIT 20
+            """,
+            (base_code, link),
+        ):
+            out.add(str(row.get("shopify_product_id") or "").strip())
+        for row in query(
+            """
+            SELECT product_id
+            FROM dianxiaomi_product_assets
+            WHERE product_code=%s OR product_url=%s
+            ORDER BY id DESC
+            LIMIT 20
+            """,
+            (base_code, link),
+        ):
+            out.add(str(row.get("product_id") or "").strip())
+    return {value for value in out if value}
+
+
+def list_library_candidates_for_product(product: dict[str, Any], *, limit: int = 10) -> list[dict[str, Any]]:
+    base_code = normalize_product_code(product.get("product_code"))
+    shopify_ids = _candidate_shopify_ids(product)
+    clauses: list[str] = []
+    args: list[Any] = []
+    if base_code:
+        clauses.append("p.product_code=%s")
+        args.append(base_code)
+        clauses.append("p.mk_handle=%s")
+        args.append(base_code)
+    if shopify_ids:
+        placeholders = ",".join(["%s"] * len(shopify_ids))
+        clauses.append(f"p.mk_shopify_product_id IN ({placeholders})")
+        args.extend(sorted(shopify_ids))
+    if not clauses:
+        return []
+    shopify_order_expr = "1"
+    order_args: list[Any] = []
+    if shopify_ids:
+        shopify_order_placeholders = ",".join(["%s"] * len(shopify_ids))
+        shopify_order_expr = f"CASE WHEN p.mk_shopify_product_id IN ({shopify_order_placeholders}) THEN 0 ELSE 1 END"
+        order_args.extend(sorted(shopify_ids))
+    rows = query(
+        f"""
+        SELECT
+          p.*,
+          COALESCE(stats.procurement_count, 0) AS procurement_count,
+          COALESCE(stats.relation_count, 0) AS relation_count,
+          COALESCE(stats.combo_count, 0) AS combo_count
+        FROM mingkong_products p
+        LEFT JOIN (
+          SELECT
+            v.mingkong_product_id,
+            COUNT(DISTINCT l.id) AS procurement_count,
+            SUM(CASE WHEN v.relation_flag = 1 THEN 1 ELSE 0 END) AS relation_count,
+            SUM(CASE WHEN v.is_combo = 1 THEN 1 ELSE 0 END) AS combo_count
+          FROM mingkong_product_variants v
+          LEFT JOIN mingkong_procurement_links l ON l.mingkong_variant_id = v.id
+          GROUP BY v.mingkong_product_id
+        ) stats ON stats.mingkong_product_id = p.id
+        WHERE {" OR ".join(clauses)}
+        ORDER BY
+          {shopify_order_expr},
+          COALESCE(stats.procurement_count, 0) DESC,
+          COALESCE(stats.relation_count, 0) DESC,
+          COALESCE(stats.combo_count, 0) DESC,
+          p.shopify_created_at DESC,
+          p.id DESC
+        LIMIT %s
+        """,
+        tuple(args + order_args + [int(limit)]),
+    )
+    return [dict(row) for row in rows]
+
+
+def _procurement_for_skus(skus: list[str]) -> dict[str, dict[str, Any]]:
+    clean = [sku for sku in {str(s or "").strip() for s in skus} if sku]
+    if not clean:
+        return {}
+    placeholders = ",".join(["%s"] * len(clean))
+    rows = query(
+        f"""
+        SELECT *
+        FROM mingkong_procurement_links
+        WHERE sku IN ({placeholders})
+        ORDER BY pairing_state DESC, id DESC
+        """,
+        tuple(clean),
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        sku = str(row.get("sku") or "").strip()
+        out.setdefault(sku, dict(row))
+    return out
+
+
+def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = list_library_candidates_for_product(product, limit=10)
+    if not candidates:
+        return []
+    shopify_ids = _candidate_shopify_ids(product)
+    strong_candidates = [
+        row for row in candidates
+        if str(row.get("mk_shopify_product_id") or "").strip() in shopify_ids
+        or int(row.get("procurement_count") or 0) > 0
+        or int(row.get("relation_count") or 0) > 0
+        or int(row.get("combo_count") or 0) > 0
+    ]
+    product_ids = [int(row["id"]) for row in (strong_candidates or candidates)]
+    placeholders = ",".join(["%s"] * len(product_ids))
+    variants = query(
+        f"""
+        SELECT v.*, p.product_code, p.mk_title, p.mk_main_image_url
+        FROM mingkong_product_variants v
+        JOIN mingkong_products p ON p.id = v.mingkong_product_id
+        WHERE v.mingkong_product_id IN ({placeholders})
+        ORDER BY FIELD(v.mingkong_product_id, {placeholders}), v.id
+        """,
+        tuple(product_ids + product_ids),
+    )
+    skus = [
+        str(row.get("dxm_sku") or row.get("pair_key") or "").strip()
+        for row in variants
+    ]
+    procurement = _procurement_for_skus(skus)
+    combo_rows = query(
+        f"""
+        SELECT c.*
+        FROM mingkong_combo_components c
+        JOIN mingkong_product_variants v ON v.id = c.mingkong_variant_id
+        WHERE v.mingkong_product_id IN ({placeholders})
+        ORDER BY c.id
+        """,
+        tuple(product_ids),
+    )
+    components_by_variant: dict[int, list[dict[str, Any]]] = {}
+    component_procurement = _procurement_for_skus([
+        str(row.get("component_sku") or "").strip()
+        for row in combo_rows
+    ])
+    for component in combo_rows:
+        item = dict(component)
+        item["pairing"] = component_procurement.get(str(item.get("component_sku") or "").strip())
+        components_by_variant.setdefault(int(item["mingkong_variant_id"]), []).append(item)
+
+    out: list[dict[str, Any]] = []
+    for row in variants:
+        item = dict(row)
+        sku = str(item.get("dxm_sku") or item.get("pair_key") or "").strip()
+        proc = procurement.get(sku)
+        out.append({
+            "shopify_product_id": item.get("mk_shopify_product_id") or "",
+            "shopify_variant_id": item.get("mk_shopify_variant_id") or "",
+            "shopify_sku": item.get("shopify_sku") or "",
+            "shopify_variant_title": item.get("variant_title") or "",
+            "dianxiaomi_sku": sku,
+            "dianxiaomi_product_sku": item.get("dxm_product_sku") or "",
+            "dianxiaomi_sku_code": item.get("dxm_sku_code") or "",
+            "dianxiaomi_name": item.get("dxm_name") or item.get("mk_title") or "",
+            "source": "mingkong_library",
+            "image_url": item.get("dxm_img_url") or item.get("mk_main_image_url") or "",
+            "purchase_1688_url": (proc or {}).get("purchase_1688_url") or "",
+            "mingkong_product_id": item.get("mingkong_product_id"),
+            "mingkong_variant_id": item.get("id"),
+            "mingkong_procurement": proc or None,
+            "is_combo": bool(item.get("is_combo")),
+            "combo_components": components_by_variant.get(int(item["id"]), []),
+        })
+    return out
+
+
+def refresh_product_from_dxm02(
+    product: dict[str, Any],
+    *,
+    cdp_url: str = DEFAULT_DXM02_CDP_URL,
+    timeout_seconds: int = 60,
+) -> dict[str, Any]:
+    """Targeted DXM02 refresh used as a workbench fallback.
+
+    This intentionally imports the CLI module lazily so normal page rendering
+    does not load Playwright unless the local Mingkong product library misses.
+    """
+    product_code = normalize_product_code(product.get("product_code") or product.get("product_link"))
+    if not product_code:
+        return {"products_seen": 0, "variants_seen": 0, "reason": "missing_product_code"}
+
+    from argparse import Namespace
+    from tools import mingkong_product_library_sync as runner
+
+    args = Namespace(
+        cdp_url=cdp_url,
+        days=0,
+        product_code=product_code,
+        max_pages=5,
+        timeout_seconds=timeout_seconds,
+        lock_timeout=180,
+        include_combo_components=True,
+    )
+    return runner.run_sync(args)

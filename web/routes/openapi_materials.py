@@ -107,7 +107,7 @@ def shopify_localizer_bootstrap():
             is_valid_language_fn=medias.is_valid_language,
             get_product_by_code_fn=medias.get_product_by_code,
             resolve_shopify_product_id_fn=medias.resolve_shopify_product_id,
-            list_reference_images_for_lang_fn=medias.list_reference_images_for_lang,
+            list_reference_images_for_lang_fn=medias.list_shopify_localizer_images,
             get_language_name_fn=medias.get_language_name,
             media_download_url_fn=_media_download_url,
         )

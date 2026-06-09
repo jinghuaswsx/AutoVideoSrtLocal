@@ -6,12 +6,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pipeline.compose import (
+    _calculate_size_adjustment_bitrates,
     _build_subtitle_filter,
     _compose_hard,
     _compose_soft_from_manifest,
     _compute_font_size,
     _compute_margin_v,
+    _encode_video_with_bitrate,
     _get_video_height,
+    adjust_video_size_to_limit,
 )
 
 
@@ -234,6 +237,129 @@ class TestGetVideoHeightReturnsDefaultOnFailure:
             with caplog.at_level(logging.WARNING, logger="pipeline.compose"):
                 _get_video_height("/fake/video.mp4")
         assert "无法解析" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# final video size adjustment
+# ---------------------------------------------------------------------------
+
+def test_calculate_size_adjustment_bitrates_uses_file_size_budget():
+    targets = _calculate_size_adjustment_bitrates(
+        32.5,
+        limit_bytes=100 * 1024 * 1024,
+        safety_ratio=0.96,
+        original_audio_bitrate_bps=192_000,
+    )
+
+    assert targets["target_total_bitrate_bps"] == 24_128_000
+    assert targets["target_audio_bitrate_bps"] == 128_000
+    assert targets["target_video_bitrate_bps"] == 24_000_000
+
+
+def test_calculate_size_adjustment_bitrates_snaps_video_to_1000_kbps_steps():
+    targets = _calculate_size_adjustment_bitrates(
+        10.0,
+        original_audio_bitrate_bps=128_000,
+        target_total_bitrate_bps=5_900_000,
+    )
+
+    assert targets["target_video_bitrate_bps"] == 5_000_000
+    assert targets["target_audio_bitrate_bps"] == 128_000
+    assert targets["target_total_bitrate_bps"] == 5_128_000
+
+
+def test_encode_video_with_bitrate_uses_required_ffmpeg_flags(monkeypatch):
+    captured = {}
+
+    def fake_run_ffmpeg(cmd, error_prefix):
+        captured["cmd"] = cmd
+        captured["error_prefix"] = error_prefix
+
+    monkeypatch.setattr("pipeline.compose._run_ffmpeg", fake_run_ffmpeg)
+
+    _encode_video_with_bitrate(
+        "/tmp/in.mp4",
+        "/tmp/out.mp4",
+        target_video_bitrate_bps=800_999,
+        target_audio_bitrate_bps=128_000,
+    )
+
+    cmd = captured["cmd"]
+    assert captured["error_prefix"] == "视频大小调整失败"
+    assert cmd[cmd.index("-c:v") + 1] == "libx264"
+    assert cmd[cmd.index("-preset") + 1] == "slow"
+    assert cmd[cmd.index("-b:v") + 1] == "800k"
+    assert cmd[cmd.index("-maxrate") + 1] == "800k"
+    assert cmd[cmd.index("-bufsize") + 1] == "1600k"
+    assert cmd[cmd.index("-c:a") + 1] == "aac"
+    assert cmd[cmd.index("-b:a") + 1] == "128k"
+    assert cmd[-1] == "/tmp/out.mp4"
+
+
+def test_adjust_video_size_to_limit_skips_when_under_limit(monkeypatch, tmp_path):
+    video_path = tmp_path / "hard.mp4"
+    video_path.write_bytes(b"small")
+    monkeypatch.setattr(
+        "pipeline.compose._probe_media_info_or_empty",
+        lambda path: {
+            "duration_seconds": 10.0,
+            "format_bitrate_bps": 400_000,
+            "video_bitrate_bps": 272_000,
+            "audio_bitrate_bps": 128_000,
+        },
+    )
+    monkeypatch.setattr(
+        "pipeline.compose._encode_video_with_bitrate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not re-encode small files")),
+    )
+
+    summary = adjust_video_size_to_limit(str(video_path), limit_bytes=100)
+
+    assert summary["status"] == "skipped"
+    assert summary["output_path"] == str(video_path)
+    assert summary["input_size_bytes"] == len(b"small")
+    assert summary["attempts"] == []
+
+
+def test_adjust_video_size_to_limit_reencodes_when_over_limit(monkeypatch, tmp_path):
+    video_path = tmp_path / "hard.mp4"
+    video_path.write_bytes(b"oversized")
+    output_sizes = {str(video_path): 2_000_000}
+    captured = {}
+
+    def fake_getsize(path):
+        return output_sizes[str(path)]
+
+    def fake_encode(input_path, output_path, **kwargs):
+        captured.update(kwargs)
+        output_sizes[output_path] = 900_000
+        tmp_path.joinpath("hard_size_adjusted.mp4").write_bytes(b"adjusted")
+
+    monkeypatch.setattr("pipeline.compose.os.path.getsize", fake_getsize)
+    monkeypatch.setattr(
+        "pipeline.compose._probe_media_info_or_empty",
+        lambda path: {
+            "duration_seconds": 10.0,
+            "format_bitrate_bps": 1_600_000,
+            "video_bitrate_bps": 1_408_000,
+            "audio_bitrate_bps": 192_000,
+        },
+    )
+    monkeypatch.setattr("pipeline.compose._encode_video_with_bitrate", fake_encode)
+
+    summary = adjust_video_size_to_limit(str(video_path), limit_bytes=1_000_000)
+
+    assert summary["status"] == "adjusted"
+    assert summary["input_size_bytes"] == 2_000_000
+    assert summary["output_size_bytes"] == 900_000
+    assert summary["output_path"].endswith("_size_adjusted.mp4")
+    assert summary["original_total_bitrate_bps"] == 1_600_000
+    assert summary["target_total_bitrate_bps"] == 768_000
+    assert summary["target_video_bitrate_bps"] == 640_000
+    assert summary["target_audio_bitrate_bps"] == 128_000
+    assert captured["target_video_bitrate_bps"] == summary["target_video_bitrate_bps"]
+    assert "1.60 Mbps (1600 kbps) -> 0.77 Mbps (768 kbps)" in summary["message"]
+    assert "1.41 Mbps (1408 kbps) -> 0.64 Mbps (640 kbps)" in summary["message"]
 
 
 # ---------------------------------------------------------------------------

@@ -67,6 +67,7 @@
     date_from: '',
     date_to: '',
     sort: 'created_at_desc',
+    video_size: '',
   };
   let LANGUAGES = [];
   let OWNERS = [];
@@ -251,6 +252,29 @@
     return formatVideoSizeMb(item && item.file_size);
   }
 
+  function calculateRecommendedBitrate(fileSize, durationSeconds) {
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const PUSH_VIDEO_SUGGESTED_BITRATE = 3000;
+    const size = Number(fileSize || 0);
+    const dur = Number(durationSeconds || 0);
+    if (!dur || dur <= 0) {
+      return PUSH_VIDEO_SUGGESTED_BITRATE;
+    }
+    const targetBytes = 90 * 1024 * 1024;
+    const targetBitrateKbps = (targetBytes * 8) / (dur * 1000.0);
+    let suggestedBitrate = Math.round(targetBitrateKbps / 1000.0) * 1000;
+
+    const expectedSize = (suggestedBitrate * 1000.0 * dur) / 8.0;
+    if (expectedSize > PUSH_VIDEO_MAX_BYTES) {
+      suggestedBitrate -= 1000;
+    }
+
+    if (suggestedBitrate < 1000) {
+      suggestedBitrate = 1000;
+    }
+    return suggestedBitrate;
+  }
+
   function createCopyButton(value, attrName) {
     const btn = el('button', {
       type: 'button',
@@ -338,6 +362,7 @@
     const ownerSel = document.getElementById('f-owner');
     const auditResultSel = document.getElementById('f-audit-result');
     const newProductSel = document.getElementById('f-new-product');
+    const videoSizeSel = document.getElementById('f-video-size');
     const sortSel = document.getElementById('f-sort');
 
     setSelectValue(statusSel, paramValue(params, 'status', DEFAULT_FILTERS.status), DEFAULT_FILTERS.status);
@@ -345,6 +370,7 @@
     setSelectValue(ownerSel, paramValue(params, 'owner_id', DEFAULT_FILTERS.owner_id), DEFAULT_FILTERS.owner_id);
     setSelectValue(auditResultSel, paramValue(params, 'audit_result', DEFAULT_FILTERS.audit_result), DEFAULT_FILTERS.audit_result);
     setSelectValue(newProductSel, paramValue(params, 'new_product', DEFAULT_FILTERS.new_product), DEFAULT_FILTERS.new_product);
+    setSelectValue(videoSizeSel, paramValue(params, 'video_size', DEFAULT_FILTERS.video_size), DEFAULT_FILTERS.video_size);
     setSelectValue(sortSel, normalizeSort(paramValue(params, 'sort', DEFAULT_FILTERS.sort)), DEFAULT_FILTERS.sort);
     document.getElementById('f-keyword').value = paramValue(params, 'keyword', DEFAULT_FILTERS.keyword);
     document.getElementById('f-date-from').value = paramValue(params, 'date_from', DEFAULT_FILTERS.date_from);
@@ -366,6 +392,8 @@
     params.set('audit_result', auditResultSel ? auditResultSel.value : '');
     const newProductSel = document.getElementById('f-new-product');
     params.set('new_product', newProductSel ? newProductSel.value : '');
+    const videoSizeSel = document.getElementById('f-video-size');
+    params.set('video_size', videoSizeSel ? videoSizeSel.value : '');
     const df = document.getElementById('f-date-from').value;
     params.set('date_from', df);
     const dt = document.getElementById('f-date-to').value;
@@ -1307,6 +1335,12 @@
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
     const sizeMbStr = itemVideoSizeText(it);
     const productOwnerName = String(it.product_owner_name || '').trim();
+
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const recommendationHtml = (it.file_size > PUSH_VIDEO_MAX_BYTES)
+      ? `<div class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-top: 2px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</div>`
+      : '';
+
     return `<tr data-id="${escapeAttr(it.id)}">
       <td class="push-thumb-cell">${thumb}</td>
       <td class="push-product-cell">
@@ -1320,6 +1354,7 @@
       <td class="push-item-cell">
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
         <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}</div>
+        ${recommendationHtml}
         <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
       </td>
       <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
@@ -1347,6 +1382,12 @@
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
     const sizeMbStr = itemVideoSizeText(it);
     const productPageUrl = safeExternalHref(it.product_page_url);
+
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const recommendationHtml = (it.file_size > PUSH_VIDEO_MAX_BYTES)
+      ? `<div class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-top: 2px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</div>`
+      : '';
+
     const copyProductNameBtn = it.product_name
       ? `<button type="button" class="product-copy-btn" data-copy-product-name="${escapeAttr(it.product_name)}" title="复制产品中文名" style="margin-left: 6px; display: inline-flex; vertical-align: middle; width: 22px; height: 22px; align-items: center; justify-content: center; flex-shrink: 0;">
            <svg class="icon-copy" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1411,6 +1452,7 @@
           ${copyFilenameBtn}
         </div>
         <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}</div>
+        ${recommendationHtml}
         <div class="item-meta">
           ${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}
         </div>
@@ -1516,9 +1558,21 @@
     document.getElementById('btn-apply').addEventListener('click', () => {
       state.page = 1; load();
     });
-    document.getElementById('f-sort').addEventListener('change', () => {
-      state.page = 1; load();
+
+    const instantTriggerIds = [
+      'f-status', 'f-lang', 'f-owner', 'f-audit-result',
+      'f-new-product', 'f-video-size', 'f-sort', 'f-date-from', 'f-date-to'
+    ];
+    instantTriggerIds.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) {
+        element.addEventListener('change', () => {
+          state.page = 1;
+          load();
+        });
+      }
     });
+
     let keywordTimeout = null;
     const keywordInput = document.getElementById('f-keyword');
     if (keywordInput) {
@@ -1529,14 +1583,18 @@
           load();
         }, 500);
       });
-      keywordInput.addEventListener('keydown', (e) => {
+    }
+
+    document.querySelectorAll('.push-toolbar select, .push-toolbar input').forEach(el => {
+      el.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           if (keywordTimeout) clearTimeout(keywordTimeout);
           state.page = 1;
           load();
         }
       });
-    }
+    });
+
     document.getElementById('btn-reset').addEventListener('click', () => {
       document.querySelectorAll('.push-toolbar input').forEach(i => (i.value = ''));
       document.getElementById('f-status').value = 'pending';
@@ -1544,6 +1602,8 @@
       document.getElementById('f-owner').value = '';
       document.getElementById('f-audit-result').value = '';
       document.getElementById('f-new-product').value = '';
+      const videoSize = document.getElementById('f-video-size');
+      if (videoSize) videoSize.value = '';
       document.getElementById('f-sort').value = 'created_at_desc';
       state.page = 1; load();
     });

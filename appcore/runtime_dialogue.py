@@ -209,6 +209,7 @@ class DialogueTranslateRunner(OmniV2TranslateRunner):
             "loudness_match": lambda: self._step_loudness_match(task_id, task_dir),
             "subtitle": lambda: self.profile.subtitle(self, task_id, task_dir),
             "compose": lambda: self._step_compose(task_id, video_path, task_dir),
+            "video_size_adjustment": lambda: self._step_video_size_adjustment(task_id, video_path, task_dir),
             "analysis": lambda: self._step_analysis(task_id),
             "export": lambda: self._step_export(task_id, video_path, task_dir),
         }

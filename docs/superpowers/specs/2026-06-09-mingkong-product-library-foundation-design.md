@@ -4,7 +4,7 @@
 
 ## 背景
 
-新上产品如果来自明空，最可靠的配对路径不应该从单品页面临时反查，而应该先沉淀一套本地“明空产品库”。该库每天同步明空店小秘最近 30 天商品，并补齐商品链接、产品 code、Shopify variants、店小秘 SKU、1688 采购链接、供应商等采购侧信息。后续新品 SKU 工作台只读本地库做匹配，人工确认后再写入本地产品和 DXM03 店小秘。
+新上产品如果来自明空，最可靠的配对路径不应该从单品页面临时反查，而应该先沉淀一套本地“明空产品库”。该库每周同步明空店小秘全量 Shopify 在线商品，并补齐商品链接、产品 code、Shopify variants、店小秘 SKU、1688 采购链接、供应商等采购侧信息。后续新品 SKU 工作台先读本地库做匹配；本地库没有命中时，再实时访问 DXM02-MK 明空店小秘后台按当前产品补采并回写本地库，随后重新读取本地结果，人工确认后再写入本地产品和 DXM03 店小秘。
 
 ## 事实来源
 
@@ -17,10 +17,10 @@
 
 ## 目标
 
-1. 新增本地“明空产品库”数据模型，保存明空最近 30 天商品、产品链接、产品 code、Shopify 商品/variant、SKU、1688 采购链接、供应商、采购配对状态。
-2. 新增每天北京时间 04:00 同步任务，从 DXM02-MK 店小秘拉取明空数据。
-3. 同步范围按最近 30 天滚动窗口，首版允许全量覆盖窗口内数据，后续再做增量优化。
-4. 新品 SKU 工作台改为优先查本地明空产品库；只有本地库缺失或用户手动刷新时才访问 DXM02。
+1. 新增本地“明空产品库”数据模型，保存明空全量 Shopify 在线商品、产品链接、产品 code、Shopify 商品/variant、SKU、1688 采购链接、供应商、采购配对状态。
+2. 新增每周北京时间周一 04:00 同步任务，从 DXM02-MK 店小秘拉取明空数据。
+3. 同步范围首版按明空 Shopify 在线商品全量分页同步，后续可在全量基线稳定后增加增量优化。
+4. 新品 SKU 工作台改为优先查本地明空产品库；本地库缺失时按产品 code 实时访问 DXM02 补采并回写，再用本地库结果渲染。
 5. 针对 `adjustable-claw-clippers-rjc`，先用本地明空产品库完成可解释的候选匹配；如果明空侧缺精确采购关系，工作台展示候选与缺口，不自动猜测。
 
 ## 非目标
@@ -42,7 +42,7 @@
 
 首版策略：
 
-- 以 DXM02 店小秘在线商品接口为主，拉最近 30 天商品。
+- 以 DXM02 店小秘在线商品接口为主，全量分页拉取商品。
 - 用 `product_url` 或 handle 解析 `product_code`。
 - 用 `dianxiaomi_product_assets.product_code` 做补充，补齐明空选品页已归档但在线商品接口缺失的字段。
 
@@ -88,7 +88,7 @@
 
 ### `mingkong_products`
 
-滚动窗口内的明空商品主表。
+明空 Shopify 在线商品主表。
 
 - `id`
 - `product_code`：明空商品 code，唯一优先键。
@@ -196,10 +196,10 @@
 
 ## 同步流程
 
-每天 04:00 运行 `mingkong_product_library_sync`：
+每周一 04:00 运行 `mingkong_product_library_sync`：
 
 1. 连接 DXM02-MK CDP `127.0.0.1:9223`。
-2. 拉取最近 30 天 Shopify 在线商品。
+2. 全量分页拉取 Shopify 在线商品。
 3. 从商品链接/handle 解析 product code，并 upsert `mingkong_products`。
 4. 拉取商品管理 ERP SKU 索引，按 variant `pair_key` 合并并 upsert `mingkong_product_variants`。
 5. 拉取 1688 商品配对列表：
@@ -211,6 +211,15 @@
    - 采购链接与供应商优先读取组件 SKU 的 1688 配对；外层组合 SKU 没有配对时不得视为缺失。
 7. 可用时拉仓库/采购价，补充供应商/采购价/库存字段。
 8. 写 `scheduled_task_runs` 与 `mingkong_product_library_sync_runs`。
+
+## 工作台读取顺序
+
+明空配对工作台的读取顺序固定为：
+
+1. 先读取本地 `media_product_skus`；如果已有我们 DXM03 自营 SKU，则沿用现有数据。
+2. 如果本地 SKU 为空，读取本地 `mingkong_products` / `mingkong_product_variants` / `mingkong_procurement_links` / `mingkong_combo_components`。
+3. 如果明空本地库仍然没有命中，按当前产品 code、明空历史素材表、商品链接、Shopify product id 生成搜索词，实时访问 DXM02-MK 店小秘后台补采该产品，写回本地明空产品库。
+4. 补采完成后再次只读本地明空产品库渲染工作台；如果仍无结果，则展示“无明空匹配数据”，不自动猜测。
 
 ## 组合 SKU 接口实测补充
 
@@ -253,6 +262,50 @@ DXM03 写入仍遵守：
 - 必须用户人工确认。
 - 必须 DXM03 自己存在待配对行 `pairProductId`。
 - 明空侧 `pairing_row_id` 不能直接当 DXM03 `pairProductId` 使用。
+
+## 2026-06-09 实施落地
+
+新增本地数据底座：
+
+- 迁移：`db/migrations/2026_06_09_mingkong_product_library.sql`
+- 表：
+  - `mingkong_product_library_sync_runs`
+  - `mingkong_products`
+  - `mingkong_product_variants`
+  - `mingkong_combo_components`
+  - `mingkong_procurement_links`
+- 服务层：`appcore/mingkong_product_library.py`
+- 采集脚本：`tools/mingkong_product_library_sync.py`
+- 定时任务登记：`appcore/scheduled_tasks.py` 的 `mingkong_product_library_sync`
+- systemd：
+  - `deploy/server_browser/autovideosrt-mingkong-product-library-sync.service`
+  - `deploy/server_browser/autovideosrt-mingkong-product-library-sync.timer`
+  - `deploy/server_browser/install_mingkong_product_library_sync_timer.sh`
+
+同步脚本行为：
+
+1. 使用 DXM02-MK CDP `127.0.0.1:9223`。
+2. 默认 `--days 0` 同步全量 Shopify 在线商品；`--days > 0` 仅用于临时缩小创建时间窗口。
+3. 支持 `--product-code <code>` 单品定向刷新；该模式会结合本地 `media_products`、`mingkong_material_products`、`dianxiaomi_product_assets` 的标题、链接、Shopify 商品 ID 生成搜索词。
+4. 写入明空 Shopify 商品和 variants 后，用 variant `pair_key` 反查 DXM02 ERP 商品管理。
+5. 1688 采购配对按 SKU 写入 `mingkong_procurement_links`。
+6. 组合 SKU 会读取 `getChildSkuInfo.json` 并写入 `mingkong_combo_components`；组件采购配对按组件 SKU 补充。
+
+工作台读取顺序：
+
+1. 先读本地 `media_product_skus`。
+2. 如果本地 SKU 行为空，则用 `appcore.mingkong_product_library.sku_rows_from_library()` 从明空产品库生成候选 SKU 行。
+3. 如果明空产品库仍为空，则按当前产品 code / 链接 / 本地明空素材表中沉淀的标题和 Shopify 商品 ID，实时查询 DXM02-MK 店小秘后台，并把查询到的商品、SKU、采购配对和组合组件回写本地明空产品库。
+4. 回写完成后重新读取本地明空产品库，页面不直接依赖一次性临时结果。
+5. 每个候选行继续实时核验 DXM03 商品管理和 DXM03 采购配对状态。
+6. 明空采购候选只作为人工确认默认值；写入 DXM03 时仍必须使用 DXM03 自己的待配对行。
+
+首轮全量同步修正：
+
+- DXM02-MK 全量 Shopify 商品里存在超过 1000 字符的来源 URL，`source_url` 不应使用 `VARCHAR(1000)`。
+- `mingkong_products.source_url`、`mingkong_product_variants.dxm_source_url`、`mingkong_procurement_links.purchase_1688_url/source_url` 使用 `TEXT`。
+- DXM02-MK 全量 Shopify variants 里存在超过 128 字符的 SKU，`shopify_sku`、`pair_key`、`dxm_sku`、`dxm_product_sku`、组合父/子 SKU、采购配对 SKU 统一使用 `VARCHAR(512)`。
+- 迁移文件必须同时包含 `CREATE TABLE` 的 `TEXT` 定义和对既有表的 `ALTER TABLE ... MODIFY ... TEXT NULL`，确保线上已创建表后重新执行同步也能自愈。
 
 ## adjustable-claw-clippers-rjc 当前预期
 
@@ -305,6 +358,30 @@ DXM03 写入仍遵守：
    - 未完成配对时，先用 DXM03 商品管理接口确认/更新采购链接，再触发 DXM03 1688 商品同步，最后用 DXM03 自己的 `pairProductId` 调用确认配对接口。
 5. `adjustable-claw-clippers-rjc` 的首版工作台数据源允许使用已人工确认并写入本地的 `source=mingkong_pair` SKU 行；后续明空产品库上线后，工作台候选区改为读取明空产品库，而不是每次实时访问 DXM02。
 
+## 2026-06-09 追加：明空 SKU 同步与页面标注
+
+针对本地产品没有任何 `media_product_skus` 行、但明空产品库已有同款 SKU 的场景，工作台提供管理员手动触发的“同步明空 SKU 到我们系统”动作：
+
+1. 后端先读本地 `media_product_skus`；如果已经存在 SKU 行，默认不覆盖，返回“本地已有 SKU”。
+2. 本地 SKU 为空时，按当前产品 code / 链接 / Shopify 商品 ID 读取 `mingkong_product_library.sku_rows_from_library()`。
+3. 明空本地库仍未命中时，允许定向调用 `refresh_product_from_dxm02()` 补采 DXM02-MK，并重新读取明空本地库。
+4. 写入 `media_product_skus` 时只落 Shopify variant、明空店小秘 SKU、明空 ERP 编码、明空商品名等候选字段，`source='mingkong_library'`，用于我们系统后续可见和人工核对。
+5. 该同步动作不代表 DXM03 已有 ERP SKU / 采购配对；确认写入 DXM03 时仍必须实时核验 DXM03 自己的商品管理 SKU 和待配对行。DXM03 找不到 SKU 时继续阻断，不用明空侧 `pairing_row_id` 跨账号写入。
+
+页面展示必须明确区分数据归属：
+
+1. 左侧区域展示“我们系统 / DXM03”维度：我们系统 Shopify variant、我们系统 SKU、DXM03 ERP 状态、DXM03 供应商、DXM03 1688 商品 ID、DXM03 1688 SKU ID、写入状态。
+2. 右侧区域展示“明空店小秘”维度：明空 SKU 图片、明空店小秘 SKU、明空店小秘 ERP 编码、明空店小秘商品名、明空供应商、明空 1688 商品 ID、明空 1688 SKU ID、明空组合组件。
+3. 页面中所有明空维度字段必须加“明空”前缀；所有 DXM03 维度字段必须加“DXM03”前缀；本地字段用“我们系统”前缀，避免混淆来源。
+4. 明空 SKU 图片首版只读取并展示明空产品库已同步的 `dxm_img_url` / `image_url`，不新增 `media_product_skus` 图片字段；如后续需要把图片持久写入我们系统 SKU 表，必须另行补充 schema 迁移设计。
+
+操作过程必须可视化：
+
+1. 工作台上会触发远程读取或写入的按钮必须打开 modal 弹窗，至少包括“刷新状态”“同步明空 SKU 到我们系统”“复刻明空 SKU”“同步明空店小秘SKU”。
+2. modal 必须显示当前状态、已耗时、步骤日志、后端返回的逐 SKU 结果和报错信息；失败时不自动关闭，方便管理员复制/排查。
+3. 后端写入类接口返回体必须包含可读 `message` 和 `logs`；`logs` 用于前端 modal 展示，`items` 继续保留逐 SKU 结构化结果。
+4. 原“确认写入 DXM03”按钮文案调整为“同步明空店小秘SKU”，但接口语义仍是把已确认的明空店小秘 SKU / 1688 SKU 选择写入 DXM03 自己的采购配对，不跨账号复用明空 pairing row id。
+
 ## DXM02 到 DXM03 SKU 复刻规则
 
 当明空产品库或人工确认候选已经能定位到明空 DXM02 的 ERP 商品行，但 DXM03 商品管理中找不到同一个 SKU 时，工作台不能直接停在“缺 ERP SKU”。它应提供管理员确认的“创建/补齐 DXM03 SKU”动作，先把明空 SKU 设置复刻到 DXM03，再继续 1688 采购配对确认。
@@ -344,7 +421,7 @@ DXM03 写入仍遵守：
 
 1. 数据表迁移存在并可重复执行。
 2. 同步服务 pure 解析函数有单元测试，覆盖 Shopify 商品、ERP SKU、1688 配对候选。
-3. 定时任务登记到 `appcore/scheduled_tasks.py`，计划为每天 04:00。
+3. 定时任务登记到 `appcore/scheduled_tasks.py`，计划为每周一 04:00。
 4. 同步脚本支持手动运行，只读拉 DXM02 并输出 products/variants/procurement counts。
 5. 工作台读取本地明空产品库，不依赖每次实时访问 DXM02。
 6. 聚焦测试通过；不跑全量 pytest，除非涉及迁移/定时任务广影响时按规则扩大。

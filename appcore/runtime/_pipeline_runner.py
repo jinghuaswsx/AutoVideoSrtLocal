@@ -20,7 +20,7 @@ _TASK_AUTO_RETRY_DELAYS = [5, 30, 120]  # seconds before retry 1, 2, 3
 _ALL_STEP_NAMES = (
     "extract", "asr", "separate", "asr_normalize", "asr_clean",
     "speaker_detect", "voice_match", "voice_match_ab", "alignment", "shot_decompose", "translate", "tts",
-    "av_sync_audit", "loudness_match", "subtitle", "compose", "export",
+    "av_sync_audit", "loudness_match", "subtitle", "compose", "video_size_adjustment", "export",
 )
 
 import config
@@ -58,6 +58,7 @@ from appcore.preview_artifacts import (
     build_subtitle_artifact,
     build_translate_artifact,
     build_tts_artifact,
+    build_video_size_adjustment_artifact,
 )
 from appcore.tts_loudness_calibration import (
     apply_sentence_tts_loudness_calibration,
@@ -2416,6 +2417,7 @@ class PipelineRunner:
             "translate": f"{source_hint}，已跳过翻译文案生成并保留原视频",
             "tts": f"{source_hint}，已跳过{lang_prefix}并保留原视频",
             "subtitle": f"{source_hint}，已跳过字幕生成并保留原视频",
+            "video_size_adjustment": f"{source_hint}，已跳过视频大小调整并保留原视频",
             "analysis": f"{source_hint}，已跳过 AI 分析并保留原视频",
         }
         update_kwargs: dict = {}
@@ -4108,6 +4110,137 @@ class PipelineRunner:
         task_state.set_artifact(task_id, "compose", build_compose_artifact())
         self._set_step(task_id, "compose", "done", "视频合成完成")
 
+    def _step_video_size_adjustment(self, task_id: str, video_path: str, task_dir: str) -> None:
+        del video_path, task_dir
+        task = task_state.get(task_id) or {}
+        if self._skip_original_video_passthrough_step(task_id, "video_size_adjustment", task=task):
+            return
+
+        self._set_step(task_id, "video_size_adjustment", "running", "正在检查最终视频大小...")
+        from pipeline.compose import adjust_video_size_to_limit
+
+        variant = self._resolve_compose_variant_name(task)
+        variants = dict(task.get("variants", {}))
+        variant_state = dict(variants.get(variant, {}))
+        result = dict(variant_state.get("result") or task.get("result") or {})
+        pre_adjustment_hard_video = result.get("pre_size_adjustment_hard_video")
+        hard_video = (
+            pre_adjustment_hard_video
+            if pre_adjustment_hard_video and os.path.isfile(pre_adjustment_hard_video)
+            else result.get("hard_video")
+            or (variant_state.get("preview_files") or {}).get("hard_video")
+            or (task.get("preview_files") or {}).get("hard_video")
+        )
+        if not hard_video or not os.path.isfile(hard_video):
+            summary = {
+                "status": "failed",
+                "variant": variant,
+                "input_path": hard_video or "",
+                "output_path": hard_video or "",
+                "attempts": [],
+                "message": "未找到视频合成后的硬字幕视频，无法进行大小调整。",
+            }
+            artifact = build_video_size_adjustment_artifact(summary)
+            variant_state["video_size_adjustment"] = summary
+            variant_artifacts = dict(variant_state.get("artifacts") or {})
+            variant_artifacts["video_size_adjustment"] = artifact
+            variant_state["artifacts"] = variant_artifacts
+            variants[variant] = variant_state
+            artifacts = dict(task.get("artifacts") or {})
+            artifacts["video_size_adjustment"] = artifact
+            steps = dict(task.get("steps") or {})
+            steps["video_size_adjustment"] = "failed"
+            step_messages = dict(task.get("step_messages") or {})
+            step_messages["video_size_adjustment"] = summary["message"]
+            task_state.update(
+                task_id,
+                variants=variants,
+                video_size_adjustment=summary,
+                artifacts=artifacts,
+                steps=steps,
+                step_messages=step_messages,
+            )
+            self._set_step(task_id, "video_size_adjustment", "failed", summary["message"])
+            raise RuntimeError(summary["message"])
+
+        summary = adjust_video_size_to_limit(hard_video, variant=variant)
+        output_path = summary.get("output_path") or hard_video
+        if output_path != hard_video and summary.get("status") == "adjusted":
+            result.setdefault("pre_size_adjustment_hard_video", hard_video)
+            result["hard_video"] = output_path
+            variant_preview_files = dict(variant_state.get("preview_files") or {})
+            variant_preview_files["hard_video"] = output_path
+            variant_state["preview_files"] = variant_preview_files
+            task_state.set_preview_file(task_id, "hard_video", output_path)
+            task_state.set_variant_preview_file(task_id, variant, "hard_video", output_path)
+
+        variant_state["result"] = result
+        variant_state["video_size_adjustment"] = summary
+        artifact = build_video_size_adjustment_artifact(summary)
+        variant_artifacts = dict(variant_state.get("artifacts") or {})
+        variant_artifacts["video_size_adjustment"] = artifact
+        variant_state["artifacts"] = variant_artifacts
+        variants[variant] = variant_state
+        artifacts = dict(task.get("artifacts") or {})
+        artifacts["video_size_adjustment"] = artifact
+        final_compose_summary = dict(
+            variant_state.get("final_compose_summary")
+            or task.get("final_compose_summary")
+            or {}
+        )
+        update_payload = {
+            "variants": variants,
+            "result": result,
+            "video_size_adjustment": summary,
+            "artifacts": artifacts,
+        }
+        if final_compose_summary:
+            final_compose_summary["compose_result"] = result
+            final_compose_summary["video_size_adjustment"] = summary
+            variant_state["final_compose_summary"] = final_compose_summary
+            variants[variant] = variant_state
+            update_payload["final_compose_summary"] = final_compose_summary
+
+        message = summary.get("message") or "视频大小调整完成"
+        steps = dict(task.get("steps") or {})
+        steps["video_size_adjustment"] = "failed" if summary.get("status") == "failed" else "done"
+        step_messages = dict(task.get("step_messages") or {})
+        step_messages["video_size_adjustment"] = message
+        update_payload["steps"] = steps
+        update_payload["step_messages"] = step_messages
+
+        task_state.update(task_id, **update_payload)
+
+        if summary.get("status") == "failed":
+            self._set_step(task_id, "video_size_adjustment", "failed", message)
+            raise RuntimeError(message)
+        self._set_step(task_id, "video_size_adjustment", "done", message)
+
+    def _resolve_capcut_export_video_input(self, task: dict, variant_state: dict) -> tuple[str, bool]:
+        size_summary = (
+            variant_state.get("video_size_adjustment")
+            or task.get("video_size_adjustment")
+            or {}
+        )
+        if not isinstance(size_summary, dict) or size_summary.get("status") != "adjusted":
+            return "", False
+
+        variant_result = variant_state.get("result") or {}
+        task_result = task.get("result") or {}
+        variant_preview_files = variant_state.get("preview_files") or {}
+        task_preview_files = task.get("preview_files") or {}
+        candidates = [
+            size_summary.get("output_path"),
+            variant_result.get("hard_video"),
+            task_result.get("hard_video"),
+            variant_preview_files.get("hard_video"),
+            task_preview_files.get("hard_video"),
+        ]
+        for candidate in candidates:
+            if candidate and os.path.isfile(str(candidate)):
+                return str(candidate), True
+        return "", False
+
     def _resolve_compose_srt_path(
         self,
         task: dict,
@@ -4253,12 +4386,15 @@ class PipelineRunner:
             separation.get("accompaniment_path")
             if sep.is_usable(separation) else None
         )
+        # CapCut 工程包总是使用原视频以保留独立的视频段、音轨和字幕轨道（防止硬字幕和音频合并）
+        capcut_video_path = video_path
+        capcut_final_video_mode = False
         export_result = export_capcut_project(
-            video_path=video_path,
+            video_path=capcut_video_path,
             tts_audio_path=variant_state["tts_audio_path"],
             srt_path=srt_path,
             output_dir=task_dir,
-            timeline_manifest=timeline_manifest,
+            timeline_manifest={} if capcut_final_video_mode else timeline_manifest,
             variant=variant,
             draft_title=draft_title,
             jianying_project_root=jianying_project_root,
@@ -4266,13 +4402,17 @@ class PipelineRunner:
             subtitle_font=task.get("subtitle_font", "Impact"),
             subtitle_size=task.get("subtitle_size", 14),
             subtitle_position_y=float(task.get("subtitle_position_y", 0.68)),
-            accompaniment_audio_path=accompaniment_for_capcut,
+            accompaniment_audio_path=None if capcut_final_video_mode else accompaniment_for_capcut,
+            final_video_mode=capcut_final_video_mode,
+            video_source="video_size_adjustment" if capcut_final_video_mode else "source_timeline",
         )
         exports = {
             "capcut_project": export_result["project_dir"],
             "capcut_archive": export_result["archive_path"],
             "capcut_manifest": export_result["manifest_path"],
             "jianying_project_dir": export_result.get("jianying_project_dir", ""),
+            "capcut_video_path": capcut_video_path,
+            "capcut_final_video_mode": capcut_final_video_mode,
         }
         variant_state["exports"] = exports
         variants[variant] = variant_state

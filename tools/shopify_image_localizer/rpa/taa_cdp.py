@@ -92,6 +92,7 @@ BODY_HTML_FIELD_PREFIX = "editable_Ym9keV9odG1s"
 DETAIL_RELOAD_VERIFY_ATTEMPTS = 3
 DETAIL_RELOAD_VERIFY_DELAY_S = 3.0
 SOURCE_INDEX_RE = re.compile(r"from_url_en_(\d+)_", re.I)
+SOURCE_IMAGE_EXTENSIONS = ("webp", "jpg", "jpeg", "png", "gif", "avif")
 IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.I | re.S)
 IMG_ATTR_RE = re.compile(r"\b(src|alt)\s*=\s*(['\"])(.*?)\2", re.I | re.S)
 INSERT_IMAGE_BUTTON_LABELS = ("Insert image", "插入图片")
@@ -583,6 +584,33 @@ def source_index_from_filename(filename: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _source_index_from_metadata(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _strip_wrapped_source_image_extension(stem: str) -> str:
+    normalized = str(stem or "").strip()
+    while normalized:
+        lowered = normalized.lower()
+        changed = False
+        for ext in SOURCE_IMAGE_EXTENSIONS:
+            for suffix in (f".{ext}", f"_{ext}"):
+                if lowered.endswith(suffix):
+                    normalized = normalized[: -len(suffix)]
+                    changed = True
+                    break
+            if changed:
+                break
+        if not changed:
+            break
+    return normalized
+
+
 def source_name_key(value: str) -> str | None:
     raw = str(value or "").strip()
     if not raw:
@@ -594,22 +622,45 @@ def source_name_key(value: str) -> str | None:
     match = SOURCE_INDEX_RE.search(name)
     if match:
         name = name[match.end():]
-    stem = Path(name).stem.strip().lower()
+    stem = _strip_wrapped_source_image_extension(Path(name).stem).strip().lower()
     return f"name:{stem}" if stem else None
+
+
+def source_index_from_image_item(item: dict[str, Any], filename: str | None = None) -> int | None:
+    metadata_index = _source_index_from_metadata(item.get("source_index"))
+    if metadata_index is not None:
+        return metadata_index
+    return source_index_from_filename(filename or str(item.get("filename") or Path(str(item.get("local_path") or "")).name))
+
+
+def source_token_from_image_item(item: dict[str, Any], filename: str | None = None) -> str | None:
+    for key in ("source_token", "token"):
+        token = str(item.get(key) or "").strip().lower()
+        if token:
+            return token
+    return ez_cdp.md5_token(filename or str(item.get("filename") or Path(str(item.get("local_path") or "")).name))
+
+
+def source_name_key_from_image_item(item: dict[str, Any], filename: str | None = None) -> str | None:
+    source_key = str(item.get("source_name_key") or "").strip()
+    if source_key:
+        return source_key
+    return source_name_key(filename or str(item.get("filename") or Path(str(item.get("local_path") or "")).name))
 
 
 def build_localized_candidates(localized_images: list[dict]) -> dict[str, list[dict[str, Any]]]:
     candidates: dict[str, list[dict[str, Any]]] = {}
     for item in localized_images or []:
         filename = str(item.get("filename") or Path(str(item.get("local_path") or "")).name)
-        token = ez_cdp.md5_token(filename)
+        token = source_token_from_image_item(item, filename)
         local_path = str(item.get("local_path") or "")
         if not token or not local_path:
             continue
         row = {
             **item,
             "token": token,
-            "source_index": source_index_from_filename(filename),
+            "source_index": source_index_from_image_item(item, filename),
+            "source_name_key": source_name_key_from_image_item(item, filename),
             "local_path": local_path,
             "filename": filename,
         }
@@ -624,14 +675,14 @@ def build_localized_candidates_by_source_index(localized_images: list[dict]) -> 
     for item in localized_images or []:
         filename = str(item.get("filename") or Path(str(item.get("local_path") or "")).name)
         local_path = str(item.get("local_path") or "")
-        source_index = source_index_from_filename(filename)
+        source_index = source_index_from_image_item(item, filename)
         if source_index is None or not local_path:
             continue
         row = {
             **item,
-            "token": ez_cdp.md5_token(filename),
+            "token": source_token_from_image_item(item, filename),
             "source_index": source_index,
-            "source_name_key": source_name_key(filename),
+            "source_name_key": source_name_key_from_image_item(item, filename),
             "local_path": local_path,
             "filename": filename,
         }

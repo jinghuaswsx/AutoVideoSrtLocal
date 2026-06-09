@@ -1,0 +1,13 @@
+[Unit]
+Description=AutoVideoSrt Mingkong product library sync
+Wants=autovideosrt-dxm02-mk-vnc.service
+After=network-online.target autovideosrt-dxm02-mk-vnc.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+Environment=PYTHONUNBUFFERED=1
+Environment=DXM02_MINGKONG_CDP_URL=http://127.0.0.1:9223
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/mingkong_product_library_sync.py --days 0
+TimeoutStartSec=21600

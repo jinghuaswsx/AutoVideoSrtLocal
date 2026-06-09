@@ -45,6 +45,15 @@ class _FakeRunner:
         return {"id": "voice-1"}, "voice-1", None
 
 
+class _ConfigResolvingRunner(_FakeRunner):
+    def __init__(self, plugin_config, tts_engine=None):
+        super().__init__(tts_engine=tts_engine)
+        self.plugin_config = plugin_config
+
+    def _resolve_plugin_config(self, task_id):
+        return dict(self.plugin_config)
+
+
 class _FakeTtsEngine:
     def __init__(self, tmp_path: Path, durations: list[float]):
         self.tmp_path = tmp_path
@@ -244,6 +253,79 @@ def test_run_skips_when_av_sentences_missing(monkeypatch, tmp_path):
     report = task["artifacts"]["av_sync_audit"]
     assert report["status"] == "skipped_missing_av_sentences"
     assert task["variants"]["av"]["av_sync_audit"]["status"] == "skipped_missing_av_sentences"
+
+
+def test_run_uses_runner_default_config_when_task_config_missing(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_task(tmp_path, mode="off")
+    task = task_state.get(task_id)
+    task.pop("plugin_config", None)
+    task_state.update(task_id, **task)
+    cfg = {
+        "asr_post": "asr_normalize",
+        "shot_decompose": False,
+        "translate_algo": "av_sentence",
+        "source_anchored": False,
+        "tts_strategy": "sentence_reconcile",
+        "subtitle": "sentence_units",
+        "voice_separation": True,
+        "loudness_match": True,
+        "av_sync_audit": "report_only",
+    }
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={"text": "画面理解：两句都与画面同步。"}),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {
+                "timeline": [{
+                    "asr_index": 0,
+                    "visual_observation": "画面与第一句同步。",
+                    "sync_score": 95,
+                    "diagnosis": "同步良好。",
+                    "recommendation": "无需调整。",
+                }, {
+                    "asr_index": 1,
+                    "visual_observation": "画面与第二句同步。",
+                    "sync_score": 96,
+                    "diagnosis": "同步良好。",
+                    "recommendation": "无需调整。",
+                }],
+            },
+        }),
+    )
+
+    report = omni_av_sync_audit.run(_ConfigResolvingRunner(cfg), task_id, video_path, str(tmp_path))
+
+    assert report["mode"] == "report_only"
+    assert task_state.get(task_id)["artifacts"]["av_sync_audit"]["mode"] == "report_only"
+
+
+def test_run_mode_off_is_defensive_noop(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_task(tmp_path, mode="off")
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(side_effect=AssertionError("audit is disabled")),
+    )
+
+    runner = _FakeRunner()
+    report = omni_av_sync_audit.run(runner, task_id, video_path, str(tmp_path))
+
+    assert report["status"] == "skipped_disabled"
+    assert runner.step_calls[-1] == (
+        task_id,
+        "av_sync_audit",
+        "done",
+        "音画同步审计未启用，已跳过",
+    )
 
 
 def test_multi_report_only_writes_audit_without_mutating_normal_segments(monkeypatch, tmp_path):
@@ -509,6 +591,12 @@ def test_multi_report_only_ignores_actionable_issue_report_fields(monkeypatch, t
                     "sync_score": 68,
                     "diagnosis": "音频比动作略拖后。",
                     "recommendation": "缩短目标语句子并重新生成音频。",
+                }, {
+                    "asr_index": 1,
+                    "visual_observation": "画面切到指示灯闪烁。",
+                    "sync_score": 96,
+                    "diagnosis": "音画同步良好。",
+                    "recommendation": "无需调整。",
                 }],
             },
         }),
@@ -529,6 +617,81 @@ def test_multi_report_only_ignores_actionable_issue_report_fields(monkeypatch, t
     assert timeline[0]["diagnosis"] == "音频比动作略拖后。"
     assert timeline[0]["recommendation"] == "缩短目标语句子并重新生成音频。"
     assert timeline[0]["problem"] == ""
+
+
+def test_report_only_rejects_repeated_visual_observation(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path)
+    bad_visual = "第一人称视角，准备过马路。" + ("点数开始前导语阶段" * 40)
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={"text": "画面理解：两只狗在街道行走。"}),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {
+                "timeline": [{
+                    "asr_index": 0,
+                    "visual_observation": bad_visual,
+                    "sync_score": 92,
+                    "diagnosis": "同步良好。",
+                    "recommendation": "无需调整。",
+                }, {
+                    "asr_index": 1,
+                    "visual_observation": "画面切到另一段行走。",
+                    "sync_score": 94,
+                    "diagnosis": "同步良好。",
+                    "recommendation": "无需调整。",
+                }],
+            },
+        }),
+    )
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    assert report["status"] == "diagnose_failed"
+    assert "visual_observation" in report["diagnosis"]["error"]
+    assert all(
+        "点数开始前导语阶段" not in row["visual_observation"]
+        for row in report["audit_timeline"]
+    )
+
+
+def test_report_only_rejects_incomplete_scorecard_rows(monkeypatch, tmp_path):
+    from pipeline import omni_av_sync_audit
+
+    task_id, video_path = _create_multi_task(tmp_path)
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_generate",
+        MagicMock(return_value={"text": "画面理解：两段内容。"}),
+    )
+    monkeypatch.setattr(
+        omni_av_sync_audit.llm_client,
+        "invoke_chat",
+        MagicMock(return_value={
+            "json": {
+                "timeline": [{
+                    "asr_index": 0,
+                    "visual_observation": "画面对应第一句。",
+                    "sync_score": 92,
+                    "diagnosis": "同步良好。",
+                    "recommendation": "无需调整。",
+                }],
+            },
+        }),
+    )
+
+    omni_av_sync_audit.run_report_only(_FakeRunner(), task_id, video_path, str(tmp_path))
+
+    report = task_state.get(task_id)["artifacts"]["av_sync_audit"]
+    assert report["status"] == "diagnose_failed"
+    assert "cover every ASR row" in report["diagnosis"]["error"]
 
 
 def test_report_only_builds_asr_ordered_audit_timeline_with_visual_context(monkeypatch, tmp_path):
@@ -1197,8 +1360,8 @@ def test_report_only_registers_prompt_debug_refs(monkeypatch, tmp_path):
     assert understand_payload["request_payload"].get("response_schema") is None
     assert assess_payload["request_payload"]["type"] == "chat"
     assert assess_payload["request_payload"]["use_case_code"] == "omni_av_sync.assess"
-    assert assess_payload["request_payload"]["provider"] == "openrouter"
-    assert assess_payload["request_payload"]["model"] == "google/gemini-3-flash-preview"
+    assert assess_payload["request_payload"]["provider"] == "test-provider"
+    assert assess_payload["request_payload"]["model"] == "omni_av_sync.assess-model"
     user_payload = json.loads(assess_payload["messages"][1]["content"])
     assert "scorecard_rows" in user_payload
     assert set(user_payload["scorecard_rows"][0]) >= {

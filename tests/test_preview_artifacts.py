@@ -8,6 +8,7 @@ from web.preview_artifacts import (
     build_translate_artifact,
     build_variant_compare_artifact,
     build_tts_artifact,
+    build_video_size_adjustment_artifact,
     build_shot_translate_artifact,
 )
 
@@ -34,6 +35,10 @@ def test_preview_artifact_builders_cover_all_pipeline_steps():
     tts = build_tts_artifact(segments)
     subtitle = build_subtitle_artifact("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
     compose = build_compose_artifact()
+    video_size = build_video_size_adjustment_artifact({
+        "status": "adjusted",
+        "target_total_bitrate_bps": 5_000_000,
+    })
     export = build_export_artifact(
         '{"backend":"pyJianYingDraft"}',
         archive_url="/download/capcut.zip",
@@ -49,6 +54,9 @@ def test_preview_artifact_builders_cover_all_pipeline_steps():
     assert tts["items"][0]["artifact"] == "tts_full_audio"
     assert subtitle["items"][0]["content"].startswith("1\n00:00:00,000")
     assert [item["artifact"] for item in compose["items"]] == ["hard_video"]
+    assert video_size["title"] == "视频大小调整"
+    assert video_size["layout"] == "video_size_adjustment"
+    assert video_size["summary"]["target_total_bitrate_bps"] == 5_000_000
     assert export["items"][0]["type"] == "download"
     assert export["items"][1]["content"] == '{"backend":"pyJianYingDraft"}'
 

@@ -145,14 +145,40 @@
 /* ---------- 筛选工具栏 ---------- */
 .push-toolbar {
   display: flex;
+  flex-direction: column;
   gap: var(--oc-sp-4);
-  flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: stretch;
   padding: var(--oc-sp-4);
   background: var(--oc-bg);
   border: 1px solid var(--oc-border);
   border-radius: var(--oc-r-lg);
   margin-bottom: var(--oc-sp-5);
+}
+
+.toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--oc-sp-4);
+  width: 100%;
+}
+
+.toolbar-row-first {
+  border-bottom: 1px dashed var(--oc-border);
+  padding-bottom: var(--oc-sp-4);
+}
+
+.filter-group-keyword {
+  width: 300px !important;
+}
+.filter-group-keyword input {
+  width: 100% !important;
+}
+
+@media (max-width: 1500px) {
+  .toolbar-row {
+    display: contents;
+  }
 }
 
 .filter-group {

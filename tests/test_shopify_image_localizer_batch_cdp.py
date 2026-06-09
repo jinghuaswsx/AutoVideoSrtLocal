@@ -163,6 +163,27 @@ def _write_shape_image(path: Path, *, shape: str, fill: str = "black") -> None:
     image.save(path)
 
 
+def test_source_name_key_strips_wrapped_source_image_extensions():
+    source = (
+        "https://cdn.shopify.com/s/files/1/0727/2831/4029/files/"
+        "1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57.webp?v=1780486718"
+    )
+    wrapped_download = (
+        "20260608_4ba5cb89_20260608_ff23159a_from_url_en_02_"
+        "1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57.webp.jpg"
+    )
+    shopify_uploaded = (
+        "https://cdn.shopify.com/s/files/1/0727/2831/4029/files/"
+        "6a27a1e9eb657_20260608_4ba5cb89_20260608_ff23159a_from_url_en_02_"
+        "1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57_webp.webp?v=1780982252"
+    )
+
+    expected = taa_cdp.source_name_key(source)
+
+    assert taa_cdp.source_name_key(wrapped_download) == expected
+    assert taa_cdp.source_name_key(shopify_uploaded) == expected
+
+
 def test_downloader_fallback_shortens_long_shopify_filename_without_losing_match_keys():
     token = "f348cc3161901b6173b86170ab9a2eca"
     filename = (
@@ -288,6 +309,141 @@ def test_pair_carousel_images_prefers_one_based_carousel_source_before_detail_du
         (1, str(Path("C:/tmp") / "loc_from_url_en_02_3626cdd48c7ed37bebc5db0e8f6d3c99.jpg")),
         (2, str(Path("C:/tmp") / f"loc_from_url_en_03_{token}.png")),
     ]
+
+
+def test_pair_carousel_images_routes_duplicate_token_without_slot_match_to_visual_fallback():
+    token = "b0d7cac6bbce4313a7ff2883a7818803d"
+    product_images = [
+        {"src": f"https://cdn.shopify.com/files/slot-{idx}.gif"}
+        for idx in range(7)
+    ] + [
+        {"src": f"https://cdn.shopify.com/files/S{token.upper()}_1.webp?v=1"}
+    ]
+    localized_images = [
+        {
+            **_localized(
+                f"20260608_617388c9_20260608_db0bb5b9_from_url_en_00_S{token.upper()}_1.webp.jpg"
+            ),
+            "id": "detail-28755",
+        },
+        {
+            **_localized(
+                f"20260608_eda96020_20260608_4c54de21_from_url_en_01_S{token.upper()}_1.webp.jpg"
+            ),
+            "id": "detail-28756",
+        },
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == []
+
+
+def test_pair_carousel_images_keeps_pet_bath_brush_order_when_source_list_has_duplicate_detail_rows():
+    token = "b0d7cac6bbce4313a7ff2883a7818803d"
+    product_images = [
+        {"src": "https://cdn.shopify.com/files/1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/2_4471d4b9-2e39-44e2-af66-780dfbedeb4f.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/3_7d210095-cebc-473a-8a93-2d6e1b18e766.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/4_0e1a7d3a-8bfa-4de8-9941-31df5788674d.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/5_4ce8934e-5a24-4e75-b24c-efbdbb17b868.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/1_4.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/6_e626c391-6cdd-49f4-8a7d-643d0d955289.webp?v=1"},
+        {"src": f"https://cdn.shopify.com/files/S{token.upper()}_1.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/7_12978231-a297-4fbd-b4ed-798235b7849f.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/9.webp?v=1"},
+        {"src": "https://cdn.shopify.com/files/8.webp?v=1"},
+    ]
+    localized_images = [
+        _localized(f"loc_from_url_en_00_S{token.upper()}_1.webp.png"),
+        _localized(f"loc_from_url_en_01_S{token.upper()}_1.webp.png"),
+        _localized("loc_from_url_en_02_1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57.webp.jpg"),
+        _localized("loc_from_url_en_03_2_4471d4b9-2e39-44e2-af66-780dfbedeb4f.webp.jpg"),
+        _localized("loc_from_url_en_04_3_7d210095-cebc-473a-8a93-2d6e1b18e766.webp.jpg"),
+        _localized("loc_from_url_en_05_4_0e1a7d3a-8bfa-4de8-9941-31df5788674d.webp.jpg"),
+        _localized("loc_from_url_en_06_5_4ce8934e-5a24-4e75-b24c-efbdbb17b868.webp.jpg"),
+        _localized("loc_from_url_en_07_1_4.webp.jpg"),
+        _localized("loc_from_url_en_08_6_e626c391-6cdd-49f4-8a7d-643d0d955289.webp.jpg"),
+        _localized("loc_from_url_en_09_7_12978231-a297-4fbd-b4ed-798235b7849f.webp.jpg"),
+        _localized("loc_from_url_en_10_9.webp.jpg"),
+        _localized("loc_from_url_en_11_8.webp.jpg"),
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == [
+        (0, str(Path("C:/tmp") / "loc_from_url_en_02_1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57.webp.jpg")),
+        (1, str(Path("C:/tmp") / "loc_from_url_en_03_2_4471d4b9-2e39-44e2-af66-780dfbedeb4f.webp.jpg")),
+        (2, str(Path("C:/tmp") / "loc_from_url_en_04_3_7d210095-cebc-473a-8a93-2d6e1b18e766.webp.jpg")),
+        (3, str(Path("C:/tmp") / "loc_from_url_en_05_4_0e1a7d3a-8bfa-4de8-9941-31df5788674d.webp.jpg")),
+        (4, str(Path("C:/tmp") / "loc_from_url_en_06_5_4ce8934e-5a24-4e75-b24c-efbdbb17b868.webp.jpg")),
+        (5, str(Path("C:/tmp") / "loc_from_url_en_07_1_4.webp.jpg")),
+        (6, str(Path("C:/tmp") / "loc_from_url_en_08_6_e626c391-6cdd-49f4-8a7d-643d0d955289.webp.jpg")),
+        (8, str(Path("C:/tmp") / "loc_from_url_en_09_7_12978231-a297-4fbd-b4ed-798235b7849f.webp.jpg")),
+        (9, str(Path("C:/tmp") / "loc_from_url_en_10_9.webp.jpg")),
+        (10, str(Path("C:/tmp") / "loc_from_url_en_11_8.webp.jpg")),
+    ]
+
+
+def test_localized_candidate_builders_prefer_bootstrap_source_metadata_when_filename_is_ambiguous():
+    token = "f348cc3161901b6173b86170ab9a2eca"
+    source_name_key = "name:1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57"
+    local_path = str(Path("C:/tmp") / "downloaded-localized-image.jpg")
+    localized_images = [
+        {
+            "id": "loc-2",
+            "filename": "downloaded-localized-image.jpg",
+            "local_path": local_path,
+            "source_token": token,
+            "source_index": 2,
+            "source_name_key": source_name_key,
+        }
+    ]
+
+    by_token = taa_cdp.build_localized_candidates(localized_images)
+    by_source_index = taa_cdp.build_localized_candidates_by_source_index(localized_images)
+    by_source_name = run_product_cdp._localized_by_source_name_key(localized_images)
+
+    assert by_token[token][0]["local_path"] == local_path
+    assert by_token[token][0]["source_index"] == 2
+    assert by_source_index[2][0]["source_name_key"] == source_name_key
+    assert by_source_name[source_name_key][0]["token"] == token
+
+
+def test_pair_carousel_images_uses_bootstrap_source_metadata_when_filename_is_ambiguous():
+    token = "f348cc3161901b6173b86170ab9a2eca"
+    product_images = [
+        {
+            "src": (
+                "https://cdn.shopify.com/files/"
+                "1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57.webp"
+                f"?v={token}"
+            )
+        }
+    ]
+    source_name_key = taa_cdp.source_name_key(product_images[0]["src"])
+    localized_images = [
+        {
+            "id": "loc-old",
+            "filename": "older-unparseable-download.jpg",
+            "local_path": str(Path("C:/tmp") / "older-unparseable-download.jpg"),
+            "source_token": token,
+            "source_index": 9,
+            "source_name_key": "name:other-source",
+        },
+        {
+            "id": "loc-current",
+            "filename": "current-unparseable-download.jpg",
+            "local_path": str(Path("C:/tmp") / "current-unparseable-download.jpg"),
+            "source_token": token,
+            "source_index": 0,
+            "source_name_key": source_name_key,
+        },
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == [(0, str(Path("C:/tmp") / "current-unparseable-download.jpg"))]
 
 
 def test_pair_carousel_images_falls_back_to_source_index_when_urls_have_no_hash_token():
@@ -438,6 +594,59 @@ def test_visual_carousel_pair_plan_matches_unkeyed_slot_to_localized_candidate(t
     assert plan["confirmation_pairs"][0]["reference_filename"] == "server-reference-a.png"
     assert plan["confirmation_pairs"][0]["match_method"] == "visual"
     assert plan["review"] == []
+
+
+def test_visual_carousel_pair_plan_selects_actual_reference_for_duplicate_token_slot(tmp_path):
+    token = "b0d7cac6bbce4313a7ff2883a7818803d"
+    slot_path = tmp_path / "shopify-slot-07.png"
+    reference_00_path = tmp_path / "reference-00.png"
+    reference_01_path = tmp_path / "reference-01.png"
+    localized_00_path = tmp_path / "localized-00.png"
+    localized_01_path = tmp_path / "localized-01.png"
+    _write_shape_image(reference_00_path, shape="circle")
+    _write_shape_image(localized_00_path, shape="circle")
+    _write_shape_image(slot_path, shape="bar")
+    _write_shape_image(reference_01_path, shape="bar")
+    _write_shape_image(localized_01_path, shape="bar")
+
+    plan = run_product_cdp.build_visual_carousel_pair_plan(
+        slot_images=[
+            {
+                "slot_id": "carousel-07",
+                "slot_index": 7,
+                "src": f"https://cdn.shopify.com/files/S{token.upper()}_1.webp?v=1",
+                "local_path": str(slot_path),
+            }
+        ],
+        reference_images=[
+            {
+                "id": "detail-29400",
+                "filename": f"reference_from_url_en_00_S{token.upper()}_1.webp.jpg",
+                "local_path": str(reference_00_path),
+            },
+            {
+                "id": "detail-29401",
+                "filename": f"reference_from_url_en_01_S{token.upper()}_1.webp.jpg",
+                "local_path": str(reference_01_path),
+            },
+        ],
+        localized_images=[
+            {
+                "id": "detail-28954",
+                "filename": f"localized_from_url_en_00_S{token.upper()}_1.webp.png",
+                "local_path": str(localized_00_path),
+            },
+            {
+                "id": "detail-28955",
+                "filename": f"localized_from_url_en_01_S{token.upper()}_1.webp.png",
+                "local_path": str(localized_01_path),
+            },
+        ],
+    )
+
+    assert plan["pairs"] == [(7, str(localized_01_path))]
+    assert plan["confirmation_pairs"][0]["reference_filename"].endswith("from_url_en_01_S" + token.upper() + "_1.webp.jpg")
+    assert plan["confirmation_pairs"][0]["replacement_local_path"] == str(localized_01_path)
 
 
 def test_visual_pair_plan_keeps_compare_match_when_binary_check_warns(monkeypatch, tmp_path):
@@ -3041,6 +3250,94 @@ def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypat
     assert "[轮播图] 整体完成：请求=2 成功=1 跳过=1 失败=0" in output
 
 
+def test_ez_replace_many_force_existing_reprocesses_marked_slots(monkeypatch):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", url))
+
+        def close(self):
+            calls.append(("page_close",))
+
+    class FakeContext:
+        def __init__(self):
+            self.page = FakePage()
+
+        def set_default_timeout(self, timeout):
+            calls.append(("timeout", timeout))
+
+        def new_page(self):
+            calls.append(("new_page",))
+            return self.page
+
+    class FakeBrowser:
+        def __init__(self):
+            self.contexts = [FakeContext()]
+
+        def close(self):
+            calls.append(("browser_close",))
+
+    class FakeChromium:
+        def connect_over_cdp(self, endpoint):
+            calls.append(("connect", endpoint))
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(ez_cdp, "ensure_cdp_chrome", lambda *args, **kwargs: calls.append(("ensure",)))
+    monkeypatch.setattr(ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(ez_cdp, "sync_playwright", lambda: FakePlaywright())
+    monkeypatch.setattr(ez_cdp, "_wait_plugin_frame", lambda page, **kwargs: object())
+
+    def fake_filter(frame, pairs, language):
+        calls.append(("filter", list(pairs), language))
+        return [], []
+
+    monkeypatch.setattr(ez_cdp, "filter_pairs_missing_language_markers", fake_filter)
+
+    def fake_replace_slot(frame, slot_idx, path, **kwargs):
+        calls.append(("replace_slot", slot_idx, path, kwargs["language"], kwargs["replace_existing"]))
+        return {"slot": slot_idx, "status": "ok", "path": path}
+
+    monkeypatch.setattr(ez_cdp, "replace_slot", fake_replace_slot)
+    monkeypatch.setattr(
+        ez_cdp,
+        "verify_target_language_markers",
+        lambda frame, expected_slots, language: {
+            "ok": True,
+            "expected": len(expected_slots),
+            "matched": len(expected_slots),
+            "missing": [],
+        },
+    )
+
+    result = ez_cdp.replace_many(
+        ez_url="https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
+        user_data_dir=r"C:\chrome-shopify-image",
+        pairs=[(0, "C:/tmp/a.jpg"), (1, "C:/tmp/b.jpg")],
+        language="German",
+        replace_existing=True,
+    )
+
+    assert result == [
+        {"slot": 0, "status": "ok", "path": "C:/tmp/a.jpg"},
+        {"slot": 1, "status": "ok", "path": "C:/tmp/b.jpg"},
+    ]
+    assert ("filter", [], "German") in calls
+    assert ("replace_slot", 0, "C:/tmp/a.jpg", "German", True) in calls
+    assert ("replace_slot", 1, "C:/tmp/b.jpg", "German", True) in calls
+
+
 def test_ez_replace_many_pauses_for_review_when_all_slots_already_translated(monkeypatch, capsys):
     from tools.shopify_image_localizer.rpa import ez_cdp
 
@@ -3605,6 +3902,73 @@ def test_ez_replace_slot_does_not_remove_existing_language_marker(monkeypatch):
         "path": "C:/tmp/loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
     }
     assert ("click", 'button[aria-label="Remove German"]') not in calls
+
+
+def test_ez_replace_slot_force_existing_removes_marker_and_uploads(monkeypatch):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def wait_for_timeout(self, ms):
+            calls.append(("wait_for_timeout", ms))
+
+    class FakeLocator:
+        def __init__(self, selector: str):
+            self.selector = selector
+
+        @property
+        def first(self):
+            return self
+
+        def count(self):
+            return 1
+
+        def nth(self, index):
+            calls.append(("nth", self.selector, index))
+            return self
+
+        def click(self, timeout=None):
+            calls.append(("click", self.selector, timeout))
+
+        def wait_for(self, state=None, timeout=None):
+            calls.append(("wait_for", self.selector, state, timeout))
+
+        def inner_text(self, timeout=None):
+            return "translation for: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
+
+        def set_input_files(self, path, timeout=None):
+            calls.append(("set_input_files", path, timeout))
+
+    class FakeFrame:
+        page = FakePage()
+
+        def locator(self, selector):
+            calls.append(("locator", selector))
+            return FakeLocator(selector)
+
+        def evaluate(self, script, arg=None):
+            if "const wanted" in script:
+                return {"ok": True, "value": "de"}
+            if "input.files" in script:
+                return {"ok": True, "count": 1, "names": ["loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"]}
+            if "querySelectorAll('s-button.image-button')" in script:
+                return [{"slot": 0, "languages": ["German"]}]
+            raise AssertionError(script)
+
+    monkeypatch.setattr(ez_cdp, "_target_exists", lambda frame, language: True)
+
+    result = ez_cdp.replace_slot(
+        FakeFrame(),
+        0,
+        "C:/tmp/loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+        language="German",
+        replace_existing=True,
+    )
+
+    assert result["status"] == "ok"
+    assert ("click", 'button[aria-label="Remove German"]', 5000) in calls
+    assert ("set_input_files", "C:/tmp/loc_from_url_de_00_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg", 10000) in calls
 
 
 def test_ez_replace_slot_logs_timed_steps_and_waits_between_actions(monkeypatch, capsys):

@@ -1571,6 +1571,33 @@ def import_hot_post(
         lang="en",
     )
 
+    # Save thumbnail to local media_thumbs and update metadata in DB
+    try:
+        from config import OUTPUT_DIR
+        import appcore.medias as medias_mod
+
+        thumb_dir = os.path.join(OUTPUT_DIR, "media_thumbs", str(product_id))
+        os.makedirs(thumb_dir, exist_ok=True)
+        final_thumb_path = os.path.join(thumb_dir, f"{item_id}.jpg")
+
+        if local_cover_path and local_cover_path.exists():
+            import shutil
+            shutil.copyfile(str(local_cover_path), final_thumb_path)
+            relative_thumb_path = os.path.relpath(final_thumb_path, OUTPUT_DIR).replace("\\", "/")
+            medias_mod.update_item_thumbnail_metadata(item_id, relative_thumb_path, duration_seconds if duration_seconds > 0 else None)
+        elif local_path and local_path.exists():
+            from pipeline.ffutil import extract_thumbnail
+            extracted = extract_thumbnail(str(local_path), thumb_dir, scale="360:-1")
+            if extracted:
+                if os.path.exists(final_thumb_path):
+                    os.remove(final_thumb_path)
+                os.rename(extracted, final_thumb_path)
+                relative_thumb_path = os.path.relpath(final_thumb_path, OUTPUT_DIR).replace("\\", "/")
+                medias_mod.update_item_thumbnail_metadata(item_id, relative_thumb_path, duration_seconds if duration_seconds > 0 else None)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Save thumbnail for imported hot post failed: %s", exc)
+
     # 6. Update mapping back to meta_hot_posts
     execute(
         "UPDATE meta_hot_posts SET local_product_id = %s, local_media_item_id = %s WHERE id = %s",

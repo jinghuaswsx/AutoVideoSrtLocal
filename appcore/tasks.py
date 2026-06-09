@@ -4153,7 +4153,7 @@ def complete_child_if_ready(*, task_id: int, actor_user_id: int | None = None) -
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE tasks SET status=%s, last_reason=NULL, "
-                    "updated_at=NOW() "
+                    "completed_at=COALESCE(completed_at, NOW()), updated_at=NOW() "
                     "WHERE id=%s AND parent_task_id IS NOT NULL AND status=%s",
                     (CHILD_REVIEW, int(task_id), CHILD_ASSIGNED),
                 )
@@ -4253,13 +4253,36 @@ def confirm_child_step(
     finally:
         conn.close()
     _refresh_push_status_cache_for_child_task(int(task_id), row)
+    completion = complete_child_if_ready(
+        task_id=int(task_id),
+        actor_user_id=int(actor_user_id),
+    )
+    from appcore import pushes
+    updated_row = query_one(
+        "SELECT status, media_product_id, completed_at FROM tasks WHERE id=%s",
+        (int(task_id),),
+    )
+    if updated_row:
+        item = _find_child_task_target_lang_item(
+            task_id=int(task_id),
+            row=updated_row,
+            allow_source_fallback=True,
+        )
+        if item:
+            product = _find_product(updated_row["media_product_id"])
+            readiness = pushes.compute_readiness(item, product)
+            if pushes.is_ready(readiness) and not updated_row.get("completed_at"):
+                execute(
+                    "UPDATE tasks SET completed_at=NOW(), updated_at=NOW() WHERE id=%s",
+                    (int(task_id),),
+                )
     if normalized_key == FINAL_PUSH_CONFIRMATION_STEP_KEY:
         return {
             "step_key": normalized_key,
-            "completed": False,
-            "status": row["status"],
+            "completed": completion.get("completed", False),
+            "status": completion.get("status", row["status"]),
         }
-    return {"step_key": normalized_key}
+    return {"step_key": normalized_key, "completion": completion}
 
 
 def unconfirm_child_step(
@@ -4629,6 +4652,25 @@ def submit_child_step_manual_output(
         task_id=int(task_id),
         actor_user_id=int(actor_user_id),
     )
+    from appcore import pushes
+    updated_row = query_one(
+        "SELECT status, media_product_id, completed_at FROM tasks WHERE id=%s",
+        (int(task_id),),
+    )
+    if updated_row:
+        item = _find_child_task_target_lang_item(
+            task_id=int(task_id),
+            row=updated_row,
+            allow_source_fallback=True,
+        )
+        if item:
+            product = _find_product(updated_row["media_product_id"])
+            readiness = pushes.compute_readiness(item, product)
+            if pushes.is_ready(readiness) and not updated_row.get("completed_at"):
+                execute(
+                    "UPDATE tasks SET completed_at=NOW(), updated_at=NOW() WHERE id=%s",
+                    (int(task_id),),
+                )
     return result
 
 
@@ -4751,10 +4793,11 @@ def _reject_child_submission_if_push_video_oversize(
     )
     if not item:
         return
-    check = video_size_limits.push_video_size_check(item.get("file_size"))
+    duration = item.get("duration_seconds")
+    check = video_size_limits.push_video_size_check(item.get("file_size"), duration)
     if not check["over_limit"]:
         return
-    reason = video_size_limits.build_push_video_oversize_reason(check["size_bytes"])
+    reason = video_size_limits.build_push_video_oversize_reason(check["size_bytes"], duration)
     reject_child(
         task_id=int(task_id),
         actor_user_id=int(actor_user_id),
@@ -5117,7 +5160,13 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
         f"  {expr} AS employee_name, "
         "  SUM(CASE WHEN DATE(t.completed_at) BETWEEN %s AND %s AND ("
         "      (t.parent_task_id IS NULL AND t.status IN ('raw_done', 'all_done')) OR "
-        "      (t.parent_task_id IS NOT NULL AND t.status = 'done')"
+        "      (t.parent_task_id IS NOT NULL AND ("
+        "          t.status = 'done' OR "
+        "          (t.status IN ('assigned', 'review') AND EXISTS ("
+        "              SELECT 1 FROM media_push_status_cache psc "
+        "              WHERE psc.task_id = t.id AND psc.status = 'pending'"
+        "          ))"
+        "      ))"
         "  ) THEN 1 ELSE 0 END) AS today_completed, "
         "  SUM(CASE WHEN ("
         "      (t.parent_task_id IS NULL AND t.status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
@@ -5150,3 +5199,99 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
         }
         for row in rows
     ]
+
+
+def get_user_workload_stats(user_id: int) -> dict:
+    """获取指定用户的工作量统计信息（今日进行中，今日已完成）。
+
+    用户维度的已完成定义：待推送状态（pending_push）或者已完成状态。
+    今日已完成：今日内完成或提交的任务。
+    进行中：处于 todo 状态（并且不是待推送状态）的任务。
+    """
+    from datetime import datetime, date
+    
+    today = datetime.now().date()
+    today_start = datetime.combine(today, datetime.min.time())
+    
+    # 1. 获取所有当前处于“待推送”状态的子任务ID
+    pending_push_ids = get_active_pending_push_task_ids()
+    
+    # 2. 查询该用户的所有任务（不限于非归档，保证归档也算今日工作量）
+    tasks = query_all(
+        "SELECT id, parent_task_id, status, media_product_id, completed_at "
+        "FROM tasks "
+        "WHERE assignee_id = %s",
+        (int(user_id),)
+    )
+    
+    # 3. 查询今日由该用户提交的翻译任务ID（通过 task_events 的 submitted 事件判定今日提交）
+    event_rows = query_all(
+        "SELECT DISTINCT task_id "
+        "FROM task_events "
+        "WHERE actor_user_id = %s "
+        "  AND event_type IN ('submitted', 'completed') "
+        "  AND created_at >= %s",
+        (int(user_id), today_start)
+    )
+    today_event_task_ids = {int(r["task_id"]) for r in event_rows if r.get("task_id") is not None}
+    
+    def is_dt_today(val) -> bool:
+        if not val:
+            return False
+        if isinstance(val, (datetime, date)):
+            return val.date() == today
+        val_str = str(val)
+        return val_str.startswith(str(today))
+
+    in_progress_count = 0
+    today_completed_count = 0
+    
+    today_completed_product_ids = set()
+    today_completed_translate_tasks = 0
+    today_completed_raw_tasks = 0
+    
+    for t in tasks:
+        tid = int(t["id"])
+        parent_id = t.get("parent_task_id")
+        status = t.get("status")
+        product_id = t.get("media_product_id")
+        
+        # 判断状态
+        is_pending_push = tid in pending_push_ids
+        is_done_status = status in (PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE)
+        
+        # A. 进行中 (todo 状态，且不属于 pending_push)
+        is_active = status in (PARENT_PENDING, PARENT_RAW_IN_PROGRESS, PARENT_RAW_REVIEW,
+                              CHILD_ASSIGNED, CHILD_REVIEW, CHILD_BLOCKED)
+        if is_active and not is_pending_push:
+            in_progress_count += 1
+            
+        # B. 今日已完成
+        completed_today = False
+        if is_dt_today(t.get("completed_at")):
+            if parent_id is None:
+                if status in (PARENT_RAW_DONE, PARENT_ALL_DONE):
+                    completed_today = True
+            else:
+                if status == CHILD_DONE or is_pending_push:
+                    completed_today = True
+        elif is_pending_push and tid in today_event_task_ids:
+            completed_today = True
+            
+        if completed_today:
+            today_completed_count += 1
+            if product_id:
+                today_completed_product_ids.add(int(product_id))
+            if parent_id is not None:
+                today_completed_translate_tasks += 1
+            else:
+                today_completed_raw_tasks += 1
+                
+    return {
+        "in_progress": in_progress_count,
+        "today_completed": today_completed_count,
+        "today_completed_products": len(today_completed_product_ids),
+        "today_completed_translate_tasks": today_completed_translate_tasks,
+        "today_completed_raw_tasks": today_completed_raw_tasks,
+    }
+

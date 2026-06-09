@@ -727,6 +727,11 @@ html, body {
   padding:0 8px;
   font-size:12px;
 }
+.oc-vitem .vmeta-line {
+  font-size: 11px;
+  color: var(--oc-fg-muted);
+  line-height: 1.4;
+}
 .oc-vitem .vsource {
   display:grid;
   grid-template-columns:minmax(0, 1fr);
@@ -1167,6 +1172,30 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-delivery-pill.active { background:#dcfce7; color:#15803d; border:1px solid #86efac; }
 .oc-delivery-pill.stopped { background:#f3f4f6; color:#111827; border:1px solid #d1d5db; }
 .oc-delivery-pill.never { background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; }
+.oc-delivery-pill-btn {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:64px;
+  height:26px;
+  padding:0 10px;
+  border-radius:9999px;
+  font-size:11px;
+  font-weight:800;
+  white-space:nowrap;
+  text-decoration:none;
+  box-sizing:border-box;
+  background:#eff6ff;
+  color:#1d4ed8;
+  border:1px solid #bfdbfe;
+  transition:all 0.15s ease;
+  cursor:pointer;
+}
+.oc-delivery-pill-btn:hover {
+  background:#dbeafe;
+  color:#1e40af;
+  border-color:#93c5fd;
+}
 .oc-stability-badge {
   display: inline-flex;
   align-items: center;
@@ -4251,6 +4280,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   <nav class="oc-page-tabs" role="tablist" aria-label="素材管理类型">
     <a href="{{ url_for('medias.product_tab_page') }}" class="oc-page-tab{% if medias_active_tab == 'products' %} active{% endif %}" data-media-tab="products" role="tab" aria-selected="{{ 'true' if medias_active_tab == 'products' else 'false' }}">产品管理</a>
     <a href="{{ url_for('medias.video_tab_page') }}" class="oc-page-tab{% if medias_active_tab == 'videos' %} active{% endif %}" data-media-tab="videos" role="tab" aria-selected="{{ 'true' if medias_active_tab == 'videos' else 'false' }}">视频素材管理</a>
+    <a href="{{ url_for('medias.ai_material_strategist_page') }}" class="oc-page-tab" role="tab" aria-selected="false">AI素材军师</a>
   </nav>
 
   <section id="mediaProductsPanel" class="oc-panel-page" role="tabpanel"{% if medias_active_tab != 'products' %} hidden{% endif %}>

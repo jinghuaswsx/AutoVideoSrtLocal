@@ -46,7 +46,15 @@ def done_task(tmp_path, monkeypatch):
         },
         preview_files={"hard_video": str(task_dir / f"{task_id}_hard.normal.mp4")},
         result={"hard_video": str(task_dir / f"{task_id}_hard.normal.mp4")},
-        variants={"normal": {"label": "normal", "result": {"hard_video": "x"}, "preview_files": {}}},
+        video_size_adjustment={"status": "adjusted"},
+        variants={
+            "normal": {
+                "label": "normal",
+                "result": {"hard_video": "x"},
+                "preview_files": {},
+                "video_size_adjustment": {"status": "adjusted"},
+            }
+        },
         translation_history=[{"result": {"sentences": []}}],
         subtitle_font="Impact",
         subtitle_size=14,
@@ -160,11 +168,13 @@ def test_restart_resets_state_and_persists_new_config(done_task):
     assert task["status"] == "uploaded"
     assert task["tos_uploads"] == {}
     assert task["result"] == {}
+    assert task["video_size_adjustment"] == {}
     assert task["exports"] == {}
     assert task["preview_files"] == {"source_video": str(done_task["video_path"])}
     assert task["translation_history"] == []
     assert task["variants"] != {} and "normal" in task["variants"]
     assert task["variants"]["normal"].get("result") == {}
+    assert task["variants"]["normal"].get("video_size_adjustment") == {}
     assert all(status == "pending" for status in task["steps"].values())
     assert all(msg == "" for msg in task["step_messages"].values())
     assert task["voice_id"] == "v-new"
@@ -193,6 +203,7 @@ def test_restart_uses_explicit_dynamic_step_order(done_task):
         "loudness_match",
         "subtitle",
         "compose",
+        "video_size_adjustment",
         "export",
     )
 

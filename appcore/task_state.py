@@ -47,6 +47,7 @@ def _empty_variant_state(label: str) -> dict:
         "corrected_subtitle": {},
         "timeline_manifest": {},
         "result": {},
+        "video_size_adjustment": {},
         "exports": {},
         "artifacts": {},
         "preview_files": {},

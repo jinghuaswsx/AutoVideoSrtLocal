@@ -3763,6 +3763,7 @@
           <option value="">全部店铺</option>
           <option value="newjoy">NewJoy</option>
           <option value="omurio">Omurio</option>
+          <option value="cozywint">Cozywint</option>
         </select>
       </div>
     </div>
@@ -4270,6 +4271,9 @@
           </table>
         </div>
       </div>
+      {% if level == 'ad' %}
+      <div class="ads-country-cards-container" data-ads-country-cards="ad" style="display: none; flex-direction: column; gap: 16px; margin-top: 12px; width: 100%;"></div>
+      {% endif %}
       <div class="oa-pagination" data-ads-pagination="{{ level }}"></div>
     </div>
 
@@ -8255,7 +8259,7 @@
     var body = document.getElementById('weeklyAiStoreBody');
     if (!body) return;
     body.innerHTML = '';
-    [['all', '全局'], ['newjoy', 'Newjoy'], ['omurio', 'Omurio']].forEach(function(pair) {
+    [['all', '全局'], ['newjoy', 'Newjoy'], ['omurio', 'Omurio'], ['cozywint', 'Cozywint']].forEach(function(pair) {
       var row = weeklyAiSumRows(stores[pair[0]] || []);
       weeklyAiAppendRow(body, [
         pair[1],
@@ -8733,7 +8737,7 @@
       body: JSON.stringify({
         start_date: '2026-01-01',
         end_date: '2026-04-28',
-        site_codes: ['newjoy', 'omurio'],
+        site_codes: ['newjoy', 'omurio', 'cozywint'],
         dry_run: dryRun
       })
     })
@@ -8842,7 +8846,7 @@
   ];
   var metaAdAccountsState = {
     accounts: [],
-    stores: ['newjoy', 'omurio'],
+    stores: ['newjoy', 'omurio', 'cozywint'],
     columnPresetChoices: META_AD_COLUMN_PRESET_FALLBACK_CHOICES,
   };
   var metaAdSyncState = { account: null, jobId: '', pollTimer: null };
@@ -8874,7 +8878,7 @@
       .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
       .then(function(res) {
         if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '加载失败');
-        metaAdAccountsState.stores = res.body.available_store_codes || ['newjoy', 'omurio'];
+        metaAdAccountsState.stores = res.body.available_store_codes || ['newjoy', 'omurio', 'cozywint'];
         metaAdAccountsState.columnPresetChoices = res.body.column_preset_choices || META_AD_COLUMN_PRESET_FALLBACK_CHOICES;
         metaAdAccountsState.accounts = res.body.accounts || [];
         renderMetaAdAccounts();
@@ -9096,7 +9100,8 @@
 
   function adsPopulateAccountFilters() {
     document.querySelectorAll('[data-ads-account-filter], [data-ads-detail-account]').forEach(function(select) {
-      var current = adsNormalizeAccountId(select.value);
+      var current = adsNormalizeAccountId(select.value) || select.getAttribute('data-init-val') || '';
+      select.removeAttribute('data-init-val');
       select.innerHTML = adsAccountOptionsHtml(current);
       if (current) select.value = current;
     });
@@ -10816,6 +10821,109 @@
     if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
   }
 
+  function adsSyncListParamsToUrl(level, query, accountId, country, start, end) {
+    if (!window.history || !window.history.replaceState || !window.location) return;
+    var url = new URL(window.location.href);
+    url.searchParams.set('subtab', level);
+    
+    if (query) {
+      url.searchParams.set('q', query);
+    } else {
+      url.searchParams.delete('q');
+    }
+    
+    if (accountId) {
+      url.searchParams.set('ad_account_id', accountId);
+    } else {
+      url.searchParams.delete('ad_account_id');
+    }
+    
+    if (country) {
+      url.searchParams.set('country', country);
+    } else {
+      url.searchParams.delete('country');
+    }
+    
+    var activeRangeBtn = document.querySelector('[data-ads-level-range].is-active[data-ads-level="' + level + '"]');
+    if (activeRangeBtn) {
+      url.searchParams.set('range', activeRangeBtn.dataset.adsLevelRange);
+    } else {
+      url.searchParams.delete('range');
+    }
+    
+    if (start) {
+      url.searchParams.set('start_date', start);
+    } else {
+      url.searchParams.delete('start_date');
+    }
+    
+    if (end) {
+      url.searchParams.set('end_date', end);
+    } else {
+      url.searchParams.delete('end_date');
+    }
+    
+    window.history.replaceState(null, '', url);
+  }
+
+  function adsInitializeFiltersFromUrl(level) {
+    var params = new URLSearchParams(window.location.search);
+    
+    var q = params.get('q');
+    if (q) {
+      var searchInput = document.querySelector('[data-ads-search-input="' + level + '"]');
+      if (searchInput) searchInput.value = q.trim();
+    }
+    
+    var adAccountId = params.get('ad_account_id');
+    if (adAccountId) {
+      var accountFilter = document.querySelector('[data-ads-account-filter="' + level + '"]');
+      if (accountFilter) {
+        accountFilter.setAttribute('data-init-val', adAccountId);
+        accountFilter.value = adAccountId;
+      }
+    }
+    
+    var country = params.get('country');
+    if (country) {
+      var countryFilter = document.querySelector('[data-ads-country-filter="' + level + '"]');
+      if (countryFilter) {
+        countryFilter.setAttribute('data-init-val', country);
+        countryFilter.value = country;
+      }
+    }
+    
+    var range = params.get('range');
+    var startDate = params.get('start_date');
+    var endDate = params.get('end_date');
+    
+    var startEl = document.querySelector('[data-ads-list-start="' + level + '"]');
+    var endEl = document.querySelector('[data-ads-list-end="' + level + '"]');
+    
+    if (range) {
+      var bounds = resolveCountryRange(range);
+      if (bounds) {
+        if (startEl) startEl.value = formatDateInput(bounds.start);
+        if (endEl) endEl.value = formatDateInput(bounds.end);
+      }
+      
+      document.querySelectorAll('[data-ads-level-range][data-ads-level="' + level + '"]').forEach(function(btn) {
+        var isActive = btn.dataset.adsLevelRange === range;
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+    } else {
+      if (startDate && startEl) startEl.value = startDate;
+      if (endDate && endEl) endEl.value = endDate;
+      
+      document.querySelectorAll('[data-ads-level-range][data-ads-level="' + level + '"]').forEach(function(btn) {
+        btn.classList.remove('is-active');
+        btn.setAttribute('aria-pressed', 'false');
+      });
+    }
+    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
+  }
+
   function adsLoadList(level) {
     var start = (document.querySelector('[data-ads-list-start="' + level + '"]') || {}).value || adsDefaultStartIso(level);
     var end = (document.querySelector('[data-ads-list-end="' + level + '"]') || {}).value || adsDefaultEndIso(level);
@@ -10825,6 +10933,9 @@
     var accountId = getSelectedAdsAccountId('[data-ads-account-filter="' + level + '"]');
     var countryEl = document.querySelector('[data-ads-country-filter="' + level + '"]');
     var country = countryEl ? countryEl.value : '';
+    
+    adsSyncListParamsToUrl(level, query, accountId, country, start, end);
+
     var page = adsLevelState[level].listPage || 1;
     var url = '/order-analytics/ads/list?level=' + encodeURIComponent(level) +
               '&start_date=' + encodeURIComponent(start) +
@@ -11062,7 +11173,8 @@
   function adsPopulateCountryFilter(level, availableCountries) {
     var select = document.querySelector('[data-ads-country-filter="' + level + '"]');
     if (!select) return;
-    var current = select.value;
+    var current = select.value || select.getAttribute('data-init-val') || '';
+    select.removeAttribute('data-init-val');
     var html = '<option value="">全部国家</option>';
     var seenSelected = false;
     (availableCountries || []).forEach(function(c) {
@@ -11086,54 +11198,177 @@
     var body = document.querySelector('[data-ads-list-body="' + level + '"]');
     if (!body) return;
     adsRenderDataQuality(level, data.data_quality);
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="7" class="oad-loading">该日期范围内暂无 ' + adsLevelLabels[level] + ' 数据。</td></tr>';
-    } else {
-      var html = '';
-      rows.forEach(function(r) {
-        var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
-        html += '<tr class="oa-row-clickable" data-ads-row="' + escHtml(r.code || '') + '" data-ads-name="' + escHtml(r.name || '') + '" data-ads-account-id="' + escHtml(r.ad_account_id || '') + '">';
-        var copyLabel = adsCopyLabels[level];
-        if (copyLabel) {
-          var levelName = r.name || r.code || '';
-          html += '<td><div class="ads-name-cell"><span class="ads-name-text">' + escHtml(levelName || '—') + '</span>' +
-            '<button type="button" class="ads-copy-name-btn" data-ads-copy-name="' + escHtml(levelName) + '" data-ads-copy-label="' + escHtml(copyLabel) + '" title="' + escHtml(copyLabel) + '">' + escHtml(copyLabel) + '</button>' +
-            '</div></td>';
-        } else {
-          html += '<td>' + escHtml(r.name || r.code || '—') + '</td>';
+    var cardsContainer = document.querySelector('[data-ads-country-cards="ad"]');
+    var tableEl = document.querySelector('[data-ads-list-table="' + level + '"]');
+    var tableWrap = tableEl ? tableEl.closest('.oa-table-wrap') : null;
+
+    if (level === 'ad') {
+      if (cardsContainer) cardsContainer.innerHTML = '';
+      if (!rows.length) {
+        if (tableWrap) tableWrap.style.display = '';
+        if (cardsContainer) cardsContainer.style.display = 'none';
+        body.innerHTML = '<tr><td colspan="7" class="oad-loading">该日期范围内暂无 ' + adsLevelLabels[level] + ' 数据。</td></tr>';
+      } else {
+        if (tableWrap) tableWrap.style.display = 'none';
+        
+        var countryGroups = [];
+        var countryGroupsMap = {};
+        
+        rows.forEach(function(r) {
+          var countryCode = (r.country_code || 'UNKNOWN').toUpperCase();
+          if (!countryGroupsMap[countryCode]) {
+            countryGroupsMap[countryCode] = {
+              code: countryCode,
+              rows: [],
+              spend: 0,
+              purchase_value: 0,
+              result_count: 0
+            };
+            countryGroups.push(countryGroupsMap[countryCode]);
+          }
+          var g = countryGroupsMap[countryCode];
+          g.rows.push(r);
+          g.spend += Number(r.spend_usd || 0);
+          g.purchase_value += Number(r.purchase_value_usd || 0);
+          g.result_count += Number(r.result_count || 0);
+        });
+        
+        var countryMap = {
+          'DE': '德', 'FR': '法', 'ES': '西', 'IT': '意', 'JP': '日',
+          'PT': '葡', 'NL': '荷', 'SE': '瑞', 'FI': '芬', 'US': '美',
+          'GB': '英', 'CA': '加', 'AU': '澳', 'EN': '英'
+        };
+        
+        var cardsHtml = countryGroups.map(function(group) {
+          var marketCode = group.code;
+          var countryPrefix = countryMap[marketCode] || '';
+          var countryText = countryPrefix ? (countryPrefix + ' (' + marketCode + ')') : marketCode;
+          var countryRoas = group.spend > 0 ? (group.purchase_value / group.spend) : 0;
+          
+          var headerKpiHtml = '<div style="display: flex; gap: 16px; align-items: center;">' +
+            '<div style="font-size: 12px; color: var(--oc-fg-muted, #64748b);">消耗: <strong style="color: var(--oc-fg, #1e293b); font-size: 13px; margin-left: 2px;">$' + group.spend.toFixed(2) + '</strong></div>' +
+            '<div style="font-size: 12px; color: var(--oc-fg-muted, #64748b);">购买金额: <strong style="color: var(--oc-fg, #1e293b); font-size: 13px; margin-left: 2px;">$' + group.purchase_value.toFixed(2) + '</strong></div>' +
+            '<div style="font-size: 12px; color: var(--oc-fg-muted, #64748b);">ROAS: <strong style="color: var(--oc-accent, #2563eb); font-size: 13px; margin-left: 2px;">' + countryRoas.toFixed(2) + 'x</strong></div>' +
+            '<div style="font-size: 12px; color: var(--oc-fg-muted, #64748b);">购买数: <strong style="color: var(--oc-fg, #1e293b); font-size: 13px; margin-left: 2px;">' + group.result_count + '</strong></div>' +
+            '</div>';
+
+          var tbodyRowsHtml = group.rows.map(function(r) {
+            var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
+            var levelName = r.name || r.code || '';
+            var copyLabel = adsCopyLabels[level];
+            
+            var nameCell = '<div class="ads-name-cell"><span class="ads-name-text">' + escHtml(levelName || '—') + '</span>' +
+              '<button type="button" class="ads-copy-name-btn" data-ads-copy-name="' + escHtml(levelName) + '" data-ads-copy-label="' + escHtml(copyLabel) + '" title="' + escHtml(copyLabel) + '">' + escHtml(copyLabel) + '</button>' +
+              '</div>';
+
+            return '<tr class="oa-row-clickable" data-ads-row="' + escHtml(r.code || '') + '" data-ads-name="' + escHtml(r.name || '') + '" data-ads-account-id="' + escHtml(r.ad_account_id || '') + '">' +
+              '<td>' + nameCell + '</td>' +
+              '<td>' + escHtml(r.ad_account_name || r.ad_account_id || '—') + '</td>' +
+              '<td class="oa-table-num">$' + Number(r.spend_usd).toFixed(2) + '</td>' +
+              '<td class="oa-table-num">$' + Number(r.purchase_value_usd).toFixed(2) + fallbackBadge + '</td>' +
+              '<td class="oa-table-num">' + adsFmtRoas(r.roas_purchase) + '</td>' +
+              '<td class="oa-table-num">' + adsFmtInt(r.result_count) + '</td>' +
+              '<td class="oa-table-num">' + adsFmtInt(r.day_count) + '</td>' +
+              '</tr>';
+          }).join('');
+
+          return '<section class="oc-country-card" style="border: 1px solid var(--oc-border, #e2e8f0); border-radius: var(--oc-r-lg, 8px); background: var(--oc-bg, #fff); overflow: hidden; box-shadow: var(--oc-shadow-sm); margin-bottom: 16px;">' +
+            '<div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--oc-border, #e2e8f0); background: var(--oc-bg-subtle, #f8fafc);">' +
+            '<div style="font-size: 14px; font-weight: bold; color: var(--oc-accent, #2563eb);">国家：' + escHtml(countryText) + '</div>' +
+            headerKpiHtml +
+            '</div>' +
+            '<div style="padding: 0;">' +
+            '<div class="oa-table-wrap" style="border: none; border-radius: 0; margin-top: 0; width: 100%; max-width: 100%; overflow: auto;">' +
+            '<table class="oa-table" style="border: none; width: 100%;">' +
+            '<thead>' +
+            '<tr>' +
+            '<th>Ad</th><th>账户</th><th class="oa-table-num">消耗 (USD)</th><th class="oa-table-num">购买金额 (USD)</th><th class="oa-table-num">ROAS</th><th class="oa-table-num">购买数</th><th class="oa-table-num">活跃天数</th>' +
+            '</tr>' +
+            '</thead>' +
+            '<tbody>' +
+            tbodyRowsHtml +
+            '</tbody>' +
+            '</table>' +
+            '</div>' +
+            '</div>' +
+            '</section>';
+        }).join('');
+
+        if (cardsContainer) {
+          cardsContainer.innerHTML = cardsHtml;
+          cardsContainer.style.display = 'flex';
+          
+          cardsContainer.querySelectorAll('[data-ads-copy-name]').forEach(function(btn) {
+            btn.addEventListener('click', function(ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              adsCopyText(btn.dataset.adsCopyName || '')
+                .then(function() { adsSetCopyButtonState(btn, '已复制', 'is-copied'); })
+                .catch(function() { adsSetCopyButtonState(btn, '复制失败', ''); });
+            });
+          });
+          
+          cardsContainer.querySelectorAll('[data-ads-row]').forEach(function(tr) {
+            tr.addEventListener('click', function(ev) {
+              if (ev.target && ev.target.closest && ev.target.closest('[data-ads-copy-name]')) return;
+              adsOpenDetail(level, tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
+            });
+          });
         }
-        html += '<td>' + escHtml(r.ad_account_name || r.ad_account_id || '—') + '</td>';
-        html += '<td class="oa-table-num">' + adsFmtMoney(r.spend_usd) + '</td>';
-        html += '<td class="oa-table-num">' + adsFmtMoney(r.purchase_value_usd) + fallbackBadge + '</td>';
-        html += '<td class="oa-table-num">' + adsFmtRoas(r.roas_purchase) + '</td>';
-        html += '<td class="oa-table-num">' + adsFmtInt(r.result_count) + '</td>';
-        html += '<td class="oa-table-num">' + adsFmtInt(r.day_count) + '</td>';
-        html += '</tr>';
-      });
-      body.innerHTML = html;
-      body.querySelectorAll('[data-ads-copy-name]').forEach(function(btn) {
-        btn.addEventListener('click', function(ev) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          adsCopyText(btn.dataset.adsCopyName || '')
-            .then(function() { adsSetCopyButtonState(btn, '已复制', 'is-copied'); })
-            .catch(function() { adsSetCopyButtonState(btn, '复制失败', ''); });
-        });
-      });
-      body.querySelectorAll('[data-ads-row]').forEach(function(tr) {
-        tr.addEventListener('click', function(ev) {
-          if (ev.target && ev.target.closest && ev.target.closest('[data-ads-copy-name]')) return;
-          if (level === 'campaign') {
-            adsOpenChildList('campaign', 'adset', tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
-            return;
+      }
+    } else {
+      if (tableWrap) tableWrap.style.display = '';
+      if (cardsContainer) cardsContainer.style.display = 'none';
+
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="7" class="oad-loading">该日期范围内暂无 ' + adsLevelLabels[level] + ' 数据。</td></tr>';
+      } else {
+        var html = '';
+        rows.forEach(function(r) {
+          var fallbackBadge = adsFallbackBadge(r.purchase_value_source);
+          html += '<tr class="oa-row-clickable" data-ads-row="' + escHtml(r.code || '') + '" data-ads-name="' + escHtml(r.name || '') + '" data-ads-account-id="' + escHtml(r.ad_account_id || '') + '">';
+          var copyLabel = adsCopyLabels[level];
+          if (copyLabel) {
+            var levelName = r.name || r.code || '';
+            html += '<td><div class="ads-name-cell"><span class="ads-name-text">' + escHtml(levelName || '—') + '</span>' +
+              '<button type="button" class="ads-copy-name-btn" data-ads-copy-name="' + escHtml(levelName) + '" data-ads-copy-label="' + escHtml(copyLabel) + '" title="' + escHtml(copyLabel) + '">' + escHtml(copyLabel) + '</button>' +
+              '</div></td>';
+          } else {
+            html += '<td>' + escHtml(r.name || r.code || '—') + '</td>';
           }
-          if (level === 'adset') {
-            adsOpenChildList('adset', 'ad', tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
-            return;
-          }
-          adsOpenDetail(level, tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
+          html += '<td>' + escHtml(r.ad_account_name || r.ad_account_id || '—') + '</td>';
+          html += '<td class="oa-table-num">' + adsFmtMoney(r.spend_usd) + '</td>';
+          html += '<td class="oa-table-num">' + adsFmtMoney(r.purchase_value_usd) + fallbackBadge + '</td>';
+          html += '<td class="oa-table-num">' + adsFmtRoas(r.roas_purchase) + '</td>';
+          html += '<td class="oa-table-num">' + adsFmtInt(r.result_count) + '</td>';
+          html += '<td class="oa-table-num">' + adsFmtInt(r.day_count) + '</td>';
+          html += '</tr>';
         });
-      });
+        body.innerHTML = html;
+        body.querySelectorAll('[data-ads-copy-name]').forEach(function(btn) {
+          btn.addEventListener('click', function(ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            adsCopyText(btn.dataset.adsCopyName || '')
+              .then(function() { adsSetCopyButtonState(btn, '已复制', 'is-copied'); })
+              .catch(function() { adsSetCopyButtonState(btn, '复制失败', ''); });
+          });
+        });
+        body.querySelectorAll('[data-ads-row]').forEach(function(tr) {
+          tr.addEventListener('click', function(ev) {
+            if (ev.target && ev.target.closest && ev.target.closest('[data-ads-copy-name]')) return;
+            if (level === 'campaign') {
+              adsOpenChildList('campaign', 'adset', tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
+              return;
+            }
+            if (level === 'adset') {
+              adsOpenChildList('adset', 'ad', tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
+              return;
+            }
+            adsOpenDetail(level, tr.dataset.adsRow, tr.dataset.adsName || tr.dataset.adsRow, tr.dataset.adsAccountId || '');
+          });
+        });
+      }
     }
     var pag = document.querySelector('[data-ads-pagination="' + level + '"]');
     if (pag) {
@@ -11333,10 +11568,13 @@
       var code = (params.get('ads_code') || '').trim();
       var hasDeepLink = params.get('tab') === 'ads' && ADS_LEVELS.indexOf(level) !== -1 && code;
       if (!hasDeepLink) {
-        if (window.location.pathname.indexOf('ad-accounts-view') !== -1 || params.get('subtab') === 'ad-accounts') {
+        var subtab = (params.get('subtab') || '').trim().toLowerCase();
+        if (window.location.pathname.indexOf('ad-accounts-view') !== -1 || subtab === 'ad-accounts') {
           setAdsSubtab('ad-accounts');
         } else {
-          setAdsSubtab('ad');
+          var targetLevel = ADS_LEVELS.indexOf(subtab) !== -1 ? subtab : 'ad';
+          adsInitializeFiltersFromUrl(targetLevel);
+          setAdsSubtab(targetLevel);
         }
       }
     };
@@ -11348,10 +11586,13 @@
       var code = (params.get('ads_code') || '').trim();
       var hasDeepLink = params.get('tab') === 'ads' && ADS_LEVELS.indexOf(level) !== -1 && code;
       if (!hasDeepLink) {
-        if (window.location.pathname.indexOf('ad-accounts-view') !== -1 || params.get('subtab') === 'ad-accounts') {
+        var subtab = (params.get('subtab') || '').trim().toLowerCase();
+        if (window.location.pathname.indexOf('ad-accounts-view') !== -1 || subtab === 'ad-accounts') {
           setAdsSubtab('ad-accounts');
         } else {
-          setAdsSubtab('ad');
+          var targetLevel = ADS_LEVELS.indexOf(subtab) !== -1 ? subtab : 'ad';
+          adsInitializeFiltersFromUrl(targetLevel);
+          setAdsSubtab(targetLevel);
         }
       }
     });
@@ -11725,6 +11966,7 @@
           <option value="">请选择店铺</option>
           <option value="newjoyloo">newjoyloo</option>
           <option value="Omurio">Omurio</option>
+          <option value="Cozywint">Cozywint</option>
         </select>
       </label>
       <label>
@@ -11759,6 +12001,7 @@
           <option value="">全部</option>
           <option value="newjoy">newjoyloo</option>
           <option value="omurio">Omurio</option>
+          <option value="cozywint">Cozywint</option>
         </select>
       </label>
       <div class="ppr-dialog-row">

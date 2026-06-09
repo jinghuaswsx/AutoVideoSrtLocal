@@ -709,8 +709,12 @@
       detailsHtml = `<div class="oc-delivery-details" style="font-size: 11px; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; align-items: center;">${parts.join('')}</div>`;
     }
     
-    return `<div style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%;">`
+    const productCode = (p.product_code === null || p.product_code === undefined) ? '' : String(p.product_code).trim();
+    const adAnalysisUrl = `/order-analytics/ads-view?subtab=ad&q=${encodeURIComponent(productCode)}&range=thisMonth`;
+
+    return `<div style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%; gap: 4px;">`
       + `<span class="oc-delivery-pill ${meta.cls}">${meta.label}</span>`
+      + `<a href="${escapeHtml(adAnalysisUrl)}" target="_blank" rel="noopener noreferrer" class="oc-delivery-pill-btn" title="查看广告分析">广告分析</a>`
       + detailsHtml
       + `</div>`;
   }
@@ -3973,6 +3977,9 @@
             <button class="oc-btn sm ghost" data-product-unsuitable-push="${p.id}" title="推送该产品的不合适标注报文">
               ${icon('alert', 12)}<span>推送不合适</span>
             </button>
+            <a class="oc-btn sm ghost" href="/pushes?keyword=${encodeURIComponent(productCode)}&status=" target="_blank" rel="noopener noreferrer" title="跳转到推送管理">
+              ${icon('external-link', 12)}<span>推送管理</span>
+            </a>
           </div>
         </td>
         <td class="actions">
@@ -9407,6 +9414,8 @@
       const imgTag = coverSrc
         ? `<img src="${escapeHtml(coverSrc)}" loading="lazy" alt="">${playBtnHtml}`
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
+      const fileSizeMb = it.file_size ? (it.file_size / 1024 / 1024).toFixed(1) + 'M' : '-';
+      const durationStr = it.duration_seconds ? Math.round(it.duration_seconds) + ' s' : '-';
       return `
       <div class="oc-vitem" data-item="${it.id}" data-lang="${escapeHtml(it.lang || edState.activeLang || 'en')}" data-filename="${escapeHtml(rawName)}">
         <div class="vname oc-vitem-name-editor">
@@ -9424,6 +9433,7 @@
             <button class="oc-btn ghost sm" type="button" data-act="name-cancel" hidden>${icon('close', 12)}<span>取消</span></button>
           </div>
         </div>
+        <div class="vmeta-line">文件大小：${fileSizeMb},视频时长：${durationStr}</div>
         ${sourceHtml}
         ${taskHtml}
         <div class="vtabs">
@@ -9747,6 +9757,8 @@
         const deleteHtml = version.can_delete
           ? `<button type="button" class="oc-btn text sm danger-txt" data-version-delete="${escapeHtml(version.id)}">${icon('trash', 12)}<span>删除</span></button>`
           : '';
+        const vSizeMb = version.file_size ? (version.file_size / 1024 / 1024).toFixed(1) + 'M' : '-';
+        const vDurationStr = version.duration_seconds ? Math.round(version.duration_seconds) + ' s' : '-';
         return `
           <div class="oc-vitem" style="margin-bottom:12px;">
             <div class="vname">
@@ -9754,6 +9766,7 @@
                 V${versionNo || '-'} · ${escapeHtml(version.display_name || version.filename || '')}
               </div>
             </div>
+            <div class="vmeta-line">文件大小：${vSizeMb},视频时长：${vDurationStr}</div>
             <div class="vsource">${escapeHtml(taskId)}${archivedAt ? ` · ${escapeHtml(archivedAt)}` : ''}</div>
             <div style="display:grid;grid-template-columns:minmax(180px, 260px) 1fr;gap:12px;align-items:start;">
               <div class="vpane active" style="min-height:180px;">

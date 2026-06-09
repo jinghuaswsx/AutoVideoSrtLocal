@@ -337,10 +337,18 @@ def new_product_page():
 @login_required
 def get_item_thumbnail(item_id: int):
     from appcore.db import query_one
+    from config import OUTPUT_DIR
     row = query_one("SELECT thumbnail_path FROM media_items WHERE id=%s", (item_id,))
-    if row and row.get("thumbnail_path") and os.path.exists(row["thumbnail_path"]):
-        return send_file(row["thumbnail_path"])
+    if row and row.get("thumbnail_path"):
+        thumb_path = row["thumbnail_path"]
+        if not os.path.isabs(thumb_path):
+            full_path = os.path.join(OUTPUT_DIR, thumb_path)
+        else:
+            full_path = thumb_path
+        if os.path.exists(full_path):
+            return send_file(full_path)
     abort(404)
+
 
 
 @bp.route("/api/new-product/project/<int:media_item_id>", methods=["DELETE"])
@@ -493,6 +501,35 @@ def api_stats():
         end_date = start_date
     stats = tasks_svc.get_employee_task_stats(start_date, end_date)
     return _json_response({"stats": stats})
+
+
+@bp.route("/api/user-workload", methods=["GET"])
+@login_required
+def api_user_workload():
+    try:
+        stats = tasks_svc.get_user_workload_stats(int(current_user.id))
+        stats["is_admin"] = _is_admin()
+        stats["others"] = []
+        if _is_admin():
+            from appcore.db import query_all
+            display_name_expr = tasks_svc._user_display_name_expr("")
+            sql = f"SELECT id, {display_name_expr} AS display_name FROM users WHERE {display_name_expr} IN (%s, %s, %s)"
+            rows = query_all(sql, ("周干琴", "顾倩", "王健"))
+            target_order = ["周干琴", "顾倩", "王健"]
+            user_by_name = {row["display_name"]: row["id"] for row in rows}
+            for name in target_order:
+                if name in user_by_name:
+                    uid = user_by_name[name]
+                    user_stats = tasks_svc.get_user_workload_stats(uid)
+                    stats["others"].append({
+                        "user_id": uid,
+                        "display_name": name,
+                        "stats": user_stats
+                    })
+        return _json_response(stats)
+    except Exception as exc:
+        current_app.logger.exception("get user workload stats failed")
+        return _json_response({"error": str(exc)}, 500)
 
 
 @bp.route("/api/<int:tid>/archive", methods=["POST"])
@@ -876,9 +913,20 @@ def api_parent_manual_result(tid: int):
         elif status in (tasks_svc.PARENT_RAW_DONE, tasks_svc.PARENT_ALL_DONE):
             tasks_svc.reset_to_raw_review(task_id=tid, actor_user_id=int(current_user.id))
 
-        size_check = video_size_limits.push_video_size_check(new_size)
+        duration_seconds = 0.0
+        media_item_id = task_row.get("media_item_id")
+        if media_item_id:
+            from appcore.db import query_one
+            item_row = query_one("SELECT duration_seconds FROM media_items WHERE id=%s", (media_item_id,))
+            if item_row and item_row.get("duration_seconds"):
+                try:
+                    duration_seconds = float(item_row["duration_seconds"])
+                except (ValueError, TypeError):
+                    pass
+
+        size_check = video_size_limits.push_video_size_check(new_size, duration_seconds=duration_seconds)
         if size_check["over_limit"]:
-            reason = video_size_limits.build_push_video_oversize_reason(new_size)
+            reason = video_size_limits.build_push_video_oversize_reason(new_size, duration_seconds=duration_seconds)
             tasks_svc.reject_raw(
                 task_id=tid,
                 actor_user_id=int(current_user.id),

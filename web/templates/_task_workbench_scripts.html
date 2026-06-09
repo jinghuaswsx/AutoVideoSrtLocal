@@ -5,8 +5,8 @@
   const MAIN_STEPS = {{ pipeline_main_steps|default([])|tojson }};
   const PROGRESS_STEPS = {{ pipeline_progress_steps|default(pipeline_main_steps|default([]))|tojson }};
   {% elif api_base == '/api/omni-translate' %}
-  const STEP_ORDER = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export", "analysis"];
-  const MAIN_STEPS = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "export"];
+  const STEP_ORDER = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "video_size_adjustment", "export", "analysis"];
+  const MAIN_STEPS = ["extract", "asr", "separate", "asr_clean", "voice_match", "alignment", "shot_decompose", "translate", "tts", "av_sync_audit", "loudness_match", "subtitle", "compose", "video_size_adjustment", "export"];
   const PROGRESS_STEPS = MAIN_STEPS;
   {% elif pipeline_kind == 'multi_translate' %}
   const STEP_ORDER = ["extract", "asr", "asr_normalize", "separate", "alignment", "translate", "tts", "loudness_match", "subtitle", "compose", "av_sync_audit", "export", "analysis"];
@@ -510,6 +510,7 @@
       subtitle: "字幕生成",
       quality_assessment: "翻译质量评估",
       compose: "视频合成",
+      video_size_adjustment: "视频大小调整",
       analysis: "AI 视频分析",
       export: "CapCut 导出",
     }[step] || step;
@@ -1580,6 +1581,10 @@
         const fallbackArtifact = synthesizeAsrCleanArtifact(currentTask);
         if (fallbackArtifact) artifact = fallbackArtifact;
       }
+      if (step === "video_size_adjustment" && (!artifact || !artifact.summary)) {
+        const fallbackArtifact = buildVideoSizeAdjustmentArtifactFromTask(currentTask);
+        if (fallbackArtifact) artifact = fallbackArtifact;
+      }
       const status = currentTask?.steps?.[step] || "pending";
       const displayStatus = visualStepStatus(status);
       let html;
@@ -1594,6 +1599,8 @@
         html = `<div class="preview-placeholder">${escapeHtml(message)}</div>`;
       } else if (artifact.layout === "variant_compare") {
         html = renderVariantCompareArtifact(artifact);
+      } else if (artifact.layout === "video_size_adjustment") {
+        html = renderVideoSizeAdjustmentArtifact(artifact);
       } else if (artifact.layout === "analysis") {
         html = renderAnalysisArtifact(artifact);
       } else if (!artifact.items || !artifact.items.length) {
@@ -1618,6 +1625,104 @@
         delete previewEl.dataset.terminalFrozen;
       }
     });
+  }
+
+  function buildVideoSizeAdjustmentArtifactFromTask(task) {
+    if (!task) return null;
+    const variants = task.variants || {};
+    const preferredVariant = task.video_size_adjustment?.variant || "";
+    const preferredSummary = preferredVariant && variants[preferredVariant]?.video_size_adjustment
+      ? variants[preferredVariant].video_size_adjustment
+      : null;
+    const summary = task.video_size_adjustment
+      || preferredSummary
+      || variants.av?.video_size_adjustment
+      || variants.normal?.video_size_adjustment
+      || variants.hook_cta?.video_size_adjustment
+      || null;
+    if (!summary || !Object.keys(summary).length) return null;
+    return {
+      title: "视频大小调整",
+      layout: "video_size_adjustment",
+      summary,
+      items: [],
+    };
+  }
+
+  function renderVideoSizeAdjustmentArtifact(artifact) {
+    const summary = artifact.summary || {};
+    if (!Object.keys(summary).length) {
+      return `<div class="preview-placeholder">等待视频大小调整结果</div>`;
+    }
+    const statusMeta = videoSizeAdjustmentStatusMeta(summary.status);
+    const originalTotal = summary.original_total_bitrate_bps;
+    const targetTotal = summary.target_total_bitrate_bps;
+    const metrics = [
+      ["原始大小", formatFileSizeMb(summary.input_size_bytes)],
+      ["最终大小", formatFileSizeMb(summary.output_size_bytes)],
+      ["限制", formatFileSizeMb(summary.limit_bytes)],
+      ["时长", formatAvDuration(summary.duration_seconds)],
+      ["总码率", `${formatBitrateBps(originalTotal)} → ${formatBitrateBps(targetTotal)}`],
+      ["视频码率", `${formatBitrateBps(summary.original_video_bitrate_bps)} → ${formatBitrateBps(summary.target_video_bitrate_bps)}`],
+      ["音频码率", `${formatBitrateBps(summary.original_audio_bitrate_bps)} → ${formatBitrateBps(summary.target_audio_bitrate_bps)}`],
+    ];
+    const attempts = Array.isArray(summary.attempts) ? summary.attempts : [];
+    const attemptHtml = attempts.length ? `
+      <div class="video-size-attempts">
+        <div class="preview-label">重编码尝试</div>
+        <div class="video-size-attempt-list">
+          ${attempts.map(attempt => `
+            <div class="video-size-attempt-row">
+              <span>第 ${escapeHtml(attempt.attempt ?? "--")} 轮</span>
+              <span>总码率 ${escapeHtml(formatBitrateBps(attempt.target_total_bitrate_bps))}</span>
+              <span>视频 ${escapeHtml(formatBitrateBps(attempt.target_video_bitrate_bps))}</span>
+              <span>音频 ${escapeHtml(formatBitrateBps(attempt.target_audio_bitrate_bps))}</span>
+              <strong>${escapeHtml(formatFileSizeMb(attempt.output_size_bytes))}</strong>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    ` : "";
+    const message = summary.message || statusMeta.label;
+    return `
+      <div class="preview-block video-size-adjustment ${statusMeta.className}">
+        <div class="video-size-head">
+          <span class="video-size-status">${escapeHtml(statusMeta.label)}</span>
+          <span class="video-size-unit-note">MB 是文件大小，Mbps/kbps 是码率单位</span>
+        </div>
+        <div class="video-size-message">${escapeHtml(message)}</div>
+        <div class="video-size-metrics">
+          ${metrics.map(([label, value]) => `
+            <div>
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(value)}</strong>
+            </div>
+          `).join("")}
+        </div>
+        ${attemptHtml}
+      </div>
+    `;
+  }
+
+  function videoSizeAdjustmentStatusMeta(status) {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "adjusted") return { label: "已调整", className: "is-adjusted" };
+    if (normalized === "failed") return { label: "失败", className: "is-failed" };
+    return { label: "已检查，无需调整", className: "is-skipped" };
+  }
+
+  function formatFileSizeMb(bytes) {
+    const numeric = numberOrNull(bytes);
+    if (numeric == null || numeric <= 0) return "--";
+    return `${(numeric / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function formatBitrateBps(bps) {
+    const numeric = numberOrNull(bps);
+    if (numeric == null || numeric <= 0) return "--";
+    const kbps = Math.round(numeric / 1000);
+    if (numeric >= 1000000) return `${(numeric / 1000000).toFixed(2)} Mbps (${kbps} kbps)`;
+    return `${kbps} kbps`;
   }
 
   function renderAnalysisArtifact(artifact) {

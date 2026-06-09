@@ -455,6 +455,15 @@ def build_compose_artifact() -> dict:
     }
 
 
+def build_video_size_adjustment_artifact(summary: dict | None) -> dict:
+    return {
+        "title": "视频大小调整",
+        "layout": "video_size_adjustment",
+        "summary": summary or {},
+        "items": [],
+    }
+
+
 def build_analysis_artifact(score: dict | None, csk: dict | None,
                             score_prompt: str = "", csk_prompt: str = "",
                             score_error: str = "", csk_error: str = "",

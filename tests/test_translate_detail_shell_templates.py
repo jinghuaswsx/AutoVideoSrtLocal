@@ -76,6 +76,29 @@ def test_task_workbench_renders_tts_speech_rate_diagnostics():
     assert ".duration-rate-diagnostic" in styles
 
 
+def test_task_workbench_renders_video_size_adjustment_card_and_renderer():
+    root = Path(__file__).resolve().parents[1]
+    template = (root / "web" / "templates" / "_task_workbench.html").read_text(encoding="utf-8")
+    script = (root / "web" / "templates" / "_task_workbench_scripts.html").read_text(encoding="utf-8")
+    styles = (root / "web" / "templates" / "_task_workbench_styles.html").read_text(encoding="utf-8")
+
+    assert 'id="step-video_size_adjustment"' in template
+    assert 'id="preview-video_size_adjustment"' in template
+    assert "视频大小调整" in template
+    assert 'video_size_adjustment: "视频大小调整"' in script
+    assert 'artifact.layout === "video_size_adjustment"' in script
+    assert "buildVideoSizeAdjustmentArtifactFromTask" in script
+    assert 'step === "video_size_adjustment"' in script
+    assert "task.video_size_adjustment" in script
+    assert "variants.av?.video_size_adjustment" in script
+    assert "已检查，无需调整" in script
+    assert "renderVideoSizeAdjustmentArtifact" in script
+    assert "总码率" in script
+    assert "视频码率" in script
+    assert "音频码率" in script
+    assert ".video-size-adjustment" in styles
+
+
 def test_translate_status_card_is_sticky_below_topbar():
     root = Path(__file__).resolve().parents[1]
     shared = (root / "web" / "templates" / "_translate_detail_shell.html").read_text(encoding="utf-8")

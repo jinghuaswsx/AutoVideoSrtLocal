@@ -103,7 +103,7 @@ EXPECTED_MULTI_STEPS = [
 EXPECTED_OMNI_STEPS = [
     "extract", "asr", "separate", "asr_clean", "voice_match",
     "alignment", "translate", "tts", "loudness_match", "subtitle",
-    "compose", "export",
+    "compose", "video_size_adjustment", "export",
 ]
 EXPECTED_AV_SYNC_STEPS = [
     "extract", "asr", "asr_normalize", "voice_match",

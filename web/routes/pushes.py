@@ -516,6 +516,10 @@ def api_list():
     if sort not in {"created_at_asc", "created_at_desc"}:
         sort = "created_at_desc"
 
+    video_size = (request.args.get("video_size") or "").strip().lower()
+    if video_size not in {"large", "small"}:
+        video_size = ""
+
     owner_id = None
     if owner_id_raw:
         try:
@@ -540,6 +544,7 @@ def api_list():
         sort=sort,
         offset=0,
         limit=None,
+        video_size=video_size,
     )
     status_cache_by_item_id = pushes.status_cache_for_rows(rows)
     missing_cache_rows = [
@@ -1735,6 +1740,7 @@ def api_history():
     date_from = (request.args.get("date_from") or "").strip() or None
     date_to = (request.args.get("date_to") or "").strip() or None
     ad_plan = (request.args.get("ad_plan") or "all").strip().lower()  # all / has / none
+    video_size = (request.args.get("video_size") or "").strip().lower()
     page = max(1, int(request.args.get("page") or 1))
     limit = _PAGE_SIZE_DEFAULT
 
@@ -1763,6 +1769,11 @@ def api_history():
             date_to_dt = date_to
         where.append("l.created_at <= %s")
         args.append(date_to_dt)
+
+    if video_size == "large":
+        where.append("i.file_size >= 104857600")
+    elif video_size == "small":
+        where.append("i.file_size < 104857600")
 
     has_ad_plan_clause, has_ad_plan_args = _push_history_has_ad_plan_clause()
     if ad_plan == "has":
