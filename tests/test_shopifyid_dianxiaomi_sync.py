@@ -572,6 +572,7 @@ def test_click_sync_products_button_retries_after_notice_overlay_cleanup():
     class ButtonLocator:
         def __init__(self):
             self.clicks = 0
+            self.scrolls = 0
 
         def filter(self, *, has_text):
             assert has_text.search("同步产品")
@@ -592,6 +593,10 @@ def test_click_sync_products_button_retries_after_notice_overlay_cleanup():
             self.clicks += 1
             if self.clicks == 1:
                 raise RuntimeError("notice iframe intercepts pointer events")
+
+        def scroll_into_view_if_needed(self, *, timeout):
+            assert timeout == 3000
+            self.scrolls += 1
 
     class FakePage:
         def __init__(self):
@@ -617,8 +622,121 @@ def test_click_sync_products_button_retries_after_notice_overlay_cleanup():
     mod._click_sync_products_button(page)
 
     assert page.button.clicks == 2
+    assert page.button.scrolls == 2
     assert page.evaluated is True
     assert 300 in page.waits
+
+
+def test_click_sync_products_button_falls_back_to_js_click_when_outside_viewport():
+    mod = _load_module()
+
+    class EmptyLocator:
+        def count(self):
+            return 0
+
+        def nth(self, index):
+            raise AssertionError(f"unexpected nth({index})")
+
+    class ButtonLocator:
+        def __init__(self):
+            self.clicks = 0
+            self.scrolls = 0
+            self.js_clicks = 0
+
+        def filter(self, *, has_text):
+            assert has_text.search("同步产品")
+            return self
+
+        @property
+        def first(self):
+            return self
+
+        def wait_for(self, *, state, timeout):
+            assert state == "visible"
+            assert timeout == 30000
+
+        def count(self):
+            return 1
+
+        def scroll_into_view_if_needed(self, *, timeout):
+            assert timeout == 3000
+            self.scrolls += 1
+
+        def click(self, *, timeout):
+            self.clicks += 1
+            raise RuntimeError("element is outside of the viewport")
+
+        def evaluate(self, script, *, timeout):
+            assert timeout == 3000
+            if "el.click()" in script:
+                self.js_clicks += 1
+
+    class FakePage:
+        def __init__(self):
+            self.button = ButtonLocator()
+            self.waits = []
+
+        def locator(self, selector):
+            if selector == "button":
+                return self.button
+            return EmptyLocator()
+
+        def evaluate(self, script):
+            assert "theNewestModalLabelFrame" in script
+            return 0
+
+        def wait_for_timeout(self, value):
+            self.waits.append(value)
+
+    page = FakePage()
+
+    mod._click_sync_products_button(page)
+
+    assert page.button.clicks == 2
+    assert page.button.scrolls == 3
+    assert page.button.js_clicks == 1
+
+
+def test_ensure_page_automation_viewport_expands_tiny_cdp_viewport():
+    mod = _load_module()
+
+    class FakePage:
+        def __init__(self):
+            self.viewport = None
+
+        def evaluate(self, script):
+            assert "window.innerWidth" in script
+            return {"width": 1, "height": 1}
+
+        def set_viewport_size(self, value):
+            self.viewport = value
+
+    page = FakePage()
+
+    mod._ensure_page_automation_viewport(page)
+
+    assert page.viewport == {"width": 1440, "height": 1000}
+
+
+def test_ensure_page_automation_viewport_keeps_usable_viewport():
+    mod = _load_module()
+
+    class FakePage:
+        def __init__(self):
+            self.viewport = None
+
+        def evaluate(self, script):
+            assert "window.innerWidth" in script
+            return {"width": 1280, "height": 720}
+
+        def set_viewport_size(self, value):
+            self.viewport = value
+
+    page = FakePage()
+
+    mod._ensure_page_automation_viewport(page)
+
+    assert page.viewport is None
 
 
 def test_connect_existing_browser_context_restarts_shared_browser_once_after_cdp_timeout(monkeypatch):

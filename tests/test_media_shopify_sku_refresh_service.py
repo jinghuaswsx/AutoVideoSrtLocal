@@ -86,6 +86,7 @@ def test_build_refresh_product_shopify_sku_response_records_fetch_failure_for_ad
             "stage": "manual_refresh_fetch",
             "product_id": 42,
             "shopifyid": "SP1",
+            "shopifyids": ["SP1"],
         },
     }
 
@@ -160,7 +161,12 @@ def test_build_refresh_product_shopify_sku_response_updates_product_and_serializ
         "ok": True,
         "shopify_title": "New Title",
         "skus": [{"sku": "serialized"}],
-        "summary": {"variant_pairs": 2, "pairs_with_dxm": 1},
+        "summary": {
+            "variant_pairs": 2,
+            "pairs_with_dxm": 1,
+            "shopifyids": ["SP1"],
+            "missing_shopifyids": [],
+        },
     }
     assert captured["update"] == (42, {"shopify_title": "New Title"})
     assert captured["replace"] == (42, pairs, {"source": "manual"})
@@ -179,3 +185,36 @@ def test_build_refresh_product_shopify_sku_response_updates_product_and_serializ
             "yuncang_index": yuncang_index,
         },
     )
+
+
+def test_build_refresh_product_shopify_sku_response_uses_per_domain_shopify_ids():
+    from web.services.media_shopify_sku_refresh import build_refresh_product_shopify_sku_response
+
+    captured = {}
+    pairs = [{"shopify_variant_id": "V2", "dianxiaomi_sku_code": "D2"}]
+
+    result = build_refresh_product_shopify_sku_response(
+        42,
+        {"id": 42, "shopifyid": ""},
+        fetch_shopify_and_dxm_fn=lambda: (
+            [{"shopify_product_id": "SP2", "shopify_title": "Domain Title"}],
+            {},
+        ),
+        build_pair_rows_fn=lambda shopify_products, dxm_index: {"SP2": pairs},
+        update_product_fn=lambda pid, **kwargs: captured.update(update=(pid, kwargs)),
+        replace_product_skus_fn=lambda pid, rows, **kwargs: captured.update(
+            replace=(pid, rows, kwargs)
+        ),
+        list_product_skus_fn=lambda pid: [],
+        list_yuncang_unit_prices_fn=lambda skus: {},
+        get_configured_rmb_per_usd_fn=lambda: 7.0,
+        serialize_product_skus_fn=lambda rows, **kwargs: [],
+        list_shopify_product_ids_fn=lambda pid: [
+            {"domain": "omurio.com", "shopify_product_id": "SP2"},
+        ],
+    )
+
+    assert result.status_code == 200
+    assert result.payload["summary"]["shopifyids"] == ["SP2"]
+    assert captured["update"] == (42, {"shopify_title": "Domain Title"})
+    assert captured["replace"] == (42, pairs, {"source": "manual"})

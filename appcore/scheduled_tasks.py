@@ -25,7 +25,10 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
     "shopifyid": {
         "code": "shopifyid",
         "name": "Shopify ID 获取",
-        "description": "每天从店小秘 Shopify 在线商品库抓取 shopifyProductId，并回填 media_products.shopifyid。",
+        "description": (
+            "每天从店小秘 Shopify 在线商品库抓取 shopifyProductId，"
+            "按域名写入 media_product_shopify_ids，并兼容回填默认域名 media_products.shopifyid。"
+        ),
         "schedule": "每天 12:11（与 ROI :00/:20/:40 错峰）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
@@ -39,7 +42,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "店小秘 SKU 配对同步",
         "description": (
             "每 2 小时从店小秘 Shopify 在线商品库与 ERP 商品管理库抓取 variants 与 SKU，"
-            "按 shopifyid 回填 media_products.shopify_title 和 media_product_skus 配对表。"
+            "按 shopifyid 与 media_product_shopify_ids 多域名存档回填 "
+            "media_products.shopify_title 和 media_product_skus 配对表。"
             "Docs-anchor: docs/superpowers/specs/2026-06-05-dianxiaomi-sku-purchase-sync-design.md"
         ),
         "schedule": "每 2 小时（00:21 起，奇偶小时错峰）",

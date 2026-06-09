@@ -158,6 +158,67 @@ def test_resolve_shopify_product_id_does_not_fallback_for_other_domain_cache_mis
     assert product_fetches == []
 
 
+def test_list_shopify_product_ids_batch_returns_domain_mapping(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "product_id": 573,
+                "domain": "OMURIO.com",
+                "shopify_product_id": "9174825337044",
+                "updated_at": None,
+            },
+            {
+                "product_id": 575,
+                "domain": "newjoyloo.com",
+                "shopify_product_id": "8589437075629",
+                "updated_at": None,
+            },
+        ]
+
+    monkeypatch.setattr(medias, "query", fake_query)
+
+    out = medias.list_shopify_product_ids_batch([575, "573", 575, 0, "bad"])
+
+    assert "FROM media_product_shopify_ids" in captured["sql"]
+    assert captured["args"] == (575, 573)
+    assert out[573] == [
+        {
+            "domain": "omurio.com",
+            "shopify_product_id": "9174825337044",
+            "updated_at": None,
+        }
+    ]
+    assert out[575][0]["shopify_product_id"] == "8589437075629"
+
+
+def test_find_product_ids_by_shopifyid_reads_legacy_and_domain_cache(monkeypatch):
+    queries = []
+
+    def fake_query(sql, args=()):
+        queries.append((sql, args))
+        if "FROM media_product_shopify_ids" in sql:
+            return [
+                {"product_id": 20, "shopify_product_id": "200"},
+                {"product_id": 99, "shopify_product_id": "100"},
+            ]
+        return [{"product_id": 10, "shopify_product_id": "100"}]
+
+    monkeypatch.setattr(medias, "query", fake_query)
+
+    out = medias.find_product_ids_by_shopifyid(["200", "100", "100", ""])
+
+    assert len(queries) == 2
+    assert "FROM media_products" in queries[0][0]
+    assert "FROM media_product_shopify_ids" in queries[1][0]
+    assert queries[0][1] == ("100", "200")
+    assert queries[1][1] == ("100", "200")
+    assert out == {"100": 10, "200": 20}
+
+
 def test_update_product_ad_supported_langs(user_id):
     pid = medias.create_product(user_id, "适配语种测试")
     try:

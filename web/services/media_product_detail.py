@@ -195,6 +195,7 @@ def build_product_detail_response(
     list_items_fn=None,
     list_raw_sources_fn=None,
     list_product_skus_fn=None,
+    list_shopify_product_ids_fn=None,
     list_yuncang_unit_prices_fn=None,
     list_copywritings_fn=None,
     get_configured_rmb_per_usd_fn=None,
@@ -207,6 +208,7 @@ def build_product_detail_response(
     list_items_fn = list_items_fn or medias.list_items
     list_raw_sources_fn = list_raw_sources_fn or medias.list_raw_sources
     list_product_skus_fn = list_product_skus_fn or medias.list_product_skus
+    list_shopify_product_ids_fn = list_shopify_product_ids_fn or medias.list_shopify_product_ids
     list_yuncang_unit_prices_fn = list_yuncang_unit_prices_fn or medias.list_yuncang_unit_prices
     list_copywritings_fn = list_copywritings_fn or medias.list_copywritings
     count_item_versions_fn = count_item_versions_fn or medias.count_item_versions
@@ -242,6 +244,7 @@ def build_product_detail_response(
     items = _annotate_source_mk_materials(items, mk_bindings_by_item_id)
     items = _annotate_source_english_items(items, raw_sources_by_id)
     skus = list_product_skus_fn(product_id)
+    shopify_ids = list_shopify_product_ids_fn(product_id)
     yuncang_index = list_yuncang_unit_prices_fn(
         [sku.get("dianxiaomi_sku") or "" for sku in skus]
     )
@@ -255,6 +258,7 @@ def build_product_detail_response(
             roas_rmb_per_usd=get_configured_rmb_per_usd_fn(),
             skus=skus,
             yuncang_index=yuncang_index,
+            shopify_ids=shopify_ids,
         ),
         "covers": covers,
         "copywritings": list_copywritings_fn(product_id),

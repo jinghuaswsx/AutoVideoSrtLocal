@@ -429,6 +429,7 @@ def test_products_list_includes_raw_sources_count(authed_client_no_db, monkeypat
         "id": 123,
         "name": "demo",
         "product_code": "demo",
+        "shopify_title": "Demo Title",
         "color_people": None,
         "source": None,
         "ad_supported_langs": "",
@@ -445,6 +446,7 @@ def test_products_list_includes_raw_sources_count(authed_client_no_db, monkeypat
     monkeypatch.setattr(r.medias, "lang_coverage_by_product", lambda pids: {123: {}})
     monkeypatch.setattr(r.medias, "get_product_covers_batch", lambda pids: {123: {}})
     monkeypatch.setattr(r.medias, "list_product_skus_batch", lambda pids: {123: []})
+    monkeypatch.setattr(r.medias, "list_shopify_product_ids_batch", lambda pids: {})
     monkeypatch.setattr(r.medias, "list_yuncang_unit_prices", lambda skus: {})
     monkeypatch.setattr(r.product_roas, "get_configured_rmb_per_usd", lambda: 7.0)
 

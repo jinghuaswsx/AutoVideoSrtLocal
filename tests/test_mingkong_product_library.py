@@ -126,6 +126,26 @@ def test_mingkong_product_library_keeps_other_candidates_after_shopify_match():
     assert library._selected_candidate_product_ids(candidates, {"matched"}) == [1, 2, 3]
 
 
+def test_mingkong_product_library_candidate_ids_include_per_domain_cache(monkeypatch):
+    from appcore import mingkong_product_library as library
+
+    def fake_query(sql, args):
+        if "FROM media_product_shopify_ids" in sql:
+            assert args == (747,)
+            return [{"shopify_product_id": "domain-shopify-product"}]
+        if "FROM mingkong_material_products" in sql:
+            return []
+        if "FROM dianxiaomi_product_assets" in sql:
+            return []
+        raise AssertionError(sql)
+
+    monkeypatch.setattr(library, "query", fake_query)
+
+    assert library._candidate_shopify_ids(
+        {"id": 747, "product_code": "sample-rjc", "shopifyid": "legacy-shopify-product"}
+    ) == {"legacy-shopify-product", "domain-shopify-product"}
+
+
 def test_mingkong_product_library_dedupes_repeated_shopify_products_by_dxm_sku():
     from appcore import mingkong_product_library as library
 

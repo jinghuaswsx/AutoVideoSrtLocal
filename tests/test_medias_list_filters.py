@@ -225,6 +225,7 @@ def test_products_list_response_includes_product_stability_cache():
         get_product_stability_cache_fn=lambda pids: {
             9: {"status": "stable", "stable_marks": ["7天稳定"]}
         },
+        list_shopify_product_ids_batch_fn=lambda pids: {},
         serialize_product_fn=lambda p, *args, **kwargs: {
             "id": p["id"],
             "stability": kwargs.get("stability"),

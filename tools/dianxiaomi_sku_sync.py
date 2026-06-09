@@ -36,6 +36,7 @@ from tools.shopifyid_dianxiaomi_sync import (
     REPO_ROOT,
     SERVER_BROWSER_CDP_URL,
     SERVER_BROWSER_SERVICE_NAME,
+    build_remote_shopify_ids_table_sql,
     _connect_existing_browser_context,
     _open_browser_context,
     _run_mysql,
@@ -519,10 +520,17 @@ def build_remote_add_shopify_title_sql() -> str:
 
 def build_remote_select_products_sql() -> str:
     return (
+        "SELECT id, shopifyid, shopify_title FROM ("
         "SELECT id, IFNULL(shopifyid, '') AS shopifyid, IFNULL(shopify_title, '') AS shopify_title "
         "FROM media_products "
         "WHERE deleted_at IS NULL AND shopifyid IS NOT NULL AND shopifyid <> '' "
-        "ORDER BY id ASC;\n"
+        "UNION "
+        "SELECT p.id, mps.shopify_product_id AS shopifyid, IFNULL(p.shopify_title, '') AS shopify_title "
+        "FROM media_product_shopify_ids mps "
+        "JOIN media_products p ON p.id = mps.product_id "
+        "WHERE p.deleted_at IS NULL AND mps.shopify_product_id IS NOT NULL AND mps.shopify_product_id <> ''"
+        ") AS local_shopify_ids "
+        "ORDER BY id ASC, shopifyid ASC;\n"
     )
 
 
@@ -626,29 +634,65 @@ def plan_sync(
     sku_replacements: list[tuple[int, list[dict[str, Any]]]] = []
     matched_products: list[dict[str, Any]] = []
     unmatched_local: list[dict[str, Any]] = []
+    unmatched_product_ids: set[int] = set()
+    local_by_product_id: dict[int, dict[str, Any]] = {}
 
     for row in local_products:
-        spid = str(row.get("shopifyid") or "").strip()
-        if not spid:
+        try:
+            product_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
             continue
-        pairs = pair_index.get(spid)
-        if pairs is None:
+        spid = str(row.get("shopifyid") or "").strip()
+        if not product_id or not spid:
+            continue
+        entry = local_by_product_id.setdefault(
+            product_id,
+            {
+                "id": product_id,
+                "shopify_title": (row.get("shopify_title") or "").strip(),
+                "shopifyids": [],
+            },
+        )
+        if spid not in entry["shopifyids"]:
+            entry["shopifyids"].append(spid)
+
+    for row in local_by_product_id.values():
+        matched_pairs: list[dict[str, Any]] = []
+        matched_shopifyids: list[str] = []
+        missing_shopifyids: list[str] = []
+        new_title: str | None = None
+
+        for spid in row["shopifyids"]:
+            pairs = pair_index.get(spid)
+            if pairs is None:
+                missing_shopifyids.append(spid)
+                continue
+            matched_shopifyids.append(spid)
+            matched_pairs.extend(pairs)
+            if new_title is None:
+                new_title = title_index.get(spid) or None
+
+        for spid in missing_shopifyids:
             unmatched_local.append({
                 "id": row.get("id"),
                 "shopifyid": spid,
                 "status": "missing_in_shopify_pagelist",
             })
+
+        if not matched_pairs:
+            unmatched_product_ids.add(int(row["id"]))
             continue
-        new_title = title_index.get(spid) or None
+
         existing_title = (row.get("shopify_title") or "").strip()
         if (new_title or "") != existing_title:
             title_updates.append((int(row["id"]), new_title))
-        sku_replacements.append((int(row["id"]), pairs))
+        sku_replacements.append((int(row["id"]), matched_pairs))
         matched_products.append({
             "id": int(row["id"]),
-            "shopifyid": spid,
-            "variants": len(pairs),
-            "matched_dxm": sum(1 for p in pairs if p.get("dianxiaomi_sku_code")),
+            "shopifyid": matched_shopifyids[0] if matched_shopifyids else "",
+            "shopifyids": matched_shopifyids,
+            "variants": len(matched_pairs),
+            "matched_dxm": sum(1 for p in matched_pairs if p.get("dianxiaomi_sku_code")),
         })
 
     matched_pair_total = sum(len(pairs) for _, pairs in sku_replacements)
@@ -664,9 +708,13 @@ def plan_sync(
         "summary": {
             "shopify_products_fetched": len(shopify_products),
             "dxm_skus_fetched": len(dxm_index),
-            "local_products_with_shopifyid": len(local_products),
+            "local_products_with_shopifyid": len(local_by_product_id),
+            "local_shopifyids_count": sum(
+                len(row["shopifyids"]) for row in local_by_product_id.values()
+            ),
             "matched_local_products": len(matched_products),
-            "unmatched_local_products": len(unmatched_local),
+            "unmatched_local_products": len(unmatched_product_ids),
+            "unmatched_local_shopifyids": len(unmatched_local),
             "title_updates": len(title_updates),
             "matched_variant_pairs": matched_pair_total,
             "matched_variant_pairs_with_dxm": matched_with_dxm,
@@ -940,7 +988,10 @@ def _print_report(report: dict[str, Any], *, remote_label: str, db_name: str) ->
     print(f"  目标库: {remote_label} / {db_name}")
     print(f"  Shopify 在线商品: {s.get('shopify_products_fetched')}")
     print(f"  店小秘 ERP SKU: {s.get('dxm_skus_fetched')}")
-    print(f"  本地待同步 product (有 shopifyid): {s.get('local_products_with_shopifyid')}")
+    print(
+        "  本地待同步 product / Shopify ID: "
+        f"{s.get('local_products_with_shopifyid')} / {s.get('local_shopifyids_count')}"
+    )
     print(f"  命中本地: {s.get('matched_local_products')} （未匹配 {s.get('unmatched_local_products')}）")
     print(f"  写入 variant 配对: {s.get('matched_variant_pairs')} （含 ERP 编码: {s.get('matched_variant_pairs_with_dxm')}）")
     print(f"  英文名更新: {s.get('title_updates')}")
@@ -961,6 +1012,7 @@ def _run_main_impl(argv: list[str] | None = None):
 
     # 确保远端表/字段已就绪（线上是先跑 SQL 迁移，但这里幂等检查一遍兜底）。
     _run_mysql(build_remote_add_shopify_title_sql(), db_name, db_mode=db_mode)
+    _run_mysql(build_remote_shopify_ids_table_sql(), db_name, db_mode=db_mode)
     _run_mysql(build_remote_ensure_table_sql(), db_name, db_mode=db_mode)
 
     from playwright.sync_api import sync_playwright

@@ -18,6 +18,32 @@ def refresh_shopify_sku_flask_response(result: RefreshShopifySkuResponse):
     return jsonify(result.payload), result.status_code
 
 
+def _candidate_shopify_ids(
+    product_id: int,
+    product: dict,
+    list_shopify_product_ids_fn: Callable[[int], list[dict]] | None,
+) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(value) -> None:
+        shopify_id = str(value or "").strip()
+        if shopify_id and shopify_id not in seen:
+            seen.add(shopify_id)
+            out.append(shopify_id)
+
+    add(product.get("shopifyid"))
+    rows = None
+    if list_shopify_product_ids_fn is not None:
+        rows = list_shopify_product_ids_fn(product_id)
+    elif isinstance(product.get("shopify_ids"), list):
+        rows = product.get("shopify_ids")
+    for row in rows or []:
+        if isinstance(row, dict):
+            add(row.get("shopify_product_id"))
+    return out
+
+
 def build_refresh_product_shopify_sku_response(
     product_id: int,
     product: dict,
@@ -31,9 +57,10 @@ def build_refresh_product_shopify_sku_response(
     get_configured_rmb_per_usd_fn: Callable[[], float],
     serialize_product_skus_fn: Callable[..., list[dict]],
     record_fetch_failure_fn: Callable[..., int] | None = None,
+    list_shopify_product_ids_fn: Callable[[int], list[dict]] | None = None,
 ) -> RefreshShopifySkuResponse:
-    shopify_id = (product.get("shopifyid") or "").strip()
-    if not shopify_id:
+    shopify_ids = _candidate_shopify_ids(product_id, product, list_shopify_product_ids_fn)
+    if not shopify_ids:
         return RefreshShopifySkuResponse(
             {
                 "error": "missing_shopifyid",
@@ -54,7 +81,8 @@ def build_refresh_product_shopify_sku_response(
                     summary={
                         "stage": "manual_refresh_fetch",
                         "product_id": int(product_id),
-                        "shopifyid": shopify_id,
+                        "shopifyid": shopify_ids[0] if shopify_ids else "",
+                        "shopifyids": shopify_ids,
                     },
                 )
             except Exception:
@@ -72,17 +100,29 @@ def build_refresh_product_shopify_sku_response(
         (item.get("shopify_product_id") or ""): (item.get("shopify_title") or "")
         for item in shopify_products
     }
-    pairs = pair_index.get(shopify_id)
-    if pairs is None:
+    pairs: list[dict] = []
+    matched_shopify_ids: list[str] = []
+    missing_shopify_ids: list[str] = []
+    new_title: str | None = None
+    for shopify_id in shopify_ids:
+        matched_pairs = pair_index.get(shopify_id)
+        if matched_pairs is None:
+            missing_shopify_ids.append(shopify_id)
+            continue
+        matched_shopify_ids.append(shopify_id)
+        pairs.extend(matched_pairs)
+        if new_title is None:
+            new_title = (title_map.get(shopify_id) or "").strip() or None
+
+    if not matched_shopify_ids:
         return RefreshShopifySkuResponse(
             {
                 "error": "shopify_product_not_found",
-                "message": f"店小秘 Shopify 商品库未找到 shopifyid={shopify_id}",
+                "message": f"店小秘 Shopify 商品库未找到 shopifyid={','.join(shopify_ids)}",
             },
             404,
         )
 
-    new_title = (title_map.get(shopify_id) or "").strip() or None
     update_product_fn(product_id, shopify_title=new_title)
     replace_product_skus_fn(product_id, pairs, source="manual")
 
@@ -110,6 +150,8 @@ def build_refresh_product_shopify_sku_response(
             "summary": {
                 "variant_pairs": len(pairs),
                 "pairs_with_dxm": sum(1 for row in pairs if row.get("dianxiaomi_sku_code")),
+                "shopifyids": matched_shopify_ids,
+                "missing_shopifyids": missing_shopify_ids,
             },
         },
         200,
