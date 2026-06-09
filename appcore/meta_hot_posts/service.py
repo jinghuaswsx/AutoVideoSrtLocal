@@ -10,6 +10,7 @@ from appcore.meta_hot_posts import (
     categories,
     europe_fit,
     europe_fit_translation,
+    message_translation,
     product_analysis,
     product_title_translation,
     store,
@@ -26,6 +27,8 @@ MANUAL_AI_TRANSLATE_PROVIDER = "openrouter"
 MANUAL_AI_TRANSLATE_MODEL = "google/gemini-3.1-flash-lite"
 MANUAL_US_AI_TRANSLATE_SOURCE = "meta_hot_posts_manual_us_ai_translate_zh"
 MANUAL_EUROPE_AI_TRANSLATE_SOURCE = "meta_hot_posts_manual_europe_ai_translate_zh"
+MANUAL_MESSAGE_TRANSLATE_PROVIDER = "openrouter"
+MANUAL_MESSAGE_TRANSLATE_MODEL = "google/gemini-3.1-flash-lite"
 
 
 @dataclass(frozen=True)
@@ -646,6 +649,54 @@ def build_product_title_translate_zh_response(
     store.finish_product_title_translation(
         analysis_id,
         translated_title=translated_title,
+        error_message=None,
+    )
+    refreshed = _get_ai_analysis_row(post_id) or row
+    return MetaHotPostsResponse(
+        {"ok": True, "cached": False, "item": _hydrate_ai_analysis_row(refreshed)}
+    )
+
+
+def build_message_translate_zh_response(
+    post_id: int,
+    *,
+    user_id: int | None = None,
+) -> MetaHotPostsResponse:
+    row = _get_ai_analysis_row(post_id)
+    if not row:
+        return MetaHotPostsResponse({"error": "not_found"}, 404)
+    item = _hydrate_ai_analysis_row(row)
+    source_message = str(
+        item.get("message_source_html") or item.get("message_html") or ""
+    ).strip()
+    if not source_message:
+        return MetaHotPostsResponse({"error": "missing_message"}, 400)
+    if str(row.get("message_zh_html") or "").strip():
+        return MetaHotPostsResponse({"ok": True, "cached": True, "item": item})
+
+    store.mark_message_translation_running(post_id)
+    try:
+        translated_html = message_translation.translate_message_html(
+            source_message,
+            user_id=user_id,
+            provider_override=MANUAL_MESSAGE_TRANSLATE_PROVIDER,
+            model_override=MANUAL_MESSAGE_TRANSLATE_MODEL,
+        )
+    except Exception as exc:
+        message = str(exc)[:1000]
+        store.finish_message_translation(
+            post_id,
+            translated_html=None,
+            error_message=message,
+        )
+        return MetaHotPostsResponse(
+            {"ok": False, "error": message, "item": item},
+            500,
+        )
+
+    store.finish_message_translation(
+        post_id,
+        translated_html=translated_html,
         error_message=None,
     )
     refreshed = _get_ai_analysis_row(post_id) or row
@@ -1643,4 +1694,3 @@ def get_hot_post_detail(
     if not row:
         return None
     return _hydrate_item(row)
-

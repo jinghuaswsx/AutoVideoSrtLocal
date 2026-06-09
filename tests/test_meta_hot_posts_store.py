@@ -368,8 +368,8 @@ def test_next_pending_message_translations_selects_untranslated_rows():
     assert rows[0]["id"] == 7
     assert "message_html IS NOT NULL" in sql
     assert "message_zh_status IN ('pending', 'failed')" in sql
-    assert "message_zh_attempts < %s" in sql
-    assert params == (3, 100)
+    assert "message_zh_attempts < %s" not in sql
+    assert params == (100,)
 
 
 def test_mark_message_translation_running_increments_attempts():
@@ -1301,8 +1301,8 @@ def test_next_pending_product_title_translations_selects_titles_without_chinese_
     assert "product_title IS NOT NULL" in sql
     assert "product_title_zh IS NULL" in sql
     assert "product_title_zh_status IN ('pending', 'failed')" in sql
-    assert "product_title_zh_attempts < %s" in sql
-    assert params == (3, 100)
+    assert "product_title_zh_attempts < %s" not in sql
+    assert params == (100,)
 
 
 def test_finish_product_title_translation_saves_success_and_failure():

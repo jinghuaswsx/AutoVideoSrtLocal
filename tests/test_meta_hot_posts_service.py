@@ -248,6 +248,75 @@ def test_build_product_title_translate_zh_response_translates_and_returns_item(m
     ]
 
 
+def test_build_message_translate_zh_response_translates_with_flash_lite_and_returns_item(monkeypatch):
+    rows = [
+        {
+            "id": 7,
+            "message_html": "<p>A practical multitool kit.</p>",
+            "message_zh_html": "",
+            "sku_prices_json": "[]",
+        },
+        {
+            "id": 7,
+            "message_html": "<p>A practical multitool kit.</p>",
+            "message_zh_html": "实用多功能工具套装。",
+            "message_zh_status": "done",
+            "sku_prices_json": "[]",
+        },
+    ]
+    marked = []
+    finished = []
+    translated_calls = []
+
+    monkeypatch.setattr(
+        service.store,
+        "get_hot_post_ai_analysis_row",
+        lambda post_id: rows.pop(0),
+    )
+    monkeypatch.setattr(
+        service.store,
+        "mark_message_translation_running",
+        lambda post_id: marked.append(post_id),
+    )
+
+    def fake_translate(message_html, **kwargs):
+        translated_calls.append((message_html, kwargs))
+        return "实用多功能工具套装。"
+
+    monkeypatch.setattr(
+        service.message_translation,
+        "translate_message_html",
+        fake_translate,
+    )
+    monkeypatch.setattr(
+        service.store,
+        "finish_message_translation",
+        lambda post_id, **kwargs: finished.append((post_id, kwargs)),
+    )
+
+    result = service.build_message_translate_zh_response(7, user_id=88)
+
+    assert result.status_code == 200
+    assert result.payload["cached"] is False
+    assert result.payload["item"]["message_html"] == "实用多功能工具套装。"
+    assert result.payload["item"]["message_source_html"] == "<p>A practical multitool kit.</p>"
+    assert result.payload["item"]["message_is_translated"] is True
+    assert marked == [7]
+    assert translated_calls == [
+        (
+            "<p>A practical multitool kit.</p>",
+            {
+                "user_id": 88,
+                "provider_override": "openrouter",
+                "model_override": "google/gemini-3.1-flash-lite",
+            },
+        )
+    ]
+    assert finished == [
+        (7, {"translated_html": "实用多功能工具套装。", "error_message": None})
+    ]
+
+
 def test_ai_analysis_visibility_defaults_hidden_and_persists_per_user(monkeypatch):
     stored = {}
 

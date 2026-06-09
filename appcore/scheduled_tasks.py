@@ -502,7 +502,8 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
             "商品标题固定走 OpenRouter Gemini 3.1 Flash-Lite 并写回 product_title_zh；"
             "页面优先展示中文缓存，原始英文仍保留在 message_html / product_title。默认文案使用 OpenRouter Gemini 3 Flash。"
             "Docs-anchor: docs/superpowers/specs/2026-05-18-meta-hot-posts-translate-model-and-schedule-design.md; "
-            "docs/superpowers/specs/2026-05-19-meta-hot-posts-product-title-translation-design.md"
+            "docs/superpowers/specs/2026-05-19-meta-hot-posts-product-title-translation-design.md; "
+            "docs/superpowers/specs/2026-06-09-meta-hot-posts-copy-title-translation-catchup-design.md"
         ),
         "schedule": "每 10 分钟",
         "source_type": "apscheduler",

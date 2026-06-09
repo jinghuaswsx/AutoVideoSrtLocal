@@ -294,8 +294,11 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "翻译文案</button>" not in body
     assert "显示原文案" in body
     assert "显示翻译文案" in body
+    assert "mh-message-translate" in body
     assert "function renderMessageBlock(row)" in body
     assert "function toggleMetaHotPostSourceMessage(event)" in body
+    assert "function translateMetaHotPostMessageToChinese(event, postId)" in body
+    assert "/xuanpin/api/meta-hot-posts/${postId}/message/translate-zh" in body
     assert "row.message_source_html" in body
     assert "function metaHotPostDisplayId(row)" in body
     assert "function metaHotPostLink(row)" in body
@@ -324,6 +327,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function toggleMetaHotProductTitle(event, postId)" in body
     assert "translateMetaHotProductTitleToChinese(event, postId)" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/product-title/translate-zh" in body
+    assert "/xuanpin/api/meta-hot-posts/${postId}/message/translate-zh" in body
     assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
     assert "/xuanpin/api/meta-hot-posts/localize-videos" in body
     assert "可抄 Top 50</button>" not in body
@@ -802,6 +806,27 @@ def test_meta_hot_posts_product_title_translate_zh_api_passes_current_user(
 
     resp = authed_client_no_db.post(
         "/xuanpin/api/meta-hot-posts/7/product-title/translate-zh",
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["ok"] is True
+    assert captured["args"][0] == 7
+    assert captured["args"][1]
+
+
+def test_meta_hot_posts_message_translate_zh_api_passes_current_user(
+    authed_client_no_db, monkeypatch
+):
+    captured = {}
+
+    def fake_response(post_id, user_id=None):
+        captured["args"] = (post_id, user_id)
+        return type("Resp", (), {"payload": {"ok": True, "cached": False}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_message_translate_zh_response", fake_response)
+
+    resp = authed_client_no_db.post(
+        "/xuanpin/api/meta-hot-posts/7/message/translate-zh",
     )
 
     assert resp.status_code == 200
