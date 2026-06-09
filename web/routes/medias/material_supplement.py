@@ -1246,7 +1246,7 @@ def _query_ad_detail_rows(
         extra_clause = "  AND UPPER(COALESCE(m.market_country, '')) = %s "
         extra_args.append(str(country).strip().upper())
 
-    return query_fn(
+    daily_rows = query_fn(
         "SELECT m.id, m.ad_account_id, m.ad_account_name, "
         "       COALESCE(m.meta_business_date, m.report_date) AS activity_date, "
         "       m.report_date, m.product_code AS campaign_name, "
@@ -1257,11 +1257,123 @@ def _query_ad_detail_rows(
         "  AND COALESCE(m.spend_usd, 0) > 0 "
         "  AND DATE(COALESCE(m.meta_business_date, m.report_date)) BETWEEN %s AND %s "
         f"  AND ({match_sql}) "
-        f"{extra_clause}"
-        "ORDER BY m.market_country ASC, activity_date DESC, COALESCE(m.spend_usd, 0) DESC, m.id DESC "
-        "LIMIT 500",
+        f"{extra_clause}",
         [product_id, date_from.isoformat(), date_to.isoformat(), *match_args, *extra_args],
     )
+    for r in daily_rows:
+        r["metric_source"] = "daily"
+
+    # Query product_code for realtime campaign match
+    products = query_fn(
+        "SELECT product_code FROM media_products WHERE id = %s AND deleted_at IS NULL",
+        [product_id],
+    )
+    product_code = products[0].get("product_code") if products else None
+
+    def table_exists(tbl_name):
+        try:
+            res = query_fn(f"SHOW TABLES LIKE '{tbl_name}'")
+            return len(res) > 0
+        except Exception:
+            return False
+
+    realtime_rows = []
+    if product_code and table_exists("meta_ad_realtime_daily_ad_metrics"):
+        rt_country_clause = ""
+        rt_country_args = []
+        if country:
+            rt_country_clause = " AND UPPER(COALESCE(m.country_code, '')) = %s "
+            rt_country_args.append(str(country).strip().upper())
+
+        rt_sql = (
+            "SELECT m.id, m.ad_account_id, m.ad_account_name, "
+            "       m.business_date AS activity_date, "
+            "       m.business_date AS report_date, m.campaign_name, "
+            "       m.normalized_ad_code, m.ad_name, m.country_code AS market_country, "
+            "       m.spend_usd, m.purchase_value_usd, m.result_count "
+            "FROM ("
+            "  SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at "
+            "  FROM meta_ad_realtime_daily_ad_metrics rt "
+            "  INNER JOIN ("
+            "    SELECT ad_account_id, MAX(business_date) AS business_date "
+            "    FROM meta_ad_realtime_daily_ad_metrics "
+            "    WHERE data_completeness = 'realtime_partial' "
+            "    GROUP BY ad_account_id"
+            "  ) latest_day "
+            "    ON rt.business_date = latest_day.business_date "
+            "   AND (rt.ad_account_id <=> latest_day.ad_account_id) "
+            "  WHERE rt.data_completeness = 'realtime_partial' "
+            "  GROUP BY latest_day.business_date, latest_day.ad_account_id"
+            ") latest "
+            "STRAIGHT_JOIN meta_ad_realtime_daily_ad_metrics m "
+            "  ON m.business_date = latest.business_date "
+            " AND (m.ad_account_id <=> latest.ad_account_id) "
+            " AND m.snapshot_at = latest.max_snapshot_at "
+            "JOIN media_products p_rt "
+            "  ON p_rt.id = %s "
+            " AND p_rt.deleted_at IS NULL "
+            " AND ( "
+            "   LOWER(COALESCE(m.normalized_campaign_code, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+            "   OR LOWER(COALESCE(m.campaign_name, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+            "   OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+            "   OR LOWER(COALESCE(m.ad_name, '')) LIKE CONCAT(LOWER(p_rt.product_code), '%%') "
+            " ) "
+            "WHERE m.data_completeness = 'realtime_partial' "
+            "  AND COALESCE(m.spend_usd, 0) > 0 "
+            "  AND m.business_date BETWEEN %s AND %s "
+            f"  AND ({match_sql}) "
+            f"{rt_country_clause}"
+        )
+        try:
+            realtime_rows = query_fn(
+                rt_sql,
+                [product_id, date_from.isoformat(), date_to.isoformat(), *match_args, *rt_country_args],
+            )
+            for r in realtime_rows:
+                r["metric_source"] = "realtime"
+        except Exception:
+            log.exception("Failed to query realtime ad metrics for detail product_id=%s", product_id)
+
+    # Merge and deduplicate by (ad_account_id, ad_name, activity_date)
+    # Realtime rows take precedence
+    merged = {}
+    for r in daily_rows:
+        act_date = str(r.get("activity_date") or "")
+        key = (r.get("ad_account_id"), r.get("ad_name"), act_date)
+        merged[key] = r
+
+    for r in realtime_rows:
+        act_date = str(r.get("activity_date") or "")
+        key = (r.get("ad_account_id"), r.get("ad_name"), act_date)
+        merged[key] = r
+
+    rows = list(merged.values())
+
+    from functools import cmp_to_key
+    def compare_rows(a, b):
+        mca = (a.get("market_country") or "").upper()
+        mcb = (b.get("market_country") or "").upper()
+        if mca != mcb:
+            return -1 if mca < mcb else 1
+
+        ada = str(a.get("activity_date") or "")
+        adb = str(b.get("activity_date") or "")
+        if ada != adb:
+            return 1 if ada < adb else -1
+
+        sa = float(a.get("spend_usd") or 0.0)
+        sb = float(b.get("spend_usd") or 0.0)
+        if sa != sb:
+            return 1 if sa < sb else -1
+
+        ida = a.get("id") or 0
+        idb = b.get("id") or 0
+        if ida != idb:
+            return 1 if ida < idb else -1
+        return 0
+
+    rows.sort(key=cmp_to_key(compare_rows))
+    return rows[:500]
 
 
 def _build_ad_detail_result(
@@ -1278,7 +1390,7 @@ def _build_ad_detail_result(
     total_purchase = 0.0
     total_results = 0
     for row in rows:
-        metric_id = f"daily:{row.get('id')}"
+        metric_id = f"{row.get('metric_source', 'daily')}:{row.get('id')}"
         if metric_id in seen_metric_ids:
             continue
         seen_metric_ids.add(metric_id)
