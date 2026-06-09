@@ -1,4 +1,5 @@
 {% extends "layout.html" %}
+{# Docs-anchor: docs/superpowers/specs/2026-06-09-task-center-mobile-filter-collapse-design.md #}
 {% block title %}任务中心 - AutoVideoSrt{% endblock %}
 {% block page_title %}任务中心{% endblock %}
 {% block extra_style %}
@@ -67,11 +68,16 @@
 .tc-overview-head { display:flex; align-items:center; justify-content:space-between; gap:var(--tc-sp-3); flex-wrap:wrap; margin-bottom:var(--tc-sp-3); }
 .tc-overview-title { font-size:16px; font-weight:700; }
 .tc-overview-note { font-size:12px; color:var(--tc-fg-muted); }
+.tc-overview-actions { display:flex; align-items:center; justify-content:flex-end; gap:var(--tc-sp-2); margin-left:auto; }
 .tc-subtabs { display:flex; gap:var(--tc-sp-2); flex-wrap:wrap; margin-bottom:var(--tc-sp-4); }
 .tc-subtab { height:32px; padding:0 12px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); background:var(--tc-bg); color:var(--tc-fg-muted); cursor:pointer; font-size:13px; }
 .tc-subtab:hover { background:var(--tc-bg-muted); }
 .tc-subtab.active { border-color:var(--tc-accent); background:var(--tc-accent-subtle); color:var(--tc-accent); font-weight:700; }
 .tc-filters { display:flex; gap:var(--tc-sp-2); flex-wrap:wrap; align-items:center; margin-bottom:var(--tc-sp-4); }
+.tc-filters.is-collapsed { display:none !important; }
+.tc-filter-toggle { gap:6px; font-weight:700; }
+.tc-filter-toggle svg { width:14px; height:14px; transition:transform 180ms ease-out; flex:0 0 auto; }
+.tc-filter-toggle[aria-expanded="false"] svg { transform:rotate(180deg); }
 .tc-input { height:32px; padding:0 10px; border:1px solid var(--tc-border-strong); border-radius:var(--tc-r); font-size:13px; }
 .tc-input:focus { border-color:var(--tc-accent); outline:none; box-shadow:0 0 0 2px var(--tc-accent-subtle); }
 .tc-select { min-width:120px; background:var(--tc-bg); color:var(--tc-fg); }
@@ -140,7 +146,7 @@
 .tc-manual-modal-status { min-height:18px; margin-top:8px; font-size:12px; color:var(--tc-fg-muted); }
 .tc-manual-modal-status.is-ok { color:var(--tc-success-fg); }
 .tc-manual-modal-status.is-error { color:var(--tc-danger-fg); }
-.tc-table-scroll { overflow:visible; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
+.tc-table-scroll { max-width:100%; overflow:visible; border:1px solid var(--tc-border); border-radius:var(--tc-r-md); background:var(--tc-bg); }
 .tc-table { width:100%; min-width:860px; border-collapse:collapse; font-size:13px; }
 .tc-table th { text-align:left; padding:10px 12px; background:var(--tc-bg-subtle); border-bottom:2px solid var(--tc-border); font-weight:600; color:var(--tc-fg-muted); }
 .tc-table td { padding:10px 12px; border-bottom:1px solid var(--tc-border); }
@@ -453,29 +459,36 @@
 /* ── 移动端适配 ── */
 @media (max-width: 768px) {
   .tc-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .tc-overview-head { align-items:flex-start; }
+  .tc-overview-actions { width:100%; justify-content:flex-start; margin-left:0; }
+  .tc-filter-toggle { width:100%; }
   .tc-tabs { gap: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
   .tc-tabs::-webkit-scrollbar { display: none; }
   .tc-tab { white-space: nowrap; flex: 0 0 auto; padding: 10px 14px; }
   .tc-subtabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .tc-subtabs::-webkit-scrollbar { display: none; }
   .tc-subtab { white-space: nowrap; flex: 0 0 auto; }
-  .tc-filters { gap: 8px; }
-  .tc-filters #tcKeyword { width: 100% !important; flex: 1 1 100%; }
-  .tc-filters #tcTaskTypeFilter { flex: 0 0 auto; }
-  .tc-filters #tcRefresh { flex: 0 0 auto; }
+  .tc-filters { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; align-items:stretch; }
+  .tc-filters .tc-input,
+  .tc-filters .tc-select,
+  .tc-filters .tc-btn { width:100%; min-width:0; }
+  .tc-filters #tcKeyword { grid-column:1 / -1; width:100% !important; }
+  .tc-filters #tcRefresh { grid-column:1 / -1; }
+  .tc-filters #tcFilterStats { grid-column:1 / -1; margin-left:0 !important; justify-content:center; text-align:center; line-height:1.45; }
   /* 详情抽屉移动端全宽 */
   #tcDetailDrawer { width: 100vw !important; max-width: 100vw !important; min-width:0 !important; padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
   .tc-manual-result-modal { width: 100vw !important; min-width:0 !important; }
   .tc-admin-feedback-images { grid-template-columns:1fr; }
   .tc-readiness-portrait-card { width:min(270px, 100%); height:auto; aspect-ratio:9 / 16; }
   /* 表格走 mobile.css 兜底横滚；这里只调字号和间距 */
-  .tc-table-scroll { overflow-x: auto; }
+  .tc-table-scroll { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .tc-table th { position: static !important; }
   .tc-table { font-size: 12px; }
   .tc-table th, .tc-table td { padding: 8px 10px; white-space: nowrap; }
 }
 
 @media (max-width: 480px) {
+  .tc-filters { grid-template-columns:1fr; }
   /* 弹窗全屏化 */
   #tcCreateModal > div,
   #tcReasonModal > div,
@@ -688,6 +701,7 @@
 {% endblock %}
 {% block content %}
 <div id="tcRoot" class="tc">
+  <!-- Docs-anchor: docs/superpowers/specs/2026-06-09-task-center-mobile-filter-collapse-design.md -->
   <div class="tc-sticky-top">
     <div class="tc-header">
       <div>
@@ -741,6 +755,14 @@
         <div>
           <div class="tc-overview-title">任务列表</div>
           <div class="tc-overview-note">默认按创建时间倒序展示。</div>
+        </div>
+        <div class="tc-overview-actions">
+          <button class="tc-btn tc-filter-toggle" id="tcFilterToggle" type="button" aria-controls="tcFilters" aria-expanded="true">
+            <span id="tcFilterToggleText">收起筛选</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 15 12 9 18 15"></polyline>
+            </svg>
+          </button>
         </div>
       </div>
       <div class="tc-subtabs" role="tablist" aria-label="全部任务状态">
@@ -899,6 +921,7 @@ let TC_LANGUAGE_LOAD_PROMISE = null;
 let TC_TARGET_LANGUAGES = [];
 let TC_DETAIL_CURRENT_TASK = null;
 let TC_PRODUCT_LINK_MANAGER_DATA = { productId: 0, lang: '', items: [], product: null };
+let TC_FILTERS_COLLAPSED = false;
 const TC_SHOPIFY_IMAGE_REPLACE_LABELS = {
   none: '未替换',
   confirmed: '图片正常',
@@ -2671,6 +2694,58 @@ async function tcLoadAssigneeFilterUsers() {
   return TC_ASSIGNEE_FILTER_LOAD_PROMISE;
 }
 
+function tcHasActiveUrlFilters() {
+  const params = new URLSearchParams(window.location.search);
+  const defaults = {
+    keyword: '',
+    task_type: 'all',
+    urgency: 'all',
+    assignee_id: 'all',
+    task_status: 'all',
+  };
+  return Object.keys(defaults).some(key => {
+    const value = params.get(key);
+    return value !== null && String(value).trim() !== defaults[key];
+  });
+}
+
+function tcShouldStartWithCollapsedFilters() {
+  if (!window.matchMedia || !window.matchMedia('(max-width: 768px)').matches) return false;
+  return !tcHasActiveUrlFilters();
+}
+
+function tcApplyFilterVisibility() {
+  const filters = document.getElementById('tcFilters');
+  const toggle = document.getElementById('tcFilterToggle');
+  const toggleText = document.getElementById('tcFilterToggleText');
+  const isOverview = TC_CURRENT_SECTION === 'overview';
+  const expanded = isOverview && !TC_FILTERS_COLLAPSED;
+
+  if (filters) {
+    filters.hidden = !expanded;
+    filters.classList.toggle('is-collapsed', !expanded);
+  }
+  if (toggle) {
+    toggle.hidden = !isOverview;
+    toggle.setAttribute('aria-expanded', String(!TC_FILTERS_COLLAPSED));
+  }
+  if (toggleText) {
+    toggleText.textContent = TC_FILTERS_COLLAPSED ? '展开筛选' : '收起筛选';
+  }
+}
+
+function tcSetFilterCollapsed(collapsed) {
+  TC_FILTERS_COLLAPSED = Boolean(collapsed);
+  tcApplyFilterVisibility();
+}
+
+const tcFilterToggle = document.getElementById('tcFilterToggle');
+if (tcFilterToggle) {
+  tcFilterToggle.addEventListener('click', () => {
+    tcSetFilterCollapsed(!TC_FILTERS_COLLAPSED);
+  });
+}
+
 document.querySelectorAll('[data-section-tab]').forEach(btn => {
   btn.addEventListener('click', () => {
     const section = btn.dataset.sectionTab || 'overview';
@@ -2773,13 +2848,12 @@ async function tcLoadUserWorkload() {
 
 async function tcRender() {
   const wrap = document.getElementById('tcTableWrap');
-  const filters = document.getElementById('tcFilters');
   const overview = document.getElementById('tcOverviewPanel');
-  const isOverview = TC_CURRENT_SECTION === 'overview';
   if (TC_CURRENT_SECTION === 'stats' && !TC_IS_ADMIN) {
     TC_CURRENT_SECTION = 'overview';
   }
-  if (filters) filters.style.display = isOverview ? 'flex' : 'none';
+  const isOverview = TC_CURRENT_SECTION === 'overview';
+  tcApplyFilterVisibility();
   if (overview) overview.style.display = isOverview ? 'block' : 'none';
   wrap.innerHTML = '<div class="tc-empty">加载中...</div>';
   try {
@@ -3990,6 +4064,7 @@ function tcRestoreFiltersFromUrl() {
 }
 
 async function tcInitialRender() {
+  tcSetFilterCollapsed(tcShouldStartWithCollapsedFilters());
   tcRestoreFiltersFromUrl();
   await tcRender();
   tcSetupStickyHeader();

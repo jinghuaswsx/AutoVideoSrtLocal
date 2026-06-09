@@ -284,6 +284,28 @@ def test_task_center_overview_has_assignee_filter_after_task_type(authed_client_
     assert "tcAssigneeFilter').addEventListener('change'" in body
 
 
+def test_task_center_mobile_filters_can_collapse_and_table_scrolls(authed_client_no_db):
+    rsp = authed_client_no_db.get("/tasks/")
+    body = rsp.data.decode("utf-8")
+
+    assert "2026-06-09-task-center-mobile-filter-collapse-design.md" in body
+    assert 'id="tcFilterToggle"' in body
+    assert 'aria-controls="tcFilters"' in body
+    assert 'aria-expanded="true"' in body
+    assert "收起筛选" in body
+    assert "展开筛选" in body
+    assert ".tc-filters.is-collapsed { display:none !important; }" in body
+    assert "function tcShouldStartWithCollapsedFilters" in body
+    assert "window.matchMedia('(max-width: 768px)').matches" in body
+    assert "return !tcHasActiveUrlFilters();" in body
+    assert "function tcApplyFilterVisibility" in body
+    assert "filters.hidden = !expanded;" in body
+    assert "tcSetFilterCollapsed(!TC_FILTERS_COLLAPSED)" in body
+    assert ".tc-filters { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr));" in body
+    assert ".tc-table-scroll { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }" in body
+    assert ".tc-table th { position: static !important; }" in body
+
+
 def test_task_center_rows_expose_archive_action_for_any_unarchived_task(authed_client_no_db):
     rsp = authed_client_no_db.get("/tasks/")
     body = rsp.data.decode("utf-8")
@@ -2923,5 +2945,4 @@ def test_api_user_workload_admin_returns_others_stats(authed_client_no_db, monke
     
     # Check that workload stats were fetched for self (id 1) and others (101, 102, 103)
     assert workload_calls == [1, 101, 102, 103]
-
 
