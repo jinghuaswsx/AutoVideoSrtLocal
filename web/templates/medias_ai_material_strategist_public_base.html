@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}AI素材军师报告{% endblock %}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { background: #eef2f7; }
+    body {
+      margin: 0;
+      background: #eef2f7;
+      color: #172033;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .main-content {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+      padding: 18px;
+    }
+    @media (max-width: 720px) {
+      .main-content { padding: 12px; }
+    }
+  </style>
+  {% block extra_style %}{% endblock %}
+</head>
+<body>
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -7,7 +7,13 @@ from typing import Any
 
 from flask import jsonify
 
-from appcore import medias, product_roas, shopify_image_localizer_release, users as appusers
+from appcore import (
+    dianxiaomi_procurement_insights_release,
+    medias,
+    product_roas,
+    shopify_image_localizer_release,
+    users as appusers,
+)
 
 
 def media_page_flask_response(payload: dict[str, Any], status_code: int = 200):
@@ -19,6 +25,7 @@ def build_medias_page_context(
     extra: Mapping[str, Any] | None = None,
     *,
     get_release_info_fn: Callable[[], Any] | None = None,
+    get_procurement_insights_release_info_fn: Callable[[], Any] | None = None,
     get_rmb_per_usd_fn: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     args = args or {}
@@ -30,9 +37,14 @@ def build_medias_page_context(
         or ""
     )
     release_info_fn = get_release_info_fn or shopify_image_localizer_release.get_release_info
+    procurement_release_info_fn = (
+        get_procurement_insights_release_info_fn
+        or dianxiaomi_procurement_insights_release.get_release_info
+    )
     rmb_per_usd_fn = get_rmb_per_usd_fn or product_roas.get_configured_rmb_per_usd
     return {
         "shopify_image_localizer_release": release_info_fn(),
+        "dianxiaomi_procurement_insights_release": procurement_release_info_fn(),
         "material_roas_rmb_per_usd": float(rmb_per_usd_fn()),
         "medias_initial_query": str(initial_query).strip(),
         **extra_context,

@@ -271,13 +271,13 @@ def test_shopify_localizer_product_link_save_updates_target_domain_only():
     assert payload["ok"] is True
     assert payload["product_id"] == 704
     assert payload["domain"] == "newjoyloo.com"
-    assert payload["link_url"].endswith("?variant=46081369309357")
+    assert payload["link_url"] == "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc"
     assert captured["product_id"] == 704
     assert captured["fields"]["localized_links_json"] == {
         "de": "https://newjoyloo.com/de/products/demo-rjc",
         "it": {
             "omurio.com": "https://omurio.com/it/products/demo-rjc",
-            "newjoyloo.com": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc?variant=46081369309357",
+            "newjoyloo.com": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc",
         },
     }
 

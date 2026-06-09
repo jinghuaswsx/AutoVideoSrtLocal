@@ -280,6 +280,31 @@ def test_mingkong_product_library_accepts_public_shopify_variant_payloads():
     ]
 
 
+def test_mingkong_product_library_drops_out_of_range_variant_weight():
+    from appcore import mingkong_product_library as library
+
+    rows = library.variant_payloads_from_shopify_row({
+        "shopifyProductId": "8591109816493",
+        "variants": [
+            {
+                "shopify_variant_id": "46041796313261",
+                "shopify_sku": "0422-14562851",
+                "shopify_variant_title": "Purple",
+                "shopify_weight_grams": 1000000000,
+            },
+            {
+                "shopify_variant_id": "46041796313262",
+                "shopify_sku": "0422-14562852",
+                "shopify_variant_title": "Blue",
+                "weight": 1000000000,
+            },
+        ],
+    })
+
+    assert rows[0]["shopify_weight_grams"] is None
+    assert rows[1]["shopify_weight_grams"] is None
+
+
 def test_mingkong_product_library_builds_full_base_from_product_link():
     from appcore import mingkong_product_library as library
 
@@ -324,3 +349,26 @@ def test_mingkong_product_library_builds_full_base_from_product_link():
     assert rows[0]["shopify_weight_grams"] == 90.0
     assert rows[0]["image_url"] == "https://cdn.shopify.com/blue.jpg"
     assert rows[0]["dianxiaomi_sku"] == ""
+
+
+def test_mingkong_product_library_drops_out_of_range_public_shopify_weight():
+    from appcore import mingkong_product_library as library
+
+    rows = library.public_shopify_sku_rows_from_product(
+        {
+            "product_link": "https://example.test/products/sample-rjc",
+            "shopifyid": "8591109816493",
+        },
+        fetch_json_fn=lambda _url: {
+            "id": 8591109816493,
+            "variants": [
+                {
+                    "id": 46041795559597,
+                    "grams": 1000000000,
+                    "title": "Blue",
+                }
+            ],
+        },
+    )
+
+    assert rows[0]["shopify_weight_grams"] is None

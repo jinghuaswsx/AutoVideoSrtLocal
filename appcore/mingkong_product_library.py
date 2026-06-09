@@ -15,6 +15,7 @@ from appcore.db import execute, query, query_one
 
 SYNC_TASK_CODE = "mingkong_product_library_sync"
 DEFAULT_DXM02_CDP_URL = "http://127.0.0.1:9223"
+MAX_DB_WEIGHT_GRAMS = 99_999_999.99
 
 
 def normalize_product_code(value: Any) -> str:
@@ -95,10 +96,21 @@ def _normalize_public_shopify_weight_grams(variant: dict[str, Any]) -> float | N
     value = variant.get("grams")
     if value not in (None, ""):
         try:
-            return round(float(value), 2)
+            grams = round(float(value), 2)
         except (TypeError, ValueError):
             return None
+        return grams if 0 <= grams <= MAX_DB_WEIGHT_GRAMS else None
     return None
+
+
+def _normalize_db_weight_grams(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        grams = round(float(value), 2)
+    except (TypeError, ValueError):
+        return None
+    return grams if 0 <= grams <= MAX_DB_WEIGHT_GRAMS else None
 
 
 def _variant_title_from_public_variant(variant: dict[str, Any]) -> str:
@@ -411,9 +423,9 @@ def variant_payloads_from_shopify_row(product_row: dict[str, Any]) -> list[dict[
                 else variant.get("inventoryQuantity")
             ),
             "shopify_weight_grams": (
-                variant.get("shopify_weight_grams")
+                _normalize_db_weight_grams(variant.get("shopify_weight_grams"))
                 if variant.get("shopify_weight_grams") is not None
-                else variant.get("weight")
+                else _normalize_db_weight_grams(variant.get("weight"))
             ),
             "raw_json": variant,
         })

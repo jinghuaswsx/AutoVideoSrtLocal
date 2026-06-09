@@ -153,6 +153,7 @@ html, body {
 .oc-header .subtitle { display:flex; align-items:center; gap:var(--oc-sp-2); font-size:13px; color:var(--oc-fg-muted); }
 .oc-header .count { display:inline-flex; align-items:center; padding:2px 10px; border-radius:var(--oc-r-full,9999px); background:var(--oc-bg-muted); color:var(--oc-fg-muted); font-weight:500; font-size:12px; font-variant-numeric:tabular-nums; }
 /* Docs-anchor: docs/superpowers/specs/2026-05-10-medias-toolbar-mobile-layout.md */
+/* Docs-anchor: docs/superpowers/specs/2026-06-09-chrome-extension-tool-release-standard.md */
 .oc-header-actions { display:flex; flex-direction:column; align-items:flex-end; gap:var(--oc-sp-2); flex:1 1 420px; min-width:320px; }
 .oc-header-action-buttons { display:flex; align-items:flex-start; justify-content:flex-end; gap:var(--oc-sp-3); flex-wrap:nowrap; }
 .oc-header-action-buttons > .oc-btn { height:34px; padding:0 18px; font-weight:600; border-radius:9999px; justify-content:center; }
@@ -4246,9 +4247,23 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
         <span class="count" id="totalPill">—</span>
       </div>
     </div>
+    {% set procurement_plugin_release = dianxiaomi_procurement_insights_release or {} %}
     {% set tool_release = shopify_image_localizer_release or {} %}
     <div class="oc-header-actions">
       <div class="oc-header-action-buttons">
+        {% if procurement_plugin_release.download_url %}
+        <div class="oc-tool-download-group">
+          <a class="oc-tool-download-btn" href="{{ procurement_plugin_release.download_url }}" download
+             title="版本号：{{ procurement_plugin_release.version or '—' }}；时间：{{ procurement_plugin_release.released_at_display or procurement_plugin_release.released_at or '—' }}">
+            <svg width="15" height="15"><use href="#ic-download"/></svg>
+            <span>下载采购洞察插件</span>
+          </a>
+          <div class="oc-tool-download-meta">
+            <span>版本号：{{ procurement_plugin_release.version or "—" }}</span>
+            <span>时间：{{ procurement_plugin_release.released_at_display or procurement_plugin_release.released_at or "—" }}</span>
+          </div>
+        </div>
+        {% endif %}
         {% if tool_release.download_url %}
         <div class="oc-tool-download-group">
           <a class="oc-tool-download-btn" href="{{ tool_release.download_url }}" download

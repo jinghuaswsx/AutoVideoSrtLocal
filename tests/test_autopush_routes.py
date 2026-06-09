@@ -176,3 +176,60 @@ def test_push_localized_texts_falls_back_to_env_authorization(monkeypatch):
         "Content-Type": "application/json",
         "Authorization": "Bearer demo-token",
     }
+
+
+def test_push_item_rejects_oversize_before_downstream_post(monkeypatch):
+    class FakeService:
+        async def get_push_item(self, item_id):
+            return {"item_id": item_id, "file_size": 101 * 1024 * 1024}
+
+    class FailClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *args, **kwargs):
+            raise AssertionError("oversize item must not post downstream")
+
+    routes = importlib.import_module("backend.routes")
+    monkeypatch.setattr(routes, "_service", lambda: FakeService())
+    monkeypatch.setattr(routes.httpx, "AsyncClient", lambda timeout=30.0: FailClient())
+
+    client = _build_client(monkeypatch)
+    response = client.post(
+        "/api/push-items/7/push",
+        json={"videos": [{"size": 12 * 1024 * 1024}]},
+    )
+
+    body = response.json()
+    assert response.status_code == 413
+    assert body["detail"]["error"] == "video_too_large"
+    assert body["detail"]["size_mb"] == "101.0 MB"
+
+
+def test_push_medias_rejects_oversize_payload_before_downstream_post(monkeypatch):
+    class FailClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *args, **kwargs):
+            raise AssertionError("oversize payload must not post downstream")
+
+    routes = importlib.import_module("backend.routes")
+    monkeypatch.setattr(routes.httpx, "AsyncClient", lambda timeout=30.0: FailClient())
+
+    client = _build_client(monkeypatch)
+    response = client.post(
+        "/api/push/medias",
+        json={"videos": [{"size": 101 * 1024 * 1024}]},
+    )
+
+    body = response.json()
+    assert response.status_code == 413
+    assert body["detail"]["error"] == "video_too_large"
+    assert body["detail"]["size_mb"] == "101.0 MB"

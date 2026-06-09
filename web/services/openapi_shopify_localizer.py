@@ -262,7 +262,7 @@ def build_shopify_localizer_product_link_save_response(
     product_code = str(body.get("product_code") or "").strip().lower()
     lang = str(body.get("lang") or "").strip().lower()
     domain = str(body.get("domain") or "").strip().lower()
-    link_url = str(body.get("link_url") or "").strip()
+    link_url = product_link_domains.canonical_product_page_url(body.get("link_url") or "")
     if not product_code or not lang or not link_url:
         raise ShopifyLocalizerBootstrapError("missing product_code, lang or link_url", 400)
     if not link_url.startswith(("http://", "https://")):

@@ -1879,6 +1879,19 @@ _SKU_MANUAL_EDIT_FIELDS = (
 )
 _SKU_MANUAL_VARIANT_TITLE_FIELD = "shopify_variant_title"
 _SKU_MANUAL_VARIANT_ID_PREFIX = "manual-"
+_SKU_WEIGHT_GRAMS_MAX = 99_999_999.99
+
+
+def _normalize_sku_numeric_field(key: str, value: Any) -> int | float | None:
+    if value is None or value == "":
+        return None
+    try:
+        normalized = int(value) if key.endswith("_quantity") else float(value)
+    except (TypeError, ValueError):
+        return None
+    if key == "shopify_weight_grams" and (normalized < 0 or normalized > _SKU_WEIGHT_GRAMS_MAX):
+        return None
+    return normalized
 
 
 def _normalize_sku_pair(pair: dict) -> dict:
@@ -1891,14 +1904,7 @@ def _normalize_sku_pair(pair: dict) -> dict:
         text = str(value).strip()
         cleaned[key] = text or None
     for key in _SKU_PAIR_NUMERIC_FIELDS:
-        value = pair.get(key)
-        if value is None or value == "":
-            cleaned[key] = None
-            continue
-        try:
-            cleaned[key] = int(value) if key.endswith("_quantity") else float(value)
-        except (TypeError, ValueError):
-            cleaned[key] = None
+        cleaned[key] = _normalize_sku_numeric_field(key, pair.get(key))
     if not cleaned.get("shopify_variant_id"):
         raise ValueError("shopify_variant_id is required for SKU pairing")
     return cleaned

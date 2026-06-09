@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>店小秘采购洞察</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup">
+    <header>
+      <h1>店小秘采购洞察</h1>
+      <span id="statusBadge" class="badge">未测试</span>
+    </header>
+    <label class="field">
+      <span>后台地址</span>
+      <input id="backendBase" type="url" spellcheck="false" autocomplete="off">
+    </label>
+    <div class="actions">
+      <button id="saveBtn" type="button">保存</button>
+      <button id="testBtn" type="button">测试</button>
+      <button id="openBtn" type="button">打开后台</button>
+    </div>
+    <p id="message" class="message"></p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

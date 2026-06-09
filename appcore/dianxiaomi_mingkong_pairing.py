@@ -753,6 +753,16 @@ def _search_pair(ctx, sku: str) -> dict[str, Any] | None:
     return None
 
 
+def _wait_for_pair_row(ctx, sku: str, *, attempts: int = 12, delay_seconds: float = 2.0) -> dict[str, Any] | None:
+    for index in range(attempts):
+        pair = _search_pair(ctx, sku)
+        if pair:
+            return pair
+        if index < attempts - 1:
+            time.sleep(delay_seconds)
+    return None
+
+
 def _update_source_url(ctx, commodity_id: str, purchase_url: str) -> dict[str, Any]:
     payload = _post_form(
         ctx,
@@ -1028,6 +1038,46 @@ def _row_title_key(row: dict[str, Any]) -> str:
     return " ".join(text.lower().split())
 
 
+def _sku_fill_score(row: dict[str, Any], *, exact_variant: bool = False, exact_sku: bool = False) -> tuple[int, int, int, int, int]:
+    proc = row.get("mingkong_procurement") or {}
+    purchase_url = row.get("purchase_1688_url") or proc.get("purchase_1688_url")
+    return (
+        1 if row.get("dianxiaomi_sku") else 0,
+        1 if row.get("dianxiaomi_sku_code") else 0,
+        1 if purchase_url else 0,
+        1 if proc.get("sku_id_alibaba") else 0,
+        1 if exact_variant or exact_sku else 0,
+    )
+
+
+def _keep_better_sku_fill(
+    index: dict[str, dict[str, Any]],
+    key: str,
+    row: dict[str, Any],
+    *,
+    exact_variant: bool = False,
+    exact_sku: bool = False,
+) -> None:
+    if not key:
+        return
+    existing = index.get(key)
+    if existing is None or _sku_fill_score(row, exact_variant=exact_variant, exact_sku=exact_sku) > _sku_fill_score(existing):
+        index[key] = row
+
+
+def _best_sku_fill(candidates: list[tuple[dict[str, Any], bool, bool]]) -> dict[str, Any]:
+    best: dict[str, Any] = {}
+    best_score: tuple[int, int, int, int, int] | None = None
+    for row, exact_variant, exact_sku in candidates:
+        if not row:
+            continue
+        score = _sku_fill_score(row, exact_variant=exact_variant, exact_sku=exact_sku)
+        if best_score is None or score > best_score:
+            best = row
+            best_score = score
+    return best
+
+
 def _overlay_sku_fill(base: dict[str, Any], fill: dict[str, Any]) -> dict[str, Any]:
     if not fill:
         return dict(base)
@@ -1076,11 +1126,11 @@ def merge_full_sku_base_with_fill_rows(
             sku = _row_sku_key(row)
             title = _row_title_key(row)
             if variant_id:
-                fill_by_variant.setdefault(variant_id, row)
+                _keep_better_sku_fill(fill_by_variant, variant_id, row, exact_variant=True)
             if sku:
-                fill_by_sku.setdefault(sku, row)
+                _keep_better_sku_fill(fill_by_sku, sku, row, exact_sku=True)
             if title:
-                fill_by_title.setdefault(title, row)
+                _keep_better_sku_fill(fill_by_title, title, row)
 
     out: list[dict[str, Any]] = []
     seen_variants: set[str] = set()
@@ -1090,12 +1140,11 @@ def merge_full_sku_base_with_fill_rows(
         if not variant_id or variant_id in seen_variants:
             continue
         seen_variants.add(variant_id)
-        fill = (
-            fill_by_variant.get(variant_id)
-            or fill_by_sku.get(_row_sku_key(base))
-            or fill_by_title.get(_row_title_key(base))
-            or {}
-        )
+        fill = _best_sku_fill([
+            (fill_by_variant.get(variant_id) or {}, True, False),
+            (fill_by_sku.get(_row_sku_key(base)) or {}, False, True),
+            (fill_by_title.get(_row_title_key(base)) or {}, False, False),
+        ])
         out.append(_overlay_sku_fill(base, fill))
     return out
 
@@ -1499,6 +1548,111 @@ def _wait_for_commodity(ctx, sku: str, *, attempts: int = 5) -> dict[str, Any] |
     return None
 
 
+def _mingkong_procurement_for_sku(sku: str) -> dict[str, Any]:
+    sku = str(sku or "").strip()
+    if not sku:
+        return {}
+    try:
+        return mingkong_product_library._procurement_for_skus([sku]).get(sku) or {}
+    except Exception:
+        return {}
+
+
+def _replicate_combo_component_to_dxm03(
+    source_ctx,
+    target_ctx,
+    component: dict[str, Any],
+    *,
+    product: dict[str, Any],
+    fallback_purchase_url: str = "",
+) -> dict[str, Any] | None:
+    component_sku = str(component.get("sku") or "").strip()
+    if not component_sku:
+        return None
+    source_component = _search_commodity(source_ctx, component_sku)
+    if not source_component or not source_component.get("id"):
+        return None
+    source_detail = _view_commodity_detail(
+        source_ctx,
+        source_component["id"],
+        account_label="DXM02",
+    )
+    proc = _mingkong_procurement_for_sku(component_sku)
+    purchase_url = (
+        str(proc.get("purchase_1688_url") or "").strip()
+        or str(source_component.get("source_url") or "").strip()
+        or fallback_purchase_url
+    )
+    desired_sku_code = (
+        component.get("skuCode")
+        or component.get("sku_code")
+        or source_component.get("sku_code")
+        or _source_commodity_from_detail(source_detail).get("skuCode")
+        or component_sku
+    )
+    final_sku_code, _strategy = _target_sku_code(
+        target_ctx,
+        str(desired_sku_code or ""),
+        target_sku=component_sku,
+    )
+    form_payload = _replicated_commodity_form(
+        source_detail,
+        target_sku=component_sku,
+        target_sku_code=final_sku_code,
+        purchase_url=purchase_url,
+        fallback_name=(
+            str(component.get("name") or "").strip()
+            or str(source_component.get("name") or "").strip()
+        ),
+        fallback_name_en=product.get("shopify_title") or "",
+    )
+    _add_replicated_commodity(target_ctx, form_payload)
+    return _wait_for_commodity(target_ctx, component_sku)
+
+
+def _confirm_component_procurement_pair(ctx, component_sku: str) -> dict[str, Any] | None:
+    proc = _mingkong_procurement_for_sku(component_sku)
+    purchase_url = str(proc.get("purchase_1688_url") or "").strip()
+    selected_product_id = normalize_1688_offer_id(
+        proc.get("alibaba_product_id") or purchase_url
+    )
+    selected_sku_id = str(proc.get("sku_id_alibaba") or "").strip()
+    if not selected_product_id or not selected_sku_id:
+        return _search_pair(ctx, component_sku)
+    commodity = _search_commodity(ctx, component_sku)
+    if not commodity:
+        return None
+    selected_purchase_url = _purchase_url_for_offer(selected_product_id, purchase_url)
+    if (
+        selected_purchase_url
+        and commodity.get("id")
+        and commodity.get("source_url") != selected_purchase_url
+    ):
+        _update_source_url(ctx, commodity["id"], selected_purchase_url)
+    pair = _search_pair(ctx, component_sku)
+    if not pair:
+        _trigger_source_sync(ctx, selected_purchase_url)
+        pair = _wait_for_pair_row(ctx, component_sku)
+    if pair and pair.get("is_paired"):
+        return pair
+    if pair and pair.get("pair_row_id"):
+        _check_pair(ctx, selected_product_id, selected_sku_id)
+        try:
+            _confirm_pair(
+                ctx,
+                pair_row_id=pair["pair_row_id"],
+                product_id_alibaba=selected_product_id,
+                sku_id_alibaba=selected_sku_id,
+            )
+        except Exception:
+            after_error = _search_pair(ctx, component_sku)
+            if after_error and after_error.get("is_paired"):
+                return after_error
+            raise
+        return _search_pair(ctx, component_sku) or pair
+    return pair
+
+
 def replicate_mingkong_skus_to_dxm03(
     product: dict[str, Any],
     sku_rows: list[dict[str, Any]],
@@ -1578,7 +1732,8 @@ def _replicate_mingkong_skus_to_dxm03_impl(
         target_browser = None
         try:
             target_browser, target_ctx = _connect_dxm_context(source_playwright, target_url)
-            for row in rows_with_sku:
+            ordered_rows = sorted(rows_with_sku, key=lambda item: 1 if item.get("is_combo") else 0)
+            for row in ordered_rows:
                 sku = str(row.get("dianxiaomi_sku") or "").strip()
                 variant_id = str(row.get("shopify_variant_id") or "").strip()
                 selection = (
@@ -1624,12 +1779,26 @@ def _replicate_mingkong_skus_to_dxm03_impl(
                         )
                         target_components: list[dict[str, Any]] = []
                         missing_components: list[str] = []
+                        purchase_url = _purchase_url_for_selection(
+                            product,
+                            row,
+                            selection,
+                            source_commodity,
+                        )
                         for component in source_components:
                             component_sku = str(component.get("sku") or "").strip()
                             target_component = _search_commodity(target_ctx, component_sku)
                             if not target_component or not target_component.get("id"):
-                                missing_components.append(component_sku)
-                                continue
+                                target_component = _replicate_combo_component_to_dxm03(
+                                    source_ctx,
+                                    target_ctx,
+                                    component,
+                                    product=product,
+                                    fallback_purchase_url=purchase_url,
+                                )
+                                if not target_component or not target_component.get("id"):
+                                    missing_components.append(component_sku)
+                                    continue
                             target_components.append({
                                 **component,
                                 "target_product_id": target_component["id"],
@@ -1657,12 +1826,6 @@ def _replicate_mingkong_skus_to_dxm03_impl(
                             source_ctx,
                             source_commodity["id"],
                             account_label="DXM02",
-                        )
-                        purchase_url = _purchase_url_for_selection(
-                            product,
-                            row,
-                            selection,
-                            source_commodity,
                         )
                         desired_sku_code = (
                             row.get("dianxiaomi_sku_code")
@@ -1858,6 +2021,7 @@ def confirm_dxm03_pairing(
     *,
     selections: list[dict[str, Any]] | None = None,
     cdp_url: str | None = None,
+    preserve_existing_pairing: bool = True,
     force_isolated_thread: bool | None = None,
 ) -> dict[str, Any]:
     return _run_playwright_operation(
@@ -1867,6 +2031,7 @@ def confirm_dxm03_pairing(
             sku_rows,
             selections=selections,
             cdp_url=cdp_url,
+            preserve_existing_pairing=preserve_existing_pairing,
         ),
         force_isolated_thread=force_isolated_thread,
     )
@@ -1878,6 +2043,7 @@ def _confirm_dxm03_pairing_impl(
     *,
     selections: list[dict[str, Any]] | None = None,
     cdp_url: str | None = None,
+    preserve_existing_pairing: bool = True,
 ) -> dict[str, Any]:
     purchase_url = str(product.get("purchase_1688_url") or "").strip()
     product_id_alibaba = normalize_1688_offer_id(purchase_url)
@@ -1944,7 +2110,16 @@ def _confirm_dxm03_pairing_impl(
                     if commodity.get("is_combo"):
                         components = _search_child_sku_info(ctx, commodity.get("id") or "")
                         for component in components:
-                            component["pairing"] = _search_pair(ctx, component["sku"])
+                            component_sku = str(component.get("sku") or "").strip()
+                            component["pairing"] = _search_pair(ctx, component_sku)
+                            if not (component.get("pairing") or {}).get("is_paired"):
+                                try:
+                                    component["pairing"] = _confirm_component_procurement_pair(
+                                        ctx,
+                                        component_sku,
+                                    )
+                                except Exception as exc:
+                                    component["pairing_error"] = str(exc)
                         item_result["combo_components"] = components
                         if components and all(
                             (component.get("pairing") or {}).get("is_paired")
@@ -1965,7 +2140,7 @@ def _confirm_dxm03_pairing_impl(
                     pair = _search_pair(ctx, sku)
                     item_result["pairing_before"] = pair
                     existing_sku_id = str((pair or {}).get("sku_id_alibaba") or "").strip()
-                    if pair and pair.get("is_paired"):
+                    if preserve_existing_pairing and pair and pair.get("is_paired"):
                         item_result.update({
                             "status": "already_configured_preserved",
                             "sku_id_alibaba": existing_sku_id,
@@ -1992,20 +2167,17 @@ def _confirm_dxm03_pairing_impl(
                         item_result["commodity"] = commodity
                     if not pair:
                         _trigger_source_sync(ctx, selected_purchase_url)
-                        for _ in range(5):
-                            time.sleep(1)
-                            pair = _search_pair(ctx, sku)
-                            if pair:
-                                break
+                        pair = _wait_for_pair_row(ctx, sku)
                     if pair and pair.get("is_paired"):
                         existing_sku_id = str(pair.get("sku_id_alibaba") or "").strip()
-                        item_result.update({
-                            "status": "already_paired",
-                            "sku_id_alibaba": existing_sku_id,
-                            "pairing_after": pair,
-                        })
-                        results.append(item_result)
-                        continue
+                        if preserve_existing_pairing or not selected_sku_id:
+                            item_result.update({
+                                "status": "already_paired",
+                                "sku_id_alibaba": existing_sku_id,
+                                "pairing_after": pair,
+                            })
+                            results.append(item_result)
+                            continue
                     if not pair or not pair.get("pair_row_id"):
                         item_result.update({
                             "status": "blocked",
@@ -2023,12 +2195,21 @@ def _confirm_dxm03_pairing_impl(
                         results.append(item_result)
                         continue
                     _check_pair(ctx, selected_product_id, selected_sku_id)
-                    _confirm_pair(
-                        ctx,
-                        pair_row_id=pair["pair_row_id"],
-                        product_id_alibaba=selected_product_id,
-                        sku_id_alibaba=selected_sku_id,
-                    )
+                    try:
+                        _confirm_pair(
+                            ctx,
+                            pair_row_id=pair["pair_row_id"],
+                            product_id_alibaba=selected_product_id,
+                            sku_id_alibaba=selected_sku_id,
+                        )
+                    except Exception:
+                        after_error = _search_pair(ctx, sku)
+                        if after_error and after_error.get("is_paired"):
+                            item_result["pairing_after"] = after_error
+                            item_result["status"] = "confirmed"
+                            results.append(item_result)
+                            continue
+                        raise
                     item_result["pairing_after"] = _search_pair(ctx, sku)
                     item_result["status"] = "confirmed"
                     results.append(item_result)

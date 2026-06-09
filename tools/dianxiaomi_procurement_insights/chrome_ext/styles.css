@@ -1,0 +1,229 @@
+#dpi-procurement-root {
+  position: fixed;
+  top: 92px;
+  right: 18px;
+  z-index: 2147483000;
+  width: min(360px, calc(100vw - 28px));
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #111827;
+  line-height: 1.35;
+}
+
+#dpi-procurement-root * {
+  box-sizing: border-box;
+}
+
+#dpi-procurement-root .dpi-panel {
+  overflow: hidden;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgba(17, 24, 39, 0.18);
+}
+
+#dpi-procurement-root .dpi-panel.is-collapsed {
+  width: 142px;
+}
+
+#dpi-procurement-root .dpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 42px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+#dpi-procurement-root .dpi-title {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #111827;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+#dpi-procurement-root .dpi-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+#dpi-procurement-root .dpi-actions button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#dpi-procurement-root .dpi-actions button:hover,
+#dpi-procurement-root .dpi-title:hover {
+  color: #0f766e;
+}
+
+#dpi-procurement-root .dpi-body {
+  padding: 12px;
+}
+
+#dpi-procurement-root .dpi-product-line {
+  min-width: 0;
+  color: #111827;
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+#dpi-procurement-root .dpi-status-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+}
+
+#dpi-procurement-root .dpi-status,
+#dpi-procurement-root .dpi-market-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .is-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+#dpi-procurement-root .is-stopped {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+#dpi-procurement-root .is-never {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+#dpi-procurement-root .dpi-muted {
+  color: #6b7280;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#dpi-procurement-root .dpi-kpis div {
+  min-width: 0;
+  padding: 8px 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+#dpi-procurement-root .dpi-kpis span {
+  display: block;
+  color: #6b7280;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-kpis strong {
+  display: block;
+  margin-top: 3px;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-markets {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+#dpi-procurement-root .dpi-market-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.8fr) auto minmax(112px, 1.2fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+#dpi-procurement-root .dpi-market-name {
+  min-width: 0;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-market-meta {
+  min-width: 0;
+  color: #6b7280;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+#dpi-procurement-root .dpi-foot span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-loading,
+#dpi-procurement-root .dpi-empty-line,
+#dpi-procurement-root .dpi-error {
+  padding: 8px 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+#dpi-procurement-root .dpi-error {
+  color: #b91c1c;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  #dpi-procurement-root {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    width: calc(100vw - 20px);
+  }
+}

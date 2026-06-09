@@ -114,6 +114,7 @@ def build_push_item_payload_response(
     query_one_fn: QueryOneFn | None = None,
     media_download_url_fn: MediaUrlFn = media_download_url,
 ) -> dict:
+    pushes.ensure_push_video_size(item)
     payload = pushes.build_item_payload(item, product)
     localized_text = pushes.resolve_localized_text_payload(item)
     localized_texts_request = pushes.build_localized_texts_request(item)
@@ -166,6 +167,7 @@ def build_material_push_payload(
 
     videos = []
     for item in items or []:
+        pushes.ensure_push_video_size(item)
         object_key = item.get("object_key")
         cover_object_key = item.get("cover_object_key")
         videos.append({

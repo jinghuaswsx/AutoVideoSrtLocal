@@ -18,6 +18,7 @@ from flask import Blueprint, Response, request, abort, send_file, url_for
 from flask_login import login_required, current_user
 
 from appcore import (
+    dianxiaomi_procurement_insights_release,
     local_media_storage,
     material_evaluation,
     media_route_store,
@@ -292,9 +293,12 @@ api_mk_video_proxy = _mk_selection.api_mk_video_proxy
 api_mk_detail_proxy = _mk_selection.api_mk_detail_proxy
 ai_material_strategist_page = _ai_material_strategist.ai_material_strategist_page
 ai_material_strategist_project_page = _ai_material_strategist.ai_material_strategist_project_page
+ai_material_strategist_public_report = _ai_material_strategist.ai_material_strategist_public_report
 api_ai_material_strategist_projects = _ai_material_strategist.api_ai_material_strategist_projects
 api_ai_material_strategist_create_project = _ai_material_strategist.api_ai_material_strategist_create_project
 api_ai_material_strategist_project = _ai_material_strategist.api_ai_material_strategist_project
+api_ai_material_strategist_share_project = _ai_material_strategist.api_ai_material_strategist_share_project
+api_ai_material_strategist_public_project = _ai_material_strategist.api_ai_material_strategist_public_project
 api_ai_material_strategist_preview = _ai_material_strategist.api_ai_material_strategist_preview
 api_detail_images_list = _detail_images.api_detail_images_list
 _build_detail_images_list_response = _detail_images._build_detail_images_list_response

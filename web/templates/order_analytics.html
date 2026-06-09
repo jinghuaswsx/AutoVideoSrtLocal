@@ -5149,6 +5149,37 @@
     syncLaunchWindowSelects();
   }
 
+  function realtimeSubtabRoute(name) {
+    var routeMapping = {
+      'orders': 'order',
+      'profitDetails': 'profit',
+      'products': 'product',
+      'campaigns': 'campaign',
+      'trend': 'trend'
+    };
+    return routeMapping[name] || 'trend';
+  }
+
+  function updateRealtimeSubtabUrl(name) {
+    var params = new URLSearchParams(window.location.search);
+    var queryString = params.toString();
+    var newUrl = '/order-analytics/realtime/' + realtimeSubtabRoute(name) + (queryString ? '?' + queryString : '');
+    if (window.location.pathname + window.location.search !== newUrl) {
+      window.history.pushState(null, '', newUrl);
+    }
+  }
+
+  function switchRealtimeSubtab(name, refreshDetails) {
+    var subtab = name || 'trend';
+    setRealtimeSubtab(subtab);
+    updateRealtimeUrlState();
+    updateRealtimeSubtabUrl(subtab);
+    if (refreshDetails) {
+      resetRealtimeProfitPage();
+      loadRealtimeSubTabs();
+    }
+  }
+
   var realtimeRefresh = document.getElementById('realtimeRefresh');
   if (realtimeRefresh) {
     realtimeRefresh.addEventListener('click', function() {
@@ -5217,18 +5248,7 @@
   }
   document.querySelectorAll('[data-realtime-subtab]').forEach(function(btn) {
     btn.addEventListener('click', function() {
-      var name = btn.dataset.realtimeSubtab;
-      var routeMapping = {
-        'orders': 'order',
-        'profitDetails': 'profit',
-        'products': 'product',
-        'campaigns': 'campaign',
-        'trend': 'trend'
-      };
-      var subtabRoute = routeMapping[name] || 'order';
-      var params = new URLSearchParams(window.location.search);
-      var queryString = params.toString();
-      window.location.href = '/order-analytics/realtime/' + subtabRoute + (queryString ? '?' + queryString : '');
+      switchRealtimeSubtab(btn.dataset.realtimeSubtab, true);
     });
   });
   var nplRefresh = document.getElementById('nplRefresh');
@@ -5431,7 +5451,7 @@
     document.querySelectorAll('[data-realtime-subtab]').forEach(function(item) {
       item.classList.toggle('is-active', item.dataset.realtimeSubtab === name);
     });
-    document.querySelectorAll('.oar-subpanel').forEach(function(panel) {
+    document.querySelectorAll('#panelRealtime .oar-subpanel').forEach(function(panel) {
       panel.classList.toggle('is-active', panel.id === 'realtimeSub' + capitalize(name));
     });
   }
@@ -5439,9 +5459,9 @@
   function showRealtimeUnallocatedCampaigns() {
     var card = document.getElementById('realtimeProfitUnallocatedAdCard');
     if (card && card.getAttribute('aria-disabled') === 'true') return;
-    var params = new URLSearchParams(window.location.search);
-    params.set('campaign_filter', 'unallocated');
-    window.location.href = '/order-analytics/realtime/campaign?' + params.toString();
+    realtimeState.campaignFilter = 'unallocated';
+    if (card) card.classList.add('is-active');
+    switchRealtimeSubtab('campaigns', true);
   }
 
   function clearRealtimeCampaignFilter() {

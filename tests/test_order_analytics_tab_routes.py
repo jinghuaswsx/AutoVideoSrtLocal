@@ -51,7 +51,7 @@ def test_order_analytics_sub_routes_authenticated_200(authed_client_no_db):
         for route in ("/order-analytics", "/order-analytics/realtime"):
             resp = authed_client_no_db.get(route)
             assert resp.status_code == 302
-            assert "/order-analytics/realtime/order" in resp.headers["Location"]
+            assert "/order-analytics/realtime/trend" in resp.headers["Location"]
 
         sub_routes = {
             "/order-analytics/realtime/order": "realtime",
@@ -78,6 +78,19 @@ def test_order_analytics_sub_routes_authenticated_200(authed_client_no_db):
             html = resp.data.decode("utf-8")
             # 验证 HTML 中注入的 active_tab 值是正确的
             assert f'var initialTab = "{expected_tab}";' in html
+
+
+def test_order_analytics_default_realtime_subtab_is_roas_trend(authed_client_no_db):
+    """默认进入数据分析时，实时大盘内部直接激活 ROAS 走势。"""
+    with patch("appcore.meta_ad_accounts.get_all_accounts", return_value=[]), \
+         patch("appcore.meta_ad_accounts.AVAILABLE_STORE_CODES", {"newjoy", "omurio"}):
+        resp = authed_client_no_db.get("/order-analytics", follow_redirects=True)
+
+    assert resp.status_code == 200
+    html = resp.data.decode("utf-8")
+    assert 'var initialTab = "realtime";' in html
+    assert 'class="oar-subtab is-active" data-realtime-subtab="trend"' in html
+    assert 'class="oar-subtab is-active" data-realtime-subtab="orders"' not in html
 
 
 def test_ads_view_initializes_after_ads_state_and_subtab_hook(authed_client_no_db):

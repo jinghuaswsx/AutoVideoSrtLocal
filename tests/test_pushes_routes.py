@@ -1263,6 +1263,34 @@ def test_mark_pushed_updates_state(logged_in_client, seeded_item):
     assert it["pushed_at"] is not None
 
 
+def test_mark_pushed_rejects_video_over_100mb(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.pushes.medias.get_item",
+        lambda item_id: {
+            "id": item_id,
+            "product_id": 11,
+            "lang": "de",
+            "file_size": 101 * 1024 * 1024,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.record_push_success",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("oversize item must not be marked pushed")
+        ),
+    )
+
+    resp = authed_client_no_db.post(
+        "/pushes/api/items/7/mark-pushed",
+        json={"request_payload": {"mode": "create"}, "response_body": "ok"},
+    )
+
+    body = resp.get_json()
+    assert resp.status_code == 413
+    assert body["error"] == "video_too_large"
+    assert body["size_mb"] == "101.0 MB"
+
+
 def test_mark_pushed_records_task_completion_for_unbound_item(
     authed_client_no_db,
     monkeypatch,
