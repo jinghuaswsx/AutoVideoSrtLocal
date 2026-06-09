@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -408,6 +410,70 @@ def test_mingkong_pairing_template_has_progress_modal_and_renamed_sync_button():
     assert 'id="mkpProgressModal"' in source
     assert "同步明空店小秘SKU" in source
     assert "明空 SKU 图片" in source
+    assert "non_json_response" in source
+
+
+def test_mingkong_pairing_action_error_payload_is_json_readable():
+    payload = products_route._mingkong_pairing_action_error_payload(
+        "复刻明空 SKU",
+        RuntimeError("Playwright Sync API inside the asyncio loop"),
+    )
+
+    assert payload["ok"] is False
+    assert payload["error"] == "mingkong_pairing_internal_error"
+    assert "复刻明空 SKU 失败" in payload["message"]
+    assert payload["logs"][1]["level"] == "error"
+
+
+def test_replicate_mingkong_sku_runs_impl_on_isolated_thread_when_forced(monkeypatch):
+    thread_names = []
+
+    def fake_impl(product, sku_rows, **kwargs):
+        thread_names.append(threading.current_thread().name)
+        assert product["id"] == 736
+        assert sku_rows[0]["dianxiaomi_sku"] == "sku-1"
+        assert kwargs["selections"] == [{"dianxiaomi_sku": "sku-1"}]
+        return {"ok": True, "logs": [{"level": "ok", "message": "done"}]}
+
+    monkeypatch.setattr(pairing, "_replicate_mingkong_skus_to_dxm03_impl", fake_impl)
+
+    result = pairing.replicate_mingkong_skus_to_dxm03(
+        {"id": 736, "product_code": "sample-rjc"},
+        [{"dianxiaomi_sku": "sku-1"}],
+        selections=[{"dianxiaomi_sku": "sku-1"}],
+        force_isolated_thread=True,
+    )
+
+    assert result["ok"] is True
+    assert thread_names
+    assert thread_names[0].startswith("mingkong-dxm-cdp")
+
+
+def test_playwright_operation_isolates_by_default():
+    thread_names = []
+
+    result = pairing._run_playwright_operation(
+        "test_mingkong_default_isolation",
+        lambda: thread_names.append(threading.current_thread().name) or "ok",
+    )
+
+    assert result == "ok"
+    assert thread_names
+    assert thread_names[0].startswith("mingkong-dxm-cdp")
+
+
+def test_playwright_operation_auto_isolates_inside_running_asyncio_loop():
+    thread_names = []
+
+    async def run_operation():
+        return pairing._run_playwright_operation(
+            "test_mingkong_asyncio_loop",
+            lambda: thread_names.append(threading.current_thread().name) or "ok",
+        )
+
+    assert asyncio.run(run_operation()) == "ok"
+    assert thread_names
+    assert thread_names[0].startswith("mingkong-dxm-cdp")
 
 
 def test_confirm_dxm03_pairing_allows_combo_without_outer_purchase_url(monkeypatch):

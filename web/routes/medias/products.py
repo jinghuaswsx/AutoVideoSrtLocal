@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import abort, render_template, request
+from flask import abort, current_app, render_template, request
 from flask_login import current_user, login_required
 
 from appcore import (
@@ -68,6 +68,21 @@ def _routes_module():
     from web.routes import medias as routes
 
     return routes
+
+
+def _mingkong_pairing_action_error_payload(action_label: str, exc: Exception) -> dict:
+    detail = str(exc) or exc.__class__.__name__
+    message = f"{action_label} 失败：{detail}"
+    return {
+        "ok": False,
+        "error": "mingkong_pairing_internal_error",
+        "message": message,
+        "logs": [
+            {"level": "info", "message": f"{action_label}请求已进入后端"},
+            {"level": "error", "message": message},
+        ],
+        "items": [],
+    }
 
 
 def _mk_copywriting_http_get(*args, **kwargs):
@@ -602,7 +617,14 @@ def api_mingkong_pairing_replicate(pid: int):
     if not routes._can_access_product(p):
         abort(404)
     body = request.get_json(silent=True) or {}
-    result = routes._build_mingkong_pairing_replicate_response(pid, p, body)
+    try:
+        result = routes._build_mingkong_pairing_replicate_response(pid, p, body)
+    except Exception as exc:  # noqa: BLE001 - keep workbench modal JSON-readable
+        current_app.logger.exception(
+            "mingkong pairing replicate failed product_id=%s", pid
+        )
+        result = _mingkong_pairing_action_error_payload("复刻明空 SKU", exc)
+        return result, 500
     status = 200 if result.get("ok") else 409
     return result, status
 

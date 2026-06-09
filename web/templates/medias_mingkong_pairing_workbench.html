@@ -605,7 +605,21 @@
     const text = await res.text();
     let data = {};
     if (text) {
-      try { data = JSON.parse(text); } catch (_) { data = { message: text }; }
+      try {
+        data = JSON.parse(text);
+      } catch (_) {
+        const snippet = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+        data = {
+          ok: false,
+          error: 'non_json_response',
+          message: `后端返回非 JSON 响应（HTTP ${res.status}）`,
+          detail: snippet,
+          logs: [{
+            level: 'error',
+            message: `后端返回非 JSON 响应（HTTP ${res.status}），请查看服务日志`
+          }]
+        };
+      }
     }
     if (!res.ok) {
       const err = new Error(data.message || data.error || `HTTP ${res.status}`);

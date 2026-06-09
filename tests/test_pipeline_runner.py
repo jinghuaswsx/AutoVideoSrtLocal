@@ -818,7 +818,7 @@ def test_step_video_size_adjustment_records_card_when_no_reencode_needed(tmp_pat
     assert saved["variants"]["normal"]["artifacts"]["video_size_adjustment"]["summary"]["status"] == "skipped"
 
 
-def test_step_export_uses_adjusted_hard_video_for_capcut_after_size_adjustment(tmp_path, monkeypatch):
+def test_step_export_uses_original_video_for_capcut_even_after_size_adjustment(tmp_path, monkeypatch):
     task_id = "task-export-adjusted-capcut-video"
     task = store.create(task_id, "video.mp4", str(tmp_path))
     task["video_path"] = "video.mp4"
@@ -855,7 +855,7 @@ def test_step_export_uses_adjusted_hard_video_for_capcut_after_size_adjustment(t
     def fake_export_capcut_project(**kwargs):
         captured.update(kwargs)
         manifest_path = tmp_path / "manifest.normal.json"
-        manifest_path.write_text('{"final_video_mode": true}', encoding="utf-8")
+        manifest_path.write_text('{"final_video_mode": false}', encoding="utf-8")
         return {
             "project_dir": str(tmp_path / "capcut_normal"),
             "archive_path": str(tmp_path / "capcut_normal.zip"),
@@ -871,13 +871,14 @@ def test_step_export_uses_adjusted_hard_video_for_capcut_after_size_adjustment(t
     runner._step_export(task_id, "video.mp4", str(tmp_path))
 
     saved = store.get(task_id)
-    assert captured["video_path"] == str(adjusted_video)
-    assert captured["final_video_mode"] is True
-    assert captured["video_source"] == "video_size_adjustment"
-    assert captured["timeline_manifest"] == {}
+    assert captured["video_path"] == "video.mp4"
+    assert captured["final_video_mode"] is False
+    assert captured["video_source"] == "source_timeline"
+    assert captured["timeline_manifest"] == {"segments": [{"video_ranges": [{"start": 1, "end": 2}]}]}
     assert captured["accompaniment_audio_path"] is None
-    assert saved["exports"]["capcut_video_path"] == str(adjusted_video)
-    assert saved["exports"]["capcut_final_video_mode"] is True
+    assert saved["exports"]["capcut_video_path"] == "video.mp4"
+    assert saved["exports"]["capcut_final_video_mode"] is False
+
 
 
 def test_step_export_keeps_editable_capcut_tracks_when_size_adjustment_skipped(tmp_path, monkeypatch):
