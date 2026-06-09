@@ -1338,7 +1338,7 @@
 
     const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
     const recommendationHtml = (it.file_size > PUSH_VIDEO_MAX_BYTES)
-      ? ` <span class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-left: 6px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</span>`
+      ? `<div class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-top: 2px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</div>`
       : '';
 
     return `<tr data-id="${escapeAttr(it.id)}">
@@ -1353,7 +1353,8 @@
       <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span>${renderPushTaskLink(it)}</td>
       <td class="push-item-cell">
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
-        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}${recommendationHtml}</div>
+        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}</div>
+        ${recommendationHtml}
         <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
       </td>
       <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
@@ -1384,7 +1385,7 @@
 
     const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
     const recommendationHtml = (it.file_size > PUSH_VIDEO_MAX_BYTES)
-      ? ` <span class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-left: 6px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</span>`
+      ? `<div class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-top: 2px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</div>`
       : '';
 
     const copyProductNameBtn = it.product_name
@@ -1450,7 +1451,8 @@
           <div class="item-name" style="word-break: break-all; min-width: 0; flex-grow: 1;">${escapeHtml(filename)}</div>
           ${copyFilenameBtn}
         </div>
-        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}${recommendationHtml}</div>
+        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}</div>
+        ${recommendationHtml}
         <div class="item-meta">
           ${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}
         </div>
