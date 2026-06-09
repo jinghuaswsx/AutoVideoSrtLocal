@@ -206,17 +206,6 @@ def _latest_carousel_candidate(candidates: list[dict[str, Any]]) -> dict[str, An
     return max(candidates, key=_candidate_recency_key)
 
 
-def _stable_carousel_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
-    return min(
-        candidates,
-        key=lambda row: (
-            row.get("source_index") is None,
-            row.get("source_index") if row.get("source_index") is not None else 9999,
-            str(row.get("filename") or ""),
-        ),
-    )
-
-
 def _choose_carousel_name_candidate(
     *,
     slot_idx: int,
@@ -272,7 +261,10 @@ def _choose_carousel_candidate(
             no_index = [row for row in candidates if row.get("source_index") is None]
             if len(no_index) == 1:
                 return no_index[0]
-            return _stable_carousel_candidate(candidates)
+            source_indices = {row.get("source_index") for row in candidates}
+            if len(source_indices) == 1:
+                return _latest_carousel_candidate(candidates)
+            return None
         canonical_token = (
             domain_mapping.carousel_canonical_token_for(src)
             if domain_mapping is not None else ""
@@ -1609,7 +1601,8 @@ def run(
                 user_data_dir=browser_user_data_dir,
                 pairs=pairs,
                 language=args.language,
-                replace_existing=not args.skip_existing_carousel,
+                replace_existing=bool(getattr(args, "force_existing_carousel", False))
+                and not bool(getattr(args, "skip_existing_carousel", False)),
                 port=args.port,
                 limit=args.carousel_limit if args.carousel_limit > 0 else None,
                 cancel_token=cancel_token,
@@ -1913,6 +1906,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-carousel", action="store_true")
     parser.add_argument("--skip-detail", action="store_true")
     parser.add_argument("--skip-existing-carousel", action="store_true")
+    parser.add_argument("--force-existing-carousel", action="store_true")
     parser.add_argument("--source-index-map", default="")
     parser.add_argument("--replace-shopify-cdn", action="store_true")
     parser.add_argument("--no-preserve-detail-size", action="store_true")

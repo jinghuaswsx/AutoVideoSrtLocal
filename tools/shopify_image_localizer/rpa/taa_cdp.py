@@ -92,6 +92,7 @@ BODY_HTML_FIELD_PREFIX = "editable_Ym9keV9odG1s"
 DETAIL_RELOAD_VERIFY_ATTEMPTS = 3
 DETAIL_RELOAD_VERIFY_DELAY_S = 3.0
 SOURCE_INDEX_RE = re.compile(r"from_url_en_(\d+)_", re.I)
+SOURCE_IMAGE_EXTENSIONS = ("webp", "jpg", "jpeg", "png", "gif", "avif")
 IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.I | re.S)
 IMG_ATTR_RE = re.compile(r"\b(src|alt)\s*=\s*(['\"])(.*?)\2", re.I | re.S)
 INSERT_IMAGE_BUTTON_LABELS = ("Insert image", "插入图片")
@@ -583,6 +584,24 @@ def source_index_from_filename(filename: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _strip_wrapped_source_image_extension(stem: str) -> str:
+    normalized = str(stem or "").strip()
+    while normalized:
+        lowered = normalized.lower()
+        changed = False
+        for ext in SOURCE_IMAGE_EXTENSIONS:
+            for suffix in (f".{ext}", f"_{ext}"):
+                if lowered.endswith(suffix):
+                    normalized = normalized[: -len(suffix)]
+                    changed = True
+                    break
+            if changed:
+                break
+        if not changed:
+            break
+    return normalized
+
+
 def source_name_key(value: str) -> str | None:
     raw = str(value or "").strip()
     if not raw:
@@ -594,7 +613,7 @@ def source_name_key(value: str) -> str | None:
     match = SOURCE_INDEX_RE.search(name)
     if match:
         name = name[match.end():]
-    stem = Path(name).stem.strip().lower()
+    stem = _strip_wrapped_source_image_extension(Path(name).stem).strip().lower()
     return f"name:{stem}" if stem else None
 
 
