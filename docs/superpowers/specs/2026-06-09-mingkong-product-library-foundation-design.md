@@ -421,7 +421,7 @@ DXM03 普通商品新增接口 `POST /api/dxmCommodityProduct/addCommodityProduc
 
 1. 先复刻所有组件普通 SKU；组件缺失或冲突无法解决时，不创建外层组合 SKU。
 2. 组件在 DXM03 均存在后，再按 DXM02 外层组合 SKU 的 `childIds` / `childNums` 关系，在 DXM03 使用组件自己的商品 ID 组装组合 SKU。
-3. 首版如果缺少可验证的组合保存 payload，只在工作台展示组件复刻缺口，不自动提交外层组合保存。
+3. 组合保存使用 `POST /api/dxmCommodityProduct/addCommodityProductGroup.json`，`dxmCommodityProduct.groupState=1`，`childIds` 必须是 DXM03 组件商品 ID，`childNums` 使用 DXM02 组件数量；创建后仍要重新搜索 DXM03，以 DXM03 返回的外层组合商品 ID 为准。
 
 ## 验收
 

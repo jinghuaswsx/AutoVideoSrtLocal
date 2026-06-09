@@ -845,3 +845,102 @@ def test_replicate_mingkong_sku_creates_missing_dxm03_commodity(monkeypatch):
     assert created_product["sourceUrl"] == "https://detail.1688.com/offer/922648495856.html"
     assert replaced["pairs"][0]["dianxiaomi_sku_code"] == "98012311-MK"
     assert updated_product["fields"]["purchase_1688_url"] == "https://detail.1688.com/offer/922648495856.html"
+
+
+def test_replicate_mingkong_sku_creates_combo_from_target_components(monkeypatch):
+    @contextmanager
+    def fake_lock(**_kwargs):
+        yield
+
+    added = {}
+    replaced = {}
+
+    source_detail = {
+        "productDTO": {
+            "dxmCommodityProduct": {
+                "id": "mk-combo",
+                "name": "组合商品 2件装",
+                "nameEn": "Combo 2-Pack",
+                "sku": "combo-sku",
+                "skuCode": "combo-code",
+                "price": 0,
+                "weight": 200,
+                "groupState": 1,
+                "productType": "100",
+                "imgUrl": "/productimage/combo.jpg",
+            }
+        }
+    }
+
+    monkeypatch.setattr(pairing, "browser_automation_lock", fake_lock)
+    monkeypatch.setattr(pairing, "_open_dxm02_context", lambda _url: ("spw", "sbrowser", "source"))
+    monkeypatch.setattr(pairing, "_connect_dxm_context", lambda _playwright, _url: ("tbrowser", "target"))
+    monkeypatch.setattr(pairing, "_close_dxm03_context", lambda _playwright, _browser: None)
+
+    def fake_search(ctx, sku):
+        if ctx == "source" and sku == "combo-sku":
+            return {"id": "mk-combo", "sku": sku, "sku_code": "combo-code", "is_combo": True}
+        if ctx == "target" and sku == "combo-sku":
+            return None
+        if ctx == "target" and sku == "child-sku":
+            return {"id": "dxm03-child", "sku": sku, "sku_code": "child-code", "name": "组件"}
+        return None
+
+    def fake_add_combo(_ctx, form_payload):
+        added["payload"] = form_payload
+        return {"code": 0, "data": {"code": 0}}
+
+    def fake_replace(product_id, pairs, *, source):
+        replaced["product_id"] = product_id
+        replaced["pairs"] = pairs
+        replaced["source"] = source
+        return {"inserted": 0, "updated": 1, "deleted": 0, "preserved": 0}
+
+    def fake_update(_product_id, **_fields):
+        return 1
+
+    monkeypatch.setattr(pairing, "_search_commodity", fake_search)
+    monkeypatch.setattr(
+        pairing,
+        "_search_child_sku_info",
+        lambda _ctx, _product_id: [{"sku": "child-sku", "quantity": 2}],
+    )
+    monkeypatch.setattr(pairing, "_view_commodity_detail", lambda *_args, **_kwargs: source_detail)
+    monkeypatch.setattr(pairing, "_target_sku_code", lambda *_args, **_kwargs: ("combo-code", "preserved"))
+    monkeypatch.setattr(pairing, "_add_replicated_combo_commodity", fake_add_combo)
+    monkeypatch.setattr(
+        pairing,
+        "_wait_for_commodity",
+        lambda _ctx, sku: {
+            "id": "dxm03-combo",
+            "sku": sku,
+            "sku_code": "combo-code",
+            "name": "组合商品 2件装",
+        },
+    )
+
+    result = pairing.replicate_mingkong_skus_to_dxm03(
+        {"id": 747, "product_code": "combo-rjc", "purchase_1688_url": ""},
+        [
+            {
+                "shopify_variant_id": "combo-variant",
+                "shopify_variant_title": "Combo",
+                "dianxiaomi_sku": "combo-sku",
+                "dianxiaomi_sku_code": "combo-code",
+                "dianxiaomi_name": "组合商品 2件装",
+            }
+        ],
+        selections=[{"dianxiaomi_sku": "combo-sku", "product_id_alibaba": "888"}],
+        replace_product_skus_fn=fake_replace,
+        update_product_fn=fake_update,
+    )
+
+    form = json.loads(added["payload"]["obj"])
+    created_product = json.loads(form["dxmCommodityProduct"])
+    assert result["ok"] is True
+    assert result["items"][0]["status"] == "created"
+    assert created_product["groupState"] == "1"
+    assert created_product["childIds"] == "dxm03-child"
+    assert created_product["childNums"] == "2"
+    assert added["payload"]["shopId"] == "-1"
+    assert replaced["pairs"][0]["dianxiaomi_sku_code"] == "combo-code"
