@@ -4,6 +4,7 @@ import asyncio
 import json
 import threading
 from contextlib import contextmanager
+from decimal import Decimal
 from pathlib import Path
 
 import web.routes.medias.products as products_route
@@ -453,6 +454,34 @@ def test_replicate_mingkong_sku_uses_subprocess_by_default(monkeypatch):
     assert calls["payload"]["product"] == product
     assert calls["payload"]["sku_rows"] == sku_rows
     assert calls["payload"]["selections"] == selections
+
+
+def test_pairing_subprocess_serializes_decimal_payload(monkeypatch):
+    captured = {}
+
+    class Completed:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(command, **kwargs):
+        captured["input"] = kwargs["input"]
+        output_path = command[command.index("--output") + 1]
+        Path(output_path).write_text(
+            json.dumps({"ok": True, "result": {"ok": True}}),
+            encoding="utf-8",
+        )
+        return Completed()
+
+    monkeypatch.setattr(pairing.subprocess, "run", fake_run)
+
+    result = pairing._run_pairing_subprocess(
+        "replicate",
+        {"product": {"id": 736, "price": Decimal("12.34")}},
+    )
+
+    assert result["ok"] is True
+    assert json.loads(captured["input"])["product"]["price"] == "12.34"
 
 
 def test_replicate_mingkong_sku_runs_impl_on_isolated_thread_when_forced(monkeypatch):

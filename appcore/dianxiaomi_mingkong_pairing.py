@@ -78,7 +78,7 @@ def _run_pairing_subprocess(operation: str, payload: dict[str, Any]) -> Any:
         try:
             completed = subprocess.run(
                 command,
-                input=json.dumps(payload, ensure_ascii=False),
+                input=json.dumps(payload, ensure_ascii=False, default=str),
                 text=True,
                 capture_output=True,
                 cwd=project_root,
