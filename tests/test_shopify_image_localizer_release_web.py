@@ -106,6 +106,11 @@ def test_medias_page_shows_release_download_from_db(authed_client_no_db, monkeyp
     from web.routes import medias as medias_route
 
     monkeypatch.setattr(
+        medias_route.dianxiaomi_procurement_insights_release,
+        "get_release_info",
+        lambda: {},
+    )
+    monkeypatch.setattr(
         medias_route.shopify_image_localizer_release,
         "get_release_info",
         lambda: {

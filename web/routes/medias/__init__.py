@@ -18,6 +18,7 @@ from flask import Blueprint, Response, request, abort, send_file, url_for
 from flask_login import login_required, current_user
 
 from appcore import (
+    dianxiaomi_procurement_insights_release,
     local_media_storage,
     material_evaluation,
     media_route_store,
