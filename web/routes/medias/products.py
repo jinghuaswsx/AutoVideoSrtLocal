@@ -238,7 +238,41 @@ def _refresh_shopify_sku_flask_response(result):
 
 def _build_mingkong_pairing_workbench_response(pid: int, product: dict):
     sku_rows = medias.list_product_skus(pid)
-    return dianxiaomi_mingkong_pairing.build_workbench_payload(product, sku_rows)
+    return dianxiaomi_mingkong_pairing.build_workbench_payload(
+        product,
+        sku_rows,
+        include_mingkong_reference=True,
+    )
+
+
+def _build_mingkong_pairing_import_skus_response(pid: int, product: dict):
+    existing_rows = medias.list_product_skus(pid)
+    if existing_rows:
+        return {
+            "ok": False,
+            "error": "local_skus_exist",
+            "message": "我们系统已存在 SKU 行，未覆盖明空 SKU",
+            "existing_count": len(existing_rows),
+        }
+    payload = dianxiaomi_mingkong_pairing.build_mingkong_library_sku_import_payload(product)
+    pairs = payload.get("pairs") or []
+    if not pairs:
+        return {
+            "ok": False,
+            "error": "mingkong_skus_missing",
+            "message": payload.get("message") or "明空产品库未找到可同步的 SKU 行",
+            "realtime_refresh": payload.get("realtime_refresh"),
+        }
+    stats = medias.replace_product_skus(pid, pairs, source="mingkong_library")
+    imported_rows = medias.list_product_skus(pid)
+    return {
+        "ok": True,
+        "message": f"已同步 {len(imported_rows)} 行明空 SKU 到我们系统",
+        "stats": stats,
+        "items": imported_rows,
+        "mingkong_items": payload.get("items") or [],
+        "realtime_refresh": payload.get("realtime_refresh"),
+    }
 
 
 def _build_mingkong_pairing_confirm_response(pid: int, product: dict, body: dict):
@@ -493,6 +527,20 @@ def api_mingkong_pairing_workbench(pid: int):
     if not routes._can_access_product(p):
         abort(404)
     return routes._build_mingkong_pairing_workbench_response(pid, p)
+
+
+@bp.route("/api/products/<int:pid>/mingkong-pairing/import-skus", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_mingkong_pairing_import_skus(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    result = routes._build_mingkong_pairing_import_skus_response(pid, p)
+    status = 200 if result.get("ok") else 409
+    return result, status
 
 
 @bp.route("/api/products/<int:pid>/mingkong-pairing/confirm", methods=["POST"])

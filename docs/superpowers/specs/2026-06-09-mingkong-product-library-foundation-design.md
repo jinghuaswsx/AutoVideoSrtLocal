@@ -358,6 +358,22 @@ DXM03 写入仍遵守：
    - 未完成配对时，先用 DXM03 商品管理接口确认/更新采购链接，再触发 DXM03 1688 商品同步，最后用 DXM03 自己的 `pairProductId` 调用确认配对接口。
 5. `adjustable-claw-clippers-rjc` 的首版工作台数据源允许使用已人工确认并写入本地的 `source=mingkong_pair` SKU 行；后续明空产品库上线后，工作台候选区改为读取明空产品库，而不是每次实时访问 DXM02。
 
+## 2026-06-09 追加：明空 SKU 同步与页面标注
+
+针对本地产品没有任何 `media_product_skus` 行、但明空产品库已有同款 SKU 的场景，工作台提供管理员手动触发的“同步明空 SKU 到我们系统”动作：
+
+1. 后端先读本地 `media_product_skus`；如果已经存在 SKU 行，默认不覆盖，返回“本地已有 SKU”。
+2. 本地 SKU 为空时，按当前产品 code / 链接 / Shopify 商品 ID 读取 `mingkong_product_library.sku_rows_from_library()`。
+3. 明空本地库仍未命中时，允许定向调用 `refresh_product_from_dxm02()` 补采 DXM02-MK，并重新读取明空本地库。
+4. 写入 `media_product_skus` 时只落 Shopify variant、明空店小秘 SKU、明空 ERP 编码、明空商品名等候选字段，`source='mingkong_library'`，用于我们系统后续可见和人工核对。
+5. 该同步动作不代表 DXM03 已有 ERP SKU / 采购配对；确认写入 DXM03 时仍必须实时核验 DXM03 自己的商品管理 SKU 和待配对行。DXM03 找不到 SKU 时继续阻断，不用明空侧 `pairing_row_id` 跨账号写入。
+
+页面展示必须明确区分数据归属：
+
+1. 左侧区域展示“我们系统 / DXM03”维度：我们系统 Shopify variant、我们系统 SKU、DXM03 ERP 状态、DXM03 供应商、DXM03 1688 商品 ID、DXM03 1688 SKU ID、写入状态。
+2. 右侧区域展示“明空店小秘”维度：明空店小秘 SKU、明空店小秘 ERP 编码、明空店小秘商品名、明空供应商、明空 1688 商品 ID、明空 1688 SKU ID、明空组合组件。
+3. 页面中所有明空维度字段必须加“明空”前缀；所有 DXM03 维度字段必须加“DXM03”前缀；本地字段用“我们系统”前缀，避免混淆来源。
+
 ## 验收
 
 1. 数据表迁移存在并可重复执行。
