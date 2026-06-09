@@ -1522,9 +1522,12 @@ def test_run_repairs_material_product_link_to_default_variant_when_variant_passe
         "product_code": "instant-snap-iodine-swabs-rjc",
         "lang": "it",
         "domain": "newjoyloo.com",
-        "link_url": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc?variant=46081369309357",
+        "link_url": "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc",
     }]
     assert result["product_links"][0]["repaired_from"] == link_url
+    assert result["product_links"][0]["verified_variant_url"] == (
+        "https://newjoyloo.com/it/products/instant-snap-iodine-swabs-rjc?variant=46081369309357"
+    )
     assert result["product_links"][0]["localized_token_present"] == 1
 
 

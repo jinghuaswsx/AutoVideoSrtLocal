@@ -1023,6 +1023,13 @@ def _with_variant_param(link_url: str, variant_id: str) -> str:
     return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(pairs), parsed.fragment))
 
 
+def _canonical_product_link_url(link_url: str) -> str:
+    parsed = urlparse(str(link_url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, "", ""))
+
+
 def _product_link_accept_language(link_url: str) -> str:
     parsed = urlparse(str(link_url or "").strip())
     first_segment = (parsed.path or "").strip("/").split("/", 1)[0].strip().lower()
@@ -1855,19 +1862,21 @@ def run(
                             cancel_token=cancel_token,
                         )
                         if _product_link_verification_passed(variant_link_result):
+                            canonical_link_url = _canonical_product_link_url(link_url) or link_url
                             save_link_result = api_client.save_product_link(
                                 cfg["base_url"],
                                 cfg["api_key"],
                                 product_code=args.product_code,
                                 lang=args.shop_locale,
                                 domain=args.store_domain,
-                                link_url=variant_link_url,
+                                link_url=canonical_link_url,
                             )
                             variant_link_result["repaired_from"] = link_url
+                            variant_link_result["verified_variant_url"] = variant_link_url
                             variant_link_result["saved_product_link"] = save_link_result
                             result["product_links"][-1] = variant_link_result
                             product_link_result = variant_link_result
-                            print(f"详情图：已将素材库商品链接更新为默认 variant 链接 {variant_link_url}")
+                            print(f"详情图：已确认默认 variant 链接并保存素材库商品链接 {canonical_link_url}")
                 assert_product_link_detail_contract(product_link_result)
                 print(
                     "详情图：素材库商品链接详情页校验完成 "
