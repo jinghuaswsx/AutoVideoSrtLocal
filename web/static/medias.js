@@ -709,8 +709,12 @@
       detailsHtml = `<div class="oc-delivery-details" style="font-size: 11px; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; align-items: center;">${parts.join('')}</div>`;
     }
     
-    return `<div style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%;">`
+    const productCode = (p.product_code === null || p.product_code === undefined) ? '' : String(p.product_code).trim();
+    const adAnalysisUrl = `/order-analytics/ads-view?subtab=ad&q=${encodeURIComponent(productCode)}&range=thisMonth`;
+
+    return `<div style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%; gap: 4px;">`
       + `<span class="oc-delivery-pill ${meta.cls}">${meta.label}</span>`
+      + `<a href="${escapeHtml(adAnalysisUrl)}" target="_blank" class="oc-delivery-pill-btn" title="查看广告分析">广告分析</a>`
       + detailsHtml
       + `</div>`;
   }
