@@ -111,7 +111,9 @@
 .mh-play-button.bottom::before { border-top-width:7px; border-bottom-width:7px; border-left-width:10px; }
 .mh-message-wrap { display:grid; gap:8px; margin-bottom:2px; }
 .mh-message { max-height:178px; overflow:auto; line-height:1.45; font-size:14px; color:#334155; word-break:break-word; }
+.mh-message-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .mh-message-toggle { justify-self:start; height:28px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:5px; background:#fff; color:#334155; font-size:12px; font-weight:700; cursor:pointer; }
+.mh-message-translate { border-color:#99f6e4; color:#0f766e; }
 .mh-message-toggle:hover { border-color:var(--mh-accent); color:var(--mh-accent); }
 .mh-links { display:flex; gap:8px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid #edf2f7; }
 .mh-link-btn { display:inline-flex; align-items:center; height:30px; padding:0 10px; border:1px solid #d8dee8; border-radius:5px; color:#334155; background:#fff; text-decoration:none; font-size:13px; }
@@ -1197,16 +1199,53 @@ function copyabilityBlock(row) {
   </div>`;
 }
 function renderMessageBlock(row) {
+  const postId = Number(row.id || 0);
   const translated = row.message_html || '';
   const original = row.message_source_html || '';
   const canToggleOriginal = Boolean(row.message_is_translated && original);
+  const canTranslate = Boolean(postId && !row.message_is_translated && String(translated || original || '').trim());
   const attrs = canToggleOriginal
     ? ` data-message-showing="translated" data-message-translated="${esc(translated)}" data-message-original="${esc(original)}"`
     : '';
-  const toggle = canToggleOriginal
-    ? '<button class="mh-message-toggle" type="button" onclick="toggleMetaHotPostSourceMessage(event)">显示原文案</button>'
+  const actions = [];
+  if (canToggleOriginal) {
+    actions.push('<button class="mh-message-toggle" type="button" onclick="toggleMetaHotPostSourceMessage(event)">显示原文案</button>');
+  }
+  if (canTranslate) {
+    actions.push(`<button class="mh-message-toggle mh-message-translate" type="button" onclick="translateMetaHotPostMessageToChinese(event, ${postId})">翻译</button>`);
+  }
+  const actionHtml = actions.length
+    ? `<div class="mh-message-actions">${actions.join('')}</div>`
     : '';
-  return `<div class="mh-message-wrap"${attrs}><div class="mh-message">${translated}</div>${toggle}</div>`;
+  return `<div class="mh-message-wrap"${attrs}><div class="mh-message">${translated}</div>${actionHtml}</div>`;
+}
+async function translateMetaHotPostMessageToChinese(event, postId) {
+  event.preventDefault();
+  event.stopPropagation();
+  const button = event.currentTarget;
+  const originalText = button ? button.textContent : '翻译';
+  if (!postId || (button && button.disabled)) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = '翻译中...';
+  }
+  qs('mhStatus').textContent = '文案翻译中...';
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${postId}/message/translate-zh`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders()
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'translate_failed');
+    if (data.item) updateMetaHotCard(data.item);
+    qs('mhStatus').textContent = data.cached ? '已有文案中文缓存' : '文案翻译完成';
+  } catch (err) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+    qs('mhStatus').textContent = '文案翻译失败';
+  }
 }
 function toggleMetaHotPostSourceMessage(event) {
   const button = event.currentTarget;

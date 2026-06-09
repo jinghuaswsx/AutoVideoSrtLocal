@@ -131,7 +131,7 @@ def _favorite_sort_arg(args: Mapping[str, Any]) -> str:
 
 def _favorite_order_sql(sort: str) -> str:
     if sort == "interactions":
-        return "p.latest_likes DESC, fav.created_at DESC, fav.id DESC"
+        return "COALESCE(p.latest_likes, 0) DESC, fav.created_at DESC, fav.id DESC"
     if sort == "creation_time":
         return "p.creation_time DESC, fav.created_at DESC, fav.id DESC"
     return "fav.created_at DESC, fav.id DESC"
@@ -286,7 +286,7 @@ def list_hot_posts(
           ON va.hot_post_id = p.id AND va.status = 'done'
         {favorite_join}
         {where_sql}
-        ORDER BY p.sync_period_likes DESC, p.creation_time DESC, p.id DESC
+        ORDER BY COALESCE(p.sync_period_likes, 0) DESC, p.creation_time DESC, p.id DESC
         LIMIT %s OFFSET %s
         """,
         list(favorite_params + params + [page_size, offset]),
@@ -499,7 +499,7 @@ def list_today_new_hot_posts(
           ON va.hot_post_id = p.id AND va.status = 'done'
         {favorite_join}
         {where_sql}
-        ORDER BY p.first_seen_at DESC, p.sync_period_likes DESC, p.id DESC
+        ORDER BY p.first_seen_at DESC, COALESCE(p.sync_period_likes, 0) DESC, p.id DESC
         LIMIT %s OFFSET %s
         """,
         list(favorite_params + params + [page_size, offset]),
@@ -742,11 +742,10 @@ def next_pending_message_translations(
             OR message_zh_html = ''
             OR message_zh_status IN ('pending', 'failed')
           )
-          AND message_zh_attempts < %s
         ORDER BY updated_at ASC, id ASC
         LIMIT %s
         """,
-        (int(max_attempts), safe_limit),
+        (safe_limit,),
     )
 
 
@@ -2096,11 +2095,10 @@ def next_pending_product_title_translations(
             OR product_title_zh = ''
             OR product_title_zh_status IN ('pending', 'failed')
           )
-          AND product_title_zh_attempts < %s
         ORDER BY updated_at ASC, id ASC
         LIMIT %s
         """,
-        (int(max_attempts), safe_limit),
+        (safe_limit,),
     )
 
 
@@ -2359,4 +2357,3 @@ def get_hot_post_by_id(
         list(favorite_params + [int(post_id)]),
     )
     return rows[0] if rows else None
-
