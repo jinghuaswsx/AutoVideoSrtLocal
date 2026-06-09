@@ -212,12 +212,12 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "mingkong_product_library_sync",
         "name": "明空产品库同步",
         "description": (
-            "每天 04:00 使用 DXM02-MK 店小秘登录态全量同步明空 Shopify 商品、variants、"
+            "每周一 04:00 使用 DXM02-MK 店小秘登录态全量同步明空 Shopify 商品、variants、"
             "ERP SKU、1688 采购配对和组合 SKU 组件关系到本地 mingkong_* 产品库表；"
-            "明空配对工作台优先读取该本地库。Docs-anchor: "
+            "明空配对工作台优先读取该本地库，本地没有时实时访问 DXM02 补采并回写。Docs-anchor: "
             "docs/superpowers/specs/2026-06-09-mingkong-product-library-foundation-design.md"
         ),
-        "schedule": "每天 04:00（北京时间）",
+        "schedule": "每周一 04:00（北京时间）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-mingkong-product-library-sync.timer",

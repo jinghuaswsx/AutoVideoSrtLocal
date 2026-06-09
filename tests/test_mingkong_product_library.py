@@ -84,6 +84,19 @@ def test_mingkong_product_library_scheduler_registered():
     task = scheduled_tasks.get_task_definition("mingkong_product_library_sync")
 
     assert task["code"] == "mingkong_product_library_sync"
+    assert task["schedule"] == "每周一 04:00（北京时间）"
     assert task["source_ref"] == "autovideosrt-mingkong-product-library-sync.timer"
     assert task["runner"] == "tools/mingkong_product_library_sync.py --days 0"
     assert task["log_table"] == "mingkong_product_library_sync_runs"
+
+
+def test_mingkong_product_library_systemd_timer_is_weekly():
+    body = (
+        ROOT
+        / "deploy"
+        / "server_browser"
+        / "autovideosrt-mingkong-product-library-sync.timer"
+    ).read_text(encoding="utf-8")
+
+    assert "OnCalendar=Mon *-*-* 04:00:00" in body
+    assert "OnCalendar=*-*-* 04:00:00" not in body
