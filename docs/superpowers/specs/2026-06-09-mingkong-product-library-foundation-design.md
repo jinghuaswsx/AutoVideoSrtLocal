@@ -221,6 +221,26 @@
 3. 如果明空本地库仍然没有命中，按当前产品 code、明空历史素材表、商品链接、Shopify product id 生成搜索词，实时访问 DXM02-MK 店小秘后台补采该产品，写回本地明空产品库。
 4. 补采完成后再次只读本地明空产品库渲染工作台；如果仍无结果，则展示“无明空匹配数据”，不自动猜测。
 
+## Shopify variants 完整性补充
+
+2026-06-09 对产品 `hygienic-silicone-back-scrub-rjc` / AutoVideoSrtLocal 产品 ID `772` 复核发现：店小秘 Shopify 在线商品接口 `shopifyProduct/pageList.json` 返回的商品行包含 `variantSize=24`，但内嵌 `variants` 只有前 5 条。公开 Shopify 商品 JSON：
+
+- `https://0ixug9-pv.myshopify.com/products/hygienic-silicone-back-scrub-rjc.js`
+- `https://7t1gn3-sv.myshopify.com/products/hygienic-silicone-back-scrub-rjc.js`
+- `https://newshopllox.com/products/hygienic-silicone-back-scrub.js`
+
+均返回 24 个 variants/SKU。明空产品库同步不得只信店小秘列表接口内嵌 variants；当 `variantSize` 大于内嵌 variants 数量时，必须用 `sellerLoginId + handle` 打开公开 Shopify `.js` / `.json` 补齐全量 variants，并且只有公开 JSON 的 `product.id` 与店小秘 `shopifyProductId` 一致时才允许替换。补齐失败时保留店小秘接口结果并在同步摘要中体现缺口。
+
+## 全量 SKU 基底与明空填充口径
+
+明空配对工作台的 SKU 行基底必须来自“我们自己的商品全量 Shopify variants”，不能来自“明空已配采购信息的行数”。流程固定为：
+
+1. 先从当前产品的 `product_link` 或 DXM03 Shopify 在线商品公开 JSON 建全量 variant/SKU 基底，唯一键是 `shopify_variant_id`。
+2. 再按 `shopify_sku` / 明空 `dxm_sku` 从明空产品库填充采购相关字段，包括店小秘 SKU、SKUID、商品名、图片、供应商、1688 商品 ID、1688 SKU ID、采购链接。
+3. 明空库命中的行填充完整后可参与 DXM03 商品复刻和 1688 配对。
+4. 明空库没有命中的行也必须保留在工作台和本地 `media_product_skus`，但采购字段置空，后续运营在真实发货/采购前手动维护。
+5. 后端不得按 `dianxiaomi_sku` 对目标行去重；同一个采购 SKU 被多个前台 variant 复用时也必须保留所有 `shopify_variant_id` 行。
+
 ## 组合 SKU 接口实测补充
 
 2026-06-09 在 DXM02-MK 明空账号实测：

@@ -304,6 +304,88 @@ def test_build_workbench_payload_adds_mingkong_reference_when_enabled(monkeypatc
     assert payload["items"][0]["mingkong"]["sku_id_alibaba"] == "sku-1688"
 
 
+def test_build_workbench_payload_uses_full_shopify_base_then_fills_mingkong(monkeypatch):
+    product = {
+        "id": 772,
+        "product_code": "hygienic-silicone-back-scrub-rjc",
+        "product_link": "https://example.test/products/hygienic-silicone-back-scrub-rjc",
+    }
+    existing_rows = [
+        {
+            "shopify_product_id": "old-mk-product",
+            "shopify_variant_id": "old-mk-variant",
+            "shopify_sku": "0422-14563244",
+            "shopify_variant_title": "Old Blue",
+            "dianxiaomi_sku": "0422-14563244",
+            "dianxiaomi_sku_code": "98036085",
+            "dianxiaomi_name": "旧本地蓝色",
+        }
+    ]
+    full_base = [
+        {
+            "shopify_product_id": "our-shopify-product",
+            "shopify_variant_id": "our-variant-blue",
+            "shopify_sku": "0422-14563244",
+            "shopify_variant_title": 'Blue / Standard (23.6") / 1 Pack (Single)',
+            "source": "shopify_public",
+        },
+        {
+            "shopify_product_id": "our-shopify-product",
+            "shopify_variant_id": "our-variant-purple",
+            "shopify_sku": "0422-14563574",
+            "shopify_variant_title": 'Purple / Standard (23.6") / 1 Pack (Single)',
+            "source": "shopify_public",
+        },
+    ]
+    mingkong_rows = [
+        {
+            "shopify_product_id": "mk-shopify-product",
+            "shopify_variant_id": "mk-variant-purple",
+            "shopify_sku": "0422-14563574",
+            "shopify_variant_title": 'Purple / Standard (23.6") / 1 Pack (Single)',
+            "dianxiaomi_sku": "0422-14563574",
+            "dianxiaomi_sku_code": "98036091",
+            "dianxiaomi_name": "明空紫色标准款",
+            "source": "mingkong_library",
+            "purchase_1688_url": "https://detail.1688.com/offer/921703756878.html",
+            "mingkong_procurement": {
+                "supplier_name": "明空供应商",
+                "alibaba_product_id": "921703756878",
+                "sku_id_alibaba": "1688-purple",
+            },
+        }
+    ]
+
+    monkeypatch.setattr(
+        pairing.mingkong_product_library,
+        "public_shopify_sku_rows_from_product",
+        lambda _product: full_base,
+    )
+    monkeypatch.setattr(
+        pairing.mingkong_product_library,
+        "sku_rows_from_library",
+        lambda _product: mingkong_rows,
+    )
+
+    payload = pairing.build_workbench_payload(
+        product,
+        existing_rows,
+        include_live=False,
+        include_mingkong_reference=True,
+    )
+
+    assert payload["summary"]["source"] == "shopify_public_base"
+    assert [item["shopify_variant_id"] for item in payload["items"]] == [
+        "our-variant-blue",
+        "our-variant-purple",
+    ]
+    assert payload["items"][0]["dianxiaomi_sku"] == "0422-14563244"
+    assert payload["items"][0]["dianxiaomi_sku_code"] == "98036085"
+    assert payload["items"][1]["dianxiaomi_sku"] == "0422-14563574"
+    assert payload["items"][1]["dianxiaomi_sku_code"] == "98036091"
+    assert payload["items"][1]["mingkong"]["sku_id_alibaba"] == "1688-purple"
+
+
 def test_build_mingkong_library_sku_import_payload_refreshes_and_converts(monkeypatch):
     product = {"id": 747, "product_code": "sample-rjc", "shopifyid": "shopify-product"}
     calls = {"library": 0, "refresh": 0}
@@ -394,7 +476,7 @@ def test_build_target_sku_import_pairs_uses_editable_target_values():
     assert purchase_url == "https://detail.1688.com/offer/987654321.html"
 
 
-def test_build_target_sku_import_pairs_dedupes_repeated_target_skus():
+def test_build_target_sku_import_pairs_keeps_repeated_skus_for_distinct_variants():
     product = {"id": 772, "product_code": "hygienic-silicone-back-scrub-rjc"}
     library_items = [
         {
@@ -433,10 +515,13 @@ def test_build_target_sku_import_pairs_dedupes_repeated_target_skus():
 
     pairs = pairing.build_target_sku_import_pairs(product, library_items, targets)
 
-    assert len(pairs) == 1
+    assert len(pairs) == 2
     assert pairs[0]["shopify_product_id"] == "shop-a"
     assert pairs[0]["shopify_variant_id"] == "variant-a"
     assert pairs[0]["dianxiaomi_sku"] == "0422-14563244"
+    assert pairs[1]["shopify_product_id"] == "shop-b"
+    assert pairs[1]["shopify_variant_id"] == "variant-b"
+    assert pairs[1]["dianxiaomi_sku"] == "0422-14563244"
 
 
 def test_mingkong_pairing_ai_review_uses_openrouter_use_case_with_images():

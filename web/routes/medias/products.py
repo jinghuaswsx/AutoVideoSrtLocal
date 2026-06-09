@@ -361,20 +361,16 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
         library_items,
         targets,
     )
-    pair_skus = {
-        str(pair.get("dianxiaomi_sku") or "").strip()
+    pair_variants = {
+        str(pair.get("shopify_variant_id") or "").strip()
         for pair in pairs
-        if str(pair.get("dianxiaomi_sku") or "").strip()
+        if str(pair.get("shopify_variant_id") or "").strip()
     }
-    effective_targets: list[dict] = []
-    seen_target_skus: set[str] = set()
-    for target in targets:
-        if not isinstance(target, dict):
-            continue
-        sku = str(target.get("dianxiaomi_sku") or "").strip()
-        if sku and sku in pair_skus and sku not in seen_target_skus:
-            effective_targets.append(target)
-            seen_target_skus.add(sku)
+    effective_targets: list[dict] = [
+        target for target in targets
+        if isinstance(target, dict)
+        and str(target.get("shopify_variant_id") or "").strip() in pair_variants
+    ]
     if not pairs:
         message = import_payload.get("message") or "目标计划中没有可写入的 SKU 行"
         return {

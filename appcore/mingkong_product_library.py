@@ -6,6 +6,9 @@ import json
 import re
 from datetime import datetime, timezone
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import Request, urlopen
 
 from appcore.db import execute, query, query_one
 
@@ -62,6 +65,156 @@ def normalize_image_url(value: Any) -> str:
     if text.startswith("/productimage/"):
         return f"http://productimage-1251220924.picgz.myqcloud.com{text}"
     return text
+
+
+def _normalize_public_shopify_price(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            if "." in text:
+                return float(text)
+            numeric = int(text)
+        except ValueError:
+            return None
+    else:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number != int(number):
+            return number
+        numeric = int(number)
+    return round(numeric / 100.0, 2)
+
+
+def _normalize_public_shopify_weight_grams(variant: dict[str, Any]) -> float | None:
+    value = variant.get("grams")
+    if value not in (None, ""):
+        try:
+            return round(float(value), 2)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _variant_title_from_public_variant(variant: dict[str, Any]) -> str:
+    title = str(variant.get("title") or "").strip()
+    if title and title != "Default Title":
+        return title
+    parts: list[str] = []
+    for key in ("option1", "option2", "option3"):
+        text = str(variant.get(key) or "").strip()
+        if text and text != "Default Title":
+            parts.append(text)
+    return " / ".join(parts)
+
+
+def _public_variant_image_url(variant: dict[str, Any]) -> str:
+    for key in ("featured_image", "image"):
+        value = variant.get(key)
+        if isinstance(value, dict):
+            image = normalize_image_url(value.get("src") or value.get("url"))
+        else:
+            image = normalize_image_url(value)
+        if image:
+            return image
+    return ""
+
+
+def _public_product_urls_from_link(url: Any) -> list[str]:
+    text = str(url or "").strip()
+    if not text or "/products/" not in text:
+        return []
+    parsed = urlsplit(text)
+    if not parsed.scheme or not parsed.netloc:
+        return []
+    path = parsed.path.rstrip("/")
+    if path.endswith(".js") or path.endswith(".json"):
+        base = path.rsplit(".", 1)[0]
+    else:
+        base = path
+    urls: list[str] = []
+    for suffix in (".js", ".json"):
+        urls.append(urlunsplit((parsed.scheme, parsed.netloc, f"{base}{suffix}", "", "")))
+    return urls
+
+
+def public_shopify_sku_rows_from_product(
+    product: dict[str, Any],
+    *,
+    fetch_json_fn=None,
+    timeout_seconds: int = 10,
+) -> list[dict[str, Any]]:
+    """Build the full local SKU base from the product's public Shopify JSON."""
+
+    urls = _public_product_urls_from_link(product.get("product_link"))
+    if not urls:
+        return []
+    expected_product_id = str(product.get("shopifyid") or "").strip()
+
+    def default_fetch_json(url: str) -> dict[str, Any]:
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json,text/javascript,*/*",
+            },
+        )
+        with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310 - Shopify public product JSON
+            return json.loads(response.read().decode("utf-8", errors="replace"))
+
+    fetch_json = fetch_json_fn or default_fetch_json
+    for url in urls:
+        try:
+            payload = fetch_json(url)
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError):
+            continue
+        source_product = payload.get("product") if isinstance(payload.get("product"), dict) else payload
+        if not isinstance(source_product, dict):
+            continue
+        shopify_product_id = str(source_product.get("id") or "").strip()
+        if expected_product_id and shopify_product_id != expected_product_id:
+            continue
+        rows: list[dict[str, Any]] = []
+        for variant in source_product.get("variants") or []:
+            if not isinstance(variant, dict):
+                continue
+            variant_id = str(variant.get("id") or variant.get("shopifyVariantId") or "").strip()
+            if not variant_id:
+                continue
+            sku = str(variant.get("sku") or "").strip()
+            rows.append({
+                "shopify_product_id": shopify_product_id,
+                "shopify_variant_id": variant_id,
+                "shopify_sku": sku,
+                "shopify_price": _normalize_public_shopify_price(variant.get("price")),
+                "shopify_compare_at_price": _normalize_public_shopify_price(
+                    variant.get("compare_at_price") or variant.get("compareAtPrice")
+                ),
+                "shopify_currency": None,
+                "shopify_inventory_quantity": (
+                    variant.get("inventory_quantity")
+                    if variant.get("inventory_quantity") is not None
+                    else variant.get("inventoryQuantity")
+                ),
+                "shopify_weight_grams": _normalize_public_shopify_weight_grams(variant),
+                "shopify_variant_title": _variant_title_from_public_variant(variant),
+                "dianxiaomi_sku": "",
+                "dianxiaomi_product_sku": "",
+                "dianxiaomi_sku_code": "",
+                "dianxiaomi_name": "",
+                "source": "shopify_public",
+                "image_url": _public_variant_image_url(variant),
+                "purchase_1688_url": "",
+                "mingkong_procurement": None,
+            })
+        if rows:
+            return rows
+    return []
 
 
 def purchase_url_from_pairing(row: dict[str, Any]) -> str:
@@ -213,25 +366,55 @@ def variant_payloads_from_shopify_row(product_row: dict[str, Any]) -> list[dict[
     for variant in product_row.get("variants") or []:
         if not isinstance(variant, dict):
             continue
-        variant_id = str(variant.get("shopifyVariantId") or variant.get("id") or "").strip()
+        variant_id = str(
+            variant.get("shopifyVariantId")
+            or variant.get("shopify_variant_id")
+            or variant.get("id")
+            or ""
+        ).strip()
         if not variant_id:
             continue
-        sku = str(variant.get("sku") or "").strip()
+        sku = str(variant.get("sku") or variant.get("shopify_sku") or "").strip()
         option_parts: list[str] = []
         for key in ("option1", "option2", "option3"):
             text = str(variant.get(key) or "").strip()
             if text:
                 option_parts.append(text)
+        variant_title = (
+            " / ".join(option_parts)
+            if option_parts
+            else str(
+                variant.get("shopify_variant_title")
+                or variant.get("title")
+                or ""
+            ).strip()
+        )
         out.append({
             "mk_shopify_product_id": shopify_product_id,
             "mk_shopify_variant_id": variant_id,
-            "variant_title": " / ".join(option_parts) if option_parts else str(variant.get("title") or "").strip(),
+            "variant_title": variant_title,
             "shopify_sku": sku,
             "pair_key": sku or variant_id,
-            "shopify_price": variant.get("price"),
-            "shopify_compare_at_price": variant.get("compareAtPrice"),
-            "shopify_inventory_quantity": variant.get("inventoryQuantity"),
-            "shopify_weight_grams": variant.get("weight"),
+            "shopify_price": (
+                variant.get("shopify_price")
+                if variant.get("shopify_price") is not None
+                else variant.get("price")
+            ),
+            "shopify_compare_at_price": (
+                variant.get("shopify_compare_at_price")
+                if variant.get("shopify_compare_at_price") is not None
+                else variant.get("compareAtPrice")
+            ),
+            "shopify_inventory_quantity": (
+                variant.get("shopify_inventory_quantity")
+                if variant.get("shopify_inventory_quantity") is not None
+                else variant.get("inventoryQuantity")
+            ),
+            "shopify_weight_grams": (
+                variant.get("shopify_weight_grams")
+                if variant.get("shopify_weight_grams") is not None
+                else variant.get("weight")
+            ),
             "raw_json": variant,
         })
     return out
@@ -565,7 +748,15 @@ def _selected_candidate_product_ids(
         if str(row.get("mk_shopify_product_id") or "").strip() in shopify_ids
     ]
     if matched_shopify:
-        return [int(row["id"]) for row in matched_shopify]
+        out: list[int] = []
+        seen: set[int] = set()
+        for row in [*matched_shopify, *candidates]:
+            row_id = int(row["id"])
+            if row_id in seen:
+                continue
+            seen.add(row_id)
+            out.append(row_id)
+        return out
     with_procurement = [
         row for row in candidates
         if int(row.get("procurement_count") or 0) > 0
@@ -575,12 +766,26 @@ def _selected_candidate_product_ids(
 
 
 def _dedupe_variant_rows_by_dxm_sku(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def score(row: dict[str, Any]) -> tuple[int, int, int]:
+        return (
+            int(row.get("_procurement_count") or 0),
+            int(row.get("_component_count") or 0),
+            int(row.get("relation_flag") or 0),
+        )
+
     out: list[dict[str, Any]] = []
+    best_by_key: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        sku = str(row.get("dxm_sku") or row.get("pair_key") or "").strip()
+        key = sku or f"variant:{row.get('id')}"
+        existing = best_by_key.get(key)
+        if existing is None or score(row) > score(existing):
+            best_by_key[key] = row
     seen: set[str] = set()
     for row in rows:
         sku = str(row.get("dxm_sku") or row.get("pair_key") or "").strip()
         key = sku or f"variant:{row.get('id')}"
-        if key in seen:
+        if key in seen or best_by_key.get(key) is not row:
             continue
         seen.add(key)
         out.append(row)
@@ -596,9 +801,26 @@ def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
     placeholders = ",".join(["%s"] * len(product_ids))
     variants = query(
         f"""
-        SELECT v.*, p.product_code, p.mk_title, p.mk_main_image_url
+        SELECT
+          v.*,
+          p.product_code,
+          p.mk_title,
+          p.mk_main_image_url,
+          COALESCE(proc.procurement_count, 0) AS _procurement_count,
+          COALESCE(comp.component_count, 0) AS _component_count
         FROM mingkong_product_variants v
         JOIN mingkong_products p ON p.id = v.mingkong_product_id
+        LEFT JOIN (
+          SELECT sku, COUNT(*) AS procurement_count
+          FROM mingkong_procurement_links
+          WHERE sku IS NOT NULL AND sku <> ''
+          GROUP BY sku
+        ) proc ON proc.sku = COALESCE(NULLIF(v.dxm_sku, ''), v.pair_key)
+        LEFT JOIN (
+          SELECT mingkong_variant_id, COUNT(*) AS component_count
+          FROM mingkong_combo_components
+          GROUP BY mingkong_variant_id
+        ) comp ON comp.mingkong_variant_id = v.id
         WHERE v.mingkong_product_id IN ({placeholders})
         ORDER BY FIELD(v.mingkong_product_id, {placeholders}), v.id
         """,

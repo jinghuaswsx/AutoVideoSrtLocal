@@ -916,6 +916,11 @@ def _local_sku_payload(row: dict[str, Any]) -> dict[str, Any]:
         "shopify_product_id": row.get("shopify_product_id") or "",
         "shopify_variant_id": row.get("shopify_variant_id") or "",
         "shopify_sku": row.get("shopify_sku") or "",
+        "shopify_price": row.get("shopify_price"),
+        "shopify_compare_at_price": row.get("shopify_compare_at_price"),
+        "shopify_currency": row.get("shopify_currency") or "USD",
+        "shopify_inventory_quantity": row.get("shopify_inventory_quantity"),
+        "shopify_weight_grams": row.get("shopify_weight_grams"),
         "variant_title": row.get("shopify_variant_title") or row.get("variant_title") or "",
         "dianxiaomi_sku": row.get("dianxiaomi_sku") or "",
         "dianxiaomi_product_sku": row.get("dianxiaomi_product_sku") or "",
@@ -993,11 +998,86 @@ def load_mingkong_library_sku_rows(product: dict[str, Any]) -> dict[str, Any]:
     if not library_rows:
         realtime_refresh_summary = mingkong_product_library.refresh_product_from_dxm02(product)
         library_rows = mingkong_product_library.sku_rows_from_library(product)
-    rows = [_local_sku_payload(row) for row in library_rows]
+    base_rows = mingkong_product_library.public_shopify_sku_rows_from_product(product)
+    rows = merge_full_sku_base_with_fill_rows(
+        base_rows,
+        [_local_sku_payload(row) for row in library_rows],
+    )
     return {
         "rows": rows,
         "realtime_refresh": realtime_refresh_summary,
     }
+
+
+def _row_sku_key(row: dict[str, Any]) -> str:
+    return str(
+        row.get("shopify_sku")
+        or row.get("dianxiaomi_sku")
+        or ""
+    ).strip()
+
+
+def _overlay_sku_fill(base: dict[str, Any], fill: dict[str, Any]) -> dict[str, Any]:
+    if not fill:
+        return dict(base)
+    merged = dict(base)
+    for key in (
+        "dianxiaomi_sku",
+        "dianxiaomi_product_sku",
+        "dianxiaomi_sku_code",
+        "dianxiaomi_name",
+        "image_url",
+        "purchase_1688_url",
+        "mingkong_product_id",
+        "mingkong_variant_id",
+        "mingkong_procurement",
+        "is_combo",
+        "combo_components",
+    ):
+        value = fill.get(key)
+        if value not in (None, "", []):
+            merged[key] = value
+    if not merged.get("dianxiaomi_sku") and _row_sku_key(base) == _row_sku_key(fill):
+        merged["dianxiaomi_sku"] = fill.get("dianxiaomi_sku") or ""
+    merged["source"] = "shopify_public_mingkong_fill" if fill else (base.get("source") or "shopify_public")
+    return merged
+
+
+def merge_full_sku_base_with_fill_rows(
+    base_rows: list[dict[str, Any]],
+    *fill_groups: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep the full Shopify variant base and fill known Mingkong/local SKU fields."""
+
+    if not base_rows:
+        for rows in fill_groups:
+            if rows:
+                return [_local_sku_payload(row) for row in rows]
+        return []
+
+    fill_by_variant: dict[str, dict[str, Any]] = {}
+    fill_by_sku: dict[str, dict[str, Any]] = {}
+    for rows in fill_groups:
+        for raw in rows or []:
+            row = _local_sku_payload(raw)
+            variant_id = str(row.get("shopify_variant_id") or "").strip()
+            sku = _row_sku_key(row)
+            if variant_id:
+                fill_by_variant.setdefault(variant_id, row)
+            if sku:
+                fill_by_sku.setdefault(sku, row)
+
+    out: list[dict[str, Any]] = []
+    seen_variants: set[str] = set()
+    for raw_base in base_rows:
+        base = _local_sku_payload(raw_base)
+        variant_id = str(base.get("shopify_variant_id") or "").strip()
+        if not variant_id or variant_id in seen_variants:
+            continue
+        seen_variants.add(variant_id)
+        fill = fill_by_variant.get(variant_id) or fill_by_sku.get(_row_sku_key(base)) or {}
+        out.append(_overlay_sku_fill(base, fill))
+    return out
 
 
 def build_mingkong_library_sku_import_payload(product: dict[str, Any]) -> dict[str, Any]:
@@ -1073,7 +1153,6 @@ def build_target_sku_import_pairs(
     by_variant, by_sku = _target_source_indexes(library_items)
     pairs: list[dict[str, Any]] = []
     seen_variants: set[str] = set()
-    seen_skus: set[str] = set()
     for raw_target in targets or []:
         if not isinstance(raw_target, dict):
             continue
@@ -1091,11 +1170,7 @@ def build_target_sku_import_pairs(
         if not variant_id or variant_id in seen_variants:
             continue
         target_sku = str(_target_value(target, source, "dianxiaomi_sku") or "").strip()
-        if target_sku and target_sku in seen_skus:
-            continue
         seen_variants.add(variant_id)
-        if target_sku:
-            seen_skus.add(target_sku)
         pairs.append({
             "shopify_product_id": _target_value(
                 target,
@@ -1230,9 +1305,15 @@ def build_workbench_payload(
     purchase_url = str(product.get("purchase_1688_url") or "").strip()
     source_rows = list(sku_rows or [])
     library_rows: list[dict[str, Any]] = []
+    base_rows: list[dict[str, Any]] = []
     realtime_refresh_error = ""
     mingkong_reference_error = ""
+    full_sku_base_error = ""
     realtime_refresh_summary: dict[str, Any] | None = None
+    try:
+        base_rows = mingkong_product_library.public_shopify_sku_rows_from_product(product)
+    except Exception as exc:
+        full_sku_base_error = str(exc)
     if not source_rows:
         try:
             loaded_library = load_mingkong_library_sku_rows(product)
@@ -1251,7 +1332,14 @@ def build_workbench_payload(
         except Exception as exc:
             mingkong_reference_error = str(exc)
             library_rows = []
-    local_rows = [_local_sku_payload(row) for row in source_rows]
+    if base_rows and source_rows:
+        local_rows = merge_full_sku_base_with_fill_rows(
+            base_rows,
+            [_local_sku_payload(row) for row in source_rows],
+            library_rows,
+        )
+    else:
+        local_rows = [_local_sku_payload(row) for row in source_rows]
     mingkong_by_variant, mingkong_by_sku = _mingkong_reference_indexes(library_rows)
     sku_values = [row["dianxiaomi_sku"] for row in local_rows if row.get("dianxiaomi_sku")]
     live_error = ""
@@ -1274,7 +1362,7 @@ def build_workbench_payload(
             mingkong_by_variant.get(str(row.get("shopify_variant_id") or "").strip())
             or mingkong_by_sku.get(sku)
         )
-        row_purchase_url = str(row.get("purchase_1688_url") or purchase_url).strip()
+        row_purchase_url = str(row.get("purchase_1688_url") or "").strip()
         row_alibaba_product_id = normalize_1688_offer_id(row_purchase_url)
         status = "missing_local_sku"
         if sku and commodity and commodity.get("is_combo") and components:
@@ -1331,8 +1419,13 @@ def build_workbench_payload(
             "missing_count": len(items) - ready_count - paired_count,
             "has_purchase_url": bool(purchase_url),
             "live_error": live_error or realtime_refresh_error,
+            "full_sku_base_error": full_sku_base_error,
             "mingkong_reference_error": mingkong_reference_error,
-            "source": "media_product_skus" if sku_rows else ("mingkong_library" if library_rows else "empty"),
+            "source": (
+                "shopify_public_base"
+                if base_rows
+                else ("media_product_skus" if sku_rows else ("mingkong_library" if library_rows else "empty"))
+            ),
             "realtime_refresh": realtime_refresh_summary,
         },
     }
@@ -1348,7 +1441,7 @@ def _sku_pair_for_replace(row: dict[str, Any]) -> dict[str, Any]:
         "shopify_currency": row.get("shopify_currency") or "USD",
         "shopify_inventory_quantity": row.get("shopify_inventory_quantity"),
         "shopify_weight_grams": row.get("shopify_weight_grams"),
-        "shopify_variant_title": row.get("shopify_variant_title"),
+        "shopify_variant_title": row.get("shopify_variant_title") or row.get("variant_title"),
         "dianxiaomi_sku": row.get("dianxiaomi_sku"),
         "dianxiaomi_product_sku": row.get("dianxiaomi_product_sku"),
         "dianxiaomi_sku_code": row.get("dianxiaomi_sku_code"),

@@ -114,6 +114,18 @@ def test_mingkong_product_library_prefers_procurement_candidate_without_shopify_
     assert library._selected_candidate_product_ids(candidates, set()) == [2]
 
 
+def test_mingkong_product_library_keeps_other_candidates_after_shopify_match():
+    from appcore import mingkong_product_library as library
+
+    candidates = [
+        {"id": 1, "mk_shopify_product_id": "matched", "procurement_count": 0},
+        {"id": 2, "mk_shopify_product_id": "richer", "procurement_count": 0},
+        {"id": 3, "mk_shopify_product_id": "other", "procurement_count": 0},
+    ]
+
+    assert library._selected_candidate_product_ids(candidates, {"matched"}) == [1, 2, 3]
+
+
 def test_mingkong_product_library_dedupes_repeated_shopify_products_by_dxm_sku():
     from appcore import mingkong_product_library as library
 
@@ -127,3 +139,114 @@ def test_mingkong_product_library_dedupes_repeated_shopify_products_by_dxm_sku()
     deduped = library._dedupe_variant_rows_by_dxm_sku(rows)
 
     assert [row["id"] for row in deduped] == [10, 11]
+
+
+def test_mingkong_product_library_dedupe_prefers_rows_with_components():
+    from appcore import mingkong_product_library as library
+
+    rows = [
+        {
+            "id": 10,
+            "dxm_sku": "0422-14563009",
+            "mk_shopify_product_id": "shop-without-components",
+            "_component_count": 0,
+        },
+        {
+            "id": 20,
+            "dxm_sku": "0422-14563009",
+            "mk_shopify_product_id": "shop-with-components",
+            "_component_count": 1,
+        },
+    ]
+
+    deduped = library._dedupe_variant_rows_by_dxm_sku(rows)
+
+    assert [row["id"] for row in deduped] == [20]
+
+
+def test_mingkong_product_library_accepts_public_shopify_variant_payloads():
+    from appcore import mingkong_product_library as library
+
+    rows = library.variant_payloads_from_shopify_row({
+        "shopifyProductId": "8591109816493",
+        "variants": [
+            {
+                "shopify_variant_id": "46041796313261",
+                "shopify_sku": "0422-14562851",
+                "shopify_variant_title": 'Purple / Extended (27.6") / Family Pack (Set of 3)',
+                "shopify_price": 12.95,
+                "shopify_compare_at_price": 16.83,
+                "shopify_inventory_quantity": 995879,
+                "shopify_weight_grams": 90.0,
+            }
+        ],
+    })
+
+    assert rows == [
+        {
+            "mk_shopify_product_id": "8591109816493",
+            "mk_shopify_variant_id": "46041796313261",
+            "variant_title": 'Purple / Extended (27.6") / Family Pack (Set of 3)',
+            "shopify_sku": "0422-14562851",
+            "pair_key": "0422-14562851",
+            "shopify_price": 12.95,
+            "shopify_compare_at_price": 16.83,
+            "shopify_inventory_quantity": 995879,
+            "shopify_weight_grams": 90.0,
+            "raw_json": {
+                "shopify_variant_id": "46041796313261",
+                "shopify_sku": "0422-14562851",
+                "shopify_variant_title": 'Purple / Extended (27.6") / Family Pack (Set of 3)',
+                "shopify_price": 12.95,
+                "shopify_compare_at_price": 16.83,
+                "shopify_inventory_quantity": 995879,
+                "shopify_weight_grams": 90.0,
+            },
+        }
+    ]
+
+
+def test_mingkong_product_library_builds_full_base_from_product_link():
+    from appcore import mingkong_product_library as library
+
+    fetched_urls = []
+
+    def fake_fetch(url):
+        fetched_urls.append(url)
+        return {
+            "id": 8591109816493,
+            "handle": "hygienic-silicone-back-scrub-rjc",
+            "title": "Hygienic Silicone Back Scrub",
+            "variants": [
+                {
+                    "id": 46041795559597,
+                    "sku": "0422-14563244",
+                    "price": 1295,
+                    "compare_at_price": 1683,
+                    "inventory_quantity": 995879,
+                    "grams": 90,
+                    "title": 'Blue / Standard (23.6") / 1 Pack (Single)',
+                    "featured_image": {"src": "//cdn.shopify.com/blue.jpg"},
+                }
+            ],
+        }
+
+    rows = library.public_shopify_sku_rows_from_product(
+        {
+            "product_link": "https://0ixug9-pv.myshopify.com/products/hygienic-silicone-back-scrub-rjc",
+            "shopifyid": "8591109816493",
+        },
+        fetch_json_fn=fake_fetch,
+    )
+
+    assert fetched_urls == [
+        "https://0ixug9-pv.myshopify.com/products/hygienic-silicone-back-scrub-rjc.js"
+    ]
+    assert rows[0]["shopify_product_id"] == "8591109816493"
+    assert rows[0]["shopify_variant_id"] == "46041795559597"
+    assert rows[0]["shopify_sku"] == "0422-14563244"
+    assert rows[0]["shopify_price"] == 12.95
+    assert rows[0]["shopify_compare_at_price"] == 16.83
+    assert rows[0]["shopify_weight_grams"] == 90.0
+    assert rows[0]["image_url"] == "https://cdn.shopify.com/blue.jpg"
+    assert rows[0]["dianxiaomi_sku"] == ""

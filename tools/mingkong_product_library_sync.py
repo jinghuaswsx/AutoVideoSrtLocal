@@ -9,6 +9,8 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -17,7 +19,11 @@ if str(REPO_ROOT) not in sys.path:
 from appcore import mingkong_product_library as library
 from appcore.browser_automation_lock import browser_automation_lock
 from appcore.db import execute, query
-from tools.dianxiaomi_sku_sync import build_dxm_payload, build_shopify_payload
+from tools.dianxiaomi_sku_sync import (
+    build_dxm_payload,
+    build_shopify_payload,
+    extract_public_shopify_product,
+)
 
 
 DXM_BASE_URL = "https://www.dianxiaomi.com"
@@ -219,6 +225,96 @@ def fetch_shopify_rows(
     return list(rows_by_id.values())
 
 
+def _int_or_zero(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _public_shopify_urls_for_row(row: dict[str, Any]) -> list[str]:
+    handle = str(row.get("handle") or "").strip().strip("/")
+    if not handle:
+        return []
+    domains: list[str] = []
+    seller_login = str(row.get("sellerLoginId") or "").strip().strip("/")
+    if seller_login:
+        domains.append(seller_login.replace("https://", "").replace("http://", "").split("/", 1)[0])
+    urls: list[str] = []
+    seen: set[str] = set()
+    for domain in domains:
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        base = f"https://{domain}/products/{handle}"
+        urls.extend([f"{base}.js", f"{base}.json"])
+    return urls
+
+
+def fetch_public_shopify_product_for_row(
+    row: dict[str, Any],
+    *,
+    timeout_seconds: int = 10,
+) -> dict[str, Any] | None:
+    expected_id = str(row.get("shopifyProductId") or "").strip()
+    if not expected_id:
+        return None
+    for url in _public_shopify_urls_for_row(row):
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json,text/javascript,*/*",
+            },
+        )
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310 - Shopify public product JSON
+                payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError):
+            continue
+        public_product = extract_public_shopify_product(payload)
+        if (
+            public_product
+            and str(public_product.get("shopify_product_id") or "").strip() == expected_id
+        ):
+            return public_product
+    return None
+
+
+def enrich_shopify_rows_with_public_variants(
+    rows: list[dict[str, Any]],
+    *,
+    fetch_public_product_fn=None,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Use public Shopify JSON when Dianxiaomi embeds only a truncated variants list."""
+
+    fetch_public = fetch_public_product_fn or fetch_public_shopify_product_for_row
+    enriched: list[dict[str, Any]] = []
+    stats = {
+        "public_variant_products_checked": 0,
+        "public_variant_products_enriched": 0,
+        "public_variant_products_failed": 0,
+    }
+    for row in rows:
+        embedded_count = len(row.get("variants") or [])
+        variant_size = _int_or_zero(row.get("variantSize"))
+        if not variant_size or variant_size <= embedded_count:
+            enriched.append(row)
+            continue
+        stats["public_variant_products_checked"] += 1
+        public_product = fetch_public(row)
+        public_variants = list((public_product or {}).get("variants") or [])
+        if len(public_variants) > embedded_count:
+            updated = dict(row)
+            updated["variants"] = public_variants
+            stats["public_variant_products_enriched"] += 1
+            enriched.append(updated)
+        else:
+            stats["public_variant_products_failed"] += 1
+            enriched.append(row)
+    return enriched, stats
+
+
 def _iter_dxm_items(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for group in groups:
@@ -360,6 +456,9 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
                     timeout_ms=timeout_ms,
                     days=args.days,
                 )
+                shopify_rows, public_variant_stats = enrich_shopify_rows_with_public_variants(
+                    shopify_rows,
+                )
                 variant_payloads = [
                     variant
                     for row in shopify_rows
@@ -437,6 +536,7 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
                     "procurement_links_seen": len(pairing_rows),
                     "combo_components_seen": combo_count,
                     "product_code": args.product_code,
+                    **public_variant_stats,
                 }
                 library.finish_sync_run(run_id, status="success", summary=summary)
                 return summary

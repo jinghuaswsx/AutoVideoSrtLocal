@@ -932,7 +932,9 @@
       manual_edit: ['warn', '人工维护'],
       mingkong_library: ['warn', '明空库同步'],
       mingkong_pair: ['warn', '明空人工配对'],
-      mingkong_replicated: ['ok', '明空复刻']
+      mingkong_replicated: ['ok', '明空复刻'],
+      shopify_public: ['warn', '全量SKU基底'],
+      shopify_public_mingkong_fill: ['ok', '全量SKU+明空填充']
     };
     const item = labels[source] || ['', source || '—'];
     return `<span class="mkp-chip ${item[0]}">${esc(item[1])}</span>`;
@@ -1075,6 +1077,8 @@
     $('mkpMissingCount').textContent = summary.missing_count || 0;
     if (summary.live_error) {
       $('mkpResult').textContent = `DXM03 实时核验失败：${summary.live_error}`;
+    } else if (summary.full_sku_base_error) {
+      $('mkpResult').textContent = `DXM03 实时核验完成；全量 Shopify SKU 基底读取失败：${summary.full_sku_base_error}`;
     } else if (summary.mingkong_reference_error) {
       $('mkpResult').textContent = `DXM03 实时核验完成；明空参考数据读取失败：${summary.mingkong_reference_error}`;
     } else {
@@ -1151,6 +1155,9 @@
         if (summary.mingkong_reference_error) {
           appendProgressLog('warn', `明空参考数据读取失败：${summary.mingkong_reference_error}`);
         }
+        if (summary.full_sku_base_error) {
+          appendProgressLog('warn', `全量 Shopify SKU 基底读取失败：${summary.full_sku_base_error}`);
+        }
         finishProgress(summary.live_error ? 'error' : 'ok', summary.live_error ? '刷新完成但 DXM03 核验失败' : '刷新完成');
       }
       return payload;
@@ -1193,11 +1200,11 @@
     const commodity = (item.dxm03 && item.dxm03.commodity) || {};
     const pairing = (item.dxm03 && item.dxm03.pairing) || {};
     const mingkong = item.mingkong || {};
-    const purchaseUrl = bestValue(mingkong.purchase_1688_url, item.purchase_1688_url, (state.payload?.product || {}).purchase_1688_url);
+    const purchaseUrl = bestValue(mingkong.purchase_1688_url, item.purchase_1688_url);
     const productIdAlibaba = bestValue(mingkong.alibaba_product_id, pairing.alibaba_product_id, item.alibaba_product_id);
     return {
-      shopify_product_id: bestValue(mingkong.shopify_product_id, item.shopify_product_id, (state.payload?.product || {}).shopifyid),
-      shopify_variant_id: bestValue(mingkong.shopify_variant_id, item.shopify_variant_id),
+      shopify_product_id: bestValue(item.shopify_product_id, (state.payload?.product || {}).shopifyid, mingkong.shopify_product_id),
+      shopify_variant_id: bestValue(item.shopify_variant_id, mingkong.shopify_variant_id),
       shopify_sku: bestValue(item.shopify_sku),
       shopify_currency: bestValue(item.shopify_currency, 'USD'),
       variant_title: bestValue(mingkong.variant_title, item.variant_title),
