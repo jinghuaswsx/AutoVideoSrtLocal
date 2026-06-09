@@ -762,13 +762,82 @@
   font-weight: 700;
   color: var(--tc-fg);
 }
+
+@media (max-width: 768px) {
+  .tc .tc-sticky-top {
+    position: static;
+    top: auto;
+    margin: -14px -12px 8px -12px;
+    padding: 10px 12px 8px 12px;
+  }
+  .tc .tc-header {
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .tc .tc-page-heading,
+  .tc .tc-overview-note {
+    display: none !important;
+  }
+  .tc .tc-workload-container {
+    flex: 0 0 auto;
+    min-height: 0;
+    width: 100%;
+    margin-left: 0;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .tc .tc-workload-toggle {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+  }
+  .tc .tc-workload-container.is-collapsed .tc-workload-cards {
+    display: none !important;
+  }
+  .tc .tc-workload-cards {
+    flex-direction: column;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+  .tc .tc-workload-card {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    padding: 8px 10px;
+    box-shadow: none;
+  }
+  .tc .tc-workload-card:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  .tc .tc-workload-content {
+    gap: 8px;
+  }
+  .tc .tc-workload-metric-group {
+    gap: 6px;
+  }
+  .tc .tc-workload-metric-item {
+    min-width: 0;
+    padding: 4px 6px;
+  }
+  .tc .tc-tabs,
+  .tc .tc-subtabs {
+    margin-bottom: 8px;
+  }
+  .tc .tc-overview-head {
+    margin-bottom: 8px;
+  }
+  .tc .tc-pager--top {
+    display: none !important;
+  }
+}
 {% endblock %}
 {% block content %}
 <div id="tcRoot" class="tc">
   <!-- Docs-anchor: docs/superpowers/specs/2026-06-09-task-center-mobile-filter-collapse-design.md -->
   <div class="tc-sticky-top">
     <div class="tc-header">
-      <div>
+      <div class="tc-page-heading">
         <h1 style="margin:0; font-size:22px; font-weight:600;">任务中心</h1>
         <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理小语种视频翻译任务及去字幕原始视频处理流程</p>
       </div>
@@ -3248,7 +3317,7 @@ function tcRenderTaskPager(data, itemCount, isTop = false) {
   const suffix = isTop ? 'Top' : 'Bottom';
   const customMargin = isTop ? 'margin-bottom: var(--tc-sp-3); margin-top: 0;' : '';
 
-  return `<div class="tc-pager" aria-label="任务列表分页" style="${customMargin}">
+  return `<div class="tc-pager ${isTop ? 'tc-pager--top' : 'tc-pager--bottom'}" aria-label="任务列表分页" style="${customMargin}">
     <span class="tc-pager__summary">共 ${total} 条 · 每页 ${pageSize} 条 · 第 ${page} / ${totalPages} 页</span>
     <div class="tc-pager__controls">
       <button type="button" class="tc-btn" ${hasPrev ? '' : 'disabled'} onclick="tcTaskGotoPage(1)">第一页</button>
