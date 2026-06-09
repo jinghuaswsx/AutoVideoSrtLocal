@@ -15,14 +15,17 @@ def test_build_medias_page_context_uses_query_then_extra_fallbacks():
     from web.services.media_pages import build_medias_page_context
 
     release = {"version": "1.0.0"}
+    procurement_release = {"version": "0.1.0"}
     context = build_medias_page_context(
         {"q": "  demo-rjc  ", "keyword": "ignored"},
         {"initial_query": "fallback", "custom_flag": True},
         get_release_info_fn=lambda: release,
+        get_procurement_insights_release_info_fn=lambda: procurement_release,
         get_rmb_per_usd_fn=lambda: "7.23",
     )
 
     assert context["shopify_image_localizer_release"] == release
+    assert context["dianxiaomi_procurement_insights_release"] == procurement_release
     assert context["material_roas_rmb_per_usd"] == 7.23
     assert context["medias_initial_query"] == "demo-rjc"
     assert context["initial_query"] == "fallback"
@@ -36,12 +39,14 @@ def test_build_medias_page_context_uses_keyword_and_extra_when_query_missing():
         {"keyword": "  product-keyword  "},
         {},
         get_release_info_fn=lambda: {},
+        get_procurement_insights_release_info_fn=lambda: {},
         get_rmb_per_usd_fn=lambda: 7,
     )
     extra_context = build_medias_page_context(
         {},
         {"initial_query": "  product-extra  "},
         get_release_info_fn=lambda: {},
+        get_procurement_insights_release_info_fn=lambda: {},
         get_rmb_per_usd_fn=lambda: 7,
     )
 
