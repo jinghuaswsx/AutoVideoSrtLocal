@@ -153,6 +153,7 @@
 .tc-table tr:hover td { background:var(--tc-bg-subtle); }
 .tc-task-name { font-weight:700; max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tc-task-meta { margin-top:3px; color:var(--tc-fg-muted); font-size:12px; }
+.tc-task-created-mobile { display:none; }
 .tc-pager { display:flex; align-items:center; justify-content:center; gap:var(--tc-sp-2); margin-top:var(--tc-sp-3); font-size:13px; color:var(--tc-fg-muted); flex-wrap:wrap; }
 .tc-pager__summary { display:inline-flex; align-items:center; min-height:32px; font-weight:600; color:var(--tc-fg); }
 .tc-pager__controls { display:inline-flex; align-items:center; justify-content:center; gap:var(--tc-sp-2); flex-wrap:wrap; }
@@ -489,11 +490,120 @@
   .tc-manual-result-modal { width: 100vw !important; min-width:0 !important; }
   .tc-admin-feedback-images { grid-template-columns:1fr; }
   .tc-readiness-portrait-card { width:min(270px, 100%); height:auto; aspect-ratio:9 / 16; }
-  /* 表格走 mobile.css 兜底横滚；这里只调字号和间距 */
-  .tc-table-scroll { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .tc-table-scroll { display:block; overflow-x:hidden; -webkit-overflow-scrolling:touch; }
+  .tc-table {
+    display:block;
+    width:100%;
+    min-width:0;
+    max-width:100%;
+    border-collapse:separate;
+    border-spacing:0;
+    table-layout:fixed;
+    font-size:12px;
+  }
+  .tc-table thead,
+  .tc-table tbody {
+    display:block !important;
+    inline-size:100%;
+    max-inline-size:100%;
+    min-inline-size:0;
+    overflow:hidden;
+  }
+  .tc-table tr {
+    display:grid !important;
+    grid-template-columns:minmax(82px, 1fr) minmax(82px, 1fr) minmax(78px, .9fr) minmax(76px, .85fr);
+    align-items:stretch;
+    inline-size:100%;
+    max-inline-size:100%;
+    min-inline-size:0;
+    overflow:hidden;
+  }
+  .tc-table th,
+  .tc-table td {
+    display:flex !important;
+    align-items:center;
+    inline-size:auto !important;
+    min-width:0;
+    max-width:100%;
+    padding:8px 8px;
+    white-space:normal;
+    border-bottom:0;
+    overflow:hidden;
+  }
   .tc-table th { position: static !important; }
-  .tc-table { font-size: 12px; }
-  .tc-table th, .tc-table td { padding: 8px 10px; white-space: nowrap; }
+  .tc-table thead tr {
+    border-bottom:2px solid var(--tc-border);
+    background:var(--tc-bg-subtle);
+  }
+  .tc-table tbody tr {
+    border-bottom:1px solid var(--tc-border);
+    background:var(--tc-bg);
+  }
+  .tc-table tbody tr:hover td { background:transparent; }
+  .tc-table th:nth-child(1),
+  .tc-table td:nth-child(1) { grid-column:1 / span 2; grid-row:1; }
+  .tc-table th:nth-child(2),
+  .tc-table td:nth-child(2) { grid-column:3; grid-row:1; }
+  .tc-table th:nth-child(4),
+  .tc-table td:nth-child(4) { grid-column:4; grid-row:1; justify-content:flex-start; }
+  .tc-table th:nth-child(3),
+  .tc-table td:nth-child(3) { grid-column:1; grid-row:2; }
+  .tc-table th:nth-child(5),
+  .tc-table td:nth-child(5) { grid-column:2; grid-row:2; }
+  .tc-table th:nth-child(6),
+  .tc-table td:nth-child(6) { display:none !important; }
+  .tc-table th:nth-child(7),
+  .tc-table td:nth-child(7) { grid-column:3 / span 2; grid-row:2; justify-content:flex-start; }
+  .tc-table td:nth-child(1) {
+    flex-direction:column;
+    align-items:flex-start;
+    justify-content:center;
+    gap:3px;
+  }
+  .tc-table td:nth-child(5) .tc-input {
+    width:100% !important;
+    min-width:0 !important;
+    max-width:100%;
+  }
+  .tc-table td:nth-child(7) .tc-row-actions {
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    width:100%;
+    justify-content:stretch;
+    gap:4px;
+  }
+  .tc-table td:nth-child(7) .tc-row-actions .tc-btn {
+    width:100%;
+    min-width:0;
+    height:26px;
+    padding:0 6px;
+    font-size:11px;
+  }
+  .tc-task-name { max-width:100%; }
+  .tc-task-name-row {
+    width:100%;
+    min-width:0;
+  }
+  .tc-task-name-row .tc-badge,
+  .tc-task-name-row .tc-copy-btn {
+    flex:0 0 auto;
+  }
+  .tc-task-name-row .tc-task-name {
+    flex:1 1 auto;
+    min-width:0;
+    white-space:normal !important;
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+  .tc-task-meta {
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .tc-task-created-mobile { display:inline; }
 }
 
 @media (max-width: 480px) {
@@ -3230,6 +3340,7 @@ function tcBuildTaskRowHtml(it, users) {
       </div>
       <div class="tc-task-meta" style="display:flex; align-items:center; gap:6px; margin-top:3px;">
         <span>#${tcEsc(it.id)}${it.product_code ? ' · ' + tcEsc(it.product_code) : ''}</span>
+        <span class="tc-task-created-mobile">· ${tcEsc(tcFormatTime(it.created_at))}</span>
         ${it.product_code ? tcCopyIconButton(it.product_code, '复制产品Code', 'tc-task-code-copy') : ''}
       </div>
     </td>
