@@ -1197,8 +1197,8 @@ def test_report_only_registers_prompt_debug_refs(monkeypatch, tmp_path):
     assert understand_payload["request_payload"].get("response_schema") is None
     assert assess_payload["request_payload"]["type"] == "chat"
     assert assess_payload["request_payload"]["use_case_code"] == "omni_av_sync.assess"
-    assert assess_payload["request_payload"]["provider"] == "openrouter"
-    assert assess_payload["request_payload"]["model"] == "google/gemini-3-flash-preview"
+    assert assess_payload["request_payload"]["provider"] == "test-provider"
+    assert assess_payload["request_payload"]["model"] == "omni_av_sync.assess-model"
     user_payload = json.loads(assess_payload["messages"][1]["content"])
     assert "scorecard_rows" in user_payload
     assert set(user_payload["scorecard_rows"][0]) >= {

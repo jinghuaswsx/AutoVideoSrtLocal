@@ -42,7 +42,7 @@ _MIN_SAFE_SPEED = 0.95
 _MAX_SAFE_SPEED = 1.05
 _MAX_SUBTITLE_CONTEXT_CHARS = 12000
 _ASSESS_PROVIDER = "openrouter"
-_ASSESS_MODEL = "google/gemini-3-flash-preview"
+_ASSESS_MODEL = "google/gemini-3.5-flash"
 _CHINESE_REFERENCE_PROVIDER = "openrouter"
 _CHINESE_REFERENCE_MODEL = "google/gemini-3.1-flash-lite"
 _CHINESE_REFERENCE_MAX_WORKERS = 20
@@ -849,7 +849,9 @@ def _call_sync_assess(
 ) -> dict:
     use_case_code = "omni_av_sync.assess"
     messages = _build_assess_messages(video_understanding, task, cfg, sentences, program_candidates)
-    provider, model = _ASSESS_PROVIDER, _ASSESS_MODEL
+    provider, model = _resolve_llm_binding(use_case_code)
+    if not provider or not model:
+        provider, model = _ASSESS_PROVIDER, _ASSESS_MODEL
     is_scorecard = _is_multi_translate_report(cfg) or _is_report_only_scorecard(cfg)
     schema = _SCORECARD_SCHEMA if is_scorecard else _DIAGNOSIS_SCHEMA
     response_format = {
