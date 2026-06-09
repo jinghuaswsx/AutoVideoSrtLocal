@@ -29,6 +29,15 @@
 6. 推送管理真正执行推送时必须后端硬拦截超限视频，避免绕过前端。
 7. 推送管理列表的素材文件名下方直接显示视频大小，样式为蓝色、加粗、较大字号，便于管理员扫描。
 
+## 2026-06-09 回归修正
+
+AutoPush / OpenAPI 也是素材推送执行链路的一部分，不能只在主 Web `/pushes/api/items/<id>/push` 拦截。
+
+- `/openapi/push-items/by-keys` 和旧 `/openapi/materials/<product_code>/push-payload` 在生成可执行 payload 前必须拒绝超限素材。
+- `/openapi/push-items/<item_id>/mark-pushed` 在写成功状态前必须再次拒绝超限素材，避免旧 payload 或外部脚本绕过。
+- AutoPush 本地代理 `/api/push-items/<item_id>/push` 和旧 `/api/push/medias` 在 POST 下游前必须根据上游 item 元数据或 payload `videos[].size` 做兜底拦截。
+- 拦截统一返回 `video_too_large`、HTTP 413，并带实际大小、100 MB 上限和建议码率。
+
 ## 不做范围
 
 - 不改变 500 MB 手动上传接口的传输保护上限；100 MB 是推送可用性上限。

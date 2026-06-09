@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 
 def test_serialize_push_item_includes_latest_push_and_cover_url(monkeypatch):
     from web.services import openapi_push_items
@@ -296,6 +298,30 @@ def test_build_push_item_payload_response_combines_payload_and_localized_text(mo
     assert payload["item"]["cover_url"] == "https://local/k.jpg"
 
 
+def test_build_push_item_payload_response_rejects_oversize_video(monkeypatch):
+    from web.services import openapi_push_items
+
+    monkeypatch.setattr(
+        openapi_push_items.pushes,
+        "build_item_payload",
+        lambda item, product: (_ for _ in ()).throw(
+            AssertionError("oversize item must not build payload")
+        ),
+    )
+
+    item = {
+        "id": 238,
+        "product_id": 10,
+        "lang": "fr",
+        "filename": "demo.mp4",
+        "file_size": 101 * 1024 * 1024,
+    }
+    product = {"id": 10, "name": "P", "product_code": "p"}
+
+    with pytest.raises(openapi_push_items.pushes.PushVideoTooLargeError):
+        openapi_push_items.build_push_item_payload_response(item, product)
+
+
 def test_build_material_push_payload_lists_items_and_serializes_video_urls(monkeypatch):
     from web.services import openapi_push_items
 
@@ -394,6 +420,48 @@ def test_build_material_push_payload_lists_items_and_serializes_video_urls(monke
             "image_url": None,
         },
     ]
+
+
+def test_build_material_push_payload_rejects_oversize_video(monkeypatch):
+    from web.services import openapi_push_items
+
+    monkeypatch.setattr(
+        openapi_push_items.medias,
+        "is_product_listed",
+        lambda product: True,
+    )
+
+    def fail_media_url(key):
+        raise AssertionError("oversize item must not serialize media urls")
+
+    product = {
+        "id": 123,
+        "name": "Alpha",
+        "product_code": "alpha-rjc",
+        "importance": 5,
+        "selling_points": "point",
+    }
+
+    with pytest.raises(openapi_push_items.pushes.PushVideoTooLargeError):
+        openapi_push_items.build_material_push_payload(
+            product,
+            lang="de",
+            product_code="alpha-rjc",
+            list_items_fn=lambda product_id, lang: [
+                {
+                    "display_name": "Oversize",
+                    "filename": "oversize.mp4",
+                    "file_size": 101 * 1024 * 1024,
+                    "object_key": "video/oversize.mp4",
+                    "cover_object_key": "cover/oversize.jpg",
+                },
+            ],
+            resolve_push_texts_fn=lambda product_id: [
+                {"title": "T", "message": "M", "description": "D"},
+            ],
+            resolve_product_page_urls_fn=lambda lang, product: [],
+            media_download_url_fn=fail_media_url,
+        )
 
 
 def test_build_mark_pushed_response_records_payload():

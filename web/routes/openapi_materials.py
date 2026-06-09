@@ -71,6 +71,21 @@ def _openapi_error_response(error: str, status_code: int, **extra):
     return openapi_flask_response(build_openapi_error_response(error, status_code, **extra))
 
 
+def _openapi_video_too_large_response(exc: pushes.PushVideoTooLargeError):
+    check = exc.check
+    return _openapi_error_response(
+        "video_too_large",
+        413,
+        code="video_too_large",
+        message=str(exc),
+        size_bytes=check["size_bytes"],
+        size_mb=check["size_mb"],
+        max_bytes=check["max_bytes"],
+        max_mb=check["max_mb"],
+        suggested_bitrate=check["suggested_bitrate"],
+    )
+
+
 def _api_key_valid(required_scope: str = "materials:read") -> bool:
     cfg = get_provider_config("openapi_materials")
     provided = (request.headers.get("X-API-Key") or "").strip()
@@ -223,6 +238,8 @@ def build_push_payload(product_code: str):
 
     try:
         payload = _build_material_push_payload(product, lang=lang, product_code=code)
+    except pushes.PushVideoTooLargeError as exc:
+        return _openapi_video_too_large_response(exc)
     except pushes.ProductNotListedError as exc:
         return _openapi_error_response(str(exc), 409)
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
@@ -387,6 +404,8 @@ def get_push_item_payload_by_keys():
             product,
             query_one_fn=openapi_materials_store.query_one_material_row,
         )
+    except pushes.PushVideoTooLargeError as exc:
+        return _openapi_video_too_large_response(exc)
     except pushes.ProductNotListedError as exc:
         return _openapi_error_response(str(exc), 409, code="product_not_listed")
     except (pushes.CopywritingMissingError, pushes.CopywritingParseError) as exc:
@@ -402,6 +421,10 @@ def mark_pushed(item_id: int):
     item = medias.get_item(item_id)
     if not item:
         return _openapi_error_response("item not found", 404)
+    try:
+        pushes.ensure_push_video_size(item)
+    except pushes.PushVideoTooLargeError as exc:
+        return _openapi_video_too_large_response(exc)
     body = request.get_json(silent=True) or {}
     response_payload = _build_mark_pushed_response(
         item_id,
@@ -516,4 +539,3 @@ def shopify_localizer_ai_listing_task_success(task_id: int):
         (shopify_product_id, datetime.datetime.now(), task_id)
     )
     return _openapi_payload_response({"ok": True})
-
