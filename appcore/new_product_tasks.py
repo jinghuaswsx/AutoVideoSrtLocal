@@ -406,7 +406,7 @@ def _create_english_item_from_upload(
         duration_seconds = get_media_duration(str(path))
     except Exception:
         duration_seconds = None
-    return int(
+    item_id = int(
         medias.create_item(
             product_id=int(product_id),
             user_id=int(owner_id),
@@ -422,6 +422,25 @@ def _create_english_item_from_upload(
             skip_push=1,
         )
     )
+    try:
+        from config import OUTPUT_DIR
+        from pipeline.ffutil import extract_thumbnail
+
+        thumb_dir = os.path.join(OUTPUT_DIR, "media_thumbs", str(product_id))
+        os.makedirs(thumb_dir, exist_ok=True)
+        extracted = extract_thumbnail(str(path), thumb_dir, scale="360:-1")
+        if extracted:
+            final_thumb_path = os.path.join(thumb_dir, f"{item_id}.jpg")
+            if os.path.exists(final_thumb_path):
+                os.remove(final_thumb_path)
+            os.rename(extracted, final_thumb_path)
+            relative_thumb_path = os.path.relpath(final_thumb_path, OUTPUT_DIR).replace("\\", "/")
+            medias.update_item_thumbnail_metadata(item_id, relative_thumb_path, duration_seconds)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Extract thumbnail for uploaded new product video failed: %s", exc)
+
+    return item_id
 
 
 def _client_filename_basename(filename: str) -> str:

@@ -1098,6 +1098,81 @@ def test_import_hot_post_uses_space_free_media_display_name(monkeypatch, tmp_pat
     assert " " not in create_payload["display_name"]
 
 
+def test_import_hot_post_saves_thumbnail(monkeypatch, tmp_path):
+    import os
+    from pathlib import Path
+
+    video_dir = tmp_path / "videos"
+    video_dir.mkdir()
+    video_file = video_dir / "77.mp4"
+    video_file.write_bytes(b"dummy video")
+
+    cover_dir = tmp_path / "covers"
+    cover_dir.mkdir()
+    cover_file = cover_dir / "cover.jpg"
+    cover_file.write_bytes(b"dummy cover image")
+
+    captured = {}
+    query_calls = []
+
+    import config
+    monkeypatch.setattr(config, "OUTPUT_DIR", str(tmp_path / "output"))
+
+    def fake_query_one(sql, args=()):
+        query_calls.append(sql)
+        if "FROM meta_hot_posts" in sql:
+            return {
+                "id": 77,
+                "local_product_id": None,
+                "local_media_item_id": None,
+                "local_video_status": "downloaded",
+                "local_video_path": "meta_hot_posts/videos/77.mp4",
+                "local_video_cover_path": "meta_hot_posts/video_covers/77/thumbnail.jpg",
+                "local_video_duration_seconds": 12.3,
+                "product_title": "E2E Meta Product With Spaces",
+                "product_url": "https://example.com/products/e2e-meta",
+                "product_main_image_url": "https://example.com/main.jpg",
+                "image_url": "",
+            }
+        return None
+
+    def fake_execute(sql, args=()):
+        if "INSERT INTO media_products" in sql:
+            return 123
+        return 1
+
+    monkeypatch.setattr("appcore.db.query_one", fake_query_one)
+    monkeypatch.setattr("appcore.db.execute", fake_execute)
+
+    monkeypatch.setattr(service.video_localization, "resolve_local_video_path", lambda path: video_file)
+    monkeypatch.setattr(service.video_localization, "resolve_output_relative_file_path", lambda path: cover_file)
+
+    monkeypatch.setattr("appcore.local_media_storage.write_stream", lambda k, h: None)
+    monkeypatch.setattr("appcore.medias.create_item", lambda **kwargs: 456)
+
+    metadata_calls = []
+    def fake_update_metadata(item_id, relative_path, duration):
+        metadata_calls.append((item_id, relative_path, duration))
+
+    import appcore.medias as medias_mod
+    monkeypatch.setattr(medias_mod, "update_item_thumbnail_metadata", fake_update_metadata)
+
+    result = service.import_hot_post(77, translator_id=238, actor_user_id=1)
+
+    assert result["media_product_id"] == 123
+    assert result["media_item_id"] == 456
+
+    expected_final_thumb = tmp_path / "output" / "media_thumbs" / "123" / "456.jpg"
+    assert expected_final_thumb.exists()
+    assert expected_final_thumb.read_bytes() == b"dummy cover image"
+
+    assert len(metadata_calls) == 1
+    assert metadata_calls[0][0] == 456
+    assert metadata_calls[0][1] == "media_thumbs/123/456.jpg"
+    assert metadata_calls[0][2] == 12.3
+
+
+
 def test_build_list_response_can_fallback_to_raw_json_duration_for_online_only(monkeypatch):
     monkeypatch.setattr(
         service.store,
