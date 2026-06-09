@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from typing import Any
@@ -46,6 +47,7 @@ _ASSESS_MODEL = "google/gemini-3-flash-preview"
 _CHINESE_REFERENCE_PROVIDER = "openrouter"
 _CHINESE_REFERENCE_MODEL = "google/gemini-3.1-flash-lite"
 _CHINESE_REFERENCE_MAX_WORKERS = 20
+_MAX_VISUAL_OBSERVATION_CHARS = 280
 
 _SEVERITY_LABELS = {
     "low": "低风险",
@@ -134,6 +136,61 @@ def _is_multi_translate_report(cfg: dict) -> bool:
 
 def _is_report_only_scorecard(cfg: dict) -> bool:
     return str((cfg or {}).get("av_sync_audit") or "") == "report_only"
+
+
+def _resolve_audit_plugin_config(runner, task_id: str, task: dict | None) -> dict:
+    cfg = (task or {}).get("plugin_config")
+    if cfg:
+        return validate_plugin_config(cfg)
+    resolver = getattr(runner, "_resolve_plugin_config", None)
+    if callable(resolver):
+        try:
+            return validate_plugin_config(resolver(task_id))
+        except Exception:  # noqa: BLE001 - fall back to hard-coded defaults
+            log.warning("[av_sync_audit] resolve runner plugin_config failed task=%s", task_id, exc_info=True)
+    return validate_plugin_config({})
+
+
+def _has_repeated_visual_fragment(text: str) -> bool:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    if len(compact) < 32:
+        return False
+    max_size = min(24, max(4, len(compact) // 3))
+    for size in range(4, max_size + 1):
+        for offset in range(size):
+            repeats = 1
+            prev = None
+            for pos in range(offset, len(compact) - size + 1, size):
+                chunk = compact[pos:pos + size]
+                if chunk == prev:
+                    repeats += 1
+                    if repeats >= 4 and size * repeats >= 32:
+                        return True
+                else:
+                    repeats = 1
+                    prev = chunk
+    return False
+
+
+def _validate_visual_observation(value: Any, *, context: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{context} missing visual_observation")
+    if len(text) > _MAX_VISUAL_OBSERVATION_CHARS:
+        raise ValueError(
+            f"{context} visual_observation too long "
+            f"({len(text)} > {_MAX_VISUAL_OBSERVATION_CHARS})"
+        )
+    if _has_repeated_visual_fragment(text):
+        raise ValueError(f"{context} visual_observation contains repeated garbage text")
+    return text
+
+
+def _safe_visual_observation(value: Any) -> str:
+    try:
+        return _validate_visual_observation(value, context="audit timeline")
+    except ValueError:
+        return ""
 
 
 def _is_chinese_source_language(task: dict | None) -> bool:
@@ -808,7 +865,12 @@ def _call_video_understand(
     return {"summary": notes}
 
 
-def _normalize_scorecard_timeline(raw: Any, *, require_rows: bool) -> list[dict]:
+def _normalize_scorecard_timeline(
+    raw: Any,
+    *,
+    require_rows: bool,
+    expected_indices: list[int] | None = None,
+) -> list[dict]:
     if not isinstance(raw, list):
         raise ValueError("Gemini scorecard response must contain timeline array")
     if require_rows and not raw:
@@ -832,8 +894,20 @@ def _normalize_scorecard_timeline(raw: Any, *, require_rows: bool) -> list[dict]
             value = str(row.get(key) or "").strip()
             if not value:
                 raise ValueError(f"Gemini scorecard ASR {asr_index} missing {key}")
+            if key == "visual_observation":
+                value = _validate_visual_observation(
+                    value,
+                    context=f"Gemini scorecard ASR {asr_index}",
+                )
             row[key] = value
         normalized.append(row)
+    if require_rows and expected_indices is not None:
+        actual_indices = [row["asr_index"] for row in normalized]
+        if actual_indices != expected_indices:
+            raise ValueError(
+                "Gemini scorecard timeline must cover every ASR row in order; "
+                f"expected {expected_indices}, got {actual_indices}"
+            )
     return normalized
 
 
@@ -930,9 +1004,11 @@ def _call_sync_assess(
         }
     diagnosis = _json_from_result(result, {"issues": [], "timeline": [], "summary": ""})
     if is_scorecard:
+        expected_indices = [row["asr_index"] for row in _scorecard_rows(sentences, task)]
         diagnosis["timeline"] = _normalize_scorecard_timeline(
             diagnosis.get("timeline"),
             require_rows=_is_report_only_scorecard(cfg),
+            expected_indices=expected_indices,
         )
         diagnosis["issues"] = []
         diagnosis["summary"] = ""
@@ -1351,7 +1427,7 @@ def _visual_observation_for_timeline(issue: dict | None, hint: dict | None, shot
             "scene_description",
             "scene",
         ):
-            value = str(source.get(key) or "").strip()
+            value = _safe_visual_observation(source.get(key))
             if value:
                 return value
     return _format_visual_context(shot_note) or "未记录画面描述，请结合成片人工复核。"
@@ -2137,8 +2213,13 @@ def run(runner, task_id: str, video_path: str, task_dir: str) -> dict:
     """Run Omni AV sync audit; never fail the Omni pipeline."""
     try:
         task = task_state.get(task_id) or {}
-        cfg = validate_plugin_config(task.get("plugin_config") or {})
+        cfg = _resolve_audit_plugin_config(runner, task_id, task)
         mode = cfg.get("av_sync_audit") or "off"
+        if mode == "off":
+            report = _base_report(mode)
+            report["status"] = "skipped_disabled"
+            runner._set_step(task_id, "av_sync_audit", "done", "音画同步审计未启用，已跳过")
+            return report
         runner._set_step(task_id, "av_sync_audit", "running", "正在审计音画同步风险...")
 
         variants = task.get("variants") or {}
