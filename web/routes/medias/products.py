@@ -284,6 +284,15 @@ def _build_mingkong_pairing_confirm_response(pid: int, product: dict, body: dict
     )
 
 
+def _build_mingkong_pairing_replicate_response(pid: int, product: dict, body: dict):
+    sku_rows = medias.list_product_skus(pid)
+    return dianxiaomi_mingkong_pairing.replicate_mingkong_skus_to_dxm03(
+        product,
+        sku_rows,
+        selections=body.get("items") if isinstance(body, dict) else None,
+    )
+
+
 def _build_roas_page_context(product: dict):
     return _build_roas_page_context_impl(
         product,
@@ -554,6 +563,21 @@ def api_mingkong_pairing_confirm(pid: int):
         abort(404)
     body = request.get_json(silent=True) or {}
     result = routes._build_mingkong_pairing_confirm_response(pid, p, body)
+    status = 200 if result.get("ok") else 409
+    return result, status
+
+
+@bp.route("/api/products/<int:pid>/mingkong-pairing/replicate", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_mingkong_pairing_replicate(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    result = routes._build_mingkong_pairing_replicate_response(pid, p, body)
     status = 200 if result.get("ok") else 409
     return result, status
 

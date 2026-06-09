@@ -346,6 +346,7 @@
       <a class="mkp-btn" href="{{ url_for('medias.product_detail_page', product_code=product.product_code) if product.product_code else url_for('medias.product_tab_page') }}">返回产品</a>
       <button type="button" id="mkpReload" class="mkp-btn">刷新状态</button>
       <button type="button" id="mkpImportSkus" class="mkp-btn">同步明空 SKU 到我们系统</button>
+      <button type="button" id="mkpReplicate" class="mkp-btn">复刻明空 SKU</button>
       <button type="button" id="mkpConfirm" class="mkp-btn primary">确认写入 DXM03</button>
     </div>
   </div>
@@ -460,6 +461,8 @@
       combo_components_incomplete: ['warn', '组件待补齐'],
       already_paired_combo_components: ['ok', '组件已存在'],
       already_paired: ['ok', '已存在'],
+      already_exists: ['ok', 'DXM03已存在'],
+      created: ['ok', '已复刻'],
       confirmed: ['ok', '已写入'],
       blocked: ['bad', '阻断'],
       error: ['bad', '失败'],
@@ -658,8 +661,42 @@
     }
   }
 
+  async function replicateSku() {
+    const btn = $('mkpReplicate');
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = '复刻中';
+    $('mkpResult').textContent = '正在从明空 DXM02 复刻 SKU 设置到 DXM03';
+    try {
+      const result = await fetchJson(`/medias/api/products/${productId}/mingkong-pairing/replicate`, {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ items: collectSelections() })
+      });
+      const lines = (result.items || []).map((item) => {
+        const label = item.variant_title || item.dianxiaomi_sku || item.shopify_variant_id || '';
+        const code = item.dxm03_sku_code ? ` · SKUID ${item.original_mingkong_sku_code || '—'} -> ${item.dxm03_sku_code}` : '';
+        return `${label}: ${item.status}${code}${item.message ? ' - ' + item.message : ''}`;
+      });
+      $('mkpResult').textContent = lines.length ? lines.join('\n') : '复刻完成';
+      await load();
+    } catch (err) {
+      const payload = err.payload || {};
+      const lines = (payload.items || []).map((item) => {
+        const label = item.variant_title || item.dianxiaomi_sku || item.shopify_variant_id || '';
+        const code = item.dxm03_sku_code ? ` · SKUID ${item.original_mingkong_sku_code || '—'} -> ${item.dxm03_sku_code}` : '';
+        return `${label}: ${item.status || item.error}${code}${item.message ? ' - ' + item.message : ''}`;
+      });
+      $('mkpResult').textContent = lines.length ? lines.join('\n') : (err.message || String(err));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+
   $('mkpReload').addEventListener('click', load);
   $('mkpImportSkus').addEventListener('click', importMingkongSkus);
+  $('mkpReplicate').addEventListener('click', replicateSku);
   $('mkpConfirm').addEventListener('click', confirmPairing);
   load();
 })();
