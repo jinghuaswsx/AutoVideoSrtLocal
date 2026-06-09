@@ -500,6 +500,24 @@ def api_stats():
 def api_user_workload():
     try:
         stats = tasks_svc.get_user_workload_stats(int(current_user.id))
+        stats["is_admin"] = _is_admin()
+        stats["others"] = []
+        if _is_admin():
+            from appcore.db import query_all
+            display_name_expr = tasks_svc._user_display_name_expr("")
+            sql = f"SELECT id, {display_name_expr} AS display_name FROM users WHERE {display_name_expr} IN (%s, %s, %s)"
+            rows = query_all(sql, ("周干琴", "顾倩", "王健"))
+            target_order = ["周干琴", "顾倩", "王健"]
+            user_by_name = {row["display_name"]: row["id"] for row in rows}
+            for name in target_order:
+                if name in user_by_name:
+                    uid = user_by_name[name]
+                    user_stats = tasks_svc.get_user_workload_stats(uid)
+                    stats["others"].append({
+                        "user_id": uid,
+                        "display_name": name,
+                        "stats": user_stats
+                    })
         return _json_response(stats)
     except Exception as exc:
         current_app.logger.exception("get user workload stats failed")

@@ -714,7 +714,7 @@
 
     return `<div style="display: flex; flex-direction: column; align-items: center; text-align: center; width: 100%; gap: 4px;">`
       + `<span class="oc-delivery-pill ${meta.cls}">${meta.label}</span>`
-      + `<a href="${escapeHtml(adAnalysisUrl)}" target="_blank" class="oc-delivery-pill-btn" title="查看广告分析">广告分析</a>`
+      + `<a href="${escapeHtml(adAnalysisUrl)}" target="_blank" rel="noopener noreferrer" class="oc-delivery-pill-btn" title="查看广告分析">广告分析</a>`
       + detailsHtml
       + `</div>`;
   }
