@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import re
 import time
-from typing import Any
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable
 
 from appcore.browser_automation_lock import browser_automation_lock
 from appcore import mingkong_product_library
 
+
+log = logging.getLogger(__name__)
 
 DXM_BASE_URL = "https://www.dianxiaomi.com"
 DEFAULT_DXM02_CDP_URL = "http://127.0.0.1:9223"
@@ -31,6 +36,40 @@ PAIR_CONFIRM_API = "/api/dxmAlibabaProductPair/confirmPairOpt.json"
 
 class DianxiaomiPairingError(RuntimeError):
     """Raised when DXM03 cannot be reached or returns an unexpected response."""
+
+
+def _has_running_asyncio_loop() -> bool:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return loop is not None
+
+
+def _run_playwright_operation(
+    label: str,
+    operation: Callable[[], Any],
+    *,
+    force_isolated_thread: bool | None = None,
+) -> Any:
+    if force_isolated_thread is None:
+        use_isolated_thread = _has_running_asyncio_loop()
+    else:
+        use_isolated_thread = bool(force_isolated_thread)
+
+    if not use_isolated_thread:
+        return operation()
+
+    log.info(
+        "%s: running Playwright sync operation on a worker thread "
+        "(asyncio loop detected on caller thread)",
+        label,
+    )
+    with ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="mingkong-dxm-cdp",
+    ) as executor:
+        return executor.submit(operation).result()
 
 
 def dxm03_cdp_url() -> str:
@@ -627,6 +666,19 @@ def fetch_dxm03_pairing_snapshot(
     skus: list[str],
     *,
     cdp_url: str | None = None,
+    force_isolated_thread: bool | None = None,
+) -> dict[str, dict[str, Any]]:
+    return _run_playwright_operation(
+        "dxm03_mingkong_pairing_snapshot",
+        lambda: _fetch_dxm03_pairing_snapshot_impl(skus, cdp_url=cdp_url),
+        force_isolated_thread=force_isolated_thread,
+    )
+
+
+def _fetch_dxm03_pairing_snapshot_impl(
+    skus: list[str],
+    *,
+    cdp_url: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     clean_skus = [str(sku or "").strip() for sku in skus if str(sku or "").strip()]
     if not clean_skus:
@@ -1007,6 +1059,32 @@ def replicate_mingkong_skus_to_dxm03(
     source_cdp_url: str | None = None,
     replace_product_skus_fn=None,
     update_product_fn=None,
+    force_isolated_thread: bool | None = None,
+) -> dict[str, Any]:
+    return _run_playwright_operation(
+        "dxm03_mingkong_sku_replicate",
+        lambda: _replicate_mingkong_skus_to_dxm03_impl(
+            product,
+            sku_rows,
+            selections=selections,
+            cdp_url=cdp_url,
+            source_cdp_url=source_cdp_url,
+            replace_product_skus_fn=replace_product_skus_fn,
+            update_product_fn=update_product_fn,
+        ),
+        force_isolated_thread=force_isolated_thread,
+    )
+
+
+def _replicate_mingkong_skus_to_dxm03_impl(
+    product: dict[str, Any],
+    sku_rows: list[dict[str, Any]],
+    *,
+    selections: list[dict[str, Any]] | None = None,
+    cdp_url: str | None = None,
+    source_cdp_url: str | None = None,
+    replace_product_skus_fn=None,
+    update_product_fn=None,
 ) -> dict[str, Any]:
     """Create missing DXM03 commodities by cloning safe SKU settings from DXM02."""
 
@@ -1227,6 +1305,26 @@ def replicate_mingkong_skus_to_dxm03(
 
 
 def confirm_dxm03_pairing(
+    product: dict[str, Any],
+    sku_rows: list[dict[str, Any]],
+    *,
+    selections: list[dict[str, Any]] | None = None,
+    cdp_url: str | None = None,
+    force_isolated_thread: bool | None = None,
+) -> dict[str, Any]:
+    return _run_playwright_operation(
+        "dxm03_mingkong_pairing_confirm",
+        lambda: _confirm_dxm03_pairing_impl(
+            product,
+            sku_rows,
+            selections=selections,
+            cdp_url=cdp_url,
+        ),
+        force_isolated_thread=force_isolated_thread,
+    )
+
+
+def _confirm_dxm03_pairing_impl(
     product: dict[str, Any],
     sku_rows: list[dict[str, Any]],
     *,
