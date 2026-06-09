@@ -132,6 +132,21 @@ def product_video_workbench_page(pid: int):
     )
 
 
+@bp.route("/product/mingkong_pairing/<int:pid>", methods=["GET"])
+@login_required
+@admin_required
+@permission_required("medias")
+def product_mingkong_pairing_page(pid: int):
+    product = medias.get_product(pid)
+    if not _routes_module()._can_access_product(product):
+        abort(404)
+    return render_template(
+        "medias_mingkong_pairing_workbench.html",
+        product=product,
+        product_id=pid,
+    )
+
+
 @bp.route("/api/users/active", methods=["GET"])
 @login_required
 def api_list_active_users():

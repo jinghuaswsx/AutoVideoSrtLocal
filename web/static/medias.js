@@ -3943,7 +3943,10 @@
           </div>
         </td>
         <td class="sku-action-cell">
-          <button type="button" class="oc-btn sm ${skuBtnClass} sku-detail-btn" data-sku-detail="${p.id}" title="查看 SKU 详细信息">SKU</button>
+          <div class="sku-action-stack">
+            <button type="button" class="oc-btn sm ${skuBtnClass} sku-detail-btn" data-sku-detail="${p.id}" title="查看 SKU 详细信息">SKU</button>
+            <a class="oc-btn sm ghost mingkong-pairing-btn" href="/medias/product/mingkong_pairing/${p.id}" title="打开明空 SKU 配对工作台">明空配对</a>
+          </div>
         </td>
         <td class="wrap" style="text-align: center; vertical-align: middle;">${aiEvalCell}</td>
         <td class="listing-status-cell" data-pid="${p.id}" data-listing-status="${escapeHtml(listingStatus(p))}" title="点击编辑上架状态">${listingStatusPill(listingStatus(p))}</td>

@@ -1,0 +1,564 @@
+{% extends "layout.html" %}
+{% block title %}明空配对 - {{ product.product_code or product.name }}{% endblock %}
+{% block page_title %}明空配对{% endblock %}
+{% block extra_style %}
+<style>
+  .mkp-page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 1480px;
+    margin: 0 auto;
+    padding-bottom: 32px;
+  }
+  .mkp-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .mkp-title {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+  .mkp-title h2 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 22px;
+    line-height: 1.25;
+  }
+  .mkp-sub {
+    color: #64748b;
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .mkp-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+  .mkp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    color: #0f172a;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .mkp-btn.primary {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #fff;
+  }
+  .mkp-btn:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+  }
+  .mkp-band {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+  }
+  .mkp-meta {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    padding: 16px;
+  }
+  .mkp-meta dt {
+    margin: 0 0 4px;
+    color: #64748b;
+    font-size: 12px;
+  }
+  .mkp-meta dd {
+    margin: 0;
+    min-width: 0;
+    color: #0f172a;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mkp-meta a {
+    color: #2563eb;
+    text-decoration: none;
+  }
+  .mkp-status {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1px;
+    overflow: hidden;
+  }
+  .mkp-stat {
+    padding: 14px 16px;
+    background: #f8fafc;
+  }
+  .mkp-stat span {
+    display: block;
+    color: #64748b;
+    font-size: 12px;
+  }
+  .mkp-stat strong {
+    display: block;
+    margin-top: 4px;
+    color: #0f172a;
+    font-size: 20px;
+    line-height: 1.1;
+  }
+  .mkp-table-wrap {
+    overflow: auto;
+  }
+  .mkp-table {
+    width: 100%;
+    min-width: 1320px;
+    border-collapse: collapse;
+  }
+  .mkp-table th,
+  .mkp-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    color: #0f172a;
+    font-size: 13px;
+    vertical-align: middle;
+  }
+  .mkp-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: left;
+  }
+  .mkp-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .mkp-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+  }
+  .mkp-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .mkp-chip.ok {
+    background: #dcfce7;
+    color: #166534;
+  }
+  .mkp-chip.warn {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .mkp-chip.bad {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .mkp-thumb {
+    width: 54px;
+    height: 54px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    object-fit: cover;
+    background: #f8fafc;
+  }
+  .mkp-thumb-empty {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+    color: #94a3b8;
+    font-size: 12px;
+  }
+  .mkp-name-stack {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+  }
+  .mkp-components {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+  .mkp-component {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    padding: 6px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #f8fafc;
+  }
+  .mkp-component img {
+    width: 34px;
+    height: 34px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: #fff;
+  }
+  .mkp-component-main {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mkp-component-sub {
+    margin-top: 2px;
+    color: #64748b;
+    font-size: 12px;
+  }
+  .mkp-input {
+    width: 100%;
+    height: 30px;
+    min-width: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0 8px;
+    color: #0f172a;
+    background: #fff;
+    font: inherit;
+    font-size: 12px;
+  }
+  .mkp-result {
+    padding: 12px 16px;
+    color: #334155;
+    font-size: 13px;
+    white-space: pre-wrap;
+  }
+  .mkp-empty {
+    padding: 28px 16px;
+    color: #64748b;
+    text-align: center;
+  }
+  [data-theme='dark'] .mkp-band,
+  [data-theme='dark'] .mkp-btn,
+  [data-theme='dark'] .mkp-input {
+    background: #0f172a;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+  [data-theme='dark'] .mkp-title h2,
+  [data-theme='dark'] .mkp-meta dd,
+  [data-theme='dark'] .mkp-stat strong,
+  [data-theme='dark'] .mkp-table td {
+    color: #e2e8f0;
+  }
+  [data-theme='dark'] .mkp-sub,
+  [data-theme='dark'] .mkp-meta dt,
+  [data-theme='dark'] .mkp-table th,
+  [data-theme='dark'] .mkp-empty {
+    color: #94a3b8;
+  }
+  [data-theme='dark'] .mkp-stat,
+  [data-theme='dark'] .mkp-table th {
+    background: #111827;
+  }
+  [data-theme='dark'] .mkp-thumb,
+  [data-theme='dark'] .mkp-component {
+    border-color: #334155;
+    background: #111827;
+  }
+  [data-theme='dark'] .mkp-component-sub {
+    color: #94a3b8;
+  }
+  [data-theme='dark'] .mkp-table th,
+  [data-theme='dark'] .mkp-table td {
+    border-bottom-color: #334155;
+  }
+  @media (max-width: 900px) {
+    .mkp-head {
+      flex-direction: column;
+    }
+    .mkp-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    .mkp-meta,
+    .mkp-status {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="mkp-page" data-product-id="{{ product_id }}">
+  <div class="mkp-head">
+    <div class="mkp-title">
+      <h2>{{ product.name or product.product_code }}</h2>
+      <div class="mkp-sub mkp-mono">{{ product.product_code or "" }}</div>
+    </div>
+    <div class="mkp-actions">
+      <a class="mkp-btn" href="{{ url_for('medias.product_detail_page', product_code=product.product_code) if product.product_code else url_for('medias.product_tab_page') }}">返回产品</a>
+      <button type="button" id="mkpReload" class="mkp-btn">刷新状态</button>
+      <button type="button" id="mkpConfirm" class="mkp-btn primary">确认写入 DXM03</button>
+    </div>
+  </div>
+
+  <section class="mkp-band">
+    <dl class="mkp-meta">
+      <div><dt>产品链接</dt><dd id="mkpProductLink">—</dd></div>
+      <div><dt>Shopify ID</dt><dd id="mkpShopifyId" class="mkp-mono">—</dd></div>
+      <div><dt>采购链接</dt><dd id="mkpPurchaseUrl">—</dd></div>
+      <div><dt>1688 商品 ID</dt><dd id="mkpAlibabaId" class="mkp-mono">—</dd></div>
+    </dl>
+  </section>
+
+  <section class="mkp-band mkp-status">
+    <div class="mkp-stat"><span>SKU 行</span><strong id="mkpSkuCount">0</strong></div>
+    <div class="mkp-stat"><span>已配对</span><strong id="mkpPairedCount">0</strong></div>
+    <div class="mkp-stat"><span>待确认</span><strong id="mkpReadyCount">0</strong></div>
+    <div class="mkp-stat"><span>缺口</span><strong id="mkpMissingCount">0</strong></div>
+  </section>
+
+  <section class="mkp-band">
+    <div class="mkp-table-wrap">
+      <table class="mkp-table">
+        <thead>
+          <tr>
+            <th style="width:76px;">图片</th>
+            <th style="width:130px;">变体</th>
+            <th style="width:180px;">Shopify Variant</th>
+            <th style="width:180px;">店小秘 SKU</th>
+            <th style="width:110px;">ERP 编码</th>
+            <th style="width:260px;">店小秘商品名 / 组合组件</th>
+            <th style="width:120px;">DXM03 状态</th>
+            <th style="width:160px;">供应商</th>
+            <th style="width:150px;">1688 商品 ID</th>
+            <th style="width:170px;">1688 SKU ID</th>
+            <th style="width:150px;">写入状态</th>
+          </tr>
+        </thead>
+        <tbody id="mkpRows">
+          <tr><td colspan="11" class="mkp-empty">加载中</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="mkp-band">
+    <div id="mkpResult" class="mkp-result">—</div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function() {
+  const productId = Number({{ product_id|tojson }});
+  const state = { payload: null };
+  const $ = (id) => document.getElementById(id);
+
+  function esc(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function csrfHeaders(extra) {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    return token ? Object.assign({}, extra || {}, { 'X-CSRFToken': token }) : (extra || {});
+  }
+
+  async function fetchJson(url, opts) {
+    const res = await fetch(url, opts || {});
+    const text = await res.text();
+    let data = {};
+    if (text) {
+      try { data = JSON.parse(text); } catch (_) { data = { message: text }; }
+    }
+    if (!res.ok) {
+      const err = new Error(data.message || data.error || `HTTP ${res.status}`);
+      err.payload = data;
+      throw err;
+    }
+    return data;
+  }
+
+  function linkHtml(url) {
+    const text = String(url || '').trim();
+    if (!text) return '<span class="mkp-sub">—</span>';
+    return `<a href="${esc(text)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
+  }
+
+  function chip(status) {
+    const labels = {
+      paired: ['ok', '已配对'],
+      ready_to_confirm: ['warn', '待确认'],
+      missing_pair_row: ['bad', '缺配对行'],
+      missing_dxm03_commodity: ['bad', '缺 ERP SKU'],
+      missing_local_sku: ['bad', '缺本地 SKU'],
+      combo_components_paired: ['ok', '组件已配对'],
+      combo_components_incomplete: ['warn', '组件待补齐'],
+      already_paired_combo_components: ['ok', '组件已存在'],
+      already_paired: ['ok', '已存在'],
+      confirmed: ['ok', '已写入'],
+      blocked: ['bad', '阻断'],
+      error: ['bad', '失败'],
+      pending: ['', '待处理']
+    };
+    const item = labels[status] || ['', status || '—'];
+    return `<span class="mkp-chip ${item[0]}">${esc(item[1])}</span>`;
+  }
+
+  function imageHtml(url, cls) {
+    const text = String(url || '').trim();
+    if (!text) return '<span class="mkp-thumb-empty">无图</span>';
+    return `<img class="${cls || 'mkp-thumb'}" src="${esc(text)}" alt="">`;
+  }
+
+  function componentHtml(components) {
+    if (!Array.isArray(components) || !components.length) return '';
+    return `<div class="mkp-components">` + components.map((component) => {
+      const pairing = component.pairing || {};
+      const supplier = pairing.supplier_name ? ` · ${pairing.supplier_name}` : '';
+      const skuId = pairing.sku_id_alibaba ? ` · 1688 SKU ${pairing.sku_id_alibaba}` : '';
+      return `<div class="mkp-component">
+        ${imageHtml(component.image_url, '')}
+        <div>
+          <div class="mkp-component-main mkp-mono">${esc(component.sku || '—')} × ${esc(component.quantity || 0)} · ${esc(component.name || '—')}</div>
+          <div class="mkp-component-sub">${chip(pairing.is_paired ? 'already_paired' : 'missing_pair_row')} ${esc(supplier + skuId)}</div>
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
+  }
+
+  function renderMeta(payload) {
+    const product = payload.product || {};
+    $('mkpProductLink').innerHTML = linkHtml(product.product_link);
+    $('mkpShopifyId').textContent = product.shopifyid || '—';
+    $('mkpPurchaseUrl').innerHTML = linkHtml(product.purchase_1688_url);
+    $('mkpAlibabaId').textContent = product.alibaba_product_id || '—';
+    const summary = payload.summary || {};
+    $('mkpSkuCount').textContent = summary.sku_count || 0;
+    $('mkpPairedCount').textContent = summary.paired_count || 0;
+    $('mkpReadyCount').textContent = summary.ready_count || 0;
+    $('mkpMissingCount').textContent = summary.missing_count || 0;
+    if (summary.live_error) {
+      $('mkpResult').textContent = `DXM03 实时核验失败：${summary.live_error}`;
+    } else {
+      $('mkpResult').textContent = 'DXM03 实时核验完成';
+    }
+  }
+
+  function renderRows(items) {
+    const tbody = $('mkpRows');
+    if (!items || !items.length) {
+      tbody.innerHTML = '<tr><td colspan="11" class="mkp-empty">暂无 SKU 配对数据</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((item) => {
+      const commodity = (item.dxm03 && item.dxm03.commodity) || {};
+      const pairing = (item.dxm03 && item.dxm03.pairing) || {};
+      const productIdAlibaba = pairing.alibaba_product_id || item.alibaba_product_id || '';
+      const skuIdAlibaba = pairing.sku_id_alibaba || '';
+      const imageUrl = item.image_url || commodity.image_url || '';
+      const components = item.combo_components || [];
+      const nameHtml = `<div class="mkp-name-stack"><div>${esc(item.dianxiaomi_name || commodity.name || '—')}</div>${componentHtml(components)}</div>`;
+      return `<tr data-row="1"
+          data-dianxiaomi-sku="${esc(item.dianxiaomi_sku || '')}"
+          data-shopify-variant-id="${esc(item.shopify_variant_id || '')}">
+        <td>${imageHtml(imageUrl)}</td>
+        <td>${esc(item.variant_title || '—')}</td>
+        <td class="mkp-mono">${esc(item.shopify_variant_id || '—')}</td>
+        <td class="mkp-mono">${esc(item.dianxiaomi_sku || '—')}</td>
+        <td class="mkp-mono">${esc(item.dianxiaomi_sku_code || commodity.sku_code || '—')}</td>
+        <td>${nameHtml}</td>
+        <td>${chip(item.status)}</td>
+        <td>${esc(pairing.supplier_name || '—')}</td>
+        <td><input class="mkp-input mkp-mono" data-field="product_id_alibaba" value="${esc(productIdAlibaba)}"></td>
+        <td><input class="mkp-input mkp-mono" data-field="sku_id_alibaba" value="${esc(skuIdAlibaba)}"></td>
+        <td>${chip(pairing.is_paired ? 'already_paired' : item.status)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function load() {
+    $('mkpReload').disabled = true;
+    try {
+      const payload = await fetchJson(`/medias/api/products/${productId}/mingkong-pairing`);
+      state.payload = payload;
+      renderMeta(payload);
+      renderRows(payload.items || []);
+    } catch (err) {
+      $('mkpRows').innerHTML = `<tr><td colspan="11" class="mkp-empty">${esc(err.message || err)}</td></tr>`;
+      $('mkpResult').textContent = err.message || String(err);
+    } finally {
+      $('mkpReload').disabled = false;
+    }
+  }
+
+  function collectSelections() {
+    return Array.from(document.querySelectorAll('[data-row="1"]')).map((tr) => {
+      const get = (field) => tr.querySelector(`[data-field="${field}"]`)?.value || '';
+      return {
+        dianxiaomi_sku: tr.dataset.dianxiaomiSku || '',
+        shopify_variant_id: tr.dataset.shopifyVariantId || '',
+        product_id_alibaba: get('product_id_alibaba'),
+        sku_id_alibaba: get('sku_id_alibaba')
+      };
+    });
+  }
+
+  async function confirmPairing() {
+    const btn = $('mkpConfirm');
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = '写入中';
+    $('mkpResult').textContent = '写入 DXM03 中';
+    try {
+      const result = await fetchJson(`/medias/api/products/${productId}/mingkong-pairing/confirm`, {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ items: collectSelections() })
+      });
+      const lines = (result.items || []).map((item) => {
+        const label = item.variant_title || item.dianxiaomi_sku || item.shopify_variant_id || '';
+        return `${label}: ${item.status}${item.message ? ' - ' + item.message : ''}`;
+      });
+      $('mkpResult').textContent = lines.length ? lines.join('\n') : '写入完成';
+      await load();
+    } catch (err) {
+      const payload = err.payload || {};
+      const lines = (payload.items || []).map((item) => {
+        const label = item.variant_title || item.dianxiaomi_sku || item.shopify_variant_id || '';
+        return `${label}: ${item.status || item.error}${item.message ? ' - ' + item.message : ''}`;
+      });
+      $('mkpResult').textContent = lines.length ? lines.join('\n') : (err.message || String(err));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+
+  $('mkpReload').addEventListener('click', load);
+  $('mkpConfirm').addEventListener('click', confirmPairing);
+  load();
+})();
+</script>
+{% endblock %}

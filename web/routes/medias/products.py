@@ -3,7 +3,17 @@ from __future__ import annotations
 from flask import abort, render_template, request
 from flask_login import current_user, login_required
 
-from appcore import medias, parcel_cost_suggest, product_link_domains, product_roas, pushes, scheduled_tasks, supply_pairing
+from appcore import (
+    dianxiaomi_mingkong_pairing,
+    medias,
+    parcel_cost_suggest,
+    product_link_domains,
+    product_roas,
+    pushes,
+    scheduled_tasks,
+    supply_pairing,
+)
+from web.auth import admin_required, permission_required
 from . import bp
 from ._serializers import _serialize_item, _serialize_product, _serialize_product_skus
 from web.services.media_products_listing import (
@@ -224,6 +234,20 @@ def _build_refresh_product_shopify_sku_response(pid: int, product: dict):
 
 def _refresh_shopify_sku_flask_response(result):
     return _refresh_shopify_sku_flask_response_impl(result)
+
+
+def _build_mingkong_pairing_workbench_response(pid: int, product: dict):
+    sku_rows = medias.list_product_skus(pid)
+    return dianxiaomi_mingkong_pairing.build_workbench_payload(product, sku_rows)
+
+
+def _build_mingkong_pairing_confirm_response(pid: int, product: dict, body: dict):
+    sku_rows = medias.list_product_skus(pid)
+    return dianxiaomi_mingkong_pairing.confirm_dxm03_pairing(
+        product,
+        sku_rows,
+        selections=body.get("items") if isinstance(body, dict) else None,
+    )
 
 
 def _build_roas_page_context(product: dict):
@@ -459,6 +483,33 @@ def api_refresh_product_shopify_sku(pid: int):
     return routes._refresh_shopify_sku_flask_response(result)
 
 
+@bp.route("/api/products/<int:pid>/mingkong-pairing", methods=["GET"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_mingkong_pairing_workbench(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    return routes._build_mingkong_pairing_workbench_response(pid, p)
+
+
+@bp.route("/api/products/<int:pid>/mingkong-pairing/confirm", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_mingkong_pairing_confirm(pid: int):
+    routes = _routes_module()
+    p = medias.get_product(pid)
+    if not routes._can_access_product(p):
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    result = routes._build_mingkong_pairing_confirm_response(pid, p, body)
+    status = 200 if result.get("ok") else 409
+    return result, status
+
+
 @bp.route("/api/products/<int:pid>/ad-orders-report", methods=["GET"])
 @login_required
 def api_product_ad_orders_report(pid: int):
@@ -481,4 +532,3 @@ def roas_page(pid: int):
         "medias/roas.html",
         **routes._build_roas_page_context(product),
     )
-
