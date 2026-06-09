@@ -94,6 +94,7 @@
 - 产品：`media_products`。
 - 素材：`media_items`、`media_item_mk_bindings`。
 - 翻译 / 推送反馈：`media_product_lang_ad_summary_cache`、`media_push_logs`。
+- 任务中心：`tasks`，按产品、源素材、目标国家同步已分派任务，避免重复建议。
 - 广告：`meta_ad_daily_ad_metrics` + `meta_ad_realtime_daily_ad_metrics` 最新 `(business_date, ad_account_id)` 快照。
 - 订单利润：`order_profit_lines` + `dianxiaomi_order_lines`。
 - 明空素材：`mingkong_material_daily_snapshots`、`mingkong_material_daily_top100`、`mingkong_material_products`。
@@ -213,7 +214,28 @@
 - `local_materials`: 本地视频素材、语言、推送次数、明空绑定线索、视频预览 URL。
 - `translated_feedback`: 翻译后素材对应广告反馈数据。
 - `mingkong_material_candidates`: 明空素材候选，含视频名、路径、封面、90 天消耗、广告数、昨日消耗增量。
+- `task_assignments`: 任务中心已分派任务，含任务 ID、目标国家、源素材、状态、负责人、任务详情链接。
 - `target_country_tiers`: 第一阶梯 DE/FR，第二阶梯 ES/IT/JP，第三阶梯 SE/NL/PT。
+
+### 任务中心同步与去重
+
+AI素材军师必须把任务中心已排程任务作为决策输入，而不是只作为页面备注。
+
+- 任务匹配口径：优先按 `media_product_id + media_item_id + country_code` 匹配具体源素材和目标国家；如果明空候选尚未入库、没有本地 `media_item_id`，至少按 `media_product_id + country_code` 识别该国家已存在排程。
+- 状态归一：
+  - `pending`: 待处理，含 `pending`、`blocked`。
+  - `in_progress`: 进行中，含 `raw_in_progress`、`raw_review`、`raw_done`、`assigned`、`review`。
+  - `completed`: 已完成，含 `done`、`all_done`。
+  - `cancelled`: 已取消，含 `cancelled` 或存在取消时间。
+- 去重规则：
+  - `pending` / `in_progress` / `completed` 任务都视为已有安排，不再生成同产品、同国家、同素材的 `创建小语种翻译任务` 建议。
+  - `completed` 即使尚未推送，也不能重复排程；后续动作应提示先查看任务结果或推送反馈。
+  - `cancelled` 可重新安排，但页面必须标注“曾取消任务 #ID”供复查。
+  - 如果模型输出仍建议重复创建任务，服务端在生成 `action_items` 时必须二次拦截，改为 `查看任务 #ID` 操作入口。
+- 页面展示：
+  - 国家矩阵、产品建议和操作区必须显示已有任务状态，例如 `任务 #123 · 进行中`。
+  - 任务 ID 链接到 `/tasks/detail/<task_id>`。
+  - 被已有任务拦截的建议应显示“已有任务，不重复排程”的原因。
 
 单产品提示词要求：
 
@@ -225,6 +247,7 @@
   - `weak_country_retest`
 - 如果建议用明空素材，必须选择具体 `material_key` / `video_path`。
 - 如果建议创建小语种任务，必须指定源素材和目标国家 / 语言。
+- 必须读取 `task_assignments`，已有非取消任务的国家 / 素材只标注任务，不再建议重复排程；已取消任务可以建议重排并说明取消任务 ID。
 - 如果数据不足，明确缺什么，不能输出空泛建议。
 
 输出契约：
@@ -257,7 +280,7 @@
   ],
   "operation_entries": [
     {
-      "type": "view_video|view_feedback|import_to_library|create_translation_task",
+      "type": "view_video|view_feedback|import_to_library|create_translation_task|view_task",
       "label": "",
       "payload": {}
     }
@@ -306,6 +329,7 @@
 - `查看反馈数据`：打开素材广告表现详情。
 - `加入素材库`：复用明空入库接口和进度弹窗。
 - `创建小语种翻译任务`：复用现有素材管理创建任务弹窗，预填产品、源素材、目标语言和紧急任务选项。
+- `查看任务 #ID`：当建议目标已有待处理、进行中或已完成任务时展示，跳转任务详情，不重复创建任务。
 
 ## 流程图与提示词可视化
 
@@ -342,6 +366,8 @@ LLM 节点提供 `提示词` 按钮，展示：
 - 两个 AI use case 默认 provider 都是 `google_wj`，model 都是 `gemini-3.5-flash`。
 - 单产品 prompt 包含 8 国阶梯、明空素材候选、本地素材和翻译反馈。
 - AI 返回的操作入口能序列化到项目详情。
+- 已有待处理 / 进行中 / 已完成任务时，服务端不会生成重复 `create_translation_task`，而是输出任务链接。
+- 已取消任务允许重新建议排程，同时保留已取消任务标注。
 
 前端 focused tests：
 
