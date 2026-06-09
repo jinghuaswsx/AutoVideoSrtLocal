@@ -292,8 +292,10 @@ class PushVideoTooLargeError(Exception):
 
 
 def push_video_size_check_for_item(item: dict | None) -> dict[str, Any]:
-    check = video_size_limits.push_video_size_check((item or {}).get("file_size"))
-    check["summary"] = video_size_limits.build_push_video_size_summary(check["size_bytes"])
+    file_size = (item or {}).get("file_size")
+    duration = (item or {}).get("duration_seconds")
+    check = video_size_limits.push_video_size_check(file_size, duration)
+    check["summary"] = video_size_limits.build_push_video_size_summary(check["size_bytes"], duration)
     if check["over_limit"]:
         check["issues"] = [
             (

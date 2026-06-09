@@ -252,6 +252,29 @@
     return formatVideoSizeMb(item && item.file_size);
   }
 
+  function calculateRecommendedBitrate(fileSize, durationSeconds) {
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const PUSH_VIDEO_SUGGESTED_BITRATE = 3000;
+    const size = Number(fileSize || 0);
+    const dur = Number(durationSeconds || 0);
+    if (!dur || dur <= 0) {
+      return PUSH_VIDEO_SUGGESTED_BITRATE;
+    }
+    const targetBytes = 90 * 1024 * 1024;
+    const targetBitrateKbps = (targetBytes * 8) / (dur * 1000.0);
+    let suggestedBitrate = Math.round(targetBitrateKbps / 1000.0) * 1000;
+
+    const expectedSize = (suggestedBitrate * 1000.0 * dur) / 8.0;
+    if (expectedSize > PUSH_VIDEO_MAX_BYTES) {
+      suggestedBitrate -= 1000;
+    }
+
+    if (suggestedBitrate < 1000) {
+      suggestedBitrate = 1000;
+    }
+    return suggestedBitrate;
+  }
+
   function createCopyButton(value, attrName) {
     const btn = el('button', {
       type: 'button',
@@ -1312,6 +1335,12 @@
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
     const sizeMbStr = itemVideoSizeText(it);
     const productOwnerName = String(it.product_owner_name || '').trim();
+
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const recommendationHtml = (it.file_size > PUSH_VIDEO_MAX_BYTES)
+      ? ` <span class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-left: 6px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</span>`
+      : '';
+
     return `<tr data-id="${escapeAttr(it.id)}">
       <td class="push-thumb-cell">${thumb}</td>
       <td class="push-product-cell">
@@ -1324,7 +1353,7 @@
       <td class="push-owner-cell"><span class="product-owner-name">${escapeHtml(productOwnerName || '-')}</span>${renderPushTaskLink(it)}</td>
       <td class="push-item-cell">
         <div class="item-name">${escapeHtml(it.display_name || it.filename || '')}</div>
-        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}</div>
+        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}${recommendationHtml}</div>
         <div class="item-meta">${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}</div>
       </td>
       <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
@@ -1352,6 +1381,12 @@
     const sizeStr = (it.file_size || 0).toLocaleString() + ' B';
     const sizeMbStr = itemVideoSizeText(it);
     const productPageUrl = safeExternalHref(it.product_page_url);
+
+    const PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024;
+    const recommendationHtml = (it.file_size > PUSH_VIDEO_MAX_BYTES)
+      ? ` <span class="item-size-recommendation" style="color: var(--oc-danger); font-size: 13px; font-weight: 700; margin-left: 6px;">推荐码率：${calculateRecommendedBitrate(it.file_size, it.duration_seconds)}</span>`
+      : '';
+
     const copyProductNameBtn = it.product_name
       ? `<button type="button" class="product-copy-btn" data-copy-product-name="${escapeAttr(it.product_name)}" title="复制产品中文名" style="margin-left: 6px; display: inline-flex; vertical-align: middle; width: 22px; height: 22px; align-items: center; justify-content: center; flex-shrink: 0;">
            <svg class="icon-copy" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1415,7 +1450,7 @@
           <div class="item-name" style="word-break: break-all; min-width: 0; flex-grow: 1;">${escapeHtml(filename)}</div>
           ${copyFilenameBtn}
         </div>
-        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}</div>
+        <div class="item-size-highlight">视频大小 ${escapeHtml(sizeMbStr)}${recommendationHtml}</div>
         <div class="item-meta">
           ${escapeHtml(durStr ? `${durStr} · ${sizeStr}` : sizeStr)}
         </div>

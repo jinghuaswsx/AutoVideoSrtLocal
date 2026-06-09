@@ -887,9 +887,20 @@ def api_parent_manual_result(tid: int):
         elif status in (tasks_svc.PARENT_RAW_DONE, tasks_svc.PARENT_ALL_DONE):
             tasks_svc.reset_to_raw_review(task_id=tid, actor_user_id=int(current_user.id))
 
-        size_check = video_size_limits.push_video_size_check(new_size)
+        duration_seconds = 0.0
+        media_item_id = task_row.get("media_item_id")
+        if media_item_id:
+            from appcore.db import query_one
+            item_row = query_one("SELECT duration_seconds FROM media_items WHERE id=%s", (media_item_id,))
+            if item_row and item_row.get("duration_seconds"):
+                try:
+                    duration_seconds = float(item_row["duration_seconds"])
+                except (ValueError, TypeError):
+                    pass
+
+        size_check = video_size_limits.push_video_size_check(new_size, duration_seconds=duration_seconds)
         if size_check["over_limit"]:
-            reason = video_size_limits.build_push_video_oversize_reason(new_size)
+            reason = video_size_limits.build_push_video_oversize_reason(new_size, duration_seconds=duration_seconds)
             tasks_svc.reject_raw(
                 task_id=tid,
                 actor_user_id=int(current_user.id),
