@@ -388,6 +388,8 @@ def test_shopify_localizer_bootstrap_accepts_shopify_id_override(client, monkeyp
 
 
 def test_shopify_localizer_bootstrap_delegates_response_building(client, monkeypatch):
+    from web.routes import openapi_materials
+
     captured: dict = {}
 
     def fake_build_shopify_localizer_bootstrap_response(body, **kwargs):
@@ -425,6 +427,7 @@ def test_shopify_localizer_bootstrap_delegates_response_building(client, monkeyp
     assert payload["product"]["shopify_product_id"] == "8559391932589"
     assert captured["body"]["lang"] == "it"
     assert "list_reference_images_for_lang_fn" in captured["kwargs"]
+    assert captured["kwargs"]["list_reference_images_for_lang_fn"] is openapi_materials.medias.list_shopify_localizer_images
 
 
 def test_shopify_localizer_languages_include_shopify_language_name(client, monkeypatch):

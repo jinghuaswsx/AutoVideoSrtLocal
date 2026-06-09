@@ -385,6 +385,67 @@ def test_pair_carousel_images_keeps_pet_bath_brush_order_when_source_list_has_du
     ]
 
 
+def test_localized_candidate_builders_prefer_bootstrap_source_metadata_when_filename_is_ambiguous():
+    token = "f348cc3161901b6173b86170ab9a2eca"
+    source_name_key = "name:1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57"
+    local_path = str(Path("C:/tmp") / "downloaded-localized-image.jpg")
+    localized_images = [
+        {
+            "id": "loc-2",
+            "filename": "downloaded-localized-image.jpg",
+            "local_path": local_path,
+            "source_token": token,
+            "source_index": 2,
+            "source_name_key": source_name_key,
+        }
+    ]
+
+    by_token = taa_cdp.build_localized_candidates(localized_images)
+    by_source_index = taa_cdp.build_localized_candidates_by_source_index(localized_images)
+    by_source_name = run_product_cdp._localized_by_source_name_key(localized_images)
+
+    assert by_token[token][0]["local_path"] == local_path
+    assert by_token[token][0]["source_index"] == 2
+    assert by_source_index[2][0]["source_name_key"] == source_name_key
+    assert by_source_name[source_name_key][0]["token"] == token
+
+
+def test_pair_carousel_images_uses_bootstrap_source_metadata_when_filename_is_ambiguous():
+    token = "f348cc3161901b6173b86170ab9a2eca"
+    product_images = [
+        {
+            "src": (
+                "https://cdn.shopify.com/files/"
+                "1_2a8eb12c-e7c3-4f4e-b178-ae55ec0bcd57.webp"
+                f"?v={token}"
+            )
+        }
+    ]
+    source_name_key = taa_cdp.source_name_key(product_images[0]["src"])
+    localized_images = [
+        {
+            "id": "loc-old",
+            "filename": "older-unparseable-download.jpg",
+            "local_path": str(Path("C:/tmp") / "older-unparseable-download.jpg"),
+            "source_token": token,
+            "source_index": 9,
+            "source_name_key": "name:other-source",
+        },
+        {
+            "id": "loc-current",
+            "filename": "current-unparseable-download.jpg",
+            "local_path": str(Path("C:/tmp") / "current-unparseable-download.jpg"),
+            "source_token": token,
+            "source_index": 0,
+            "source_name_key": source_name_key,
+        },
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == [(0, str(Path("C:/tmp") / "current-unparseable-download.jpg"))]
+
+
 def test_pair_carousel_images_falls_back_to_source_index_when_urls_have_no_hash_token():
     product_images = [
         {"src": "https://cdn.shopify.com/files/nano6_8ec008c6-5d50-41f9-9f75-f54df04cbf0f.jpg?v=1"},

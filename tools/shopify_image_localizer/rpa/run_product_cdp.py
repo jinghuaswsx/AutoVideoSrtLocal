@@ -175,13 +175,13 @@ def _localized_by_source_name_key(localized_images: list[dict]) -> dict[str, lis
     for item in localized_images or []:
         filename = str(item.get("filename") or Path(str(item.get("local_path") or "")).name)
         local_path = str(item.get("local_path") or "")
-        source_name_key = taa_cdp.source_name_key(filename)
+        source_name_key = taa_cdp.source_name_key_from_image_item(item, filename)
         if not source_name_key or not local_path:
             continue
         row = {
             **item,
-            "token": ez_cdp.md5_token(filename),
-            "source_index": taa_cdp.source_index_from_filename(filename),
+            "token": taa_cdp.source_token_from_image_item(item, filename),
+            "source_index": taa_cdp.source_index_from_image_item(item, filename),
             "source_name_key": source_name_key,
             "local_path": local_path,
             "filename": filename,
@@ -719,11 +719,11 @@ def build_detail_source_index_map(
     reference_by_name: dict[str, list[int]] = {}
     for item in reference_images:
         filename = str(item.get("filename") or "")
-        token = ez_cdp.md5_token(filename)
-        source_index = taa_cdp.source_index_from_filename(filename)
+        token = taa_cdp.source_token_from_image_item(item, filename)
+        source_index = taa_cdp.source_index_from_image_item(item, filename)
         if token and source_index is not None:
             reference_by_token.setdefault(token, []).append(source_index)
-        name_key = taa_cdp.source_name_key(filename)
+        name_key = taa_cdp.source_name_key_from_image_item(item, filename)
         if name_key and source_index is not None:
             reference_by_name.setdefault(name_key, []).append(source_index)
 
