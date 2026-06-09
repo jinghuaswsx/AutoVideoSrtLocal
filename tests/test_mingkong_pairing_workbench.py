@@ -449,6 +449,19 @@ def test_replicate_mingkong_sku_runs_impl_on_isolated_thread_when_forced(monkeyp
     assert thread_names[0].startswith("mingkong-dxm-cdp")
 
 
+def test_playwright_operation_isolates_by_default():
+    thread_names = []
+
+    result = pairing._run_playwright_operation(
+        "test_mingkong_default_isolation",
+        lambda: thread_names.append(threading.current_thread().name) or "ok",
+    )
+
+    assert result == "ok"
+    assert thread_names
+    assert thread_names[0].startswith("mingkong-dxm-cdp")
+
+
 def test_playwright_operation_auto_isolates_inside_running_asyncio_loop():
     thread_names = []
 

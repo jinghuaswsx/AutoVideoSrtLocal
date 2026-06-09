@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -38,14 +37,6 @@ class DianxiaomiPairingError(RuntimeError):
     """Raised when DXM03 cannot be reached or returns an unexpected response."""
 
 
-def _has_running_asyncio_loop() -> bool:
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return False
-    return loop is not None
-
-
 def _run_playwright_operation(
     label: str,
     operation: Callable[[], Any],
@@ -53,7 +44,7 @@ def _run_playwright_operation(
     force_isolated_thread: bool | None = None,
 ) -> Any:
     if force_isolated_thread is None:
-        use_isolated_thread = _has_running_asyncio_loop()
+        use_isolated_thread = True
     else:
         use_isolated_thread = bool(force_isolated_thread)
 
@@ -61,8 +52,7 @@ def _run_playwright_operation(
         return operation()
 
     log.info(
-        "%s: running Playwright sync operation on a worker thread "
-        "(asyncio loop detected on caller thread)",
+        "%s: running Playwright sync operation on a worker thread",
         label,
     )
     with ThreadPoolExecutor(
