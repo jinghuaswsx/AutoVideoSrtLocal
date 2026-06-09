@@ -9404,6 +9404,8 @@
       const imgTag = coverSrc
         ? `<img src="${escapeHtml(coverSrc)}" loading="lazy" alt="">${playBtnHtml}`
         : `<div class="thumb-ph">${icon('film', 20)}</div>`;
+      const fileSizeMb = it.file_size ? (it.file_size / 1024 / 1024).toFixed(1) + 'M' : '-';
+      const durationStr = it.duration_seconds ? Math.round(it.duration_seconds) + ' s' : '-';
       return `
       <div class="oc-vitem" data-item="${it.id}" data-lang="${escapeHtml(it.lang || edState.activeLang || 'en')}" data-filename="${escapeHtml(rawName)}">
         <div class="vname oc-vitem-name-editor">
@@ -9421,6 +9423,7 @@
             <button class="oc-btn ghost sm" type="button" data-act="name-cancel" hidden>${icon('close', 12)}<span>取消</span></button>
           </div>
         </div>
+        <div class="vmeta-line">文件大小：${fileSizeMb},视频时长：${durationStr}</div>
         ${sourceHtml}
         ${taskHtml}
         <div class="vtabs">
@@ -9744,6 +9747,8 @@
         const deleteHtml = version.can_delete
           ? `<button type="button" class="oc-btn text sm danger-txt" data-version-delete="${escapeHtml(version.id)}">${icon('trash', 12)}<span>删除</span></button>`
           : '';
+        const vSizeMb = version.file_size ? (version.file_size / 1024 / 1024).toFixed(1) + 'M' : '-';
+        const vDurationStr = version.duration_seconds ? Math.round(version.duration_seconds) + ' s' : '-';
         return `
           <div class="oc-vitem" style="margin-bottom:12px;">
             <div class="vname">
@@ -9751,6 +9756,7 @@
                 V${versionNo || '-'} · ${escapeHtml(version.display_name || version.filename || '')}
               </div>
             </div>
+            <div class="vmeta-line">文件大小：${vSizeMb},视频时长：${vDurationStr}</div>
             <div class="vsource">${escapeHtml(taskId)}${archivedAt ? ` · ${escapeHtml(archivedAt)}` : ''}</div>
             <div style="display:grid;grid-template-columns:minmax(180px, 260px) 1fr;gap:12px;align-items:start;">
               <div class="vpane active" style="min-height:180px;">
