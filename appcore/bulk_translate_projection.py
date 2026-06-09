@@ -44,36 +44,64 @@ _IMAGE_TERMINAL_ITEM_STATUSES = {"done", "failed", "error", "cancelled", "interr
 _IMAGE_RUNNING_PROJECT_STATUSES = {"planning", "queued", "dispatching", "running", "syncing_result"}
 
 
-def _list_candidate_rows(user_id: int | None, *, limit: int = 50) -> list[dict]:
-    if user_id is None:
+def _list_candidate_rows(user_id: int | None, product_id: int | None = None, *, limit: int = 50) -> list[dict]:
+    if product_id is None:
+        if user_id is None:
+            return query(
+                """
+                SELECT id, status, state_json, created_at
+                FROM projects
+                WHERE type = 'bulk_translate'
+                  AND deleted_at IS NULL
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
         return query(
             """
             SELECT id, status, state_json, created_at
             FROM projects
-            WHERE type = 'bulk_translate'
+            WHERE user_id = %s
+              AND type = 'bulk_translate'
               AND deleted_at IS NULL
             ORDER BY created_at DESC
             LIMIT %s
             """,
-            (limit,),
+            (user_id, limit),
         )
-    return query(
-        """
-        SELECT id, status, state_json, created_at
-        FROM projects
-        WHERE user_id = %s
-          AND type = 'bulk_translate'
-          AND deleted_at IS NULL
-        ORDER BY created_at DESC
-        LIMIT %s
-        """,
-        (user_id, limit),
-    )
+    else:
+        if user_id is None:
+            return query(
+                """
+                SELECT id, status, state_json, created_at
+                FROM projects
+                WHERE type = 'bulk_translate'
+                  AND deleted_at IS NULL
+                  AND JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.product_id')) = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (str(product_id), limit),
+            )
+        return query(
+            """
+            SELECT id, status, state_json, created_at
+            FROM projects
+            WHERE user_id = %s
+              AND type = 'bulk_translate'
+              AND deleted_at IS NULL
+              AND JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.product_id')) = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (user_id, str(product_id), limit),
+        )
 
 
 def list_product_task_ids(user_id: int | None, product_id: int, *, limit: int = 50) -> list[str]:
     task_ids: list[str] = []
-    for row in _list_candidate_rows(user_id, limit=limit) or []:
+    for row in _list_candidate_rows(user_id, product_id, limit=limit) or []:
         state = _parse_state(row.get("state_json"))
         if int(state.get("product_id") or 0) == int(product_id):
             task_ids.append(str(row["id"]))
@@ -87,7 +115,7 @@ def list_product_tasks(
     limit: int = 50,
     refresh_children: bool = False,
 ) -> list[dict]:
-    rows = _list_candidate_rows(user_id, limit=limit)
+    rows = _list_candidate_rows(user_id, product_id, limit=limit)
     tasks: list[dict] = []
     for row in rows or []:
         state = _parse_state(row.get("state_json"))
