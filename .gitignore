@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 
 # Python virtual environments
+.venv
 .venv/
 venv/
 .venv_link_check_runtime/
