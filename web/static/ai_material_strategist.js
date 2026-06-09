@@ -389,8 +389,8 @@
           <h2>${esc(project.project_name || ('项目 #' + project.id))}</h2>
           <div class="aims-subline">
             <span class="aims-status ${esc(project.status)}">${statusLabel(project.status)}</span>
-            <span>Provider ${esc(project.provider_code || 'google_wj')}</span>
-            <span>Model ${esc(project.model_id || 'gemini-3.5-flash')}</span>
+            <span>Provider ${esc(project.provider_code || 'openrouter')}</span>
+            <span>Model ${esc(project.model_id || 'google/gemini-3.5-flash')}</span>
             <span>开始 ${esc((project.started_at || '').slice(0, 16))}</span>
             ${project.finished_at ? `<span>完成 ${esc(project.finished_at.slice(0, 16))}</span>` : ''}
           </div>

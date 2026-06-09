@@ -21,8 +21,8 @@ log = logging.getLogger(__name__)
 
 RANK_USE_CASE = "medias.ai_material_strategist_rank_products"
 PRODUCT_ANALYSIS_USE_CASE = "medias.ai_material_strategist_product_analysis"
-PROVIDER_CODE = "google_wj"
-MODEL_ID = "gemini-3.5-flash"
+PROVIDER_CODE = "openrouter"
+MODEL_ID = "google/gemini-3.5-flash"
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
 _MAX_AI_CANDIDATES = 60
@@ -56,7 +56,7 @@ _PROGRESS_LOG_LIMIT = 12
 PROGRESS_STEPS: tuple[dict[str, str], ...] = (
     {"key": "snapshot", "label": "读取数据窗口", "description": "读取产品、广告、订单、明空素材新鲜度。"},
     {"key": "candidate_score", "label": "规则预筛打分", "description": "按消耗、订单、ROAS、广告数筛选候选品。"},
-    {"key": "ai_ranking", "label": "Top 20 AI 复评", "description": "分批调用 GOOGLEWJ Gemini 复评候选产品。"},
+    {"key": "ai_ranking", "label": "Top 20 AI 复评", "description": "分批调用 OpenRouter Gemini 复评候选产品。"},
     {"key": "material_context", "label": "补齐素材上下文", "description": "读取国家反馈、本地素材、明空素材和任务中心排程。"},
     {"key": "product_analysis", "label": "逐产品分析", "description": "逐个产品分析国家、素材、任务去重和补素材建议。"},
     {"key": "persist", "label": "保存结果", "description": "写入 Top 产品、AI 建议和操作入口。"},
@@ -1957,7 +1957,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 "复用已保存 Top 20 排名结果，不重复调用排名模型。",
             )
         else:
-            checkpoint("ai_ranking", "running", 32, "调用 GOOGLEWJ Gemini 分批复评 Top 20。")
+            checkpoint("ai_ranking", "running", 32, "调用 OpenRouter Gemini 分批复评 Top 20。")
             ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
             _save_project_ranking(project_id, ranking)
         selected = _select_products(candidates, ranking)

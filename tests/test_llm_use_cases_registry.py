@@ -128,16 +128,16 @@ def test_order_analytics_weekly_ai_analysis_use_case_registered():
     assert product_uc["units_type"] == "tokens"
 
 
-def test_ai_material_strategist_use_cases_use_googlewj_gemini_35_flash():
+def test_ai_material_strategist_use_cases_use_openrouter_gemini_35_flash():
     for code in (
         "medias.ai_material_strategist_rank_products",
         "medias.ai_material_strategist_product_analysis",
     ):
         uc = USE_CASES[code]
         assert uc["module"] == "material"
-        assert uc["default_provider"] == "google_wj"
-        assert uc["default_model"] == "gemini-3.5-flash"
-        assert uc["usage_log_service"] == "google_wj"
+        assert uc["default_provider"] == "openrouter"
+        assert uc["default_model"] == "google/gemini-3.5-flash"
+        assert uc["usage_log_service"] == "openrouter"
         assert uc["units_type"] == "tokens"
 
 

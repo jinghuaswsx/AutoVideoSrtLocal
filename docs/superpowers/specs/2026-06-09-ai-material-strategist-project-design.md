@@ -22,6 +22,7 @@
 - `docs/superpowers/specs/2026-05-18-mingkong-video-material-library-subtabs-design.md`：明空视频素材卡片、视频预览、加入素材库 / 做小语种操作入口。
 - `docs/superpowers/specs/2026-05-16-task-center-e2e-flow-design.md`：选品到任务中心到素材到推送的流程闭环。
 - `db/migrations/2026_06_06_googlewj_vertex_provider.sql`：`google_wj` 通道和 `gemini-3.5-flash` 模型配置。
+- `appcore/llm_use_cases.py`：AI素材军师当前先走 OpenRouter 的 `google/gemini-3.5-flash`，后续配额和间隔完善后再切回 WJ 通道。
 
 ## 2026-06-09 只读数据基线
 
@@ -68,7 +69,7 @@
 2. 每次运行生成一个项目，项目保存完整结论和快照，不被后续数据变化覆盖。
 3. 找出当前产品里综合表现最好的 20 个产品，必须同时考虑“量”和“ROAS”，不能让 1-2 单高 ROAS 产品冒头。
 4. 对 Top 20 每个产品单独分析投放、订单、国家、素材翻译反馈、明空素材候选，并给出补素材建议。
-5. 所有 LLM 调用统一走 `GOOGLEWJ` 通道：provider `google_wj`，model `gemini-3.5-flash`。
+5. 所有 LLM 调用当前统一走 OpenRouter 过渡通道：provider `openrouter`，model `google/gemini-3.5-flash`；后续配额与请求间隔完善后再切回 `google_wj`。
 6. 页面提供可执行入口：看明空视频、查看翻译后视频反馈数据、加入素材库、创建小语种翻译任务。
 7. 页面可视化、项目化、可回看，且展示提示词、输入数据、调用参数和模型输出。
 
@@ -165,9 +166,9 @@
 
 注册 use case：`medias.ai_material_strategist_rank_products`。
 
-- provider: `google_wj`
-- model: `gemini-3.5-flash`
-- usage service: `google_wj`
+- provider: `openrouter`
+- model: `google/gemini-3.5-flash`
+- usage service: `openrouter`
 - units: `tokens`
 
 将候选按 20 个一批分 3 次调用。每批输入压缩指标，输出每批 Top 10 与理由。最后再把 3 批候选合并调用一次总排名，输出最终 Top 20。
@@ -266,6 +267,7 @@ AI素材军师每次运行都是一个项目任务，必须像全能视频翻译
   7. `summary`: 汇总项目结论。
 - `progress_json` 至少包含 `percent`、`current_step`、`current_step_label`、`message`、`steps[]`、`logs[]`、`product_progress`。
 - `status=running` 时，页面首屏必须显示 sticky 运行状态卡：状态、进度条、百分比、当前动作、当前产品进度。
+- 移动端或项目已完成/失败时，运行状态卡不能 sticky 遮挡后续数据；只允许桌面端 `running` 项目使用 sticky 运行卡。
 - 步骤卡片展示 `等待中 / 运行中 / 已完成 / 失败` 四类状态，失败时显示错误信息。
 - 同一时间只能有一个 AI素材军师项目运行。创建新项目前必须检查是否已有 `status='running'` 项目：
   - 如果有，API 返回 `409`，payload 带 `running_project` 和其详情路由。
@@ -402,7 +404,7 @@ LLM 节点提供 `提示词` 按钮，展示：
 - Top 20 规则打分不会让低量高 ROAS 产品进榜。
 - `meta_ad_realtime_daily_ad_metrics` 按 `(business_date, ad_account_id)` 取最新快照。
 - 本地产品 code 去掉 `-rjc` 后能匹配明空素材快照。
-- 两个 AI use case 默认 provider 都是 `google_wj`，model 都是 `gemini-3.5-flash`。
+- 两个 AI use case 当前默认 provider 都是 `openrouter`，model 都是 `google/gemini-3.5-flash`。
 - 单产品 prompt 包含 8 国阶梯、明空素材候选、本地素材和翻译反馈。
 - AI 返回的操作入口能序列化到项目详情。
 - 已有待处理 / 进行中 / 已完成任务时，服务端不会生成重复 `create_translation_task`，而是输出任务链接。
