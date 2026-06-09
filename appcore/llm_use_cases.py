@@ -714,6 +714,26 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "medias.ai_material_strategist_rank_products": _uc(
+        "medias.ai_material_strategist_rank_products",
+        "material",
+        "AI素材军师 Top20 排名",
+        "使用 GoogleWJ Gemini 3.5 Flash 复评素材管理产品表现，筛出有量且 ROAS 不差的 Top20",
+        "google_wj",
+        "gemini-3.5-flash",
+        "google_wj",
+        "tokens",
+    ),
+    "medias.ai_material_strategist_product_analysis": _uc(
+        "medias.ai_material_strategist_product_analysis",
+        "material",
+        "AI素材军师单品分析",
+        "使用 GoogleWJ Gemini 3.5 Flash 分析单品投放、国家、素材和明空候选，输出补素材操作建议",
+        "google_wj",
+        "gemini-3.5-flash",
+        "google_wj",
+        "tokens",
+    ),
     # 数据分析
     "order_analytics.weekly_ai_analysis": _uc(
         "order_analytics.weekly_ai_analysis",

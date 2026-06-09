@@ -248,30 +248,55 @@ def _build_mingkong_pairing_workbench_response(pid: int, product: dict):
 def _build_mingkong_pairing_import_skus_response(pid: int, product: dict):
     existing_rows = medias.list_product_skus(pid)
     if existing_rows:
+        message = "我们系统已存在 SKU 行，未覆盖明空 SKU"
         return {
             "ok": False,
             "error": "local_skus_exist",
-            "message": "我们系统已存在 SKU 行，未覆盖明空 SKU",
+            "message": message,
             "existing_count": len(existing_rows),
+            "logs": [{
+                "level": "warn",
+                "message": f"{message}；当前我们系统 SKU 行 {len(existing_rows)}",
+            }],
         }
     payload = dianxiaomi_mingkong_pairing.build_mingkong_library_sku_import_payload(product)
     pairs = payload.get("pairs") or []
     if not pairs:
+        message = payload.get("message") or "明空产品库未找到可同步的 SKU 行"
         return {
             "ok": False,
             "error": "mingkong_skus_missing",
-            "message": payload.get("message") or "明空产品库未找到可同步的 SKU 行",
+            "message": message,
             "realtime_refresh": payload.get("realtime_refresh"),
+            "logs": [
+                {"level": "info", "message": "已读取明空产品库 SKU 候选"},
+                {"level": "error", "message": message},
+            ],
         }
     stats = medias.replace_product_skus(pid, pairs, source="mingkong_library")
     imported_rows = medias.list_product_skus(pid)
+    message = f"已同步 {len(imported_rows)} 行明空 SKU 到我们系统"
     return {
         "ok": True,
-        "message": f"已同步 {len(imported_rows)} 行明空 SKU 到我们系统",
+        "message": message,
         "stats": stats,
         "items": imported_rows,
         "mingkong_items": payload.get("items") or [],
         "realtime_refresh": payload.get("realtime_refresh"),
+        "logs": [
+            {"level": "info", "message": f"明空产品库返回 {len(pairs)} 行可同步 SKU"},
+            {"level": "ok", "message": message},
+            {
+                "level": "info",
+                "message": (
+                    "我们系统 SKU 写入统计："
+                    f"新增 {stats.get('inserted', 0)}，"
+                    f"更新 {stats.get('updated', 0)}，"
+                    f"删除 {stats.get('deleted', 0)}，"
+                    f"保留 {stats.get('preserved', 0)}"
+                ),
+            },
+        ],
     }
 
 

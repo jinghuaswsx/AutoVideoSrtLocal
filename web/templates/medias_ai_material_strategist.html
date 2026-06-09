@@ -1,0 +1,528 @@
+{% extends "layout.html" %}
+{% block title %}AI素材军师 - AutoVideoSrt{% endblock %}
+{% block page_title %}
+<span class="selection-center-title">AI素材军师</span>
+<span class="selection-center-title-note" id="aimsPageNote">项目化补素材建议</span>
+{% endblock %}
+
+{% block extra_style %}
+<style>
+  .aims-page {
+    --aims-bg: #f7f9fc;
+    --aims-surface: #fff;
+    --aims-border: #d9e2ec;
+    --aims-border-strong: #b7c4d4;
+    --aims-fg: #172033;
+    --aims-muted: #65758b;
+    --aims-blue: #2563eb;
+    --aims-teal: #0f766e;
+    --aims-green: #15803d;
+    --aims-amber: #b45309;
+    --aims-red: #b91c1c;
+    --aims-rose: #be123c;
+    --aims-radius: 8px;
+    color: var(--aims-fg);
+  }
+  .aims-page * { box-sizing: border-box; }
+  .aims-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--aims-border);
+    border-radius: var(--aims-radius);
+    background: var(--aims-surface);
+  }
+  .aims-toolbar-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    min-width: 0;
+    color: var(--aims-muted);
+    font-size: 13px;
+  }
+  .aims-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .aims-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--aims-border-strong);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--aims-fg);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .aims-btn svg { width: 15px; height: 15px; }
+  .aims-btn.primary {
+    border-color: var(--aims-blue);
+    background: var(--aims-blue);
+    color: #fff;
+  }
+  .aims-btn.teal {
+    border-color: var(--aims-teal);
+    background: var(--aims-teal);
+    color: #fff;
+  }
+  .aims-btn:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+  }
+  .aims-layout {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+  }
+  .aims-projects,
+  .aims-detail {
+    border: 1px solid var(--aims-border);
+    border-radius: var(--aims-radius);
+    background: var(--aims-surface);
+    min-width: 0;
+  }
+  .aims-projects {
+    position: sticky;
+    top: 72px;
+    max-height: calc(100vh - 112px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .aims-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--aims-border);
+    font-size: 14px;
+    font-weight: 800;
+  }
+  .aims-project-list {
+    overflow: auto;
+    padding: 8px;
+  }
+  .aims-project-item {
+    width: 100%;
+    display: grid;
+    gap: 5px;
+    padding: 10px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .aims-project-item:hover,
+  .aims-project-item.active {
+    border-color: var(--aims-border-strong);
+    background: #f8fafc;
+  }
+  .aims-project-name {
+    font-size: 13px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .aims-project-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: var(--aims-muted);
+    font-size: 12px;
+  }
+  .aims-status {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    background: #e2e8f0;
+    color: #334155;
+  }
+  .aims-status.success { background: #dcfce7; color: var(--aims-green); }
+  .aims-status.running { background: #dbeafe; color: #1d4ed8; }
+  .aims-status.failed { background: #fee2e2; color: var(--aims-red); }
+  .aims-detail {
+    padding: 14px;
+    min-height: 560px;
+  }
+  .aims-empty,
+  .aims-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 360px;
+    color: var(--aims-muted);
+    font-size: 14px;
+  }
+  .aims-title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .aims-title-row h2 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    line-height: 1.25;
+  }
+  .aims-subline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: var(--aims-muted);
+    font-size: 12px;
+  }
+  .aims-metrics {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .aims-metric {
+    padding: 12px;
+    border: 1px solid var(--aims-border);
+    border-radius: var(--aims-radius);
+    background: #fbfdff;
+  }
+  .aims-metric span {
+    display: block;
+    color: var(--aims-muted);
+    font-size: 12px;
+  }
+  .aims-metric strong {
+    display: block;
+    margin-top: 5px;
+    font-size: 20px;
+    line-height: 1.1;
+  }
+  .aims-visuals {
+    display: grid;
+    grid-template-columns: 1.2fr .8fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .aims-band {
+    border: 1px solid var(--aims-border);
+    border-radius: var(--aims-radius);
+    background: #fff;
+    overflow: hidden;
+  }
+  .aims-band-title {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--aims-border);
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .aims-bars {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+  }
+  .aims-bar-row {
+    display: grid;
+    grid-template-columns: 34px minmax(110px, 1fr) minmax(120px, 2fr) 76px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .aims-bar-track {
+    height: 10px;
+    border-radius: 999px;
+    background: #e5e7eb;
+    overflow: hidden;
+  }
+  .aims-bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0f766e, #2563eb);
+  }
+  .aims-scatter {
+    position: relative;
+    height: 240px;
+    margin: 12px;
+    border: 1px solid var(--aims-border);
+    border-radius: 7px;
+    background:
+      linear-gradient(#eef2f7 1px, transparent 1px),
+      linear-gradient(90deg, #eef2f7 1px, transparent 1px);
+    background-size: 25% 25%;
+  }
+  .aims-dot {
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    transform: translate(-50%, 50%);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: var(--aims-rose);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 16px rgba(15, 23, 42, .18);
+  }
+  .aims-table-wrap {
+    overflow: auto;
+    border: 1px solid var(--aims-border);
+    border-radius: var(--aims-radius);
+    margin-bottom: 14px;
+  }
+  .aims-table {
+    width: 100%;
+    min-width: 1120px;
+    border-collapse: collapse;
+    background: #fff;
+  }
+  .aims-table th,
+  .aims-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--aims-border);
+    font-size: 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .aims-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 800;
+  }
+  .aims-product-link {
+    color: var(--aims-blue);
+    font-weight: 800;
+    text-decoration: none;
+  }
+  .aims-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .aims-chip.p0 { background: #fee2e2; color: var(--aims-red); }
+  .aims-chip.p1 { background: #ffedd5; color: var(--aims-amber); }
+  .aims-chip.p2 { background: #dbeafe; color: #1d4ed8; }
+  .aims-country-grid {
+    display: grid;
+    grid-template-columns: 120px repeat(8, minmax(74px, 1fr));
+    gap: 1px;
+    overflow: auto;
+    background: var(--aims-border);
+    border: 1px solid var(--aims-border);
+    border-radius: var(--aims-radius);
+    margin-bottom: 14px;
+  }
+  .aims-country-cell {
+    min-height: 38px;
+    padding: 7px;
+    background: #fff;
+    font-size: 12px;
+  }
+  .aims-country-cell.head {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 800;
+  }
+  .aims-country-cell.active { background: #ecfdf5; color: var(--aims-green); }
+  .aims-country-cell.stopped { background: #fff7ed; color: var(--aims-amber); }
+  .aims-country-cell.never { background: #f8fafc; color: #64748b; }
+  .aims-product-sections {
+    display: grid;
+    gap: 12px;
+  }
+  .aims-product-section {
+    border: 1px solid var(--aims-border);
+    border-radius: var(--aims-radius);
+    background: #fff;
+    overflow: hidden;
+  }
+  .aims-product-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border-bottom: 1px solid var(--aims-border);
+    background: #fbfdff;
+  }
+  .aims-product-head h3 {
+    margin: 0 0 5px;
+    font-size: 15px;
+  }
+  .aims-product-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    gap: 12px;
+    padding: 12px;
+  }
+  .aims-rec {
+    color: #334155;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .aims-material-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .aims-material {
+    border: 1px solid var(--aims-border);
+    border-radius: var(--aims-radius);
+    padding: 10px;
+    background: #fff;
+  }
+  .aims-material video {
+    width: 100%;
+    aspect-ratio: 9 / 16;
+    max-height: 300px;
+    border-radius: 6px;
+    background: #111827;
+    object-fit: contain;
+  }
+  .aims-material-title {
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .aims-material-meta {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 7px 0;
+    color: var(--aims-muted);
+    font-size: 12px;
+  }
+  .aims-actions {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+  .aims-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 200;
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 10px 12px;
+    border: 1px solid var(--aims-border-strong);
+    border-radius: var(--aims-radius);
+    background: #fff;
+    color: var(--aims-fg);
+    box-shadow: 0 18px 38px rgba(15, 23, 42, .18);
+    font-size: 13px;
+  }
+  .aims-toast[hidden] { display: none; }
+  @media (max-width: 1100px) {
+    .aims-layout,
+    .aims-visuals,
+    .aims-product-body {
+      grid-template-columns: 1fr;
+    }
+    .aims-projects {
+      position: static;
+      max-height: 320px;
+    }
+    .aims-metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 720px) {
+    .main-content { padding: 16px 12px 32px; }
+    .aims-toolbar,
+    .aims-title-row,
+    .aims-product-head {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .aims-toolbar-actions,
+    .aims-actions {
+      width: 100%;
+    }
+    .aims-btn {
+      flex: 1 1 auto;
+    }
+    .aims-metrics {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="aims-page" id="aimsApp">
+  <div class="aims-toolbar">
+    <div class="aims-toolbar-main">
+      <span id="aimsWindowText">数据窗口：—</span>
+      <span id="aimsQualityText">数据新鲜度：—</span>
+    </div>
+    <div class="aims-toolbar-actions">
+      <a class="aims-btn" href="{{ url_for('medias.product_tab_page') }}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+        产品列表
+      </a>
+      <button class="aims-btn" type="button" id="aimsRefreshBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path></svg>
+        刷新
+      </button>
+      <button class="aims-btn primary" type="button" id="aimsCreateBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg>
+        运行一轮
+      </button>
+    </div>
+  </div>
+
+  <div class="aims-layout">
+    <aside class="aims-projects">
+      <div class="aims-panel-head">
+        <span>项目</span>
+        <span class="aims-status" id="aimsProjectCount">0</span>
+      </div>
+      <div class="aims-project-list" id="aimsProjectList"></div>
+    </aside>
+
+    <section class="aims-detail" id="aimsDetail">
+      <div class="aims-loading">加载中...</div>
+    </section>
+  </div>
+  <div class="aims-toast" id="aimsToast" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.AIMS_INITIAL_PROJECT_ID = {{ initial_project_id|tojson }};
+</script>
+<script src="{{ url_for('static', filename='ai_material_strategist.js') }}"></script>
+{% endblock %}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from pathlib import Path
 
 import web.routes.medias.products as products_route
 from appcore import dianxiaomi_mingkong_pairing as pairing
@@ -271,6 +272,7 @@ def test_build_workbench_payload_adds_mingkong_reference_when_enabled(monkeypatc
         "dianxiaomi_sku_code": "mk-erp-1",
         "dianxiaomi_name": "明空商品名",
         "source": "mingkong_library",
+        "image_url": "https://example.test/mingkong-sku.jpg",
         "purchase_1688_url": "https://detail.1688.com/offer/123456789.html",
         "mingkong_procurement": {
             "supplier_name": "明空供应商",
@@ -294,6 +296,7 @@ def test_build_workbench_payload_adds_mingkong_reference_when_enabled(monkeypatc
 
     assert payload["summary"]["source"] == "media_product_skus"
     assert payload["items"][0]["mingkong"]["sku"] == "0421-13260712"
+    assert payload["items"][0]["mingkong"]["image_url"] == "https://example.test/mingkong-sku.jpg"
     assert payload["items"][0]["mingkong"]["supplier_name"] == "明空供应商"
     assert payload["items"][0]["mingkong"]["sku_id_alibaba"] == "sku-1688"
 
@@ -352,6 +355,7 @@ def test_mingkong_pairing_import_skus_refuses_to_overwrite_existing(monkeypatch)
 
     assert result["ok"] is False
     assert result["error"] == "local_skus_exist"
+    assert result["logs"][0]["level"] == "warn"
 
 
 def test_mingkong_pairing_import_skus_writes_mingkong_library_source(monkeypatch):
@@ -393,6 +397,17 @@ def test_mingkong_pairing_import_skus_writes_mingkong_library_source(monkeypatch
     assert calls["replace"][0] == 747
     assert calls["replace"][2] == "mingkong_library"
     assert result["items"] == imported_rows
+    assert result["logs"][1]["level"] == "ok"
+
+
+def test_mingkong_pairing_template_has_progress_modal_and_renamed_sync_button():
+    source = Path("web/templates/medias_mingkong_pairing_workbench.html").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'id="mkpProgressModal"' in source
+    assert "同步明空店小秘SKU" in source
+    assert "明空 SKU 图片" in source
 
 
 def test_confirm_dxm03_pairing_allows_combo_without_outer_purchase_url(monkeypatch):
@@ -428,6 +443,8 @@ def test_confirm_dxm03_pairing_allows_combo_without_outer_purchase_url(monkeypat
 
     assert result["ok"] is True
     assert result["items"][0]["status"] == "already_paired_combo_components"
+    assert result["logs"][0]["level"] == "info"
+    assert result["summary"]["already_paired_count"] == 1
 
 
 def test_confirm_dxm03_pairing_blocks_single_sku_without_purchase_url(monkeypatch):
@@ -451,6 +468,7 @@ def test_confirm_dxm03_pairing_blocks_single_sku_without_purchase_url(monkeypatc
 
     assert result["ok"] is False
     assert result["items"][0]["error"] == "missing_purchase_url"
+    assert result["logs"][1]["level"] == "warn"
 
 
 def test_replicated_commodity_form_clears_account_bound_fields():
@@ -585,6 +603,7 @@ def test_replicate_mingkong_sku_reuses_existing_dxm03_commodity(monkeypatch):
     assert result["ok"] is True
     assert result["items"][0]["status"] == "already_exists"
     assert result["items"][0]["dxm03_sku_code"] == "DXM03-CODE"
+    assert result["logs"][1]["level"] == "ok"
     assert replaced["product_id"] == 747
     assert replaced["source"] == "mingkong_replicated"
     assert replaced["pairs"][0]["dianxiaomi_sku_code"] == "DXM03-CODE"
@@ -691,6 +710,7 @@ def test_replicate_mingkong_sku_creates_missing_dxm03_commodity(monkeypatch):
     assert result["ok"] is True
     assert result["items"][0]["status"] == "created"
     assert result["items"][0]["sku_code_strategy"] == "renamed"
+    assert result["summary"]["created_count"] == 1
     assert created_product["sku"] == "50853279039762"
     assert created_product["skuCode"] == "98012311-MK"
     assert created_product["sourceUrl"] == "https://detail.1688.com/offer/922648495856.html"

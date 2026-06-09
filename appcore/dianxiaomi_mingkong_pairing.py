@@ -691,6 +691,61 @@ def _local_sku_payload(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_RESULT_STATUS_LABELS = {
+    "already_exists": "DXM03 已存在",
+    "already_paired": "DXM03 已配对",
+    "already_paired_combo_components": "DXM03 组合组件已配对",
+    "blocked": "阻断",
+    "confirmed": "已同步",
+    "created": "已复刻",
+    "error": "失败",
+    "pending": "待处理",
+}
+
+
+def _operation_item_label(item: dict[str, Any]) -> str:
+    return (
+        str(item.get("variant_title") or "").strip()
+        or str(item.get("dianxiaomi_sku") or "").strip()
+        or str(item.get("shopify_variant_id") or "").strip()
+        or "SKU"
+    )
+
+
+def _operation_logs(action: str, items: list[dict[str, Any]]) -> list[dict[str, str]]:
+    logs: list[dict[str, str]] = [{
+        "level": "info",
+        "message": f"{action}：后端已返回逐 SKU 处理结果",
+    }]
+    if not items:
+        logs.append({"level": "warn", "message": "没有可处理的 SKU 行"})
+        return logs
+    for item in items:
+        status = str(item.get("status") or item.get("error") or "").strip()
+        label = _operation_item_label(item)
+        readable = _RESULT_STATUS_LABELS.get(status, status or "未知状态")
+        message = str(item.get("message") or "").strip()
+        sku_code = str(item.get("dxm03_sku_code") or "").strip()
+        original_code = str(item.get("original_mingkong_sku_code") or "").strip()
+        suffix = ""
+        if sku_code:
+            suffix = f"；明空 SKUID {original_code or '-'} -> DXM03 SKUID {sku_code}"
+        if message:
+            suffix = f"{suffix}；{message}"
+        level = "ok" if status in {
+            "already_exists",
+            "already_paired",
+            "already_paired_combo_components",
+            "confirmed",
+            "created",
+        } else ("error" if status == "error" else "warn")
+        logs.append({
+            "level": level,
+            "message": f"{label}：{readable}{suffix}",
+        })
+    return logs
+
+
 def load_mingkong_library_sku_rows(product: dict[str, Any]) -> dict[str, Any]:
     library_rows = mingkong_product_library.sku_rows_from_library(product)
     realtime_refresh_summary: dict[str, Any] | None = None
@@ -764,6 +819,7 @@ def _mingkong_reference_payload(row: dict[str, Any] | None, fallback: dict[str, 
         "product_sku": row.get("dianxiaomi_product_sku") or "",
         "sku_code": row.get("dianxiaomi_sku_code") or "",
         "name": row.get("dianxiaomi_name") or "",
+        "image_url": row.get("image_url") or "",
         "supplier_name": proc.get("supplier_name") or "",
         "purchase_1688_url": purchase_url,
         "alibaba_product_id": proc.get("alibaba_product_id") or normalize_1688_offer_id(purchase_url),
@@ -957,10 +1013,12 @@ def replicate_mingkong_skus_to_dxm03(
     local_rows = [_local_sku_payload(row) for row in sku_rows or []]
     rows_with_sku = [row for row in local_rows if row.get("dianxiaomi_sku")]
     if not rows_with_sku:
+        message = "产品缺少可复刻的明空 SKU 行"
         return {
             "ok": False,
             "error": "missing_sku_rows",
-            "message": "产品缺少可复刻的明空 SKU 行",
+            "message": message,
+            "logs": [{"level": "error", "message": message}],
             "items": [],
         }
     selection_by_key = _selection_map(selections)
@@ -1143,18 +1201,28 @@ def replicate_mingkong_skus_to_dxm03(
         item.get("status") in {"already_exists", "created"}
         for item in results
     )
+    summary = {
+        "created_count": sum(1 for item in results if item.get("status") == "created"),
+        "existing_count": sum(1 for item in results if item.get("status") == "already_exists"),
+        "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
+        "error_count": sum(1 for item in results if item.get("status") == "error"),
+        "local_update": update_summary,
+    }
+    message = (
+        "复刻明空 SKU 完成："
+        f"新建 {summary['created_count']}，"
+        f"DXM03 已存在 {summary['existing_count']}，"
+        f"阻断 {summary['blocked_count']}，"
+        f"失败 {summary['error_count']}"
+    )
     return {
         "ok": ok,
         "product_id": product.get("id"),
         "product_code": product.get("product_code") or "",
+        "message": message,
+        "logs": _operation_logs("复刻明空 SKU 到 DXM03", results),
         "items": results,
-        "summary": {
-            "created_count": sum(1 for item in results if item.get("status") == "created"),
-            "existing_count": sum(1 for item in results if item.get("status") == "already_exists"),
-            "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
-            "error_count": sum(1 for item in results if item.get("status") == "error"),
-            "local_update": update_summary,
-        },
+        "summary": summary,
     }
 
 
@@ -1173,10 +1241,12 @@ def confirm_dxm03_pairing(
     local_rows = [_local_sku_payload(row) for row in source_rows]
     rows_with_sku = [row for row in local_rows if row.get("dianxiaomi_sku")]
     if not rows_with_sku:
+        message = "产品缺少可写入 DXM03 的 SKU 配对行"
         return {
             "ok": False,
             "error": "missing_sku_rows",
-            "message": "产品缺少可写入 DXM03 的 SKU 配对行",
+            "message": message,
+            "logs": [{"level": "error", "message": message}],
             "items": [],
         }
     selection_by_key = _selection_map(selections)
@@ -1325,9 +1395,32 @@ def confirm_dxm03_pairing(
         }
         for item in results
     )
+    summary = {
+        "confirmed_count": sum(1 for item in results if item.get("status") == "confirmed"),
+        "already_paired_count": sum(
+            1
+            for item in results
+            if item.get("status") in {
+                "already_paired",
+                "already_paired_combo_components",
+            }
+        ),
+        "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
+        "error_count": sum(1 for item in results if item.get("status") == "error"),
+    }
+    message = (
+        "同步明空店小秘SKU完成："
+        f"写入 {summary['confirmed_count']}，"
+        f"已存在 {summary['already_paired_count']}，"
+        f"阻断 {summary['blocked_count']}，"
+        f"失败 {summary['error_count']}"
+    )
     return {
         "ok": ok,
         "product_id": product.get("id"),
         "product_code": product.get("product_code") or "",
+        "message": message,
+        "logs": _operation_logs("同步明空店小秘SKU", results),
         "items": results,
+        "summary": summary,
     }

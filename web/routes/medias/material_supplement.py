@@ -162,6 +162,51 @@ def _legacy_translation_fingerprint(value: str | None) -> str:
     return "|".join([date_key, *material_tokens])
 
 
+def _legacy_date_key(value: str | None) -> str:
+    normalized = _term_no_ext(value or "")
+    date_match = re.match(r"^(20\d{2})[.\-_年]?(\d{1,2})[.\-_月]?(\d{1,2})", normalized)
+    if not date_match:
+        return ""
+    return "".join(part.zfill(2) if idx else part for idx, part in enumerate(date_match.groups()))
+
+
+def _legacy_material_terms(value: str | None) -> set[str]:
+    normalized = _term_no_ext(value or "")
+    if not normalized:
+        return set()
+    normalized = re.sub(r"^(20\d{2})[.\-_年]?(\d{1,2})[.\-_月]?(\d{1,2})[-_\s]*", "", normalized)
+    tokens = [
+        token.strip().lower()
+        for token in re.split(r"[-_\s]+", normalized)
+        if token.strip()
+    ]
+    ignored = {
+        "原素材",
+        "补充素材",
+        "小语种翻译素材",
+        "翻译素材",
+        "素材",
+        "de",
+        "fr",
+        "es",
+        "it",
+        "pt",
+        "ja",
+        "nl",
+        "sv",
+        "fi",
+        "en",
+    }
+    return {
+        token
+        for token in tokens
+        if token not in ignored
+        and not re.fullmatch(r"[a-z]{1,3}", token)
+        and not re.fullmatch(r"20\d{6}", token)
+        and len(token) >= 2
+    }
+
+
 def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
     lib_id = _link_value(lib_item.get("id"))
     bound_id = _link_value(bound_item.get("id"))
@@ -182,6 +227,20 @@ def _is_translation_of(lib_item: dict, bound_item: dict) -> bool:
     if lib_source_raw or lib_source_ref or bound_source_raw or bound_source_ref:
         if (lib_source_raw or lib_source_ref) and (bound_source_raw or bound_source_ref):
             return False
+
+    lib_name = lib_item.get("filename") or lib_item.get("display_name")
+    bound_name = bound_item.get("filename") or bound_item.get("display_name")
+    lib_date = _legacy_date_key(lib_name)
+    bound_date = _legacy_date_key(bound_name)
+    if lib_date and bound_date and lib_date != bound_date:
+        lib_digits = re.sub(r"\D+", "", _term_no_ext(lib_name or ""))
+        bound_digits = re.sub(r"\D+", "", _term_no_ext(bound_name or ""))
+        if lib_date in bound_digits or bound_date in lib_digits:
+            lib_terms = _legacy_material_terms(lib_name)
+            bound_terms = _legacy_material_terms(bound_name)
+            if lib_terms and bound_terms and lib_terms.intersection(bound_terms):
+                return True
+        return False
 
     lib_fingerprint = _legacy_translation_fingerprint(lib_item.get("filename") or lib_item.get("display_name"))
     bound_fingerprint = _legacy_translation_fingerprint(bound_item.get("filename") or bound_item.get("display_name"))
