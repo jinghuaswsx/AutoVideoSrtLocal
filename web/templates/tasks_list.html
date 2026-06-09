@@ -571,6 +571,13 @@
 }
 
 /* ── 我的今日工作量卡片 ── */
+.tc-workload-container {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  justify-content: flex-end;
+}
 .tc-workload-card {
   display: flex;
   flex-direction: column;
@@ -582,7 +589,6 @@
   min-width: 320px;
   max-width: 420px;
   font-size: 13px;
-  margin-left: auto;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .tc-workload-card:hover {
@@ -689,32 +695,34 @@
         <p style="margin:4px 0 0; font-size:13px; color:var(--tc-fg-muted);">管理小语种视频翻译任务及去字幕原始视频处理流程</p>
       </div>
       <!-- 用户今日工作量看板 -->
-      <div id="tcUserWorkloadCard" class="tc-workload-card">
-        <div class="tc-workload-title">我的今日工作量</div>
-        <div class="tc-workload-content">
-          <div class="tc-workload-metric-group">
-            <div class="tc-workload-metric-item in-progress" title="当前进行中的非待推送任务">
-              <div class="tc-workload-metric-value" id="wlInProgress">-</div>
-              <div class="tc-workload-metric-label">进行中任务</div>
+      <div id="tcWorkloadContainer" class="tc-workload-container">
+        <div id="tcUserWorkloadCard" class="tc-workload-card">
+          <div class="tc-workload-title">我的今日工作量</div>
+          <div class="tc-workload-content">
+            <div class="tc-workload-metric-group">
+              <div class="tc-workload-metric-item in-progress" title="当前进行中的非待推送任务">
+                <div class="tc-workload-metric-value" id="wlInProgress">-</div>
+                <div class="tc-workload-metric-label">进行中任务</div>
+              </div>
+              <div class="tc-workload-metric-item completed" title="今日已完成或已提交待推送的任务">
+                <div class="tc-workload-metric-value" id="wlCompleted">-</div>
+                <div class="tc-workload-metric-label">今日已完成</div>
+              </div>
             </div>
-            <div class="tc-workload-metric-item completed" title="今日已完成或已提交待推送的任务">
-              <div class="tc-workload-metric-value" id="wlCompleted">-</div>
-              <div class="tc-workload-metric-label">今日已完成</div>
-            </div>
-          </div>
-          <div class="tc-workload-divider"></div>
-          <div class="tc-workload-details">
-            <div class="tc-workload-detail-item">
-              <span class="tc-workload-detail-label">已完成产品：</span>
-              <span class="tc-workload-detail-value" id="wlProducts">-</span>
-            </div>
-            <div class="tc-workload-detail-item">
-              <span class="tc-workload-detail-label">翻译任务：</span>
-              <span class="tc-workload-detail-value" id="wlTranslations">-</span>
-            </div>
-            <div class="tc-workload-detail-item">
-              <span class="tc-workload-detail-label">去字幕任务：</span>
-              <span class="tc-workload-detail-value" id="wlRaws">-</span>
+            <div class="tc-workload-divider"></div>
+            <div class="tc-workload-details">
+              <div class="tc-workload-detail-item">
+                <span class="tc-workload-detail-label">已完成产品：</span>
+                <span class="tc-workload-detail-value" id="wlProducts">-</span>
+              </div>
+              <div class="tc-workload-detail-item">
+                <span class="tc-workload-detail-label">翻译任务：</span>
+                <span class="tc-workload-detail-value" id="wlTranslations">-</span>
+              </div>
+              <div class="tc-workload-detail-item">
+                <span class="tc-workload-detail-label">去字幕任务：</span>
+                <span class="tc-workload-detail-value" id="wlRaws">-</span>
+              </div>
             </div>
           </div>
         </div>
@@ -2696,17 +2704,68 @@ document.getElementById('tcStatusFilter').addEventListener('keyup', e => { if (e
 tcLoadAssigneeFilterUsers();
 
 async function tcLoadUserWorkload() {
-  const card = document.getElementById('tcUserWorkloadCard');
-  if (!card) return;
+  const container = document.getElementById('tcWorkloadContainer');
+  if (!container) return;
+  // Remove existing dynamic cards
+  const existingOthers = container.querySelectorAll('.tc-workload-card-other');
+  existingOthers.forEach(el => el.remove());
+
   try {
     const res = await fetch('/tasks/api/user-workload');
     if (!res.ok) throw new Error('Failed to fetch user workload');
     const data = await res.json();
-    document.getElementById('wlInProgress').textContent = data.in_progress ?? 0;
-    document.getElementById('wlCompleted').textContent = data.today_completed ?? 0;
-    document.getElementById('wlProducts').textContent = data.today_completed_products ?? 0;
-    document.getElementById('wlTranslations').textContent = data.today_completed_translate_tasks ?? 0;
-    document.getElementById('wlRaws').textContent = data.today_completed_raw_tasks ?? 0;
+    
+    // Update self card
+    const wlInProgressEl = document.getElementById('wlInProgress');
+    const wlCompletedEl = document.getElementById('wlCompleted');
+    const wlProductsEl = document.getElementById('wlProducts');
+    const wlTranslationsEl = document.getElementById('wlTranslations');
+    const wlRawsEl = document.getElementById('wlRaws');
+    
+    if (wlInProgressEl) wlInProgressEl.textContent = data.in_progress ?? 0;
+    if (wlCompletedEl) wlCompletedEl.textContent = data.today_completed ?? 0;
+    if (wlProductsEl) wlProductsEl.textContent = data.today_completed_products ?? 0;
+    if (wlTranslationsEl) wlTranslationsEl.textContent = data.today_completed_translate_tasks ?? 0;
+    if (wlRawsEl) wlRawsEl.textContent = data.today_completed_raw_tasks ?? 0;
+
+    // Render other users' cards if admin
+    if (data.is_admin && data.others && data.others.length > 0) {
+      data.others.forEach(other => {
+        const otherCard = document.createElement('div');
+        otherCard.className = 'tc-workload-card tc-workload-card-other';
+        otherCard.innerHTML = `
+          <div class="tc-workload-title">${tcEsc(other.display_name)} 的今日工作量</div>
+          <div class="tc-workload-content">
+            <div class="tc-workload-metric-group">
+              <div class="tc-workload-metric-item in-progress" title="当前进行中的非待推送任务">
+                <div class="tc-workload-metric-value">${other.stats.in_progress ?? 0}</div>
+                <div class="tc-workload-metric-label">进行中任务</div>
+              </div>
+              <div class="tc-workload-metric-item completed" title="今日已完成或已提交待推送的任务">
+                <div class="tc-workload-metric-value">${other.stats.today_completed ?? 0}</div>
+                <div class="tc-workload-metric-label">今日已完成</div>
+              </div>
+            </div>
+            <div class="tc-workload-divider"></div>
+            <div class="tc-workload-details">
+              <div class="tc-workload-detail-item">
+                <span class="tc-workload-detail-label">已完成产品：</span>
+                <span class="tc-workload-detail-value">${other.stats.today_completed_products ?? 0}</span>
+              </div>
+              <div class="tc-workload-detail-item">
+                <span class="tc-workload-detail-label">翻译任务：</span>
+                <span class="tc-workload-detail-value">${other.stats.today_completed_translate_tasks ?? 0}</span>
+              </div>
+              <div class="tc-workload-detail-item">
+                <span class="tc-workload-detail-label">去字幕任务：</span>
+                <span class="tc-workload-detail-value">${other.stats.today_completed_raw_tasks ?? 0}</span>
+              </div>
+            </div>
+          </div>
+        `;
+        container.appendChild(otherCard);
+      });
+    }
   } catch (e) {
     console.error('load user workload failed:', e);
   }
