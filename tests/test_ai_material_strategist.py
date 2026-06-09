@@ -106,6 +106,73 @@ def test_progress_payload_marks_current_step_and_keeps_logs():
     assert updated["logs"][-1]["message"] == "正在预筛"
 
 
+def test_normalize_progress_preserves_existing_checkpoint():
+    progress = {
+        "percent": 63,
+        "current_step": "product_analysis",
+        "steps": [{"key": "snapshot", "status": "done", "message": "done"}],
+        "product_progress": {"current_index": 7, "total": 20},
+        "logs": [{"time": "now", "level": "info", "message": "existing"}],
+    }
+
+    normalized = svc._normalize_progress(progress, message="resume")
+
+    assert normalized["percent"] == 63
+    assert normalized["current_step"] == "product_analysis"
+    assert normalized["steps"][0]["status"] == "done"
+    assert normalized["product_progress"]["current_index"] == 7
+    assert normalized["logs"][-1]["message"] == "existing"
+
+
+def test_selected_product_ids_from_stored_ranking_wrapper_and_legacy_payload():
+    wrapped = {
+        "selected_product_ids": [3, "2", 0],
+        "ranking_result": {"mode": "ai"},
+    }
+    legacy = {
+        "mode": "ai",
+        "final_output": {
+            "ranked_products": [
+                {"product_id": 9, "rank": 2},
+                {"product_id": 8, "rank": 1},
+            ],
+        },
+    }
+
+    assert svc._selected_product_ids_from_ranking(wrapped) == [3, 2]
+    assert svc._selected_product_ids_from_ranking(legacy) == [8, 9]
+
+
+def test_select_products_fills_from_rule_candidates_when_ai_returns_short_list():
+    candidates = [
+        _row(product_id=1, product_code="one-rjc", spend_30d=300, orders_30d=30),
+        _row(product_id=2, product_code="two-rjc", spend_30d=200, orders_30d=20),
+        _row(product_id=3, product_code="three-rjc", spend_30d=100, orders_30d=10),
+    ]
+
+    selected = svc._select_products(candidates, {"selected_product_ids": [2]})
+
+    assert [item["product_id"] for item in selected] == [2, 1, 3]
+
+
+def test_runtime_result_from_stored_project_product_result():
+    stored = {
+        "rank_no": 4,
+        "metrics": {"product_id": 22, "product_code": "demo-rjc"},
+        "country_summary": [{"country_code": "DE"}],
+        "local_materials": [{"id": 1}],
+        "mingkong_materials": [{"material_key": "mk"}],
+        "ai_result": {"priority": "P1"},
+        "action_items": [{"type": "view_task"}],
+    }
+
+    runtime = svc._runtime_result_from_stored(stored)
+
+    assert runtime["rank_no"] == 4
+    assert runtime["product"]["product_id"] == 22
+    assert runtime["ai_result"]["priority"] == "P1"
+
+
 def test_task_status_group_matches_strategist_dedup_policy():
     assert svc._task_status_group({"status": "blocked"}) == "pending"
     assert svc._task_status_group({"status": "assigned"}) == "in_progress"

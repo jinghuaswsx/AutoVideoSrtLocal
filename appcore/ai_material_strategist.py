@@ -198,6 +198,104 @@ def _save_progress(project_id: int, progress: Mapping[str, Any]) -> None:
     )
 
 
+def _normalize_progress(progress: Mapping[str, Any] | None, *, message: str) -> dict[str, Any]:
+    base = _initial_progress(message=message)
+    if not isinstance(progress, Mapping) or not progress:
+        return base
+
+    for key in (
+        "status", "percent", "current_step", "current_step_label",
+        "message", "updated_at",
+    ):
+        if key in progress:
+            base[key] = progress[key]
+
+    existing_steps = {
+        str(step.get("key") or ""): dict(step)
+        for step in progress.get("steps") or []
+        if isinstance(step, Mapping)
+    }
+    merged_steps = []
+    for step in base["steps"]:
+        existing = existing_steps.get(step["key"]) or {}
+        merged = dict(step)
+        merged.update(existing)
+        merged_steps.append(merged)
+    base["steps"] = merged_steps
+
+    product_progress = progress.get("product_progress")
+    if isinstance(product_progress, Mapping):
+        merged_product_progress = dict(base["product_progress"])
+        merged_product_progress.update(dict(product_progress))
+        base["product_progress"] = merged_product_progress
+
+    logs = progress.get("logs")
+    if isinstance(logs, list) and logs:
+        base["logs"] = logs[-_PROGRESS_LOG_LIMIT:]
+    return base
+
+
+def _with_project_lock(timeout_seconds: int = 5):
+    conn = db.get_conn()
+    locked = False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT GET_LOCK(%s, %s) AS lock_ok", (_PROJECT_LOCK_NAME, timeout_seconds))
+            row = cur.fetchone() or {}
+            locked = _safe_int(row.get("lock_ok")) == 1
+        if locked:
+            return conn
+    except Exception:
+        log.exception("AI material strategist lock acquire failed")
+    try:
+        conn.close()
+    except Exception:
+        pass
+    return None
+
+
+def _release_project_lock(conn) -> None:
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT RELEASE_LOCK(%s)", (_PROJECT_LOCK_NAME,))
+    finally:
+        conn.close()
+
+
+def _save_project_snapshot(project_id: int, snapshot: Mapping[str, Any]) -> None:
+    db.execute(
+        """
+        UPDATE ai_material_strategist_projects
+        SET data_window_json = %s,
+            data_snapshot_json = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (
+            _json_dumps(snapshot.get("window") or {}),
+            _json_dumps(snapshot),
+            project_id,
+        ),
+    )
+
+
+def _save_project_ranking(project_id: int, ranking: Mapping[str, Any]) -> None:
+    db.execute(
+        """
+        UPDATE ai_material_strategist_projects
+        SET ranking_prompt_json = %s,
+            ranking_result_json = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (
+            _json_dumps(ranking.get("prompt_debug") or {}),
+            _json_dumps(ranking),
+            project_id,
+        ),
+    )
+
+
 def _safe_float(value: Any) -> float:
     if value is None or value == "":
         return 0.0
@@ -1475,6 +1573,239 @@ def _summarize_project(products: list[dict], ranking: dict, snapshot: dict) -> d
     }
 
 
+def _selected_product_ids_from_ranking(ranking: Mapping[str, Any]) -> list[int]:
+    raw_ids = ranking.get("selected_product_ids")
+    if isinstance(raw_ids, list):
+        return [_safe_int(pid) for pid in raw_ids if _safe_int(pid)]
+
+    payload = ranking.get("ranking_result") if isinstance(ranking.get("ranking_result"), Mapping) else ranking
+    ranked_products: list[Any] = []
+    if isinstance(payload, Mapping):
+        final_output = payload.get("final_output")
+        if isinstance(final_output, Mapping):
+            ranked_products = final_output.get("ranked_products") or []
+        if not ranked_products:
+            ranked_products = payload.get("ranked_products") or []
+
+    ordered = sorted(
+        [item for item in ranked_products if isinstance(item, Mapping)],
+        key=lambda item: _safe_int(item.get("rank")) or 999,
+    )
+    return [_safe_int(item.get("product_id")) for item in ordered if _safe_int(item.get("product_id"))]
+
+
+def _ranking_from_stored(project_row: Mapping[str, Any]) -> dict[str, Any] | None:
+    stored = _json_loads(project_row.get("ranking_result_json"), {}) or {}
+    if not isinstance(stored, Mapping) or not stored:
+        return None
+    if "selected_product_ids" in stored:
+        ranking = dict(stored)
+    else:
+        prompt_debug = _json_loads(project_row.get("ranking_prompt_json"), {}) or {}
+        ranking = {
+            "selected_product_ids": _selected_product_ids_from_ranking(stored),
+            "ranking_result": dict(stored),
+            "prompt_debug": prompt_debug if isinstance(prompt_debug, Mapping) else {},
+        }
+    selected = _selected_product_ids_from_ranking(ranking)
+    if not selected:
+        return None
+    ranking["selected_product_ids"] = selected[:_PROJECT_TOP_N]
+    return ranking
+
+
+def _load_project_row(project_id: int) -> dict | None:
+    return db.query_one(
+        """
+        SELECT id, project_name, status, user_id, provider_code, model_id,
+               data_window_json, data_snapshot_json, ranking_prompt_json,
+               ranking_result_json, summary_json, progress_json, error_message,
+               started_at, finished_at, created_at, updated_at
+        FROM ai_material_strategist_projects
+        WHERE id = %s
+        """,
+        (project_id,),
+    )
+
+
+def _mark_other_running_projects_interrupted(project_id: int) -> None:
+    rows = db.query(
+        """
+        SELECT id, progress_json
+        FROM ai_material_strategist_projects
+        WHERE status = 'running' AND id <> %s
+        """,
+        (project_id,),
+    )
+    for row in rows:
+        other_id = _safe_int(row.get("id"))
+        if not other_id:
+            continue
+        progress = _normalize_progress(
+            _json_loads(row.get("progress_json"), {}) or {},
+            message="历史运行线程已中断。",
+        )
+        current_step = str(progress.get("current_step") or "snapshot")
+        progress = _progress_update(
+            progress,
+            step_key=current_step if current_step != "queued" else "snapshot",
+            step_status="failed",
+            percent=_safe_float(progress.get("percent")),
+            message=f"历史运行线程已中断，当前恢复执行项目 #{project_id}；本项目已标记失败。",
+            project_status="failed",
+            level="error",
+        )
+        db.execute(
+            """
+            UPDATE ai_material_strategist_projects
+            SET status = 'failed',
+                error_message = %s,
+                progress_json = %s,
+                finished_at = NOW(),
+                updated_at = NOW()
+            WHERE id = %s AND status = 'running'
+            """,
+            (
+                f"历史运行线程已中断，当前恢复执行项目 #{project_id}。",
+                _json_dumps(progress),
+                other_id,
+            ),
+        )
+
+
+def _prepare_project_for_run(project_id: int) -> dict:
+    row = _load_project_row(project_id)
+    if not row:
+        raise ValueError(f"AI素材军师项目不存在：{project_id}")
+    if row.get("status") == "success":
+        return row
+    progress = _normalize_progress(
+        _json_loads(row.get("progress_json"), {}) or {},
+        message="从断点恢复执行。",
+    )
+    db.execute(
+        """
+        UPDATE ai_material_strategist_projects
+        SET status = 'running',
+            error_message = NULL,
+            finished_at = NULL,
+            progress_json = %s,
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (_json_dumps(progress), project_id),
+    )
+    _mark_other_running_projects_interrupted(project_id)
+    return _load_project_row(project_id) or row
+
+
+def _snapshot_from_stored(project_row: Mapping[str, Any]) -> dict[str, Any] | None:
+    snapshot = _json_loads(project_row.get("data_snapshot_json"), {}) or {}
+    if isinstance(snapshot, Mapping) and isinstance(snapshot.get("products"), list):
+        return dict(snapshot)
+    return None
+
+
+def _select_products(candidates: list[dict], ranking: Mapping[str, Any]) -> list[dict]:
+    candidate_by_id = {_safe_int(item.get("product_id")): item for item in candidates}
+    selected = [
+        candidate_by_id[pid]
+        for pid in _selected_product_ids_from_ranking(ranking)
+        if pid in candidate_by_id
+    ]
+    if len(selected) < _PROJECT_TOP_N:
+        seen = {_safe_int(item.get("product_id")) for item in selected}
+        selected.extend(item for item in candidates if _safe_int(item.get("product_id")) not in seen)
+        selected = selected[:_PROJECT_TOP_N]
+    return selected
+
+
+def _load_existing_product_results(project_id: int) -> dict[int, dict]:
+    rows = db.query(
+        """
+        SELECT id, project_id, rank_no, product_id, product_code, product_name, score,
+               metrics_json, country_summary_json, local_materials_json,
+               mingkong_materials_json, ai_result_json, action_items_json,
+               created_at, updated_at
+        FROM ai_material_strategist_product_results
+        WHERE project_id = %s
+        ORDER BY rank_no ASC, id ASC
+        """,
+        (project_id,),
+    )
+    return {
+        _safe_int(row.get("product_id")): _serialize_product_result(row)
+        for row in rows
+        if _safe_int(row.get("product_id"))
+    }
+
+
+def _runtime_result_from_stored(row: Mapping[str, Any]) -> dict:
+    return {
+        "rank_no": _safe_int(row.get("rank_no")),
+        "product": row.get("metrics") or {},
+        "country_summary": row.get("country_summary") or [],
+        "local_materials": row.get("local_materials") or [],
+        "mingkong_materials": row.get("mingkong_materials") or [],
+        "ai_result": row.get("ai_result") or {},
+        "action_items": row.get("action_items") or [],
+    }
+
+
+def _upsert_product_result(project_id: int, item: Mapping[str, Any]) -> None:
+    product = item["product"]
+    db.execute(
+        """
+        INSERT INTO ai_material_strategist_product_results
+          (project_id, rank_no, product_id, product_code, product_name, score,
+           metrics_json, country_summary_json, local_materials_json,
+           mingkong_materials_json, ai_result_json, action_items_json)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          rank_no = VALUES(rank_no),
+          product_code = VALUES(product_code),
+          product_name = VALUES(product_name),
+          score = VALUES(score),
+          metrics_json = VALUES(metrics_json),
+          country_summary_json = VALUES(country_summary_json),
+          local_materials_json = VALUES(local_materials_json),
+          mingkong_materials_json = VALUES(mingkong_materials_json),
+          ai_result_json = VALUES(ai_result_json),
+          action_items_json = VALUES(action_items_json),
+          updated_at = NOW()
+        """,
+        (
+            project_id,
+            item["rank_no"],
+            product.get("product_id"),
+            product.get("product_code") or "",
+            product.get("product_name") or "",
+            _safe_float(product.get("score")),
+            _json_dumps(product),
+            _json_dumps(item["country_summary"]),
+            _json_dumps(item["local_materials"]),
+            _json_dumps(item["mingkong_materials"]),
+            _json_dumps(item["ai_result"]),
+            _json_dumps(item["action_items"]),
+        ),
+    )
+
+
+def _delete_unselected_product_results(project_id: int, selected_product_ids: list[int]) -> None:
+    selected_product_ids = [_safe_int(pid) for pid in selected_product_ids if _safe_int(pid)]
+    if not selected_product_ids:
+        return
+    placeholders = ",".join(["%s"] * len(selected_product_ids))
+    db.execute(
+        f"""
+        DELETE FROM ai_material_strategist_product_results
+        WHERE project_id = %s
+          AND product_id NOT IN ({placeholders})
+        """,
+        (project_id, *selected_product_ids),
+    )
+
+
 def get_running_project() -> dict | None:
     row = db.query_one(
         """
@@ -1534,7 +1865,25 @@ def create_project_record(user_id: int | None, project_name: str | None = None) 
 
 
 def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
-    progress = _initial_progress(message="后台任务已启动。")
+    lock_conn = _with_project_lock(timeout_seconds=5)
+    if lock_conn is None:
+        log.warning("AI material strategist runner lock busy project_id=%s", project_id)
+        return get_project(project_id) or {"id": project_id, "status": "running"}
+    try:
+        return _run_project_locked(project_id, user_id=user_id, run_ai=run_ai)
+    finally:
+        _release_project_lock(lock_conn)
+
+
+def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
+    project_row = _prepare_project_for_run(project_id)
+    if project_row.get("status") == "success":
+        return get_project(project_id) or {"id": project_id, "status": "success"}
+
+    progress = _normalize_progress(
+        _json_loads(project_row.get("progress_json"), {}) or {},
+        message="从断点恢复执行。",
+    )
 
     def checkpoint(
         step_key: str,
@@ -1547,6 +1896,8 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
         level: str = "info",
     ) -> None:
         nonlocal progress
+        if project_status == "running" and step_status != "failed":
+            percent = max(_safe_float(progress.get("percent")), _safe_float(percent))
         progress = _progress_update(
             progress,
             step_key=step_key,
@@ -1560,15 +1911,34 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
         _save_progress(project_id, progress)
 
     try:
-        checkpoint("snapshot", "running", 4, "读取数据窗口、产品、广告、订单和数据新鲜度。")
-        snapshot = build_data_snapshot()
-        product_count = len(snapshot.get("products") or [])
         checkpoint(
-            "snapshot",
-            "done",
-            14,
-            f"数据快照完成，读取到 {product_count} 个产品。",
+            str(progress.get("current_step") or "snapshot") if progress.get("current_step") != "queued" else "snapshot",
+            "running",
+            _safe_float(progress.get("percent")),
+            "从断点恢复执行项目，正在检查已完成阶段。",
         )
+
+        snapshot = _snapshot_from_stored(project_row)
+        if snapshot is not None:
+            product_count = len(snapshot.get("products") or [])
+            checkpoint(
+                "snapshot",
+                "done",
+                max(_safe_float(progress.get("percent")), 14),
+                f"复用已保存数据快照，包含 {product_count} 个产品。",
+            )
+        else:
+            checkpoint("snapshot", "running", 4, "读取数据窗口、产品、广告、订单和数据新鲜度。")
+            snapshot = build_data_snapshot()
+            _save_project_snapshot(project_id, snapshot)
+            product_count = len(snapshot.get("products") or [])
+            checkpoint(
+                "snapshot",
+                "done",
+                14,
+                f"数据快照完成，读取到 {product_count} 个产品。",
+            )
+        product_count = len(snapshot.get("products") or [])
         checkpoint("candidate_score", "running", 18, "按量级、ROAS、订单和广告数做规则预筛。")
         candidates = score_product_rows(snapshot["products"], limit=_MAX_AI_CANDIDATES)
         checkpoint(
@@ -1577,14 +1947,20 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
             28,
             f"规则预筛完成，{len(candidates)} 个候选进入 AI 复评。",
         )
-        checkpoint("ai_ranking", "running", 32, "调用 GOOGLEWJ Gemini 分批复评 Top 20。")
-        ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
-        candidate_by_id = {_safe_int(item.get("product_id")): item for item in candidates}
-        selected = [candidate_by_id[pid] for pid in ranking["selected_product_ids"] if pid in candidate_by_id]
-        if len(selected) < _PROJECT_TOP_N:
-            seen = {_safe_int(item.get("product_id")) for item in selected}
-            selected.extend(item for item in candidates if _safe_int(item.get("product_id")) not in seen)
-            selected = selected[:_PROJECT_TOP_N]
+
+        ranking = _ranking_from_stored(project_row)
+        if ranking is not None:
+            checkpoint(
+                "ai_ranking",
+                "done",
+                max(_safe_float(progress.get("percent")), 42),
+                "复用已保存 Top 20 排名结果，不重复调用排名模型。",
+            )
+        else:
+            checkpoint("ai_ranking", "running", 32, "调用 GOOGLEWJ Gemini 分批复评 Top 20。")
+            ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
+            _save_project_ranking(project_id, ranking)
+        selected = _select_products(candidates, ranking)
         checkpoint("ai_ranking", "done", 42, f"Top 产品选择完成，进入逐产品分析 {len(selected)} 个。")
 
         product_ids = [_safe_int(item.get("product_id")) for item in selected]
@@ -1596,6 +1972,7 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
         checkpoint("material_context", "done", 54, "素材上下文读取完成，开始逐产品 AI 分析。")
 
         results: list[dict] = []
+        existing_results = _load_existing_product_results(project_id)
         total_products = len(selected)
         for rank_no, product in enumerate(selected, start=1):
             code_key = str(product.get("product_code") or "").strip().lower()
@@ -1608,6 +1985,25 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
                 "current_product_name": product.get("product_name") or "",
             }
             start_percent = 54 + ((rank_no - 1) / max(total_products, 1)) * 30
+            existing = existing_results.get(product_id)
+            if existing and existing.get("ai_result"):
+                stored = _runtime_result_from_stored(existing)
+                stored["rank_no"] = rank_no
+                stored_product = dict(stored.get("product") or product)
+                stored_product.setdefault("product_id", product_id)
+                stored_product.setdefault("product_code", product.get("product_code") or "")
+                stored_product.setdefault("product_name", product.get("product_name") or "")
+                stored["product"] = stored_product
+                results.append(stored)
+                checkpoint(
+                    "product_analysis",
+                    "running" if rank_no < total_products else "done",
+                    54 + (rank_no / max(total_products, 1)) * 30,
+                    f"跳过第 {rank_no}/{total_products} 个产品，已存在分析结果。",
+                    product_progress=product_progress,
+                )
+                continue
+
             checkpoint(
                 "product_analysis",
                 "running",
@@ -1642,6 +2038,7 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
                 "ai_result": ai_result,
                 "action_items": action_items,
             })
+            _upsert_product_result(project_id, results[-1])
             done_percent = 54 + (rank_no / max(total_products, 1)) * 30
             checkpoint(
                 "product_analysis",
@@ -1651,33 +2048,9 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
                 product_progress=product_progress,
             )
 
-        checkpoint("persist", "running", 88, "保存 Top 产品、AI 建议、任务去重结果和操作入口。")
-        db.execute("DELETE FROM ai_material_strategist_product_results WHERE project_id = %s", (project_id,))
-        for item in results:
-            product = item["product"]
-            db.execute(
-                """
-                INSERT INTO ai_material_strategist_product_results
-                  (project_id, rank_no, product_id, product_code, product_name, score,
-                   metrics_json, country_summary_json, local_materials_json,
-                   mingkong_materials_json, ai_result_json, action_items_json)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    project_id,
-                    item["rank_no"],
-                    product.get("product_id"),
-                    product.get("product_code") or "",
-                    product.get("product_name") or "",
-                    _safe_float(product.get("score")),
-                    _json_dumps(product),
-                    _json_dumps(item["country_summary"]),
-                    _json_dumps(item["local_materials"]),
-                    _json_dumps(item["mingkong_materials"]),
-                    _json_dumps(item["ai_result"]),
-                    _json_dumps(item["action_items"]),
-                ),
-            )
+        checkpoint("persist", "running", 88, "整理已落库结果，清理不在本轮 Top 20 内的旧结果。")
+        _delete_unselected_product_results(project_id, product_ids)
+        results.sort(key=lambda item: _safe_int(item.get("rank_no")))
 
         checkpoint("persist", "done", 94, "产品结果保存完成，开始汇总结论。")
         checkpoint("summary", "running", 96, "汇总 P0/P1、主动作和数据质量。")
@@ -1706,15 +2079,9 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
             """,
             (
                 _json_dumps(snapshot.get("window") or {}),
-                _json_dumps({
-                    "generated_at": snapshot.get("generated_at"),
-                    "data_quality": snapshot.get("data_quality"),
-                    "candidate_count": len(candidates),
-                    "product_count": len(snapshot.get("products") or []),
-                    "top_candidate_inputs": [_rank_input(item) for item in candidates[:_MAX_AI_CANDIDATES]],
-                }),
+                _json_dumps(snapshot),
                 _json_dumps(ranking.get("prompt_debug") or {}),
-                _json_dumps(ranking.get("ranking_result") or {}),
+                _json_dumps(ranking),
                 _json_dumps(summary),
                 _json_dumps(progress),
                 project_id,
