@@ -493,6 +493,7 @@
 .ppd-tag-partial { background: #fef9c3; color: #854d0e; }
 .ppd-tag-site-newjoyloo { background: #dbeafe; color: #1e40af; }
 .ppd-tag-site-omurio { background: #cffafe; color: #155e75; }
+.ppd-tag-site-cozywint { background: #e0f2fe; color: #0369a1; }
 /* 估算列的小提示：在数字右边的小字 */
 .ppd-num .ppd-est-mark {
   margin-left: 3px;
@@ -900,6 +901,7 @@
         <option value="">全部店铺</option>
         <option value="newjoy">newjoyloo</option>
         <option value="omurio">Omurio</option>
+        <option value="cozywint">Cozywint</option>
       </select>
     </label>
     <label data-filter-control="country">
@@ -2601,7 +2603,7 @@
       return;
     }
     var html = capped.map(function(o) {
-      var siteSlug = o.site === 'newjoyloo' ? 'newjoyloo' : (o.site === 'Omurio' ? 'omurio' : 'other');
+      var siteSlug = o.site === 'newjoyloo' ? 'newjoyloo' : (o.site === 'Omurio' ? 'omurio' : (o.site === 'Cozywint' ? 'cozywint' : 'other'));
       return '<tr>'
         + '<td>' + escHtml((o.paid_at || '').replace('T', ' ').slice(0, 19)) + '</td>'
         + '<td>' + escHtml(o.dxm_package_id || '') + '</td>'
@@ -3153,7 +3155,7 @@
     (sites || []).forEach(function(s) {
       var card = document.createElement('div');
       card.className = 'ppd-site-card';
-      var siteSlug = s.site === 'newjoyloo' ? 'newjoyloo' : (s.site === 'Omurio' ? 'omurio' : 'other');
+      var siteSlug = s.site === 'newjoyloo' ? 'newjoyloo' : (s.site === 'Omurio' ? 'omurio' : (s.site === 'Cozywint' ? 'cozywint' : 'other'));
       card.innerHTML =
         '<h4><span class="ppd-site-tag ppd-tag-site-' + siteSlug + '">' + escHtml(s.site) + '</span>'
         + '<span style="color:var(--text-user-badge);font-weight:400;font-size:12px;">' + (s.orders || 0) + ' 单 · ' + (s.units || 0) + ' 件</span></h4>'
@@ -3317,7 +3319,7 @@
     $('orders-count').textContent = '(' + filtered.length + ' / ' + orders.length + ')';
     var tbody = document.querySelector('#ppd-orders-table tbody');
     var html = sorted.map(function(o) {
-      var siteSlug = o.site === 'newjoyloo' ? 'newjoyloo' : (o.site === 'Omurio' ? 'omurio' : 'other');
+      var siteSlug = o.site === 'newjoyloo' ? 'newjoyloo' : (o.site === 'Omurio' ? 'omurio' : (o.site === 'Cozywint' ? 'cozywint' : 'other'));
       var feeClass = o.shopify_fee_source === 'real' ? 'ppd-tag-real' : 'ppd-tag-est';
       var feeLabel = o.shopify_fee_source === 'real' ? '真实' : '估算';
       // 成本来源标签 + 估算字段
@@ -3482,7 +3484,7 @@
     if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.initAll();
     syncAnalyticsDateRangePicker();
     var wantSite = urlParams.get('site_code');
-    if (wantSite === 'newjoy' || wantSite === 'omurio') {
+    if (wantSite === 'newjoy' || wantSite === 'omurio' || wantSite === 'cozywint') {
       siteSelect.value = wantSite;
     }
 

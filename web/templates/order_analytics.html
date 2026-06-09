@@ -3763,6 +3763,7 @@
           <option value="">全部店铺</option>
           <option value="newjoy">NewJoy</option>
           <option value="omurio">Omurio</option>
+          <option value="cozywint">Cozywint</option>
         </select>
       </div>
     </div>
@@ -8258,7 +8259,7 @@
     var body = document.getElementById('weeklyAiStoreBody');
     if (!body) return;
     body.innerHTML = '';
-    [['all', '全局'], ['newjoy', 'Newjoy'], ['omurio', 'Omurio']].forEach(function(pair) {
+    [['all', '全局'], ['newjoy', 'Newjoy'], ['omurio', 'Omurio'], ['cozywint', 'Cozywint']].forEach(function(pair) {
       var row = weeklyAiSumRows(stores[pair[0]] || []);
       weeklyAiAppendRow(body, [
         pair[1],
@@ -8736,7 +8737,7 @@
       body: JSON.stringify({
         start_date: '2026-01-01',
         end_date: '2026-04-28',
-        site_codes: ['newjoy', 'omurio'],
+        site_codes: ['newjoy', 'omurio', 'cozywint'],
         dry_run: dryRun
       })
     })
@@ -8845,7 +8846,7 @@
   ];
   var metaAdAccountsState = {
     accounts: [],
-    stores: ['newjoy', 'omurio'],
+    stores: ['newjoy', 'omurio', 'cozywint'],
     columnPresetChoices: META_AD_COLUMN_PRESET_FALLBACK_CHOICES,
   };
   var metaAdSyncState = { account: null, jobId: '', pollTimer: null };
@@ -8877,7 +8878,7 @@
       .then(function(r) { return r.json().then(function(d) { return { status: r.status, body: d }; }); })
       .then(function(res) {
         if (res.status >= 400) throw new Error((res.body && (res.body.detail || res.body.error)) || '加载失败');
-        metaAdAccountsState.stores = res.body.available_store_codes || ['newjoy', 'omurio'];
+        metaAdAccountsState.stores = res.body.available_store_codes || ['newjoy', 'omurio', 'cozywint'];
         metaAdAccountsState.columnPresetChoices = res.body.column_preset_choices || META_AD_COLUMN_PRESET_FALLBACK_CHOICES;
         metaAdAccountsState.accounts = res.body.accounts || [];
         renderMetaAdAccounts();
@@ -11965,6 +11966,7 @@
           <option value="">请选择店铺</option>
           <option value="newjoyloo">newjoyloo</option>
           <option value="Omurio">Omurio</option>
+          <option value="Cozywint">Cozywint</option>
         </select>
       </label>
       <label>
@@ -11999,6 +12001,7 @@
           <option value="">全部</option>
           <option value="newjoy">newjoyloo</option>
           <option value="omurio">Omurio</option>
+          <option value="cozywint">Cozywint</option>
         </select>
       </label>
       <div class="ppr-dialog-row">

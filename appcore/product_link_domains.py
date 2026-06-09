@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from typing import Any
 
 
-DEFAULT_LINK_DOMAINS: tuple[str, ...] = ("newjoyloo.com", "omurio.com")
+DEFAULT_LINK_DOMAINS: tuple[str, ...] = ("newjoyloo.com", "omurio.com", "cozywint.com")
 DEFAULT_PRODUCT_LINK_DOMAINS: tuple[str, ...] = ("newjoyloo.com",)
 
 _DOMAIN_RE = re.compile(

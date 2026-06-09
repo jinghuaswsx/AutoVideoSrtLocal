@@ -278,7 +278,7 @@ def api_import_payments_csv():
 
     Form 字段：
       - file: CSV 文件（必填）
-      - store_code: 店铺标识（newjoyloo / Omurio）（必填，拼到 source_csv 前缀）
+      - store_code: 店铺标识（newjoyloo / Omurio / Cozywint）（必填，拼到 source_csv 前缀）
     """
     f = request.files.get("file")
     if f is None or not f.filename:
@@ -292,7 +292,7 @@ def api_import_payments_csv():
             build_product_profit_report_error_response(
                 "invalid store_code",
                 400,
-                hint="需要 1-32 个字母/数字/下划线，例如 newjoyloo / Omurio",
+                hint="需要 1-32 个字母/数字/下划线，例如 newjoyloo / Omurio / cozywint",
             )
         )
 

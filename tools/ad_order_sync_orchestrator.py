@@ -23,7 +23,7 @@ TIMEZONE = "Asia/Shanghai"
 META_CUTOVER_HOUR_BJ = 16
 TASK_PREVIOUS_BUSINESS_DAY = "ad_order_previous_business_day_sync"
 TASK_PREVIOUS_WEEK = "ad_order_previous_week_sync"
-DEFAULT_SITE_CODES = ["newjoy", "omurio"]
+DEFAULT_SITE_CODES = ["newjoy", "omurio", "cozywint"]
 
 
 def bj_now() -> datetime:

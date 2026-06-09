@@ -56,7 +56,7 @@ _META_PURCHASE_ROAS_CORRECTION_FACTOR = 1.5
 
 # 实时大盘店铺筛选：默认双店，site_codes 取值必须命中此白名单。
 # 详细设计：docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md
-_DEFAULT_SITE_CODES: tuple[str, ...] = ("newjoy", "omurio")
+_DEFAULT_SITE_CODES: tuple[str, ...] = ("newjoy", "omurio", "cozywint")
 _ALLOWED_SITE_CODES: frozenset[str] = frozenset(_DEFAULT_SITE_CODES)
 _DEFAULT_STORE_SCOPE = ",".join(_DEFAULT_SITE_CODES)
 _BERLIN_TIMEZONE = "Europe/Berlin"
@@ -93,7 +93,7 @@ def _normalize_site_codes(site_codes: Any) -> tuple[str, ...]:
 
 
 def _site_codes_in_sql(site_codes: tuple[str, ...], column: str = "site_code") -> str:
-    """渲染 ``<column> IN ('newjoy', 'omurio')`` 片段。
+    """渲染 ``<column> IN ('newjoy', 'omurio', 'cozywint')`` 片段。
 
     ``site_codes`` 必须先经 ``_normalize_site_codes`` 校验，因此字面量拼接是安全的；
     保留与历史 SQL 字符串一致（默认值场景下生成的 SQL 与改造前完全相同）。

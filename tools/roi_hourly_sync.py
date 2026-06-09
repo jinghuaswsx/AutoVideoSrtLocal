@@ -38,7 +38,7 @@ from appcore.meta_ad_accounts import (
 from appcore.meta_ads_cdp import DEFAULT_META_ADS_CDP_URL
 
 TIMEZONE = "Asia/Shanghai"
-STORE_SCOPE = "newjoy,omurio"
+STORE_SCOPE = "newjoy,omurio,cozywint"
 AD_PLATFORM_SCOPE = "meta"
 META_CUTOVER_HOUR_BJ = 16
 META_AD_EXPORT_SCRIPT = REPO_ROOT / "scripts" / "run_meta_ads_backfill_range.py"
@@ -181,7 +181,7 @@ def _run_dxm_recent_import(window_start: datetime, window_end: datetime, *, max_
         item = dxm_import.run_import_from_server_browser(
             start_date_text=day.isoformat(),
             end_date_text=day.isoformat(),
-            site_codes=["newjoy", "omurio"],
+            site_codes=["newjoy", "omurio", "cozywint"],
             states=[""],
             dxm_env="DXM03-RJC",
             dry_run=False,
@@ -1475,7 +1475,7 @@ def _upsert_order_hour(run_id: int, hour_start: datetime, hour_end: datetime) ->
         "MAX(" + order_time_expr + ") AS last_order_at, "
         "MAX(updated_at) AS source_updated_at "
         "FROM dianxiaomi_order_lines "
-        "WHERE site_code IN ('newjoy', 'omurio') "
+        "WHERE site_code IN ('newjoy', 'omurio', 'cozywint') "
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s",
         (hour_start, hour_end),
     ) or {}
@@ -1483,7 +1483,7 @@ def _upsert_order_hour(run_id: int, hour_start: datetime, hour_end: datetime) ->
         "SELECT COALESCE(SUM(s.ship_per_pkg), 0) AS shipping_revenue_usd "
         "FROM (SELECT dxm_package_id, MAX(COALESCE(ship_amount, 0)) AS ship_per_pkg "
         "      FROM dianxiaomi_order_lines "
-        "      WHERE site_code IN ('newjoy', 'omurio') "
+        "      WHERE site_code IN ('newjoy', 'omurio', 'cozywint') "
         "      AND " + order_time_expr + " >= %s AND " + order_time_expr + " < %s "
         "      GROUP BY dxm_package_id) s",
         (hour_start, hour_end),
@@ -1656,7 +1656,7 @@ def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
         "SUM(COALESCE(line_amount, 0)) AS order_revenue_usd, "
         "MAX(" + order_time_expr + ") AS last_order_at "
         "FROM dianxiaomi_order_lines "
-        "WHERE site_code IN ('newjoy', 'omurio') "
+        "WHERE site_code IN ('newjoy', 'omurio', 'cozywint') "
         "AND " + order_time_expr + " >= %s AND " + order_time_expr + " <= %s",
         (day_start, snapshot_at),
     ) or {}
@@ -1664,7 +1664,7 @@ def _insert_daily_snapshot(run_id: int, snapshot_at: datetime) -> int:
         "SELECT COALESCE(SUM(s.ship_per_pkg), 0) AS shipping_revenue_usd "
         "FROM (SELECT dxm_package_id, MAX(COALESCE(ship_amount, 0)) AS ship_per_pkg "
         "      FROM dianxiaomi_order_lines "
-        "      WHERE site_code IN ('newjoy', 'omurio') "
+        "      WHERE site_code IN ('newjoy', 'omurio', 'cozywint') "
         "      AND " + order_time_expr + " >= %s AND " + order_time_expr + " <= %s "
         "      GROUP BY dxm_package_id) s",
         (day_start, snapshot_at),

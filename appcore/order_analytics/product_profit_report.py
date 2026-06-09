@@ -54,6 +54,7 @@ def query_one(*args, **kwargs):
 SITE_FULL_NAME: dict[str, str] = {
     "newjoy": "newjoyloo",
     "omurio": "Omurio",
+    "cozywint": "Cozywint",
 }
 
 

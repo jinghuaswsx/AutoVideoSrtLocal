@@ -342,7 +342,7 @@ def test_get_dashboard_month_view_happy_path(monkeypatch):
 
 
 def test_product_dashboard_frontend_displays_total_units(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics", follow_redirects=True)
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)

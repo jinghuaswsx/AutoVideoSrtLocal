@@ -104,7 +104,7 @@ def test_run_one_business_day_imports_orders_then_meta_daily(monkeypatch):
     assert [item[0] for item in calls] == ["order", "meta"]
     assert calls[0][1]["start_date_text"] == "2026-06-02"
     assert calls[0][1]["end_date_text"] == "2026-06-03"
-    assert calls[0][1]["site_codes"] == ["newjoy", "omurio"]
+    assert calls[0][1]["site_codes"] == ["newjoy", "omurio", "cozywint"]
     assert calls[0][1]["dxm_env"] == "DXM03-RJC"
     assert calls[0][1]["date_filter_mode"] == "recent-scan"
     assert calls[1][1] == {
