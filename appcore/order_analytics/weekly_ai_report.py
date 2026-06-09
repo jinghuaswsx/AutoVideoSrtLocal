@@ -64,6 +64,7 @@ _STORE_SCOPES: tuple[tuple[str, list[str] | None], ...] = (
     ("all", None),
     ("newjoy", ["newjoy"]),
     ("omurio", ["omurio"]),
+    ("cozywint", ["cozywint"]),
 )
 _STATUS_RANK = {
     "ok": 0,
@@ -3376,7 +3377,7 @@ def build_workflow_debug(
             "title": "读取每日实时大盘",
             "kind": "data",
             "status": "success" if metrics.get("daily_global_count") else "ready",
-            "summary": f"按 all/newjoy/omurio 拉取每日 KPI，共 {metrics.get('daily_global_count', 0)} 个业务日。",
+            "summary": f"按 all/newjoy/omurio/cozywint 拉取每日 KPI，共 {metrics.get('daily_global_count', 0)} 个业务日。",
             "input_keys": ["period", "site_codes"],
             "output_keys": ["daily_global", "daily_by_store", "data_quality"],
             "metrics": {"store_scopes": store_scopes},

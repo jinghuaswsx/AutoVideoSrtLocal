@@ -63,6 +63,7 @@ _META_AD_NUMERIC_FIELDS: dict[str, tuple[str, str]] = {
 _DIANXIAOMI_SITE_DOMAINS: dict[str, tuple[str, ...]] = {
     "newjoy": ("newjoyloo.com",),
     "omurio": ("omurio.com", "omurio"),
+    "cozywint": ("cozywint.com", "cozywint"),
 }
 _DIANXIAOMI_EXCLUDED_DOMAINS = ("smartgearx.com", "smartgearx")
 

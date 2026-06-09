@@ -316,6 +316,7 @@ def _audit_order_analytics_action(
 _REALTIME_STORE_LABELS = {
     "newjoy": "Newjoy",
     "omurio": "Omurio",
+    "cozywint": "Cozywint",
 }
 
 
@@ -1305,11 +1306,11 @@ def dianxiaomi_import_batches():
 @login_required
 @permission_required("data_analytics")
 def dianxiaomi_import():
-    """从店小秘订单接口抓取 NewJoy / omurio 订单明细。"""
+    """从店小秘订单接口抓取 NewJoy / omurio / cozywint 订单明细。"""
     payload = request.get_json(silent=True) or {}
     start_date = (payload.get("start_date") or "2026-01-01").strip()
     end_date = (payload.get("end_date") or "2026-04-28").strip()
-    site_codes = payload.get("site_codes") or ["newjoy", "omurio"]
+    site_codes = payload.get("site_codes") or ["newjoy", "omurio", "cozywint"]
     states = payload.get("states") or None
     dry_run = bool(payload.get("dry_run", True))
     try:
