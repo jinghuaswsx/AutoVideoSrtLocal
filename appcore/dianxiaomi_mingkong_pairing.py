@@ -6,8 +6,12 @@ import json
 import logging
 import os
 import re
+import subprocess
+import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Callable
 
 from appcore.browser_automation_lock import browser_automation_lock
@@ -20,10 +24,12 @@ DXM_BASE_URL = "https://www.dianxiaomi.com"
 DEFAULT_DXM02_CDP_URL = "http://127.0.0.1:9223"
 DEFAULT_DXM03_CDP_URL = "http://127.0.0.1:9225"
 DEFAULT_DXM03_FULL_CID = "1750880-"
+DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = 420
 
 DXM_PRODUCT_API = "/api/dxmCommodityProduct/pageList.json"
 DXM_VIEW_COMMODITY_API = "/api/dxmCommodityProduct/viewDxmCommodityProduct.json"
 DXM_ADD_COMMODITY_API = "/api/dxmCommodityProduct/addCommodityProduct.json"
+DXM_ADD_COMMODITY_GROUP_API = "/api/dxmCommodityProduct/addCommodityProductGroup.json"
 DXM_ADD_COMMODITY_BZ_API = "/api/dxmCommodityProduct/addCommProBz.json"
 DXM_UPDATE_SOURCE_URL_API = "/api/dxmCommodityProduct/updateUrl.json"
 DXM_CHILD_SKU_INFO_API = "/api/dxmCommodityProduct/getChildSkuInfo.json"
@@ -35,6 +41,89 @@ PAIR_CONFIRM_API = "/api/dxmAlibabaProductPair/confirmPairOpt.json"
 
 class DianxiaomiPairingError(RuntimeError):
     """Raised when DXM03 cannot be reached or returns an unexpected response."""
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _subprocess_timeout_seconds() -> int:
+    raw = os.getenv("MINGKONG_PAIRING_SUBPROCESS_TIMEOUT_SECONDS") or ""
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
+
+
+def _run_pairing_subprocess(operation: str, payload: dict[str, Any]) -> Any:
+    project_root = _project_root()
+    timeout_seconds = _subprocess_timeout_seconds()
+    env = os.environ.copy()
+    env["PYTHONPATH"] = (
+        str(project_root)
+        if not env.get("PYTHONPATH")
+        else f"{project_root}{os.pathsep}{env['PYTHONPATH']}"
+    )
+    with tempfile.TemporaryDirectory(prefix="mingkong-pairing-") as tmpdir:
+        output_path = Path(tmpdir) / "result.json"
+        command = [
+            sys.executable,
+            "-m",
+            "appcore.dianxiaomi_mingkong_pairing",
+            "--operation",
+            operation,
+            "--output",
+            str(output_path),
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                input=json.dumps(payload, ensure_ascii=False, default=str),
+                text=True,
+                capture_output=True,
+                cwd=project_root,
+                env=env,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise DianxiaomiPairingError(
+                f"{operation} subprocess timed out after {timeout_seconds}s"
+            ) from exc
+
+        envelope: dict[str, Any] = {}
+        if output_path.exists():
+            try:
+                envelope = json.loads(output_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise DianxiaomiPairingError(
+                    f"{operation} subprocess returned invalid JSON"
+                ) from exc
+
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()
+            detail = envelope.get("error") or stderr or f"exit {completed.returncode}"
+            raise DianxiaomiPairingError(f"{operation} subprocess failed: {detail}")
+        if not envelope:
+            stdout = (completed.stdout or "").strip()
+            detail = stdout or "empty subprocess result"
+            raise DianxiaomiPairingError(f"{operation} subprocess failed: {detail}")
+        if not envelope.get("ok"):
+            detail = envelope.get("error") or envelope.get("message") or "unknown error"
+            raise DianxiaomiPairingError(f"{operation} subprocess failed: {detail}")
+        return envelope.get("result")
+
+
+def _pairing_subprocess_entrypoint(operation: str, payload: dict[str, Any]) -> Any:
+    if operation == "replicate":
+        return _replicate_mingkong_skus_to_dxm03_impl(
+            payload.get("product") or {},
+            payload.get("sku_rows") or [],
+            selections=payload.get("selections"),
+            cdp_url=payload.get("cdp_url"),
+            source_cdp_url=payload.get("source_cdp_url"),
+        )
+    raise DianxiaomiPairingError(f"unsupported pairing subprocess operation: {operation}")
 
 
 def _run_playwright_operation(
@@ -430,7 +519,102 @@ def _replicated_commodity_form(
     packs = _strip_dxm_identity_fields(_source_packs_from_detail(source_detail))
     if packs:
         form["dxmProductPacks"] = json.dumps(packs, ensure_ascii=False)
-    return {"obj": json.dumps(form, ensure_ascii=False)}
+    return _commodity_save_payload(form)
+
+
+def _commodity_save_payload(form: dict[str, Any]) -> dict[str, str]:
+    return {
+        "obj": json.dumps(form, ensure_ascii=False),
+        "pid": "",
+        "vid": "",
+        "orderStatus": "",
+        "shopId": "-1",
+        "pt": "-1",
+        "orderId": "",
+        "orderWarehoseId": "-1",
+        "orderCount": "0",
+    }
+
+
+def _replicated_combo_form(
+    source_detail: dict[str, Any],
+    *,
+    target_sku: str,
+    target_sku_code: str,
+    target_components: list[dict[str, Any]],
+    purchase_url: str = "",
+    fallback_name: str = "",
+    fallback_name_en: str = "",
+) -> dict[str, str]:
+    source_product = _source_commodity_from_detail(source_detail)
+    child_ids = ",".join(
+        str(component.get("target_product_id") or "").strip()
+        for component in target_components
+        if str(component.get("target_product_id") or "").strip()
+    )
+    child_nums = ",".join(
+        str(int(component.get("quantity") or 1))
+        for component in target_components
+        if str(component.get("target_product_id") or "").strip()
+    )
+    if not child_ids or not child_nums:
+        raise DianxiaomiPairingError("combo sku replication requires target components")
+
+    def text_field(key: str, default: Any = "") -> str:
+        value = source_product.get(key)
+        if value is None:
+            value = default
+        return str(value)
+
+    commodity = {
+        "productId": "",
+        "name": str(source_product.get("name") or fallback_name or target_sku or "").strip(),
+        "nameEn": str(source_product.get("nameEn") or fallback_name_en or "").strip(),
+        "skuCode": str(target_sku_code or "").strip(),
+        "sku": str(target_sku or "").strip(),
+        "productVariationStr": "",
+        "sbmId": "",
+        "agentId": "0",
+        "developmentId": "0",
+        "salesId": "0",
+        "weight": source_product.get("weight") or "",
+        "allowWeightError": source_product.get("allowWeightError") or "",
+        "price": text_field("price"),
+        "sourceUrl": str(purchase_url or source_product.get("sourceUrl") or "").strip(),
+        "imgUrl": str(source_product.get("imgUrl") or "").strip(),
+        "isUsed": 1,
+        "fullCid": dxm03_default_full_cid(),
+        "productType": str(source_product.get("productType") or "100"),
+        "length": source_product.get("length") or 0,
+        "width": source_product.get("width") or 0,
+        "height": source_product.get("height") or 0,
+        "qcType": source_product.get("qcType") or 0,
+        "productStatus": text_field("productStatus"),
+        "childIds": child_ids,
+        "childNums": child_nums,
+        "processFee": source_product.get("processFee") or 0,
+        "qcContent": "",
+        "qcImgStr": "",
+        "qcImgNum": 0,
+        "groupState": "1",
+        "ncm": str(source_product.get("ncm") or ""),
+        "cest": str(source_product.get("cest") or ""),
+        "unit": str(source_product.get("unit") or ""),
+        "origin": str(source_product.get("origin") or "0"),
+    }
+    form: dict[str, Any] = {
+        "dxmCommodityProduct": json.dumps(commodity, ensure_ascii=False),
+        "dxmProductCustoms": json.dumps(
+            _strip_dxm_identity_fields(_source_customs_from_detail(source_detail)) or {},
+            ensure_ascii=False,
+        ),
+        "warehouseIdList": "",
+        "supplierProductRelationMapList": json.dumps([], ensure_ascii=False),
+        "dxmProductPacks": json.dumps([], ensure_ascii=False),
+        "imageUrls": "",
+        "imgUrl": commodity["imgUrl"],
+    }
+    return _commodity_save_payload(form)
 
 
 def _add_replicated_commodity(ctx, form_payload: dict[str, Any]) -> dict[str, Any]:
@@ -449,6 +633,16 @@ def _add_replicated_commodity(ctx, form_payload: dict[str, Any]) -> dict[str, An
     if last_error:
         raise last_error
     raise DianxiaomiPairingError("add replicated commodity failed")
+
+
+def _add_replicated_combo_commodity(ctx, form_payload: dict[str, Any]) -> dict[str, Any]:
+    payload = _post_form(ctx, DXM_ADD_COMMODITY_GROUP_API, form_payload)
+    _ensure_success(payload, "add replicated combo commodity")
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    data_code = data.get("code")
+    if data_code not in (0, "0", 1, "1", None):
+        raise DianxiaomiPairingError(data.get("msg") or "add replicated combo commodity failed")
+    return payload
 
 
 def _candidate_text(item: dict[str, Any]) -> str:
@@ -626,12 +820,17 @@ def _open_dxm_context(cdp_url: str):
 
     playwright = sync_playwright().start()
     try:
-        browser = playwright.chromium.connect_over_cdp(cdp_url)
-        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        browser, ctx = _connect_dxm_context(playwright, cdp_url)
         return playwright, browser, ctx
     except Exception:
         playwright.stop()
         raise
+
+
+def _connect_dxm_context(playwright, cdp_url: str):
+    browser = playwright.chromium.connect_over_cdp(cdp_url)
+    ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+    return browser, ctx
 
 
 def _open_dxm03_context(cdp_url: str):
@@ -1192,6 +1391,21 @@ def replicate_mingkong_skus_to_dxm03(
     update_product_fn=None,
     force_isolated_thread: bool | None = None,
 ) -> dict[str, Any]:
+    if (
+        force_isolated_thread is None
+        and replace_product_skus_fn is None
+        and update_product_fn is None
+    ):
+        return _run_pairing_subprocess(
+            "replicate",
+            {
+                "product": product,
+                "sku_rows": sku_rows,
+                "selections": selections,
+                "cdp_url": cdp_url,
+                "source_cdp_url": source_cdp_url,
+            },
+        )
     return _run_playwright_operation(
         "dxm03_mingkong_sku_replicate",
         lambda: _replicate_mingkong_skus_to_dxm03_impl(
@@ -1242,9 +1456,9 @@ def _replicate_mingkong_skus_to_dxm03_impl(
         command=str(product.get("product_code") or product.get("id") or ""),
     ):
         source_playwright, source_browser, source_ctx = _open_dxm02_context(source_url)
-        target_playwright = target_browser = None
+        target_browser = None
         try:
-            target_playwright, target_browser, target_ctx = _open_dxm03_context(target_url)
+            target_browser, target_ctx = _connect_dxm_context(source_playwright, target_url)
             for row in rows_with_sku:
                 sku = str(row.get("dianxiaomi_sku") or "").strip()
                 variant_id = str(row.get("shopify_variant_id") or "").strip()
@@ -1285,11 +1499,97 @@ def _replicate_mingkong_skus_to_dxm03_impl(
                         results.append(item_result)
                         continue
                     if source_commodity.get("is_combo"):
+                        source_components = _search_child_sku_info(
+                            source_ctx,
+                            source_commodity["id"],
+                        )
+                        target_components: list[dict[str, Any]] = []
+                        missing_components: list[str] = []
+                        for component in source_components:
+                            component_sku = str(component.get("sku") or "").strip()
+                            target_component = _search_commodity(target_ctx, component_sku)
+                            if not target_component or not target_component.get("id"):
+                                missing_components.append(component_sku)
+                                continue
+                            target_components.append({
+                                **component,
+                                "target_product_id": target_component["id"],
+                                "target_commodity": target_component,
+                            })
+                        item_result["combo_components"] = target_components
+                        if not source_components:
+                            item_result.update({
+                                "status": "blocked",
+                                "error": "missing_combo_components",
+                                "message": "DXM02 组合 SKU 未返回组件，无法复刻",
+                            })
+                            results.append(item_result)
+                            continue
+                        if missing_components:
+                            item_result.update({
+                                "status": "blocked",
+                                "error": "missing_target_combo_components",
+                                "message": "DXM03 缺少组合组件 SKU："
+                                + "，".join(missing_components),
+                            })
+                            results.append(item_result)
+                            continue
+                        source_detail = _view_commodity_detail(
+                            source_ctx,
+                            source_commodity["id"],
+                            account_label="DXM02",
+                        )
+                        purchase_url = _purchase_url_for_selection(
+                            product,
+                            row,
+                            selection,
+                            source_commodity,
+                        )
+                        desired_sku_code = (
+                            row.get("dianxiaomi_sku_code")
+                            or source_commodity.get("sku_code")
+                            or _source_commodity_from_detail(source_detail).get("skuCode")
+                            or sku
+                        )
+                        final_sku_code, strategy = _target_sku_code(
+                            target_ctx,
+                            str(desired_sku_code or ""),
+                            target_sku=sku,
+                        )
+                        form_payload = _replicated_combo_form(
+                            source_detail,
+                            target_sku=sku,
+                            target_sku_code=final_sku_code,
+                            target_components=target_components,
+                            purchase_url=purchase_url,
+                            fallback_name=(
+                                row.get("dianxiaomi_name")
+                                or source_commodity.get("name")
+                                or ""
+                            ),
+                            fallback_name_en=product.get("shopify_title") or "",
+                        )
+                        _add_replicated_combo_commodity(target_ctx, form_payload)
+                        created = _wait_for_commodity(target_ctx, sku)
+                        if not created:
+                            item_result.update({
+                                "status": "error",
+                                "error": "dxm03_combo_create_not_visible",
+                                "message": "DXM03 组合创建接口返回成功，但商品管理暂未搜索到该 SKU",
+                            })
+                            results.append(item_result)
+                            continue
                         item_result.update({
-                            "status": "blocked",
-                            "error": "combo_replication_not_supported",
-                            "message": "组合 SKU 需要组件先复刻，首版不自动创建外层组合 SKU",
+                            "status": "created",
+                            "message": "已从明空 DXM02 复刻组合 SKU 到 DXM03",
+                            "commodity": created,
+                            "purchase_1688_url": purchase_url,
+                            "dxm03_sku_code": created.get("sku_code") or final_sku_code,
+                            "sku_code_strategy": strategy,
                         })
+                        if purchase_url and not first_purchase_url:
+                            first_purchase_url = purchase_url
+                        successful_by_sku[sku] = item_result
                         results.append(item_result)
                         continue
 
@@ -1354,8 +1654,6 @@ def _replicate_mingkong_skus_to_dxm03_impl(
                     results.append(item_result)
         finally:
             _close_dxm03_context(source_playwright, source_browser)
-            if target_playwright is not None and target_browser is not None:
-                _close_dxm03_context(target_playwright, target_browser)
 
     if successful_by_sku:
         medias_module = None
@@ -1653,3 +1951,36 @@ def _confirm_dxm03_pairing_impl(
         "items": results,
         "summary": summary,
     }
+
+
+def _main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run Mingkong pairing Playwright operations.")
+    parser.add_argument("--operation", required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args(argv)
+
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+        result = _pairing_subprocess_entrypoint(args.operation, payload)
+        envelope = {"ok": True, "result": result}
+        exit_code = 0
+    except Exception as exc:  # noqa: BLE001 - subprocess must preserve error text
+        log.exception("mingkong pairing subprocess failed operation=%s", args.operation)
+        envelope = {
+            "ok": False,
+            "error": str(exc),
+            "error_type": exc.__class__.__name__,
+        }
+        exit_code = 1
+
+    Path(args.output).write_text(
+        json.dumps(envelope, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

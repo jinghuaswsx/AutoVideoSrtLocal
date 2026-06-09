@@ -66,6 +66,70 @@
     return map[action] || action || '—';
   }
 
+  function taskStatusLabel(task) {
+    if (!task) return '';
+    if (task.status_label) return task.status_label;
+    const group = task.status_group || task.display_high_level || task.status;
+    const map = {
+      in_progress: '进行中',
+      pending: '待处理',
+      completed: '已完成',
+      cancelled: '已取消',
+      done: '已完成',
+      all_done: '已完成',
+      blocked: '待处理',
+      assigned: '进行中',
+      review: '进行中',
+    };
+    return map[group] || group || '';
+  }
+
+  function taskRank(task) {
+    const map = { in_progress: 0, pending: 1, completed: 2, cancelled: 3 };
+    return map[task && task.status_group] == null ? 9 : map[task.status_group];
+  }
+
+  function collectProductTasks(item) {
+    const seen = new Set();
+    const tasks = [];
+    function add(task) {
+      const id = Number(task && (task.task_id || task.id) || 0);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      tasks.push(task);
+    }
+    (item.country_summary || []).forEach((country) => {
+      (country.tasks || []).forEach(add);
+      add(country.blocking_task);
+      add(country.cancelled_task);
+    });
+    (item.action_items || []).forEach((action) => {
+      if (action.type === 'view_task') add(action.task || action);
+    });
+    return tasks.sort((a, b) => {
+      const rank = taskRank(a) - taskRank(b);
+      if (rank !== 0) return rank;
+      return Number(b.task_id || b.id || 0) - Number(a.task_id || a.id || 0);
+    });
+  }
+
+  function renderTaskLink(task, compact) {
+    const id = Number(task && (task.task_id || task.id) || 0);
+    if (!id) return '';
+    const url = task.task_url || task.url || ('/tasks/detail/' + id);
+    const label = taskStatusLabel(task);
+    const text = compact ? ('#' + id) : ('任务 #' + id);
+    return `<a class="aims-task-link ${esc(task.status_group || '')}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(text)}${label ? ` · ${esc(label)}` : ''}</a>`;
+  }
+
+  function renderTaskBadges(item, limit) {
+    const tasks = collectProductTasks(item);
+    if (!tasks.length) return '—';
+    const shown = tasks.slice(0, limit || 3).map((task) => renderTaskLink(task, false)).join('');
+    const extra = tasks.length > (limit || 3) ? `<span class="aims-chip">+${esc(tasks.length - (limit || 3))}</span>` : '';
+    return `<div class="aims-task-list">${shown}${extra}</div>`;
+  }
+
   function showToast(message) {
     if (!els.toast) return;
     els.toast.textContent = message;
@@ -302,10 +366,13 @@
       const cells = countries.map((code) => {
         const country = byCode[code] || {};
         const cls = country.delivery_status || 'never';
+        const task = country.blocking_task || country.cancelled_task;
+        const taskTitle = task ? ` · 任务 #${task.task_id} ${taskStatusLabel(task)}` : '';
         return `
-          <div class="aims-country-cell ${esc(cls)}" title="${esc(code)} ${fmtUsd(country.ad_spend_usd)} ROAS ${fmtRoas(country.ad_roas)}">
+          <div class="aims-country-cell ${esc(cls)}" title="${esc(code)} ${fmtUsd(country.ad_spend_usd)} ROAS ${fmtRoas(country.ad_roas)}${esc(taskTitle)}">
             <strong>${fmtUsd(country.ad_spend_usd)}</strong><br>
             <span>R ${fmtRoas(country.ad_roas)}</span>
+            ${task ? `<br>${renderTaskLink(task, true)}` : ''}
           </div>
         `;
       }).join('');
@@ -333,6 +400,7 @@
           <td><span class="aims-chip ${String(ai.priority || '').toLowerCase()}">${esc(ai.priority || 'P3')}</span></td>
           <td>${esc(actionLabel(ai.primary_action))}</td>
           <td>${mk.video_name ? `${esc(mk.video_name)}<br><span>${fmtUsd(mk.cumulative_90_spend)} · 广告 ${fmtNumber(mk.video_ads_count)}</span>` : '—'}</td>
+          <td>${renderTaskBadges(item, 3)}</td>
           <td><div class="aims-actions">${renderInlineActions(item)}</div></td>
         </tr>
       `;
@@ -340,7 +408,7 @@
     return `
       <div class="aims-table-wrap">
         <table class="aims-table">
-          <thead><tr><th>排名</th><th>产品</th><th>30天消耗</th><th>30天订单</th><th>真实ROAS</th><th>昨日消耗</th><th>优先级</th><th>动作</th><th>明空候选</th><th>入口</th></tr></thead>
+          <thead><tr><th>排名</th><th>产品</th><th>30天消耗</th><th>30天订单</th><th>真实ROAS</th><th>昨日消耗</th><th>优先级</th><th>动作</th><th>明空候选</th><th>任务</th><th>入口</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -386,6 +454,7 @@
           <div>
             <p class="aims-rec">${esc(ai.overall_judgement || '')}</p>
             ${renderCountryActions(ai)}
+            <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskBadges(item, 5)}</div>
             <div class="aims-material-grid">${materials.map((material, materialIndex) => renderMaterial(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:160px;">暂无明空候选</div>'}</div>
           </div>
           <div class="aims-band">
@@ -402,7 +471,11 @@
     if (!actions.length) return '';
     return `
       <div class="aims-actions" style="margin:8px 0 12px;">
-        ${actions.map((action) => `<span class="aims-chip">${esc(action.country_code || action.lang)} · ${esc(actionLabel(action.action))}</span>`).join('')}
+        ${actions.map((action) => {
+          const task = action.existing_task || action.cancelled_task;
+          const label = action.duplicate_suppressed ? '已有任务' : actionLabel(action.action);
+          return `<span class="aims-chip">${esc(action.country_code || action.lang)} · ${esc(label)}</span>${task ? renderTaskLink(task, false) : ''}`;
+        }).join('')}
       </div>
     `;
   }
@@ -436,11 +509,12 @@
     return countries.map((country) => {
       const width = Math.max(3, Math.round((Number(country.ad_spend_usd || 0) / maxSpend) * 100));
       return `
-        <div class="aims-bar-row" style="grid-template-columns:42px minmax(76px,1fr) minmax(100px,2fr) 52px;">
+        <div class="aims-bar-row" style="grid-template-columns:42px minmax(76px,1fr) minmax(100px,2fr) 52px minmax(96px, auto);">
           <span>${esc(country.country_code || country.lang)}</span>
           <span>${esc(country.delivery_status || 'never')}</span>
           <span class="aims-bar-track"><span class="aims-bar-fill" style="width:${width}%"></span></span>
           <span>${fmtRoas(country.ad_roas)}</span>
+          <span>${country.blocking_task ? renderTaskLink(country.blocking_task, true) : (country.cancelled_task ? renderTaskLink(country.cancelled_task, true) : '')}</span>
         </div>
       `;
     }).join('');

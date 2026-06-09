@@ -293,7 +293,7 @@
   }
   .aims-table {
     width: 100%;
-    min-width: 1120px;
+    min-width: 1240px;
     border-collapse: collapse;
     background: #fff;
   }
@@ -332,6 +332,32 @@
   .aims-chip.p0 { background: #fee2e2; color: var(--aims-red); }
   .aims-chip.p1 { background: #ffedd5; color: var(--aims-amber); }
   .aims-chip.p2 { background: #dbeafe; color: #1d4ed8; }
+  .aims-task-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
+  .aims-task-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    max-width: 100%;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #3730a3;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 20px;
+    text-decoration: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .aims-task-link.pending { background: #fff7ed; color: var(--aims-amber); }
+  .aims-task-link.in_progress { background: #dbeafe; color: #1d4ed8; }
+  .aims-task-link.completed { background: #dcfce7; color: var(--aims-green); }
+  .aims-task-link.cancelled { background: #f1f5f9; color: #64748b; }
   .aims-country-grid {
     display: grid;
     grid-template-columns: 120px repeat(8, minmax(74px, 1fr));

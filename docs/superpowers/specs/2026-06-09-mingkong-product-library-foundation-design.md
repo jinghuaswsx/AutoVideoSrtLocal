@@ -386,6 +386,12 @@ DXM03 写入仍遵守：
 
 当明空产品库或人工确认候选已经能定位到明空 DXM02 的 ERP 商品行，但 DXM03 商品管理中找不到同一个 SKU 时，工作台不能直接停在“缺 ERP SKU”。它应提供管理员确认的“创建/补齐 DXM03 SKU”动作，先把明空 SKU 设置复刻到 DXM03，再继续 1688 采购配对确认。
 
+线上验收要求：`复刻明空 SKU` 按钮必须完成真实 DXM02 -> DXM03 复刻或返回逐 SKU 业务缺口，不能只把后端异常包装成可读错误。由于 Web 路由运行环境可能已有 asyncio loop，复刻动作中的 Playwright Sync API 必须脱离 Flask / gunicorn worker 运行环境执行，避免 `Playwright Sync API inside the asyncio loop` 阻断真实写入。
+
+复刻动作需要同时访问 DXM02-MK 与 DXM03-RJC CDP。实现上只能启动一个 `sync_playwright()` 实例，再用同一个 Playwright 分别 `connect_over_cdp` 两个账号浏览器；不能在同一线程里连续启动两个 Playwright Sync context。
+
+DXM03 普通商品新增接口 `POST /api/dxmCommodityProduct/addCommodityProduct.json` 除 `obj` 外还必须携带前端保存动作同款外层字段，至少包括 `shopId=-1`、`pt=-1`、`pid`、`vid`、`orderStatus`、`orderId`、`orderWarehoseId=-1`、`orderCount=0`；缺少 `shopId/pt` 时接口会直接返回 404。
+
 复刻字段分三类处理：
 
 1. 可复刻字段：
@@ -415,7 +421,7 @@ DXM03 写入仍遵守：
 
 1. 先复刻所有组件普通 SKU；组件缺失或冲突无法解决时，不创建外层组合 SKU。
 2. 组件在 DXM03 均存在后，再按 DXM02 外层组合 SKU 的 `childIds` / `childNums` 关系，在 DXM03 使用组件自己的商品 ID 组装组合 SKU。
-3. 首版如果缺少可验证的组合保存 payload，只在工作台展示组件复刻缺口，不自动提交外层组合保存。
+3. 组合保存使用 `POST /api/dxmCommodityProduct/addCommodityProductGroup.json`，`dxmCommodityProduct.groupState=1`，`childIds` 必须是 DXM03 组件商品 ID，`childNums` 使用 DXM02 组件数量；创建后仍要重新搜索 DXM03，以 DXM03 返回的外层组合商品 ID 为准。
 
 ## 验收
 

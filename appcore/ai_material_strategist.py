@@ -39,6 +39,19 @@ TARGET_COUNTRIES: tuple[dict[str, str], ...] = (
     {"country_code": "PT", "country_name": "葡萄牙", "lang": "pt", "lang_name": "葡萄牙语", "tier": "tier_3"},
 )
 
+_TARGET_BY_COUNTRY = {item["country_code"]: item for item in TARGET_COUNTRIES}
+_TARGET_BY_LANG = {item["lang"]: item for item in TARGET_COUNTRIES}
+_TASK_PENDING_STATUSES = {"pending", "blocked"}
+_TASK_IN_PROGRESS_STATUSES = {"raw_in_progress", "raw_review", "raw_done", "assigned", "review"}
+_TASK_COMPLETED_STATUSES = {"done", "all_done"}
+_TASK_CANCELLED_STATUSES = {"cancelled"}
+_TASK_STATUS_LABELS = {
+    "pending": "待处理",
+    "in_progress": "进行中",
+    "completed": "已完成",
+    "cancelled": "已取消",
+}
+
 
 def _json_default(value: Any) -> Any:
     if isinstance(value, Decimal):
@@ -112,6 +125,56 @@ def _roas(numerator: Any, denominator: Any) -> float | None:
     if denom <= 0:
         return None
     return round(_safe_float(numerator) / denom, 4)
+
+
+def _normalize_country_code(value: Any, *, lang: Any = None) -> str:
+    raw = str(value or "").strip()
+    upper = raw.upper()
+    if upper in _TARGET_BY_COUNTRY:
+        return upper
+    lower = raw.lower()
+    if lower in _TARGET_BY_LANG:
+        return _TARGET_BY_LANG[lower]["country_code"]
+    lang_lower = str(lang or "").strip().lower()
+    if lang_lower in _TARGET_BY_LANG:
+        return _TARGET_BY_LANG[lang_lower]["country_code"]
+    if upper == "JA":
+        return "JP"
+    return upper
+
+
+def _lang_for_country_code(country_code: Any) -> str:
+    code = _normalize_country_code(country_code)
+    return (_TARGET_BY_COUNTRY.get(code) or {}).get("lang", str(country_code or "").strip().lower())
+
+
+def _country_code_for_action(action: Mapping[str, Any]) -> str:
+    return _normalize_country_code(action.get("country_code"), lang=action.get("lang"))
+
+
+def _task_status_group(row: Mapping[str, Any]) -> str:
+    status = str(row.get("status") or "").strip()
+    parent_status = str(row.get("parent_status") or "").strip()
+    if status in _TASK_CANCELLED_STATUSES or row.get("cancelled_at"):
+        return "cancelled"
+    if status in _TASK_COMPLETED_STATUSES:
+        return "completed"
+    if parent_status in _TASK_CANCELLED_STATUSES or row.get("parent_cancelled_at"):
+        return "cancelled"
+    if status in _TASK_PENDING_STATUSES:
+        return "pending"
+    if status in _TASK_IN_PROGRESS_STATUSES:
+        return "in_progress"
+    return "in_progress"
+
+
+def _task_blocks_recommendation(task: Mapping[str, Any] | None) -> bool:
+    return bool(task and task.get("status_group") in {"pending", "in_progress", "completed"})
+
+
+def _task_sort_key(task: Mapping[str, Any]) -> tuple[int, int]:
+    group_rank = {"in_progress": 0, "pending": 1, "completed": 2, "cancelled": 3}
+    return (group_rank.get(str(task.get("status_group") or ""), 9), -_safe_int(task.get("task_id")))
 
 
 def strip_rjc(product_code: str | None) -> str:
@@ -574,6 +637,8 @@ def _product_prompt(payload: dict) -> str:
     return (
         "你是跨境电商 AI素材军师。只分析当前一个产品，不编造输入中没有的数据。\n"
         "请先判断产品阶段，再给补素材操作建议。建议必须落到国家、语言、素材或明空 video_path；"
+        "必须读取 task_assignments：已有待处理/进行中/已完成任务的国家或素材只标注任务，不要重复建议创建翻译任务；"
+        "已取消任务可以建议重排，但要写明曾取消的任务ID；"
         "如果数据不足，明确缺什么。输出严格 JSON，字段符合 response_schema。\n"
         f"当前产品数据：\n{_json_dumps(payload)}"
     )
@@ -779,6 +844,114 @@ def _load_local_materials(product_ids: list[int]) -> dict[int, list[dict]]:
     return dict(out)
 
 
+def _serialize_task_assignment(row: Mapping[str, Any]) -> dict[str, Any]:
+    country_code = _normalize_country_code(row.get("country_code"))
+    lang = _lang_for_country_code(country_code)
+    status_group = _task_status_group(row)
+    media_item_id = _safe_int(row.get("media_item_id")) or _safe_int(row.get("parent_media_item_id"))
+    task_id = _safe_int(row.get("id"))
+    return {
+        "task_id": task_id,
+        "parent_task_id": _safe_int(row.get("parent_task_id")),
+        "product_id": _safe_int(row.get("media_product_id")),
+        "media_item_id": media_item_id,
+        "country_code": country_code,
+        "lang": lang,
+        "raw_country_code": str(row.get("country_code") or "").strip().upper(),
+        "status": row.get("status") or "",
+        "status_group": status_group,
+        "status_label": _TASK_STATUS_LABELS.get(status_group, status_group),
+        "parent_status": row.get("parent_status") or "",
+        "assignee_id": row.get("assignee_id"),
+        "is_urgent": bool(row.get("is_urgent")),
+        "last_reason": row.get("last_reason") or "",
+        "task_url": f"/tasks/detail/{task_id}" if task_id else "",
+        "created_at": _iso(row.get("created_at")),
+        "updated_at": _iso(row.get("updated_at")),
+        "claimed_at": _iso(row.get("claimed_at")),
+        "completed_at": _iso(row.get("completed_at")),
+        "cancelled_at": _iso(row.get("cancelled_at") or row.get("parent_cancelled_at")),
+    }
+
+
+def _load_task_assignments(product_ids: list[int]) -> dict[int, list[dict]]:
+    product_ids = sorted({_safe_int(pid) for pid in product_ids if _safe_int(pid) > 0})
+    if not product_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(product_ids))
+    rows = db.query(
+        f"""
+        SELECT
+          c.id, c.parent_task_id, c.media_product_id, c.media_item_id,
+          c.country_code, c.assignee_id, c.status, c.last_reason, c.is_urgent,
+          c.created_at, c.updated_at, c.claimed_at, c.completed_at, c.cancelled_at,
+          p.media_item_id AS parent_media_item_id,
+          p.status AS parent_status,
+          p.cancelled_at AS parent_cancelled_at
+        FROM tasks c
+        LEFT JOIN tasks p ON p.id = c.parent_task_id
+        WHERE c.media_product_id IN ({placeholders})
+          AND c.parent_task_id IS NOT NULL
+        ORDER BY c.media_product_id ASC, c.updated_at DESC, c.id DESC
+        """,
+        tuple(product_ids),
+    )
+    out: dict[int, list[dict]] = defaultdict(list)
+    for row in rows:
+        task = _serialize_task_assignment(row)
+        if not task["task_id"] or not task["product_id"] or not task["country_code"]:
+            continue
+        out[task["product_id"]].append(task)
+    return dict(out)
+
+
+def _enrich_country_summaries_with_tasks(countries: list[dict], tasks: list[dict]) -> list[dict]:
+    by_country: dict[str, list[dict]] = defaultdict(list)
+    for task in tasks:
+        code = _normalize_country_code(task.get("country_code"), lang=task.get("lang"))
+        if code:
+            by_country[code].append(task)
+    for items in by_country.values():
+        items.sort(key=_task_sort_key)
+
+    enriched: list[dict] = []
+    for country in countries:
+        item = dict(country)
+        code = _normalize_country_code(item.get("country_code"), lang=item.get("lang"))
+        country_tasks = list(by_country.get(code) or [])
+        blocking_task = next((task for task in country_tasks if _task_blocks_recommendation(task)), None)
+        cancelled_task = next((task for task in country_tasks if task.get("status_group") == "cancelled"), None)
+        status_counts: dict[str, int] = defaultdict(int)
+        for task in country_tasks:
+            status_counts[str(task.get("status_group") or "unknown")] += 1
+        item["tasks"] = country_tasks[:8]
+        item["blocking_task"] = blocking_task
+        item["cancelled_task"] = cancelled_task
+        item["has_active_task"] = bool(blocking_task)
+        item["task_status_counts"] = dict(status_counts)
+        enriched.append(item)
+    return enriched
+
+
+def _task_assignments_summary(tasks: list[dict]) -> dict[str, Any]:
+    counts: dict[str, int] = defaultdict(int)
+    blocking = []
+    cancelled = []
+    for task in tasks:
+        group = str(task.get("status_group") or "unknown")
+        counts[group] += 1
+        if _task_blocks_recommendation(task):
+            blocking.append(task)
+        elif group == "cancelled":
+            cancelled.append(task)
+    return {
+        "total": len(tasks),
+        "status_counts": dict(counts),
+        "blocking_count": len(blocking),
+        "cancelled_count": len(cancelled),
+    }
+
+
 def _mk_search_codes(product_codes: Iterable[str]) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for code in product_codes:
@@ -883,6 +1056,10 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
     strong = [c for c in countries if _safe_float(c.get("ad_spend_usd")) >= 30 and _safe_float(c.get("ad_roas")) >= 1.5]
     never = [c for c in countries if c.get("delivery_status") == "never"]
     weak = [c for c in countries if c.get("delivery_status") == "stopped"]
+    actionable_never = [c for c in never if not _task_blocks_recommendation(c.get("blocking_task"))]
+    actionable_weak = [c for c in weak if not _task_blocks_recommendation(c.get("blocking_task"))]
+    actionable_active = [c for c in active if not _task_blocks_recommendation(c.get("blocking_task"))]
+    blocked_countries = [c for c in countries if _task_blocks_recommendation(c.get("blocking_task"))]
     spend30 = _safe_float(product.get("spend_30d"))
     orders30 = _safe_float(product.get("orders_30d"))
     true_roas = _safe_float(product.get("true_roas_30d"))
@@ -896,23 +1073,29 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
     else:
         priority = "P3"
 
-    if strong and never:
+    if strong and actionable_never:
         primary_action = "expand_country"
         judgement = "已有国家跑出量和效率，优先把同素材扩到未验证国家。"
-    elif active and mk_materials:
+    elif actionable_active and mk_materials:
         primary_action = "same_country_new_material"
         judgement = "当前仍有投放消耗，可在已跑国家补新明空素材继续测。"
-    elif weak and mk_materials:
+    elif actionable_weak and mk_materials:
         primary_action = "weak_country_retest"
         judgement = "部分国家历史投放弱，可用新素材做二次确认。"
+    elif blocked_countries:
+        primary_action = "hold"
+        judgement = "候选国家已有待处理、进行中或已完成任务，先查看任务结果和推送反馈，不重复排程。"
     else:
         primary_action = "investigate"
         judgement = "数据量或素材线索不足，先检查广告命名、订单归因和素材绑定。"
 
     picked_material = mk_materials[0] if mk_materials else {}
     country_actions = []
-    for country in (never[:3] or weak[:2] or active[:2]):
-        country_actions.append({
+    picked_countries = actionable_never[:3] or actionable_weak[:2] or actionable_active[:2] or blocked_countries[:2]
+    for country in picked_countries:
+        blocking_task = country.get("blocking_task")
+        cancelled_task = country.get("cancelled_task")
+        action = {
             "country_code": country.get("country_code"),
             "lang": country.get("lang"),
             "action": primary_action,
@@ -920,7 +1103,13 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
             "reason": judgement,
             "material_key": picked_material.get("material_key", ""),
             "video_path": picked_material.get("video_path", ""),
-        })
+        }
+        if blocking_task:
+            action["existing_task"] = blocking_task
+            action["duplicate_suppressed"] = True
+        elif cancelled_task:
+            action["cancelled_task"] = cancelled_task
+        country_actions.append(action)
     material_actions = []
     if picked_material:
         target_langs = [item.get("lang") for item in country_actions if item.get("lang")]
@@ -968,6 +1157,15 @@ def _run_product_analysis(
         "country_summary": countries,
         "local_materials": local_materials[:20],
         "mingkong_material_candidates": mk_materials,
+        "task_assignments": [
+            task
+            for country in countries
+            for task in (country.get("tasks") or [])
+        ],
+        "task_dedup_rule": (
+            "pending/in_progress/completed 都视为已安排，不要再建议同产品同国家创建翻译任务；"
+            "cancelled 可以重排。"
+        ),
         "target_country_tiers": list(TARGET_COUNTRIES),
     }
     try:
@@ -996,9 +1194,83 @@ def _run_product_analysis(
         return fallback
 
 
-def _build_action_items(product: Mapping[str, Any], ai_result: Mapping[str, Any], mk_materials: list[dict]) -> list[dict]:
+def _decorate_ai_result_with_tasks(ai_result: Mapping[str, Any], countries: list[dict], task_assignments: list[dict]) -> dict:
+    result = dict(ai_result or {})
+    by_country = {
+        _normalize_country_code(country.get("country_code"), lang=country.get("lang")): country
+        for country in countries
+    }
+    decorated_actions: list[dict] = []
+    blocked_count = 0
+    for raw_action in result.get("country_actions") or []:
+        action = dict(raw_action or {})
+        code = _country_code_for_action(action)
+        country = by_country.get(code) or {}
+        blocking_task = country.get("blocking_task")
+        cancelled_task = country.get("cancelled_task")
+        if blocking_task:
+            blocked_count += 1
+            original_action = action.get("action") or action.get("decision") or ""
+            action["original_action"] = original_action
+            action["action"] = "hold"
+            action["existing_task"] = blocking_task
+            action["duplicate_suppressed"] = True
+            reason = str(action.get("reason") or "").strip()
+            suffix = (
+                f"已有任务 #{blocking_task.get('task_id')}（{blocking_task.get('status_label')}），"
+                "不重复排程。"
+            )
+            action["reason"] = f"{reason}；{suffix}" if reason else suffix
+        elif cancelled_task:
+            action["cancelled_task"] = cancelled_task
+            reason = str(action.get("reason") or "").strip()
+            suffix = f"曾取消任务 #{cancelled_task.get('task_id')}，可重新安排。"
+            if suffix not in reason:
+                action["reason"] = f"{reason}；{suffix}" if reason else suffix
+        decorated_actions.append(action)
+
+    if decorated_actions:
+        result["country_actions"] = decorated_actions
+    if blocked_count and blocked_count == len(decorated_actions):
+        result["primary_action"] = "hold"
+        next_check = str(result.get("next_check") or "").strip()
+        hold_check = "先查看已存在任务的产出、推送状态和广告反馈，再决定是否补新素材。"
+        result["next_check"] = f"{next_check} {hold_check}".strip() if hold_check not in next_check else next_check
+    result["task_assignments"] = task_assignments[:30]
+    result["task_summary"] = _task_assignments_summary(task_assignments)
+    return result
+
+
+def _append_task_action(actions: list[dict], task: Mapping[str, Any], *, seen_task_ids: set[int], label_prefix: str = "任务") -> None:
+    task_id = _safe_int(task.get("task_id"))
+    if not task_id or task_id in seen_task_ids:
+        return
+    seen_task_ids.add(task_id)
+    actions.append({
+        "type": "view_task",
+        "label": f"{label_prefix} #{task_id} · {task.get('status_label') or ''}".strip(),
+        "url": task.get("task_url") or f"/tasks/detail/{task_id}",
+        "task_id": task_id,
+        "task": dict(task),
+        "country_code": task.get("country_code"),
+        "target_lang": task.get("lang"),
+    })
+
+
+def _build_action_items(
+    product: Mapping[str, Any],
+    ai_result: Mapping[str, Any],
+    mk_materials: list[dict],
+    countries: list[dict],
+) -> list[dict]:
     pid = _safe_int(product.get("product_id"))
     code = str(product.get("product_code") or "").strip()
+    country_by_code = {
+        _normalize_country_code(country.get("country_code"), lang=country.get("lang")): country
+        for country in countries
+    }
+    seen_task_ids: set[int] = set()
+    seen_create_countries: set[str] = set()
     actions: list[dict] = [
         {
             "type": "supplement_workbench",
@@ -1037,15 +1309,29 @@ def _build_action_items(product: Mapping[str, Any], ai_result: Mapping[str, Any]
             },
         })
     for country in ai_result.get("country_actions") or []:
+        code_for_action = _country_code_for_action(country)
+        country_summary = country_by_code.get(code_for_action) or {}
+        blocking_task = country.get("existing_task") or country_summary.get("blocking_task")
+        cancelled_task = country.get("cancelled_task") or country_summary.get("cancelled_task")
+        if blocking_task:
+            _append_task_action(actions, blocking_task, seen_task_ids=seen_task_ids)
+            continue
+        if cancelled_task:
+            _append_task_action(actions, cancelled_task, seen_task_ids=seen_task_ids, label_prefix="已取消任务")
         lang = str(country.get("lang") or "").strip()
+        if not lang and code_for_action:
+            lang = _lang_for_country_code(code_for_action)
         if not lang:
             continue
+        if code_for_action in seen_create_countries:
+            continue
+        seen_create_countries.add(code_for_action)
         actions.append({
             "type": "create_translation_task",
-            "label": f"创建{country.get('country_code') or lang}翻译任务",
+            "label": f"创建{code_for_action or lang}翻译任务",
             "url": f"/medias/product/addvideo/{pid}?target_lang={quote(lang)}",
             "target_lang": lang,
-            "country_code": country.get("country_code"),
+            "country_code": code_for_action or country.get("country_code"),
         })
     return actions
 
@@ -1095,13 +1381,19 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
         product_ids = [_safe_int(item.get("product_id")) for item in selected]
         countries_by_product = _load_country_summaries(product_ids)
         local_by_product = _load_local_materials(product_ids)
+        tasks_by_product = _load_task_assignments(product_ids)
         mk_by_code = _load_mingkong_materials([str(item.get("product_code") or "") for item in selected])
 
         results: list[dict] = []
         for rank_no, product in enumerate(selected, start=1):
             code_key = str(product.get("product_code") or "").strip().lower()
-            countries = countries_by_product.get(_safe_int(product.get("product_id"))) or []
-            local_materials = local_by_product.get(_safe_int(product.get("product_id"))) or []
+            product_id = _safe_int(product.get("product_id"))
+            task_assignments = tasks_by_product.get(product_id) or []
+            countries = _enrich_country_summaries_with_tasks(
+                countries_by_product.get(product_id) or [],
+                task_assignments,
+            )
+            local_materials = local_by_product.get(product_id) or []
             mk_materials = mk_by_code.get(code_key) or []
             ai_result = _run_product_analysis(
                 product,
@@ -1112,7 +1404,8 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
                 user_id=user_id,
                 run_ai=run_ai,
             )
-            action_items = _build_action_items(product, ai_result, mk_materials)
+            ai_result = _decorate_ai_result_with_tasks(ai_result, countries, task_assignments)
+            action_items = _build_action_items(product, ai_result, mk_materials, countries)
             results.append({
                 "rank_no": rank_no,
                 "product": product,
