@@ -4751,10 +4751,11 @@ def _reject_child_submission_if_push_video_oversize(
     )
     if not item:
         return
-    check = video_size_limits.push_video_size_check(item.get("file_size"))
+    duration = item.get("duration_seconds")
+    check = video_size_limits.push_video_size_check(item.get("file_size"), duration)
     if not check["over_limit"]:
         return
-    reason = video_size_limits.build_push_video_oversize_reason(check["size_bytes"])
+    reason = video_size_limits.build_push_video_oversize_reason(check["size_bytes"], duration)
     reject_child(
         task_id=int(task_id),
         actor_user_id=int(actor_user_id),

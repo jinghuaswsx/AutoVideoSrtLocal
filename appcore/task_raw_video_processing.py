@@ -396,12 +396,21 @@ def attach_niuma_result_to_parent_task(
 
     if payload.get("status") == PARENT_RAW_IN_PROGRESS:
         tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
-        size_check = video_size_limits.push_video_size_check(new_size)
+        
+        # Probe duration from result video path
+        duration = None
+        try:
+            info = _probe_media_info(result_path)
+            duration = info.get("duration")
+        except Exception:
+            pass
+
+        size_check = video_size_limits.push_video_size_check(new_size, duration)
         if size_check["over_limit"]:
             tasks_svc.reject_raw(
                 task_id=parent_task_id,
                 actor_user_id=actor_user_id,
-                reason=video_size_limits.build_push_video_oversize_reason(new_size),
+                reason=video_size_limits.build_push_video_oversize_reason(new_size, duration),
             )
 
 
