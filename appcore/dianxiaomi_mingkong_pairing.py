@@ -8,6 +8,7 @@ import time
 from typing import Any
 
 from appcore.browser_automation_lock import browser_automation_lock
+from appcore import mingkong_product_library
 
 
 DXM_BASE_URL = "https://www.dianxiaomi.com"
@@ -422,6 +423,12 @@ def _local_sku_payload(row: dict[str, Any]) -> dict[str, Any]:
         "dianxiaomi_name": row.get("dianxiaomi_name") or "",
         "source": row.get("source") or "",
         "image_url": row.get("image_url") or "",
+        "purchase_1688_url": row.get("purchase_1688_url") or "",
+        "mingkong_product_id": row.get("mingkong_product_id"),
+        "mingkong_variant_id": row.get("mingkong_variant_id"),
+        "mingkong_procurement": row.get("mingkong_procurement"),
+        "is_combo": bool(row.get("is_combo")),
+        "combo_components": row.get("combo_components") or [],
     }
 
 
@@ -433,7 +440,21 @@ def build_workbench_payload(
     fetch_live_fn=fetch_dxm03_pairing_snapshot,
 ) -> dict[str, Any]:
     purchase_url = str(product.get("purchase_1688_url") or "").strip()
-    local_rows = [_local_sku_payload(row) for row in sku_rows or []]
+    source_rows = list(sku_rows or [])
+    library_rows: list[dict[str, Any]] = []
+    realtime_refresh_error = ""
+    realtime_refresh_summary: dict[str, Any] | None = None
+    if not source_rows:
+        try:
+            library_rows = mingkong_product_library.sku_rows_from_library(product)
+            if not library_rows:
+                realtime_refresh_summary = mingkong_product_library.refresh_product_from_dxm02(product)
+                library_rows = mingkong_product_library.sku_rows_from_library(product)
+            source_rows = library_rows
+        except Exception as exc:
+            realtime_refresh_error = str(exc)
+            library_rows = []
+    local_rows = [_local_sku_payload(row) for row in source_rows]
     sku_values = [row["dianxiaomi_sku"] for row in local_rows if row.get("dianxiaomi_sku")]
     live_error = ""
     snapshot: dict[str, dict[str, Any]] = {}
@@ -450,7 +471,9 @@ def build_workbench_payload(
         live = snapshot.get(sku) or {}
         commodity = live.get("commodity")
         pairing = live.get("pairing")
-        components = live.get("combo_components") or []
+        components = live.get("combo_components") or row.get("combo_components") or []
+        row_purchase_url = str(row.get("purchase_1688_url") or purchase_url).strip()
+        row_alibaba_product_id = normalize_1688_offer_id(row_purchase_url)
         status = "missing_local_sku"
         if sku and commodity and commodity.get("is_combo") and components:
             all_components_paired = all(
@@ -474,11 +497,12 @@ def build_workbench_payload(
             status = "missing_dxm03_commodity"
         items.append({
             **row,
-            "purchase_1688_url": purchase_url,
-            "alibaba_product_id": normalize_1688_offer_id(purchase_url),
+            "purchase_1688_url": row_purchase_url,
+            "alibaba_product_id": row_alibaba_product_id,
             "image_url": row.get("image_url") or (commodity or {}).get("image_url") or "",
-            "is_combo": bool((commodity or {}).get("is_combo")),
+            "is_combo": bool((commodity or {}).get("is_combo") or row.get("is_combo")),
             "combo_components": components,
+            "mingkong_procurement": row.get("mingkong_procurement"),
             "dxm03": {
                 "commodity": commodity,
                 "pairing": pairing,
@@ -503,7 +527,9 @@ def build_workbench_payload(
             "paired_count": paired_count,
             "missing_count": len(items) - ready_count - paired_count,
             "has_purchase_url": bool(purchase_url),
-            "live_error": live_error,
+            "live_error": live_error or realtime_refresh_error,
+            "source": "media_product_skus" if sku_rows else ("mingkong_library" if library_rows else "empty"),
+            "realtime_refresh": realtime_refresh_summary,
         },
     }
 
@@ -517,7 +543,13 @@ def confirm_dxm03_pairing(
 ) -> dict[str, Any]:
     purchase_url = str(product.get("purchase_1688_url") or "").strip()
     product_id_alibaba = normalize_1688_offer_id(purchase_url)
-    local_rows = [_local_sku_payload(row) for row in sku_rows or []]
+    source_rows = list(sku_rows or [])
+    if not source_rows:
+        source_rows = mingkong_product_library.sku_rows_from_library(product)
+        if not source_rows:
+            mingkong_product_library.refresh_product_from_dxm02(product)
+            source_rows = mingkong_product_library.sku_rows_from_library(product)
+    local_rows = [_local_sku_payload(row) for row in source_rows]
     rows_with_sku = [row for row in local_rows if row.get("dianxiaomi_sku")]
     if not rows_with_sku:
         return {
@@ -546,11 +578,12 @@ def confirm_dxm03_pairing(
                 selected_product_id = (
                     normalize_1688_offer_id(selection.get("product_id_alibaba"))
                     or normalize_1688_offer_id(selection.get("purchase_1688_url"))
+                    or normalize_1688_offer_id(row.get("purchase_1688_url"))
                     or product_id_alibaba
                 )
                 selected_purchase_url = _purchase_url_for_offer(
                     selected_product_id,
-                    selection.get("purchase_1688_url") or purchase_url,
+                    selection.get("purchase_1688_url") or row.get("purchase_1688_url") or purchase_url,
                 )
                 selected_sku_id = str(selection.get("sku_id_alibaba") or "").strip()
                 item_result = {

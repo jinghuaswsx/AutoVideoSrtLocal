@@ -438,11 +438,12 @@
       const pairing = component.pairing || {};
       const supplier = pairing.supplier_name ? ` · ${pairing.supplier_name}` : '';
       const skuId = pairing.sku_id_alibaba ? ` · 1688 SKU ${pairing.sku_id_alibaba}` : '';
+      const paired = pairing.is_paired || Number(pairing.pairing_state) === 1;
       return `<div class="mkp-component">
-        ${imageHtml(component.image_url, '')}
+        ${imageHtml(component.image_url || component.component_img_url, '')}
         <div>
-          <div class="mkp-component-main mkp-mono">${esc(component.sku || '—')} × ${esc(component.quantity || 0)} · ${esc(component.name || '—')}</div>
-          <div class="mkp-component-sub">${chip(pairing.is_paired ? 'already_paired' : 'missing_pair_row')} ${esc(supplier + skuId)}</div>
+          <div class="mkp-component-main mkp-mono">${esc(component.sku || component.component_sku || '—')} × ${esc(component.quantity || component.component_quantity || 0)} · ${esc(component.name || component.component_name || '—')}</div>
+          <div class="mkp-component-sub">${chip(paired ? 'already_paired' : 'missing_pair_row')} ${esc(supplier + skuId)}</div>
         </div>
       </div>`;
     }).join('') + `</div>`;
@@ -462,7 +463,8 @@
     if (summary.live_error) {
       $('mkpResult').textContent = `DXM03 实时核验失败：${summary.live_error}`;
     } else {
-      $('mkpResult').textContent = 'DXM03 实时核验完成';
+      const sourceLabel = summary.source === 'mingkong_library' ? '，数据源：本地明空产品库' : '';
+      $('mkpResult').textContent = `DXM03 实时核验完成${sourceLabel}`;
     }
   }
 
@@ -475,8 +477,9 @@
     tbody.innerHTML = items.map((item) => {
       const commodity = (item.dxm03 && item.dxm03.commodity) || {};
       const pairing = (item.dxm03 && item.dxm03.pairing) || {};
-      const productIdAlibaba = pairing.alibaba_product_id || item.alibaba_product_id || '';
-      const skuIdAlibaba = pairing.sku_id_alibaba || '';
+      const mkProc = item.mingkong_procurement || {};
+      const productIdAlibaba = pairing.alibaba_product_id || mkProc.alibaba_product_id || item.alibaba_product_id || '';
+      const skuIdAlibaba = pairing.sku_id_alibaba || mkProc.sku_id_alibaba || '';
       const imageUrl = item.image_url || commodity.image_url || '';
       const components = item.combo_components || [];
       const nameHtml = `<div class="mkp-name-stack"><div>${esc(item.dianxiaomi_name || commodity.name || '—')}</div>${componentHtml(components)}</div>`;
@@ -490,7 +493,7 @@
         <td class="mkp-mono">${esc(item.dianxiaomi_sku_code || commodity.sku_code || '—')}</td>
         <td>${nameHtml}</td>
         <td>${chip(item.status)}</td>
-        <td>${esc(pairing.supplier_name || '—')}</td>
+        <td>${esc(pairing.supplier_name || mkProc.supplier_name || '—')}</td>
         <td><input class="mkp-input mkp-mono" data-field="product_id_alibaba" value="${esc(productIdAlibaba)}"></td>
         <td><input class="mkp-input mkp-mono" data-field="sku_id_alibaba" value="${esc(skuIdAlibaba)}"></td>
         <td>${chip(pairing.is_paired ? 'already_paired' : item.status)}</td>

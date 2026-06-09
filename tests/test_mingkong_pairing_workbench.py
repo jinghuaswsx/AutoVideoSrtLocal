@@ -174,6 +174,81 @@ def test_build_workbench_payload_marks_incomplete_combo_components_as_gap():
     assert payload["summary"]["missing_count"] == 1
 
 
+def test_build_workbench_payload_uses_mingkong_library_when_media_skus_missing(monkeypatch):
+    product = {
+        "id": 758,
+        "product_code": "ultra-absorbent-miracle-cleaning-shammy-rjc",
+        "purchase_1688_url": "",
+    }
+    library_row = {
+        "shopify_product_id": "7540269842498",
+        "shopify_variant_id": "43237580030146",
+        "shopify_variant_title": "3 PCS",
+        "dianxiaomi_sku": "43237580030146",
+        "dianxiaomi_name": "清洁抹布 3件装",
+        "image_url": "https://example.test/shammy.jpg",
+        "purchase_1688_url": "https://detail.1688.com/offer/123456789.html",
+        "source": "mingkong_library",
+        "mingkong_procurement": {
+            "supplier_name": "明空供应商",
+            "pairing_state": 1,
+        },
+    }
+
+    monkeypatch.setattr(
+        pairing.mingkong_product_library,
+        "sku_rows_from_library",
+        lambda _product: [library_row],
+    )
+    monkeypatch.setattr(
+        pairing.mingkong_product_library,
+        "refresh_product_from_dxm02",
+        lambda _product: (_ for _ in ()).throw(AssertionError("should not refresh")),
+    )
+
+    payload = pairing.build_workbench_payload(product, [], include_live=False)
+
+    assert payload["summary"]["source"] == "mingkong_library"
+    assert payload["summary"]["realtime_refresh"] is None
+    assert payload["items"][0]["purchase_1688_url"] == "https://detail.1688.com/offer/123456789.html"
+    assert payload["items"][0]["mingkong_procurement"]["supplier_name"] == "明空供应商"
+    assert payload["items"][0]["image_url"] == "https://example.test/shammy.jpg"
+
+
+def test_build_workbench_payload_realtime_refreshes_dxm02_on_library_miss(monkeypatch):
+    product = {
+        "id": 758,
+        "product_code": "ultra-absorbent-miracle-cleaning-shammy-rjc",
+        "purchase_1688_url": "",
+    }
+    library_row = {
+        "shopify_product_id": "7540269842498",
+        "shopify_variant_id": "43237580030146",
+        "dianxiaomi_sku": "43237580030146",
+        "purchase_1688_url": "https://detail.1688.com/offer/123456789.html",
+        "source": "mingkong_library",
+    }
+    calls = {"library": 0, "refresh": 0}
+
+    def fake_library(_product):
+        calls["library"] += 1
+        return [] if calls["library"] == 1 else [library_row]
+
+    def fake_refresh(_product):
+        calls["refresh"] += 1
+        return {"products_seen": 1, "variants_seen": 1}
+
+    monkeypatch.setattr(pairing.mingkong_product_library, "sku_rows_from_library", fake_library)
+    monkeypatch.setattr(pairing.mingkong_product_library, "refresh_product_from_dxm02", fake_refresh)
+
+    payload = pairing.build_workbench_payload(product, [], include_live=False)
+
+    assert calls == {"library": 2, "refresh": 1}
+    assert payload["summary"]["source"] == "mingkong_library"
+    assert payload["summary"]["realtime_refresh"] == {"products_seen": 1, "variants_seen": 1}
+    assert payload["items"][0]["dianxiaomi_sku"] == "43237580030146"
+
+
 def test_confirm_dxm03_pairing_allows_combo_without_outer_purchase_url(monkeypatch):
     @contextmanager
     def fake_lock(**_kwargs):

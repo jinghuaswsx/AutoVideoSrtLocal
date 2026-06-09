@@ -1,0 +1,44 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_mingkong_product_library_migration_declares_tables_and_indexes():
+    body = (
+        ROOT
+        / "db"
+        / "migrations"
+        / "2026_06_09_mingkong_product_library.sql"
+    ).read_text(encoding="utf-8")
+
+    for table in [
+        "mingkong_product_library_sync_runs",
+        "mingkong_products",
+        "mingkong_product_variants",
+        "mingkong_combo_components",
+        "mingkong_procurement_links",
+    ]:
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in body
+
+    for key in [
+        "uk_mk_products_shopify_product",
+        "uk_mk_variant_shopify_variant",
+        "uk_mk_combo_component",
+        "uk_mk_proc_pairing_row",
+        "idx_mk_products_product_code",
+        "idx_mk_variant_pair_key",
+        "idx_mk_proc_sku",
+    ]:
+        assert key in body
+
+
+def test_mingkong_product_library_scheduler_registered():
+    from appcore import scheduled_tasks
+
+    task = scheduled_tasks.get_task_definition("mingkong_product_library_sync")
+
+    assert task["code"] == "mingkong_product_library_sync"
+    assert task["source_ref"] == "autovideosrt-mingkong-product-library-sync.timer"
+    assert task["runner"] == "tools/mingkong_product_library_sync.py --days 0"
+    assert task["log_table"] == "mingkong_product_library_sync_runs"
