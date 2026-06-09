@@ -4386,12 +4386,9 @@ class PipelineRunner:
             separation.get("accompaniment_path")
             if sep.is_usable(separation) else None
         )
-        capcut_video_path, capcut_final_video_mode = self._resolve_capcut_export_video_input(
-            task,
-            variant_state,
-        )
-        if not capcut_video_path:
-            capcut_video_path = video_path
+        # CapCut 工程包总是使用原视频以保留独立的视频段、音轨和字幕轨道（防止硬字幕和音频合并）
+        capcut_video_path = video_path
+        capcut_final_video_mode = False
         export_result = export_capcut_project(
             video_path=capcut_video_path,
             tts_audio_path=variant_state["tts_audio_path"],
