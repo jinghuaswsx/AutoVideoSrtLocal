@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -11,9 +12,14 @@ from appcore.browser_automation_lock import browser_automation_lock
 
 
 DXM_BASE_URL = "https://www.dianxiaomi.com"
+DEFAULT_DXM02_CDP_URL = "http://127.0.0.1:9223"
 DEFAULT_DXM03_CDP_URL = "http://127.0.0.1:9225"
+DEFAULT_DXM03_FULL_CID = "1750880-"
 
 DXM_PRODUCT_API = "/api/dxmCommodityProduct/pageList.json"
+DXM_VIEW_COMMODITY_API = "/api/dxmCommodityProduct/viewDxmCommodityProduct.json"
+DXM_ADD_COMMODITY_API = "/api/dxmCommodityProduct/addCommodityProduct.json"
+DXM_ADD_COMMODITY_BZ_API = "/api/dxmCommodityProduct/addCommProBz.json"
 DXM_UPDATE_SOURCE_URL_API = "/api/dxmCommodityProduct/updateUrl.json"
 DXM_CHILD_SKU_INFO_API = "/api/dxmCommodityProduct/getChildSkuInfo.json"
 PAIR_LIST_API = "/api/dxmAlibabaProductPair/alibabaProductPairPageList.json"
@@ -32,6 +38,19 @@ def dxm03_cdp_url() -> str:
         or os.getenv("DIANXIAOMI_DXM03_CDP_URL")
         or DEFAULT_DXM03_CDP_URL
     )
+
+
+def dxm02_cdp_url() -> str:
+    return (
+        os.getenv("DXM02_DIANXIAOMI_CDP_URL")
+        or os.getenv("MINGKONG_DIANXIAOMI_CDP_URL")
+        or os.getenv("DIANXIAOMI_DXM02_CDP_URL")
+        or DEFAULT_DXM02_CDP_URL
+    )
+
+
+def dxm03_default_full_cid() -> str:
+    return os.getenv("DXM03_DEFAULT_FULL_CID") or DEFAULT_DXM03_FULL_CID
 
 
 def normalize_1688_offer_id(value: Any) -> str:
@@ -76,7 +95,13 @@ def _ensure_success(payload: dict[str, Any], action: str) -> None:
         )
 
 
-def _post_form(ctx, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _post_form(
+    ctx,
+    path: str,
+    payload: dict[str, Any],
+    *,
+    account_label: str = "DXM03",
+) -> dict[str, Any]:
     response = ctx.request.post(
         f"{DXM_BASE_URL}{path}",
         form=_stringify_form(payload),
@@ -84,21 +109,21 @@ def _post_form(ctx, path: str, payload: dict[str, Any]) -> dict[str, Any]:
     )
     text = response.text()
     if response.status >= 400:
-        raise DianxiaomiPairingError(f"DXM03 HTTP {response.status}: {text[:200]}")
+        raise DianxiaomiPairingError(f"{account_label} HTTP {response.status}: {text[:200]}")
     try:
         data = response.json()
     except Exception as exc:
-        raise DianxiaomiPairingError(f"DXM03 returned non-JSON: {text[:200]}") from exc
+        raise DianxiaomiPairingError(f"{account_label} returned non-JSON: {text[:200]}") from exc
     if not isinstance(data, dict):
-        raise DianxiaomiPairingError("DXM03 returned invalid JSON payload")
+        raise DianxiaomiPairingError(f"{account_label} returned invalid JSON payload")
     return data
 
 
-def _dxm_product_payload(sku: str) -> dict[str, Any]:
+def _dxm_product_payload(sku: str, *, search_type: int = 1) -> dict[str, Any]:
     return {
         "pageNo": 1,
         "pageSize": 100,
-        "searchType": 1,
+        "searchType": int(search_type),
         "searchValue": sku,
         "saleMode": -1,
         "productMode": -1,
@@ -121,26 +146,57 @@ def _pair_list_payload(sku: str) -> dict[str, Any]:
     }
 
 
+def _normalize_commodity_item(item: dict[str, Any], *, sku: str | None = None) -> dict[str, Any]:
+    group_state = int(item.get("groupState") or 0)
+    return {
+        "id": str(item.get("id") or "").strip(),
+        "parent_id": str(item.get("parentId") or "").strip(),
+        "sku": str(sku or item.get("sku") or "").strip(),
+        "sku_code": str(item.get("skuCode") or "").strip(),
+        "product_sku": str(item.get("productSku") or item.get("goodsSku") or "").strip(),
+        "name": str(item.get("name") or "").strip(),
+        "name_en": str(item.get("nameEn") or "").strip(),
+        "spu": str(item.get("spu") or "").strip(),
+        "image_url": _normalize_image_url(item.get("imgUrl")),
+        "source_url": str(item.get("sourceUrl") or "").strip(),
+        "relation_flag": bool(item.get("relationFlag")),
+        "group_state": group_state,
+        "is_combo": group_state == 1,
+        "raw": item,
+    }
+
+
+def _iter_commodity_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    page = ((payload.get("data") or {}).get("page") or {})
+    items: list[dict[str, Any]] = []
+    for group in page.get("list") or []:
+        items.extend(group.get("dxmCommodityProductList") or [])
+    return [item for item in items if isinstance(item, dict)]
+
+
 def _search_commodity(ctx, sku: str) -> dict[str, Any] | None:
     payload = _post_form(ctx, DXM_PRODUCT_API, _dxm_product_payload(sku))
     _ensure_success(payload, "search commodity")
-    page = ((payload.get("data") or {}).get("page") or {})
-    for group in page.get("list") or []:
-        for item in group.get("dxmCommodityProductList") or []:
-            if str(item.get("sku") or "").strip() == sku:
-                return {
-                    "id": str(item.get("id") or "").strip(),
-                    "parent_id": str(item.get("parentId") or "").strip(),
-                    "sku": sku,
-                    "sku_code": str(item.get("skuCode") or "").strip(),
-                    "name": str(item.get("name") or "").strip(),
-                    "name_en": str(item.get("nameEn") or "").strip(),
-                    "image_url": _normalize_image_url(item.get("imgUrl")),
-                    "source_url": str(item.get("sourceUrl") or "").strip(),
-                    "relation_flag": bool(item.get("relationFlag")),
-                    "group_state": int(item.get("groupState") or 0),
-                    "is_combo": int(item.get("groupState") or 0) == 1,
-                }
+    for item in _iter_commodity_items(payload):
+        if str(item.get("sku") or "").strip() == sku:
+            return _normalize_commodity_item(item, sku=sku)
+    return None
+
+
+def _search_commodity_by_sku_code(ctx, sku_code: str) -> dict[str, Any] | None:
+    clean = str(sku_code or "").strip()
+    if not clean:
+        return None
+    for search_type in (1, 2, 3, 4):
+        payload = _post_form(
+            ctx,
+            DXM_PRODUCT_API,
+            _dxm_product_payload(clean, search_type=search_type),
+        )
+        _ensure_success(payload, "search commodity by sku code")
+        for item in _iter_commodity_items(payload):
+            if str(item.get("skuCode") or "").strip() == clean:
+                return _normalize_commodity_item(item)
     return None
 
 
@@ -168,6 +224,201 @@ def _search_child_sku_info(ctx, product_id: str) -> list[dict[str, Any]]:
             "image_url": _normalize_image_url(row.get("imgUrl")),
         })
     return out
+
+
+_COMMODITY_COPY_FIELDS = (
+    "name",
+    "nameEn",
+    "spu",
+    "price",
+    "weight",
+    "length",
+    "width",
+    "height",
+    "volume",
+    "imgUrl",
+    "attr",
+    "productType",
+    "variantOrNot",
+    "groupState",
+    "productStatus",
+    "isUsed",
+    "isStock",
+    "saleMode",
+    "remark",
+)
+
+_DXM_IDENTITY_KEYS = {
+    "id",
+    "idstr",
+    "puid",
+    "parentid",
+    "productid",
+    "developmentid",
+    "supplierid",
+    "warehouseid",
+    "warehoseid",
+    "goodsshelfid",
+    "creatorid",
+    "updaterid",
+    "createtime",
+    "updatetime",
+    "createdtime",
+    "updatedtime",
+}
+
+
+def _view_commodity_detail(
+    ctx,
+    product_id: str,
+    *,
+    account_label: str = "DXM03",
+) -> dict[str, Any]:
+    payload = _post_form(
+        ctx,
+        DXM_VIEW_COMMODITY_API,
+        {"id": str(product_id or "").strip()},
+        account_label=account_label,
+    )
+    _ensure_success(payload, f"{account_label} view commodity")
+    raw_data = payload.get("data")
+    if isinstance(raw_data, str):
+        try:
+            data = json.loads(raw_data)
+        except json.JSONDecodeError as exc:
+            raise DianxiaomiPairingError(
+                f"{account_label} view commodity returned invalid data JSON"
+            ) from exc
+    elif isinstance(raw_data, dict):
+        data = raw_data
+    else:
+        data = {}
+    if not isinstance(data, dict):
+        raise DianxiaomiPairingError(f"{account_label} view commodity returned invalid data")
+    return data
+
+
+def _product_dto(detail: dict[str, Any]) -> dict[str, Any]:
+    dto = detail.get("productDTO") if isinstance(detail, dict) else {}
+    return dto if isinstance(dto, dict) else {}
+
+
+def _strip_dxm_identity_fields(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_strip_dxm_identity_fields(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    cleaned: dict[str, Any] = {}
+    for key, raw in value.items():
+        normalized_key = str(key).replace("_", "").lower()
+        if normalized_key in _DXM_IDENTITY_KEYS:
+            continue
+        cleaned[key] = _strip_dxm_identity_fields(raw)
+    return cleaned
+
+
+def _source_commodity_from_detail(detail: dict[str, Any]) -> dict[str, Any]:
+    dto = _product_dto(detail)
+    product = dto.get("dxmCommodityProduct")
+    return product if isinstance(product, dict) else {}
+
+
+def _source_customs_from_detail(detail: dict[str, Any]) -> dict[str, Any]:
+    customs = _product_dto(detail).get("dxmProductCustoms")
+    return customs if isinstance(customs, dict) else {}
+
+
+def _source_packs_from_detail(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    packs = _product_dto(detail).get("dxmProductPacks")
+    return [item for item in packs if isinstance(item, dict)] if isinstance(packs, list) else []
+
+
+def _target_sku_code(
+    ctx,
+    desired_sku_code: str,
+    *,
+    target_sku: str,
+    max_attempts: int = 20,
+) -> tuple[str, str]:
+    desired = str(desired_sku_code or "").strip() or str(target_sku or "").strip()
+    if not desired:
+        return "", "empty"
+
+    def available(value: str) -> bool:
+        existing = _search_commodity_by_sku_code(ctx, value)
+        if not existing:
+            return True
+        return str(existing.get("sku") or "").strip() == str(target_sku or "").strip()
+
+    if available(desired):
+        return desired, "preserved"
+    for index in range(1, max_attempts + 1):
+        suffix = "-MK" if index == 1 else f"-MK{index}"
+        candidate = f"{desired}{suffix}"
+        if available(candidate):
+            return candidate, "renamed"
+    raise DianxiaomiPairingError(f"DXM03 skuCode conflict cannot be resolved for {desired}")
+
+
+def _replicated_commodity_form(
+    source_detail: dict[str, Any],
+    *,
+    target_sku: str,
+    target_sku_code: str,
+    purchase_url: str = "",
+    fallback_name: str = "",
+    fallback_name_en: str = "",
+) -> dict[str, str]:
+    source_product = _source_commodity_from_detail(source_detail)
+    group_state = int(source_product.get("groupState") or 0)
+    if group_state == 1:
+        raise DianxiaomiPairingError("combo sku replication requires component-first flow")
+    commodity: dict[str, Any] = {}
+    for key in _COMMODITY_COPY_FIELDS:
+        if key in source_product:
+            commodity[key] = source_product.get(key)
+    commodity = _strip_dxm_identity_fields(commodity)
+    commodity.update({
+        "fullCid": dxm03_default_full_cid(),
+        "sku": str(target_sku or "").strip(),
+        "skuCode": str(target_sku_code or "").strip(),
+        "name": str(source_product.get("name") or fallback_name or target_sku or "").strip(),
+        "nameEn": str(source_product.get("nameEn") or fallback_name_en or "").strip(),
+        "sourceUrl": str(purchase_url or source_product.get("sourceUrl") or "").strip(),
+        "groupState": 0,
+    })
+    commodity.setdefault("productType", "100")
+
+    form: dict[str, Any] = {
+        "dxmCommodityProduct": json.dumps(commodity, ensure_ascii=False),
+        "dxmWarehouseProductList": json.dumps([], ensure_ascii=False),
+        "supplierProductRelationMapList": json.dumps([], ensure_ascii=False),
+    }
+    customs = _strip_dxm_identity_fields(_source_customs_from_detail(source_detail))
+    if customs:
+        form["dxmProductCustoms"] = json.dumps(customs, ensure_ascii=False)
+    packs = _strip_dxm_identity_fields(_source_packs_from_detail(source_detail))
+    if packs:
+        form["dxmProductPacks"] = json.dumps(packs, ensure_ascii=False)
+    return {"obj": json.dumps(form, ensure_ascii=False)}
+
+
+def _add_replicated_commodity(ctx, form_payload: dict[str, Any]) -> dict[str, Any]:
+    last_error: Exception | None = None
+    for api_path in (DXM_ADD_COMMODITY_API, DXM_ADD_COMMODITY_BZ_API):
+        try:
+            payload = _post_form(ctx, api_path, form_payload)
+            _ensure_success(payload, "add replicated commodity")
+            data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+            data_code = data.get("code")
+            if data_code not in (0, "0", 1, "1", None):
+                raise DianxiaomiPairingError(data.get("msg") or "add replicated commodity failed")
+            return payload
+        except DianxiaomiPairingError as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    raise DianxiaomiPairingError("add replicated commodity failed")
 
 
 def _candidate_text(item: dict[str, Any]) -> str:
@@ -340,7 +591,7 @@ def _confirm_pair(
     return payload
 
 
-def _open_dxm03_context(cdp_url: str):
+def _open_dxm_context(cdp_url: str):
     from playwright.sync_api import sync_playwright
 
     playwright = sync_playwright().start()
@@ -351,6 +602,14 @@ def _open_dxm03_context(cdp_url: str):
     except Exception:
         playwright.stop()
         raise
+
+
+def _open_dxm03_context(cdp_url: str):
+    return _open_dxm_context(cdp_url)
+
+
+def _open_dxm02_context(cdp_url: str):
+    return _open_dxm_context(cdp_url)
 
 
 def _close_dxm03_context(playwright, browser) -> None:
@@ -504,6 +763,270 @@ def build_workbench_payload(
             "missing_count": len(items) - ready_count - paired_count,
             "has_purchase_url": bool(purchase_url),
             "live_error": live_error,
+        },
+    }
+
+
+def _sku_pair_for_replace(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "shopify_product_id": row.get("shopify_product_id"),
+        "shopify_variant_id": row.get("shopify_variant_id"),
+        "shopify_sku": row.get("shopify_sku"),
+        "shopify_price": row.get("shopify_price"),
+        "shopify_compare_at_price": row.get("shopify_compare_at_price"),
+        "shopify_currency": row.get("shopify_currency") or "USD",
+        "shopify_inventory_quantity": row.get("shopify_inventory_quantity"),
+        "shopify_weight_grams": row.get("shopify_weight_grams"),
+        "shopify_variant_title": row.get("shopify_variant_title"),
+        "dianxiaomi_sku": row.get("dianxiaomi_sku"),
+        "dianxiaomi_product_sku": row.get("dianxiaomi_product_sku"),
+        "dianxiaomi_sku_code": row.get("dianxiaomi_sku_code"),
+        "dianxiaomi_name": row.get("dianxiaomi_name"),
+    }
+
+
+def _purchase_url_for_selection(
+    product: dict[str, Any],
+    row: dict[str, Any],
+    selection: dict[str, Any],
+    source_commodity: dict[str, Any] | None,
+) -> str:
+    selected_product_id = (
+        normalize_1688_offer_id(selection.get("product_id_alibaba"))
+        or normalize_1688_offer_id(selection.get("purchase_1688_url"))
+    )
+    if selected_product_id:
+        return _purchase_url_for_offer(selected_product_id, selection.get("purchase_1688_url") or "")
+    return (
+        str(selection.get("purchase_1688_url") or "").strip()
+        or str(product.get("purchase_1688_url") or "").strip()
+        or str(row.get("purchase_1688_url") or "").strip()
+        or str((source_commodity or {}).get("source_url") or "").strip()
+    )
+
+
+def _wait_for_commodity(ctx, sku: str, *, attempts: int = 5) -> dict[str, Any] | None:
+    for index in range(attempts):
+        commodity = _search_commodity(ctx, sku)
+        if commodity:
+            return commodity
+        if index < attempts - 1:
+            time.sleep(1)
+    return None
+
+
+def replicate_mingkong_skus_to_dxm03(
+    product: dict[str, Any],
+    sku_rows: list[dict[str, Any]],
+    *,
+    selections: list[dict[str, Any]] | None = None,
+    cdp_url: str | None = None,
+    source_cdp_url: str | None = None,
+    replace_product_skus_fn=None,
+    update_product_fn=None,
+) -> dict[str, Any]:
+    """Create missing DXM03 commodities by cloning safe SKU settings from DXM02."""
+
+    local_rows = [_local_sku_payload(row) for row in sku_rows or []]
+    rows_with_sku = [row for row in local_rows if row.get("dianxiaomi_sku")]
+    if not rows_with_sku:
+        return {
+            "ok": False,
+            "error": "missing_sku_rows",
+            "message": "产品缺少可复刻的明空 SKU 行",
+            "items": [],
+        }
+    selection_by_key = _selection_map(selections)
+    target_url = cdp_url or dxm03_cdp_url()
+    source_url = source_cdp_url or dxm02_cdp_url()
+    results: list[dict[str, Any]] = []
+    successful_by_sku: dict[str, dict[str, Any]] = {}
+    first_purchase_url = ""
+    with browser_automation_lock(
+        task_code="dxm03_mingkong_sku_replicate",
+        timeout_seconds=240,
+        command=str(product.get("product_code") or product.get("id") or ""),
+    ):
+        source_playwright, source_browser, source_ctx = _open_dxm02_context(source_url)
+        target_playwright = target_browser = None
+        try:
+            target_playwright, target_browser, target_ctx = _open_dxm03_context(target_url)
+            for row in rows_with_sku:
+                sku = str(row.get("dianxiaomi_sku") or "").strip()
+                variant_id = str(row.get("shopify_variant_id") or "").strip()
+                selection = (
+                    selection_by_key.get(sku)
+                    or selection_by_key.get(variant_id)
+                    or {}
+                )
+                item_result: dict[str, Any] = {
+                    **row,
+                    "status": "pending",
+                    "original_mingkong_sku_code": row.get("dianxiaomi_sku_code") or "",
+                    "dxm03_sku_code": "",
+                    "sku_code_strategy": "",
+                }
+                try:
+                    existing_target = _search_commodity(target_ctx, sku)
+                    if existing_target:
+                        item_result.update({
+                            "status": "already_exists",
+                            "message": "DXM03 已存在同 SKU，直接复用",
+                            "commodity": existing_target,
+                            "dxm03_sku_code": existing_target.get("sku_code") or "",
+                            "sku_code_strategy": "existing",
+                        })
+                        successful_by_sku[sku] = item_result
+                        results.append(item_result)
+                        continue
+
+                    source_commodity = _search_commodity(source_ctx, sku)
+                    item_result["source_commodity"] = source_commodity
+                    if not source_commodity or not source_commodity.get("id"):
+                        item_result.update({
+                            "status": "blocked",
+                            "error": "missing_dxm02_source",
+                            "message": "DXM02 明空商品管理找不到该 SKU，无法复刻",
+                        })
+                        results.append(item_result)
+                        continue
+                    if source_commodity.get("is_combo"):
+                        item_result.update({
+                            "status": "blocked",
+                            "error": "combo_replication_not_supported",
+                            "message": "组合 SKU 需要组件先复刻，首版不自动创建外层组合 SKU",
+                        })
+                        results.append(item_result)
+                        continue
+
+                    source_detail = _view_commodity_detail(
+                        source_ctx,
+                        source_commodity["id"],
+                        account_label="DXM02",
+                    )
+                    purchase_url = _purchase_url_for_selection(
+                        product,
+                        row,
+                        selection,
+                        source_commodity,
+                    )
+                    desired_sku_code = (
+                        row.get("dianxiaomi_sku_code")
+                        or source_commodity.get("sku_code")
+                        or _source_commodity_from_detail(source_detail).get("skuCode")
+                        or sku
+                    )
+                    final_sku_code, strategy = _target_sku_code(
+                        target_ctx,
+                        str(desired_sku_code or ""),
+                        target_sku=sku,
+                    )
+                    form_payload = _replicated_commodity_form(
+                        source_detail,
+                        target_sku=sku,
+                        target_sku_code=final_sku_code,
+                        purchase_url=purchase_url,
+                        fallback_name=row.get("dianxiaomi_name") or source_commodity.get("name") or "",
+                        fallback_name_en=product.get("shopify_title") or "",
+                    )
+                    _add_replicated_commodity(target_ctx, form_payload)
+                    created = _wait_for_commodity(target_ctx, sku)
+                    if not created:
+                        item_result.update({
+                            "status": "error",
+                            "error": "dxm03_create_not_visible",
+                            "message": "DXM03 创建接口返回成功，但商品管理暂未搜索到该 SKU",
+                        })
+                        results.append(item_result)
+                        continue
+                    item_result.update({
+                        "status": "created",
+                        "message": "已从明空 DXM02 复刻到 DXM03",
+                        "commodity": created,
+                        "purchase_1688_url": purchase_url,
+                        "dxm03_sku_code": created.get("sku_code") or final_sku_code,
+                        "sku_code_strategy": strategy,
+                    })
+                    if purchase_url and not first_purchase_url:
+                        first_purchase_url = purchase_url
+                    successful_by_sku[sku] = item_result
+                    results.append(item_result)
+                except Exception as exc:
+                    item_result.update({
+                        "status": "error",
+                        "error": "dxm03_replicate_failed",
+                        "message": str(exc),
+                    })
+                    results.append(item_result)
+        finally:
+            _close_dxm03_context(source_playwright, source_browser)
+            if target_playwright is not None and target_browser is not None:
+                _close_dxm03_context(target_playwright, target_browser)
+
+    if successful_by_sku:
+        medias_module = None
+        if replace_product_skus_fn is None:
+            from appcore import medias
+
+            medias_module = medias
+            replace_product_skus_fn = medias.replace_product_skus
+
+        replacement_pairs: list[dict[str, Any]] = []
+        for raw_row in sku_rows or []:
+            pair = _sku_pair_for_replace(raw_row)
+            sku = str(pair.get("dianxiaomi_sku") or "").strip()
+            replicated = successful_by_sku.get(sku)
+            commodity = (replicated or {}).get("commodity") or {}
+            if replicated and commodity:
+                pair["dianxiaomi_sku_code"] = (
+                    replicated.get("dxm03_sku_code")
+                    or commodity.get("sku_code")
+                    or pair.get("dianxiaomi_sku_code")
+                )
+                pair["dianxiaomi_product_sku"] = (
+                    commodity.get("product_sku")
+                    or pair.get("dianxiaomi_product_sku")
+                )
+                pair["dianxiaomi_name"] = (
+                    commodity.get("name")
+                    or pair.get("dianxiaomi_name")
+                )
+            if pair.get("shopify_variant_id"):
+                replacement_pairs.append(pair)
+        if replacement_pairs:
+            update_summary = replace_product_skus_fn(
+                int(product["id"]),
+                replacement_pairs,
+                source="mingkong_replicated",
+            )
+        else:
+            update_summary = {"inserted": 0, "updated": 0, "deleted": 0, "preserved": 0}
+        if first_purchase_url and not str(product.get("purchase_1688_url") or "").strip():
+            if update_product_fn is None:
+                if medias_module is None:
+                    from appcore import medias
+
+                    medias_module = medias
+                update_product_fn = medias_module.update_product
+            update_product_fn(int(product["id"]), purchase_1688_url=first_purchase_url)
+    else:
+        update_summary = {"inserted": 0, "updated": 0, "deleted": 0, "preserved": 0}
+
+    ok = bool(results) and all(
+        item.get("status") in {"already_exists", "created"}
+        for item in results
+    )
+    return {
+        "ok": ok,
+        "product_id": product.get("id"),
+        "product_code": product.get("product_code") or "",
+        "items": results,
+        "summary": {
+            "created_count": sum(1 for item in results if item.get("status") == "created"),
+            "existing_count": sum(1 for item in results if item.get("status") == "already_exists"),
+            "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
+            "error_count": sum(1 for item in results if item.get("status") == "error"),
+            "local_update": update_summary,
         },
     }
 
