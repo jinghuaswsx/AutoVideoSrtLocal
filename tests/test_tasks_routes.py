@@ -2861,3 +2861,67 @@ def test_api_user_workload_returns_stats(authed_user_client_no_db, monkeypatch):
     assert data["today_completed_translate_tasks"] == 2
     assert data["today_completed_raw_tasks"] == 1
 
+
+def test_api_user_workload_admin_returns_others_stats(authed_client_no_db, monkeypatch):
+    workload_calls = []
+    
+    def fake_get_user_workload_stats(user_id):
+        workload_calls.append(user_id)
+        return {
+            "in_progress": 1,
+            "today_completed": 2,
+            "today_completed_products": 3,
+            "today_completed_translate_tasks": 4,
+            "today_completed_raw_tasks": 5,
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.get_user_workload_stats",
+        fake_get_user_workload_stats,
+        raising=False,
+    )
+    
+    # Mock _user_display_name_expr
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc._user_display_name_expr",
+        lambda alias: "username",
+        raising=False,
+    )
+    
+    # Mock query_all for users query
+    db_queries = []
+    def fake_query_all(sql, args=None):
+        db_queries.append((sql, args))
+        # Return matched users: 周干琴, 顾倩, 王健
+        return [
+            {"id": 101, "display_name": "周干琴"},
+            {"id": 102, "display_name": "顾倩"},
+            {"id": 103, "display_name": "王健"},
+        ]
+        
+    monkeypatch.setattr("appcore.db.query_all", fake_query_all)
+    
+    rsp = authed_client_no_db.get("/tasks/api/user-workload")
+    assert rsp.status_code == 200
+    data = rsp.get_json()
+    
+    # Check admin self workload
+    assert data["in_progress"] == 1
+    assert data["is_admin"] is True
+    assert len(data["others"]) == 3
+    
+    # Check the display order
+    assert data["others"][0]["display_name"] == "周干琴"
+    assert data["others"][0]["user_id"] == 101
+    assert data["others"][0]["stats"]["today_completed"] == 2
+    
+    assert data["others"][1]["display_name"] == "顾倩"
+    assert data["others"][1]["user_id"] == 102
+    
+    assert data["others"][2]["display_name"] == "王健"
+    assert data["others"][2]["user_id"] == 103
+    
+    # Check that workload stats were fetched for self (id 1) and others (101, 102, 103)
+    assert workload_calls == [1, 101, 102, 103]
+
+

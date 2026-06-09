@@ -21,7 +21,7 @@ The user wording mentions "100 Mbps (100 兆)", but the examples and goal are fi
 4. If the file is larger than 100 MB, compute a target total bitrate from duration and file-size budget, subtract the planned audio bitrate to get a target video bitrate, and re-encode with ffmpeg.
 5. The final `result.hard_video` and `preview_files.hard_video` must point to the adjusted file when re-encoding occurs.
 6. The CapCut export package must use the same adjusted final hard-video file when `video_size_adjustment` has completed. If no re-encode was necessary, it still uses the checked final hard-video file.
-7. The detail page shows a new step card named "视频大小调整" with original size, final size, original bitrate, target bitrate, audio bitrate, video bitrate before/after, and status.
+7. The detail page always shows a visible step card named "视频大小调整" once the step exists in the pipeline, regardless of whether re-encoding was required. The card must state the outcome, original size, final size, original bitrate, target bitrate, audio bitrate, and video bitrate before/after.
 
 ## Non-Goals
 
@@ -93,11 +93,13 @@ Card title: `视频大小调整`.
 
 Card contents:
 
-- Status badge: `无需调整`, `已调整`, or `失败`.
+- Status badge: `已检查，无需调整`, `已调整`, or `失败`.
 - Size metrics: original size, final size, limit.
 - Bitrate metrics: original total bitrate, target total bitrate, original video bitrate, target video bitrate, original audio bitrate, target audio bitrate.
 - Attempt list when retry occurs.
 - A note that MB is file size and Mbps/kbps are bitrate units.
+
+The renderer must not depend only on `artifacts.video_size_adjustment`. If the artifact is missing but `task.video_size_adjustment` or `variants[variant].video_size_adjustment` exists, the frontend synthesizes the same `video_size_adjustment` artifact so completed tasks still show the card. This is required for resumptions, older in-flight tasks, and any edge case where the summary persisted but the preview artifact did not.
 
 ## CapCut Export
 

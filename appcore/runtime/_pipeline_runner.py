@@ -4140,14 +4140,26 @@ class PipelineRunner:
                 "attempts": [],
                 "message": "未找到视频合成后的硬字幕视频，无法进行大小调整。",
             }
+            artifact = build_video_size_adjustment_artifact(summary)
             variant_state["video_size_adjustment"] = summary
+            variant_artifacts = dict(variant_state.get("artifacts") or {})
+            variant_artifacts["video_size_adjustment"] = artifact
+            variant_state["artifacts"] = variant_artifacts
             variants[variant] = variant_state
+            artifacts = dict(task.get("artifacts") or {})
+            artifacts["video_size_adjustment"] = artifact
+            steps = dict(task.get("steps") or {})
+            steps["video_size_adjustment"] = "failed"
+            step_messages = dict(task.get("step_messages") or {})
+            step_messages["video_size_adjustment"] = summary["message"]
             task_state.update(
                 task_id,
                 variants=variants,
                 video_size_adjustment=summary,
+                artifacts=artifacts,
+                steps=steps,
+                step_messages=step_messages,
             )
-            task_state.set_artifact(task_id, "video_size_adjustment", build_video_size_adjustment_artifact(summary))
             self._set_step(task_id, "video_size_adjustment", "failed", summary["message"])
             raise RuntimeError(summary["message"])
 
@@ -4164,7 +4176,13 @@ class PipelineRunner:
 
         variant_state["result"] = result
         variant_state["video_size_adjustment"] = summary
+        artifact = build_video_size_adjustment_artifact(summary)
+        variant_artifacts = dict(variant_state.get("artifacts") or {})
+        variant_artifacts["video_size_adjustment"] = artifact
+        variant_state["artifacts"] = variant_artifacts
         variants[variant] = variant_state
+        artifacts = dict(task.get("artifacts") or {})
+        artifacts["video_size_adjustment"] = artifact
         final_compose_summary = dict(
             variant_state.get("final_compose_summary")
             or task.get("final_compose_summary")
@@ -4174,6 +4192,7 @@ class PipelineRunner:
             "variants": variants,
             "result": result,
             "video_size_adjustment": summary,
+            "artifacts": artifacts,
         }
         if final_compose_summary:
             final_compose_summary["compose_result"] = result
@@ -4182,10 +4201,16 @@ class PipelineRunner:
             variants[variant] = variant_state
             update_payload["final_compose_summary"] = final_compose_summary
 
-        task_state.update(task_id, **update_payload)
-        task_state.set_artifact(task_id, "video_size_adjustment", build_video_size_adjustment_artifact(summary))
-
         message = summary.get("message") or "视频大小调整完成"
+        steps = dict(task.get("steps") or {})
+        steps["video_size_adjustment"] = "failed" if summary.get("status") == "failed" else "done"
+        step_messages = dict(task.get("step_messages") or {})
+        step_messages["video_size_adjustment"] = message
+        update_payload["steps"] = steps
+        update_payload["step_messages"] = step_messages
+
+        task_state.update(task_id, **update_payload)
+
         if summary.get("status") == "failed":
             self._set_step(task_id, "video_size_adjustment", "failed", message)
             raise RuntimeError(message)
