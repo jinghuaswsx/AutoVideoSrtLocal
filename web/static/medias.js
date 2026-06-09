@@ -3977,6 +3977,9 @@
             <button class="oc-btn sm ghost" data-product-unsuitable-push="${p.id}" title="推送该产品的不合适标注报文">
               ${icon('alert', 12)}<span>推送不合适</span>
             </button>
+            <a class="oc-btn sm ghost" href="/pushes?keyword=${encodeURIComponent(productCode)}&status=" target="_blank" title="跳转到推送管理">
+              ${icon('external-link', 12)}<span>推送管理</span>
+            </a>
           </div>
         </td>
         <td class="actions">
