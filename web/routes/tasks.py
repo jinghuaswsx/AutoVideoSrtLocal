@@ -495,6 +495,17 @@ def api_stats():
     return _json_response({"stats": stats})
 
 
+@bp.route("/api/user-workload", methods=["GET"])
+@login_required
+def api_user_workload():
+    try:
+        stats = tasks_svc.get_user_workload_stats(int(current_user.id))
+        return _json_response(stats)
+    except Exception as exc:
+        current_app.logger.exception("get user workload stats failed")
+        return _json_response({"error": str(exc)}, 500)
+
+
 @bp.route("/api/<int:tid>/archive", methods=["POST"])
 @login_required
 @admin_required

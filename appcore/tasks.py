@@ -5150,3 +5150,94 @@ def get_employee_task_stats(start_date: str, end_date: str = None) -> list[dict]
         }
         for row in rows
     ]
+
+
+def get_user_workload_stats(user_id: int) -> dict:
+    """获取指定用户的工作量统计信息（今日进行中，今日已完成）。
+
+    用户维度的已完成定义：待推送状态（pending_push）或者已完成状态。
+    今日已完成：今日内完成或提交的任务。
+    进行中：处于 todo 状态（并且不是待推送状态）的任务。
+    """
+    from datetime import datetime, date
+    
+    today = datetime.now().date()
+    today_start = datetime.combine(today, datetime.min.time())
+    
+    # 1. 获取所有当前处于“待推送”状态的子任务ID
+    pending_push_ids = get_active_pending_push_task_ids()
+    
+    # 2. 查询该用户的所有任务（不限于非归档，保证归档也算今日工作量）
+    tasks = query_all(
+        "SELECT id, parent_task_id, status, media_product_id, completed_at "
+        "FROM tasks "
+        "WHERE assignee_id = %s",
+        (int(user_id),)
+    )
+    
+    # 3. 查询今日由该用户提交的翻译任务ID（通过 task_events 的 submitted 事件判定今日提交）
+    event_rows = query_all(
+        "SELECT DISTINCT task_id "
+        "FROM task_events "
+        "WHERE actor_user_id = %s "
+        "  AND event_type IN ('submitted', 'completed') "
+        "  AND created_at >= %s",
+        (int(user_id), today_start)
+    )
+    today_event_task_ids = {int(r["task_id"]) for r in event_rows if r.get("task_id") is not None}
+    
+    def is_dt_today(val) -> bool:
+        if not val:
+            return False
+        if isinstance(val, (datetime, date)):
+            return val.date() == today
+        val_str = str(val)
+        return val_str.startswith(str(today))
+
+    in_progress_count = 0
+    today_completed_count = 0
+    
+    today_completed_product_ids = set()
+    today_completed_translate_tasks = 0
+    today_completed_raw_tasks = 0
+    
+    for t in tasks:
+        tid = int(t["id"])
+        parent_id = t.get("parent_task_id")
+        status = t.get("status")
+        product_id = t.get("media_product_id")
+        
+        # 判断状态
+        is_pending_push = tid in pending_push_ids
+        is_done_status = status in (PARENT_RAW_DONE, PARENT_ALL_DONE, CHILD_DONE)
+        
+        # A. 进行中 (todo 状态，且不属于 pending_push)
+        is_active = status in (PARENT_PENDING, PARENT_RAW_IN_PROGRESS, PARENT_RAW_REVIEW,
+                              CHILD_ASSIGNED, CHILD_REVIEW, CHILD_BLOCKED)
+        if is_active and not is_pending_push:
+            in_progress_count += 1
+            
+        # B. 今日已完成
+        completed_today = False
+        if is_done_status and is_dt_today(t.get("completed_at")):
+            completed_today = True
+        elif is_pending_push and tid in today_event_task_ids:
+            completed_today = True
+            
+        if completed_today:
+            today_completed_count += 1
+            if product_id:
+                today_completed_product_ids.add(int(product_id))
+            if parent_id is not None:
+                today_completed_translate_tasks += 1
+            else:
+                today_completed_raw_tasks += 1
+                
+    return {
+        "in_progress": in_progress_count,
+        "today_completed": today_completed_count,
+        "today_completed_products": len(today_completed_product_ids),
+        "today_completed_translate_tasks": today_completed_translate_tasks,
+        "today_completed_raw_tasks": today_completed_raw_tasks,
+    }
+
