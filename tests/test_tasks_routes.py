@@ -2828,3 +2828,36 @@ def test_api_list_returns_is_rework_field(authed_user_client_no_db, monkeypatch)
     assert rsp.status_code == 200
     data = rsp.get_json()
     assert data["items"][0]["is_rework"] is True
+
+
+def test_api_user_workload_requires_login(authed_client_no_db):
+    client = authed_client_no_db.application.test_client()
+    rsp = client.get("/tasks/api/user-workload", follow_redirects=False)
+    assert rsp.status_code in (302, 401)
+
+
+def test_api_user_workload_returns_stats(authed_user_client_no_db, monkeypatch):
+    def fake_get_user_workload_stats(user_id):
+        assert user_id == 2  # authed_user_client_no_db user ID is 2
+        return {
+            "in_progress": 5,
+            "today_completed": 3,
+            "today_completed_products": 2,
+            "today_completed_translate_tasks": 2,
+            "today_completed_raw_tasks": 1,
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.tasks_svc.get_user_workload_stats",
+        fake_get_user_workload_stats,
+        raising=False,
+    )
+    rsp = authed_user_client_no_db.get("/tasks/api/user-workload")
+    assert rsp.status_code == 200
+    data = rsp.get_json()
+    assert data["in_progress"] == 5
+    assert data["today_completed"] == 3
+    assert data["today_completed_products"] == 2
+    assert data["today_completed_translate_tasks"] == 2
+    assert data["today_completed_raw_tasks"] == 1
+
