@@ -555,6 +555,16 @@ def _target_exists(frame, language: str) -> bool:
     return frame.locator(f'button[aria-label="Remove {language}"]').count() > 0
 
 
+def _remove_target_language(frame, language: str) -> dict:
+    locator = frame.locator(f'button[aria-label="Remove {language}"]')
+    count = locator.count()
+    if count <= 0:
+        return {"removed": False, "count": 0}
+    locator.nth(0).click(timeout=5000)
+    frame.page.wait_for_timeout(1000)
+    return {"removed": True, "count": count}
+
+
 def _normalize_language_marker(value: object) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     text = re.sub(r"^remove\s+", "", text, flags=re.IGNORECASE).strip()
@@ -789,7 +799,7 @@ def replace_slot(
     local_image_path: str,
     *,
     language: str = "Italian",
-    replace_existing: bool = True,
+    replace_existing: bool = False,
     cancel_token: cancellation.CancellationToken | None = None,
 ) -> dict:
     scope = f"[轮播图][位置 {slot_idx}]"
@@ -828,20 +838,28 @@ def replace_slot(
                 lambda value: f"已存在={bool(value)}",
             ))
             if target_exists:
+                if not replace_existing:
+                    _run_step(
+                        attempt_scope,
+                        "已存在，关闭对话框跳过",
+                        lambda: _click_cancel(frame),
+                        lambda value: f"已关闭={bool(value)}",
+                    )
+                    status = "ok" if attempt > 1 else "skipped"
+                    _log(f"{scope} 结果：{status}，原因={language} 已存在（总耗时 {_duration_s(started_at)}）")
+                    return {
+                        "slot": slot_idx,
+                        "status": status,
+                        "reason": f"{language} already exists",
+                        "path": local_image_path,
+                    }
                 _run_step(
                     attempt_scope,
-                    "已存在，关闭对话框跳过",
-                    lambda: _click_cancel(frame),
-                    lambda value: f"已关闭={bool(value)}",
+                    f"强制重传，移除已有 {language} 语言标记",
+                    lambda: _remove_target_language(frame, language),
+                    lambda value: f"已移除={bool(dict(value).get('removed'))} 数量={dict(value).get('count')}",
                 )
-                status = "ok" if attempt > 1 else "skipped"
-                _log(f"{scope} 结果：{status}，原因={language} 已存在（总耗时 {_duration_s(started_at)}）")
-                return {
-                    "slot": slot_idx,
-                    "status": status,
-                    "reason": f"{language} already exists",
-                    "path": local_image_path,
-                }
+                _pause_after_action(frame, attempt_scope, "强制移除已有语言标记", cancel_token=cancel_token)
 
             cancellation.throw_if_cancelled(cancel_token)
             language_info = _run_step(
@@ -923,7 +941,7 @@ def replace_many(
     user_data_dir: str,
     pairs: list[tuple[int, str]],
     language: str = "Italian",
-    replace_existing: bool = True,
+    replace_existing: bool = False,
     port: int = DEFAULT_CDP_PORT,
     limit: int | None = None,
     cancel_token: cancellation.CancellationToken | None = None,
@@ -972,13 +990,17 @@ def replace_many(
                     lambda: _wait_plugin_frame(page, cancel_token=cancel_token),
                     lambda value: f"frame 地址={getattr(value, 'url', '') or '-'}",
                 )
+                scan_pairs = [] if replace_existing else selected_pairs
                 scan_result = _run_step(
                     "[轮播图]",
                     "扫描已有语言标记",
-                    lambda: filter_pairs_missing_language_markers(frame, selected_pairs, language),
+                    lambda: filter_pairs_missing_language_markers(frame, scan_pairs, language),
                     lambda value: f"已跳过={len(value[0])} 待处理={len(value[1])}",
                 )
                 skipped_results, pending_pairs = scan_result
+                if replace_existing:
+                    _log(f"[轮播图] 强制重传已启用：不预跳过已有 {language} 标记的位置")
+                    pending_pairs = list(selected_pairs)
                 results.extend(skipped_results)
                 if skipped_results:
                     _log(
