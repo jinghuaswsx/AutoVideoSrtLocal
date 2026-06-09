@@ -390,6 +390,8 @@ DXM03 写入仍遵守：
 
 复刻动作需要同时访问 DXM02-MK 与 DXM03-RJC CDP。实现上只能启动一个 `sync_playwright()` 实例，再用同一个 Playwright 分别 `connect_over_cdp` 两个账号浏览器；不能在同一线程里连续启动两个 Playwright Sync context。
 
+DXM03 普通商品新增接口 `POST /api/dxmCommodityProduct/addCommodityProduct.json` 除 `obj` 外还必须携带前端保存动作同款外层字段，至少包括 `shopId=-1`、`pt=-1`、`pid`、`vid`、`orderStatus`、`orderId`、`orderWarehoseId=-1`、`orderCount=0`；缺少 `shopId/pt` 时接口会直接返回 404。
+
 复刻字段分三类处理：
 
 1. 可复刻字段：

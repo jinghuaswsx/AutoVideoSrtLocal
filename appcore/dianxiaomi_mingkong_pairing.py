@@ -518,7 +518,17 @@ def _replicated_commodity_form(
     packs = _strip_dxm_identity_fields(_source_packs_from_detail(source_detail))
     if packs:
         form["dxmProductPacks"] = json.dumps(packs, ensure_ascii=False)
-    return {"obj": json.dumps(form, ensure_ascii=False)}
+    return {
+        "obj": json.dumps(form, ensure_ascii=False),
+        "pid": "",
+        "vid": "",
+        "orderStatus": "",
+        "shopId": "-1",
+        "pt": "-1",
+        "orderId": "",
+        "orderWarehoseId": "-1",
+        "orderCount": "0",
+    }
 
 
 def _add_replicated_commodity(ctx, form_payload: dict[str, Any]) -> dict[str, Any]:

@@ -643,6 +643,10 @@ def test_replicated_commodity_form_clears_account_bound_fields():
     product = json.loads(form["dxmCommodityProduct"])
     customs = json.loads(form["dxmProductCustoms"])
 
+    assert payload["shopId"] == "-1"
+    assert payload["pt"] == "-1"
+    assert payload["orderWarehoseId"] == "-1"
+    assert payload["orderCount"] == "0"
     assert product["sku"] == "50853279039762"
     assert product["skuCode"] == "98012311"
     assert product["fullCid"] == pairing.DEFAULT_DXM03_FULL_CID
