@@ -344,6 +344,78 @@
     overflow: auto;
   }
   .mkp-sync-row {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px 12px;
+    transition: all 0.2s;
+  }
+  .mkp-sync-row:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+  .mkp-sync-row-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .mkp-sync-row-col.local,
+  .mkp-sync-row-col.mingkong {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mkp-sync-row-col.relation {
+    flex: 0 0 160px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .mkp-sync-row-col.actions {
+    flex: 0 0 100px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .mkp-sync-row-thumb {
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+  .mkp-sync-row-info {
+    min-width: 0;
+  }
+  .mkp-sync-row-sku {
+    font-weight: 600;
+    font-size: 13px;
+    color: #0f172a;
+  }
+  .mkp-sync-row-variant {
+    font-size: 12px;
+    color: #64748b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mkp-sync-relation-arrow {
+    color: #94a3b8;
+    font-size: 12px;
+  }
+  .mkp-sync-row-detail {
+    border-top: 1px dashed #e2e8f0;
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+  .mkp-sync-row-cards {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.05fr);
     gap: 12px;
@@ -543,6 +615,22 @@
     border-color: #334155;
     background: #111827;
   }
+  [data-theme='dark'] .mkp-sync-row {
+    border-color: #334155;
+    background: #0f172a;
+  }
+  [data-theme='dark'] .mkp-sync-row-thumb {
+    border-color: #334155;
+  }
+  [data-theme='dark'] .mkp-sync-row-sku {
+    color: #e2e8f0;
+  }
+  [data-theme='dark'] .mkp-sync-row-variant {
+    color: #94a3b8;
+  }
+  [data-theme='dark'] .mkp-sync-row-detail {
+    border-top-color: #334155;
+  }
   [data-theme='dark'] .mkp-sync-card {
     border-color: #334155;
     background: #0f172a;
@@ -572,8 +660,25 @@
     .mkp-status {
       grid-template-columns: 1fr;
     }
-    .mkp-sync-row {
+    .mkp-sync-row-cards {
       grid-template-columns: 1fr;
+    }
+    .mkp-sync-row-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .mkp-sync-row-col.relation {
+      flex: none;
+      width: 100%;
+      align-items: flex-start;
+      padding-left: 46px;
+    }
+    .mkp-sync-row-col.actions {
+      flex: none;
+      width: 100%;
+      justify-content: flex-start;
+      padding-left: 46px;
     }
   }
 </style>
@@ -1107,6 +1212,7 @@
       const mingkong = item.mingkong || {};
       const target = targetForItem(item);
       const currentImageUrl = bestValue(item.image_url, commodity.image_url, mingkong.image_url);
+      const mingkongImageUrl = mingkong.image_url || '';
       const mingkongFields = [
         valueBlock('明空变体', mingkong.variant_title || item.variant_title),
         valueBlock('明空店小秘 SKU', mingkong.sku, { mono: true }),
@@ -1143,9 +1249,36 @@
           data-shopify-variant-id="${esc(target.shopify_variant_id)}"
           data-shopify-sku="${esc(target.shopify_sku)}"
           data-shopify-currency="${esc(target.shopify_currency)}">
-        ${syncCardHtml('明空 SKU 数据', mingkong.image_url, mingkongFields)}
-        ${syncCardHtml('当前我们系统 / DXM03', currentImageUrl, currentFields)}
-        ${syncCardHtml('执行后的目标效果', target.image_url, targetFields, 'target')}
+        <div class="mkp-sync-row-header">
+          <div class="mkp-sync-row-col local">
+            ${imageHtml(currentImageUrl, 'mkp-sync-row-thumb')}
+            <div class="mkp-sync-row-info">
+              <div class="mkp-sync-row-sku mkp-mono">${esc(item.dianxiaomi_sku || '—')}</div>
+              <div class="mkp-sync-row-variant">${esc(item.variant_title || '—')}</div>
+            </div>
+          </div>
+          <div class="mkp-sync-row-col relation">
+            <div class="mkp-sync-relation-arrow">➔</div>
+            ${chip(item.status)}
+          </div>
+          <div class="mkp-sync-row-col mingkong">
+            ${imageHtml(mingkongImageUrl, 'mkp-sync-row-thumb')}
+            <div class="mkp-sync-row-info">
+              <div class="mkp-sync-row-sku mkp-mono">${esc(mingkong.sku || '—')}</div>
+              <div class="mkp-sync-row-variant">${esc(mingkong.variant_title || '—')}</div>
+            </div>
+          </div>
+          <div class="mkp-sync-row-col actions">
+            <button type="button" class="mkp-btn mkp-btn-toggle-detail">查看详情</button>
+          </div>
+        </div>
+        <div class="mkp-sync-row-detail" hidden>
+          <div class="mkp-sync-row-cards">
+            ${syncCardHtml('明空 SKU 数据', mingkong.image_url, mingkongFields)}
+            ${syncCardHtml('当前我们系统 / DXM03', currentImageUrl, currentFields)}
+            ${syncCardHtml('执行后的目标效果', target.image_url, targetFields, 'target')}
+          </div>
+        </div>
       </div>`;
     }).join('');
   }
@@ -1285,6 +1418,27 @@
       $('mkpResult').textContent = resultText(payload, err.message || String(err));
     }
   }
+
+  $('mkpSyncRows').addEventListener('click', (e) => {
+    const header = e.target.closest('.mkp-sync-row-header');
+    if (!header) return;
+    if (e.target.tagName === 'A' || e.target.closest('a')) return;
+    
+    const row = header.closest('.mkp-sync-row');
+    if (!row) return;
+    
+    const detail = row.querySelector('.mkp-sync-row-detail');
+    if (detail) {
+      const isHidden = detail.hidden;
+      detail.hidden = !isHidden;
+      
+      const btn = header.querySelector('.mkp-btn-toggle-detail');
+      if (btn) {
+        btn.textContent = isHidden ? '收起详情' : '查看详情';
+        btn.classList.toggle('primary', isHidden);
+      }
+    }
+  });
 
   $('mkpReload').addEventListener('click', () => {
     load({ modal: true }).catch(() => {});
