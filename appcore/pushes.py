@@ -2329,6 +2329,7 @@ def list_items_for_push(
     sort: str = "created_at_desc",
     offset: int = 0,
     limit: int | None = 20,
+    video_size: str = "",
 ) -> tuple[list[dict], int]:
     """不过滤状态（状态在内存里算）。返回 (items join product 的原始行, total)。
 
@@ -2385,6 +2386,12 @@ def list_items_for_push(
             date_to_dt = date_to
         where.append("i.created_at <= %s")
         args.append(date_to_dt)
+    
+    video_size = (video_size or "").strip().lower()
+    if video_size == "large":
+        where.append("i.file_size >= 104857600")
+    elif video_size == "small":
+        where.append("i.file_size < 104857600")
 
     where_sql = " AND ".join(where)
 
