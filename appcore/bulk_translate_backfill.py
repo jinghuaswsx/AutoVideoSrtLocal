@@ -128,7 +128,21 @@ def _acquire_video_sync_lock(
         conn.close()
 
 
-def _find_existing_video_item(*, product_id: int, lang: str, video_object_key: str) -> dict | None:
+def _find_existing_video_item(*, product_id: int, lang: str, source_raw_id: int, video_object_key: str) -> dict | None:
+    # 优先根据原始视频源匹配，这样重译产生的不同 object key 也能准确匹配到旧视频并覆盖
+    item = query_one(
+        """
+        SELECT id, cover_object_key
+        FROM media_items
+        WHERE product_id=%s AND lang=%s AND source_raw_id=%s AND deleted_at IS NULL
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (product_id, lang, source_raw_id),
+    )
+    if item:
+        return item
+
     return query_one(
         """
         SELECT id, cover_object_key
@@ -309,19 +323,50 @@ def sync_video_result(
         existing = _find_existing_video_item(
             product_id=product_id,
             lang=lang,
+            source_raw_id=source_raw_id,
             video_object_key=video_object_key,
         ) or {}
         target_id = int(existing.get("id") or 0)
         if target_id:
+            # 覆盖老的，保留新的。如果文件名、视频/封面 object_key、时长大小有变化，也要进行覆盖。
             if bound_task_id is not None:
                 execute(
-                    "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s, task_id=%s WHERE id=%s",
-                    (source_raw_id, cover_object_key, bound_task_id, target_id),
+                    """
+                    UPDATE media_items 
+                       SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s, updated_at=NOW()
+                     WHERE id=%s
+                    """,
+                    (
+                        filename,
+                        filename,
+                        video_object_key,
+                        cover_object_key,
+                        raw_source.get("duration_seconds"),
+                        raw_source.get("file_size"),
+                        source_raw_id,
+                        bound_task_id,
+                        target_id,
+                    ),
                 )
             else:
                 execute(
-                    "UPDATE media_items SET source_raw_id=%s, cover_object_key=%s WHERE id=%s",
-                    (source_raw_id, cover_object_key, target_id),
+                    """
+                    UPDATE media_items 
+                       SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s, updated_at=NOW()
+                     WHERE id=%s
+                    """,
+                    (
+                        filename,
+                        filename,
+                        video_object_key,
+                        cover_object_key,
+                        raw_source.get("duration_seconds"),
+                        raw_source.get("file_size"),
+                        source_raw_id,
+                        target_id,
+                    ),
                 )
         else:
             target_id = medias.create_item(
