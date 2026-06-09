@@ -20,7 +20,7 @@ The user wording mentions "100 Mbps (100 兆)", but the examples and goal are fi
 3. If the file is already at or below 100 MB, keep it unchanged and record a "skipped" adjustment summary.
 4. If the file is larger than 100 MB, compute a target total bitrate from duration and file-size budget, subtract the planned audio bitrate to get a target video bitrate, and re-encode with ffmpeg.
 5. The final `result.hard_video` and `preview_files.hard_video` must point to the adjusted file when re-encoding occurs.
-6. The CapCut export package must use the same adjusted final hard-video file when `video_size_adjustment` has completed. If no re-encode was necessary, it still uses the checked final hard-video file.
+6. The CapCut export package must use the same adjusted final hard-video file only when `video_size_adjustment` actually re-encoded the video. If no re-encode was necessary, it must keep the editable source timeline with separate TTS audio, subtitle, and accompaniment tracks.
 7. The detail page always shows a visible step card named "视频大小调整" once the step exists in the pipeline, regardless of whether re-encoding was required. The card must state the outcome, original size, final size, original bitrate, target bitrate, audio bitrate, and video bitrate before/after.
 
 ## Non-Goals
@@ -103,9 +103,9 @@ The renderer must not depend only on `artifacts.video_size_adjustment`. If the a
 
 ## CapCut Export
 
-`export` runs after `video_size_adjustment`. When a `video_size_adjustment` summary exists with `status` of `skipped` or `adjusted`, CapCut export must use `summary.output_path` / `result.hard_video` as its video input. This keeps the video resource inside the CapCut archive aligned with the final downloadable video and under the 100 MB limit.
+`export` runs after `video_size_adjustment`. When a `video_size_adjustment` summary exists with `status` of `adjusted`, CapCut export must use `summary.output_path` / `result.hard_video` as its video input. This keeps the video resource inside the CapCut archive aligned with the final downloadable video and under the 100 MB limit.
 
-Because that input is already the final hard-subtitle video, CapCut export uses a final-video mode for this case:
+Because the adjusted input is already the final hard-subtitle video, CapCut export uses a final-video mode for this case:
 
 - copy the adjusted final video into `Resources/auto_generated`;
 - create one video segment that plays the final video from start to finish;
@@ -113,7 +113,7 @@ Because that input is already the final hard-subtitle video, CapCut export uses 
 - do not add duplicate TTS audio or subtitle tracks over the hard-subtitle final video;
 - record `final_video_mode: true` and `video_source: "video_size_adjustment"` in the CapCut export manifest.
 
-If the adjustment step has not run, keep the existing CapCut timeline rebuild behavior.
+If the adjustment step has not run, or if its summary status is `skipped`, keep the existing CapCut timeline rebuild behavior. The `skipped` case still records the size-check artifact, but the CapCut project must remain editable with separate video, TTS audio, subtitle, and accompaniment resources.
 
 ## Resume and Restart
 
@@ -127,7 +127,7 @@ Focused tests:
 
 - `tests/test_compose.py`: bitrate calculation and ffmpeg command construction.
 - `tests/test_pipeline_runner.py`: `video_size_adjustment` rewrites the hard-video result and records artifacts.
-- `tests/test_pipeline_runner.py`: CapCut export uses the adjusted final hard video after `video_size_adjustment`.
+- `tests/test_pipeline_runner.py`: CapCut export uses the adjusted final hard video only after `video_size_adjustment.status == "adjusted"` and keeps editable tracks when the status is `skipped`.
 - `tests/test_runtime_omni_dispatch.py`: Omni step order inserts `video_size_adjustment` after `compose` and before `export`.
 - `tests/test_omni_translate_routes.py`: restart/resume clears stale adjustment state.
 - `tests/test_translate_detail_shell_templates.py`: shared workbench includes the new card and renderer.

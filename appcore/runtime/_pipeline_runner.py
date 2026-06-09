@@ -4222,7 +4222,7 @@ class PipelineRunner:
             or task.get("video_size_adjustment")
             or {}
         )
-        if not isinstance(size_summary, dict) or size_summary.get("status") not in {"skipped", "adjusted"}:
+        if not isinstance(size_summary, dict) or size_summary.get("status") != "adjusted":
             return "", False
 
         variant_result = variant_state.get("result") or {}
