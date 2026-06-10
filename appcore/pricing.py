@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from decimal import Decimal
 import time
+import logging
 from typing import Literal
 
 from appcore.db import query
 
+
+log = logging.getLogger(__name__)
 
 _CACHE_TTL = 60
 _PRECISION = Decimal("0.000001")
@@ -29,13 +32,18 @@ def _load_prices() -> dict[tuple[str, str], dict]:
     if now < expire:
         return _cache["data"]  # type: ignore[return-value]
 
-    rows = query(
-        """
-        SELECT provider, model, units_type,
-               unit_input_cny, unit_output_cny, unit_flat_cny
-        FROM ai_model_prices
-        """
-    )
+    try:
+        rows = query(
+            """
+            SELECT provider, model, units_type,
+                   unit_input_cny, unit_output_cny, unit_flat_cny
+            FROM ai_model_prices
+            """
+        )
+    except Exception as e:
+        log.warning("Failed to load AI model prices from database: %s", e)
+        return {}
+
     data = {(row["provider"], row["model"]): row for row in rows}
     _cache["data"] = data
     _cache["expire"] = now + _CACHE_TTL
@@ -72,7 +80,11 @@ def compute_cost_cny(
     output_tokens: int | None,
     request_units: int | None,
 ) -> tuple[Decimal | None, Literal["pricebook", "unknown"]]:
-    row = _lookup(provider, model)
+    try:
+        row = _lookup(provider, model)
+    except Exception as e:
+        log.warning("Failed lookup for provider=%s model=%s: %s", provider, model, e)
+        row = None
     
     # Defensive fallback for Gemini 1.5 Flash if database row is missing
     if not row and "gemini-1.5-flash" in model.lower() and units_type == "tokens":

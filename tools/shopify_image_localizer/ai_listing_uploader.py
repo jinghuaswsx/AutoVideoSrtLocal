@@ -115,7 +115,12 @@ def run_ai_listing_upload(
     shopify_product_id = ""
     
     with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(port))
+        browser = ez_cdp.connect_cdp_browser(
+            playwright,
+            user_data_dir,
+            port=port,
+            cancel_token=cancel_token,
+        )
         try:
             context = browser.contexts[0] if browser.contexts else browser.new_context()
             context.set_default_timeout(20000)

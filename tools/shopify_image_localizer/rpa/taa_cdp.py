@@ -356,7 +356,12 @@ class TaaSession:
         cancellation.throw_if_cancelled(self.cancel_token)
         ez_cdp.ensure_cdp_chrome(self.user_data_dir, port=self.port, cancel_token=self.cancel_token)
         self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(self.port))
+        self._browser = ez_cdp.connect_cdp_browser(
+            self._playwright,
+            self.user_data_dir,
+            port=self.port,
+            cancel_token=self.cancel_token,
+        )
         context = self._browser.contexts[0] if self._browser.contexts else self._browser.new_context()
         ez_cdp.ensure_google_home_tab(context)
         self._page = ez_cdp.select_or_create_business_page(context, self.outer_url)

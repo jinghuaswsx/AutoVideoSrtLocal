@@ -1218,7 +1218,12 @@ def fetch_storefront_image_display_sizes(
     ez_cdp.ensure_cdp_chrome(user_data_dir, port=port)
     sizes: dict[str, dict[str, Any]] = {}
     with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(port))
+        browser = ez_cdp.connect_cdp_browser(
+            playwright,
+            user_data_dir,
+            port=port,
+            cancel_token=cancel_token,
+        )
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.new_page()
         try:
@@ -1420,7 +1425,7 @@ def _preload_chrome_tab_to_url(
     try:
         ez_cdp.ensure_cdp_chrome(user_data_dir, port=port)
         with sync_playwright() as playwright:
-            browser = playwright.chromium.connect_over_cdp(ez_cdp._cdp_ws_endpoint(port))
+            browser = ez_cdp.connect_cdp_browser(playwright, user_data_dir, port=port)
             context = browser.contexts[0] if browser.contexts else browser.new_context()
             ez_cdp.ensure_google_home_tab(context)
             page = ez_cdp.select_or_create_business_page(context, target_url)

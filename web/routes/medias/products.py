@@ -405,6 +405,179 @@ def _successful_pairing_items_for_yuncang(confirm_result: dict) -> list[dict]:
     ]
 
 
+def _payload_items(payload: dict | None) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+    return [item for item in payload.get("items") or [] if isinstance(item, dict)]
+
+
+def _payload_summary_count(payload: dict | None, key: str) -> int:
+    if not isinstance(payload, dict):
+        return 0
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    try:
+        return int(summary.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _payload_stage_state(payload: dict | None) -> str:
+    if not isinstance(payload, dict):
+        return "not_started"
+    items = _payload_items(payload)
+    if any(str(item.get("status") or "") == "error" for item in items):
+        return "failed"
+    if _payload_summary_count(payload, "error_count") > 0:
+        return "failed"
+    if any(str(item.get("status") or "") == "blocked" for item in items):
+        return "blocked"
+    if _payload_summary_count(payload, "blocked_count") > 0:
+        return "blocked"
+    if payload.get("ok"):
+        return "completed"
+    if payload.get("error"):
+        return "failed"
+    return "blocked"
+
+
+def _purchase_price_stage(yuncang_result: dict | None) -> dict:
+    if not isinstance(yuncang_result, dict):
+        return {
+            "stage": "purchase_price_refresh",
+            "status": "not_started",
+            "message": "云仓阶段未执行，采购价未刷新",
+        }
+    if not yuncang_result.get("ok"):
+        return {
+            "stage": "purchase_price_refresh",
+            "status": "skipped",
+            "message": "云仓阶段未完整完成，采购价刷新跳过",
+        }
+    summary = yuncang_result.get("summary") if isinstance(yuncang_result.get("summary"), dict) else {}
+    local_refresh = summary.get("local_refresh") if isinstance(summary.get("local_refresh"), dict) else {}
+    if local_refresh.get("purchase_price") is None:
+        return {
+            "stage": "purchase_price_refresh",
+            "status": "purchase_price_missing",
+            "message": "云仓已添加/已存在，但本地采购价没有可用云仓单价可回写",
+        }
+    return {
+        "stage": "purchase_price_refresh",
+        "status": "completed",
+        "message": "已根据小秘云仓单价刷新本地采购价",
+        "purchase_price": local_refresh.get("purchase_price"),
+    }
+
+
+def _stage_entry(
+    stage: str,
+    status: str,
+    message: str,
+    *,
+    payload: dict | None = None,
+    stats: dict | None = None,
+) -> dict:
+    entry = {"stage": stage, "status": status, "message": message}
+    if stats:
+        entry["stats"] = stats
+    if isinstance(payload, dict):
+        summary = payload.get("summary")
+        if isinstance(summary, dict):
+            entry["summary"] = summary
+        error = payload.get("error")
+        if error:
+            entry["error"] = error
+    return entry
+
+
+def _mingkong_sync_status_payload(
+    *,
+    import_payload: dict | None = None,
+    import_stats: dict | None = None,
+    replicate_result: dict | None = None,
+    confirm_result: dict | None = None,
+    yuncang_result: dict | None = None,
+) -> dict:
+    stage_summary: list[dict] = []
+    if import_stats is None:
+        import_message = (
+            (import_payload or {}).get("message")
+            or "本地 SKU 尚未写入，目标计划没有可写入 SKU 行"
+        )
+        stage_summary.append(_stage_entry("local_import", "blocked", import_message))
+    else:
+        stage_summary.append(_stage_entry(
+            "local_import",
+            "completed",
+            "本地 SKU 已按人工确认目标写入",
+            stats=import_stats,
+        ))
+
+    if replicate_result is None:
+        stage_summary.append(_stage_entry("dxm03_replicate", "not_started", "DXM03 商品 SKU 复刻尚未执行"))
+    else:
+        stage_summary.append(_stage_entry(
+            "dxm03_replicate",
+            _payload_stage_state(replicate_result),
+            replicate_result.get("message") or "DXM03 商品 SKU 复刻已返回结果",
+            payload=replicate_result,
+        ))
+
+    if confirm_result is None:
+        stage_summary.append(_stage_entry("purchase_pairing", "not_started", "DXM03 1688 采购配对尚未执行"))
+    else:
+        stage_summary.append(_stage_entry(
+            "purchase_pairing",
+            _payload_stage_state(confirm_result),
+            confirm_result.get("message") or "DXM03 1688 采购配对已返回结果",
+            payload=confirm_result,
+        ))
+
+    if yuncang_result is None:
+        yuncang_message = "DXM03 小秘云仓添加尚未执行"
+        if confirm_result is not None:
+            yuncang_message = "没有采购配对成功的基础 SKU，小秘云仓阶段跳过"
+        stage_summary.append(_stage_entry("yuncang_add", "not_started", yuncang_message))
+    else:
+        stage_summary.append(_stage_entry(
+            "yuncang_add",
+            _payload_stage_state(yuncang_result),
+            yuncang_result.get("message") or "DXM03 小秘云仓添加已返回结果",
+            payload=yuncang_result,
+        ))
+
+    stage_summary.append(_purchase_price_stage(yuncang_result))
+
+    statuses = [entry["status"] for entry in stage_summary]
+    completed_stages = sum(1 for status in statuses if status == "completed")
+    if "failed" in statuses:
+        state = "failed"
+    elif "blocked" in statuses:
+        state = "partial_blocked" if completed_stages else "blocked"
+    elif "purchase_price_missing" in statuses:
+        state = "completed_with_warnings"
+    elif all(status in {"completed"} for status in statuses):
+        state = "completed"
+    else:
+        state = "blocked"
+
+    blocked_items = [
+        item for payload in (replicate_result, confirm_result, yuncang_result)
+        for item in _payload_items(payload)
+        if str(item.get("status") or "") in {"blocked", "error"}
+    ]
+    return {
+        "state": state,
+        "stage_summary": stage_summary,
+        "blocked_items": blocked_items,
+        "needs_manual": state in {"blocked", "partial_blocked", "failed", "completed_with_warnings"},
+    }
+
+
+def _with_mingkong_sync_status(payload: dict, **kwargs) -> dict:
+    return {**payload, **_mingkong_sync_status_payload(**kwargs)}
+
+
 def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
     targets = body.get("items") if isinstance(body, dict) else []
     targets = targets if isinstance(targets, list) else []
@@ -431,16 +604,19 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
     ]
     if not pairs:
         message = import_payload.get("message") or "目标计划中没有可写入的 SKU 行"
-        return {
-            "ok": False,
-            "error": "missing_target_sku_rows",
-            "message": message,
-            "logs": logs + [
-                {"level": "error", "message": message},
-            ],
-            "items": [],
-            "realtime_refresh": import_payload.get("realtime_refresh"),
-        }
+        return _with_mingkong_sync_status(
+            {
+                "ok": False,
+                "error": "missing_target_sku_rows",
+                "message": message,
+                "logs": logs + [
+                    {"level": "error", "message": message},
+                ],
+                "items": [],
+                "realtime_refresh": import_payload.get("realtime_refresh"),
+            },
+            import_payload=import_payload,
+        )
 
     stats = medias.replace_product_skus(pid, pairs, source="mingkong_replicated")
     purchase_url = dianxiaomi_mingkong_pairing.first_purchase_url_from_targets(
@@ -474,28 +650,38 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
     except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
         current_app.logger.exception("mingkong pairing full sync replicate failed product_id=%s", pid)
         error_payload = _mingkong_pairing_action_error_payload("复刻明空 SKU", exc)
-        return {
-            "ok": False,
-            "error": "replicate_failed",
-            "message": error_payload["message"],
-            "logs": logs + _stage_logs("复刻 DXM03 SKU", error_payload),
-            "items": error_payload.get("items") or [],
-            "import": {"stats": stats},
-            "replicate": error_payload,
-            "realtime_refresh": import_payload.get("realtime_refresh"),
-        }
+        return _with_mingkong_sync_status(
+            {
+                "ok": False,
+                "error": "replicate_failed",
+                "message": error_payload["message"],
+                "logs": logs + _stage_logs("复刻 DXM03 SKU", error_payload),
+                "items": error_payload.get("items") or [],
+                "import": {"stats": stats},
+                "replicate": error_payload,
+                "realtime_refresh": import_payload.get("realtime_refresh"),
+            },
+            import_payload=import_payload,
+            import_stats=stats,
+            replicate_result=error_payload,
+        )
     logs.extend(_stage_logs("复刻 DXM03 SKU", replicate_result))
     if not replicate_result.get("ok"):
-        return {
-            "ok": False,
-            "error": "replicate_blocked",
-            "message": replicate_result.get("message") or "复刻 DXM03 SKU 未完成",
-            "logs": logs,
-            "items": replicate_result.get("items") or [],
-            "import": {"stats": stats},
-            "replicate": replicate_result,
-            "realtime_refresh": import_payload.get("realtime_refresh"),
-        }
+        return _with_mingkong_sync_status(
+            {
+                "ok": False,
+                "error": "replicate_blocked",
+                "message": replicate_result.get("message") or "复刻 DXM03 SKU 未完成",
+                "logs": logs,
+                "items": replicate_result.get("items") or [],
+                "import": {"stats": stats},
+                "replicate": replicate_result,
+                "realtime_refresh": import_payload.get("realtime_refresh"),
+            },
+            import_payload=import_payload,
+            import_stats=stats,
+            replicate_result=replicate_result,
+        )
 
     product_after_replicate = medias.get_product(pid) or product_after_import
     local_rows = medias.list_product_skus(pid)
@@ -508,17 +694,23 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
     except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
         current_app.logger.exception("mingkong pairing full sync confirm failed product_id=%s", pid)
         error_payload = _mingkong_pairing_action_error_payload("同步明空店小秘SKU", exc)
-        return {
-            "ok": False,
-            "error": "confirm_failed",
-            "message": error_payload["message"],
-            "logs": logs + _stage_logs("确认 DXM03 采购配对", error_payload),
-            "items": error_payload.get("items") or [],
-            "import": {"stats": stats},
-            "replicate": replicate_result,
-            "confirm": error_payload,
-            "realtime_refresh": import_payload.get("realtime_refresh"),
-        }
+        return _with_mingkong_sync_status(
+            {
+                "ok": False,
+                "error": "confirm_failed",
+                "message": error_payload["message"],
+                "logs": logs + _stage_logs("确认 DXM03 采购配对", error_payload),
+                "items": error_payload.get("items") or [],
+                "import": {"stats": stats},
+                "replicate": replicate_result,
+                "confirm": error_payload,
+                "realtime_refresh": import_payload.get("realtime_refresh"),
+            },
+            import_payload=import_payload,
+            import_stats=stats,
+            replicate_result=replicate_result,
+            confirm_result=error_payload,
+        )
     logs.extend(_stage_logs("确认 DXM03 采购配对", confirm_result))
     if not confirm_result.get("ok"):
         yuncang_pairing_items = _successful_pairing_items_for_yuncang(confirm_result)
@@ -538,43 +730,63 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
                     "添加 DXM03 小秘云仓商品",
                     exc,
                 )
-                return {
+                return _with_mingkong_sync_status(
+                    {
+                        "ok": False,
+                        "error": "yuncang_failed",
+                        "message": error_payload["message"],
+                        "logs": logs + _stage_logs("添加 DXM03 小秘云仓商品", error_payload),
+                        "items": error_payload.get("items") or confirm_result.get("items") or [],
+                        "import": {"stats": stats},
+                        "replicate": replicate_result,
+                        "confirm": confirm_result,
+                        "yuncang": error_payload,
+                        "realtime_refresh": import_payload.get("realtime_refresh"),
+                    },
+                    import_payload=import_payload,
+                    import_stats=stats,
+                    replicate_result=replicate_result,
+                    confirm_result=confirm_result,
+                    yuncang_result=error_payload,
+                )
+            logs.extend(_stage_logs("添加 DXM03 小秘云仓商品", yuncang_result))
+            return _with_mingkong_sync_status(
+                {
                     "ok": False,
-                    "error": "yuncang_failed",
-                    "message": error_payload["message"],
-                    "logs": logs + _stage_logs("添加 DXM03 小秘云仓商品", error_payload),
-                    "items": error_payload.get("items") or confirm_result.get("items") or [],
+                    "message": (
+                        f"{confirm_result.get('message') or '同步明空店小秘SKU存在阻断'}；"
+                        f"已对可用 SKU 执行云仓：{yuncang_result.get('message')}"
+                    ),
+                    "logs": logs,
+                    "items": yuncang_result.get("items") or confirm_result.get("items") or [],
                     "import": {"stats": stats},
                     "replicate": replicate_result,
                     "confirm": confirm_result,
-                    "yuncang": error_payload,
+                    "yuncang": yuncang_result,
                     "realtime_refresh": import_payload.get("realtime_refresh"),
-                }
-            logs.extend(_stage_logs("添加 DXM03 小秘云仓商品", yuncang_result))
-            return {
+                },
+                import_payload=import_payload,
+                import_stats=stats,
+                replicate_result=replicate_result,
+                confirm_result=confirm_result,
+                yuncang_result=yuncang_result,
+            )
+        return _with_mingkong_sync_status(
+            {
                 "ok": False,
-                "message": (
-                    f"{confirm_result.get('message') or '同步明空店小秘SKU存在阻断'}；"
-                    f"已对可用 SKU 执行云仓：{yuncang_result.get('message')}"
-                ),
+                "message": confirm_result.get("message") or "同步明空店小秘SKU存在阻断",
                 "logs": logs,
-                "items": yuncang_result.get("items") or confirm_result.get("items") or [],
+                "items": confirm_result.get("items") or replicate_result.get("items") or [],
                 "import": {"stats": stats},
                 "replicate": replicate_result,
                 "confirm": confirm_result,
-                "yuncang": yuncang_result,
                 "realtime_refresh": import_payload.get("realtime_refresh"),
-            }
-        return {
-            "ok": False,
-            "message": confirm_result.get("message") or "同步明空店小秘SKU存在阻断",
-            "logs": logs,
-            "items": confirm_result.get("items") or replicate_result.get("items") or [],
-            "import": {"stats": stats},
-            "replicate": replicate_result,
-            "confirm": confirm_result,
-            "realtime_refresh": import_payload.get("realtime_refresh"),
-        }
+            },
+            import_payload=import_payload,
+            import_stats=stats,
+            replicate_result=replicate_result,
+            confirm_result=confirm_result,
+        )
 
     try:
         yuncang_result = dianxiaomi_yuncang.add_product_skus_to_yuncang(
@@ -587,35 +799,49 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
     except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
         current_app.logger.exception("mingkong pairing yuncang add failed product_id=%s", pid)
         error_payload = _mingkong_pairing_action_error_payload("添加 DXM03 小秘云仓商品", exc)
-        return {
-            "ok": False,
-            "error": "yuncang_failed",
-            "message": error_payload["message"],
-            "logs": logs + _stage_logs("添加 DXM03 小秘云仓商品", error_payload),
-            "items": error_payload.get("items") or [],
+        return _with_mingkong_sync_status(
+            {
+                "ok": False,
+                "error": "yuncang_failed",
+                "message": error_payload["message"],
+                "logs": logs + _stage_logs("添加 DXM03 小秘云仓商品", error_payload),
+                "items": error_payload.get("items") or [],
+                "import": {"stats": stats},
+                "replicate": replicate_result,
+                "confirm": confirm_result,
+                "yuncang": error_payload,
+                "realtime_refresh": import_payload.get("realtime_refresh"),
+            },
+            import_payload=import_payload,
+            import_stats=stats,
+            replicate_result=replicate_result,
+            confirm_result=confirm_result,
+            yuncang_result=error_payload,
+        )
+    logs.extend(_stage_logs("添加 DXM03 小秘云仓商品", yuncang_result))
+    ok = bool(yuncang_result.get("ok"))
+    return _with_mingkong_sync_status(
+        {
+            "ok": ok,
+            "message": (
+                f"{confirm_result.get('message') or '采购配对完成'}；{yuncang_result.get('message')}"
+                if ok
+                else yuncang_result.get("message") or "同步明空店小秘SKU存在云仓阻断"
+            ),
+            "logs": logs,
+            "items": yuncang_result.get("items") or confirm_result.get("items") or replicate_result.get("items") or [],
             "import": {"stats": stats},
             "replicate": replicate_result,
             "confirm": confirm_result,
-            "yuncang": error_payload,
+            "yuncang": yuncang_result,
             "realtime_refresh": import_payload.get("realtime_refresh"),
-        }
-    logs.extend(_stage_logs("添加 DXM03 小秘云仓商品", yuncang_result))
-    ok = bool(yuncang_result.get("ok"))
-    return {
-        "ok": ok,
-        "message": (
-            f"{confirm_result.get('message') or '采购配对完成'}；{yuncang_result.get('message')}"
-            if ok
-            else yuncang_result.get("message") or "同步明空店小秘SKU存在云仓阻断"
-        ),
-        "logs": logs,
-        "items": yuncang_result.get("items") or confirm_result.get("items") or replicate_result.get("items") or [],
-        "import": {"stats": stats},
-        "replicate": replicate_result,
-        "confirm": confirm_result,
-        "yuncang": yuncang_result,
-        "realtime_refresh": import_payload.get("realtime_refresh"),
-    }
+        },
+        import_payload=import_payload,
+        import_stats=stats,
+        replicate_result=replicate_result,
+        confirm_result=confirm_result,
+        yuncang_result=yuncang_result,
+    )
 
 
 def _build_mingkong_pairing_ai_review_response(

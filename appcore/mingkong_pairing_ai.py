@@ -36,6 +36,23 @@ REVIEW_RESPONSE_SCHEMA: dict[str, Any] = {
                 "additionalProperties": True,
             },
         },
+        "variant_mappings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "shopify_variant_id": {"type": "string"},
+                    "variant_title": {"type": "string"},
+                    "recommended_sku": {"type": "string"},
+                    "recommended_sku_code": {"type": "string"},
+                    "recommended_name": {"type": "string"},
+                    "confidence": {"type": "number"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["shopify_variant_id", "recommended_sku"],
+                "additionalProperties": True,
+            },
+        },
     },
     "required": [
         "is_same_product",
@@ -46,6 +63,7 @@ REVIEW_RESPONSE_SCHEMA: dict[str, Any] = {
         "risks",
         "variant_mapping_notes",
         "candidate_rankings",
+        "variant_mappings",
     ],
     "additionalProperties": True,
 }
@@ -107,12 +125,17 @@ def _group_candidates(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(grouped.values())
 
 
-def _image_urls(product: dict[str, Any], candidates: list[dict[str, Any]]) -> list[str]:
+def _image_urls(
+    product: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    fuzzy_candidates: list[dict[str, Any]] = None,
+) -> list[str]:
     urls: list[str] = []
     for value in (
         product.get("main_image"),
         product.get("cover_url"),
         product.get("product_image"),
+        product.get("image_url"),
     ):
         text = _clean(value)
         if text and text.startswith(("http://", "https://")):
@@ -122,12 +145,19 @@ def _image_urls(product: dict[str, Any], candidates: list[dict[str, Any]]) -> li
             text = _clean(variant.get("image_url"))
             if text and text.startswith(("http://", "https://")) and text not in urls:
                 urls.append(text)
-            if len(urls) >= 8:
-                return urls
-    return urls
+    if fuzzy_candidates:
+        for cand in fuzzy_candidates:
+            text = _clean(cand.get("image_url"))
+            if text and text.startswith(("http://", "https://")) and text not in urls:
+                urls.append(text)
+    return urls[:15]
 
 
-def _prompt(product: dict[str, Any], candidates: list[dict[str, Any]]) -> str:
+def _prompt(
+    product: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    fuzzy_candidates: list[dict[str, Any]] = None,
+) -> str:
     payload = {
         "our_product": {
             "id": product.get("id"),
@@ -140,15 +170,30 @@ def _prompt(product: dict[str, Any], candidates: list[dict[str, Any]]) -> str:
         },
         "mingkong_candidates": candidates,
     }
-    return (
+    if fuzzy_candidates:
+        payload["fuzzy_candidates"] = fuzzy_candidates
+
+    prompt = (
         "你是电商 SKU 采购配对审核助手。请判断明空候选商品是否与我们新品为同一个商品，"
         "并给出最可信候选。只能基于标题、图片、SKU 变体、采购链接、供应商和 1688 规格判断；"
         "不要编造字段，不要输出 DXM03 写入参数。\n"
         "如果多个候选只是不同店铺/不同 Shopify 商品 ID 下复用同一批店小秘 SKU，请指出重复关系，"
         "推荐采购配对最完整的一组，并说明最终仍需要人工确认。\n"
-        "请严格输出符合 JSON schema 的对象。\n\n"
+    )
+    
+    if fuzzy_candidates:
+        prompt += (
+            "\n特别任务：检测到有未配对的模糊匹配明空 ERP SKU 列表（`fuzzy_candidates`）。\n"
+            "请仔细对比我们 Shopify 商品的各个变体规格（例如：'1 launcher + 3 rockets'）与 `fuzzy_candidates` 中的 ERP SKU（例如：'发射底座+3个火箭'）。\n"
+            "分析中英文数量、颜色、特征，并在 `variant_mappings` 中给出每个 Shopify 变体对应的推荐明空 ERP SKU（`recommended_sku`）。\n"
+            "对于没匹配上的变体，请设置 `recommended_sku` 为空字符串。每一项必须包含 `shopify_variant_id` 和 `recommended_sku`，即使没有 100% 确定，也请根据数量/规格相似度给出最有可能的匹配项，并设置适当的置信度和理由。\n"
+        )
+        
+    prompt += (
+        "\n请严格输出符合 JSON schema 的对象。\n\n"
         f"输入数据：\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
     )
+    return prompt
 
 
 def review_pairing_candidates(
@@ -158,8 +203,13 @@ def review_pairing_candidates(
     user_id: int | None = None,
     invoke_chat_fn=None,
 ) -> dict[str, Any]:
+    # Extract fuzzy candidates if available in the first item's list
+    fuzzy_candidates = []
+    if items and isinstance(items[0], dict):
+        fuzzy_candidates = items[0].get("fuzzy_candidates") or []
+
     candidates = _group_candidates([item for item in items or [] if isinstance(item, dict)])
-    if not candidates:
+    if not candidates and not fuzzy_candidates:
         return {
             "ok": False,
             "error": "missing_candidates",
@@ -168,8 +218,8 @@ def review_pairing_candidates(
             "logs": [{"level": "warn", "message": "没有可供 AI 判断的明空候选 SKU"}],
         }
 
-    content: list[dict[str, Any]] = [{"type": "text", "text": _prompt(product, candidates)}]
-    for url in _image_urls(product, candidates):
+    content: list[dict[str, Any]] = [{"type": "text", "text": _prompt(product, candidates, fuzzy_candidates)}]
+    for url in _image_urls(product, candidates, fuzzy_candidates):
         content.append({"type": "image_url", "image_url": {"url": url}})
 
     invoke = invoke_chat_fn or llm_client.invoke_chat

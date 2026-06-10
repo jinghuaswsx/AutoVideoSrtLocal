@@ -346,3 +346,23 @@ def test_run_product_analysis_uses_googlewj_material_review(monkeypatch):
     assert result["material_review_result"]["final_decision"] == "条件通过"
     assert result["priority"] == "P1"
     assert result["mode"] == "ai"
+
+
+def test_resolve_billing_user_id_handles_missing_and_fallback(monkeypatch):
+    # 1. 显式传入 user_id 时，直接返回
+    assert svc._resolve_billing_user_id(42) == 42
+    assert svc._resolve_billing_user_id("100") == 100
+
+    # 2. 传入 None，并且数据库正常返回用户
+    monkeypatch.setattr(svc.db, "query_one", lambda sql, args=None: {"id": 99})
+    assert svc._resolve_billing_user_id(None) == 99
+
+    # 3. 传入 None，但数据库返回空
+    monkeypatch.setattr(svc.db, "query_one", lambda sql, args=None: None)
+    assert svc._resolve_billing_user_id(None) is None
+
+    # 4. 传入 None，但数据库查询抛出异常
+    def fake_query_error(sql, args=None):
+        raise RuntimeError("DB error")
+    monkeypatch.setattr(svc.db, "query_one", fake_query_error)
+    assert svc._resolve_billing_user_id(None) is None

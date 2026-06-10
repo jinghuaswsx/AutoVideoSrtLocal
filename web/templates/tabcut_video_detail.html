@@ -735,6 +735,96 @@
     box-shadow: none !important;
     transform: none !important;
   }
+
+  /* 模态框下拉框与按钮胶囊化 */
+  .mki-xiao-dialog .mh-select,
+  .mh-modal-panel .mh-select {
+    border-radius: 9999px !important;
+    padding: 0 32px 0 16px !important;
+    border: 2px solid #2563eb !important;
+    height: 38px !important;
+    background-color: #ffffff !important;
+    color: #1e293b !important;
+    font-weight: 600 !important;
+    outline: none !important;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08) !important;
+    transition: all 0.2s ease !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 14px center !important;
+    background-size: 14px !important;
+  }
+  
+  .mki-xiao-dialog .mh-select:focus,
+  .mh-modal-panel .mh-select:focus {
+    border-color: #1d4ed8 !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.18) !important;
+  }
+
+  .mki-xiao-dialog .mh-select:disabled,
+  .mh-modal-panel .mh-select:disabled {
+    background-color: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed !important;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+  }
+
+  /* 模态框按钮胶囊化 */
+  .mki-xiao-dialog .mh-btn,
+  .mh-modal-panel .mh-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 38px !important;
+    padding: 0 24px !important;
+    border-radius: 9999px !important;
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    border: 2px solid #2563eb !important;
+    background: #2563eb !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.15) !important;
+    outline: none !important;
+  }
+
+  .mki-xiao-dialog .mh-btn:hover:not(:disabled),
+  .mh-modal-panel .mh-btn:hover:not(:disabled) {
+    background: #1d4ed8 !important;
+    border-color: #1d4ed8 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 6px 14px rgba(37, 99, 235, 0.25) !important;
+  }
+
+  .mki-xiao-dialog .mh-btn.secondary,
+  .mh-modal-panel .mh-btn.secondary {
+    background: #ffffff !important;
+    color: #2563eb !important;
+    border-color: #2563eb !important;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.05) !important;
+  }
+
+  .mki-xiao-dialog .mh-btn.secondary:hover:not(:disabled),
+  .mh-modal-panel .mh-btn.secondary:hover:not(:disabled) {
+    background: #eff6ff !important;
+    color: #1d4ed8 !important;
+    border-color: #1d4ed8 !important;
+  }
+  
+  .mki-xiao-dialog .mh-btn:disabled,
+  .mh-modal-panel .mh-btn:disabled {
+    background: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
 </style>
 {% endblock %}
 

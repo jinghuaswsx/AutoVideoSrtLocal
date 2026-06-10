@@ -110,9 +110,19 @@ def build_localized_texts_target_url(mk_id: int | None) -> str:
     return f"{base}/api/marketing/medias/{int(mk_id)}/texts"
 
 
+_RJC_SUFFIX_RE = re.compile(r"-rjc$", re.IGNORECASE)
+
+
+def _normalize_product_code(code: str | None) -> str:
+    """Strip -RJC suffix (case-insensitive) and lowercase. Empty/None → ''."""
+    if not code:
+        return ""
+    return _RJC_SUFFIX_RE.sub("", code.strip()).lower()
+
+
 def lookup_mk_id(product_code: str) -> tuple[int | None, str]:
     """推送素材成功后，调 wedev /api/marketing/medias 按 q=product_code 搜索，
-    遍历 items.product_links，取 URL 末段精准匹配 product_code，
+    遍历 items.product_links，取 URL 末段精准比对归一化后的 product_code，
     多条命中时按 id 最大优先（最新推送的那条）。
 
     返回 (mk_id|None, status)。status 枚举：
@@ -168,7 +178,7 @@ def lookup_mk_id(product_code: str) -> tuple[int | None, str]:
             if not isinstance(link, str):
                 continue
             tail = link.rstrip("/").rsplit("/", 1)[-1].strip().lower()
-            if tail == code:
+            if _normalize_product_code(tail) == _normalize_product_code(code):
                 matched_ids.append(item_id)
                 break
     if not matched_ids:

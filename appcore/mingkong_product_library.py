@@ -876,6 +876,34 @@ def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
         item["pairing"] = component_procurement.get(str(item.get("component_sku") or "").strip())
         components_by_variant.setdefault(int(item["mingkong_variant_id"]), []).append(item)
 
+    product_id = int(product.get("id") or 0)
+    fuzzy_candidates = []
+    if product_id:
+        from appcore.db import query as db_query
+        rows = db_query(
+            """
+            SELECT id, sku, sku_code, dxm_name, purchase_1688_url, raw_json
+            FROM mingkong_procurement_links
+            WHERE mingkong_product_id = %s AND confidence = 'keyword_candidate'
+            ORDER BY last_synced_at DESC
+            """,
+            (product_id,),
+        )
+        for r in rows:
+            raw_item = json.loads(r.get("raw_json") or "{}")
+            img_url = raw_item.get("imgUrl") or raw_item.get("imageUrl") or ""
+            if img_url:
+                img_url = normalize_image_url(img_url)
+            fuzzy_candidates.append({
+                "id": r.get("id"),
+                "sku": r.get("sku"),
+                "sku_code": r.get("sku_code"),
+                "dxm_name": r.get("dxm_name") or raw_item.get("name") or "",
+                "image_url": img_url,
+                "purchase_1688_url": r.get("purchase_1688_url") or raw_item.get("sourceUrl") or "",
+                "alibaba_product_id": r.get("alibaba_product_id") or normalize_1688_offer_id(r.get("purchase_1688_url")),
+            })
+
     out: list[dict[str, Any]] = []
     for row in variants:
         item = dict(row)
@@ -898,6 +926,7 @@ def sku_rows_from_library(product: dict[str, Any]) -> list[dict[str, Any]]:
             "mingkong_procurement": proc or None,
             "is_combo": bool(item.get("is_combo")),
             "combo_components": components_by_variant.get(int(item["id"]), []),
+            "fuzzy_candidates": fuzzy_candidates,
         })
     return out
 
@@ -936,3 +965,153 @@ def refresh_product_from_dxm02(
         public_variant_delay_seconds=0.0,
     )
     return runner.run_sync(args)
+
+
+def extract_keyword_from_name(name: str) -> str:
+    if not name:
+        return ""
+    # Only keep Chinese characters
+    chinese_chars = "".join(c for c in name if "\u4e00" <= c <= "\u9fff")
+    if not chinese_chars:
+        return ""
+    # Remove common prefixes/suffixes/adjectives/stop words
+    stop_words = ["儿童", "玩具", "新款", "跨境", "抖音", "爆款", "现货", "批发", "3D", "大号", "小号", "小", "个", "套", "只"]
+    keyword = chinese_chars
+    for word in stop_words:
+        keyword = keyword.replace(word, "")
+    return keyword or chinese_chars
+
+
+def save_fuzzy_candidate_commodity(product_id: int, p: dict[str, Any]) -> None:
+    sku = str(p.get("sku") or "").strip()
+    dxm_product_id = str(p.get("id") or "").strip()
+    if not sku or not dxm_product_id:
+        return
+    
+    pairing_row_id = f"fuzzy_{dxm_product_id}"
+    dxm_name = str(p.get("name") or "").strip()
+    source_url = str(p.get("sourceUrl") or "").strip()
+    purchase_1688_url = purchase_url_from_pairing({"sourceUrl": source_url}) or source_url
+    
+    execute(
+        """
+        INSERT INTO mingkong_procurement_links
+          (mingkong_product_id, mingkong_variant_id, pairing_row_id, sku, sku_code, dxm_product_id, dxm_name,
+           purchase_1688_url, source_url, alibaba_product_id, sku_id_alibaba, supplier_id,
+           supplier_name, pairing_state, confidence, raw_json, last_synced_at)
+        VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, NULL, NULL, -1, 'keyword_candidate', %s, NOW())
+        ON DUPLICATE KEY UPDATE
+          mingkong_product_id=VALUES(mingkong_product_id),
+          sku=VALUES(sku),
+          sku_code=VALUES(sku_code),
+          dxm_product_id=VALUES(dxm_product_id),
+          dxm_name=VALUES(dxm_name),
+          purchase_1688_url=VALUES(purchase_1688_url),
+          source_url=VALUES(source_url),
+          raw_json=VALUES(raw_json),
+          confidence='keyword_candidate',
+          last_synced_at=NOW()
+        """,
+        (
+            product_id,
+            pairing_row_id,
+            sku,
+            str(p.get("skuCode") or "").strip() or None,
+            dxm_product_id,
+            dxm_name,
+            purchase_1688_url or None,
+            source_url or None,
+            json.dumps(p, ensure_ascii=False),
+        )
+    )
+
+
+def refresh_fuzzy_candidates_from_dxm02(
+    product: dict[str, Any],
+    keyword: str | None = None,
+    *,
+    cdp_url: str = DEFAULT_DXM02_CDP_URL,
+    timeout_seconds: int = 60,
+) -> dict[str, Any]:
+    """Search DXM02 ERP commodities using fuzzy keyword matching and store them as candidates."""
+    try:
+        product_id = int(product.get("id") or 0)
+    except (TypeError, ValueError):
+        return {"candidates_seen": 0, "reason": "invalid_product_id"}
+    
+    if not product_id:
+        return {"candidates_seen": 0, "reason": "missing_product_id"}
+        
+    if not keyword:
+        # Extract search keyword from Chinese name or handle
+        keyword = extract_keyword_from_name(product.get("name") or product.get("shopify_title") or "")
+        
+    if not keyword:
+        return {"candidates_seen": 0, "reason": "empty_keyword"}
+
+    from playwright.sync_api import sync_playwright
+    from tools.mingkong_product_library_sync import DXM_PRODUCT_API, build_dxm_payload, _post_form
+    from appcore.browser_automation_lock import browser_automation_lock
+
+    candidates_seen = 0
+    try:
+        with browser_automation_lock(
+            task_code="mingkong_product_library_fuzzy_sync",
+            timeout_seconds=180,
+            command=f"fuzzy_{product_id}_{keyword}",
+        ):
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.connect_over_cdp(cdp_url)
+                context = browser.contexts[0] if browser.contexts else browser.new_context()
+                
+                # Fetch fuzzy candidates
+                payload = build_dxm_payload(
+                    1,
+                    searchValue=keyword,
+                    searchType=2,          # 2 is commodity name in Chinese
+                    productSearchType=0,   # 0 is fuzzy substring matching
+                    pageSize=100
+                )
+                data = _post_form(context, DXM_PRODUCT_API, payload, timeout_ms=int(timeout_seconds * 1000))
+                page = data.get("data", {}).get("page", {})
+                lst = page.get("list", []) if page else []
+                
+                for group in lst:
+                    if not isinstance(group, dict):
+                        continue
+                    products = group.get("dxmCommodityProductList") or []
+                    for p in products:
+                        if not isinstance(p, dict):
+                            continue
+                        save_fuzzy_candidate_commodity(product_id, p)
+                        candidates_seen += 1
+
+                # Fallback: if 0 candidates found and keyword has length > 2, retry using its last 2 characters
+                if candidates_seen == 0 and len(keyword) > 2:
+                    fallback_keyword = keyword[-2:]
+                    payload = build_dxm_payload(
+                        1,
+                        searchValue=fallback_keyword,
+                        searchType=2,
+                        productSearchType=0,
+                        pageSize=100
+                    )
+                    data = _post_form(context, DXM_PRODUCT_API, payload, timeout_ms=int(timeout_seconds * 1000))
+                    page = data.get("data", {}).get("page", {})
+                    lst = page.get("list", []) if page else []
+                    
+                    for group in lst:
+                        if not isinstance(group, dict):
+                            continue
+                        products = group.get("dxmCommodityProductList") or []
+                        for p in products:
+                            if not isinstance(p, dict):
+                                continue
+                            save_fuzzy_candidate_commodity(product_id, p)
+                            candidates_seen += 1
+                    keyword = f"{keyword} -> {fallback_keyword}"
+                        
+        return {"status": "success", "candidates_seen": candidates_seen, "keyword": keyword}
+    except Exception as exc:
+        return {"status": "failed", "candidates_seen": candidates_seen, "error": str(exc), "keyword": keyword}
+
