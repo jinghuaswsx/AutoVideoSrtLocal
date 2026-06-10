@@ -238,7 +238,7 @@ def test_protective_sync_only_sends_newly_filled_rows_to_dxm03(monkeypatch):
         },
         {"shopify_variant_id": "variant-2"},
     ]
-    captured = {"replace_pairs": None, "replicate_rows": None, "confirm_rows": None}
+    captured = {"replace_pairs": None, "replicate_rows": None, "confirm_rows": None, "yuncang_rows": None}
 
     def fake_list_product_skus(_product_id):
         if captured["replace_pairs"] is None:
@@ -257,6 +257,11 @@ def test_protective_sync_only_sends_newly_filled_rows_to_dxm03(monkeypatch):
     def fake_confirm(_product, rows, **_kwargs):
         captured["confirm_rows"] = rows
         return {"ok": True, "summary": {}, "message": "confirmed", "items": rows}
+
+    def fake_yuncang(_product, rows, **kwargs):
+        captured["yuncang_rows"] = rows
+        captured["yuncang_items"] = kwargs.get("pairing_items")
+        return {"ok": True, "summary": {}, "message": "yuncang", "items": rows}
 
     monkeypatch.setattr(mod.medias, "list_product_skus", fake_list_product_skus)
     monkeypatch.setattr(mod.medias, "replace_product_skus", fake_replace)
@@ -288,6 +293,7 @@ def test_protective_sync_only_sends_newly_filled_rows_to_dxm03(monkeypatch):
     monkeypatch.setattr(mod.pairing, "first_purchase_url_from_targets", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(mod.pairing, "replicate_mingkong_skus_to_dxm03", fake_replicate)
     monkeypatch.setattr(mod.pairing, "confirm_dxm03_pairing", fake_confirm)
+    monkeypatch.setattr(mod.dianxiaomi_yuncang, "add_product_skus_to_yuncang", fake_yuncang)
 
     result = mod.run_product_sync(
         {"id": 1, "product_code": "sample-rjc", "name": "样品"},
@@ -302,6 +308,8 @@ def test_protective_sync_only_sends_newly_filled_rows_to_dxm03(monkeypatch):
     assert captured["replace_pairs"][0]["dianxiaomi_sku_code"] == "keep-code"
     assert [row["shopify_variant_id"] for row in captured["replicate_rows"]] == ["variant-2"]
     assert [row["shopify_variant_id"] for row in captured["confirm_rows"]] == ["variant-2"]
+    assert [row["shopify_variant_id"] for row in captured["yuncang_rows"]] == ["variant-2"]
+    assert result["yuncang"]["message"] == "yuncang"
 
 
 def test_protective_replace_product_skus_merges_action_rows_without_deleting_existing(monkeypatch):

@@ -35,6 +35,49 @@ SAMPLE_YUNCANG_HTML = """
 </table>
 """
 
+SAMPLE_CHOOSE_GOODS_HTML = """
+<table>
+  <tr class="content">
+    <td>
+      <span class="pro-box commodity w300">
+        <div class="commodity-img"><img class="img-css" src="/productimage/a.jpg"></div>
+        <span class="commodity-con">
+          <div><span title="sku-1">sku-1</span></div>
+          <div><span title="110001">[110001]</span></div>
+          <div><span title="基础商品">基础商品</span></div>
+        </span>
+      </span>
+    </td>
+    <td class="operating f-center">
+      <a class="chooseGoodsBtn" data-goodsid="goods-1" href="javascript:">选择</a>
+      <input id="hiddenSkuz_goods-1" type="hidden" value="sku-1">
+      <input id="hiddenNamez_goods-1" type="hidden" value="基础商品">
+      <input id="hiddenMainImagez_goods-1" type="hidden" value="/productimage/a.jpg">
+    </td>
+    <td></td>
+    <td class="operating f-center"></td>
+  </tr>
+  <tr class="content">
+    <td>
+      <span class="pro-box commodity w300">
+        <div class="commodity-img"><img class="img-css" src="/static/img/kong.png"></div>
+        <span class="commodity-con">
+          <div><span title="sku-2">sku-2</span></div>
+          <div><span title="110002">[110002]</span></div>
+          <div><span title="缺图商品">缺图商品</span></div>
+        </span>
+      </span>
+    </td>
+    <td class="operating f-center">
+      <a class="chooseGoodsBtn" data-goodsid="goods-2" href="javascript:">选择</a>
+      <input id="hiddenSkuz_goods-2" type="hidden" value="sku-2">
+      <input id="hiddenNamez_goods-2" type="hidden" value="缺图商品">
+      <input id="hiddenMainImagez_goods-2" type="hidden" value="/static/img/kong.png">
+    </td>
+  </tr>
+</table>
+"""
+
 
 def test_parse_yuncang_page_html_extracts_rows():
     rows = mod.parse_yuncang_page_html(SAMPLE_YUNCANG_HTML)
@@ -55,6 +98,45 @@ def test_parse_yuncang_page_html_extracts_rows():
             "unit_price": Decimal("39.00"),
         },
     ]
+
+
+def test_parse_yuncang_choose_goods_html_extracts_candidates():
+    rows = mod.parse_yuncang_choose_goods_html(SAMPLE_CHOOSE_GOODS_HTML)
+
+    assert rows[0]["goods_id"] == "goods-1"
+    assert rows[0]["sku"] == "sku-1"
+    assert rows[0]["sku_code"] == "110001"
+    assert rows[0]["goods_name"] == "基础商品"
+    assert rows[0]["image_url"] == "https://www.dianxiaomi.com/productimage/a.jpg"
+    assert rows[0]["has_image"] is True
+    assert rows[1]["goods_id"] == "goods-2"
+    assert rows[1]["has_image"] is False
+
+
+def test_build_yuncang_add_targets_uses_combo_components_not_outer_sku():
+    rows = mod.build_yuncang_add_targets(
+        [{"dianxiaomi_sku": "outer-combo"}],
+        pairing_items=[
+            {
+                "dianxiaomi_sku": "outer-combo",
+                "commodity": {"is_combo": True},
+                "combo_components": [
+                    {"sku": "base-a", "name": "组件A", "component_quantity": 2},
+                    {"component_sku": "base-b", "component_name": "组件B"},
+                ],
+            },
+            {
+                "dianxiaomi_sku": "single-c",
+                "commodity": {"is_combo": False},
+                "dianxiaomi_name": "单品C",
+            },
+        ],
+    )
+
+    assert [row["sku"] for row in rows] == ["base-a", "base-b", "single-c"]
+    assert rows[0]["parent_sku"] == "outer-combo"
+    assert rows[0]["source"] == "combo_component"
+    assert rows[2]["source"] == "single"
 
 
 def test_upsert_skus_preserves_existing_aggregate_columns(monkeypatch):

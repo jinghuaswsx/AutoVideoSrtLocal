@@ -847,6 +847,8 @@
     already_exists: ['ok', 'DXM03已存在'],
     created: ['ok', '已复刻'],
     confirmed: ['ok', '已同步'],
+    added: ['ok', '已入云仓'],
+    pending_add: ['warn', '待入云仓'],
     blocked: ['bad', '阻断'],
     error: ['bad', '失败'],
     warning: ['warn', '提醒'],
@@ -1024,7 +1026,7 @@
     if (!logs.length && Array.isArray(payload?.items)) {
       payload.items.forEach((item) => {
         const status = item.status || item.error || '';
-        const level = ['confirmed', 'created', 'already_configured_preserved', 'already_exists', 'already_paired', 'already_paired_combo_components'].includes(status)
+        const level = ['confirmed', 'created', 'added', 'already_configured_preserved', 'already_exists', 'already_paired', 'already_paired_combo_components'].includes(status)
           ? 'ok'
           : (status === 'error' ? 'error' : 'warn');
         logs.push({ level, message: itemLogLine(item) });

@@ -5,6 +5,7 @@ from flask_login import current_user, login_required
 
 from appcore import (
     dianxiaomi_mingkong_pairing,
+    dianxiaomi_yuncang,
     mingkong_pairing_ai,
     medias,
     parcel_cost_suggest,
@@ -318,11 +319,30 @@ def _build_mingkong_pairing_import_skus_response(pid: int, product: dict):
 
 def _build_mingkong_pairing_confirm_response(pid: int, product: dict, body: dict):
     sku_rows = medias.list_product_skus(pid)
-    return dianxiaomi_mingkong_pairing.confirm_dxm03_pairing(
+    confirm_result = dianxiaomi_mingkong_pairing.confirm_dxm03_pairing(
         product,
         sku_rows,
         selections=body.get("items") if isinstance(body, dict) else None,
     )
+    if not confirm_result.get("ok"):
+        return confirm_result
+    yuncang_result = dianxiaomi_yuncang.add_product_skus_to_yuncang(
+        product,
+        sku_rows,
+        pairing_items=confirm_result.get("items") or sku_rows,
+    )
+    ok = bool(confirm_result.get("ok")) and bool(yuncang_result.get("ok"))
+    return {
+        "ok": ok,
+        "message": yuncang_result.get("message") if not ok else (
+            f"{confirm_result.get('message') or '采购配对完成'}；{yuncang_result.get('message')}"
+        ),
+        "logs": _stage_logs("确认 DXM03 采购配对", confirm_result)
+        + _stage_logs("添加 DXM03 小秘云仓商品", yuncang_result),
+        "items": yuncang_result.get("items") or confirm_result.get("items") or [],
+        "confirm": confirm_result,
+        "yuncang": yuncang_result,
+    }
 
 
 def _build_mingkong_pairing_replicate_response(pid: int, product: dict, body: dict):
@@ -462,17 +482,54 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
             "realtime_refresh": import_payload.get("realtime_refresh"),
         }
     logs.extend(_stage_logs("确认 DXM03 采购配对", confirm_result))
-    ok = bool(confirm_result.get("ok"))
+    if not confirm_result.get("ok"):
+        return {
+            "ok": False,
+            "message": confirm_result.get("message") or "同步明空店小秘SKU存在阻断",
+            "logs": logs,
+            "items": confirm_result.get("items") or replicate_result.get("items") or [],
+            "import": {"stats": stats},
+            "replicate": replicate_result,
+            "confirm": confirm_result,
+            "realtime_refresh": import_payload.get("realtime_refresh"),
+        }
+
+    try:
+        yuncang_result = dianxiaomi_yuncang.add_product_skus_to_yuncang(
+            product_after_replicate,
+            local_rows,
+            pairing_items=confirm_result.get("items") or local_rows,
+        )
+    except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
+        current_app.logger.exception("mingkong pairing yuncang add failed product_id=%s", pid)
+        error_payload = _mingkong_pairing_action_error_payload("添加 DXM03 小秘云仓商品", exc)
+        return {
+            "ok": False,
+            "error": "yuncang_failed",
+            "message": error_payload["message"],
+            "logs": logs + _stage_logs("添加 DXM03 小秘云仓商品", error_payload),
+            "items": error_payload.get("items") or [],
+            "import": {"stats": stats},
+            "replicate": replicate_result,
+            "confirm": confirm_result,
+            "yuncang": error_payload,
+            "realtime_refresh": import_payload.get("realtime_refresh"),
+        }
+    logs.extend(_stage_logs("添加 DXM03 小秘云仓商品", yuncang_result))
+    ok = bool(yuncang_result.get("ok"))
     return {
         "ok": ok,
-        "message": confirm_result.get("message") or (
-            "同步明空店小秘SKU完成" if ok else "同步明空店小秘SKU存在阻断"
+        "message": (
+            f"{confirm_result.get('message') or '采购配对完成'}；{yuncang_result.get('message')}"
+            if ok
+            else yuncang_result.get("message") or "同步明空店小秘SKU存在云仓阻断"
         ),
         "logs": logs,
-        "items": confirm_result.get("items") or replicate_result.get("items") or [],
+        "items": yuncang_result.get("items") or confirm_result.get("items") or replicate_result.get("items") or [],
         "import": {"stats": stats},
         "replicate": replicate_result,
         "confirm": confirm_result,
+        "yuncang": yuncang_result,
         "realtime_refresh": import_payload.get("realtime_refresh"),
     }
 

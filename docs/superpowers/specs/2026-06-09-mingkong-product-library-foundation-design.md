@@ -266,10 +266,11 @@
    - 当同一个明空 product code 下存在多个 Shopify 副本时，合并 SKU 基底不能让“同 variant 但无 DXM SKU”的空候选压过“同规格标题且有 DXM SKU/采购信息”的候选；同规格候选必须按真实 DXM SKU、SKUID、采购链接、1688 SKU ID 的信息量择优。
    - Shopify 公开 JSON 或 DXM02 返回的重量字段如果超过本地数据库可保存范围，写入本地明空库和 `media_product_skus` 前必须置空，不得中断整品同步。
    - 写入本地 `media_product_skus`。
-   - 在 DXM03 小秘云仓/商品管理中补缺 SKU；已存在且已配置的 SKU 保持不动。
+   - 在 DXM03 商品管理中补缺 SKU；已存在且已配置的 SKU 保持不动。
    - DXM03 复刻顺序必须先普通组件 SKU、后组合 SKU，避免组合商品先执行时因为组件还没创建而被误判为缺组件；如果组合组件不在当前 Shopify variant 基底里，但 DXM02 组合关系返回了组件 SKU，也允许先把该组件从 DXM02 复刻到 DXM03。
    - 对未配置的单品 SKU 执行 1688 采购配对；触发 1688 来源同步后必须轮询等待配对行生成，不能只做一次即时查询；`confirm` 接口报错后要复查实际配对状态，避免接口返回异常但已成功写入的误判。
    - 组合 SKU 只在组件关系完整时视为完成；组件未配对时，可用本地明空采购库中的组件采购链接与 1688 SKU ID 自动补配组件，再重新判断组合是否完整。
+   - DXM03 商品管理与采购配对完成后，必须进入小秘云仓仓库清单补齐“添加商品”动作：只添加基础 SKU；组合 SKU 不添加外层 SKU，改为添加其组件基础 SKU。添加完成后立即回查小秘云仓列表并写入本地 `dianxiaomi_yuncang_skus`，再刷新关联产品采购价。
 3. 输出报告：
    - `product_id`
    - `product_code`
@@ -451,7 +452,29 @@ DXM03 写入仍遵守：
    - 已经 `state=1` 的配对行只做核验并返回 `already_paired`。
    - 组合 SKU 不用外层 SKU 直接确认 1688；应先核验/搬运组件 SKU 及数量，组件 SKU 采购配对完整后再视为可采购。
    - 未完成配对时，先用 DXM03 商品管理接口确认/更新采购链接，再触发 DXM03 1688 商品同步，最后用 DXM03 自己的 `pairProductId` 调用确认配对接口。
+   - 采购配对完成后，继续把基础 SKU 添加到 DXM03 小秘云仓仓库清单。云仓添加使用 DXM03 自己的商品管理 ID，不使用明空 DXM02 的商品 ID；外层组合 SKU 只作为组件来源，不直接添加到云仓。
 5. `adjustable-claw-clippers-rjc` 的首版工作台数据源允许使用已人工确认并写入本地的 `source=mingkong_pair` SKU 行；后续明空产品库上线后，工作台候选区改为读取明空产品库，而不是每次实时访问 DXM02。
+
+### DXM03 小秘云仓添加商品闭环
+
+2026-06-10 核查 DXM03 小秘云仓页面确认，仓库清单的“添加商品”并不是商品管理复刻或 1688 采购配对的副作用，必须作为独立阶段执行。接口契约如下：
+
+- 页面：`https://www.dianxiaomi.com/yuncangWarehouseSku/index.htm`
+- 商品选择列表：`GET /dxmCommodityProduct/getPageForYuncang.htm`
+  - `type=2` 场景由前端 `CHOOSE_GOODS.list(YUN_CANG.getAddSkuParam)` 打开。
+  - 搜索参数沿用弹窗：`searchType=0` 表示商品 SKU，`searchMode=1` 表示精确搜索。
+  - 返回 HTML 里的 `a.chooseGoodsBtn[data-goodsid]` 是 DXM03 商品管理自己的商品 ID。
+- 添加接口：`POST /yuncangWarehouseSku/addSku.json`
+  - 参数：`ids=<goodsId1,goodsId2,...>`
+  - 成功后页面会刷新仓库清单。
+
+落地规则：
+
+1. “同步明空店小秘SKU”完整流程顺序固定为：写本地 SKU -> 复刻/复用 DXM03 商品管理 SKU -> 确认 DXM03 1688 采购配对 -> 添加基础 SKU 到 DXM03 小秘云仓 -> 回查云仓并刷新本地采购价。
+2. 单品 SKU 添加其自身；组合 SKU 不添加外层组合 SKU，只添加 DXM03 返回的组件 SKU。组件不存在或云仓选择列表查不到时，返回逐 SKU 阻断。
+3. 如果基础 SKU 已经存在于云仓列表，标记 `already_exists`，不得重复添加。
+4. 如果商品管理存在但云仓选择列表没有可添加项，需先回查云仓列表：能查到则视为已存在；查不到则标记 `missing_yuncang_candidate`。
+5. 云仓添加完成后只回写本次涉及的 SKU 到 `dianxiaomi_yuncang_skus`，并调用采购价刷新逻辑；不强制跑全量云仓同步。
 
 ## 2026-06-09 追加：明空 SKU 同步与页面标注
 

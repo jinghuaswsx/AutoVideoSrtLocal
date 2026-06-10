@@ -769,7 +769,7 @@ def test_mingkong_pairing_sync_response_imports_targets_then_replicates_and_conf
             "sku_id_alibaba": "1688-sku",
         }
     ]
-    calls = {"replace": [], "update": [], "replicate": None, "confirm": None}
+    calls = {"replace": [], "update": [], "replicate": None, "confirm": None, "yuncang": None}
     local_rows = [
         {
             "shopify_product_id": "shopify-product",
@@ -834,6 +834,21 @@ def test_mingkong_pairing_sync_response_imports_targets_then_replicates_and_conf
         fake_confirm,
     )
 
+    def fake_yuncang(product_arg, rows_arg, **kwargs):
+        calls["yuncang"] = (product_arg, rows_arg, kwargs)
+        return {
+            "ok": True,
+            "message": "云仓完成",
+            "logs": [{"level": "ok", "message": "云仓完成"}],
+            "items": [{"status": "already_exists", "sku": "mk-sku"}],
+        }
+
+    monkeypatch.setattr(
+        products_route.dianxiaomi_yuncang,
+        "add_product_skus_to_yuncang",
+        fake_yuncang,
+    )
+
     result = products_route._build_mingkong_pairing_sync_response(
         747,
         product,
@@ -849,7 +864,9 @@ def test_mingkong_pairing_sync_response_imports_targets_then_replicates_and_conf
     ]
     assert calls["replicate"][2]["selections"] == targets
     assert calls["confirm"][2]["selections"] == targets
+    assert calls["yuncang"][2]["pairing_items"][0]["dianxiaomi_sku"] == "mk-sku"
     assert "确认完成" in result["message"]
+    assert result["yuncang"]["message"] == "云仓完成"
 
 
 def test_mingkong_pairing_template_has_review_modal_and_single_sync_entry():

@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from appcore import dianxiaomi_mingkong_pairing as pairing
+from appcore import dianxiaomi_yuncang
 from appcore import medias
 from appcore.db import execute as db_execute
 from appcore.db import query as db_query
@@ -391,6 +392,7 @@ def _empty_product_result(product: dict[str, Any], status: str, message: str) ->
         "import": {},
         "replicate": {},
         "confirm": {},
+        "yuncang": {},
         "skus": [],
     }
 
@@ -554,9 +556,30 @@ def run_product_sync(
         "summary": confirm_result.get("summary") or {},
         "message": confirm_result.get("message") or "",
     }
-    result["status"] = "ok" if confirm_result.get("ok") else "confirm_blocked"
-    result["message"] = confirm_result.get("message") or result["status"]
-    result["skus"] = _sku_report_items(confirm_result.get("items") or local_rows)
+    if not confirm_result.get("ok"):
+        result["status"] = "confirm_blocked"
+        result["message"] = confirm_result.get("message") or result["status"]
+        result["skus"] = _sku_report_items(confirm_result.get("items") or local_rows)
+        return result
+
+    yuncang_result = dianxiaomi_yuncang.add_product_skus_to_yuncang(
+        product_after_replicate,
+        local_rows,
+        pairing_items=confirm_result.get("items") or local_rows,
+        force_isolated_thread=False,
+    )
+    result["yuncang"] = {
+        "ok": bool(yuncang_result.get("ok")),
+        "summary": yuncang_result.get("summary") or {},
+        "message": yuncang_result.get("message") or "",
+    }
+    result["status"] = "ok" if yuncang_result.get("ok") else "yuncang_blocked"
+    result["message"] = (
+        f"{confirm_result.get('message') or 'confirmed'}；{yuncang_result.get('message')}"
+        if yuncang_result.get("ok")
+        else yuncang_result.get("message") or result["status"]
+    )
+    result["skus"] = _sku_report_items(yuncang_result.get("items") or confirm_result.get("items") or local_rows)
     return result
 
 
