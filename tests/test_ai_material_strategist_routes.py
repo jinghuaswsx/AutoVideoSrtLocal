@@ -21,7 +21,7 @@ def test_ai_material_strategist_page_renders_for_admin(authed_client_no_db):
     response = authed_client_no_db.get("/medias/ai-material-strategist")
 
     assert response.status_code == 200
-    assert "AI素材军师".encode() in response.data
+    assert "投放素材AI分析".encode() in response.data
 
 
 def test_ai_material_strategist_public_share_page_does_not_require_login(authed_client_no_db):

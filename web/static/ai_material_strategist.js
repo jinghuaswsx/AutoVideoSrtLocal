@@ -682,7 +682,7 @@
     const activeRunning = runningProject();
     if (els.create) {
       els.create.disabled = state.publicMode || isBusy || Boolean(activeRunning);
-      els.create.title = activeRunning ? '已有 AI素材军师项目正在运行' : '';
+      els.create.title = activeRunning ? '已有投放素材AI分析项目正在运行' : '';
     }
     if (els.refresh) els.refresh.disabled = isBusy;
     if (els.share) els.share.disabled = state.publicMode || isBusy || !state.activeProjectId;
@@ -760,7 +760,7 @@
     }
     setBusy(true);
     try {
-      const name = 'AI素材军师 ' + new Date().toLocaleString('zh-CN', { hour12: false });
+      const name = '投放素材AI分析 ' + new Date().toLocaleString('zh-CN', { hour12: false });
       const data = await fetchJson('/medias/api/ai-material-strategist/projects', {
         method: 'POST',
         headers: csrfHeaders({ 'Content-Type': 'application/json' }),
@@ -953,8 +953,8 @@
           <h2>${esc(project.project_name || ('项目 #' + project.id))}</h2>
           <div class="aims-subline">
             <span class="aims-status ${esc(project.status)}">${statusLabel(project.status)}</span>
-            <span>Provider ${esc(project.provider_code || 'openrouter')}</span>
-            <span>Model ${esc(project.model_id || 'google/gemini-3.5-flash')}</span>
+            <span>Provider ${esc(project.provider_code || 'google_wj')}</span>
+            <span>Model ${esc(project.model_id || 'gemini-3.5-flash')}</span>
             <span>开始 ${esc((project.started_at || '').slice(0, 16))}</span>
             ${project.finished_at ? `<span>完成 ${esc(project.finished_at.slice(0, 16))}</span>` : ''}
             ${llmBtn}

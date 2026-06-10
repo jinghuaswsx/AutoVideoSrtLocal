@@ -1,4 +1,4 @@
-# AI 素材军师项目化设计
+# 投放素材 AI 分析项目化设计
 
 日期：2026-06-09
 
@@ -12,7 +12,7 @@
 2. 某条素材在某个国家表现好，给同一国家补一条新素材继续放量。
 3. 某些国家跑得差，但产品整体成立时，补新素材进一步验证该国家是否可跑。
 
-本功能新增 `AI素材军师`，每次运行生成一个独立项目。项目保存当次输入数据、AI 提示词、模型输出、Top 20 产品、逐产品建议和可执行操作入口。项目详情页是完整独立路由，可随时回看当次结论。
+本功能新增 `投放素材AI分析`，每次运行生成一个独立项目。项目保存当次输入数据、AI 提示词、模型输出、Top 20 产品、逐产品建议和可执行操作入口。项目详情页是完整独立路由，可随时回看当次结论。
 
 ## 文档锚点
 
@@ -22,7 +22,7 @@
 - `docs/superpowers/specs/2026-05-18-mingkong-video-material-library-subtabs-design.md`：明空视频素材卡片、视频预览、加入素材库 / 做小语种操作入口。
 - `docs/superpowers/specs/2026-05-16-task-center-e2e-flow-design.md`：选品到任务中心到素材到推送的流程闭环。
 - `db/migrations/2026_06_06_googlewj_vertex_provider.sql`：`google_wj` 通道和 `gemini-3.5-flash` 模型配置。
-- `appcore/llm_use_cases.py`：AI素材军师当前先走 OpenRouter 的 `google/gemini-3.5-flash`，后续配额和间隔完善后再切回 WJ 通道。
+- `appcore/llm_use_cases.py`：投放素材 AI 分析统一走 `google_wj` 通道，模型为原生 Gemini ID `gemini-3.5-flash`。
 
 ## 2026-06-09 只读数据基线
 
@@ -65,11 +65,11 @@
 
 ## 目标
 
-1. 在 `素材管理` 新增 `AI素材军师` 子 Tab。
+1. 在左侧菜单的任务中心下方新增管理员可见入口 `投放素材AI分析`，指向项目化分析页；素材管理内可保留 `AI素材军师` 子 Tab 作为同一工具入口。
 2. 每次运行生成一个项目，项目保存完整结论和快照，不被后续数据变化覆盖。
 3. 找出当前产品里综合表现最好的 20 个产品，必须同时考虑“量”和“ROAS”，不能让 1-2 单高 ROAS 产品冒头。
 4. 对 Top 20 每个产品单独分析投放、订单、国家、素材翻译反馈、明空素材候选，并给出补素材建议。
-5. 所有 LLM 调用当前统一走 OpenRouter 过渡通道：provider `openrouter`，model `google/gemini-3.5-flash`；后续配额与请求间隔完善后再切回 `google_wj`。
+5. 所有 LLM 调用统一走 GoogleWJ 通道：provider `google_wj`，model `gemini-3.5-flash`。不要把 OpenRouter 的 `google/gemini-3.5-flash` 模型 ID 传给 GoogleWJ。
 6. 页面提供可执行入口：看明空视频、查看翻译后视频反馈数据、加入素材库、创建小语种翻译任务。
 7. 页面可视化、项目化、可回看，且展示提示词、输入数据、调用参数和模型输出。
 
@@ -79,6 +79,99 @@
 - 不自动改预算、不自动创建广告计划。
 - 不绕过已有素材入库、任务中心和小语种任务创建服务。
 - 不把广告命名国家当作真实买家国家；两者必须分别展示。
+
+## 2026-06-10 投放素材 AI 分析评审契约
+
+本轮需求把现有 `AI素材军师` 扩展为“评估哪些产品需要补素材”的投放素材 AI 分析模块。模型最终评审采用四段输入：
+
+```json
+{
+  "current_date": "YYYY-MM-DD",
+  "product_brief": {},
+  "creator_brief": {},
+  "candidate_video": {},
+  "stage1_visual_brief": {}
+}
+```
+
+### 数据适配原则
+
+不要为了贴合提示词硬造字段。仓库没有某类数据时，服务端必须显式压缩事实、标注缺失，并调整提示词让模型按“未参与评分”处理。
+
+- `product_brief` 是主依据，必须尽量从现有商品、广告、订单和素材数据构造，结构对齐 `data.matrix`。
+- `creator_brief` 只在能从 Tabcut / 明空 / 外部候选视频中取得达人或视频商业数据时参与评分；否则传入 `{}`，并在提示词中要求 `creator_data.score=null, included=false`。
+- `candidate_video` 只在存在明确候选视频时传入。候选视频描述、发布时间、播放/互动/销量等字段必须区分“达人整体表现”和“这条候选视频贡献”，不能把达人总销量写成候选视频销量。
+- `stage1_visual_brief` 优先复用 `video_ai_reviews` 或素材 AI 视频分析结果；没有结果时传 `{}`，并要求视频模块不参与或只轻权重解释。
+- `trend` 不从商品近期 ROAS、达人播放增长或候选视频热度推导。没有明确的未来 45 天季节、节日或外部趋势输入时，必须输出 `included=false`。
+
+### product_brief 构造
+
+`product_brief` 输出为：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "matrix": {
+      "slug": "",
+      "total_medias": 0,
+      "product_name": "",
+      "product_desc": "",
+      "base_roas": null,
+      "today": "YYYY-MM-DD",
+      "active_days": 0,
+      "total_spend": 0,
+      "total_sales": 0,
+      "overall_roas": null,
+      "recent_7d_roas": null,
+      "recent_7d_sales": 0,
+      "recent_7d_spend": 0,
+      "cold_media_count": 0,
+      "active_media_count": 0,
+      "effective_media_count": 0,
+      "hit_rate": null,
+      "medias": []
+    }
+  },
+  "message": ""
+}
+```
+
+字段来源：
+
+- `media_products`：`slug/product_code/product_name/product_desc`。
+- `appcore.product_roas.calculate_break_even_roas()`：`base_roas`，缺成本/售价时允许为 `null`。
+- `media_product_ad_summary_cache`：`total_spend/overall_roas/active_days`。
+- `order_profit_lines` + `dianxiaomi_order_lines`：`total_sales/recent_7d_sales`，以现有美元收入口径为准。
+- `meta_ad_daily_ad_metrics` + `meta_ad_realtime_daily_ad_metrics`：按 `media_items.filename/display_name/object_key` 匹配素材广告，聚合为 ISO 自然周 `medias[].insights[]`。
+- `media_items`：`total_medias` 和素材基础信息。
+
+衍生统计：
+
+- `active_media_count`：最近 7 天或当前开放业务日有消耗的素材数。
+- `effective_media_count`：历史任一周有消耗且 ROAS 达到 `base_roas` 的素材数；`base_roas` 缺失时使用有销售且 ROAS>0 的素材数。
+- `cold_media_count`：无广告消耗或无有效周记录的素材数。
+- `hit_rate`：`effective_media_count / total_medias`，无素材时为 `null`。
+
+### 评审提示词适配
+
+服务端提示词必须包含用户提供的业务规则，并额外加入以下适配条款：
+
+1. 只根据输入 JSON 判断，不得补全不存在的数据。
+2. 如果 `creator_brief`、`candidate_video`、`stage1_visual_brief` 或趋势依据为空，按缺失模块规则输出 `score=null, included=false`，再按参与评分模块折算 `quality_score`。
+3. 不要把“数据缺失”解释成“表现差”；只能写“输入未提供该数据，未参与评分”。
+4. 商品历史数据应是最详细分析段；近期断档不得直接判死，必须结合历史强度和最近有花费周距离 `current_date` 判断。
+5. 风险扫描要二次检查 `candidate_video.desc`、`stage1_visual_brief.copy_extraction.original_copy` 和 `stage1_visual_brief.risk_alerts`，但没有候选视频或取证结果时输出空数组。
+
+### 输出和落库
+
+单产品模型输出仍保存到 `ai_material_strategist_product_results.ai_result_json`。当使用本契约评审时，`ai_result_json` 必须保留：
+
+- `material_review_input`：本次传给模型的四段输入快照。
+- `material_review_result`：模型返回的严格 JSON。
+- `material_review_prompt_debug`：provider、model、use case、提示词版本、缺失模块列表。
+
+页面优先展示 `material_review_result.final_decision`、`quality_score`、商品历史分析、风险提示和剪辑方案；旧的 `priority/primary_action/country_actions` 可继续作为操作建议来源。
 
 ## 数据窗口
 
@@ -166,9 +259,9 @@
 
 注册 use case：`medias.ai_material_strategist_rank_products`。
 
-- provider: `openrouter`
-- model: `google/gemini-3.5-flash`
-- usage service: `openrouter`
+- provider: `google_wj`
+- model: `gemini-3.5-flash`
+- usage service: `google_wj`
 - units: `tokens`
 
 将候选按 20 个一批分 3 次调用。每批输入压缩指标，输出每批 Top 10 与理由。最后再把 3 批候选合并调用一次总排名，输出最终 Top 20。
@@ -417,7 +510,7 @@ LLM 节点提供 `提示词` 按钮，展示：
 - Top 20 规则打分不会让低量高 ROAS 产品进榜。
 - `meta_ad_realtime_daily_ad_metrics` 按 `(business_date, ad_account_id)` 取最新快照。
 - 本地产品 code 去掉 `-rjc` 后能匹配明空素材快照。
-- 两个 AI use case 当前默认 provider 都是 `openrouter`，model 都是 `google/gemini-3.5-flash`。
+- 两个 AI use case 当前默认 provider 都是 `google_wj`，model 都是 `gemini-3.5-flash`。
 - 单产品 prompt 包含 EN + 8 小语种阶梯、明空素材候选、本地素材和翻译反馈。
 - AI 返回的操作入口能序列化到项目详情。
 - 已有待处理 / 进行中 / 已完成任务时，服务端不会生成重复 `create_translation_task`，而是输出任务链接。
@@ -427,7 +520,7 @@ LLM 节点提供 `提示词` 按钮，展示：
 
 前端 focused tests：
 
-- `AI素材军师` 子 Tab 存在。
+- 左侧菜单任务中心下方存在管理员可见 `投放素材AI分析` 入口，素材管理子 Tab 可继续指向同一页面。
 - 项目列表、项目详情路由未登录 302，登录有权限 200。
 - 项目详情渲染 Top 20 表、图表容器、国家矩阵、素材卡片和操作按钮。
 - POST 创建项目带 `X-CSRFToken`。

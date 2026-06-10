@@ -1,4 +1,4 @@
-"""AI素材军师项目服务。
+"""投放素材AI分析项目服务。
 
 Docs anchor:
 docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md
@@ -22,8 +22,9 @@ log = logging.getLogger(__name__)
 
 RANK_USE_CASE = "medias.ai_material_strategist_rank_products"
 PRODUCT_ANALYSIS_USE_CASE = "medias.ai_material_strategist_product_analysis"
-PROVIDER_CODE = "openrouter"
-MODEL_ID = "google/gemini-3.5-flash"
+PROVIDER_CODE = "google_wj"
+MODEL_ID = "gemini-3.5-flash"
+PROMPT_VERSION = "ad_material_review_v2026_06_10"
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
 _MAX_AI_CANDIDATES = 60
@@ -59,7 +60,7 @@ _PROGRESS_LOG_LIMIT = 12
 PROGRESS_STEPS: tuple[dict[str, str], ...] = (
     {"key": "snapshot", "label": "读取数据窗口", "description": "读取产品、广告、订单、明空素材新鲜度。"},
     {"key": "candidate_score", "label": "规则预筛打分", "description": "按消耗、订单、ROAS、广告数筛选候选品。"},
-    {"key": "ai_ranking", "label": "Top 20 AI 复评", "description": "分批调用 OpenRouter Gemini 复评候选产品。"},
+    {"key": "ai_ranking", "label": "Top 20 AI 复评", "description": "分批调用 GoogleWJ Gemini 复评候选产品。"},
     {"key": "material_context", "label": "补齐素材上下文", "description": "读取国家反馈、本地素材、明空素材和任务中心排程。"},
     {"key": "product_analysis", "label": "逐产品分析", "description": "逐个产品分析国家、素材、任务去重和补素材建议。"},
     {"key": "persist", "label": "保存结果", "description": "写入 Top 产品、AI 建议和操作入口。"},
@@ -69,7 +70,7 @@ PROGRESS_STEPS: tuple[dict[str, str], ...] = (
 
 class ProjectAlreadyRunningError(RuntimeError):
     def __init__(self, project: Mapping[str, Any] | None = None):
-        super().__init__("已有 AI素材军师项目正在运行")
+        super().__init__("已有投放素材AI分析项目正在运行")
         self.project = dict(project or {})
 
 
@@ -793,6 +794,860 @@ def _rank_input(row: Mapping[str, Any]) -> dict[str, Any]:
     return {key: row.get(key) for key in keys}
 
 
+MATERIAL_REVIEW_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "final_decision": {"type": "string", "enum": ["通过", "条件通过", "不通过"]},
+        "quality_score": {"type": "integer"},
+        "score_breakdown": {
+            "type": "object",
+            "properties": {
+                "product_history": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": ["integer", "null"]},
+                        "max_score": {"type": "integer"},
+                        "included": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                        "sub_scores": {
+                            "type": "object",
+                            "properties": {
+                                "recent_profitability": {"type": ["integer", "null"]},
+                                "historical_winner_signal": {"type": ["integer", "null"]},
+                            },
+                            "required": ["recent_profitability", "historical_winner_signal"],
+                        },
+                    },
+                    "required": ["score", "max_score", "included", "reason", "sub_scores"],
+                },
+                "creator_data": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": ["integer", "null"]},
+                        "max_score": {"type": "integer"},
+                        "included": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                        "sub_scores": {
+                            "type": "object",
+                            "properties": {
+                                "gpm_to_aov_ratio": {"type": ["integer", "null"]},
+                                "sales_burst_signal": {"type": ["integer", "null"]},
+                                "other_creator_signal": {"type": ["integer", "null"]},
+                            },
+                            "required": [
+                                "gpm_to_aov_ratio",
+                                "sales_burst_signal",
+                                "other_creator_signal",
+                            ],
+                        },
+                    },
+                    "required": ["score", "max_score", "included", "reason", "sub_scores"],
+                },
+                "trend": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": ["integer", "null"]},
+                        "max_score": {"type": "integer"},
+                        "included": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["score", "max_score", "included", "reason"],
+                },
+                "video_content": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": ["integer", "null"]},
+                        "max_score": {"type": "integer"},
+                        "included": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["score", "max_score", "included", "reason"],
+                },
+            },
+            "required": ["product_history", "creator_data", "trend", "video_content"],
+        },
+        "analysis_reason": {
+            "type": "object",
+            "properties": {
+                "product_history_analysis": {"type": "string"},
+                "creator_data_analysis": {"type": "string"},
+                "trend_analysis": {"type": "string"},
+                "video_content_analysis": {"type": "string"},
+                "final_judgment_reason": {"type": "string"},
+            },
+            "required": [
+                "product_history_analysis",
+                "creator_data_analysis",
+                "trend_analysis",
+                "video_content_analysis",
+                "final_judgment_reason",
+            ],
+        },
+        "material_plan": {
+            "type": "object",
+            "properties": {
+                "risk_alerts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "sensitive_word",
+                                    "platform_word",
+                                    "risky_expression",
+                                    "visual_risk",
+                                    "compliance_risk",
+                                    "cultural_fit_risk",
+                                ],
+                            },
+                            "original": {"type": "string"},
+                            "risk_reason": {"type": "string"},
+                            "suggested_fix": {"type": "string"},
+                        },
+                        "required": ["type", "original", "risk_reason", "suggested_fix"],
+                    },
+                },
+                "editing_plan": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "target": {"type": "string"},
+                            "issue": {"type": "string"},
+                            "action": {
+                                "type": "string",
+                                "enum": [
+                                    "delete",
+                                    "move_forward",
+                                    "mute",
+                                    "replace_text",
+                                    "crop",
+                                    "speed_up",
+                                    "add_caption",
+                                    "keep",
+                                ],
+                            },
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["target", "issue", "action", "reason"],
+                    },
+                },
+                "hook_suggestions": {"type": "array"},
+                "highlight_segments_to_move_forward": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "segment": {"type": "string"},
+                            "why_it_matters": {"type": "string"},
+                            "suggested_new_position": {"type": "string"},
+                        },
+                        "required": ["segment", "why_it_matters", "suggested_new_position"],
+                    },
+                },
+                "copy_extraction": {
+                    "type": "object",
+                    "properties": {
+                        "original_language": {"type": "string", "enum": ["中文", "英文", "混合", "unknown"]},
+                        "original_copy": {"type": "string"},
+                        "english_translation": {"type": "string"},
+                        "copy_source": {
+                            "type": "string",
+                            "enum": ["subtitle", "voiceover", "on_screen_text", "caption", "mixed", "unknown"],
+                        },
+                    },
+                    "required": [
+                        "original_language",
+                        "original_copy",
+                        "english_translation",
+                        "copy_source",
+                    ],
+                },
+            },
+            "required": [
+                "risk_alerts",
+                "editing_plan",
+                "hook_suggestions",
+                "highlight_segments_to_move_forward",
+                "copy_extraction",
+            ],
+        },
+    },
+    "required": [
+        "final_decision",
+        "quality_score",
+        "score_breakdown",
+        "analysis_reason",
+        "material_plan",
+    ],
+}
+
+
+def _product_review_facts(product_id: int) -> dict[str, Any]:
+    return db.query_one(
+        """
+        SELECT
+          p.id, p.name, p.product_code, p.description, p.selling_points,
+          p.purchase_price, p.packet_cost_estimated, p.packet_cost_actual,
+          p.standalone_price, p.standalone_shipping_fee,
+          c.order_revenue_usd, c.shipping_revenue_usd, c.total_revenue_usd,
+          c.ad_spend_usd, c.active_7d_ad_spend_usd, c.overall_roas,
+          c.delivery_start_time, c.delivery_end_time, c.active_days
+        FROM media_products p
+        LEFT JOIN media_product_ad_summary_cache c ON c.product_id = p.id
+        WHERE p.id = %s
+        """,
+        (product_id,),
+    ) or {}
+
+
+def _media_match_terms(material: Mapping[str, Any]) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for key in ("filename", "display_name", "object_key"):
+        raw = str(material.get(key) or "").strip().replace("\\", "/")
+        if not raw:
+            continue
+        name = raw.split("?", 1)[0].rsplit("/", 1)[-1].strip().lower()
+        candidates = [name]
+        if "." in name:
+            candidates.append(name.rsplit(".", 1)[0])
+        for candidate in candidates:
+            if len(candidate) < 4 or candidate in seen:
+                continue
+            seen.add(candidate)
+            terms.append(candidate)
+    return terms
+
+
+def _row_matches_material(row: Mapping[str, Any], terms: list[str]) -> bool:
+    haystack = (
+        f"{row.get('ad_name') or ''} "
+        f"{row.get('normalized_ad_code') or ''}"
+    ).strip().lower()
+    return bool(haystack and any(term in haystack for term in terms))
+
+
+def _iso_week_bounds(day: date) -> tuple[date, date, str]:
+    start = day - timedelta(days=day.weekday())
+    end = start + timedelta(days=6)
+    iso_year, iso_week, _ = day.isocalendar()
+    return start, end, f"{iso_year}-W{iso_week:02d}"
+
+
+def _load_product_ad_rows_for_materials(product_id: int) -> list[dict]:
+    rows = db.query(
+        """
+        SELECT id, ad_name, normalized_ad_code,
+               COALESCE(meta_business_date, report_date) AS activity_date,
+               spend_usd, purchase_value_usd, result_count
+        FROM meta_ad_daily_ad_metrics
+        WHERE product_id = %s
+          AND COALESCE(spend_usd, 0) > 0
+        ORDER BY COALESCE(meta_business_date, report_date), id
+        """,
+        (product_id,),
+    )
+    for row in rows:
+        row["metric_source"] = "daily"
+    realtime_rows = db.query(
+        """
+        SELECT
+          m.id,
+          m.ad_name,
+          m.normalized_ad_code,
+          m.business_date AS activity_date,
+          m.spend_usd,
+          m.purchase_value_usd,
+          m.result_count
+        FROM (
+          SELECT m.*
+          FROM (
+            SELECT latest_day.business_date, latest_day.ad_account_id, MAX(rt.snapshot_at) AS max_snapshot_at
+            FROM meta_ad_realtime_daily_ad_metrics rt
+            INNER JOIN (
+              SELECT ad_account_id, MAX(business_date) AS business_date
+              FROM meta_ad_realtime_daily_ad_metrics
+              WHERE data_completeness = 'realtime_partial'
+              GROUP BY ad_account_id
+            ) latest_day
+              ON rt.business_date = latest_day.business_date
+             AND (rt.ad_account_id <=> latest_day.ad_account_id)
+            WHERE rt.data_completeness = 'realtime_partial'
+            GROUP BY latest_day.business_date, latest_day.ad_account_id
+          ) latest
+          STRAIGHT_JOIN meta_ad_realtime_daily_ad_metrics m
+            ON m.business_date = latest.business_date
+           AND (m.ad_account_id <=> latest.ad_account_id)
+           AND m.snapshot_at = latest.max_snapshot_at
+          WHERE m.data_completeness = 'realtime_partial'
+            AND COALESCE(m.spend_usd, 0) > 0
+        ) m
+        JOIN media_products p
+          ON p.id = %s
+         AND p.deleted_at IS NULL
+         AND p.product_code IS NOT NULL
+         AND p.product_code <> ''
+         AND (
+           LOWER(COALESCE(m.normalized_campaign_code, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+           OR LOWER(COALESCE(m.campaign_name, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+           OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+           OR LOWER(COALESCE(m.ad_name, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+         )
+        ORDER BY m.business_date, m.id
+        """,
+        (product_id,),
+    )
+    for row in realtime_rows:
+        row["metric_source"] = "realtime"
+    rows.extend(realtime_rows)
+    return rows
+
+
+def _build_media_weekly_history(product_id: int, local_materials: list[dict]) -> list[dict]:
+    materials: list[dict[str, Any]] = []
+    material_terms: dict[int, list[str]] = {}
+    for material in local_materials:
+        media_id = _safe_int(material.get("id"))
+        if not media_id:
+            continue
+        material_terms[media_id] = _media_match_terms(material)
+        materials.append({
+            "media_id": media_id,
+            "lang": material.get("lang") or "",
+            "filename": material.get("filename") or "",
+            "display_name": material.get("display_name") or material.get("filename") or "",
+            "created_at": material.get("created_at"),
+            "mk_video_path": material.get("mk_video_path") or "",
+            "total_spend": 0.0,
+            "total_sales": 0.0,
+            "insights": [],
+        })
+    if not materials:
+        return []
+
+    by_media = {_safe_int(item.get("media_id")): item for item in materials}
+    week_map: dict[tuple[int, str], dict[str, Any]] = {}
+    matched_metric_keys: set[tuple[int, str]] = set()
+    for row in _load_product_ad_rows_for_materials(product_id):
+        activity_date = _to_date(row.get("activity_date"))
+        if activity_date is None:
+            continue
+        metric_key = f"{row.get('metric_source') or 'daily'}:{row.get('id') or ''}:{row.get('activity_date') or ''}"
+        for media_id, terms in material_terms.items():
+            if not terms or not _row_matches_material(row, terms):
+                continue
+            dedupe_key = (media_id, metric_key)
+            if dedupe_key in matched_metric_keys:
+                continue
+            matched_metric_keys.add(dedupe_key)
+            week_start, week_end, week_id = _iso_week_bounds(activity_date)
+            bucket = week_map.setdefault(
+                (media_id, week_id),
+                {
+                    "spend": 0.0,
+                    "sales": 0.0,
+                    "purchases": 0,
+                    "date_start": week_start.isoformat(),
+                    "date_end": week_end.isoformat(),
+                    "week_id": week_id,
+                },
+            )
+            bucket["spend"] += _safe_float(row.get("spend_usd"))
+            bucket["sales"] += _safe_float(row.get("purchase_value_usd"))
+            bucket["purchases"] += _safe_int(row.get("result_count"))
+
+    for (media_id, _week_id), bucket in sorted(week_map.items(), key=lambda item: item[0][1]):
+        media = by_media.get(media_id)
+        if not media:
+            continue
+        spend = _safe_float(bucket.get("spend"))
+        sales = _safe_float(bucket.get("sales"))
+        insight = {
+            "spend": round(spend, 4),
+            "sales": round(sales, 4),
+            "roas": _roas(sales, spend),
+            "purchases": _safe_int(bucket.get("purchases")),
+            "cpc": None,
+            "cpm": None,
+            "purchase_click_rate": None,
+            "date_start": bucket["date_start"],
+            "date_end": bucket["date_end"],
+            "week_id": bucket["week_id"],
+        }
+        media["insights"].append(insight)
+        media["total_spend"] = round(_safe_float(media.get("total_spend")) + spend, 4)
+        media["total_sales"] = round(_safe_float(media.get("total_sales")) + sales, 4)
+    return materials
+
+
+def _effective_media_count(medias: list[dict], base_roas: Any) -> int:
+    threshold = _safe_float(base_roas)
+    count = 0
+    for media in medias:
+        for insight in media.get("insights") or []:
+            spend = _safe_float(insight.get("spend"))
+            roas = insight.get("roas")
+            if spend <= 0:
+                continue
+            if threshold > 0:
+                if _safe_float(roas) >= threshold:
+                    count += 1
+                    break
+            elif roas is not None and _safe_float(roas) > 0:
+                count += 1
+                break
+    return count
+
+
+def _active_media_count(medias: list[dict], current_date: date) -> int:
+    recent_start = current_date - timedelta(days=6)
+    count = 0
+    for media in medias:
+        for insight in media.get("insights") or []:
+            week_end = _to_date(insight.get("date_end"))
+            if week_end and week_end >= recent_start and _safe_float(insight.get("spend")) > 0:
+                count += 1
+                break
+    return count
+
+
+def _build_product_brief(product: Mapping[str, Any], local_materials: list[dict]) -> dict[str, Any]:
+    product_id = _safe_int(product.get("product_id"))
+    facts = _product_review_facts(product_id)
+    review_date = date.today()
+    medias = _build_media_weekly_history(product_id, local_materials)
+    total_medias = len(medias)
+    base_roas = product.get("effective_breakeven_roas")
+    if base_roas is None:
+        try:
+            from appcore import product_roas
+
+            calc = product_roas.calculate_break_even_roas(
+                purchase_price=facts.get("purchase_price"),
+                estimated_packet_cost=facts.get("packet_cost_estimated"),
+                actual_packet_cost=facts.get("packet_cost_actual"),
+                standalone_price=facts.get("standalone_price"),
+                standalone_shipping_fee=facts.get("standalone_shipping_fee"),
+                rmb_per_usd=product_roas.get_configured_rmb_per_usd(),
+            )
+            base_roas = calc.get("effective_roas")
+        except Exception:
+            log.debug("failed to calculate product base_roas product_id=%s", product_id, exc_info=True)
+            base_roas = None
+    effective_count = _effective_media_count(medias, base_roas)
+    active_count = _active_media_count(medias, review_date)
+    cold_count = max(0, total_medias - effective_count)
+    product_desc = "；".join(
+        part for part in (
+            str(facts.get("description") or "").strip(),
+            str(facts.get("selling_points") or "").strip(),
+        )
+        if part
+    )
+    recent_7d_sales = (
+        _safe_float(product.get("revenue_7d"))
+        if product.get("revenue_7d") is not None
+        else _safe_float(product.get("purchase_value_7d"))
+    )
+    matrix = {
+        "slug": product.get("product_code") or facts.get("product_code") or "",
+        "total_medias": total_medias,
+        "product_name": product.get("product_name") or facts.get("name") or "",
+        "product_desc": product_desc,
+        "base_roas": base_roas,
+        "today": review_date.isoformat(),
+        "active_days": _safe_int(facts.get("active_days")),
+        "total_spend": _safe_float(facts.get("ad_spend_usd") or product.get("cached_ad_spend_usd")),
+        "total_sales": _safe_float(facts.get("total_revenue_usd") or product.get("revenue_30d")),
+        "overall_roas": facts.get("overall_roas") if facts.get("overall_roas") is not None else product.get("true_roas_30d"),
+        "recent_7d_roas": _roas(recent_7d_sales, product.get("spend_7d")),
+        "recent_7d_sales": recent_7d_sales,
+        "recent_7d_spend": _safe_float(product.get("spend_7d")),
+        "cold_media_count": cold_count,
+        "active_media_count": active_count,
+        "effective_media_count": effective_count,
+        "hit_rate": round(effective_count / total_medias, 4) if total_medias else None,
+        "medias": medias,
+    }
+    return {"code": 0, "data": {"matrix": matrix}, "message": ""}
+
+
+def _build_candidate_video(mk_materials: list[dict]) -> dict[str, Any]:
+    if not mk_materials:
+        return {}
+    material = dict(mk_materials[0])
+    video_name = str(material.get("video_name") or "").strip()
+    return {
+        "source": "mingkong_material_daily_snapshots",
+        "video_id": material.get("material_key") or "",
+        "video_name": video_name,
+        "desc": video_name,
+        "video_path": material.get("video_path") or "",
+        "video_url": material.get("video_url") or "",
+        "cover_path": material.get("video_image_path") or "",
+        "author_name": material.get("video_author") or "",
+        "publish_time": material.get("video_upload_time") or "",
+        "duration_seconds": material.get("video_duration_seconds"),
+        "cumulative_90_spend": material.get("cumulative_90_spend"),
+        "video_ads_count": material.get("video_ads_count"),
+        "yesterday_spend_delta": material.get("yesterday_spend_delta"),
+        "note": "该候选视频来自明空素材快照，不等同于达人销量归因数据。",
+    }
+
+
+def _build_creator_brief(candidate_video: Mapping[str, Any]) -> dict[str, Any]:
+    author = str(candidate_video.get("author_name") or "").strip()
+    if not author:
+        return {}
+    return {
+        "identity": {"name": author},
+        "commerce_metrics": {},
+        "data_availability": {
+            "included": False,
+            "missing_fields": [
+                "commerce_metrics.gpm_ratio",
+                "commerce_metrics.latest_units_sold",
+                "category_match_evidence",
+            ],
+            "reason": "当前仅有候选素材作者名，没有可证明达人卖货能力或候选视频贡献的数据。",
+        },
+    }
+
+
+def _latest_stage1_visual_brief(local_materials: list[dict]) -> dict[str, Any]:
+    item_ids = [_safe_int(item.get("id")) for item in local_materials if _safe_int(item.get("id"))]
+    if not item_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(item_ids))
+    row = db.query_one(
+        f"""
+        SELECT source_id, run_id, status, raw_response, overall_score,
+               dimensions, verdict, verdict_reason, issues, highlights, completed_at
+        FROM video_ai_reviews
+        WHERE source_type = 'media_item'
+          AND source_id IN ({placeholders})
+          AND status = 'done'
+        ORDER BY completed_at DESC, run_id DESC
+        LIMIT 1
+        """,
+        tuple(str(item_id) for item_id in item_ids),
+    )
+    if not row:
+        return {}
+    raw = _json_loads(row.get("raw_response"), {}) or {}
+    if isinstance(raw, Mapping) and any(
+        key in raw
+        for key in ("content_quality", "risk_alerts", "copy_extraction", "editing_plan")
+    ):
+        return dict(raw)
+    return {
+        "content_quality": {
+            "overall_score": row.get("overall_score"),
+            "verdict": row.get("verdict") or "",
+            "reason": row.get("verdict_reason") or "",
+            "dimensions": _json_loads(row.get("dimensions"), {}) or {},
+        },
+        "risk_alerts": _json_loads(row.get("issues"), []) or [],
+        "editing_plan": [],
+        "hook_suggestions": [],
+        "highlight_segments_to_move_forward": _json_loads(row.get("highlights"), []) or [],
+        "copy_extraction": {
+            "original_language": "unknown",
+            "original_copy": "未识别到原始文案",
+            "english_translation": "No original copy detected.",
+            "copy_source": "unknown",
+        },
+        "source_review": {
+            "source_type": "media_item",
+            "source_id": row.get("source_id"),
+            "run_id": row.get("run_id"),
+            "completed_at": _iso(row.get("completed_at")),
+        },
+    }
+
+
+def _build_material_review_input(
+    product: Mapping[str, Any],
+    local_materials: list[dict],
+    mk_materials: list[dict],
+) -> dict[str, Any]:
+    candidate_video = _build_candidate_video(mk_materials)
+    stage1_visual_brief = _latest_stage1_visual_brief(local_materials)
+    creator_brief = _build_creator_brief(candidate_video)
+    payload = {
+        "current_date": date.today().isoformat(),
+        "product_brief": _build_product_brief(product, local_materials),
+        "creator_brief": creator_brief,
+        "candidate_video": candidate_video,
+        "stage1_visual_brief": stage1_visual_brief,
+    }
+    missing = []
+    if not creator_brief or not ((creator_brief.get("commerce_metrics") or {}).get("gpm_ratio")):
+        missing.append("creator_brief.commerce_metrics.gpm_ratio")
+    if not candidate_video:
+        missing.append("candidate_video")
+    if not stage1_visual_brief:
+        missing.append("stage1_visual_brief")
+    missing.append("future_45d_trend")
+    payload["_adapter_notes"] = {
+        "missing_modules": missing,
+        "rule": "缺失数据不得补 0 分；提示词要求对应模块 included=false 并按参与满分折算 quality_score。",
+    }
+    return payload
+
+
+def _material_review_prompt(payload: dict) -> str:
+    rules = """
+你是 Facebook 信息流广告补充素材的业务评审员。
+
+判断优先级固定：
+1. 商品历史投放数据，50 分
+2. 达人数据，30 分
+3. 未来 45 天季节 / 节日 / 外部市场趋势，15 分
+4. 视频内容，5 分
+
+最终判断不由分数硬卡线决定，也没有任何单项一票否决。分数只用于排序和解释强弱。
+输出必须是严格 JSON，不要 Markdown，不要代码块，不要自然语言说明。
+
+输入包含 current_date、product_brief、creator_brief、candidate_video、stage1_visual_brief。
+current_date 是评审当天；如果 product_brief.data.matrix.today 不一致，优先使用 current_date。
+product_brief.data.matrix 是商品历史核心依据；creator_brief 是第二依据；candidate_video 只做辅助和文本风险兜底；stage1_visual_brief 只占视频内容 5 分。
+
+缺失数据适配规则：
+只根据输入 JSON 判断，不要补全不存在的数据。
+如果 creator_brief、candidate_video、stage1_visual_brief 或未来45天趋势依据为空或缺关键字段，对应 score 必须为 null、included=false、reason 写“该数据缺失，未参与评分”或等价说明。
+不要把缺失解释成表现差，也不要填 0 分。
+缺失模块如果有 sub_scores，小分也必须为 null。
+quality_score 只按参与评分模块得分/参与评分模块满分折算为 0-100 整数。
+
+final_decision 只能是：通过、条件通过、不通过。
+允许通过：商品历史非常强，最近 7 天仍高于保本或历史充分验证且近期断档可合理理解为旧素材老化/素材断供；达人 GPM/客单价 >= 1；达人类目和商品匹配；视频问题是可剪辑小问题；趋势缺失或不明确但不影响商品和达人基本盘。
+条件通过：有核心亮点但存在明显不确定性，包括商品历史曾经不错但近期转弱、商品历史强但达人或视频一般、达人强但商品历史弱、达人缺失、趋势依据不足、视频需要剪辑处理、信息不足但仍有补素材价值。
+不通过：综合看没有足够商业理由继续做。不要因为单个风险词、单个视频瑕疵、单个缺失字段直接判死。
+
+商品历史 50 分，拆分为最近赚钱能力 30 分、历史跑爆能力 20 分。商品历史分析必须是最详细的一段。
+最近赚钱能力优先看 recent_7d_roas、recent_7d_spend、recent_7d_sales、base_roas；base_roas > 0 时 recent_7d_roas >= base_roas 是最强近期信号。
+如需结合周明细，看 medias[].insights[] 中 date_end 接近 current_date 的有花费周；周记录是 ISO 自然周累计，不是日消耗。
+若最近 7 天字段缺失，禁止写“最近 7 天没有消耗”或“近期转弱”；应写“输入未提供最近 7 天顶层聚合字段”，并改从最近有花费周判断。
+若当前周覆盖 current_date，该周可能未结束，不能和完整历史周机械对比。
+如果最近几周或几个月没有周度 insights，不能直接判断商品失效；可能是旧素材老化、素材断供、账户停投或投放节奏变化。
+历史跑爆能力看 total_spend、total_sales、overall_roas、active_days、base_roas、total_medias、cold_media_count、active_media_count、effective_media_count、hit_rate、medias[].insights[]。
+历史强商品即使近期没有周度记录，仍是强商品信号；不要因为历史周数据来自几个月前就自动扣重分。
+
+达人数据 30 分，拆分为 GPM/客单价 15 分、销量爆发情况 10 分、其他达人辅助信号 5 分。
+creator_brief.commerce_metrics.gpm_ratio >= 1 视为优秀。
+latest_units_sold 默认理解为达人当前周期总销量，只能说明达人整体卖货规模，不等于候选视频销量，除非输入明确说明该销量由候选视频贡献。
+候选视频是否爆发要看发布时间附近销量上升、is_top_video=true 或 rank_by_play 靠前、recent_30d_change/recent_30d_trend；这些热度变化不等于直接销量。
+has_burst=false、pct_units_sold 下降、is_top_video=false 或 rank_by_play 靠后时，sales_burst_signal 通常落在 0-5 分。
+分析理由里必须区分“达人整体销量”和“候选视频贡献”；不确定时写“输入未证明这些销量由候选视频贡献”。
+
+未来趋势 15 分只看未来约 45 天的季节需求、节日需求、外部市场趋势、明确输入中给出的商品趋势依据。
+禁止把达人最近播放量上升、达人最近销量上升、creator_brief.trend.direction、商品最近 7 天 ROAS 变化、商品历史周度投放数据、候选视频近期增长或“看起来最近热”当作趋势评分依据。
+如果输入没有明确未来 45 天季节、节日或外部趋势依据，trend 必须 score=null、included=false、reason 写“缺少未来45天季节、节日或外部趋势依据，未参与评分”。
+
+视频内容 5 分只看是否疑似 AI 视频、画质是否太差、是否不适合欧美投放、是否有明显可剪辑风险。视频内容只占 5 分，不能主导最终判断。
+如果 stage1_visual_brief 是新版视频取证结构，用 content_quality 给视频分，用 risk_alerts 生成风险提示，用 editing_plan、hook_suggestions、highlight_segments_to_move_forward 生成剪辑方案，用 copy_extraction 生成原始文案和英文翻译。
+
+风险和文案兜底扫描：
+不能完全依赖 Stage 1 的 risk_alerts，必须二次扫描 candidate_video.desc、stage1_visual_brief.copy_extraction.original_copy、stage1_visual_brief.risk_alerts。
+出现 tiktok、tiktokshop、tiktokmademebuyit、link in bio、bio link、storefront、shop、buyit、free shipping、freeshipping、明确平台导流表达、明显夸大承诺、中文 UI / 非英语界面、车牌 / 水印 / 品牌露出时，material_plan.risk_alerts 必须包含。
+如果风险来自 candidate_video.desc，risk_reason 可写“视频描述包含平台/促销标签，不适合作为 Facebook 信息流广告原文案直接保留”。
+
+原始文案提取：
+只提取原始文案并翻译英文。禁止生成新的广告主文案、标题、CTA。
+copy_extraction.original_copy 必须合并 Stage 1 识别到的口播 / 字幕 / 画面文字和 candidate_video.desc；多来源时用 [voiceover]、[video_desc] 等标签分段，copy_source 填 mixed。
+如果没有识别到原始文案，输出 original_language=unknown、original_copy=未识别到原始文案、english_translation=No original copy detected.、copy_source=unknown。
+
+剪辑方案：
+editing_plan 必须可执行，不要只输出 keep。
+必须覆盖平台词怎么处理、中文 UI 怎么处理、车牌/水印/品牌露出怎么处理、哪个爆点片段需要前置、哪段口播需要消音或删除。
+如果风险来自 candidate_video.desc 且没有画面时间点，target 填 unknown，也要写清楚删除或替换描述文案中的平台词 / 促销词。
+如果没有风险或剪辑建议，对应数组输出 []。
+
+不要输出 test_plan。
+final_judgment_reason 只解释为什么给这个判断，不要写上线、投放、测试、预算、首日指标、ROAS 观察计划、“建议上线投放”、“建议测试”。可以写“因此判断为通过/条件通过/不通过”。
+
+严格按下面字段输出，不要增删字段：
+{
+  "final_decision": "通过 | 条件通过 | 不通过",
+  "quality_score": 0,
+  "score_breakdown": {
+    "product_history": {
+      "score": 0,
+      "max_score": 50,
+      "included": true,
+      "reason": "",
+      "sub_scores": {
+        "recent_profitability": 0,
+        "historical_winner_signal": 0
+      }
+    },
+    "creator_data": {
+      "score": 0,
+      "max_score": 30,
+      "included": true,
+      "reason": "",
+      "sub_scores": {
+        "gpm_to_aov_ratio": 0,
+        "sales_burst_signal": 0,
+        "other_creator_signal": 0
+      }
+    },
+    "trend": {
+      "score": 0,
+      "max_score": 15,
+      "included": true,
+      "reason": ""
+    },
+    "video_content": {
+      "score": 0,
+      "max_score": 5,
+      "included": true,
+      "reason": ""
+    }
+  },
+  "analysis_reason": {
+    "product_history_analysis": "",
+    "creator_data_analysis": "",
+    "trend_analysis": "",
+    "video_content_analysis": "",
+    "final_judgment_reason": ""
+  },
+  "material_plan": {
+    "risk_alerts": [
+      {
+        "type": "sensitive_word | platform_word | risky_expression | visual_risk | compliance_risk | cultural_fit_risk",
+        "original": "",
+        "risk_reason": "",
+        "suggested_fix": ""
+      }
+    ],
+    "editing_plan": [
+      {
+        "target": "0:00-0:00 | unknown",
+        "issue": "",
+        "action": "delete | move_forward | mute | replace_text | crop | speed_up | add_caption | keep",
+        "reason": ""
+      }
+    ],
+    "hook_suggestions": [],
+    "highlight_segments_to_move_forward": [
+      {
+        "segment": "0:00-0:00 | unknown",
+        "why_it_matters": "",
+        "suggested_new_position": "0:00-0:03"
+      }
+    ],
+    "copy_extraction": {
+      "original_language": "中文 | 英文 | 混合 | unknown",
+      "original_copy": "未识别到原始文案",
+      "english_translation": "No original copy detected.",
+      "copy_source": "subtitle | voiceover | on_screen_text | caption | mixed | unknown"
+    }
+  }
+}
+""".strip()
+    return f"{rules}\n\n输入 JSON：\n{_json_dumps(payload)}"
+
+
+def _fallback_material_review(review_input: Mapping[str, Any], product: Mapping[str, Any]) -> dict[str, Any]:
+    matrix = (((review_input.get("product_brief") or {}).get("data") or {}).get("matrix") or {})
+    base_roas = _safe_float(matrix.get("base_roas"))
+    recent_roas = matrix.get("recent_7d_roas")
+    overall_roas = matrix.get("overall_roas")
+    total_spend = _safe_float(matrix.get("total_spend"))
+    total_sales = _safe_float(matrix.get("total_sales"))
+    recent_spend = _safe_float(matrix.get("recent_7d_spend"))
+    recent_sales = _safe_float(matrix.get("recent_7d_sales"))
+    recent_score = 18
+    if recent_spend > 0 and recent_sales > 0 and (base_roas <= 0 or _safe_float(recent_roas) >= base_roas):
+        recent_score = 26
+    elif recent_spend > 0:
+        recent_score = 16
+    historical_score = 8
+    if total_spend >= 500 and total_sales > 0 and (base_roas <= 0 or _safe_float(overall_roas) >= base_roas):
+        historical_score = 17
+    elif total_spend >= 100:
+        historical_score = 12
+    product_score = recent_score + historical_score
+    quality = int(round(product_score / 50 * 100))
+    if product_score >= 40:
+        decision = "通过"
+    elif product_score >= 25:
+        decision = "条件通过"
+    else:
+        decision = "不通过"
+    product_reason = (
+        f"商品历史按现有系统数据评估：累计消耗 {total_spend:.2f}，累计销售 {total_sales:.2f}，"
+        f"整体ROAS {overall_roas if overall_roas is not None else '缺失'}，"
+        f"近7天消耗 {recent_spend:.2f}，近7天销售 {recent_sales:.2f}，"
+        f"近7天ROAS {recent_roas if recent_roas is not None else '缺失'}，"
+        f"保本ROAS {matrix.get('base_roas') if matrix.get('base_roas') is not None else '缺失'}。"
+    )
+    return {
+        "final_decision": decision,
+        "quality_score": quality,
+        "score_breakdown": {
+            "product_history": {
+                "score": product_score,
+                "max_score": 50,
+                "included": True,
+                "reason": product_reason,
+                "sub_scores": {
+                    "recent_profitability": recent_score,
+                    "historical_winner_signal": historical_score,
+                },
+            },
+            "creator_data": {
+                "score": None,
+                "max_score": 30,
+                "included": False,
+                "reason": "该数据缺失，未参与评分",
+                "sub_scores": {
+                    "gpm_to_aov_ratio": None,
+                    "sales_burst_signal": None,
+                    "other_creator_signal": None,
+                },
+            },
+            "trend": {
+                "score": None,
+                "max_score": 15,
+                "included": False,
+                "reason": "缺少未来45天季节、节日或外部趋势依据，未参与评分",
+            },
+            "video_content": {
+                "score": None,
+                "max_score": 5,
+                "included": False,
+                "reason": "该数据缺失，未参与评分",
+            },
+        },
+        "analysis_reason": {
+            "product_history_analysis": product_reason,
+            "creator_data_analysis": "输入未提供可证明的达人 GPM/客单价、销量爆发或类目匹配数据。",
+            "trend_analysis": "输入未提供未来45天季节、节日或外部市场趋势依据。",
+            "video_content_analysis": "输入未提供可用的视频取证结果，视频内容未参与评分。",
+            "final_judgment_reason": f"当前仅商品历史数据可参与评分，因此判断为{decision}。",
+        },
+        "material_plan": {
+            "risk_alerts": [],
+            "editing_plan": [],
+            "hook_suggestions": [],
+            "highlight_segments_to_move_forward": [],
+            "copy_extraction": {
+                "original_language": "unknown",
+                "original_copy": "未识别到原始文案",
+                "english_translation": "No original copy detected.",
+                "copy_source": "unknown",
+            },
+        },
+        "mode": "deterministic_fallback",
+    }
+
+
 RANKING_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -878,7 +1733,7 @@ def _ranking_prompt(payload: dict) -> str:
 
 def _product_prompt(payload: dict) -> str:
     return (
-        "你是跨境电商 AI素材军师。只分析当前一个产品，不编造输入中没有的数据。\n"
+        "你是跨境电商投放素材AI分析评审员。只分析当前一个产品，不编造输入中没有的数据。\n"
         "请先判断产品阶段，再给补素材操作建议。建议必须落到国家、语言、素材或明空 video_path；"
         "必须读取 task_assignments：已有待处理/进行中/已完成任务的国家或素材只标注任务，不要重复建议创建翻译任务；"
         "已取消任务可以建议重排，但要写明曾取消的任务ID；"
@@ -1298,6 +2153,9 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
             "video_url": _mk_video_url(video_path) if video_path else "",
             "cumulative_90_spend": _safe_float(row.get("cumulative_90_spend")),
             "video_ads_count": _safe_int(row.get("video_ads_count")),
+            "video_author": row.get("video_author") or "",
+            "video_upload_time": _iso(row.get("video_upload_time")),
+            "video_duration_seconds": _safe_float(row.get("video_duration_seconds")),
             "yesterday_spend_delta": _safe_float(row.get("yesterday_spend_delta")),
             "top100_display_position": row.get("top100_display_position"),
             "snapshot_at": _iso(row.get("snapshot_at")),
@@ -1401,58 +2259,74 @@ def _run_product_analysis(
     run_ai: bool,
 ) -> dict:
     fallback = _fallback_product_analysis(product, countries, mk_materials)
-    if not run_ai:
-        return fallback
-    payload = {
-        "identity": {
-            "product_id": product.get("product_id"),
-            "product_code": product.get("product_code"),
-            "product_name": product.get("product_name"),
-        },
-        "performance_windows": _rank_input(product),
-        "country_summary": countries,
-        "local_materials": local_materials[:20],
-        "mingkong_material_candidates": mk_materials,
-        "task_assignments": [
-            task
-            for country in countries
-            for task in (country.get("tasks") or [])
-        ],
-        "task_dedup_rule": (
-            "pending/in_progress/completed 都视为已安排，不要再建议同产品同国家创建翻译任务；"
-            "cancelled 可以重排。"
-        ),
-        "target_country_tiers": list(TARGET_COUNTRIES),
+    review_input = _build_material_review_input(product, local_materials, mk_materials)
+    prompt_debug = {
+        "provider": PROVIDER_CODE,
+        "model": MODEL_ID,
+        "use_case": PRODUCT_ANALYSIS_USE_CASE,
+        "prompt_version": PROMPT_VERSION,
+        "missing_modules": (review_input.get("_adapter_notes") or {}).get("missing_modules") or [],
     }
+    if not run_ai:
+        fallback["material_review_input"] = review_input
+        fallback["material_review_result"] = _fallback_material_review(review_input, product)
+        fallback["material_review_prompt_debug"] = {**prompt_debug, "mode": "deterministic_fallback"}
+        return fallback
     try:
         result = llm_client.invoke_generate(
             PRODUCT_ANALYSIS_USE_CASE,
-            prompt=_product_prompt(payload),
+            prompt=_material_review_prompt(review_input),
             user_id=user_id,
             project_id=str(project_id),
-            response_schema=PRODUCT_ANALYSIS_RESPONSE_SCHEMA,
+            response_schema=MATERIAL_REVIEW_RESPONSE_SCHEMA,
             temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
             provider_override=PROVIDER_CODE,
             model_override=MODEL_ID,
-            billing_extra={"stage": "product_analysis", "product_id": product.get("product_id")},
+            billing_extra={
+                "stage": "material_review",
+                "product_id": product.get("product_id"),
+                "prompt_version": PROMPT_VERSION,
+            },
             timeout_seconds=180,
         )
         parsed = _llm_json(result)
         if not parsed:
+            fallback["material_review_input"] = review_input
+            fallback["material_review_result"] = _fallback_material_review(review_input, product)
+            fallback["material_review_prompt_debug"] = {**prompt_debug, "mode": "empty_model_response"}
             fallback["ai_error"] = "empty model response"
             return fallback
-        parsed.setdefault("mode", "ai")
-        parsed["_prompt_debug"] = {
-            "provider": PROVIDER_CODE,
-            "model": MODEL_ID,
+        fallback["mode"] = "ai"
+        fallback["material_review_input"] = review_input
+        fallback["material_review_result"] = parsed
+        fallback["material_review_prompt_debug"] = {
+            **prompt_debug,
+            "mode": "ai",
             "usage_log_id": result.get("usage_log_id"),
-            "prompt": _product_prompt(payload),
+            "prompt": _material_review_prompt(review_input),
             "response_text": result.get("text"),
         }
-        return parsed
+        quality_score = _safe_int(parsed.get("quality_score"))
+        if quality_score >= 80:
+            fallback["priority"] = "P0"
+        elif quality_score >= 65:
+            fallback["priority"] = "P1"
+        elif quality_score >= 45:
+            fallback["priority"] = "P2"
+        else:
+            fallback["priority"] = "P3"
+        final_reason = ((parsed.get("analysis_reason") or {}).get("final_judgment_reason") or "").strip()
+        if final_reason:
+            fallback["overall_judgement"] = final_reason
+        if parsed.get("final_decision") == "不通过":
+            fallback["primary_action"] = "hold"
+        return fallback
     except Exception as exc:
         log.exception("AI material strategist product analysis failed product_id=%s", product.get("product_id"))
+        fallback["material_review_input"] = review_input
+        fallback["material_review_result"] = _fallback_material_review(review_input, product)
+        fallback["material_review_prompt_debug"] = {**prompt_debug, "mode": "error"}
         fallback["ai_error"] = str(exc)
         return fallback
 
@@ -1721,7 +2595,7 @@ def _mark_other_running_projects_interrupted(project_id: int) -> None:
 def _prepare_project_for_run(project_id: int) -> dict:
     row = _load_project_row(project_id)
     if not row:
-        raise ValueError(f"AI素材军师项目不存在：{project_id}")
+        raise ValueError(f"投放素材AI分析项目不存在：{project_id}")
     if row.get("status") == "success":
         return row
     progress = _normalize_progress(
@@ -1871,7 +2745,7 @@ def get_running_project() -> dict | None:
 
 
 def create_project_record(user_id: int | None, project_name: str | None = None) -> dict:
-    name = (project_name or "").strip() or f"AI素材军师 {datetime.now():%Y-%m-%d %H:%M}"
+    name = (project_name or "").strip() or f"投放素材AI分析 {datetime.now():%Y-%m-%d %H:%M}"
     initial_progress = _initial_progress()
     conn = db.get_conn()
     locked = False
@@ -2026,7 +2900,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 "复用已保存 Top 20 排名结果，不重复调用排名模型。",
             )
         else:
-            checkpoint("ai_ranking", "running", 32, "调用 OpenRouter Gemini 分批复评 Top 20。")
+            checkpoint("ai_ranking", "running", 32, "调用 GoogleWJ Gemini 分批复评 Top 20。")
             ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
             _save_project_ranking(project_id, ranking)
         selected = _select_products(candidates, ranking)
@@ -2269,7 +3143,7 @@ def ensure_project_share(project_id: int) -> dict | None:
         )
         if row and row.get("share_token"):
             return _serialize_share_row(row)
-    raise RuntimeError("生成 AI素材军师分享链接失败，请重试")
+    raise RuntimeError("生成投放素材AI分析分享链接失败，请重试")
 
 
 def get_project_by_share_token(share_token: str) -> dict | None:

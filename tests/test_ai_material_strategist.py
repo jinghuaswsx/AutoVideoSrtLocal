@@ -322,6 +322,91 @@ def test_english_action_does_not_create_small_language_translation_task():
     assert any(item["type"] == "supplement_workbench" for item in actions)
 
 
+def test_material_review_prompt_tells_model_to_exclude_missing_modules():
+    payload = {
+        "current_date": "2026-06-10",
+        "product_brief": {"code": 0, "data": {"matrix": {"product_name": "Demo"}}, "message": ""},
+        "creator_brief": {},
+        "candidate_video": {},
+        "stage1_visual_brief": {},
+        "_adapter_notes": {
+            "missing_modules": [
+                "creator_brief.commerce_metrics.gpm_ratio",
+                "candidate_video",
+                "stage1_visual_brief",
+                "future_45d_trend",
+            ]
+        },
+    }
+
+    prompt = svc._material_review_prompt(payload)
+
+    assert "不要补全不存在的数据" in prompt
+    assert "score 必须为 null" in prompt
+    assert "included=false" in prompt
+    assert "不要把缺失解释成表现差" in prompt
+
+
+def test_run_product_analysis_uses_googlewj_material_review(monkeypatch):
+    product = _row(product_id=10, product_code="demo-rjc", spend_30d=500, orders_30d=30)
+    review_input = {
+        "current_date": "2026-06-10",
+        "product_brief": {"code": 0, "data": {"matrix": {"product_name": "Demo"}}, "message": ""},
+        "creator_brief": {},
+        "candidate_video": {},
+        "stage1_visual_brief": {},
+        "_adapter_notes": {"missing_modules": ["future_45d_trend"]},
+    }
+    captured = {}
+
+    monkeypatch.setattr(svc, "_build_material_review_input", lambda product, local, mk: review_input)
+
+    def fake_invoke(use_case, **kwargs):
+        captured["use_case"] = use_case
+        captured["kwargs"] = kwargs
+        return {
+            "json": {
+                "final_decision": "条件通过",
+                "quality_score": 72,
+                "score_breakdown": {},
+                "analysis_reason": {"final_judgment_reason": "商品历史有基础，因此判断为条件通过。"},
+                "material_plan": {
+                    "risk_alerts": [],
+                    "editing_plan": [],
+                    "hook_suggestions": [],
+                    "highlight_segments_to_move_forward": [],
+                    "copy_extraction": {
+                        "original_language": "unknown",
+                        "original_copy": "未识别到原始文案",
+                        "english_translation": "No original copy detected.",
+                        "copy_source": "unknown",
+                    },
+                },
+            }
+        }
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    result = svc._run_product_analysis(
+        product,
+        countries=[],
+        local_materials=[],
+        mk_materials=[],
+        project_id=99,
+        user_id=1,
+        run_ai=True,
+    )
+
+    assert captured["use_case"] == "medias.ai_material_strategist_product_analysis"
+    assert captured["kwargs"]["provider_override"] == "google_wj"
+    assert captured["kwargs"]["model_override"] == "gemini-3.5-flash"
+    assert captured["kwargs"]["response_schema"] == svc.MATERIAL_REVIEW_RESPONSE_SCHEMA
+    assert result["material_review_input"] == review_input
+    assert result["material_review_result"]["final_decision"] == "条件通过"
+    assert result["priority"] == "P1"
+    assert result["mode"] == "ai"
+
+
 def test_resolve_billing_user_id_handles_missing_and_fallback(monkeypatch):
     # 1. 显式传入 user_id 时，直接返回
     assert svc._resolve_billing_user_id(42) == 42

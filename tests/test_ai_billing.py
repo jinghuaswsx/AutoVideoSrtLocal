@@ -217,8 +217,8 @@ def test_log_request_for_material_strategist():
         use_case_code="medias.ai_material_strategist_rank_products",
         user_id=1,
         project_id="strategist-project-1",
-        provider="openrouter",
-        model="google/gemini-3.5-flash",
+        provider="google_wj",
+        model="gemini-3.5-flash",
         input_tokens=2000,
         output_tokens=500,
     )
@@ -228,8 +228,8 @@ def test_log_request_for_material_strategist():
         use_case_code="medias.ai_material_strategist_product_analysis",
         user_id=1,
         project_id="strategist-project-1",
-        provider="openrouter",
-        model="google/gemini-3.5-flash",
+        provider="google_wj",
+        model="gemini-3.5-flash",
         input_tokens=1500,
         output_tokens=400,
     )
@@ -239,17 +239,17 @@ def test_log_request_for_material_strategist():
     
     # 验证第一次调用（排名）
     args1, kwargs1 = calls[0]
-    assert args1 == (1, "strategist-project-1", "openrouter")
+    assert args1 == (1, "strategist-project-1", "google_wj")
     assert kwargs1["use_case_code"] == "medias.ai_material_strategist_rank_products"
     assert kwargs1["module"] == "material"
-    assert kwargs1["provider"] == "openrouter"
-    assert kwargs1["model_name"] == "google/gemini-3.5-flash"
+    assert kwargs1["provider"] == "google_wj"
+    assert kwargs1["model_name"] == "gemini-3.5-flash"
     assert kwargs1["cost_cny"] == Decimal("0.052000")
     
     # 验证第二次调用（分析）
     args2, kwargs2 = calls[1]
-    assert args2 == (1, "strategist-project-1", "openrouter")
+    assert args2 == (1, "strategist-project-1", "google_wj")
     assert kwargs2["use_case_code"] == "medias.ai_material_strategist_product_analysis"
     assert kwargs2["module"] == "material"
-    assert kwargs2["provider"] == "openrouter"
-    assert kwargs2["model_name"] == "google/gemini-3.5-flash"
+    assert kwargs2["provider"] == "google_wj"
+    assert kwargs2["model_name"] == "gemini-3.5-flash"
