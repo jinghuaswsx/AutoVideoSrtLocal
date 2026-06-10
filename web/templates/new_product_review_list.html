@@ -164,7 +164,7 @@
           <td style="color:var(--oc-fg-subtle);font-size:11px">{{ loop.index }}</td>
           <td>
             {% if p.main_image %}
-            <img class="npr-cover" src="{{ p.main_image }}" alt="" loading="lazy">
+            <img class="npr-cover" src="{{ url_for('medias.external_image_proxy', url=p.main_image) if p.main_image.startswith('http') else p.main_image }}" alt="" loading="lazy">
             {% else %}
             <div class="npr-cover-ph"></div>
             {% endif %}
@@ -353,7 +353,12 @@
     if (!raw) return '';
     try {
       const parsed = new URL(raw, window.location.origin);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.href;
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        if (parsed.host !== window.location.host) {
+          return '/medias/external-image?url=' + encodeURIComponent(parsed.href);
+        }
+        return parsed.href;
+      }
       if (parsed.protocol === 'blob:') return raw;
     } catch (e) {
       if (raw.charAt(0) === '/' && raw.charAt(1) !== '/') return raw;
