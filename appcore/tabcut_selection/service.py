@@ -369,3 +369,12 @@ def build_tabcut_refresh_response(
         days = 30
     result = runner_fn(biz_date=biz_date, target_date=target_date, days=max(1, min(days, 30)))
     return TabcutResponse({"ok": bool(result.get("ok")), "result": result}, 202)
+
+
+def get_video_candidate_detail(video_id: str) -> dict[str, Any] | None:
+    row = store.get_video_candidate(video_id)
+    if not row:
+        return None
+    hydrated = _hydrate_video_items({"items": [row]})
+    items = hydrated.get("items")
+    return items[0] if items else None

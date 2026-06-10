@@ -312,6 +312,61 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
     }
 
 
+def get_video_candidate(video_id: str, *, query_fn: QueryFn = query) -> dict[str, Any] | None:
+    rows = query_fn(
+        """
+        SELECT c.id, c.biz_date, c.region, c.video_id, c.primary_item_id,
+               COALESCE(c.primary_item_price_min, gs.price_min) AS primary_item_price_min,
+               COALESCE(c.primary_item_price_max, gs.price_max) AS primary_item_price_max,
+               c.price_currency,
+               c.score, c.score_parts_json, COALESCE(vs.play_count, c.play_count) AS play_count,
+               vs.like_count, vs.share_count, vs.comment_count,
+               c.item_sold_count, c.video_split_sold_count, c.video_split_gmv,
+               c.goods_sold_count_7d, c.goods_gmv_7d,
+               c.goods_sold_count_total, c.goods_gmv_total, c.goods_growth_rate_7d,
+               c.category_l1_name, c.category_l2_name, c.category_l3_name,
+               c.candidate_json, c.crawled_at,
+               v.video_cover_url, v.tk_video_url, v.video_desc, v.author_name,
+               v.author_avatar_url, v.video_duration_ms, v.create_time,
+               v.is_marked, v.mark_status, v.marked_at, v.marked_by,
+               v.local_video_path, v.local_video_cover_path, v.local_video_status,
+               v.local_video_duration_seconds,
+               v.raw_json AS video_raw_json,
+               g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
+               gs.primary_item_sold_count AS primary_item_sold_count
+        FROM tabcut_video_candidates c
+        LEFT JOIN (
+            SELECT biz_date, region, video_id,
+                   MAX(play_count) AS play_count,
+                   MAX(like_count) AS like_count,
+                   MAX(share_count) AS share_count,
+                   MAX(comment_count) AS comment_count
+            FROM tabcut_video_snapshots
+            GROUP BY biz_date, region, video_id
+        ) vs ON vs.biz_date = c.biz_date
+            AND vs.region = c.region
+            AND vs.video_id = c.video_id
+        LEFT JOIN tabcut_videos v ON v.video_id = c.video_id
+        LEFT JOIN tabcut_goods g ON g.item_id = c.primary_item_id
+        LEFT JOIN (
+            SELECT biz_date, region, item_id,
+                   MIN(price_min) AS price_min,
+                   MAX(price_max) AS price_max,
+                   MAX(COALESCE(sold_count_7d, sold_count_period)) AS primary_item_sold_count
+            FROM tabcut_goods_snapshots
+            GROUP BY biz_date, region, item_id
+        ) gs ON gs.biz_date = c.biz_date
+              AND gs.region = c.region
+              AND gs.item_id = c.primary_item_id
+        WHERE c.video_id = %s
+        ORDER BY c.biz_date DESC, c.id DESC
+        LIMIT 1
+        """,
+        [video_id],
+    )
+    return rows[0] if rows else None
+
+
 def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 50, 10, 200)
