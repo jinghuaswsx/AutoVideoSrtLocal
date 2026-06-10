@@ -718,7 +718,7 @@
         <button type="button" class="mkp-copy-btn" data-clipboard-text="{{ product.product_code }}" title="复制产品代码" style="background: none; border: none; padding: 2px; margin: 0; cursor: pointer; color: #64748b; display: inline-flex; align-items: center; transition: color 0.2s;" onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#64748b'">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-copy"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
         </button>
-        <a href="/medias?q={{ product.product_code|urlencode }}" target="_blank" title="在素材管理中搜索" style="color: #64748b; display: inline-flex; align-items: center; text-decoration: none; margin-left: 2px; transition: color 0.2s;" onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#64748b'">
+        <a href="/medias?q={{ product.product_code|urlencode }}" target="_blank" rel="noopener noreferrer" title="在素材管理中搜索" style="color: #64748b; display: inline-flex; align-items: center; text-decoration: none; margin-left: 2px; transition: color 0.2s;" onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#64748b'">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-search"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
         </a>
         {% endif %}
