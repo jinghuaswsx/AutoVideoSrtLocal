@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,11 @@ PAIR_API = "/api/dxmAlibabaProductPair/alibabaProductPairPageList.json"
 CHILD_SKU_API = "/api/dxmCommodityProduct/getChildSkuInfo.json"
 DEFAULT_DXM02_CDP_URL = "http://127.0.0.1:9223"
 MIGRATION = REPO_ROOT / "db/migrations/2026_06_09_mingkong_product_library.sql"
+
+
+def _sleep_seconds(seconds: float) -> None:
+    if seconds and seconds > 0:
+        time.sleep(float(seconds))
 
 
 def _exec_sql_file(path: Path) -> None:
@@ -84,6 +90,9 @@ def _fetch_paginated(
     page_key: str,
     timeout_ms: int,
     max_pages: int,
+    page_delay_seconds: float = 0.0,
+    rest_every_pages: int = 0,
+    rest_seconds: float = 0.0,
 ) -> list[Any]:
     out: list[Any] = []
     page_no = 1
@@ -99,6 +108,9 @@ def _fetch_paginated(
             break
         if max_pages and page_no >= max_pages:
             break
+        _sleep_seconds(page_delay_seconds)
+        if rest_every_pages and page_no % int(rest_every_pages) == 0:
+            _sleep_seconds(rest_seconds)
         page_no += 1
     return out
 
@@ -175,6 +187,9 @@ def fetch_shopify_rows(
     max_pages: int,
     timeout_ms: int,
     days: int,
+    page_delay_seconds: float = 0.0,
+    rest_every_pages: int = 0,
+    rest_seconds: float = 0.0,
 ) -> list[dict[str, Any]]:
     rows_by_id: dict[str, dict[str, Any]] = {}
     if product_code:
@@ -188,6 +203,9 @@ def fetch_shopify_rows(
                 page_key="pageNo",
                 timeout_ms=timeout_ms,
                 max_pages=max_pages or 5,
+                page_delay_seconds=page_delay_seconds,
+                rest_every_pages=rest_every_pages,
+                rest_seconds=rest_seconds,
             ):
                 product_id = str(row.get("shopifyProductId") or "").strip()
                 if product_id:
@@ -210,6 +228,9 @@ def fetch_shopify_rows(
         page_key="pageNo",
         timeout_ms=timeout_ms,
         max_pages=max_pages,
+        page_delay_seconds=page_delay_seconds,
+        rest_every_pages=rest_every_pages,
+        rest_seconds=rest_seconds,
     ):
         created_text = library.parse_dxm_millis(row.get("shopiyfCreateTime"))
         if cutoff and created_text:
@@ -285,6 +306,7 @@ def enrich_shopify_rows_with_public_variants(
     rows: list[dict[str, Any]],
     *,
     fetch_public_product_fn=None,
+    delay_seconds: float = 0.0,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Use public Shopify JSON when Dianxiaomi embeds only a truncated variants list."""
 
@@ -312,6 +334,7 @@ def enrich_shopify_rows_with_public_variants(
         else:
             stats["public_variant_products_failed"] += 1
             enriched.append(row)
+        _sleep_seconds(delay_seconds)
     return enriched, stats
 
 
@@ -329,6 +352,10 @@ def fetch_erp_index(
     skus: set[str],
     max_pages: int,
     timeout_ms: int,
+    sku_delay_seconds: float = 0.0,
+    page_delay_seconds: float = 0.0,
+    rest_every_pages: int = 0,
+    rest_seconds: float = 0.0,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     items: list[dict[str, Any]] = []
     if skus:
@@ -340,8 +367,12 @@ def fetch_erp_index(
                 page_key="pageNo",
                 timeout_ms=timeout_ms,
                 max_pages=1,
+                page_delay_seconds=page_delay_seconds,
+                rest_every_pages=rest_every_pages,
+                rest_seconds=rest_seconds,
             )
             items.extend(_iter_dxm_items(groups))
+            _sleep_seconds(sku_delay_seconds)
     else:
         groups = _fetch_paginated(
             context,
@@ -350,6 +381,9 @@ def fetch_erp_index(
             page_key="pageNo",
             timeout_ms=timeout_ms,
             max_pages=max_pages,
+            page_delay_seconds=page_delay_seconds,
+            rest_every_pages=rest_every_pages,
+            rest_seconds=rest_seconds,
         )
         items.extend(_iter_dxm_items(groups))
     index: dict[str, dict[str, Any]] = {}
@@ -371,6 +405,10 @@ def fetch_pairing_rows(
     skus: set[str],
     max_pages: int,
     timeout_ms: int,
+    pair_delay_seconds: float = 0.0,
+    page_delay_seconds: float = 0.0,
+    rest_every_pages: int = 0,
+    rest_seconds: float = 0.0,
 ) -> list[dict[str, Any]]:
     rows_by_id: dict[str, dict[str, Any]] = {}
     if skus:
@@ -389,10 +427,14 @@ def fetch_pairing_rows(
                 page_key="pageNo",
                 timeout_ms=timeout_ms,
                 max_pages=1,
+                page_delay_seconds=page_delay_seconds,
+                rest_every_pages=rest_every_pages,
+                rest_seconds=rest_seconds,
             )
             for row in rows:
                 if str(row.get("sku") or "").strip() == sku and row.get("id"):
                     rows_by_id[str(row["id"])] = row
+            _sleep_seconds(pair_delay_seconds)
         return list(rows_by_id.values())
 
     rows = _fetch_paginated(
@@ -409,6 +451,9 @@ def fetch_pairing_rows(
         page_key="pageNo",
         timeout_ms=timeout_ms,
         max_pages=max_pages,
+        page_delay_seconds=page_delay_seconds,
+        rest_every_pages=rest_every_pages,
+        rest_seconds=rest_seconds,
     )
     for row in rows:
         if row.get("id"):
@@ -455,9 +500,13 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
                     max_pages=args.max_pages,
                     timeout_ms=timeout_ms,
                     days=args.days,
+                    page_delay_seconds=args.page_delay_seconds,
+                    rest_every_pages=args.rest_every_pages,
+                    rest_seconds=args.rest_seconds,
                 )
                 shopify_rows, public_variant_stats = enrich_shopify_rows_with_public_variants(
                     shopify_rows,
+                    delay_seconds=args.public_variant_delay_seconds,
                 )
                 variant_payloads = [
                     variant
@@ -474,6 +523,10 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
                     skus=pair_keys if args.product_code else set(),
                     max_pages=args.max_pages,
                     timeout_ms=timeout_ms,
+                    sku_delay_seconds=args.sku_delay_seconds,
+                    page_delay_seconds=args.page_delay_seconds,
+                    rest_every_pages=args.rest_every_pages,
+                    rest_seconds=args.rest_seconds,
                 )
                 upserted_variant_by_sku: dict[str, int] = {}
                 combo_jobs: list[tuple[int, str, str]] = []
@@ -503,6 +556,10 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
                     skus=pairing_skus if args.product_code else set(),
                     max_pages=args.max_pages,
                     timeout_ms=timeout_ms,
+                    pair_delay_seconds=args.pair_delay_seconds,
+                    page_delay_seconds=args.page_delay_seconds,
+                    rest_every_pages=args.rest_every_pages,
+                    rest_seconds=args.rest_seconds,
                 )
                 for row in pairing_rows:
                     library.upsert_procurement_link(row, variant_id_by_sku=upserted_variant_by_sku)
@@ -511,6 +568,7 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
                 if args.include_combo_components:
                     for variant_id, product_id, sku in combo_jobs:
                         children = fetch_child_sku_info(context, product_id, timeout_ms=timeout_ms)
+                        _sleep_seconds(args.pair_delay_seconds)
                         for child in children:
                             library.upsert_combo_component(
                                 child,
@@ -526,6 +584,10 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
                                     skus={child_sku},
                                     max_pages=1,
                                     timeout_ms=timeout_ms,
+                                    pair_delay_seconds=args.pair_delay_seconds,
+                                    page_delay_seconds=args.page_delay_seconds,
+                                    rest_every_pages=args.rest_every_pages,
+                                    rest_seconds=args.rest_seconds,
                                 ):
                                     library.upsert_procurement_link(pair, variant_id_by_sku={})
 
@@ -554,6 +616,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout-seconds", type=int, default=60)
     parser.add_argument("--lock-timeout", type=int, default=21600)
     parser.add_argument("--include-combo-components", action="store_true", default=True)
+    parser.add_argument("--page-delay-seconds", type=float, default=0.0)
+    parser.add_argument("--rest-every-pages", type=int, default=0)
+    parser.add_argument("--rest-seconds", type=float, default=0.0)
+    parser.add_argument("--sku-delay-seconds", type=float, default=0.0)
+    parser.add_argument("--pair-delay-seconds", type=float, default=0.0)
+    parser.add_argument("--public-variant-delay-seconds", type=float, default=0.0)
     args = parser.parse_args(argv)
     summary = run_sync(args)
     print(json.dumps(summary, ensure_ascii=False, indent=2))

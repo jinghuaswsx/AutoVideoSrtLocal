@@ -216,18 +216,99 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "mingkong_product_library_sync",
         "name": "明空产品库同步",
         "description": (
-            "每周一 04:00 使用 DXM02-MK 店小秘登录态全量同步明空 Shopify 商品、variants、"
+            "每周一 03:30 使用 DXM02-MK 店小秘登录态全量同步明空 Shopify 商品、variants、"
             "ERP SKU、1688 采购配对和组合 SKU 组件关系到本地 mingkong_* 产品库表；"
-            "明空配对工作台优先读取该本地库，本地没有时实时访问 DXM02 补采并回写。Docs-anchor: "
+            "分页与 SKU/采购查询带低频 sleep；明空配对工作台优先读取该本地库，本地没有时实时访问 DXM02 补采并回写。Docs-anchor: "
             "docs/superpowers/specs/2026-06-09-mingkong-product-library-foundation-design.md"
         ),
-        "schedule": "每周一 04:00（北京时间）",
+        "schedule": "每周一 03:30（北京时间，低频全量）",
         "source_type": "systemd",
         "source_label": "Linux systemd timer",
         "source_ref": "autovideosrt-mingkong-product-library-sync.timer",
-        "runner": "tools/mingkong_product_library_sync.py --days 0",
+        "runner": (
+            "tools/mingkong_product_library_sync.py --days 0 --page-delay-seconds 2 "
+            "--rest-every-pages 50 --rest-seconds 60 --sku-delay-seconds 2 "
+            "--pair-delay-seconds 3 --public-variant-delay-seconds 1"
+        ),
         "deployment": "待部署",
         "log_table": "mingkong_product_library_sync_runs",
+    },
+    "mingkong_sku_backfill_plan": {
+        "code": "mingkong_sku_backfill_plan",
+        "name": "明空 SKU 周计划扫描",
+        "description": (
+            "每周一 07:30 对最近 14 天未处理产品做 dry-run 分类，生成 ready / base_only / no_pairs "
+            "报告，不写 DXM03。Docs-anchor: "
+            "docs/superpowers/specs/2026-06-09-mingkong-product-library-foundation-design.md#2026-06-10-周同步节奏固化"
+        ),
+        "schedule": "每周一 07:30（北京时间，只生成计划报告）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-mingkong-sku-backfill-plan.timer",
+        "runner": "tools/mingkong_weekly_sync_orchestrator.py --phase plan --scan-limit 80 --created-within-days 14 --plan-delay-seconds 5",
+        "deployment": "待部署",
+        "log_table": "output/mingkong_weekly_sync/*.json",
+    },
+    "mingkong_sku_backfill_ready": {
+        "code": "mingkong_sku_backfill_ready",
+        "name": "明空 SKU ready 周同步",
+        "description": (
+            "每周一 09:30 串行执行有真实明空店小秘 SKU 的未处理产品；"
+            "每次最多 25 个产品，单品 SKU 行数上限 80，产品间隔 90 秒，保护已配置 SKU。Docs-anchor: "
+            "docs/superpowers/specs/2026-06-09-mingkong-product-library-foundation-design.md#2026-06-10-周同步节奏固化"
+        ),
+        "schedule": "每周一 09:30（北京时间，产品间隔 90 秒）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-mingkong-sku-backfill-ready.timer",
+        "runner": (
+            "tools/mingkong_weekly_sync_orchestrator.py --phase ready --execute "
+            "--scan-limit 80 --max-products 25 --max-sku-rows 80 "
+            "--created-within-days 14 --plan-delay-seconds 5 --product-delay-seconds 90"
+        ),
+        "deployment": "待部署",
+        "log_table": "output/mingkong_weekly_sync/*.json",
+    },
+    "mingkong_sku_backfill_base": {
+        "code": "mingkong_sku_backfill_base",
+        "name": "明空 SKU 基底周补齐",
+        "description": (
+            "每周一 14:30 串行补齐只有 Shopify variant 基底、暂无明空店小秘 SKU 的未处理产品；"
+            "每次最多 30 个产品，单品 SKU 行数上限 250，产品间隔 120 秒，不写 DXM03 采购配对。Docs-anchor: "
+            "docs/superpowers/specs/2026-06-09-mingkong-product-library-foundation-design.md#2026-06-10-周同步节奏固化"
+        ),
+        "schedule": "每周一 14:30（北京时间，产品间隔 120 秒）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-mingkong-sku-backfill-base.timer",
+        "runner": (
+            "tools/mingkong_weekly_sync_orchestrator.py --phase base --execute "
+            "--scan-limit 80 --max-products 30 --max-sku-rows 250 "
+            "--created-within-days 14 --base-refresh-existing "
+            "--plan-delay-seconds 5 --product-delay-seconds 120"
+        ),
+        "deployment": "待部署",
+        "log_table": "output/mingkong_weekly_sync/*.json",
+    },
+    "mingkong_sku_backfill_retry": {
+        "code": "mingkong_sku_backfill_retry",
+        "name": "明空 SKU 周重试",
+        "description": (
+            "每周二 03:30 只重试仍处于未处理候选里的 ready 产品，用于网络/DXM 页面瞬时失败恢复；"
+            "明确业务缺口继续留在报告，不伪造成功。Docs-anchor: "
+            "docs/superpowers/specs/2026-06-09-mingkong-product-library-foundation-design.md#2026-06-10-周同步节奏固化"
+        ),
+        "schedule": "每周二 03:30（北京时间，产品间隔 120 秒）",
+        "source_type": "systemd",
+        "source_label": "Linux systemd timer",
+        "source_ref": "autovideosrt-mingkong-sku-backfill-retry.timer",
+        "runner": (
+            "tools/mingkong_weekly_sync_orchestrator.py --phase ready --execute "
+            "--scan-limit 80 --max-products 20 --max-sku-rows 120 "
+            "--created-within-days 14 --plan-delay-seconds 5 --product-delay-seconds 120"
+        ),
+        "deployment": "待部署",
+        "log_table": "output/mingkong_weekly_sync/*.json",
     },
     "mingkong_material_ad_status_refresh": {
         "code": "mingkong_material_ad_status_refresh",

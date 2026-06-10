@@ -9,5 +9,5 @@ User=root
 WorkingDirectory=/opt/autovideosrt
 Environment=PYTHONUNBUFFERED=1
 Environment=DXM02_MINGKONG_CDP_URL=http://127.0.0.1:9223
-ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/mingkong_product_library_sync.py --days 0
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/mingkong_product_library_sync.py --days 0 --page-delay-seconds 2 --rest-every-pages 50 --rest-seconds 60 --sku-delay-seconds 2 --pair-delay-seconds 3 --public-variant-delay-seconds 1
 TimeoutStartSec=21600

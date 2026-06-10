@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -34,6 +35,11 @@ _CONFIGURED_SKU_ROW_SQL = (
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _sleep_seconds(seconds: float) -> None:
+    if seconds and seconds > 0:
+        time.sleep(float(seconds))
 
 
 def _best_value(*values: Any) -> str:
@@ -596,6 +602,7 @@ def run_batch(
     force_refresh_mingkong: bool = False,
     overwrite_existing_pairing: bool = False,
     protect_configured_local_skus: bool = False,
+    product_delay_seconds: float = 0.0,
     progress_fn: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     started_at = datetime.now().isoformat(timespec="seconds")
@@ -614,7 +621,7 @@ def run_batch(
             product_code=product_code,
         )
     results: list[dict[str, Any]] = []
-    for product in products:
+    for index, product in enumerate(products):
         try:
             result = run_product_sync(
                 product,
@@ -633,6 +640,8 @@ def run_batch(
         results.append(result)
         if progress_fn is not None:
             progress_fn(result)
+        if index < len(products) - 1:
+            _sleep_seconds(product_delay_seconds)
     finished_at = datetime.now().isoformat(timespec="seconds")
     summary = {
         "execute": execute,
@@ -679,6 +688,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force-refresh-mingkong", action="store_true")
     parser.add_argument("--overwrite-existing-pairing", action="store_true")
     parser.add_argument("--protect-configured-local-skus", action="store_true")
+    parser.add_argument("--product-delay-seconds", type=float, default=0.0)
     args = parser.parse_args(argv)
     product_ids = [
         int(part.strip())
@@ -709,6 +719,7 @@ def main(argv: list[str] | None = None) -> int:
         force_refresh_mingkong=bool(args.force_refresh_mingkong),
         overwrite_existing_pairing=bool(args.overwrite_existing_pairing),
         protect_configured_local_skus=bool(args.protect_configured_local_skus),
+        product_delay_seconds=float(args.product_delay_seconds or 0),
         progress_fn=print_progress,
     )
     path = write_report(report)
