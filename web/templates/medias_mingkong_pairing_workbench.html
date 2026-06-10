@@ -621,6 +621,84 @@
     font-size: 12px;
     box-sizing: border-box;
   }
+  .mkp-fuzzy-candidates-selector {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    background: #f8fbff;
+  }
+  .mkp-fuzzy-heading {
+    margin: 0;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.3;
+  }
+  .mkp-fuzzy-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 10px;
+    max-height: min(52vh, 520px);
+    overflow: auto;
+    padding: 2px;
+  }
+  .mkp-fuzzy-item {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    gap: 12px;
+    align-items: stretch;
+    min-width: 0;
+    min-height: 124px;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #fff;
+    color: #0f172a;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color .12s ease, border-color .12s ease;
+  }
+  .mkp-fuzzy-item:hover,
+  .mkp-fuzzy-item:focus-visible {
+    border-color: #2563eb;
+    background: #eff6ff;
+    outline: none;
+  }
+  .mkp-fuzzy-thumb {
+    width: 104px;
+    height: 104px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    object-fit: contain;
+    background: #fff;
+  }
+  .mkp-fuzzy-info {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    min-width: 0;
+  }
+  .mkp-fuzzy-sku {
+    color: #0f172a;
+    font-weight: 800;
+    word-break: break-all;
+  }
+  .mkp-fuzzy-name {
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .mkp-fuzzy-meta {
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
+    word-break: break-all;
+  }
   .mkp-sync-footer {
     display: flex;
     align-items: center;
@@ -806,6 +884,34 @@
     border-color: #334155;
     background: #111827;
   }
+  [data-theme='dark'] .mkp-fuzzy-candidates-selector {
+    border-color: #1d4ed8;
+    background: #0f1d36;
+  }
+  [data-theme='dark'] .mkp-fuzzy-heading,
+  [data-theme='dark'] .mkp-fuzzy-sku {
+    color: #e2e8f0;
+  }
+  [data-theme='dark'] .mkp-fuzzy-item {
+    border-color: #334155;
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+  [data-theme='dark'] .mkp-fuzzy-item:hover,
+  [data-theme='dark'] .mkp-fuzzy-item:focus-visible {
+    border-color: #3b82f6;
+    background: #10213f;
+  }
+  [data-theme='dark'] .mkp-fuzzy-thumb {
+    border-color: #334155;
+    background: #111827;
+  }
+  [data-theme='dark'] .mkp-fuzzy-name {
+    color: #cbd5e1;
+  }
+  [data-theme='dark'] .mkp-fuzzy-meta {
+    color: #94a3b8;
+  }
   [data-theme='dark'] .mkp-ai-review {
     border-color: #1d4ed8;
     background: #0f1d36;
@@ -844,6 +950,17 @@
     }
     .mkp-sync-row-cards {
       grid-template-columns: 1fr;
+    }
+    .mkp-fuzzy-list {
+      grid-template-columns: 1fr;
+      max-height: min(58vh, 560px);
+    }
+    .mkp-fuzzy-item {
+      grid-template-columns: 96px minmax(0, 1fr);
+    }
+    .mkp-fuzzy-thumb {
+      width: 96px;
+      height: 96px;
     }
     .mkp-sync-row-header {
       flex-direction: column;
@@ -1213,6 +1330,12 @@
     const text = String(url || '').trim();
     if (!text) return '<span class="mkp-thumb-empty">无图</span>';
     return `<img class="${cls || 'mkp-thumb'}" src="${esc(text)}" alt="">`;
+  }
+
+  function fuzzyImageHtml(url) {
+    const text = String(url || '').trim();
+    if (!text) return '<span class="mkp-fuzzy-thumb mkp-thumb-empty">无图</span>';
+    return `<img class="mkp-fuzzy-thumb" src="${esc(text)}" alt="">`;
   }
 
   function elapsedText(ms) {
@@ -1650,35 +1773,28 @@
       let fuzzyHtml = '';
       const fuzzyCandidates = state.payload?.fuzzy_candidates || [];
       if (fuzzyCandidates.length) {
-        fuzzyHtml = `<div class="mkp-fuzzy-candidates-selector" style="margin-top: 15px; padding-top: 10px; border-top: 1px dashed #cbd5e1;">
-          <strong style="font-size: 12px; color: #475569; display: block; margin-bottom: 5px;">备选明空 ERP SKU (点击快速回填):</strong>
-          <div class="mkp-fuzzy-list" style="max-height: 150px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc;">`;
+        fuzzyHtml = `<div class="mkp-fuzzy-candidates-selector">
+          <h4 class="mkp-fuzzy-heading">备选明空 ERP SKU (点击快速回填)</h4>
+          <div class="mkp-fuzzy-list">`;
         fuzzyCandidates.forEach((cand) => {
-          fuzzyHtml += `<div class="mkp-fuzzy-item" 
-            style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; cursor: pointer; transition: all 0.2s ease;"
-            onmouseover="this.style.background='#e2e8f0'"
-            onmouseout="this.style.background=''"
-            onclick="
-              const row = this.closest('.mkp-sync-row');
-              if (row) {
-                row.querySelector('[data-sync-field=\\'dianxiaomi_sku\\']').value = '${esc(cand.sku)}';
-                row.querySelector('[data-sync-field=\\'dianxiaomi_sku_code\\']').value = '${esc(cand.sku_code || '')}';
-                row.querySelector('[data-sync-field=\\'dianxiaomi_name\\']').value = '${esc(cand.dxm_name || '')}';
-                row.querySelector('[data-sync-field=\\'image_url\\']').value = '${esc(cand.image_url || '')}';
-                row.querySelector('[data-sync-field=\\'purchase_1688_url\\']').value = '${esc(cand.purchase_1688_url || '')}';
-                row.querySelector('[data-sync-field=\\'product_id_alibaba\\']').value = '${esc(cand.alibaba_product_id || '')}';
-                
-                // Refresh target image preview
-                const img = row.querySelector('.target img');
-                if (img && '${esc(cand.image_url || '')}') img.src = '${esc(cand.image_url || '')}';
-              }
-            ">
-            ${imageHtml(cand.image_url, 'mkp-fuzzy-thumb')}
-            <div style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              <span class="mkp-mono" style="font-weight: bold; color: #1e293b;">${esc(cand.sku)}</span> 
-              <span style="color: #64748b;">(${esc(cand.dxm_name)})</span>
-            </div>
-          </div>`;
+          const helper = cand.sku_code || cand.alibaba_product_id || cand.sku_id_alibaba || '';
+          fuzzyHtml += `<button type="button" class="mkp-fuzzy-item"
+            data-fuzzy-candidate="1"
+            data-candidate-sku="${esc(cand.sku || '')}"
+            data-candidate-sku-code="${esc(cand.sku_code || '')}"
+            data-candidate-product-sku="${esc(cand.product_sku || cand.dxm_product_sku || '')}"
+            data-candidate-name="${esc(cand.dxm_name || '')}"
+            data-candidate-image-url="${esc(cand.image_url || '')}"
+            data-candidate-purchase-url="${esc(cand.purchase_1688_url || '')}"
+            data-candidate-alibaba-product-id="${esc(cand.alibaba_product_id || '')}"
+            data-candidate-alibaba-sku-id="${esc(cand.sku_id_alibaba || '')}">
+            ${fuzzyImageHtml(cand.image_url)}
+            <span class="mkp-fuzzy-info">
+              <span class="mkp-fuzzy-sku mkp-mono">${esc(cand.sku || '—')}</span>
+              <span class="mkp-fuzzy-name">${esc(cand.dxm_name || '—')}</span>
+              <span class="mkp-fuzzy-meta">${esc(helper || '无 ERP 编码 / 1688 ID')}</span>
+            </span>
+          </button>`;
         });
         fuzzyHtml += `</div></div>`;
       }
@@ -1712,10 +1828,11 @@
           </div>
         </div>
         <div class="mkp-sync-row-detail" ${item.status === 'missing_local_sku' || fuzzyCandidates.length > 0 ? '' : 'hidden'}>
+          ${fuzzyHtml}
           <div class="mkp-sync-row-cards">
             ${syncCardHtml('明空 SKU 数据', mingkong.image_url, mingkongFields)}
             ${syncCardHtml('当前我们系统 / DXM03', currentImageUrl, currentFields)}
-            ${syncCardHtml('执行后的目标效果', target.image_url, targetFields + fuzzyHtml, 'target')}
+            ${syncCardHtml('执行后的目标效果', target.image_url, targetFields, 'target')}
           </div>
         </div>
       </div>`;
@@ -1973,6 +2090,49 @@
   }
 
   $('mkpSyncRows').addEventListener('click', (e) => {
+    const candidate = e.target.closest('[data-fuzzy-candidate="1"]');
+    if (candidate) {
+      const row = candidate.closest('.mkp-sync-row');
+      if (!row) return;
+      const setVal = (field, val) => {
+        const input = row.querySelector(`[data-sync-field="${field}"]`);
+        if (input) input.value = val || '';
+      };
+      setVal('dianxiaomi_sku', candidate.dataset.candidateSku);
+      setVal('dianxiaomi_sku_code', candidate.dataset.candidateSkuCode);
+      setVal('dianxiaomi_name', candidate.dataset.candidateName);
+      setVal('image_url', candidate.dataset.candidateImageUrl);
+      setVal('purchase_1688_url', candidate.dataset.candidatePurchaseUrl);
+      setVal('product_id_alibaba', candidate.dataset.candidateAlibabaProductId);
+      if (candidate.dataset.candidateProductSku) {
+        setVal('dianxiaomi_product_sku', candidate.dataset.candidateProductSku);
+      }
+      if (candidate.dataset.candidateAlibabaSkuId) {
+        setVal('sku_id_alibaba', candidate.dataset.candidateAlibabaSkuId);
+      }
+
+      const imageUrl = candidate.dataset.candidateImageUrl || '';
+      if (imageUrl) {
+        const thumbRow = row.querySelector('.target .mkp-sync-thumb-row');
+        const img = thumbRow?.querySelector('img');
+        if (img) {
+          img.src = imageUrl;
+        } else {
+          const empty = thumbRow?.querySelector('.mkp-thumb-empty');
+          if (empty) {
+            const replacement = document.createElement('img');
+            replacement.className = 'mkp-thumb';
+            replacement.src = imageUrl;
+            replacement.alt = '';
+            empty.replaceWith(replacement);
+          }
+        }
+        const imageState = thumbRow?.querySelector('.mkp-sync-value');
+        if (imageState) imageState.textContent = 'SKU 图片已加载';
+      }
+      return;
+    }
+
     const header = e.target.closest('.mkp-sync-row-header');
     if (!header) return;
     if (e.target.tagName === 'A' || e.target.closest('a')) return;

@@ -1272,6 +1272,26 @@ def test_mingkong_pairing_template_has_review_modal_and_single_sync_entry():
     assert "non_json_response" in source
 
 
+def test_mingkong_pairing_template_gives_fallback_skus_core_space():
+    source = Path("web/templates/medias_mingkong_pairing_workbench.html").read_text(
+        encoding="utf-8"
+    )
+    spec = Path(
+        "docs/superpowers/specs/2026-06-10-mingkong-sku-fallback-core-space.md"
+    )
+
+    assert spec.exists()
+    assert "独立核心操作区" in spec.read_text(encoding="utf-8")
+    assert "mkp-fuzzy-candidates-selector" in source
+    assert "mkp-fuzzy-heading" in source
+    assert "mkp-fuzzy-thumb" in source
+    assert 'data-fuzzy-candidate="1"' in source
+    assert "targetFields + fuzzyHtml" not in source
+    assert "max-height: 150px" not in source
+    detail_markup = source.split('<div class="mkp-sync-row-detail"', 1)[1]
+    assert detail_markup.index("${fuzzyHtml}") < detail_markup.index("mkp-sync-row-cards")
+
+
 def test_mingkong_pairing_action_error_payload_is_json_readable():
     payload = products_route._mingkong_pairing_action_error_payload(
         "复刻明空 SKU",
