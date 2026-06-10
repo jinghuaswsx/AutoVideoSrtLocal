@@ -131,6 +131,38 @@
     });
   }
 
+  function renderDeliveryStatusBadge(status) {
+    const s = String(status || 'never').toLowerCase().trim();
+    if (s === 'active') {
+      return `<span class="aims-status-badge active">active</span>`;
+    } else if (s === 'stopped') {
+      return `<span class="aims-status-badge stopped">stopped</span>`;
+    } else {
+      return `<span class="aims-status-badge never">未做的</span>`;
+    }
+  }
+
+  function getRoasColorClass(roasVal, breakevenRoas) {
+    if (roasVal === null || roasVal === undefined || roasVal === '' || roasVal === 0) return '';
+    const r = Number(roasVal);
+    if (!Number.isFinite(r) || r <= 0) return '';
+    const be = Number(breakevenRoas || 0);
+    if (be > 0) {
+      if (r >= be) {
+        return 'aims-roas-green';
+      } else if (r >= 1.2) {
+        return 'aims-roas-orange';
+      } else {
+        return 'aims-roas-red';
+      }
+    } else {
+      if (r < 1.2) {
+        return 'aims-roas-red';
+      }
+      return '';
+    }
+  }
+
   function renderTaskLink(task, compact) {
     const id = Number(task && (task.task_id || task.id) || 0);
     if (!id) return '';
@@ -553,7 +585,7 @@
         return `
           <div class="aims-country-cell ${esc(cls)}" title="${esc(code)} ${fmtUsd(country.ad_spend_usd)} ROAS ${fmtRoas(country.ad_roas)}${esc(taskTitle)}">
             <strong>${fmtUsd(country.ad_spend_usd)}</strong><br>
-            <span>R ${fmtRoas(country.ad_roas)}</span>
+            <span class="${esc(getRoasColorClass(country.ad_roas, item.effective_breakeven_roas))}">R ${fmtRoas(country.ad_roas)}</span>
             ${task ? `<br>${renderTaskLink(task, true)}` : ''}
           </div>
         `;
@@ -581,7 +613,7 @@
           </td>
           <td>${fmtUsd(m.spend_30d)}</td>
           <td>${fmtNumber(m.orders_30d)}</td>
-          <td>${fmtRoas(m.true_roas_30d)}</td>
+          <td class="${esc(getRoasColorClass(m.true_roas_30d, item.effective_breakeven_roas))}">${fmtRoas(m.true_roas_30d)}</td>
           <td>${fmtUsd(m.spend_yesterday)}</td>
           <td><span class="aims-chip ${String(ai.priority || '').toLowerCase()}">${esc(ai.priority || 'P3')}</span></td>
           <td>${esc(actionLabel(ai.primary_action))}</td>
@@ -608,7 +640,7 @@
       return ['supplement_workbench', 'translation_tasks', 'product_materials'].includes(action.type);
     });
     return actions.map((action) => {
-      return `<a class="aims-btn" href="${esc(action.url)}" target="_blank" rel="noopener noreferrer">${esc(action.label)}</a>`;
+      return `<a class="aims-btn primary" href="${esc(action.url)}" target="_blank" rel="noopener noreferrer">${esc(action.label)}</a>`;
     }).join('');
   }
 
@@ -633,7 +665,7 @@
               <span>${esc(item.product_code)}</span>
               <span>30天消耗 ${fmtUsd(m.spend_30d)}</span>
               <span>订单 ${fmtNumber(m.orders_30d)}</span>
-              <span>ROAS ${fmtRoas(m.true_roas_30d)}</span>
+              <span class="${esc(getRoasColorClass(m.true_roas_30d, item.effective_breakeven_roas))}">ROAS ${fmtRoas(m.true_roas_30d)}</span>
             </div>
           </div>
           ${state.publicMode ? '' : `<div class="aims-actions">${renderInlineActions(item)}</div>`}
@@ -643,11 +675,11 @@
             <p class="aims-rec">${esc(ai.overall_judgement || '')}</p>
             ${renderCountryActions(ai)}
             <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskBadges(item, 5)}</div>
-            <div class="aims-material-grid">${materials.map((material, materialIndex) => renderMaterial(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:160px;">暂无明空候选</div>'}</div>
+            <div class="aims-material-grid">${materials.map((material, materialIndex) => renderMaterial(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:48px;">暂无明空候选</div>'}</div>
           </div>
           <div class="aims-band">
             <div class="aims-band-title">国家反馈</div>
-            <div class="aims-bars">${renderCountryBars(item.country_summary || [])}</div>
+            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas)}</div>
           </div>
         </div>
       </section>
@@ -698,16 +730,17 @@
     `;
   }
 
-  function renderCountryBars(countries) {
+  function renderCountryBars(countries, breakevenRoas) {
     const maxSpend = Math.max(1, ...countries.map((country) => Number(country.ad_spend_usd || 0)));
     return countries.map((country) => {
       const width = Math.max(3, Math.round((Number(country.ad_spend_usd || 0) / maxSpend) * 100));
       return `
-        <div class="aims-bar-row" style="grid-template-columns:42px minmax(76px,1fr) minmax(100px,2fr) 52px minmax(96px, auto);">
+        <div class="aims-bar-row" style="grid-template-columns:32px minmax(64px, auto) minmax(60px, 1fr) minmax(50px, auto) 44px minmax(80px, auto); align-items: center; gap: 8px;">
           <span>${esc(country.country_code || country.lang)}</span>
-          <span>${esc(country.delivery_status || 'never')}</span>
+          <span>${renderDeliveryStatusBadge(country.delivery_status)}</span>
           <span class="aims-bar-track"><span class="aims-bar-fill" style="width:${width}%"></span></span>
-          <span>${fmtRoas(country.ad_roas)}</span>
+          <strong style="color: var(--aims-muted); font-size: 11px;">${fmtUsd(country.ad_spend_usd)}</strong>
+          <span class="${esc(getRoasColorClass(country.ad_roas, breakevenRoas))}">${fmtRoas(country.ad_roas)}</span>
           <span>${country.blocking_task ? renderTaskLink(country.blocking_task, true) : (country.cancelled_task ? renderTaskLink(country.cancelled_task, true) : '')}</span>
         </div>
       `;
