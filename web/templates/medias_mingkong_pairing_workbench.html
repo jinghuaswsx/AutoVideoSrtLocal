@@ -6,7 +6,7 @@
   .mkp-page {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 24px;
     max-width: 1480px;
     margin: 0 auto;
     padding-bottom: 32px;
@@ -20,7 +20,7 @@
   .mkp-title {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 10px;
     min-width: 0;
   }
   .mkp-title h2 {
@@ -74,11 +74,11 @@
   .mkp-meta {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
-    padding: 16px;
+    gap: 20px 24px;
+    padding: 22px 24px;
   }
   .mkp-meta dt {
-    margin: 0 0 4px;
+    margin: 0 0 6px;
     color: #64748b;
     font-size: 12px;
   }
@@ -102,7 +102,7 @@
     overflow: hidden;
   }
   .mkp-stat {
-    padding: 14px 16px;
+    padding: 20px 24px;
     background: #f8fafc;
   }
   .mkp-stat span {
@@ -112,9 +112,9 @@
   }
   .mkp-stat strong {
     display: block;
-    margin-top: 4px;
+    margin-top: 8px;
     color: #0f172a;
-    font-size: 20px;
+    font-size: 24px;
     line-height: 1.1;
   }
   .mkp-table-wrap {
@@ -711,7 +711,14 @@
   <div class="mkp-head">
     <div class="mkp-title">
       <h2>{{ product.name or product.product_code }}</h2>
-      <div class="mkp-sub mkp-mono">{{ product.product_code or "" }}</div>
+      <div class="mkp-sub mkp-mono" style="display: inline-flex; align-items: center; gap: 8px;">
+        <span>{{ product.product_code or "" }}</span>
+        {% if product.product_code %}
+        <button type="button" class="mkp-copy-btn" data-clipboard-text="{{ product.product_code }}" title="复制产品代码" style="background: none; border: none; padding: 2px; margin: 0; cursor: pointer; color: #64748b; display: inline-flex; align-items: center; transition: color 0.2s;" onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#64748b'">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-copy"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>
+        {% endif %}
+      </div>
     </div>
     <div class="mkp-actions">
       <a class="mkp-btn" href="{{ url_for('medias.product_detail_page', product_code=product.product_code) if product.product_code else url_for('medias.product_tab_page') }}">返回产品</a>
@@ -881,6 +888,29 @@
     const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
     return token ? Object.assign({}, extra || {}, { 'X-CSRFToken': token }) : (extra || {});
   }
+
+  // 点击复制产品代码
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.mkp-copy-btn');
+    if (!btn) return;
+    const text = btn.getAttribute('data-clipboard-text');
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      const svg = btn.querySelector('svg');
+      const origColor = btn.style.color;
+      btn.style.color = '#10b981'; // 变绿
+      const origTitle = btn.title;
+      btn.title = '已复制';
+      if (svg) svg.style.color = '#10b981';
+      setTimeout(() => {
+        btn.style.color = '';
+        btn.title = origTitle;
+        if (svg) svg.style.color = '';
+      }, 1500);
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+    });
+  });
 
   async function fetchJson(url, opts) {
     const res = await fetch(url, opts || {});
