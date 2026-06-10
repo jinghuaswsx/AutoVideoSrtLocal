@@ -1749,6 +1749,7 @@
   }
 
   async function openSyncReviewModal(filterShopifyVariantId) {
+    console.log("openSyncReviewModal called!", filterShopifyVariantId);
     if (!state.payload) {
       await load();
     }
