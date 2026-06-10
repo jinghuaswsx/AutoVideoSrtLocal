@@ -36,6 +36,7 @@
     llmTabPayload: document.getElementById('aimsLlmTabPayload'),
     llmTabButtons: document.querySelectorAll('[data-llm-tab]'),
   };
+  const DEFAULT_COUNTRY_CODES = ['EN', 'DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT'];
 
   function fmtNumber(value, digits) {
     const n = Number(value || 0);
@@ -681,7 +682,7 @@
     const activeRunning = runningProject();
     if (els.create) {
       els.create.disabled = state.publicMode || isBusy || Boolean(activeRunning);
-      els.create.title = activeRunning ? '已有 AI素材军师项目正在运行' : '';
+      els.create.title = activeRunning ? '已有投放素材AI分析项目正在运行' : '';
     }
     if (els.refresh) els.refresh.disabled = isBusy;
     if (els.share) els.share.disabled = state.publicMode || isBusy || !state.activeProjectId;
@@ -759,7 +760,7 @@
     }
     setBusy(true);
     try {
-      const name = 'AI素材军师 ' + new Date().toLocaleString('zh-CN', { hour12: false });
+      const name = '投放素材AI分析 ' + new Date().toLocaleString('zh-CN', { hour12: false });
       const data = await fetchJson('/medias/api/ai-material-strategist/projects', {
         method: 'POST',
         headers: csrfHeaders({ 'Content-Type': 'application/json' }),
@@ -952,8 +953,8 @@
           <h2>${esc(project.project_name || ('项目 #' + project.id))}</h2>
           <div class="aims-subline">
             <span class="aims-status ${esc(project.status)}">${statusLabel(project.status)}</span>
-            <span>Provider ${esc(project.provider_code || 'openrouter')}</span>
-            <span>Model ${esc(project.model_id || 'google/gemini-3.5-flash')}</span>
+            <span>Provider ${esc(project.provider_code || 'google_wj')}</span>
+            <span>Model ${esc(project.model_id || 'gemini-3.5-flash')}</span>
             <span>开始 ${esc((project.started_at || '').slice(0, 16))}</span>
             ${project.finished_at ? `<span>完成 ${esc(project.finished_at.slice(0, 16))}</span>` : ''}
             ${llmBtn}
@@ -1028,7 +1029,7 @@
   }
 
   function renderCountryMatrix(products) {
-    const countries = ['DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT'];
+    const countries = countryCodesForMatrix(products);
     const head = ['产品'].concat(countries).map((label) => `<div class="aims-country-cell head">${esc(label)}</div>`).join('');
     const rows = products.slice(0, 20).map((item) => {
       const byCode = {};
@@ -1063,7 +1064,21 @@
       }).join('');
       return `<div class="aims-country-cell head">#${esc(item.rank_no)} ${esc(item.product_code)}</div>${cells}`;
     }).join('');
-    return `<div class="aims-country-grid">${head}${rows}</div>`;
+    return `<div class="aims-country-grid" style="grid-template-columns:120px repeat(${countries.length}, minmax(74px, 1fr));">${head}${rows}</div>`;
+  }
+
+  function countryCodesForMatrix(products) {
+    const seen = new Set();
+    const codes = [];
+    (products || []).forEach((item) => {
+      (item.country_summary || []).forEach((country) => {
+        const code = String(country.country_code || country.lang || '').trim().toUpperCase();
+        if (!code || seen.has(code)) return;
+        seen.add(code);
+        codes.push(code);
+      });
+    });
+    return codes.length ? codes : DEFAULT_COUNTRY_CODES;
   }
 
   function renderProductsTable(products) {

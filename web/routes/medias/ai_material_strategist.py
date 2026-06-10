@@ -148,7 +148,7 @@ def api_ai_material_strategist_create_project():
         running = exc.project or service.get_running_project() or {}
         return _json({
             "success": False,
-            "message": "已有 AI素材军师项目正在运行，同一时间只能运行一个项目。",
+            "message": "已有投放素材AI分析项目正在运行，同一时间只能运行一个项目。",
             "running_project": running,
             "project": running,
         }, 409)
