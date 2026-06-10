@@ -1669,10 +1669,10 @@
             </div>
           </div>
           <div class="mkp-sync-row-col actions">
-            <button type="button" class="mkp-btn mkp-btn-toggle-detail">查看详情</button>
+            <button type="button" class="mkp-btn mkp-btn-toggle-detail ${item.status === 'missing_local_sku' || fuzzyCandidates.length > 0 ? 'primary' : ''}">${item.status === 'missing_local_sku' || fuzzyCandidates.length > 0 ? '收起详情' : '查看详情'}</button>
           </div>
         </div>
-        <div class="mkp-sync-row-detail" hidden>
+        <div class="mkp-sync-row-detail" ${item.status === 'missing_local_sku' || fuzzyCandidates.length > 0 ? '' : 'hidden'}>
           <div class="mkp-sync-row-cards">
             ${syncCardHtml('明空 SKU 数据', mingkong.image_url, mingkongFields)}
             ${syncCardHtml('当前我们系统 / DXM03', currentImageUrl, currentFields)}
@@ -1811,7 +1811,7 @@
     if (mappings.length) {
       appendSyncLog('info', `AI 建议了 ${mappings.length} 个变体的 SKU 配对映射，正在自动回填目标效果表格...`);
       mappings.forEach((mapping) => {
-        const row = document.querySelector(`[data-shopify-variant-id="${mapping.shopify_variant_id}"]`);
+        const row = document.querySelector(`#mkpSyncRows [data-shopify-variant-id="${mapping.shopify_variant_id}"]`);
         if (row) {
           const skuInput = row.querySelector('[data-sync-field="dianxiaomi_sku"]');
           const codeInput = row.querySelector('[data-sync-field="dianxiaomi_sku_code"]');
