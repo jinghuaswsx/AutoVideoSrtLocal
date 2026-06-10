@@ -717,24 +717,33 @@ def api_create_new_product_task():
         else:
             payload = request.get_json(silent=True) or {}
             source = str(payload.get("source") or "").strip()
-            if source != "meta_hot_post":
+            if source not in {"meta_hot_post", "tabcut_video"}:
                 return _json_response({"error": "unsupported source"}, 400)
             countries = _parse_new_product_countries(payload.get("countries") or [])
             language_assignments = _parse_new_product_language_assignments(
                 payload.get("language_assignments")
             )
-            result = new_product_tasks.create_from_meta_hot_post(
-                post_id=int(payload.get("post_id") or 0),
-                owner_id=int(payload.get("owner_id") or 0),
-                target_product_id=_parse_optional_positive_int(payload.get("target_product_id")),
-                task_kind=payload.get("task_kind") or new_product_tasks.TASK_KIND_NEW_PRODUCT,
-                countries=countries,
-                language_assignments=language_assignments,
-                raw_processor_id=int(payload.get("raw_processor_id") or 0),
-                created_by=int(current_user.id),
-                is_urgent=payload.get("is_urgent") is True,
-                force=bool(payload.get("force")),
-            )
+            common_kwargs = {
+                "owner_id": int(payload.get("owner_id") or 0),
+                "target_product_id": _parse_optional_positive_int(payload.get("target_product_id")),
+                "task_kind": payload.get("task_kind") or new_product_tasks.TASK_KIND_NEW_PRODUCT,
+                "countries": countries,
+                "language_assignments": language_assignments,
+                "raw_processor_id": int(payload.get("raw_processor_id") or 0),
+                "created_by": int(current_user.id),
+                "is_urgent": payload.get("is_urgent") is True,
+                "force": bool(payload.get("force")),
+            }
+            if source == "meta_hot_post":
+                result = new_product_tasks.create_from_meta_hot_post(
+                    post_id=int(payload.get("post_id") or 0),
+                    **common_kwargs,
+                )
+            else:
+                result = new_product_tasks.create_from_tabcut_video(
+                    video_id=str(payload.get("video_id") or "").strip(),
+                    **common_kwargs,
+                )
     except (ValueError, new_product_tasks.NewProductTaskError) as exc:
         return _json_response({"error": str(exc)}, 400)
     except Exception as exc:  # noqa: BLE001
@@ -767,6 +776,10 @@ def api_create_new_product_task():
                 **(
                     {"meta_hot_post_id": result.get("meta_hot_post_id")}
                     if result.get("meta_hot_post_id") else {}
+                ),
+                **(
+                    {"tabcut_video_id": result.get("tabcut_video_id")}
+                    if result.get("tabcut_video_id") else {}
                 ),
             },
         )

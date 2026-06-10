@@ -32,6 +32,13 @@ def test_tabcut_selection_page_renders_tabs(authed_client_no_db):
     assert "function handleTabcutGotoPage(event, totalPages)" in body
     assert 'class="tabcut-pager-goto"' in body
     assert 'onkeydown="handleTabcutGotoPage(event, ${totalPages})"' in body
+    assert 'id="tabcutTaskModal"' in body
+    assert 'name="tabcutTaskKind"' in body
+    assert "/tasks/api/material-products" in body
+    assert "/tasks/api/new-product" in body
+    assert 'source: "tabcut_video"' in body
+    assert "renderTabcutTaskButton(row)" in body
+    assert "tabcutHasReadyLocalVideo" in body
 
 
 def test_tabcut_video_cards_use_vertical_card_layout():
@@ -273,4 +280,3 @@ def test_tabcut_video_detail_route(monkeypatch, authed_client_no_db):
 
     resp_404 = authed_client_no_db.get("/xuanpin/tabcut/video/non_existent_id")
     assert resp_404.status_code == 404
-

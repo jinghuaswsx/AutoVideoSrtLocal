@@ -1439,6 +1439,117 @@ def test_create_new_product_task_from_meta_hot_post_supplement_calls_service(aut
     assert captured["post_id"] == 77
 
 
+def test_create_new_product_task_from_tabcut_video_calls_service(authed_client_no_db, monkeypatch):
+    captured = {}
+    audit_calls = []
+
+    def fake_create_from_tabcut_video(**kwargs):
+        captured.update(kwargs)
+        return {
+            "ok": True,
+            "source": "tabcut_video",
+            "task_kind": "new_product",
+            "tabcut_video_id": "v1",
+            "media_product_id": 12,
+            "media_item_id": 34,
+            "parent_task_id": 56,
+            "countries": ["DE"],
+            "language_assignments": {"DE": 9},
+            "raw_processor_id": 8,
+            "is_urgent": True,
+            "product_detail_url": "/medias/tabcut-v1",
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.new_product_tasks.create_from_tabcut_video",
+        fake_create_from_tabcut_video,
+    )
+    monkeypatch.setattr(
+        "web.routes.tasks._audit_task_action",
+        lambda task_id, action, detail=None: audit_calls.append((task_id, action, detail)),
+    )
+    monkeypatch.setattr("web.routes.tasks._trigger_material_evaluation", lambda **kwargs: True)
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/new-product",
+        json={
+            "source": "tabcut_video",
+            "video_id": "v1",
+            "owner_id": 9,
+            "raw_processor_id": 8,
+            "countries": ["DE"],
+            "language_assignments": {"DE": 9},
+            "is_urgent": True,
+            "force": True,
+        },
+    )
+
+    assert rsp.status_code == 201
+    assert rsp.get_json()["source"] == "tabcut_video"
+    assert captured == {
+        "video_id": "v1",
+        "owner_id": 9,
+        "target_product_id": None,
+        "task_kind": "new_product",
+        "countries": ["DE"],
+        "language_assignments": {"DE": 9},
+        "raw_processor_id": 8,
+        "created_by": 1,
+        "is_urgent": True,
+        "force": True,
+    }
+    assert audit_calls[0][2]["tabcut_video_id"] == "v1"
+    assert audit_calls[0][2]["task_kind"] == "new_product"
+
+
+def test_create_new_product_task_from_tabcut_video_supplement_calls_service(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_create_from_tabcut_video(**kwargs):
+        captured.update(kwargs)
+        return {
+            "ok": True,
+            "source": "tabcut_video",
+            "task_kind": "supplement",
+            "tabcut_video_id": "v1",
+            "media_product_id": 88,
+            "media_item_id": 89,
+            "parent_task_id": 90,
+            "countries": ["FR"],
+            "language_assignments": {"FR": 10},
+            "raw_processor_id": 8,
+            "is_urgent": False,
+            "product_detail_url": "/medias/existing",
+        }
+
+    monkeypatch.setattr(
+        "web.routes.tasks.new_product_tasks.create_from_tabcut_video",
+        fake_create_from_tabcut_video,
+    )
+    monkeypatch.setattr("web.routes.tasks._audit_task_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr("web.routes.tasks._trigger_material_evaluation", lambda **kwargs: True)
+
+    rsp = authed_client_no_db.post(
+        "/tasks/api/new-product",
+        json={
+            "source": "tabcut_video",
+            "task_kind": "supplement",
+            "target_product_id": 88,
+            "video_id": "v1",
+            "owner_id": 9,
+            "raw_processor_id": 8,
+            "countries": ["FR"],
+            "language_assignments": {"FR": 10},
+        },
+    )
+
+    assert rsp.status_code == 201
+    assert rsp.get_json()["task_kind"] == "supplement"
+    assert captured["task_kind"] == "supplement"
+    assert captured["target_product_id"] == 88
+    assert captured["video_id"] == "v1"
+
+
 def test_translation_work_users_route_returns_users(authed_client_no_db, monkeypatch):
     expected = [{"id": 10, "username": "gq", "display_name": "顾倩"}]
     monkeypatch.setattr("web.routes.tasks.list_translation_work_users", lambda: expected)

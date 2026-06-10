@@ -64,6 +64,18 @@ def test_tabcut_mark_status_migration_adds_video_and_goods_annotations():
     assert "idx_tabcut_goods_mark_status" in sql
 
 
+def test_tabcut_local_import_binding_migration_adds_video_mapping_columns():
+    sql = (
+        ROOT / "db" / "migrations" / "2026_06_10_tabcut_local_import_bindings.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ALTER TABLE tabcut_videos" in sql
+    assert "ADD COLUMN local_product_id INT UNSIGNED NULL" in sql
+    assert "ADD COLUMN local_media_item_id INT UNSIGNED NULL" in sql
+    assert "idx_tabcut_videos_local_product_id" in sql
+    assert "idx_tabcut_videos_local_media_item_id" in sql
+
+
 def test_tabcut_daily_selection_registered():
     from appcore import scheduled_tasks
 
