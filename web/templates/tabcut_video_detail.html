@@ -682,6 +682,59 @@
   .mh-input, .mh-select { width:100%; height:34px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:var(--mh-text); font-size:14px; }
   .mh-btn { height:34px; padding:0 13px; border:1px solid var(--mh-accent); border-radius:6px; background:var(--mh-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
   .mh-btn.secondary { border-color:var(--mh-strong); background:#fff; color:#334155; }
+
+  /* 蓝色胶囊按钮专属样式 */
+  .mki-btn-blue {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 38px;
+    padding: 0 22px;
+    border-radius: 9999px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid #2563eb;
+    background: #2563eb;
+    color: #ffffff;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.15);
+    outline: none;
+    text-decoration: none;
+  }
+  .mki-btn-blue:hover:not(:disabled) {
+    background: #1d4ed8;
+    border-color: #1d4ed8;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(37, 99, 235, 0.25);
+  }
+  .mki-btn-blue:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 3px 6px rgba(37, 99, 235, 0.15);
+  }
+  
+  /* 二级按钮：蓝色边框胶囊样式 */
+  .mki-btn-blue.secondary {
+    background: #ffffff;
+    color: #2563eb;
+    border-color: #2563eb;
+    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.05);
+  }
+  .mki-btn-blue.secondary:hover:not(:disabled) {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-color: #1d4ed8;
+  }
+  
+  /* 禁用状态 */
+  .mki-btn-blue:disabled, .mki-btn-blue.btn-disabled {
+    background: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+    color: #94a3b8 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
 </style>
 {% endblock %}
 
@@ -826,17 +879,17 @@
               </div>
             </div>
           {% elif video.local_video_status == 'success' %}
-            <div style="display: flex; gap: 10px;">
-              <button class="mh-btn" type="button" onclick="mkiCreateNewProductTaskFromTabcut(this, '{{ video.video_id }}')">
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <button class="mki-btn-blue" type="button" onclick="mkiCreateNewProductTaskFromTabcut(this, '{{ video.video_id }}')">
                 创建新品任务
               </button>
               
               {% if video.local_product_id and video.local_media_item_id %}
-                <button class="mh-btn secondary" type="button" onclick="mkiCreateSmallLangTaskFromTabcut(this, '{{ video.video_id }}')" data-mki-local-product-id="{{ video.local_product_id }}" data-mki-local-item-id="{{ video.local_media_item_id }}">
+                <button class="mki-btn-blue secondary" type="button" onclick="mkiCreateSmallLangTaskFromTabcut(this, '{{ video.video_id }}')" data-mki-local-product-id="{{ video.local_product_id }}" data-mki-local-item-id="{{ video.local_media_item_id }}">
                   创建小语种任务
                 </button>
               {% else %}
-                <button class="mh-btn secondary" type="button" disabled title="请先只入素材库" style="opacity: 0.65; cursor: not-allowed; background: #f1f5f9; color: #94a3b8; border-color: #cbd5e1;">
+                <button class="mki-btn-blue secondary" type="button" disabled title="请先只入素材库">
                   创建小语种任务
                 </button>
               {% endif %}
