@@ -22,6 +22,7 @@
     qualityText: document.getElementById('aimsQualityText'),
     toast: document.getElementById('aimsToast'),
   };
+  const DEFAULT_COUNTRY_CODES = ['EN', 'DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT'];
 
   function fmtNumber(value, digits) {
     const n = Number(value || 0);
@@ -572,7 +573,7 @@
   }
 
   function renderCountryMatrix(products) {
-    const countries = ['DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT'];
+    const countries = countryCodesForMatrix(products);
     const head = ['产品'].concat(countries).map((label) => `<div class="aims-country-cell head">${esc(label)}</div>`).join('');
     const rows = products.slice(0, 20).map((item) => {
       const byCode = {};
@@ -592,7 +593,21 @@
       }).join('');
       return `<div class="aims-country-cell head">#${esc(item.rank_no)} ${esc(item.product_code)}</div>${cells}`;
     }).join('');
-    return `<div class="aims-country-grid">${head}${rows}</div>`;
+    return `<div class="aims-country-grid" style="grid-template-columns:120px repeat(${countries.length}, minmax(74px, 1fr));">${head}${rows}</div>`;
+  }
+
+  function countryCodesForMatrix(products) {
+    const seen = new Set();
+    const codes = [];
+    (products || []).forEach((item) => {
+      (item.country_summary || []).forEach((country) => {
+        const code = String(country.country_code || country.lang || '').trim().toUpperCase();
+        if (!code || seen.has(code)) return;
+        seen.add(code);
+        codes.push(code);
+      });
+    });
+    return codes.length ? codes : DEFAULT_COUNTRY_CODES;
   }
 
   function renderProductsTable(products) {

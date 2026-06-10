@@ -87,6 +87,40 @@ def test_mk_search_codes_include_stripped_code_first():
     assert mapping["demo-product-rjc"] == ["demo-product", "demo-product-rjc"]
 
 
+def test_target_countries_include_english_source_language():
+    assert svc.TARGET_COUNTRIES[0]["country_code"] == "EN"
+    assert svc.TARGET_COUNTRIES[0]["lang"] == "en"
+    assert svc.TARGET_COUNTRIES[0]["tier"] == "source"
+    assert svc._normalize_country_code("en") == "EN"
+    assert svc._lang_for_country_code("EN") == "en"
+
+
+def test_country_summaries_include_english_before_small_languages(monkeypatch):
+    def fake_query(sql, params):
+        assert "media_product_lang_ad_summary_cache" in sql
+        assert params == (10,)
+        return [{
+            "product_id": 10,
+            "lang": "en",
+            "item_count": 2,
+            "pushed_video_count": 1,
+            "ad_spend_usd": 120,
+            "purchase_value_usd": 360,
+            "ad_roas": 3,
+            "active_7d_ad_spend_usd": 40,
+        }]
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+
+    summaries = svc._load_country_summaries([10])
+
+    assert [item["country_code"] for item in summaries[10]] == [
+        "EN", "DE", "FR", "IT", "ES", "JP", "SE", "NL", "PT",
+    ]
+    assert summaries[10][0]["lang_name"] == "英语"
+    assert summaries[10][0]["delivery_status"] == "active"
+
+
 def test_progress_payload_marks_current_step_and_keeps_logs():
     progress = svc._initial_progress(message="queued")
 
@@ -261,3 +295,28 @@ def test_cancelled_task_keeps_link_and_allows_new_translation_action():
     ]
     assert create_actions
     assert create_actions[0]["target_lang"] == "ja"
+
+
+def test_english_action_does_not_create_small_language_translation_task():
+    product = _row(product_id=10, product_code="demo-rjc")
+    countries = [{
+        "country_code": "EN",
+        "lang": "en",
+        "blocking_task": None,
+        "cancelled_task": None,
+        "tasks": [],
+    }]
+    ai_result = {
+        "primary_action": "same_country_new_material",
+        "country_actions": [{
+            "country_code": "EN",
+            "lang": "en",
+            "action": "same_country_new_material",
+            "reason": "英语素材仍在跑，建议补英语新素材。",
+        }],
+    }
+
+    actions = svc._build_action_items(product, ai_result, [], countries)
+
+    assert not [item for item in actions if item["type"] == "create_translation_task"]
+    assert any(item["type"] == "supplement_workbench" for item in actions)

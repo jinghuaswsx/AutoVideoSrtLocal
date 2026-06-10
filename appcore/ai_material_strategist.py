@@ -30,6 +30,7 @@ _MAX_AI_CANDIDATES = 60
 _PROJECT_TOP_N = 20
 
 TARGET_COUNTRIES: tuple[dict[str, str], ...] = (
+    {"country_code": "EN", "country_name": "英语", "lang": "en", "lang_name": "英语", "tier": "source"},
     {"country_code": "DE", "country_name": "德国", "lang": "de", "lang_name": "德语", "tier": "tier_1"},
     {"country_code": "FR", "country_name": "法国", "lang": "fr", "lang_name": "法语", "tier": "tier_1"},
     {"country_code": "IT", "country_name": "意大利", "lang": "it", "lang_name": "意大利语", "tier": "tier_2"},
@@ -1564,6 +1565,8 @@ def _build_action_items(
         if not lang and code_for_action:
             lang = _lang_for_country_code(code_for_action)
         if not lang:
+            continue
+        if lang == "en" or code_for_action == "EN":
             continue
         if code_for_action in seen_create_countries:
             continue
