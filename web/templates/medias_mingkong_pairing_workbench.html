@@ -16,6 +16,7 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
+    margin-bottom: 20px;
   }
   .mkp-title {
     display: flex;
@@ -717,6 +718,9 @@
         <button type="button" class="mkp-copy-btn" data-clipboard-text="{{ product.product_code }}" title="复制产品代码" style="background: none; border: none; padding: 2px; margin: 0; cursor: pointer; color: #64748b; display: inline-flex; align-items: center; transition: color 0.2s;" onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#64748b'">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-copy"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
         </button>
+        <a href="/medias?q={{ product.product_code|urlencode }}" target="_blank" title="在素材管理中搜索" style="color: #64748b; display: inline-flex; align-items: center; text-decoration: none; margin-left: 2px; transition: color 0.2s;" onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#64748b'">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-search"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </a>
         {% endif %}
       </div>
     </div>
@@ -944,7 +948,23 @@
   function linkHtml(url) {
     const text = String(url || '').trim();
     if (!text) return '<span class="mkp-sub">—</span>';
-    return `<a href="${esc(text)}" target="_blank" rel="noopener noreferrer">${esc(text)}</a>`;
+    return `<div style="display: inline-flex; align-items: center; gap: 6px; max-width: 100%; vertical-align: middle;">
+      <a href="${esc(text)}" target="_blank" rel="noopener noreferrer" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(text)}</a>
+      <button type="button" class="mkp-copy-btn" data-clipboard-text="${esc(text)}" title="复制链接" style="background: none; border: none; padding: 2px; margin: 0; cursor: pointer; color: #94a3b8; display: inline-flex; align-items: center; flex-shrink: 0; transition: color 0.2s;" onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#94a3b8'">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-copy"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      </button>
+    </div>`;
+  }
+
+  function copiableHtml(val, isMono) {
+    const text = String(val || '').trim();
+    if (!text || text === '—') return '<span class="mkp-sub">—</span>';
+    return `<div style="display: inline-flex; align-items: center; gap: 4px; max-width: 100%; vertical-align: middle;">
+      <span class="${isMono ? 'mkp-mono' : ''}" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(text)}</span>
+      <button type="button" class="mkp-copy-btn" data-clipboard-text="${esc(text)}" title="复制" style="background: none; border: none; padding: 2px; margin: 0; cursor: pointer; color: #cbd5e1; display: inline-flex; align-items: center; flex-shrink: 0; transition: color 0.2s;" onmouseover="this.style.color='#3b82f6'" onmouseout="this.style.color='#cbd5e1'">
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-copy"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      </button>
+    </div>`;
   }
 
   function statusText(status) {
@@ -1088,7 +1108,7 @@
       return `<div class="mkp-component">
         ${imageHtml(component.image_url || component.component_img_url, '')}
         <div>
-          <div class="mkp-component-main mkp-mono">${esc(skuLabel)} ${esc(sku)} × ${esc(quantity)} · ${esc(name)}</div>
+          <div class="mkp-component-main mkp-mono">${esc(skuLabel)} ${copiableHtml(sku, true)} × ${esc(quantity)} · ${copiableHtml(name)}</div>
           <div class="mkp-component-sub">${chip(paired ? 'already_paired' : 'missing_pair_row')} ${esc(supplier + skuId)}</div>
         </div>
       </div>`;
@@ -1136,16 +1156,16 @@
       const mingkongImageUrl = mingkong.image_url || '';
       const components = item.combo_components || [];
       const mingkongComponents = mingkong.combo_components || [];
-      const dxm03NameHtml = `<div class="mkp-name-stack"><div>${esc(commodity.name || '—')}</div>${componentHtml(components, 'dxm03')}</div>`;
-      const mingkongNameHtml = `<div class="mkp-name-stack"><div>${esc(mingkong.name || '—')}</div>${componentHtml(mingkongComponents, 'mingkong')}</div>`;
+      const dxm03NameHtml = `<div class="mkp-name-stack"><div>${copiableHtml(commodity.name)}</div>${componentHtml(components, 'dxm03')}</div>`;
+      const mingkongNameHtml = `<div class="mkp-name-stack"><div>${copiableHtml(mingkong.name)}</div>${componentHtml(mingkongComponents, 'mingkong')}</div>`;
       return `<tr data-row="1"
           data-dianxiaomi-sku="${esc(item.dianxiaomi_sku || '')}"
           data-shopify-variant-id="${esc(item.shopify_variant_id || '')}">
         <td>${imageHtml(imageUrl)}</td>
-        <td>${esc(item.variant_title || '—')}</td>
-        <td class="mkp-mono">${esc(item.shopify_variant_id || '—')}</td>
-        <td class="mkp-mono">${esc(item.dianxiaomi_sku || '—')}</td>
-        <td class="mkp-mono">${esc(item.dianxiaomi_sku_code || '—')}</td>
+        <td>${copiableHtml(item.variant_title)}</td>
+        <td>${copiableHtml(item.shopify_variant_id, true)}</td>
+        <td>${copiableHtml(item.dianxiaomi_sku, true)}</td>
+        <td>${copiableHtml(item.dianxiaomi_sku_code, true)}</td>
         <td><div class="mkp-source">${sourceChip(item.source || '')}</div></td>
         <td>${chip(item.status)}</td>
         <td>${dxm03NameHtml}</td>
@@ -1154,8 +1174,8 @@
         <td class="mkp-mono">${esc(skuIdAlibaba || '—')}</td>
         <td>${chip(pairing.is_paired ? 'already_paired' : item.status)}</td>
         <td class="mkp-mingkong-col">${imageHtml(mingkongImageUrl)}</td>
-        <td class="mkp-mingkong-col mkp-mono">${esc(mingkong.sku || '—')}</td>
-        <td class="mkp-mingkong-col mkp-mono">${esc(mingkong.sku_code || '—')}</td>
+        <td class="mkp-mingkong-col">${copiableHtml(mingkong.sku, true)}</td>
+        <td class="mkp-mingkong-col">${copiableHtml(mingkong.sku_code, true)}</td>
         <td class="mkp-mingkong-col">${mingkongNameHtml}</td>
         <td class="mkp-mingkong-col">${esc(mingkong.supplier_name || '—')}</td>
         <td class="mkp-mingkong-col mkp-mono">${esc(mingkong.alibaba_product_id || '—')}</td>
