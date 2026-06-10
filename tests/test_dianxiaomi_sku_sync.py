@@ -80,6 +80,29 @@ def test_script_path_help_bootstraps_repo_root_from_any_cwd():
     assert "--browser-mode" in result.stdout
 
 
+def test_build_pair_rows_leaves_unmatched_dianxiaomi_sku_empty():
+    from tools import dianxiaomi_sku_sync as mod
+
+    rows = mod.build_pair_rows(
+        [
+            {
+                "shopify_product_id": "SP1",
+                "variants": [
+                    {
+                        "shopify_variant_id": "46078664442029",
+                        "shopify_sku": "",
+                        "pair_key": "46078664442029",
+                    }
+                ],
+            }
+        ],
+        {},
+    )
+
+    assert rows["SP1"][0]["shopify_variant_id"] == "46078664442029"
+    assert rows["SP1"][0]["dianxiaomi_sku"] is None
+
+
 def test_run_sync_uses_public_shopify_variants_when_dianxiaomi_list_is_truncated(tmp_path):
     from tools import dianxiaomi_sku_sync as mod
 

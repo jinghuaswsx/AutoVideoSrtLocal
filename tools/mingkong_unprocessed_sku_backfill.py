@@ -27,7 +27,12 @@ _CONFIGURED_SKU_ROW_SQL = (
     "COALESCE(s.manual_override, 0)=1 "
     "OR s.manual_unit_price_rmb IS NOT NULL "
     "OR NULLIF(TRIM(s.manual_goods_name), '') IS NOT NULL "
-    "OR NULLIF(TRIM(s.dianxiaomi_sku), '') IS NOT NULL "
+    "OR (NULLIF(TRIM(s.dianxiaomi_sku), '') IS NOT NULL AND NOT ("
+    "COALESCE(s.source, '') IN ('', 'auto', 'dianxiaomi_sku', 'shopify_public', 'shopify_public_base') "
+    "AND TRIM(s.dianxiaomi_sku)=TRIM(COALESCE(s.shopify_variant_id, '')) "
+    "AND NULLIF(TRIM(COALESCE(s.dianxiaomi_product_sku, '')), '') IS NULL "
+    "AND NULLIF(TRIM(COALESCE(s.dianxiaomi_sku_code, '')), '') IS NULL"
+    ")) "
     "OR NULLIF(TRIM(s.dianxiaomi_product_sku), '') IS NOT NULL "
     "OR NULLIF(TRIM(s.dianxiaomi_sku_code), '') IS NOT NULL"
 )
@@ -55,14 +60,16 @@ def is_configured_local_sku_row(row: dict[str, Any]) -> bool:
         return True
     if row.get("manual_unit_price_rmb") is not None:
         return True
-    for key in (
-        "manual_goods_name",
-        "dianxiaomi_sku",
-        "dianxiaomi_product_sku",
-        "dianxiaomi_sku_code",
-    ):
+    for key in ("manual_goods_name", "dianxiaomi_product_sku", "dianxiaomi_sku_code"):
         if _clean_text(row.get(key)):
             return True
+    sku = _clean_text(row.get("dianxiaomi_sku"))
+    if sku and not (
+        _clean_text(row.get("source")).lower()
+        in {"", "auto", "dianxiaomi_sku", "shopify_public", "shopify_public_base"}
+        and sku == _clean_text(row.get("shopify_variant_id"))
+    ):
+        return True
     return False
 
 

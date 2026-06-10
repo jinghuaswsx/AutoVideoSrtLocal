@@ -344,6 +344,83 @@ def test_build_workbench_payload_adds_mingkong_reference_when_enabled(monkeypatc
     assert payload["items"][0]["mingkong"]["sku_id_alibaba"] == "sku-1688"
 
 
+def test_build_workbench_payload_treats_variant_id_auto_skus_as_empty_base(monkeypatch):
+    product = {
+        "id": 709,
+        "product_code": "footstep-rocket-launcher-rjc",
+        "product_link": "https://kiddomind.com/products/footstep-rocket-launcher",
+        "purchase_1688_url": "",
+    }
+    local_rows = [
+        {
+            "shopify_product_id": "8602535035053",
+            "shopify_variant_id": "46078664442029",
+            "shopify_variant_title": "1 launcher + 3 rockets",
+            "dianxiaomi_sku": "46078664442029",
+            "dianxiaomi_product_sku": "",
+            "dianxiaomi_sku_code": "",
+            "dianxiaomi_name": "",
+            "source": "auto",
+        }
+    ]
+    full_base = [
+        {
+            "shopify_product_id": "8602535035053",
+            "shopify_variant_id": "46078664442029",
+            "shopify_variant_title": "1 launcher + 3 rockets",
+            "source": "shopify_public",
+        }
+    ]
+    mingkong_row = {
+        "shopify_product_id": "mk-shopify-product",
+        "shopify_variant_id": "mk-variant-1",
+        "shopify_variant_title": "1 launcher + 3 rockets",
+        "dianxiaomi_sku": "0424-rocket-1",
+        "dianxiaomi_product_sku": "MK-ROCKET-1",
+        "dianxiaomi_sku_code": "98070901",
+        "dianxiaomi_name": "儿童脚踩小火箭 1 套",
+        "source": "mingkong_library",
+        "purchase_1688_url": "https://detail.1688.com/offer/709.html",
+        "mingkong_procurement": {
+            "supplier_name": "明空供应商",
+            "alibaba_product_id": "709",
+            "sku_id_alibaba": "1688-rocket-1",
+        },
+    }
+    calls = {"library": 0, "refresh": 0}
+
+    def fake_library(_product):
+        calls["library"] += 1
+        return [] if calls["library"] == 1 else [mingkong_row]
+
+    def fake_refresh(_product):
+        calls["refresh"] += 1
+        return {"products_seen": 1, "variants_seen": 1}
+
+    monkeypatch.setattr(
+        pairing.mingkong_product_library,
+        "public_shopify_sku_rows_from_product",
+        lambda _product: full_base,
+    )
+    monkeypatch.setattr(pairing.mingkong_product_library, "sku_rows_from_library", fake_library)
+    monkeypatch.setattr(pairing.mingkong_product_library, "refresh_product_from_dxm02", fake_refresh)
+
+    payload = pairing.build_workbench_payload(
+        product,
+        local_rows,
+        include_live=False,
+        include_mingkong_reference=True,
+    )
+
+    assert calls == {"library": 2, "refresh": 1}
+    assert payload["summary"]["realtime_refresh"] == {"products_seen": 1, "variants_seen": 1}
+    assert payload["items"][0]["shopify_variant_id"] == "46078664442029"
+    assert payload["items"][0]["dianxiaomi_sku"] == "0424-rocket-1"
+    assert payload["items"][0]["dianxiaomi_sku_code"] == "98070901"
+    assert payload["items"][0]["mingkong"]["sku"] == "0424-rocket-1"
+    assert payload["items"][0]["mingkong"]["sku_id_alibaba"] == "1688-rocket-1"
+
+
 def test_build_workbench_payload_uses_full_shopify_base_then_fills_mingkong(monkeypatch):
     product = {
         "id": 772,

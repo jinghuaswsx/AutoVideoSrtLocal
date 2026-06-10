@@ -1246,6 +1246,49 @@ def _local_sku_payload(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_EMPTY_BASE_SOURCES = {"", "auto", "dianxiaomi_sku", "shopify_public", "shopify_public_base"}
+
+
+def _clean_sku_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _is_placeholder_dianxiaomi_sku(row: dict[str, Any]) -> bool:
+    sku = _clean_sku_text(row.get("dianxiaomi_sku"))
+    variant_id = _clean_sku_text(row.get("shopify_variant_id"))
+    if not sku or not variant_id or sku != variant_id:
+        return False
+    if _clean_sku_text(row.get("dianxiaomi_product_sku")):
+        return False
+    if _clean_sku_text(row.get("dianxiaomi_sku_code")):
+        return False
+    source = _clean_sku_text(row.get("source")).lower()
+    return source in _EMPTY_BASE_SOURCES
+
+
+def _has_configured_local_sku(row: dict[str, Any]) -> bool:
+    if int(row.get("manual_override") or 0):
+        return True
+    if row.get("manual_unit_price_rmb") is not None:
+        return True
+    if _clean_sku_text(row.get("manual_goods_name")):
+        return True
+    if _clean_sku_text(row.get("dianxiaomi_product_sku")):
+        return True
+    if _clean_sku_text(row.get("dianxiaomi_sku_code")):
+        return True
+    return bool(_clean_sku_text(row.get("dianxiaomi_sku")) and not _is_placeholder_dianxiaomi_sku(row))
+
+
+def _workbench_source_row(row: dict[str, Any]) -> dict[str, Any]:
+    payload = _local_sku_payload(row)
+    if _is_placeholder_dianxiaomi_sku(row):
+        payload["dianxiaomi_sku"] = ""
+        if payload.get("source") == "auto":
+            payload["source"] = "shopify_public"
+    return payload
+
+
 _RESULT_STATUS_LABELS = {
     "already_configured_preserved": "DXM03 已配置，已保护",
     "already_exists": "DXM03 已存在",
@@ -1675,7 +1718,9 @@ def build_workbench_payload(
     fetch_live_fn=fetch_dxm03_pairing_snapshot,
 ) -> dict[str, Any]:
     purchase_url = str(product.get("purchase_1688_url") or "").strip()
-    source_rows = list(sku_rows or [])
+    raw_source_rows = list(sku_rows or [])
+    source_rows = [_workbench_source_row(row) for row in raw_source_rows]
+    has_configured_local_sku = any(_has_configured_local_sku(row) for row in raw_source_rows)
     library_rows: list[dict[str, Any]] = []
     base_rows: list[dict[str, Any]] = []
     realtime_refresh_error = ""
@@ -1697,10 +1742,15 @@ def build_workbench_payload(
             library_rows = []
     elif include_mingkong_reference:
         try:
-            library_rows = [
-                _local_sku_payload(row)
-                for row in mingkong_product_library.sku_rows_from_library(product)
-            ]
+            if has_configured_local_sku:
+                library_rows = [
+                    _local_sku_payload(row)
+                    for row in mingkong_product_library.sku_rows_from_library(product)
+                ]
+            else:
+                loaded_library = load_mingkong_library_sku_rows(product)
+                library_rows = loaded_library["rows"]
+                realtime_refresh_summary = loaded_library["realtime_refresh"]
         except Exception as exc:
             mingkong_reference_error = str(exc)
             library_rows = []
@@ -1708,6 +1758,11 @@ def build_workbench_payload(
         local_rows = merge_full_sku_base_with_fill_rows(
             base_rows,
             [_local_sku_payload(row) for row in source_rows],
+            library_rows,
+        )
+    elif source_rows and library_rows and not has_configured_local_sku:
+        local_rows = merge_full_sku_base_with_fill_rows(
+            source_rows,
             library_rows,
         )
     else:
