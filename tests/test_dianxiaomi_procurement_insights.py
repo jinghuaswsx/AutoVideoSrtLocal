@@ -212,6 +212,8 @@ def test_chrome_extension_manifest_and_assets():
     assert manifest["background"]["service_worker"] == "background.js"
     assert manifest["content_scripts"][0]["js"] == ["content.js"]
     assert manifest["content_scripts"][0]["all_frames"] is True
+    assert "const DEFAULT_BACKEND_BASE = `http://${DEFAULT_BACKEND_HOST_PARTS.join(\".\")}`;" in background
+    assert ":8080" not in background
     assert "/dianxiaomi-procurement-insights/api/insights" in background
     assert 'credentials: "include"' in background
     assert "collectClues" in content

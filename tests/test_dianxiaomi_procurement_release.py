@@ -110,9 +110,11 @@ def test_medias_page_shows_procurement_plugin_left_of_shopify_tool(
 
 
 def test_chrome_extension_release_archive_contains_manifest_and_release_manifest(tmp_path):
+    from tools.dianxiaomi_procurement_insights.version import RELEASE_VERSION
+
     script = _load_release_script()
-    archive_path = tmp_path / "DianxiaomiProcurementInsights-chrome-0.1.0.zip"
-    root_dir = "DianxiaomiProcurementInsights-chrome-0.1.0"
+    archive_path = tmp_path / f"DianxiaomiProcurementInsights-chrome-{RELEASE_VERSION}.zip"
+    root_dir = f"DianxiaomiProcurementInsights-chrome-{RELEASE_VERSION}"
 
     script.build_archive(
         source_dir=ROOT / "tools" / "dianxiaomi_procurement_insights" / "chrome_ext",
@@ -120,14 +122,14 @@ def test_chrome_extension_release_archive_contains_manifest_and_release_manifest
         root_dir_name=root_dir,
         release_manifest={
             "tool": "dianxiaomi_procurement_insights",
-            "version": "0.1.0",
+            "version": RELEASE_VERSION,
             "source_commit": "abc123",
             "origin_master_commit": "abc123",
             "release_standard": "docs/superpowers/specs/2026-06-09-chrome-extension-tool-release-standard.md",
             "built_at": "2026-06-09T00:00:00+00:00",
         },
     )
-    script.validate_archive(archive_path, root_dir, "0.1.0")
+    script.validate_archive(archive_path, root_dir, RELEASE_VERSION)
 
     with zipfile.ZipFile(archive_path) as archive:
         names = set(archive.namelist())
@@ -136,7 +138,7 @@ def test_chrome_extension_release_archive_contains_manifest_and_release_manifest
         assert f"{root_dir}/release_manifest.json" in names
         manifest = json.loads(archive.read(f"{root_dir}/manifest.json").decode("utf-8"))
 
-    assert manifest["version"] == "0.1.0"
+    assert manifest["version"] == RELEASE_VERSION
 
 
 def test_procurement_extension_version_sources_match_manifest():

@@ -14,7 +14,7 @@ tools/dianxiaomi_procurement_insights/chrome_ext
 2. 开启“开发者模式”。
 3. 点击“加载已解压的扩展程序”。
 4. 选择 `tools/dianxiaomi_procurement_insights/chrome_ext`。
-5. 打开插件 popup，确认后台地址。默认是 `http://172.16.254.106:8080`。
+5. 打开插件 popup，确认后台地址。默认是 `http://172.16.254.106`。
 6. 先在 AutoVideoSrtLocal 后台登录，再进入店小秘云仓采购建议 / 缺货建议页面刷新插件面板。
 
 ## 首版行为
@@ -39,6 +39,6 @@ docs/superpowers/specs/2026-06-09-chrome-extension-tool-release-standard.md
 ./venv/bin/python scripts/build_chrome_extension_release.py \
   --release-standard-read \
   --tool dianxiaomi_procurement_insights \
-  --version 0.1.0 \
+  --version 1.0.0 \
   --release-note "店小秘采购洞察首版"
 ```
