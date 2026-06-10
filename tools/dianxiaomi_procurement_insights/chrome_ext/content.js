@@ -1,5 +1,6 @@
 const DPI_ROOT_ID = "dpi-procurement-root";
 const MAX_TEXT_SCAN = 7000;
+const PORTAL_BASE = "http://172.16.254.106";
 
 let lastPointerTarget = null;
 let panelCollapsed = false;
@@ -251,6 +252,20 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+function renderProductLinks(product, matched) {
+  const productCode = compactText(product && product.product_code, 180);
+  if (!matched || !productCode) return "";
+  const encodedCode = encodeURIComponent(productCode);
+  const productCenterUrl = `${PORTAL_BASE}/medias/?q=${encodedCode}`;
+  const orderCenterUrl = `${PORTAL_BASE}/order-analytics/dxm-orders-view/order-trend/${encodedCode}`;
+  return `
+    <div class="dpi-product-actions">
+      <a href="${escapeHtml(productCenterUrl)}" target="_blank" rel="noopener noreferrer">产品中心</a>
+      <a href="${escapeHtml(orderCenterUrl)}" target="_blank" rel="noopener noreferrer">订单中心</a>
+    </div>
+  `;
+}
+
 function renderContent() {
   if (panelCollapsed) return "";
   if (currentState.status === "loading") {
@@ -283,7 +298,8 @@ function renderContent() {
   return `
     <div class="dpi-body">
       <div class="dpi-product-line">
-        <span>${matched ? escapeHtml(product.name || product.product_code || "已匹配产品") : "未匹配产品"}</span>
+        <span class="dpi-product-name">${matched ? escapeHtml(product.name || product.product_code || "已匹配产品") : "未匹配产品"}</span>
+        ${renderProductLinks(product, matched)}
       </div>
       <div class="dpi-status-line">
         <span class="dpi-status ${statusClass(summary.delivery_status)}">${escapeHtml(summary.delivery_label || "--")}</span>
@@ -438,6 +454,7 @@ function installPanel() {
   });
   window.addEventListener("resize", schedulePanelPlacement, { passive: true });
   window.addEventListener("scroll", schedulePanelPlacement, { passive: true });
+  window.setInterval(schedulePanelPlacement, 500);
   window.setTimeout(refreshInsights, 1200);
 }
 

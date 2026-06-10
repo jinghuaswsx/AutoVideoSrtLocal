@@ -156,3 +156,9 @@ pytest tests/test_dianxiaomi_procurement_insights.py tests/test_media_product_ad
 - 素材管理页下载按钮放在“下载自动换图工具”左侧
 - 版本号来自 `tools/dianxiaomi_procurement_insights/version.py` 与 `chrome_ext/manifest.json`，二者必须一致
 - 发布脚本：`scripts/build_chrome_extension_release.py --release-standard-read --tool dianxiaomi_procurement_insights --version <version>`
+
+## 2026-06-10 1.1.1 弹窗自动锚定修订
+
+- 用户点击“生成采购单 / 一键生成采购订单”后，插件必须在弹窗出现后自动进入右侧锚定模式；不能依赖用户手动刷新插件面板。
+- 内容脚本保留 MutationObserver / resize / scroll 触发，同时增加低频定位心跳，确保店小秘弹窗动画、遮罩层切换或异步渲染完成后，面板仍会贴到弹窗右侧并保持同高。
+- 已匹配产品且存在 `product_code` 时，产品标题行右侧显示两个跳转按钮：`产品中心` 打开 `http://172.16.254.106/medias/?q=<product_code>`，`订单中心` 打开 `http://172.16.254.106/order-analytics/dxm-orders-view/order-trend/<product_code>`。

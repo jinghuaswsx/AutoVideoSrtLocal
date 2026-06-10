@@ -247,9 +247,16 @@ def test_chrome_extension_manifest_and_assets():
     assert "collectClues" in content
     assert "findPurchaseModal" in content
     assert "syncPanelPlacement" in content
+    assert "setInterval(schedulePanelPlacement" in content
+    assert "renderProductLinks" in content
+    assert "产品中心" in content
+    assert "订单中心" in content
+    assert "/medias/?q=" in content
+    assert "/order-analytics/dxm-orders-view/order-trend/" in content
     assert "renderPeriodRows" in content
     assert "dpi-period-table" in content
     assert "last_30d" in content
     assert ".dpi-modal-anchored" in styles
+    assert ".dpi-product-actions" in styles
     assert ".dpi-total-value" in styles
     assert ".dpi-period-table" in styles
