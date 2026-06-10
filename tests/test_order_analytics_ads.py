@@ -662,7 +662,7 @@ def test_get_meta_ad_summary_merges_dianxiaomi_order_metrics(monkeypatch):
 
 
 def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -674,7 +674,7 @@ def test_data_analysis_page_has_ads_tab_and_renamed_title(authed_client_no_db):
 
 
 def test_data_analysis_page_has_meta_ad_accounts_tab(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -695,7 +695,7 @@ def test_meta_ad_accounts_tab_renders_timezone_column_and_datalist(authed_client
     Docs-anchor: docs/superpowers/specs/2026-05-09-meta-ads-account-timezone-and-async-fix.md
     «UI 接入（AUT-28）» 节。
     """
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -715,7 +715,7 @@ def test_meta_ad_accounts_tab_renders_timezone_column_and_datalist(authed_client
 
 def test_meta_ad_accounts_tab_renders_column_preset_choices(authed_client_no_db):
     """Docs-anchor: docs/superpowers/specs/2026-05-09-ads-purchase-value-order-fallback-design.md."""
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -983,7 +983,7 @@ def test_meta_ad_account_manual_sync_status_api_reports_missing_job(authed_clien
 
 
 def test_data_analysis_tabs_and_type_controls_are_capsule_buttons(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -998,7 +998,7 @@ def test_data_analysis_tabs_and_type_controls_are_capsule_buttons(authed_client_
 
 
 def test_analytics_range_controls_match_country_dashboard(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1029,7 +1029,7 @@ def test_ads_default_date_range_uses_meta_business_today_for_campaign(authed_cli
     Meta 今天由 Beijing 16:00 cutover 决定，例如 2026-05-18 16:00 前是
     2026-05-17。
     """
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1047,7 +1047,7 @@ def test_ads_default_date_range_uses_meta_business_today_for_campaign(authed_cli
 
 
 def test_ads_adset_and_ad_default_to_meta_business_today(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1068,7 +1068,7 @@ def test_ads_adset_and_ad_default_to_meta_business_today(authed_client_no_db):
 
 
 def test_ads_analysis_page_has_ad_account_filter_controls(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1088,7 +1088,7 @@ def test_ads_level_search_queries_bottom_list_without_dropdown(authed_client_no_
 
     Docs-anchor: docs/superpowers/specs/2026-05-11-ads-analytics-inline-search-list.md
     """
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1109,7 +1109,7 @@ def test_ads_level_search_queries_bottom_list_without_dropdown(authed_client_no_
 
 def test_ads_analysis_page_has_unmatched_campaigns_subtab(authed_client_no_db):
     """Docs-anchor: docs/superpowers/specs/2026-06-01-ads-unmatched-campaign-tab-design.md"""
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1126,7 +1126,7 @@ def test_ads_analysis_page_has_unmatched_campaigns_subtab(authed_client_no_db):
 
 
 def test_order_analytics_range_presets_use_shared_meta_calendar(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1142,7 +1142,7 @@ def test_order_analytics_range_presets_use_shared_meta_calendar(authed_client_no
 
 
 def test_ads_stats_card_shows_report_roas(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1152,7 +1152,7 @@ def test_ads_stats_card_shows_report_roas(authed_client_no_db):
 
 
 def test_ads_analysis_table_includes_dianxiaomi_order_columns(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1278,7 +1278,7 @@ def test_dashboard_endpoint_passes_country_filter(authed_client_no_db, monkeypat
 
 
 def test_dashboard_tab_is_default(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert 'data-tab="realtime"' in body
@@ -1313,7 +1313,7 @@ def test_get_dashboard_defaults_to_order_count_sort(monkeypatch):
 
 
 def test_dashboard_tab_label_chinese(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert "产品看板" in response.get_data(as_text=True)
 
 

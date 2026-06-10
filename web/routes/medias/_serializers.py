@@ -146,6 +146,42 @@ def _serialize_product_link_domains(product: dict) -> list[dict]:
     return out
 
 
+def _serialize_shopify_ids(
+    rows: list[dict] | None,
+    *,
+    legacy_shopifyid: str | None = None,
+    default_domain: str | None = None,
+) -> list[dict]:
+    out: list[dict] = []
+    seen_domains: set[str] = set()
+    normalized_default_domain = str(default_domain or "").strip().lower()
+    for row in rows or []:
+        domain = str(row.get("domain") or "").strip().lower()
+        shopify_product_id = str(row.get("shopify_product_id") or "").strip()
+        if not domain or not shopify_product_id or domain in seen_domains:
+            continue
+        updated_at = row.get("updated_at")
+        out.append({
+            "domain": domain,
+            "shopify_product_id": shopify_product_id,
+            "source": row.get("source") or "domain_cache",
+            "is_default_domain": bool(normalized_default_domain and domain == normalized_default_domain),
+            "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else None,
+        })
+        seen_domains.add(domain)
+
+    legacy_id = str(legacy_shopifyid or "").strip()
+    if legacy_id and normalized_default_domain and normalized_default_domain not in seen_domains:
+        out.append({
+            "domain": normalized_default_domain,
+            "shopify_product_id": legacy_id,
+            "source": "legacy_shopifyid",
+            "is_default_domain": True,
+            "updated_at": None,
+        })
+    return out
+
+
 def _serialize_product(p: dict, items_count: int | None = None,
                        cover_item_id: int | None = None,
                        items_filenames: list[str] | None = None,
@@ -159,6 +195,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
                        skus: list[dict] | None = None,
                        yuncang_index: dict[str, dict] | None = None,
                        sku_actual_roas_index: dict[str, dict] | None = None,
+                       shopify_ids: list[dict] | None = None,
                        include_product_link_domains: bool = False,
                        stability: dict | None = None) -> dict:
     if covers is None:
@@ -187,6 +224,11 @@ def _serialize_product(p: dict, items_count: int | None = None,
         default_link_domain = product_link_domains.get_default_domain()
     except Exception:
         default_link_domain = ""
+    serialized_shopify_ids = _serialize_shopify_ids(
+        shopify_ids,
+        legacy_shopifyid=p.get("shopifyid"),
+        default_domain=default_link_domain,
+    )
 
     resolved_shopify_title = (p.get("shopify_title") or "").strip()
     if not resolved_shopify_title and p.get("product_code"):
@@ -228,6 +270,11 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "product_code": p.get("product_code"),
         "mk_id": p.get("mk_id"),
         "shopifyid": p.get("shopifyid"),
+        "shopify_ids": serialized_shopify_ids,
+        "shopify_ids_by_domain": {
+            item["domain"]: item["shopify_product_id"]
+            for item in serialized_shopify_ids
+        },
         "shopify_title": resolved_shopify_title,
         "skus": _serialize_product_skus(
             skus,

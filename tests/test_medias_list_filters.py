@@ -225,6 +225,7 @@ def test_products_list_response_includes_product_stability_cache():
         get_product_stability_cache_fn=lambda pids: {
             9: {"status": "stable", "stable_marks": ["7天稳定"]}
         },
+        list_shopify_product_ids_batch_fn=lambda pids: {},
         serialize_product_fn=lambda p, *args, **kwargs: {
             "id": p["id"],
             "stability": kwargs.get("stability"),
@@ -284,8 +285,11 @@ def test_medias_toolbar_compacts_actions_and_filters():
     action_block = html[action_start:action_end]
     assert 'id="createBtn"' in action_block
     assert "oc-tool-download-btn" in action_block
+    assert "下载采购洞察插件" in action_block
+    assert action_block.index("下载采购洞察插件") < action_block.index("下载自动换图工具")
 
     assert "docs/superpowers/specs/2026-05-10-medias-toolbar-mobile-layout.md" in html
+    assert "docs/superpowers/specs/2026-06-09-chrome-extension-tool-release-standard.md" in html
     assert ".oc-header-action-buttons > .oc-btn { height:34px; padding:0 18px; font-weight:600; border-radius:9999px; justify-content:center; }" in html
     assert ".oc-tool-download-btn { display:inline-flex; align-items:center; justify-content:center;" in html
     assert ".oc-toolbar-filter-row { display:grid; grid-template-columns:minmax(180px,1.45fr) repeat(4,minmax(132px,1fr)) minmax(160px,1.15fr) minmax(150px,1.15fr);" in html

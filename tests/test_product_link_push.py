@@ -52,7 +52,7 @@ def test_build_product_links_push_preview_uses_enabled_media_languages(monkeypat
         "product_code": "demo-rjc",
         "mk_id": 3836,
         "localized_links_json": json.dumps({
-            "de": "https://newjoyloo.com/de/products/demo-rjc-special",
+            "de": "https://newjoyloo.com/de/products/demo-rjc-special?variant=123",
         }),
     }
 
@@ -1132,4 +1132,3 @@ def test_medias_product_links_push_payload_raises_400_when_no_match(
     assert resp.status_code == 400
     data = resp.get_json()
     assert data["error"] == "必须先完成这个产品的第一条视频素材推送，才可以推送文案和链接。"
-

@@ -246,6 +246,7 @@ def _build_refresh_product_shopify_sku_response(pid: int, product: dict):
         get_configured_rmb_per_usd_fn=product_roas.get_configured_rmb_per_usd,
         serialize_product_skus_fn=_serialize_product_skus,
         record_fetch_failure_fn=scheduled_tasks.record_failure,
+        list_shopify_product_ids_fn=medias.list_shopify_product_ids,
     )
 
 

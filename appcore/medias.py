@@ -436,6 +436,53 @@ def save_shopify_product_id_for_domain(product_id: int, domain: str, shopify_pro
     return True
 
 
+def list_shopify_product_ids(product_id: int) -> list[dict]:
+    """读取某产品所有按域名缓存的 Shopify product ID。"""
+    return list_shopify_product_ids_batch([int(product_id)]).get(int(product_id), [])
+
+
+def list_shopify_product_ids_batch(product_ids: list[int]) -> dict[int, list[dict]]:
+    """批量读取产品的 per-domain Shopify product ID 缓存。"""
+    cleaned: list[int] = []
+    seen: set[int] = set()
+    for raw_id in product_ids or []:
+        try:
+            pid = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if pid <= 0 or pid in seen:
+            continue
+        seen.add(pid)
+        cleaned.append(pid)
+    if not cleaned:
+        return {}
+
+    placeholders = ",".join(["%s"] * len(cleaned))
+    rows = query(
+        "SELECT product_id, domain, shopify_product_id, updated_at "
+        "FROM media_product_shopify_ids "
+        f"WHERE product_id IN ({placeholders}) "
+        "ORDER BY product_id ASC, domain ASC",
+        tuple(cleaned),
+    )
+    out: dict[int, list[dict]] = {pid: [] for pid in cleaned}
+    for row in rows or []:
+        try:
+            pid = int(row.get("product_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        domain = str(row.get("domain") or "").strip().lower()
+        shopify_product_id = str(row.get("shopify_product_id") or "").strip()
+        if not pid or not domain or not shopify_product_id:
+            continue
+        out.setdefault(pid, []).append({
+            "domain": domain,
+            "shopify_product_id": shopify_product_id,
+            "updated_at": row.get("updated_at"),
+        })
+    return out
+
+
 def resolve_shopify_product_id(product_id: int, domain: str | None = None) -> str | None:
     """解析 Shopify product ID。
 
@@ -2218,14 +2265,34 @@ def list_yuncang_unit_prices(skus: list[str]) -> dict[str, dict]:
 
 
 def find_product_ids_by_shopifyid(shopify_product_ids: list[str]) -> dict[str, int]:
-    """根据 shopifyid 找回对应的 media_products.id 映射，便于回填 SKU 配对。"""
+    """根据 Shopify product ID 找回 media_products.id，兼容旧字段和 per-domain 存档。"""
     cleaned = sorted({str(value).strip() for value in (shopify_product_ids or []) if str(value).strip()})
     if not cleaned:
         return {}
     placeholders = ",".join(["%s"] * len(cleaned))
-    rows = query(
-        f"SELECT id, shopifyid FROM media_products "
+    legacy_rows = query(
+        "SELECT id AS product_id, shopifyid AS shopify_product_id "
+        "FROM media_products "
         f"WHERE deleted_at IS NULL AND shopifyid IN ({placeholders})",
         tuple(cleaned),
     )
-    return {str(r["shopifyid"]): int(r["id"]) for r in rows or [] if r.get("shopifyid")}
+    domain_rows = query(
+        "SELECT mps.product_id, mps.shopify_product_id "
+        "FROM media_product_shopify_ids mps "
+        "JOIN media_products p ON p.id = mps.product_id "
+        f"WHERE p.deleted_at IS NULL AND mps.shopify_product_id IN ({placeholders}) "
+        "ORDER BY mps.product_id ASC, mps.domain ASC",
+        tuple(cleaned),
+    )
+    out: dict[str, int] = {}
+    for row in (legacy_rows or []) + (domain_rows or []):
+        shopify_product_id = str(row.get("shopify_product_id") or "").strip()
+        if not shopify_product_id:
+            continue
+        try:
+            product_id = int(row.get("product_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        if product_id:
+            out.setdefault(shopify_product_id, product_id)
+    return out

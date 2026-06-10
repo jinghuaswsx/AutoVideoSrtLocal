@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from typing import Any
 
 
@@ -45,6 +45,17 @@ def domain_from_url(value: str) -> str:
         return normalize_domain(value)
     except ValueError:
         return ""
+
+
+def canonical_product_page_url(value: str) -> str:
+    """Return a product page URL without volatile query or fragment parts."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if not parsed.scheme and not parsed.netloc:
+        return raw
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, "", ""))
 
 
 def build_product_page_url(domain: str, lang: str, product_code: str) -> str:
@@ -106,7 +117,7 @@ def _localized_link_map(product: dict | None) -> dict[str, dict[str, str]]:
             bucket = out.setdefault(lang, {})
             if isinstance(raw_link, dict):
                 for raw_domain, url_value in raw_link.items():
-                    url = str(url_value or "").strip()
+                    url = canonical_product_page_url(str(url_value or ""))
                     if not url:
                         continue
                     try:
@@ -116,7 +127,7 @@ def _localized_link_map(product: dict | None) -> dict[str, dict[str, str]]:
                     if domain:
                         bucket[domain] = url
                 continue
-            url = str(raw_link or "").strip()
+            url = canonical_product_page_url(str(raw_link or ""))
             if url:
                 bucket[""] = url
                 url_domain = domain_from_url(url)

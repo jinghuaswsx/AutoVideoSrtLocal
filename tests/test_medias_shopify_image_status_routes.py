@@ -6,6 +6,7 @@ def _product(**overrides):
         "id": 7,
         "name": "demo",
         "product_code": "demo-rjc",
+        "shopify_title": "Demo Title",
         "mk_id": None,
         "color_people": None,
         "source": None,
@@ -35,6 +36,7 @@ def test_get_product_detail_includes_shopify_image_status(authed_user_client_no_
     monkeypatch.setattr("web.routes.medias.medias.list_items", lambda pid: [])
     monkeypatch.setattr("web.routes.medias.medias.list_raw_sources", lambda pid: [])
     monkeypatch.setattr("web.routes.medias.medias.list_product_skus", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_shopify_product_ids", lambda pid: [])
     monkeypatch.setattr("web.routes.medias.medias.list_yuncang_unit_prices", lambda skus: {})
     monkeypatch.setattr(
         "web.services.media_product_detail.product_roas.get_configured_rmb_per_usd",
@@ -59,6 +61,7 @@ def test_get_product_detail_includes_enabled_product_link_domains(authed_user_cl
     monkeypatch.setattr("web.routes.medias.medias.list_items", lambda pid: [])
     monkeypatch.setattr("web.routes.medias.medias.list_raw_sources", lambda pid: [])
     monkeypatch.setattr("web.routes.medias.medias.list_product_skus", lambda pid: [])
+    monkeypatch.setattr("web.routes.medias.medias.list_shopify_product_ids", lambda pid: [])
     monkeypatch.setattr("web.routes.medias.medias.list_yuncang_unit_prices", lambda skus: {})
     monkeypatch.setattr(
         "web.services.media_product_detail.product_roas.get_configured_rmb_per_usd",

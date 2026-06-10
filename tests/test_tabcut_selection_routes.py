@@ -179,3 +179,98 @@ def test_tabcut_share_routes_render_without_login_no_db(monkeypatch):
 
     resp_videos = client.get("/xuanpin/tabcut/share/videos")
     assert resp_videos.status_code == 200
+
+
+def test_tabcut_selection_apis_support_search_parameter(monkeypatch, authed_client_no_db):
+    video_args = {}
+    goods_args = {}
+
+    monkeypatch.setattr(
+        "appcore.tabcut_selection.store.list_video_candidates",
+        lambda args, **kwargs: (video_args.update(args), {"items": [], "total": 0})[1],
+    )
+    monkeypatch.setattr(
+        "appcore.tabcut_selection.store.list_goods",
+        lambda args, **kwargs: (goods_args.update(args), {"items": [], "total": 0})[1],
+    )
+
+    resp_videos = authed_client_no_db.get("/xuanpin/api/tabcut/videos?q=test_query_video")
+    assert resp_videos.status_code == 200
+    assert video_args.get("q") == "test_query_video"
+
+    resp_goods = authed_client_no_db.get("/xuanpin/api/tabcut/goods?q=test_query_goods")
+    assert resp_goods.status_code == 200
+    assert goods_args.get("q") == "test_query_goods"
+
+
+def test_tabcut_store_queries_include_search_filters(monkeypatch):
+    captured_queries = []
+
+    def mock_query(sql, params=None):
+        captured_queries.append((sql, params))
+        return [{"cnt": 0}]
+
+    monkeypatch.setattr("appcore.db.query", mock_query)
+
+    from appcore.tabcut_selection import store
+
+    store.list_video_candidates({"q": "video_key"}, query_fn=mock_query)
+    assert any("v.video_desc LIKE" in q[0] and "g.item_name LIKE" in q[0] for q in captured_queries)
+    assert any("%video_key%" in param for q in captured_queries for param in q[1] if isinstance(param, str))
+
+    captured_queries.clear()
+
+    store.list_goods({"q": "goods_key"}, query_fn=mock_query)
+    assert any("g.item_name LIKE" in q[0] and "g.seller_name LIKE" in q[0] for q in captured_queries)
+    assert any("%goods_key%" in param for q in captured_queries for param in q[1] if isinstance(param, str))
+
+
+def test_tabcut_video_detail_route_requires_login(monkeypatch):
+    monkeypatch.setattr("web.app._run_startup_recovery", lambda: None)
+    monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: None)
+    monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: None)
+    monkeypatch.setattr("web.app._seed_default_prompts", lambda: None)
+    monkeypatch.setattr("appcore.db.execute", lambda *args, **kwargs: None)
+    monkeypatch.setattr("appcore.db.query", lambda *args, **kwargs: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda *args, **kwargs: None)
+
+    from web.app import create_app
+    app = create_app()
+    client = app.test_client()
+    resp = client.get("/xuanpin/tabcut/video/test_video_id")
+    assert resp.status_code == 302
+
+
+def test_tabcut_video_detail_route(monkeypatch, authed_client_no_db):
+    mock_data = {
+        "video_id": "test_video_id",
+        "author_name": "test_author",
+        "video_desc": "test_desc",
+        "primary_item_id": "test_item_id",
+        "primary_item_name": "test_item_name",
+        "primary_item_pic_url": "http://example.com/pic.jpg",
+        "primary_item_price_min": 19.9,
+        "primary_item_sold_count": 100,
+        "play_count": 1000,
+        "like_count": 50,
+        "share_count": 10,
+        "comment_count": 5,
+        "create_time": "2026-06-10 10:00:00",
+        "video_raw_json": '{"itemList": []}'
+    }
+
+    monkeypatch.setattr(
+        "appcore.tabcut_selection.store.get_video_candidate",
+        lambda video_id, **kwargs: mock_data if video_id == "test_video_id" else None
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/tabcut/video/test_video_id")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "test_video_id" in body
+    assert "test_author" in body
+    assert "test_item_name" in body
+
+    resp_404 = authed_client_no_db.get("/xuanpin/tabcut/video/non_existent_id")
+    assert resp_404.status_code == 404
+

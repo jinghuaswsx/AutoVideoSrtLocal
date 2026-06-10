@@ -342,6 +342,37 @@ def test_push_payload_route_delegates_payload_building(client, monkeypatch):
     assert captured["product_code"] == "alpha-rjc"
 
 
+def test_push_payload_route_rejects_oversize_video(client, monkeypatch):
+    from appcore import pushes
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_product_by_code",
+        lambda code: {"id": 123, "product_code": code, "name": "Alpha"},
+    )
+
+    def fake_build_material_push_payload(product, *, lang, product_code):
+        check = pushes.push_video_size_check_for_item({
+            "file_size": 101 * 1024 * 1024,
+        })
+        raise pushes.PushVideoTooLargeError(check)
+
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._build_material_push_payload",
+        fake_build_material_push_payload,
+    )
+
+    response = client.get(
+        "/openapi/materials/Alpha-RJC/push-payload?lang=DE",
+        headers={"X-API-Key": "demo-key"},
+    )
+
+    body = response.get_json()
+    assert response.status_code == 413
+    assert body["error"] == "video_too_large"
+    assert body["size_mb"] == "101.0 MB"
+    assert body["suggested_bitrate"] == 3000
+
+
 def test_shopify_localizer_bootstrap_accepts_shopify_id_override(client, monkeypatch):
     monkeypatch.setattr(
         "web.routes.openapi_materials.medias.is_valid_language",
@@ -604,6 +635,30 @@ def test_mark_pushed_returns_ok(client, monkeypatch):
     }
 
 
+def test_mark_pushed_rejects_oversize_video(client, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_item",
+        lambda iid: {"id": iid, "file_size": 101 * 1024 * 1024},
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials._build_mark_pushed_response",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("oversize item must not be marked pushed")
+        ),
+    )
+
+    response = client.post(
+        "/openapi/push-items/456/mark-pushed",
+        headers={"X-API-Key": "demo-key", "Content-Type": "application/json"},
+        json={"request_payload": {"mode": "create"}, "response_body": "ok"},
+    )
+
+    body = response.get_json()
+    assert response.status_code == 413
+    assert body["error"] == "video_too_large"
+    assert body["size_mb"] == "101.0 MB"
+
+
 def test_mark_failed_returns_ok(client, monkeypatch):
     captured: dict = {}
 
@@ -819,3 +874,51 @@ def test_push_item_by_keys_returns_mk_id_and_localized_text(client, monkeypatch)
             },
         ]
     }
+
+
+def test_push_item_by_keys_rejects_oversize_video(client, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.find_item_by_keys",
+        lambda product_id, lang, filename: {
+            "id": 238,
+            "product_id": product_id,
+            "lang": lang,
+            "filename": filename,
+            "display_name": filename,
+            "object_key": "k.mp4",
+            "cover_object_key": "k.jpg",
+            "duration_seconds": 1.0,
+            "file_size": 101 * 1024 * 1024,
+            "pushed_at": None,
+            "latest_push_id": None,
+            "created_at": None,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.medias.get_product",
+        lambda pid: {
+            "id": pid,
+            "name": "P",
+            "product_code": "p",
+            "mk_id": 3725,
+            "ad_supported_langs": "fr",
+            "selling_points": "",
+            "importance": 3,
+        },
+    )
+    monkeypatch.setattr(
+        "web.routes.openapi_materials.pushes.build_item_payload",
+        lambda item, product: (_ for _ in ()).throw(
+            AssertionError("oversize item must not build payload")
+        ),
+    )
+
+    response = client.get(
+        "/openapi/push-items/by-keys?product_id=10&lang=fr&filename=demo.mp4",
+        headers={"X-API-Key": "demo-key"},
+    )
+
+    body = response.get_json()
+    assert response.status_code == 413
+    assert body["error"] == "video_too_large"
+    assert body["size_mb"] == "101.0 MB"

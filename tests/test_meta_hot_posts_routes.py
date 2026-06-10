@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from html.parser import HTMLParser
 
 
@@ -294,8 +295,11 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "翻译文案</button>" not in body
     assert "显示原文案" in body
     assert "显示翻译文案" in body
+    assert "mh-message-translate" in body
     assert "function renderMessageBlock(row)" in body
     assert "function toggleMetaHotPostSourceMessage(event)" in body
+    assert "function translateMetaHotPostMessageToChinese(event, postId)" in body
+    assert "/xuanpin/api/meta-hot-posts/${postId}/message/translate-zh" in body
     assert "row.message_source_html" in body
     assert "function metaHotPostDisplayId(row)" in body
     assert "function metaHotPostLink(row)" in body
@@ -324,6 +328,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function toggleMetaHotProductTitle(event, postId)" in body
     assert "translateMetaHotProductTitleToChinese(event, postId)" in body
     assert "/xuanpin/api/meta-hot-posts/${postId}/product-title/translate-zh" in body
+    assert "/xuanpin/api/meta-hot-posts/${postId}/message/translate-zh" in body
     assert "/xuanpin/api/meta-hot-posts/translate-messages" in body
     assert "/xuanpin/api/meta-hot-posts/localize-videos" in body
     assert "可抄 Top 50</button>" not in body
@@ -396,8 +401,39 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function formatVideoDuration" in body
     assert "function loadMetaHotPostVideo" in body
     assert "function renderVideoShell" in body
+    assert "function directMetaHotVideoUrl(row)" in body
+    assert "function openMetaHotVideoOverlay(event, postId, videoSrc, downloadName)" in body
+    assert "function closeMetaHotVideoOverlay(event)" in body
+    assert "function handleMetaHotVideoOverlayKey(event)" in body
+    assert "function handleMetaHotVideoOverlayTouchStart(event)" in body
+    assert "function handleMetaHotVideoOverlayTouchEnd(event)" in body
+    assert "function handleMetaHotVideoOverlayWheel(event)" in body
+    assert "function switchMetaHotVideoOverlay(direction)" in body
+    assert "function renderMetaHotVideoOverlayCaption(item)" in body
+    assert "function toggleMetaHotVideoOverlayCaption(event)" in body
+    assert "function scrollMetaHotCardIntoView(postId)" in body
     assert "mh-video-duration-badge" in body
     assert "mh-play-button bottom" in body
+    assert "mh-video-fullscreen" in body
+    assert 'data-post-id="${postId}"' in body
+    assert "mh-video-overlay-caption-slot" in body
+    assert "mh-video-overlay-caption-toggle" in body
+    assert "mh-video-overlay-product-image" in body
+    assert "row.product_main_image_url" in body
+    assert "mh-video-overlay-download" in body
+    assert 'aria-label="下载视频"' in body
+    assert 'aria-label="关闭全屏播放"' in body
+    assert "overlay.addEventListener('touchstart', handleMetaHotVideoOverlayTouchStart, {passive: true})" in body
+    assert "overlay.addEventListener('touchend', handleMetaHotVideoOverlayTouchEnd, {passive: true})" in body
+    assert "overlay.addEventListener('wheel', handleMetaHotVideoOverlayWheel, {passive: false})" in body
+    assert "overlay.dataset.currentPostId" in body
+    assert "mhVideoOverlayState.captionExpanded" in body
+    assert "aria-expanded" in body
+    assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in body
+    assert "document.body.classList.add('mh-video-overlay-open')" in body
+    assert "document.body.classList.remove('mh-video-overlay-open')" in body
+    assert "event.key !== 'Escape'" in body
+    assert "event.target.closest('.mh-video-action')" in body
     assert "data-video-html" in body
     assert "local_video_cover_url" in body
     assert "tos_video_cover_url" in body
@@ -430,6 +466,36 @@ def test_meta_hot_posts_page_keeps_default_zoom_and_2x_uses_50_item_pages(
     assert "/xuanpin/api/meta-hot-posts/europe-top?limit=50" in body
     assert "/xuanpin/api/meta-hot-posts/video-copyability/top50?limit=50" in body
     assert "page_size: mhPageSize" in body
+
+
+def test_meta_hot_posts_mobile_scroll_hides_top_controls_and_expands_video_width(
+    authed_client_no_db, monkeypatch
+):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    template = Path("web/templates/meta_hot_posts.html").read_text(encoding="utf-8")
+    assert "Docs-anchor: docs/superpowers/specs/2026-06-10-meta-hot-posts-mobile-scroll-controls-and-video-width.md" in template
+    assert "const MH_MOBILE_STICKY_CONTROLS_QUERY = '(max-width: 768px)';" in body
+    assert "function initMetaHotMobileStickyControls()" in body
+    assert "page.classList.add('mh-mobile-controls-hidden')" in body
+    assert "page.classList.remove('mh-mobile-controls-hidden')" in body
+    assert "window.addEventListener('scroll', onScroll, {passive: true});" in body
+    assert "window.requestAnimationFrame(update);" in body
+    assert "controls.addEventListener('focusin', showControls);" in body
+    assert "controls.addEventListener('pointerdown', showControls);" in body
+    assert "initMetaHotMobileStickyControls();" in body
+    assert ".meta-hot-page.mh-mobile-controls-hidden .mh-sticky-controls" in body
+    assert "transform:translateY(calc(-100% - 10px));" in body
+    assert "pointer-events:none;" in body
+    assert ".mh-media {\n    width:100%;\n    max-width:100%;\n    aspect-ratio:267 / 476;" in body
+    assert "margin-left:0;\n    margin-right:0;" in body
 
 
 def test_meta_hot_posts_template_has_ai_card_translate_zh_buttons(authed_client_no_db, monkeypatch):
@@ -798,6 +864,27 @@ def test_meta_hot_posts_product_title_translate_zh_api_passes_current_user(
     assert captured["args"][1]
 
 
+def test_meta_hot_posts_message_translate_zh_api_passes_current_user(
+    authed_client_no_db, monkeypatch
+):
+    captured = {}
+
+    def fake_response(post_id, user_id=None):
+        captured["args"] = (post_id, user_id)
+        return type("Resp", (), {"payload": {"ok": True, "cached": False}, "status_code": 200})()
+
+    monkeypatch.setattr("appcore.meta_hot_posts.service.build_message_translate_zh_response", fake_response)
+
+    resp = authed_client_no_db.post(
+        "/xuanpin/api/meta-hot-posts/7/message/translate-zh",
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["ok"] is True
+    assert captured["args"][0] == 7
+    assert captured["args"][1]
+
+
 def test_meta_hot_posts_local_video_route_serves_safe_file(authed_client_no_db, monkeypatch, tmp_path):
     video = tmp_path / "output" / "meta_hot_posts" / "videos" / "5.mp4"
     video.parent.mkdir(parents=True)
@@ -1015,6 +1102,25 @@ def test_meta_hot_post_detail_page_renders_post(authed_client_no_db, monkeypatch
     assert "Meta热帖详情 - ID: 123" in body
     assert "meta-hot-card-grid" in body
     assert "cacheMetaHotItems" in body
+    assert "function openMetaHotVideoOverlay(event, postId, videoSrc, downloadName)" in body
+    assert "function handleMetaHotVideoOverlayTouchStart(event)" in body
+    assert "function handleMetaHotVideoOverlayTouchEnd(event)" in body
+    assert "function handleMetaHotVideoOverlayWheel(event)" in body
+    assert "function switchMetaHotVideoOverlay(direction)" in body
+    assert "function renderMetaHotVideoOverlayCaption(item)" in body
+    assert "function toggleMetaHotVideoOverlayCaption(event)" in body
+    assert "function scrollMetaHotCardIntoView(postId)" in body
+    assert "mh-video-fullscreen" in body
+    assert 'data-post-id="${postId}"' in body
+    assert "mh-video-overlay-caption-slot" in body
+    assert "mh-video-overlay-caption-toggle" in body
+    assert "mh-video-overlay-product-image" in body
+    assert "row.product_main_image_url" in body
+    assert "mh-video-overlay-download" in body
+    assert 'aria-label="关闭全屏播放"' in body
+    assert "overlay.dataset.currentPostId" in body
+    assert "mhVideoOverlayState.captionExpanded" in body
+    assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in body
     assert "只入素材库" in body
     assert "创建新品任务" in body
     assert "body: JSON.stringify({ owner_id: ownerId })" in body

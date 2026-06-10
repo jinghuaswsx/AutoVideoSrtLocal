@@ -2293,6 +2293,7 @@ def test_get_product_api_includes_shopifyid(
             "product_code": "demo-product",
             "mk_id": 123456,
             "shopifyid": "8560559554733",
+            "shopify_title": "测试商品 Shopify Title",
             "ad_supported_langs": "",
             "archived": 0,
             "created_at": None,
@@ -2312,14 +2313,36 @@ def test_get_product_api_includes_shopifyid(
     monkeypatch.setattr(r.medias, "list_items", lambda pid: [])
     monkeypatch.setattr(r.medias, "list_copywritings", lambda pid: [])
     monkeypatch.setattr(r.medias, "list_product_skus", lambda pid: [])
+    monkeypatch.setattr(
+        r.medias,
+        "list_shopify_product_ids",
+        lambda pid: [
+            {
+                "domain": "newjoyloo.com",
+                "shopify_product_id": "8560559554733",
+                "updated_at": None,
+            },
+            {
+                "domain": "omurio.com",
+                "shopify_product_id": "9174825337044",
+                "updated_at": None,
+            },
+        ],
+    )
     monkeypatch.setattr(r.medias, "list_yuncang_unit_prices", lambda skus: {})
     monkeypatch.setattr(r.medias, "normalize_listing_status", lambda status: status or "上架")
+    monkeypatch.setattr(r.product_link_domains, "get_default_domain", lambda: "newjoyloo.com")
 
     resp = authed_client_no_db.get("/medias/api/products/123")
 
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["product"]["shopifyid"] == "8560559554733"
+    assert data["product"]["shopify_ids_by_domain"] == {
+        "newjoyloo.com": "8560559554733",
+        "omurio.com": "9174825337044",
+    }
+    assert data["product"]["shopify_ids"][0]["is_default_domain"] is True
 
 
 def test_product_detail_delegates_to_response_builder(authed_client_no_db, monkeypatch):
@@ -3519,6 +3542,4 @@ def test_query_ad_detail_rows_merges_realtime_and_daily(monkeypatch):
     assert rows[1]["id"] == 101
     assert rows[1]["metric_source"] == "daily"
     assert rows[1]["spend_usd"] == 10.0
-
-
 

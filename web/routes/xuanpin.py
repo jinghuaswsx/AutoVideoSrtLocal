@@ -295,6 +295,21 @@ def tabcut_recommended_page():
     )
 
 
+@bp.route("/tabcut/video/<path:video_id>", methods=["GET"])
+@login_required
+def tabcut_video_detail_page(video_id: str):
+    if not _is_admin():
+        abort(403)
+    from appcore.tabcut_selection import service
+    video_detail = service.get_video_candidate_detail(video_id)
+    if not video_detail:
+        abort(404)
+    return render_template(
+        "tabcut_video_detail.html",
+        video=video_detail
+    )
+
+
 @bp.route("/tabcut/share", methods=["GET"])
 @bp.route("/tabcut/share/videos", methods=["GET"])
 def tabcut_share_videos_page():
@@ -961,6 +976,18 @@ def api_meta_hot_posts_product_title_translate_zh(post_id: int):
     if not _can_access_meta_hot_posts():
         return jsonify({"error": "forbidden"}), 403
     result = _meta_hot_posts().build_product_title_translate_zh_response(
+        post_id,
+        user_id=getattr(current_user, "id", None),
+    )
+    return jsonify(result.payload), result.status_code
+
+
+@bp.route("/api/meta-hot-posts/<int:post_id>/message/translate-zh", methods=["POST"])
+@login_required
+def api_meta_hot_posts_message_translate_zh(post_id: int):
+    if not _can_access_meta_hot_posts():
+        return jsonify({"error": "forbidden"}), 403
+    result = _meta_hot_posts().build_message_translate_zh_response(
         post_id,
         user_id=getattr(current_user, "id", None),
     )

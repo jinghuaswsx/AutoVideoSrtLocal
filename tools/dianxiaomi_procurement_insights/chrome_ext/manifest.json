@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "店小秘采购洞察",
+  "version": "1.0.0",
+  "description": "在店小秘云仓采购建议页面展示产品投放状态、订单量和真实 ROAS。",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://www.dianxiaomi.com/*",
+    "https://*.dianxiaomi.com/*",
+    "http://172.16.254.106/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.dianxiaomi.com/*",
+        "https://*.dianxiaomi.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_title": "店小秘采购洞察",
+    "default_popup": "popup.html"
+  }
+}

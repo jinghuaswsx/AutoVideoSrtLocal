@@ -13,6 +13,8 @@ from .settings import get_settings
 
 
 api = APIRouter(prefix="/api")
+PUSH_VIDEO_MAX_BYTES = 100 * 1024 * 1024
+PUSH_VIDEO_SUGGESTED_BITRATE = 3000
 
 
 def _service() -> AutoVideoService:
@@ -28,6 +30,52 @@ def _map_upstream_error(error: Exception) -> HTTPException:
             return HTTPException(404, detail="未找到该产品")
         return HTTPException(int(status or 502), detail=str(error))
     return HTTPException(502, detail=f"上游服务不可达：{error}")
+
+
+def _coerce_size_bytes(value: Any) -> int:
+    try:
+        size = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, size)
+
+
+def _format_size_mb(size_bytes: int) -> str:
+    return f"{_coerce_size_bytes(size_bytes) / 1024 / 1024:.1f} MB"
+
+
+def _video_too_large_detail(size_bytes: int) -> dict[str, Any]:
+    return {
+        "error": "video_too_large",
+        "message": (
+            f"提醒管理员：视频大小 {_format_size_mb(size_bytes)}，"
+            f"超过推送上限 {_format_size_mb(PUSH_VIDEO_MAX_BYTES)}。"
+            f"请打回重新处理，建议码率改到 {PUSH_VIDEO_SUGGESTED_BITRATE}。"
+        ),
+        "size_bytes": _coerce_size_bytes(size_bytes),
+        "size_mb": _format_size_mb(size_bytes),
+        "max_bytes": PUSH_VIDEO_MAX_BYTES,
+        "max_mb": _format_size_mb(PUSH_VIDEO_MAX_BYTES),
+        "suggested_bitrate": PUSH_VIDEO_SUGGESTED_BITRATE,
+    }
+
+
+def _ensure_size_under_push_limit(size_bytes: Any) -> None:
+    size = _coerce_size_bytes(size_bytes)
+    if size > PUSH_VIDEO_MAX_BYTES:
+        raise HTTPException(413, detail=_video_too_large_detail(size))
+
+
+def _ensure_payload_video_sizes(payload: dict[str, Any]) -> None:
+    for video in payload.get("videos") or []:
+        if isinstance(video, dict):
+            _ensure_size_under_push_limit(video.get("size"))
+
+
+async def _ensure_push_item_video_size(item_id: int, payload: dict[str, Any]) -> None:
+    item = await _service().get_push_item(item_id)
+    _ensure_size_under_push_limit(item.get("file_size"))
+    _ensure_payload_video_sizes(payload)
 
 
 def _build_localized_text_push_headers(
@@ -79,6 +127,7 @@ async def get_push_payload(product_code: str, lang: str = Query(...)) -> Any:
 async def push_medias(payload: dict[str, Any] = Body(...)) -> Any:
     """直接向下游推送（旧接口，不写回主项目 DB）。"""
     target = get_settings().push_medias_target
+    _ensure_payload_video_sizes(payload)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
@@ -199,6 +248,12 @@ async def push_item(item_id: int, payload: dict[str, Any] = Body(...)) -> Any:
     """
     settings = get_settings()
     target = settings.push_medias_target
+    try:
+        await _ensure_push_item_video_size(item_id, payload)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _map_upstream_error(exc) from exc
 
     # 1. POST 下游
     try:

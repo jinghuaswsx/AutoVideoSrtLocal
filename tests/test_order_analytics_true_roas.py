@@ -119,9 +119,9 @@ def test_get_realtime_roas_overview_summarizes_orders_and_meta_spend(monkeypatch
     assert result["summary"]["order_count"] == 2
     assert result["freshness"]["last_ad_updated_at"] == datetime(2026, 4, 29, 14, 5)
     assert result["hourly"][13]["order_count"] == 2
-    assert result["scope"]["stores"] == ["newjoy", "omurio"]
+    assert result["scope"]["stores"] == ["newjoy", "omurio", "cozywint"]
     assert result["scope"]["hourly_ad_ready"] is False
-    assert any("site_code IN ('newjoy', 'omurio')" in sql for sql, _args in calls)
+    assert any("site_code IN ('newjoy', 'omurio', 'cozywint')" in sql for sql, _args in calls)
 
 
 def test_get_realtime_roas_overview_includes_today_product_sales_stats(monkeypatch):
@@ -272,7 +272,7 @@ def test_realtime_roas_endpoint_returns_json(authed_client_no_db, monkeypatch):
 
 
 def test_data_analysis_page_has_true_roas_tab(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -280,7 +280,7 @@ def test_data_analysis_page_has_true_roas_tab(authed_client_no_db):
 
 
 def test_true_roas_tab_displays_revenue_shipping_and_total_sales(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -292,7 +292,7 @@ def test_true_roas_tab_displays_revenue_shipping_and_total_sales(authed_client_n
 
 
 def test_true_roas_tab_places_meta_result_after_order_count(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -317,7 +317,7 @@ def test_true_roas_tab_places_meta_result_after_order_count(authed_client_no_db)
 
 
 def test_data_analysis_tabs_put_order_and_ads_after_realtime(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -333,7 +333,7 @@ def test_data_analysis_tabs_put_order_and_ads_after_realtime(authed_client_no_db
 
 
 def test_realtime_tab_displays_ad_data_update_time(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -343,7 +343,7 @@ def test_realtime_tab_displays_ad_data_update_time(authed_client_no_db):
 
 
 def test_realtime_tab_displays_order_data_update_time(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -1130,7 +1130,7 @@ def test_get_realtime_roas_overview_current_day_ignores_future_roas_nodes(monkey
                 },
             ]
             if len(args) >= 2:
-                return [row for row in rows if row["node_at"] <= args[1]]
+                return [row for row in rows if row["node_at"] <= args[-1]]
             return rows
         if "FROM roi_realtime_daily_snapshots" in sql:
             return []
@@ -2521,7 +2521,7 @@ def _extract_realtime_panel(body):
 
 def test_realtime_tab_has_country_style_time_picker(authed_client_no_db):
     """实时大盘工具栏应含 6 个时间预设 + 自定义日期范围 + 刷新按钮（仿国家看板）。"""
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
 
@@ -2537,7 +2537,7 @@ def test_realtime_tab_has_country_style_time_picker(authed_client_no_db):
 
 
 def test_realtime_toolbar_uses_query_button_and_product_search(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
@@ -2551,7 +2551,7 @@ def test_realtime_toolbar_uses_query_button_and_product_search(authed_client_no_
 
 def test_realtime_tab_defaults_to_meta_business_date(authed_client_no_db):
     """实时大盘的“今天”应按 Meta 广告系统日，而不是北京时间自然日。"""
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
 
@@ -2565,7 +2565,7 @@ def test_realtime_tab_defaults_to_meta_business_date(authed_client_no_db):
 
 
 def test_embedded_product_profit_report_defaults_to_meta_business_date(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
 
@@ -2575,7 +2575,7 @@ def test_embedded_product_profit_report_defaults_to_meta_business_date(authed_cl
 
 def test_realtime_tab_drops_blue_primary_card_class(authed_client_no_db):
     """实时大盘 panel 内不应再使用 .oar-card.is-primary（浅蓝底大卡）。"""
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
 
@@ -2587,7 +2587,7 @@ def test_realtime_tab_drops_blue_primary_card_class(authed_client_no_db):
 
 
 def test_realtime_tab_has_product_sales_subtab(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
 
@@ -2606,7 +2606,7 @@ def test_realtime_tab_has_product_sales_subtab(authed_client_no_db):
 
 
 def test_realtime_roas_trend_hour_column_shows_timezone_and_bj_berlin_range(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
@@ -2625,7 +2625,7 @@ def test_realtime_roas_trend_hour_column_shows_timezone_and_bj_berlin_range(auth
 
 
 def test_realtime_tab_has_order_profit_detail_subtab(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
@@ -2636,7 +2636,7 @@ def test_realtime_tab_has_order_profit_detail_subtab(authed_client_no_db):
 
 
 def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
@@ -2672,7 +2672,7 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
 
 
 def test_realtime_order_profit_table_shows_every_fee_column(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
@@ -2701,7 +2701,7 @@ def test_realtime_order_profit_table_shows_every_fee_column(authed_client_no_db)
 
 
 def test_realtime_order_profit_renderer_is_wired(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
 
@@ -2710,7 +2710,7 @@ def test_realtime_order_profit_renderer_is_wired(authed_client_no_db):
 
 
 def test_realtime_order_profit_has_summary_and_pagination_controls(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
@@ -2751,7 +2751,7 @@ def test_realtime_unallocated_ad_card_is_clickable_and_campaign_filter_is_wired(
 
 
 def test_realtime_campaign_table_has_allocation_status_column(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)
@@ -2762,7 +2762,7 @@ def test_realtime_campaign_table_has_allocation_status_column(authed_client_no_d
 
 
 def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     subtab_start = body.index("function loadRealtimeSubTabs()")
@@ -2800,7 +2800,7 @@ def test_realtime_subtab_click_refreshes_details_without_top_cards(authed_client
 
 
 def test_order_analytics_daily_detail_escapes_country_headers(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     detail_start = body.index("function renderDailyDetail(rows, year, month)")
@@ -2812,7 +2812,7 @@ def test_order_analytics_daily_detail_escapes_country_headers(authed_client_no_d
 
 
 def test_product_profit_report_product_load_error_uses_text_content(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     products_start = body.index("function loadProducts()")
@@ -2825,7 +2825,7 @@ def test_product_profit_report_product_load_error_uses_text_content(authed_clien
 
 
 def test_realtime_subtabs_request_product_and_pagination_params(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     subtab_start = body.index("function loadRealtimeSubTabs()")
@@ -2841,7 +2841,7 @@ def test_realtime_subtabs_request_product_and_pagination_params(authed_client_no
 
 
 def test_realtime_order_detail_tables_use_infinite_loading(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     panel = _extract_realtime_panel(body)

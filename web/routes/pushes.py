@@ -1021,6 +1021,21 @@ def api_mark_pushed(item_id: int):
     body = request.get_json(silent=True) or {}
     payload = body.get("request_payload") or {}
     response_body = body.get("response_body")
+    item = medias.get_item(item_id)
+    if item:
+        try:
+            pushes.ensure_push_video_size(item)
+        except pushes.PushVideoTooLargeError as exc:
+            check = exc.check
+            return _json_response({
+                "error": "video_too_large",
+                "message": str(exc),
+                "size_bytes": check["size_bytes"],
+                "size_mb": check["size_mb"],
+                "max_bytes": check["max_bytes"],
+                "max_mb": check["max_mb"],
+                "suggested_bitrate": check["suggested_bitrate"],
+            }, 413)
     pushes.record_push_success(
         item_id=item_id,
         operator_user_id=current_user.id,
@@ -1028,7 +1043,6 @@ def api_mark_pushed(item_id: int):
         response_body=response_body,
     )
     _audit_push_action(item_id, "push_marked_succeeded")
-    item = medias.get_item(item_id)
     if item:
         try:
             _complete_task_for_push_item(

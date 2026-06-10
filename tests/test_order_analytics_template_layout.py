@@ -546,8 +546,10 @@ def test_order_analytics_mobile_tables_keep_shared_header_and_body_layout():
     template = _template_source()
     panel = _realtime_panel_source()
     ads_panel = _ads_panel_source()
-    campaign_start = panel.index('<div class="oar-subpanel" id="realtimeSubCampaigns">')
-    campaign_end = panel.index('<div class="oar-subpanel" id="realtimeSubTrend">', campaign_start)
+    campaign_id = panel.index('id="realtimeSubCampaigns"')
+    campaign_start = panel.rindex("<div", 0, campaign_id)
+    trend_id = panel.index('id="realtimeSubTrend"', campaign_id)
+    campaign_end = panel.rindex("<div", 0, trend_id)
     campaign_panel = panel[campaign_start:campaign_end]
 
     assert 'id="realtimeCampaignBody"' in campaign_panel
@@ -577,7 +579,12 @@ def test_ads_level_name_columns_expose_copy_buttons():
     assert "ev.stopPropagation();" in template
     assert "var copyLabel = adsCopyLabels[level];" in template
     assert "if (copyLabel)" in template
-    assert "if (level === 'ad')" not in template
+    ad_branch_start = template.index("if (level === 'ad')")
+    ad_branch = template[
+        ad_branch_start:
+        template.index("if (cardsContainer) {", ad_branch_start)
+    ]
+    assert 'data-ads-copy-name="' in ad_branch
     assert 'data-ads-copy-name="' not in template[: template.index("function adsRenderList")]
 
 

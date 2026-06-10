@@ -10,6 +10,8 @@ from appcore import llm_client
 
 
 TRANSLATE_USE_CASE = "meta_hot_posts.translate_message"
+MANUAL_TRANSLATE_PROVIDER = "openrouter"
+MANUAL_TRANSLATE_MODEL = "google/gemini-3.1-flash-lite"
 
 
 InvokeChatFn = Callable[..., dict[str, Any]]
@@ -61,6 +63,8 @@ def translate_message_html(
     message_html: str,
     *,
     user_id: int | None = None,
+    provider_override: str | None = None,
+    model_override: str | None = None,
     invoke_chat_fn: InvokeChatFn = llm_client.invoke_chat,
 ) -> str:
     source_text = _plain_text_from_html(message_html)
@@ -75,6 +79,8 @@ def translate_message_html(
         user_id=user_id,
         temperature=0.0,
         max_tokens=2048,
+        provider_override=provider_override,
+        model_override=model_override,
         billing_extra={"source": "meta_hot_posts_message"},
     )
     translated_text = _strip_code_fence(str(response.get("text") or ""))

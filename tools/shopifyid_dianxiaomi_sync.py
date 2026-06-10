@@ -49,6 +49,7 @@ IGNORED_PRODUCT_SYNC_FAILURE_STORES = {"SmartGearX"}
 PRODUCT_SYNC_TIMEOUT_SECONDS = 600
 DEFAULT_SHOPIFY_DOMAINS = ("newjoyloo.com", "omurio.com")
 DEFAULT_SHOPIFY_DOMAIN = "newjoyloo.com"
+AUTOMATION_VIEWPORT = {"width": 1440, "height": 1000}
 SHOPIFY_STOREFRONT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -951,11 +952,69 @@ def _click_sync_products_button(page) -> None:
     button.first.wait_for(state="visible", timeout=30000)
     if button.count() != 1:
         raise RuntimeError("未找到唯一的店小秘“同步产品”按钮")
+    button = button.first
+
+    def _scroll_into_view() -> None:
+        try:
+            button.scroll_into_view_if_needed(timeout=3000)
+            return
+        except Exception:
+            pass
+        try:
+            button.evaluate(
+                """
+                (el) => {
+                  el.scrollIntoView({block: "center", inline: "center"});
+                }
+                """,
+                timeout=3000,
+            )
+        except Exception:
+            pass
+
+    def _click(timeout: int) -> None:
+        _scroll_into_view()
+        button.click(timeout=timeout)
+
     try:
-        button.click(timeout=5000)
-    except Exception:
+        _click(5000)
+    except Exception as first_exc:
         _dismiss_dianxiaomi_notice_overlays(page)
-        button.click(timeout=10000)
+        try:
+            _click(10000)
+            return
+        except Exception as second_exc:
+            try:
+                _scroll_into_view()
+                button.evaluate(
+                    """
+                    (el) => {
+                      el.scrollIntoView({block: "center", inline: "center"});
+                      el.click();
+                    }
+                    """,
+                    timeout=3000,
+                )
+            except Exception as js_exc:
+                raise RuntimeError(
+                    "点击店小秘“同步产品”按钮失败："
+                    f"首次 click={first_exc}; 重试 click={second_exc}; JS click={js_exc}"
+                ) from js_exc
+
+
+def _ensure_page_automation_viewport(page) -> None:
+    """Recover tiny CDP pages before driving Dianxiaomi's visible UI."""
+    try:
+        size = page.evaluate(
+            "() => ({width: window.innerWidth || 0, height: window.innerHeight || 0})"
+        )
+        width = int((size or {}).get("width") or 0)
+        height = int((size or {}).get("height") or 0)
+        if width >= 1024 and height >= 640:
+            return
+    except Exception:
+        pass
+    page.set_viewport_size(AUTOMATION_VIEWPORT)
 
 
 def _assert_shopify_product_sync_success(detail_text: str) -> None:
@@ -1250,6 +1309,7 @@ def _run_main_impl(argv: list[str] | None = None) -> tuple[int, dict[str, Any], 
         )
         try:
             page = context.pages[0] if context.pages else context.new_page()
+            _ensure_page_automation_viewport(page)
             page.goto(ONLINE_URL, wait_until="domcontentloaded")
             print(f"已打开店小秘页面：{ONLINE_URL}")
             if not args.skip_login_prompt:

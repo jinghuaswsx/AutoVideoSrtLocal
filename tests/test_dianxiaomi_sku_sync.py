@@ -130,6 +130,53 @@ def test_run_sync_uses_public_shopify_variants_when_dianxiaomi_list_is_truncated
     ][0]["variants"] == 9
 
 
+def test_build_remote_select_products_sql_includes_per_domain_shopify_ids():
+    from tools import dianxiaomi_sku_sync as mod
+
+    sql = mod.build_remote_select_products_sql()
+
+    assert "media_products" in sql
+    assert "media_product_shopify_ids" in sql
+    assert "UNION" in sql
+    assert "ORDER BY id ASC, shopifyid ASC" in sql
+
+
+def test_plan_sync_aggregates_multiple_shopify_ids_for_one_product():
+    from tools import dianxiaomi_sku_sync as mod
+
+    plan = mod.plan_sync(
+        shopify_products=[
+            {
+                "shopify_product_id": "SP1",
+                "shopify_title": "Default Title",
+                "variants": [
+                    {"shopify_variant_id": "V1", "pair_key": "V1", "shopify_sku": None},
+                ],
+            },
+            {
+                "shopify_product_id": "SP2",
+                "shopify_title": "Domain Title",
+                "variants": [
+                    {"shopify_variant_id": "V2", "pair_key": "V2", "shopify_sku": None},
+                ],
+            },
+        ],
+        dxm_index={},
+        local_products=[
+            {"id": 320, "shopifyid": "SP1", "shopify_title": ""},
+            {"id": 320, "shopifyid": "SP2", "shopify_title": ""},
+        ],
+    )
+
+    assert plan["summary"]["local_products_with_shopifyid"] == 1
+    assert plan["summary"]["local_shopifyids_count"] == 2
+    assert len(plan["sku_replacements"]) == 1
+    assert plan["sku_replacements"][0][0] == 320
+    assert [row["shopify_product_id"] for row in plan["sku_replacements"][0][1]] == ["SP1", "SP2"]
+    assert [row["shopify_variant_id"] for row in plan["sku_replacements"][0][1]] == ["V1", "V2"]
+    assert plan["matched_products"][0]["shopifyids"] == ["SP1", "SP2"]
+
+
 def test_run_sync_fetches_public_variants_only_for_local_shopify_products(tmp_path):
     from tools import dianxiaomi_sku_sync as mod
 

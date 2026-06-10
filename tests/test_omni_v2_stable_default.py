@@ -285,6 +285,7 @@ def test_v2_step_resolution_ignores_global_omni_default_preset(monkeypatch):
         "loudness_match",
         "subtitle",
         "compose",
+        "video_size_adjustment",
         "export",
     ]
 

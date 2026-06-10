@@ -644,6 +644,21 @@ def upsert_combo_component(
 
 def _candidate_shopify_ids(product: dict[str, Any]) -> set[str]:
     out = {str(product.get("shopifyid") or "").strip()}
+    try:
+        media_product_id = int(product.get("id") or 0)
+    except (TypeError, ValueError):
+        media_product_id = 0
+    if media_product_id:
+        for row in query(
+            """
+            SELECT shopify_product_id
+            FROM media_product_shopify_ids
+            WHERE product_id=%s
+            ORDER BY domain ASC
+            """,
+            (media_product_id,),
+        ):
+            out.add(str(row.get("shopify_product_id") or "").strip())
     base_code = normalize_product_code(product.get("product_code"))
     link = str(product.get("product_link") or "").strip()
     if base_code:

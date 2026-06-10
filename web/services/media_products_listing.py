@@ -58,6 +58,7 @@ def build_products_list_response(
     get_product_lang_ad_summary_cache_fn=None,
     get_product_order_stats_fn=None,
     get_product_stability_cache_fn=None,
+    list_shopify_product_ids_batch_fn=None,
     serialize_product_fn: SerializeProductFn | None = None,
 ) -> dict:
     list_products_fn = list_products_fn or medias.list_products
@@ -98,6 +99,9 @@ def build_products_list_response(
     get_product_stability_cache_fn = (
         get_product_stability_cache_fn
         or media_product_stability.get_product_stability_cache
+    )
+    list_shopify_product_ids_batch_fn = (
+        list_shopify_product_ids_batch_fn or medias.list_shopify_product_ids_batch
     )
 
     keyword = str(_request_arg(args, "keyword", "") or "").strip()
@@ -144,6 +148,7 @@ def build_products_list_response(
     order_stats_map = get_product_order_stats_fn(pids)
     stability_map = get_product_stability_cache_fn(pids)
     skus_map = list_product_skus_batch_fn(pids)
+    shopify_ids_map = list_shopify_product_ids_batch_fn(pids)
     all_dxm_skus = sorted({
         (sku.get("dianxiaomi_sku") or "").strip()
         for sku_rows in skus_map.values()
@@ -172,6 +177,7 @@ def build_products_list_response(
             skus=skus_map.get(row["id"], []),
             yuncang_index=yuncang_index,
             sku_actual_roas_index=sku_actual_roas_index,
+            shopify_ids=shopify_ids_map.get(row["id"], []),
         )
         for row in rows
     ]

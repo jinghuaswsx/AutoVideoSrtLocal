@@ -97,6 +97,51 @@ def test_serialize_product_exposes_material_metadata_fields():
     assert data["listing_status"] == "下架"
 
 
+def test_serialize_product_exposes_per_domain_shopify_ids(monkeypatch):
+    from web.routes import medias as route
+
+    monkeypatch.setattr(route.product_link_domains, "get_default_domain", lambda: "newjoyloo.com")
+
+    data = route._serialize_product(
+        {
+            "id": 7,
+            "name": "多域名商品",
+            "product_code": "multi-domain",
+            "shopifyid": "111",
+            "created_at": None,
+            "updated_at": None,
+            "listing_status": "上架",
+        },
+        items_count=0,
+        covers={},
+        shopify_ids=[
+            {"domain": "omurio.com", "shopify_product_id": "222", "updated_at": None},
+        ],
+    )
+
+    assert data["shopifyid"] == "111"
+    assert data["shopify_ids_by_domain"] == {
+        "newjoyloo.com": "111",
+        "omurio.com": "222",
+    }
+    assert data["shopify_ids"] == [
+        {
+            "domain": "omurio.com",
+            "shopify_product_id": "222",
+            "source": "domain_cache",
+            "is_default_domain": False,
+            "updated_at": None,
+        },
+        {
+            "domain": "newjoyloo.com",
+            "shopify_product_id": "111",
+            "source": "legacy_shopifyid",
+            "is_default_domain": True,
+            "updated_at": None,
+        },
+    ]
+
+
 def test_down_shelf_product_blocks_item_bootstrap(authed_client_no_db, monkeypatch):
     from web.routes import medias as route
 

@@ -81,7 +81,7 @@ def test_order_profit_permission_grant_allows_user_page_access(monkeypatch):
 def test_data_analytics_permission_grant_allows_user_page_access(monkeypatch):
     client = _client_for_user(monkeypatch, permissions={"data_analytics": True})
 
-    response = client.get("/order-analytics")
+    response = client.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     assert "order-analytics" in response.get_data(as_text=True)

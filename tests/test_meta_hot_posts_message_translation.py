@@ -21,6 +21,27 @@ def test_translate_message_html_extracts_plain_text_and_sanitizes_output():
     assert "只输出中文翻译" in calls[0][1]["messages"][0]["content"]
 
 
+def test_translate_message_html_accepts_flash_lite_override():
+    calls = []
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        calls.append((use_case_code, kwargs))
+        return {"text": "便携工具套装"}
+
+    translated = message_translation.translate_message_html(
+        "<p>A practical multitool kit.</p>",
+        user_id=7,
+        provider_override=message_translation.MANUAL_TRANSLATE_PROVIDER,
+        model_override=message_translation.MANUAL_TRANSLATE_MODEL,
+        invoke_chat_fn=fake_invoke_chat,
+    )
+
+    assert translated == "便携工具套装"
+    assert calls[0][0] == "meta_hot_posts.translate_message"
+    assert calls[0][1]["provider_override"] == "openrouter"
+    assert calls[0][1]["model_override"] == "google/gemini-3.1-flash-lite"
+
+
 def test_translate_message_html_skips_blank_message_without_llm():
     def fail_invoke_chat(*args, **kwargs):
         raise AssertionError("blank message must not call llm")

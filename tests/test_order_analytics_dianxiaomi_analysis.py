@@ -487,7 +487,7 @@ def test_country_dashboard_endpoint_500_does_not_leak_exception_detail(
 
 
 def test_data_analysis_page_has_shopify_and_dianxiaomi_tabs(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -502,7 +502,7 @@ def test_data_analysis_page_has_shopify_and_dianxiaomi_tabs(authed_client_no_db)
 
 
 def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -543,7 +543,7 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
 
 def test_data_analysis_page_dianxiaomi_uses_compact_country_style_toolbar(authed_client_no_db):
     """订单分析 tab 工具栏改造（2026-05-02）：仿国家看板/实时大盘的紧凑 segmented 工具栏。"""
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -585,7 +585,7 @@ def test_data_analysis_page_dianxiaomi_uses_compact_country_style_toolbar(authed
 
 
 def test_data_analysis_page_enlarges_dianxiaomi_store_filter(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -601,7 +601,7 @@ def test_data_analysis_page_enlarges_dianxiaomi_store_filter(authed_client_no_db
 
 
 def test_data_analysis_page_hardens_dashboard_rendering_and_dynamic_loading(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -639,7 +639,7 @@ def test_data_analysis_page_hardens_dashboard_rendering_and_dynamic_loading(auth
 
 
 def test_data_analysis_page_dianxiaomi_orders_use_infinite_loading(authed_client_no_db):
-    response = authed_client_no_db.get("/order-analytics")
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)

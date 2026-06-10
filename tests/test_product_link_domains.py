@@ -19,6 +19,14 @@ def test_build_product_page_url_uses_domain_and_language_path():
     ) == "https://omurio.com/de/products/demo-rjc"
 
 
+def test_canonical_product_page_url_strips_query_and_fragment():
+    from appcore import product_link_domains
+
+    assert product_link_domains.canonical_product_page_url(
+        " https://newjoyloo.com/de/products/demo-rjc?variant=123&utm_source=x#reviews "
+    ) == "https://newjoyloo.com/de/products/demo-rjc"
+
+
 def test_domain_language_keys_are_stable_and_parseable():
     from appcore import product_link_domains
 
@@ -74,6 +82,34 @@ def test_resolve_product_page_url_rows_expands_enabled_domains_and_overrides(mon
             "url": "https://omurio.com/de/products/demo-rjc",
         },
     ]
+
+
+def test_resolve_product_page_url_rows_strips_saved_query_params(monkeypatch):
+    from appcore import product_link_domains
+
+    monkeypatch.setattr(
+        product_link_domains,
+        "list_enabled_product_domains",
+        lambda product_id: [
+            {"id": 1, "domain": "newjoyloo.com"},
+        ],
+    )
+    product = {
+        "id": 10,
+        "product_code": "demo-rjc",
+        "localized_links_json": {
+            "de": {
+                "newjoyloo.com": (
+                    "https://newjoyloo.com/de/products/demo-rjc"
+                    "?variant=123&utm_source=ads#reviews"
+                )
+            }
+        },
+    }
+
+    rows = product_link_domains.resolve_product_page_url_rows(product, "de")
+
+    assert rows[0]["url"] == "https://newjoyloo.com/de/products/demo-rjc"
 
 
 def test_list_enabled_product_domains_defaults_to_newjoyloo_only(monkeypatch):
