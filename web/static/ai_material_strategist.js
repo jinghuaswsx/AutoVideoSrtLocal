@@ -168,6 +168,22 @@
     }
   }
 
+  function getRoasStatus(roasVal, breakevenRoas) {
+    if (roasVal === null || roasVal === undefined || roasVal === '' || roasVal === 0) return 'zero';
+    const r = Number(roasVal);
+    if (!Number.isFinite(r) || r <= 0) return 'zero';
+    const be = Number(breakevenRoas || 0);
+    if (be > 0) {
+      if (r >= be) return 'green';
+      if (r >= be * 0.8 || r >= 1.2) return 'orange';
+      return 'red';
+    } else {
+      if (r >= 1.5) return 'green';
+      if (r >= 1.2) return 'orange';
+      return 'red';
+    }
+  }
+
   function getSpendStyle(spendVal) {
     const val = Number(spendVal || 0);
     if (val > 1000) {
@@ -665,14 +681,25 @@
       (item.country_summary || []).forEach((country) => { byCode[country.country_code] = country; });
       const cells = countries.map((code) => {
         const country = byCode[code] || {};
+        const spend = Number(country.ad_spend_usd || 0);
+        const roas = Number(country.ad_roas || 0);
+        
         const cls = country.delivery_status || 'never';
+        const isZero = spend === 0;
+        const cellCls = `${cls} ${isZero ? 'is-zero' : ''}`;
+        
+        const spendClass = isZero ? 'aims-cell-spend zero' : 'aims-cell-spend';
+        const roasStatus = getRoasStatus(country.ad_roas, item.effective_breakeven_roas);
+        const roasClass = `aims-cell-roas roas-${roasStatus}`;
+        
         const task = country.blocking_task || country.cancelled_task;
         const taskTitle = task ? ` · 任务 #${task.task_id} ${taskStatusLabel(task)}` : '';
+        
         return `
-          <div class="aims-country-cell ${esc(cls)}" title="${esc(code)} ${fmtUsd(country.ad_spend_usd)} ROAS ${fmtRoas(country.ad_roas)}${esc(taskTitle)}">
-            <strong>${fmtUsd(country.ad_spend_usd)}</strong><br>
-            <span class="${esc(getRoasColorClass(country.ad_roas, item.effective_breakeven_roas))}">R ${fmtRoas(country.ad_roas)}</span>
-            ${task ? `<br>${renderTaskLink(task, true)}` : ''}
+          <div class="aims-country-cell ${esc(cellCls)}" title="${esc(code)} ${fmtUsd(spend)} ROAS ${fmtRoas(country.ad_roas)}${esc(taskTitle)}">
+            <span class="${spendClass}">${fmtUsd(spend)}</span>
+            <span class="${roasClass}">${roas > 0 ? `R ${fmtRoas(country.ad_roas)}` : '—'}</span>
+            ${task ? `${renderTaskLink(task, true)}` : ''}
           </div>
         `;
       }).join('');
@@ -697,10 +724,10 @@
             ${productNode}
             <div>${esc(item.product_code)}</div>
           </td>
-          <td>${fmtUsd(m.spend_30d)}</td>
+          <td class="aims-table-spend">${fmtUsd(m.spend_30d)}</td>
           <td>${fmtNumber(m.orders_30d)}</td>
-          <td class="${esc(getRoasColorClass(m.true_roas_30d, item.effective_breakeven_roas))}">${fmtRoas(m.true_roas_30d)}</td>
-          <td>${fmtUsd(m.spend_yesterday)}</td>
+          <td class="aims-table-roas ${esc(getRoasColorClass(m.true_roas_30d, item.effective_breakeven_roas))}">${fmtRoas(m.true_roas_30d)}</td>
+          <td class="aims-table-spend">${fmtUsd(m.spend_yesterday)}</td>
           <td><span class="aims-chip ${String(ai.priority || '').toLowerCase()}">${esc(ai.priority || 'P3')}</span></td>
           <td>${esc(actionLabel(ai.primary_action))}</td>
           <td>${mk.video_name ? `${esc(mk.video_name)}<br><span>${fmtUsd(mk.cumulative_90_spend)} · 广告 ${fmtNumber(mk.video_ads_count)}</span>` : '—'}</td>
