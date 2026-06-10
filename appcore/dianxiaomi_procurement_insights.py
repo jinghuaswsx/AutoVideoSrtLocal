@@ -21,6 +21,13 @@ from appcore.order_analytics import data_quality as dq
 _MAX_TEXT_LEN = 500
 _MAX_TOKENS = 24
 
+_PERIODS: tuple[tuple[str, str], ...] = (
+    ("today", "今天"),
+    ("yesterday", "昨天"),
+    ("last_7d", "7天"),
+    ("last_30d", "30天"),
+)
+
 _MARKET_GROUPS: list[tuple[str, list[str], str]] = [
     ("en", ["US", "GB", "AU", "CA", "IE", "NZ"], "英语市场"),
     ("de", ["DE", "AT"], "德国市场"),
@@ -88,6 +95,19 @@ def _float_or_none(value: Any) -> float | None:
 
 def _float_value(value: Any) -> float:
     parsed = _float_or_none(value)
+    return parsed if parsed is not None else 0.0
+
+
+def _first_float_or_none(*values: Any) -> float | None:
+    for value in values:
+        parsed = _float_or_none(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _first_float_value(*values: Any) -> float:
+    parsed = _first_float_or_none(*values)
     return parsed if parsed is not None else 0.0
 
 
@@ -361,6 +381,20 @@ def _market_delivery_status(row: dict[str, Any]) -> str:
     return media_product_ad_status_cache.STATUS_STOPPED
 
 
+def _build_periods(ad_total: dict[str, Any], order_counts: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    periods: dict[str, dict[str, Any]] = {}
+    for key, label in _PERIODS:
+        ad_orders = _int_value(ad_total.get(f"{key}_orders"))
+        fallback_orders = _int_value(order_counts.get(key))
+        periods[key] = {
+            "label": label,
+            "orders": ad_orders or fallback_orders,
+            "ad_spend_usd": _float_value(ad_total.get(f"{key}_spend")),
+            "roas": _float_or_none(ad_total.get(f"{key}_roas")),
+        }
+    return periods
+
+
 def _build_markets(ad_report: dict[str, Any]) -> list[dict[str, Any]]:
     by_lang = {
         _normalize_lang(lang): row
@@ -436,6 +470,7 @@ def build_insights_response(raw_clues: dict[str, Any]) -> dict[str, Any]:
     match = resolve_product(clues)
     today = current_meta_business_date()
     if not match:
+        periods = _build_periods({}, {})
         return {
             "ok": True,
             "matched": False,
@@ -445,9 +480,11 @@ def build_insights_response(raw_clues: dict[str, Any]) -> dict[str, Any]:
                 "delivery_status": media_product_ad_status_cache.STATUS_NEVER,
                 "delivery_label": _delivery_label(media_product_ad_status_cache.STATUS_NEVER),
                 "orders": {"today": 0, "yesterday": 0, "last_7d": 0, "last_30d": 0},
+                "total_orders": 0,
                 "true_roas": None,
                 "ad_spend_usd": 0.0,
                 "total_revenue_usd": 0.0,
+                "periods": periods,
                 "computed_at": None,
             },
             "markets": _build_markets({}),
@@ -466,6 +503,8 @@ def build_insights_response(raw_clues: dict[str, Any]) -> dict[str, Any]:
     ad_report = media_product_ad_orders_report.get_product_ad_orders_report(product_id, today=today)
 
     total_orders = (order_stats.get("total") or {}) if isinstance(order_stats, dict) else {}
+    ad_total = (ad_report.get("total") or {}) if isinstance(ad_report, dict) else {}
+    periods = _build_periods(ad_total, total_orders)
     status = media_product_ad_status_cache.normalize_delivery_status_filter(
         ad_summary.get("delivery_status")
     )
@@ -482,12 +521,14 @@ def build_insights_response(raw_clues: dict[str, Any]) -> dict[str, Any]:
             "last_7d": _int_value(total_orders.get("last_7d")),
             "last_30d": _int_value(total_orders.get("last_30d")),
         },
-        "true_roas": _float_or_none(ad_summary.get("overall_roas")),
-        "ad_spend_usd": _float_value(ad_summary.get("ad_spend_usd")),
+        "total_orders": _int_value(ad_total.get("total_orders")) or _int_value(total_orders.get("last_30d")),
+        "true_roas": _first_float_or_none(ad_total.get("total_roas"), ad_summary.get("overall_roas")),
+        "ad_spend_usd": _first_float_value(ad_total.get("total_spend"), ad_summary.get("ad_spend_usd")),
         "active_spend_usd": _float_value(ad_summary.get("active_7d_ad_spend_usd")),
         "order_revenue_usd": _float_value(ad_summary.get("order_revenue_usd")),
         "shipping_revenue_usd": _float_value(ad_summary.get("shipping_revenue_usd")),
         "total_revenue_usd": _float_value(ad_summary.get("total_revenue_usd")),
+        "periods": periods,
         "delivery_start_time": _iso(ad_summary.get("delivery_start_time")),
         "delivery_end_time": _iso(ad_summary.get("delivery_end_time")),
         "active_days": _int_value(ad_summary.get("active_days")),

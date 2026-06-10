@@ -7,6 +7,7 @@
 运营在店小秘后台进入“店小秘云仓”的“采购建议”或“缺货建议”页面时，需要快速判断当前商品是否值得采购、采购数量是否需要放大或收缩。现有 AutoVideoSrtLocal 已经同步店小秘订单、店小秘云仓 SKU、Meta 广告消耗和素材产品投放状态，但这些数据散落在后台页面中，无法直接叠加到店小秘采购页面。
 
 首版目标是在 Chrome 插件里读取当前店小秘页面可见的 SKU / 商品线索，请求 AutoVideoSrtLocal 后端，显示最小决策数据。
+2026-06-10 追加目标：运营点击“一键生成采购订单”并出现“生成采购单”弹窗后，插件必须把采购洞察显示在弹窗右侧到屏幕最右边的区域，面板顶部和高度贴齐弹窗，并优先从弹窗内商品行确定性锁定产品。
 
 ## 事实来源
 
@@ -29,13 +30,17 @@
    - 今天、昨天、最近 7 天订单量。
    - 产品整体真实 ROAS。
 6. 响应带匹配证据与 `data_quality`，方便明天按真实页面继续调试。
+7. 弹窗模式核心展示：
+   - 总消耗、总 ROAS、总订单量作为主核心指标，字体约为普通指标 2 倍、蓝色加粗。
+   - 今天、昨天、7 天、30 天按表格展示订单、消耗、ROAS；每行订单量为核心，蓝色加粗。
+   - 弹窗可见时，展示区域贴着弹窗右侧，高度与弹窗一致；弹窗不可见时才回退为原右侧浮动紧凑面板。
 
 ## 非目标
 
 - 首版不改店小秘自动同步、订单导入、Meta 同步、缓存刷新定时任务。
 - 首版不新增数据库表或迁移。
 - 首版不在插件里计算 ROAS 或订单量；插件只采集线索和展示后端结果。
-- 首版不承诺精确解析“采购建议 / 缺货建议”页面的私有 DOM；真实入口确认后再补页面专用选择器。
+- 首版不承诺精确解析所有“采购建议 / 缺货建议”页面的私有 DOM；但“生成采购单”弹窗是已确认入口，必须提供页面专用选择器与通用兜底规则。
 - 首版不绕过 AutoVideoSrtLocal 登录权限；未登录时插件提示用户先登录后台。
 
 ## 后端接口
@@ -90,9 +95,16 @@ GET /dianxiaomi-procurement-insights/api/health
     "delivery_status": "active",
     "delivery_label": "投放中",
     "orders": {"today": 1, "yesterday": 2, "last_7d": 8, "last_30d": 22},
+    "total_orders": 42,
     "true_roas": 2.31,
     "ad_spend_usd": 120.5,
     "total_revenue_usd": 278.3,
+    "periods": {
+      "today": {"label": "今天", "orders": 1, "ad_spend_usd": 12.3, "roas": 1.23},
+      "yesterday": {"label": "昨天", "orders": 2, "ad_spend_usd": 23.4, "roas": 2.34},
+      "last_7d": {"label": "7天", "orders": 8, "ad_spend_usd": 88.8, "roas": 2.1},
+      "last_30d": {"label": "30天", "orders": 22, "ad_spend_usd": 320.5, "roas": 1.9}
+    },
     "computed_at": "2026-06-09T12:00:00"
   },
   "markets": [],
@@ -104,6 +116,8 @@ GET /dianxiaomi-procurement-insights/api/health
 
 - 插件默认在店小秘页面右侧显示紧凑面板。
 - 面板有刷新按钮，刷新时读取当前鼠标所在行；如果没有行，则读取页面可见文本的候选线索。
+- “生成采购单”弹窗可见时，插件优先读取弹窗内的 SKU、商品中文名、商品图片与商品行文本，并用这些线索请求后端；弹窗线索优先级高于鼠标所在行和整页扫描。
+- “生成采购单”弹窗可见时，插件面板进入弹窗锚定模式：左边贴弹窗右侧，右边贴近视口右侧，顶部与弹窗顶部一致，高度与弹窗一致，内容区内部滚动。
 - 面板保存后端地址，默认指向生产环境 `http://172.16.254.106`。
 - 后端未登录或权限不足时，面板显示需要登录后台。
 - 插件 popup 提供后端地址保存、测试连接和打开后台入口。
@@ -112,6 +126,7 @@ GET /dianxiaomi-procurement-insights/api/health
 
 - 投放状态、真实 ROAS、总收入、总广告消耗：优先读取 `appcore.media_product_ad_status_cache.get_product_ad_summary_cache`。
 - 订单窗口：读取 `appcore.media_product_order_stats.get_product_order_stats`。
+- 总订单量与今天 / 昨天 / 7 天 / 30 天的订单、消耗、ROAS：读取 `appcore.media_product_ad_orders_report.get_product_ad_orders_report` 的 `total` 行；如果订单窗口服务已有更新但广告订单报告缺少对应订单字段，可用 `media_product_order_stats` 订单数补齐。
 - 市场/语种明细：读取 `appcore.media_product_ad_orders_report.get_product_ad_orders_report`，首版按语种市场组展示，不承诺等价于 Meta 精确 geo breakdown。
 - `data_quality`：无匹配、缓存缺失、低置信度匹配均返回 warning。
 
@@ -119,7 +134,7 @@ GET /dianxiaomi-procurement-insights/api/health
 
 - 服务层测试覆盖 SKU 匹配、product code 兜底、无匹配响应、汇总数据组装。
 - 路由测试覆盖登录后 GET 接口返回 JSON。
-- 插件静态测试覆盖 manifest host permissions、content script、background fetch 入口。
+- 插件静态测试覆盖 manifest host permissions、content script、background fetch 入口、弹窗优先线索采集、弹窗锚定布局和周期表格关键 CSS。
 - 聚焦验证优先运行：
 
 ```bash

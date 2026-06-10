@@ -3,6 +3,8 @@ const MAX_TEXT_SCAN = 7000;
 
 let lastPointerTarget = null;
 let panelCollapsed = false;
+let placementFrame = 0;
+let lastModalSignature = "";
 let currentState = {
   status: "idle",
   clues: null,
@@ -33,7 +35,63 @@ function compactText(text, limit = 240) {
   return String(text || "").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
+function isVisibleElement(element) {
+  if (!(element instanceof Element)) return false;
+  const rect = element.getBoundingClientRect();
+  const style = window.getComputedStyle(element);
+  return (
+    rect.width > 0
+    && rect.height > 0
+    && style.display !== "none"
+    && style.visibility !== "hidden"
+    && Number(style.opacity || 1) > 0
+  );
+}
+
+function findPurchaseModal() {
+  const modalSelectors = [
+    "[role='dialog']",
+    "[aria-modal='true']",
+    ".modal",
+    ".modal-dialog",
+    ".modal-content",
+    ".layui-layer",
+    ".el-dialog",
+    ".ant-modal",
+    ".ui-dialog",
+  ];
+  const directCandidates = modalSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
+  const broadCandidates = uniqueLimitedElements([...directCandidates, ...Array.from(document.querySelectorAll("div"))]);
+  return broadCandidates
+    .filter((element) => {
+      if (!isVisibleElement(element)) return false;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 520 || rect.height < 260) return false;
+      if (rect.width > window.innerWidth - 120 || rect.height > window.innerHeight - 20) return false;
+      const text = compactText(element.innerText, 1200);
+      return /生成采购单/.test(text) && /(采购计划|添加商品|采购单价|采购数量|云仓商品信息)/.test(text);
+    })
+    .sort((a, b) => {
+      const ar = a.getBoundingClientRect();
+      const br = b.getBoundingClientRect();
+      return (ar.width * ar.height) - (br.width * br.height);
+    })[0] || null;
+}
+
+function uniqueLimitedElements(elements) {
+  const seen = new Set();
+  const out = [];
+  elements.forEach((element) => {
+    if (!(element instanceof Element) || seen.has(element)) return;
+    seen.add(element);
+    out.push(element);
+  });
+  return out;
+}
+
 function getScanRoot() {
+  const modal = findPurchaseModal();
+  if (modal) return modal;
   const target = lastPointerTarget || document.activeElement;
   if (target instanceof Element) {
     const row = target.closest(
@@ -109,10 +167,11 @@ function collectClues() {
   const labelledSkuCodes = extractLabelValues(bodyText, skuCodeLabels);
   const tokens = bodyText.match(/\b[A-Za-z0-9][A-Za-z0-9._-]{2,80}\b/g) || [];
   const skuCandidates = tokens.filter(looksLikeSku);
-  const shopifyProductIds = uniqueLimited(tokens.filter((token) => /^\d{8,}$/.test(token)), 6);
+  const numericSkuCandidates = tokens.filter((token) => /^\d{8,}$/.test(token));
+  const shopifyProductIds = uniqueLimited(numericSkuCandidates, 6);
 
   return {
-    skus: uniqueLimited([...labelledSkus, ...skuCandidates], 16),
+    skus: uniqueLimited([...labelledSkus, ...skuCandidates, ...numericSkuCandidates], 16),
     productSkus: uniqueLimited(labelledProductSkus, 10),
     skuCodes: uniqueLimited(labelledSkuCodes, 10),
     shopifyProductIds,
@@ -162,6 +221,27 @@ function renderMarkets(markets) {
   }).join("");
 }
 
+function renderPeriodRows(periods) {
+  const normalized = periods || {};
+  const rows = [
+    ["today", "今天"],
+    ["yesterday", "昨天"],
+    ["last_7d", "7天"],
+    ["last_30d", "30天"],
+  ];
+  return rows.map(([key, fallbackLabel]) => {
+    const row = normalized[key] || {};
+    return `
+      <tr>
+        <th scope="row">${escapeHtml(row.label || fallbackLabel)}</th>
+        <td class="dpi-period-orders">${fmtNumber(row.orders)}</td>
+        <td>$${fmtNumber(row.ad_spend_usd, 2)}</td>
+        <td>${fmtRoas(row.roas)}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -199,6 +279,7 @@ function renderContent() {
   const orders = summary.orders || {};
   const product = payload.product || {};
   const matched = Boolean(payload.matched);
+  const totalOrders = summary.total_orders ?? orders.last_30d ?? 0;
   return `
     <div class="dpi-body">
       <div class="dpi-product-line">
@@ -206,19 +287,38 @@ function renderContent() {
       </div>
       <div class="dpi-status-line">
         <span class="dpi-status ${statusClass(summary.delivery_status)}">${escapeHtml(summary.delivery_label || "--")}</span>
-        <span class="dpi-muted">消耗 $${fmtNumber(summary.ad_spend_usd, 2)}</span>
+        <span class="dpi-muted">${escapeHtml(product.match_method || "")}</span>
       </div>
-      <div class="dpi-kpis">
-        <div><span>今日</span><strong>${fmtNumber(orders.today)}</strong></div>
-        <div><span>昨日</span><strong>${fmtNumber(orders.yesterday)}</strong></div>
-        <div><span>7日</span><strong>${fmtNumber(orders.last_7d)}</strong></div>
-        <div><span>真实ROAS</span><strong>${fmtRoas(summary.true_roas)}</strong></div>
+      <div class="dpi-total-grid">
+        <div class="dpi-total-card">
+          <span>总消耗</span>
+          <strong class="dpi-total-value">$${fmtNumber(summary.ad_spend_usd, 2)}</strong>
+        </div>
+        <div class="dpi-total-card">
+          <span>总ROAS</span>
+          <strong class="dpi-total-value">${fmtRoas(summary.true_roas)}</strong>
+        </div>
+        <div class="dpi-total-card">
+          <span>总订单量</span>
+          <strong class="dpi-total-value">${fmtNumber(totalOrders)}</strong>
+        </div>
       </div>
+      <table class="dpi-period-table">
+        <thead>
+          <tr>
+            <th scope="col">周期</th>
+            <th scope="col">订单</th>
+            <th scope="col">消耗</th>
+            <th scope="col">ROAS</th>
+          </tr>
+        </thead>
+        <tbody>${renderPeriodRows(summary.periods)}</tbody>
+      </table>
       <div class="dpi-markets">
         ${renderMarkets(payload.markets)}
       </div>
       <div class="dpi-foot">
-        <span>${escapeHtml(product.match_method || "")}</span>
+        <span>${escapeHtml(product.match_value || "")}</span>
         <span>${escapeHtml((payload.data_quality || {}).status || "")}</span>
       </div>
     </div>
@@ -240,6 +340,7 @@ function renderPanel() {
       ${renderContent()}
     </div>
   `;
+  syncPanelPlacement();
 }
 
 async function refreshInsights() {
@@ -266,6 +367,49 @@ async function refreshInsights() {
   renderPanel();
 }
 
+function syncPanelPlacement() {
+  const root = document.getElementById(DPI_ROOT_ID);
+  if (!root) return;
+  const modal = findPurchaseModal();
+  if (!modal) {
+    root.classList.remove("dpi-modal-anchored");
+    root.style.left = "";
+    root.style.right = "";
+    root.style.top = "";
+    root.style.width = "";
+    root.style.height = "";
+    return;
+  }
+  const rect = modal.getBoundingClientRect();
+  const gap = 12;
+  const rightMargin = 12;
+  const top = Math.max(10, Math.round(rect.top));
+  const height = Math.max(280, Math.min(Math.round(rect.height), window.innerHeight - top - 10));
+  const desiredLeft = Math.round(rect.right + gap);
+  const minWidth = 320;
+  const left = Math.min(desiredLeft, Math.max(10, window.innerWidth - minWidth - rightMargin));
+  root.classList.add("dpi-modal-anchored");
+  root.style.left = `${left}px`;
+  root.style.right = `${rightMargin}px`;
+  root.style.top = `${top}px`;
+  root.style.width = "auto";
+  root.style.height = `${height}px`;
+
+  const signature = compactText(modal.innerText, 240);
+  if (signature && signature !== lastModalSignature && currentState.status !== "loading") {
+    lastModalSignature = signature;
+    window.setTimeout(refreshInsights, 250);
+  }
+}
+
+function schedulePanelPlacement() {
+  if (placementFrame) return;
+  placementFrame = window.requestAnimationFrame(() => {
+    placementFrame = 0;
+    syncPanelPlacement();
+  });
+}
+
 function installPanel() {
   if (document.getElementById(DPI_ROOT_ID)) return;
   const root = document.createElement("div");
@@ -285,6 +429,15 @@ function installPanel() {
     }
   });
   renderPanel();
+  const observer = new MutationObserver(schedulePanelPlacement);
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "style", "aria-hidden"],
+  });
+  window.addEventListener("resize", schedulePanelPlacement, { passive: true });
+  window.addEventListener("scroll", schedulePanelPlacement, { passive: true });
   window.setTimeout(refreshInsights, 1200);
 }
 
