@@ -225,6 +225,7 @@
   .aims-status.success { background: #dcfce7; color: var(--aims-green); }
   .aims-status.running { background: #dbeafe; color: #1d4ed8; }
   .aims-status.failed { background: #fee2e2; color: var(--aims-red); }
+  .aims-status.interrupted { background: #f1f5f9; color: #475569; }
 
   .aims-status-badge {
     display: inline-flex;
@@ -282,6 +283,7 @@
   .aims-run-card.running { border-color: #93c5fd; background: #eff6ff; }
   .aims-run-card.success { border-color: #86efac; background: #f0fdf4; }
   .aims-run-card.failed { border-color: #fca5a5; background: #fef2f2; }
+  .aims-run-card.interrupted { border-color: #cbd5e1; background: #f8fafc; }
   .aims-run-head {
     display: flex;
     align-items: flex-start;
@@ -321,6 +323,7 @@
   }
   .aims-run-card.success .aims-run-fill { background: linear-gradient(90deg, #16a34a, #4ade80); }
   .aims-run-card.failed .aims-run-fill { background: linear-gradient(90deg, #dc2626, #f87171); }
+  .aims-run-card.interrupted .aims-run-fill { background: linear-gradient(90deg, #64748b, #94a3b8); }
   .aims-run-progress strong {
     color: var(--aims-muted);
     font-size: 12px;
@@ -350,6 +353,7 @@
   .aims-step-card.running { border-color: #93c5fd; background: #eff6ff; }
   .aims-step-card.done { border-color: #bbf7d0; background: #f0fdf4; }
   .aims-step-card.failed { border-color: #fecaca; background: #fff1f2; }
+  .aims-step-card.interrupted { border-color: #cbd5e1; background: #f8fafc; }
   .aims-step-card.skipped { opacity: .72; }
   .aims-step-top {
     display: flex;
@@ -373,11 +377,29 @@
   .aims-step-card.running .aims-step-top span { background: #dbeafe; color: #1d4ed8; }
   .aims-step-card.done .aims-step-top span { background: #dcfce7; color: var(--aims-green); }
   .aims-step-card.failed .aims-step-top span { background: #fee2e2; color: var(--aims-red); }
+  .aims-step-card.interrupted .aims-step-top span { background: #e2e8f0; color: #475569; }
   .aims-step-card p {
     margin: 0;
     color: var(--aims-muted);
     font-size: 12px;
     line-height: 1.45;
+  }
+  .aims-step-resume {
+    margin-top: 8px;
+    min-height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--aims-border-strong);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--aims-fg);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .aims-step-resume:hover {
+    border-color: var(--aims-blue);
+    color: var(--aims-blue);
   }
   .aims-progress-logs {
     display: grid;

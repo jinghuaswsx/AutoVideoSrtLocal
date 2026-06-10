@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-from flask import abort, jsonify, render_template, request, url_for
+from flask import abort, current_app, jsonify, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from appcore import ai_material_strategist as service
@@ -157,12 +157,29 @@ def api_ai_material_strategist_create_project():
         project = service.run_project(project_id, user_id=_current_user_id(), run_ai=run_ai)
         return _json({"success": True, "project": project})
 
-    start_background_task(
-        service.run_project,
-        project_id,
-        user_id=_current_user_id(),
-        run_ai=run_ai,
-    )
+    try:
+        start_background_task(
+            service.run_project,
+            project_id,
+            user_id=_current_user_id(),
+            run_ai=run_ai,
+        )
+    except Exception:
+        current_app.logger.warning(
+            "AI material strategist create scheduling failed; project marked interrupted: project_id=%s",
+            project_id,
+            exc_info=True,
+        )
+        interrupted = service.mark_project_interrupted(
+            project_id,
+            reason="create_schedule_failed",
+            message="后台任务未能排队，已标记为中断；请点击步骤卡片「从此步继续」。",
+        )
+        return _json({
+            "success": False,
+            "message": "后台任务未能排队，已标记为中断；请点击步骤卡片「从此步继续」。",
+            "project": interrupted or service.get_project(project_id) or project,
+        }, 500)
     return _json({"success": True, "project": project}, 202)
 
 
@@ -175,6 +192,64 @@ def api_ai_material_strategist_project(project_id: int):
     if not project:
         abort(404)
     return _json({"success": True, "project": project})
+
+
+@bp.route("/api/ai-material-strategist/projects/<int:project_id>/resume-from-step", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_ai_material_strategist_resume_from_step(project_id: int):
+    payload = request.get_json(silent=True) or {}
+    step_key = str(payload.get("step_key") or "").strip()
+    run_ai = payload.get("run_ai", True) is not False
+    sync = bool(payload.get("sync"))
+    try:
+        project = service.resume_project_from_step(
+            project_id,
+            step_key,
+            user_id=_current_user_id(),
+        )
+    except service.ProjectAlreadyRunningError as exc:
+        running = exc.project or service.get_project(project_id) or {}
+        return _json({
+            "success": False,
+            "message": "当前 AI素材军师执行器仍在运行，请等待当前步骤结束或服务重启恢复后再从指定步骤继续。",
+            "running_project": running,
+            "project": running,
+        }, 409)
+    except ValueError as exc:
+        if "不存在" in str(exc):
+            return _json({"success": False, "message": str(exc)}, 404)
+        return _json({"success": False, "message": str(exc)}, 400)
+
+    if sync:
+        project = service.run_project(project_id, user_id=_current_user_id(), run_ai=run_ai)
+        return _json({"success": True, "project": project})
+
+    try:
+        start_background_task(
+            service.run_project,
+            project_id,
+            user_id=_current_user_id(),
+            run_ai=run_ai,
+        )
+    except Exception:
+        current_app.logger.warning(
+            "AI material strategist manual resume scheduling failed; project marked interrupted: project_id=%s",
+            project_id,
+            exc_info=True,
+        )
+        interrupted = service.mark_project_interrupted(
+            project_id,
+            reason="manual_resume_schedule_failed",
+            message="手动从步骤继续未能排队，已标记为中断；请稍后重试。",
+        )
+        return _json({
+            "success": False,
+            "message": "手动从步骤继续未能排队，已标记为中断；请稍后重试。",
+            "project": interrupted or service.get_project(project_id) or project,
+        }, 500)
+    return _json({"success": True, "project": project}, 202)
 
 
 @bp.route("/api/ai-material-strategist/projects/<int:project_id>", methods=["DELETE"])

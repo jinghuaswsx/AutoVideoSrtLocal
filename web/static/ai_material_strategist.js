@@ -55,6 +55,7 @@
   function statusLabel(status) {
     if (status === 'success') return '完成';
     if (status === 'failed') return '失败';
+    if (status === 'interrupted') return '中断';
     return '运行中';
   }
 
@@ -64,6 +65,7 @@
       running: '运行中',
       done: '已完成',
       failed: '失败',
+      interrupted: '中断',
       skipped: '已跳过',
     };
     return map[status] || status || '等待中';
@@ -384,6 +386,35 @@
     }
   }
 
+  async function resumeFromStep(stepKey) {
+    if (state.publicMode || !state.activeProjectId || !stepKey) return;
+    const project = state.activeProject || {};
+    const step = ((project.progress || {}).steps || []).find((item) => item.key === stepKey) || {};
+    const label = step.label || stepKey;
+    if (!window.confirm(`确定从「${label}」起点继续吗？后续断点会被清理并重新执行。`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await fetchJson('/medias/api/ai-material-strategist/projects/' + encodeURIComponent(state.activeProjectId) + '/resume-from-step', {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ step_key: stepKey, run_ai: true }),
+      });
+      showToast('已从指定步骤重新排队');
+      state.activeProject = data.project;
+      await loadProject(state.activeProjectId);
+    } catch (err) {
+      if (err.data && err.data.project) {
+        state.activeProject = err.data.project;
+        await loadProject(state.activeProjectId);
+      }
+      showToast(err.message || '从此步继续失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function renderProjects() {
     if (!els.list) return;
     if (!state.projects.length) {
@@ -492,13 +523,14 @@
           <span>${productLine}</span>
           <span>更新 ${esc((progress.updated_at || project.updated_at || '').slice(0, 19))}</span>
         </div>
-        ${steps.length ? renderProgressSteps(steps) : ''}
+        ${steps.length ? renderProgressSteps(project, steps) : ''}
         ${renderProgressLogs(progress.logs || [])}
       </section>
     `;
   }
 
-  function renderProgressSteps(steps) {
+  function renderProgressSteps(project, steps) {
+    const canResume = !state.publicMode && project && project.status !== 'running';
     return `
       <div class="aims-step-grid">
         ${steps.map((step) => `
@@ -508,6 +540,7 @@
               <span>${esc(progressStepLabel(step.status))}</span>
             </div>
             <p>${esc(step.message || step.description || '')}</p>
+            ${canResume ? `<button type="button" class="aims-step-resume" data-resume-step="${esc(step.key)}">从此步继续</button>` : ''}
           </article>
         `).join('')}
       </div>
@@ -838,6 +871,11 @@
   }
   if (els.detail) {
     els.detail.addEventListener('click', (event) => {
+      const resumeButton = event.target.closest('[data-resume-step]');
+      if (resumeButton) {
+        resumeFromStep(resumeButton.getAttribute('data-resume-step'));
+        return;
+      }
       const button = event.target.closest('[data-import-action]');
       if (!button) return;
       importMaterial(button);

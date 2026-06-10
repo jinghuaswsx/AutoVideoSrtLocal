@@ -64,6 +64,25 @@ PROGRESS_STEPS: tuple[dict[str, str], ...] = (
     {"key": "persist", "label": "保存结果", "description": "写入 Top 产品、AI 建议和操作入口。"},
     {"key": "summary", "label": "汇总结论", "description": "生成项目级统计和完成状态。"},
 )
+_PROGRESS_STEP_KEYS = tuple(step["key"] for step in PROGRESS_STEPS)
+_STEP_START_PERCENT = {
+    "snapshot": 0,
+    "candidate_score": 14,
+    "ai_ranking": 28,
+    "material_context": 42,
+    "product_analysis": 54,
+    "persist": 88,
+    "summary": 94,
+}
+_CLEAR_SNAPSHOT_FROM_STEPS = {"snapshot"}
+_CLEAR_RANKING_FROM_STEPS = {"snapshot", "candidate_score", "ai_ranking"}
+_CLEAR_PRODUCT_RESULTS_FROM_STEPS = {
+    "snapshot",
+    "candidate_score",
+    "ai_ranking",
+    "material_context",
+    "product_analysis",
+}
 
 
 class ProjectAlreadyRunningError(RuntimeError):
@@ -164,7 +183,7 @@ def _progress_update(
             step["message"] = message
             if step_status == "running" and not step.get("started_at"):
                 step["started_at"] = now
-            if step_status in {"done", "failed"}:
+            if step_status in {"done", "failed", "interrupted"}:
                 step["finished_at"] = now
                 if not step.get("started_at"):
                     step["started_at"] = now
@@ -174,7 +193,7 @@ def _progress_update(
                 if not step.get("started_at"):
                     step["started_at"] = now
                 step["finished_at"] = step.get("finished_at") or now
-            if step_status == "failed" and index > step_index and step.get("status") == "pending":
+            if step_status in {"failed", "interrupted"} and index > step_index and step.get("status") == "pending":
                 step["status"] = "skipped"
 
     if product_progress is not None:
@@ -255,6 +274,81 @@ def _mark_recovery_state(
     updated["status"] = status
     updated[timestamp_key] = _now_iso()
     progress["recovery"] = updated
+    return progress
+
+
+def _interrupted_progress(progress: dict[str, Any], *, message: str, reason: str) -> dict[str, Any]:
+    current_step = str(progress.get("current_step") or "snapshot")
+    progress = _progress_update(
+        progress,
+        step_key=current_step if current_step != "queued" else "snapshot",
+        step_status="interrupted",
+        percent=_safe_float(progress.get("percent")),
+        message=message,
+        project_status="interrupted",
+        level="error",
+    )
+    progress["runner_state"] = "interrupted"
+    recovery = progress.get("recovery") if isinstance(progress.get("recovery"), Mapping) else {}
+    recovery = dict(recovery or {})
+    recovery.update({
+        "reason": reason,
+        "status": "interrupted",
+        "interrupted_at": _now_iso(),
+        "auto_resume": bool(recovery.get("auto_resume")),
+    })
+    progress["recovery"] = recovery
+    return progress
+
+
+def _reset_progress_from_step(progress: dict[str, Any], step_key: str, *, message: str) -> dict[str, Any]:
+    step_index = _progress_step_index(step_key)
+    now = _now_iso()
+    for index, step in enumerate(progress.get("steps") or []):
+        if index < step_index:
+            step["status"] = "done"
+            step["message"] = step.get("message") or "保留已有断点。"
+            if not step.get("started_at"):
+                step["started_at"] = now
+            step["finished_at"] = step.get("finished_at") or now
+        elif step.get("key") == step_key:
+            step["status"] = "pending"
+            step["message"] = "将从此步骤起点重新执行。"
+            step["started_at"] = None
+            step["finished_at"] = None
+        else:
+            step["status"] = "pending"
+            step["message"] = ""
+            step["started_at"] = None
+            step["finished_at"] = None
+
+    logs = list(progress.get("logs") or [])
+    logs.append({"time": now, "level": "warning", "message": message})
+    progress.update({
+        "status": "running",
+        "runner_state": "manual_resume_scheduled",
+        "runner_heartbeat_at": None,
+        "percent": int(_STEP_START_PERCENT.get(step_key, 0)),
+        "current_step": step_key,
+        "current_step_label": _step_label(step_key),
+        "message": message,
+        "logs": logs[-_PROGRESS_LOG_LIMIT:],
+        "product_progress": {
+            "current_index": 0,
+            "total": 0,
+            "current_product_id": None,
+            "current_product_code": "",
+            "current_product_name": "",
+        },
+        "updated_at": now,
+    })
+    progress["recovery"] = {
+        "reason": "manual_step_resume",
+        "status": "scheduled",
+        "step_key": step_key,
+        "scheduled_at": now,
+        "auto_resume": False,
+    }
     return progress
 
 
@@ -1688,20 +1782,15 @@ def _mark_other_running_projects_interrupted(project_id: int) -> None:
             _json_loads(row.get("progress_json"), {}) or {},
             message="历史运行线程已中断。",
         )
-        current_step = str(progress.get("current_step") or "snapshot")
-        progress = _progress_update(
+        progress = _interrupted_progress(
             progress,
-            step_key=current_step if current_step != "queued" else "snapshot",
-            step_status="failed",
-            percent=_safe_float(progress.get("percent")),
-            message=f"历史运行线程已中断，当前恢复执行项目 #{project_id}；本项目已标记失败。",
-            project_status="failed",
-            level="error",
+            message=f"历史运行线程已中断，当前恢复执行项目 #{project_id}；本项目已标记中断。",
+            reason="replaced_by_project_resume",
         )
         db.execute(
             """
             UPDATE ai_material_strategist_projects
-            SET status = 'failed',
+            SET status = 'interrupted',
                 error_message = %s,
                 progress_json = %s,
                 finished_at = NOW(),
@@ -1709,7 +1798,7 @@ def _mark_other_running_projects_interrupted(project_id: int) -> None:
             WHERE id = %s AND status = 'running'
             """,
             (
-                f"历史运行线程已中断，当前恢复执行项目 #{project_id}。",
+                f"历史运行线程已中断，当前恢复执行项目 #{project_id}；请从步骤卡片手动继续。",
                 _json_dumps(progress),
                 other_id,
             ),
@@ -1931,22 +2020,125 @@ def mark_startup_interrupted_project_for_recovery() -> dict | None:
         )
         progress["runner_state"] = "resume_scheduled"
         progress["recovery"] = recovery
-        db.execute(
+        affected = db.execute(
             """
             UPDATE ai_material_strategist_projects
             SET progress_json = %s,
                 error_message = NULL,
                 finished_at = NULL,
                 updated_at = NOW()
-            WHERE id = %s AND status = 'running'
+            WHERE id = %s
+              AND status = 'running'
             """,
             (_json_dumps(progress), project_id),
         )
+        if affected <= 0:
+            return None
         updated_row = dict(row)
         updated_row["progress_json"] = _json_dumps(progress)
         updated_row["error_message"] = ""
         updated_row["finished_at"] = None
         return _serialize_project_row(updated_row, include_products=False)
+    finally:
+        _release_project_lock(lock_conn)
+
+
+def mark_project_interrupted(
+    project_id: int,
+    *,
+    reason: str = "startup_resume_failed",
+    message: str = "任务中断，等待人工从步骤卡片继续。",
+) -> dict | None:
+    """Stop a stale running project at an explicit interrupted status."""
+    project_id = _safe_int(project_id)
+    if not project_id:
+        return None
+    row = _load_project_row(project_id)
+    if not row:
+        return None
+    progress = _normalize_progress(
+        _json_loads(row.get("progress_json"), {}) or {},
+        message=message,
+    )
+    progress = _interrupted_progress(progress, message=message, reason=reason)
+    db.execute(
+        """
+        UPDATE ai_material_strategist_projects
+        SET status = 'interrupted',
+            error_message = %s,
+            progress_json = %s,
+            finished_at = NOW(),
+            updated_at = NOW()
+        WHERE id = %s
+          AND status = 'running'
+        """,
+        (message, _json_dumps(progress), project_id),
+    )
+    return get_project(project_id)
+
+
+def resume_project_from_step(project_id: int, step_key: str, *, user_id: int | None = None) -> dict:
+    """Reset persisted checkpoints so the project can continue from a step.
+
+    Docs anchor:
+    docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md#断点续跑与恢复
+    """
+    project_id = _safe_int(project_id)
+    step_key = str(step_key or "").strip()
+    if step_key not in _PROGRESS_STEP_KEYS:
+        raise ValueError(f"unsupported AI素材军师恢复步骤：{step_key}")
+
+    lock_conn = _with_project_lock(timeout_seconds=0)
+    if lock_conn is None:
+        raise ProjectAlreadyRunningError(get_project(project_id))
+    try:
+        row = _load_project_row(project_id)
+        if not row:
+            raise ValueError(f"AI素材军师项目不存在：{project_id}")
+
+        progress = _normalize_progress(
+            _json_loads(row.get("progress_json"), {}) or {},
+            message="准备从指定步骤继续。",
+        )
+        progress = _reset_progress_from_step(
+            progress,
+            step_key,
+            message=f"已手动选择从「{_step_label(step_key)}」起点继续执行。",
+        )
+        recovery = dict(progress.get("recovery") or {})
+        if user_id is not None:
+            recovery["user_id"] = user_id
+        progress["recovery"] = recovery
+
+        set_parts = [
+            "status = 'running'",
+            "summary_json = NULL",
+            "progress_json = %s",
+            "error_message = NULL",
+            "finished_at = NULL",
+            "updated_at = NOW()",
+        ]
+        params: list[Any] = [_json_dumps(progress)]
+        if step_key in _CLEAR_SNAPSHOT_FROM_STEPS:
+            set_parts.extend(["data_window_json = NULL", "data_snapshot_json = NULL"])
+        if step_key in _CLEAR_RANKING_FROM_STEPS:
+            set_parts.extend(["ranking_prompt_json = NULL", "ranking_result_json = NULL"])
+
+        db.execute(
+            f"""
+            UPDATE ai_material_strategist_projects
+            SET {', '.join(set_parts)}
+            WHERE id = %s
+            """,
+            (*params, project_id),
+        )
+        if step_key in _CLEAR_PRODUCT_RESULTS_FROM_STEPS:
+            db.execute(
+                "DELETE FROM ai_material_strategist_product_results WHERE project_id = %s",
+                (project_id,),
+            )
+        _mark_other_running_projects_interrupted(project_id)
+        return get_project(project_id) or {"id": project_id, "status": "running"}
     finally:
         _release_project_lock(lock_conn)
 

@@ -218,6 +218,142 @@ def test_ai_material_strategist_create_project_rejects_when_running(
     assert payload["running_project"]["id"] == 8
 
 
+def test_ai_material_strategist_create_project_marks_interrupted_when_schedule_fails(
+    authed_client_no_db,
+    monkeypatch,
+):
+    calls = {}
+
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.create_project_record",
+        lambda user_id, project_name=None: {"id": 9, "project_name": project_name, "status": "running"},
+    )
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.start_background_task",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("spawn failed")),
+    )
+
+    def fake_mark_project_interrupted(project_id, **kwargs):
+        calls["project_id"] = project_id
+        calls["kwargs"] = kwargs
+        return {"id": project_id, "status": "interrupted"}
+
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.mark_project_interrupted",
+        fake_mark_project_interrupted,
+    )
+
+    response = authed_client_no_db.post(
+        "/medias/api/ai-material-strategist/projects",
+        json={"project_name": "demo run"},
+    )
+
+    assert response.status_code == 500
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["project"]["status"] == "interrupted"
+    assert calls["project_id"] == 9
+    assert calls["kwargs"]["reason"] == "create_schedule_failed"
+
+
+def test_ai_material_strategist_resume_from_step_starts_background_job(
+    authed_client_no_db,
+    monkeypatch,
+):
+    calls = {}
+
+    def fake_resume(project_id, step_key, user_id=None):
+        calls["resume"] = (project_id, step_key, user_id)
+        return {"id": project_id, "status": "running"}
+
+    def fake_start_background_task(target, *args, **kwargs):
+        calls["target"] = target
+        calls["args"] = args
+        calls["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.resume_project_from_step",
+        fake_resume,
+    )
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.start_background_task",
+        fake_start_background_task,
+    )
+
+    response = authed_client_no_db.post(
+        "/medias/api/ai-material-strategist/projects/9/resume-from-step",
+        json={"step_key": "product_analysis", "run_ai": False},
+    )
+
+    assert response.status_code == 202
+    assert calls["resume"] == (9, "product_analysis", 1)
+    assert calls["args"] == (9,)
+    assert calls["kwargs"]["user_id"] == 1
+    assert calls["kwargs"]["run_ai"] is False
+
+
+def test_ai_material_strategist_resume_from_step_rejects_when_runner_busy(
+    authed_client_no_db,
+    monkeypatch,
+):
+    def fake_resume(project_id, step_key, user_id=None):
+        raise ProjectAlreadyRunningError({"id": project_id, "status": "running"})
+
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.resume_project_from_step",
+        fake_resume,
+    )
+
+    response = authed_client_no_db.post(
+        "/medias/api/ai-material-strategist/projects/9/resume-from-step",
+        json={"step_key": "product_analysis"},
+    )
+
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["running_project"]["id"] == 9
+
+
+def test_ai_material_strategist_resume_from_step_marks_interrupted_when_schedule_fails(
+    authed_client_no_db,
+    monkeypatch,
+):
+    calls = {}
+
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.resume_project_from_step",
+        lambda project_id, step_key, user_id=None: {"id": project_id, "status": "running"},
+    )
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.start_background_task",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("spawn failed")),
+    )
+
+    def fake_mark_project_interrupted(project_id, **kwargs):
+        calls["project_id"] = project_id
+        calls["kwargs"] = kwargs
+        return {"id": project_id, "status": "interrupted"}
+
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.mark_project_interrupted",
+        fake_mark_project_interrupted,
+    )
+
+    response = authed_client_no_db.post(
+        "/medias/api/ai-material-strategist/projects/9/resume-from-step",
+        json={"step_key": "product_analysis"},
+    )
+
+    assert response.status_code == 500
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["project"]["status"] == "interrupted"
+    assert calls["project_id"] == 9
+    assert calls["kwargs"]["reason"] == "manual_resume_schedule_failed"
+
+
 def test_ai_material_strategist_delete_project_delegates_service(authed_client_no_db, monkeypatch):
     calls = {}
 

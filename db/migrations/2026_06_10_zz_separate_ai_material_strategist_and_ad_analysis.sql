@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS ad_material_ai_analysis_projects (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   project_name VARCHAR(255) NOT NULL,
-  status ENUM('running','success','failed') NOT NULL DEFAULT 'running',
+  status ENUM('running','success','failed','interrupted') NOT NULL DEFAULT 'running',
   user_id INT DEFAULT NULL,
   provider_code VARCHAR(64) NOT NULL DEFAULT 'google_wj',
   model_id VARCHAR(128) NOT NULL DEFAULT 'gemini-3.5-flash',
