@@ -1459,6 +1459,7 @@
   }
 
   async function load(options) {
+    console.log("load() called with options:", options);
     const showModal = Boolean(options && options.modal);
     const force = Boolean(options && options.force);
     $('mkpReload').disabled = true;
@@ -1468,8 +1469,11 @@
     }
     try {
       const url = `/medias/api/products/${productId}/mingkong-pairing` + (force ? '?force=1' : '');
+      console.log("load() fetching from:", url);
       const payload = await fetchJson(url);
+      console.log("load() fetch completed successfully.");
       state.payload = payload;
+      console.log("state.payload is now set:", state.payload ? "not null" : "null");
       renderMeta(payload);
       renderRows(payload.items || []);
       if (showModal) {
