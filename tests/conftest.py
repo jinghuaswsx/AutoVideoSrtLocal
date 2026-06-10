@@ -77,6 +77,11 @@ def _base_env(monkeypatch, tmp_path):
     monkeypatch.setenv("OUTPUT_DIR", str(tmp_path / "output"))
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("VOICES_FILE", str(ROOT / "voices" / "voices.json"))
+    try:
+        from appcore.dianxiaomi_mingkong_pairing import _LAST_DXM_REFRESH
+        _LAST_DXM_REFRESH.clear()
+    except ImportError:
+        pass
 
 
 @pytest.fixture(autouse=True)
