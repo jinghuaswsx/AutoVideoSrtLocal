@@ -22,8 +22,8 @@
     --chart-teal-light: oklch(65% 0.20 195 / 15%);
     --chart-purple: oklch(58% 0.21 330);
     --chart-purple-light: oklch(58% 0.21 330 / 15%);
+    --chart-orange: oklch(68% 0.16 75);
     --chart-blue: oklch(58% 0.17 240);
-    --sidebar-w: 420px;
     --card-bg-trend: oklch(100% 0 0);
   }
 
@@ -185,26 +185,23 @@
     color: var(--fg-subtle);
   }
 
-  /* Two Column Layout */
+  /* Two Column 50/50 Layout */
   .trend-main-layout {
-    display: flex;
-    gap: var(--space-4);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-5);
     align-items: flex-start;
   }
 
   @media (max-width: 1100px) {
     .trend-main-layout {
-      flex-direction: column;
-    }
-    .trend-sidebar {
-      width: 100% !important;
+      grid-template-columns: 1fr;
     }
   }
 
-  /* Sidebar (Left) */
+  /* Left Panel (Sidebar) */
   .trend-sidebar {
-    width: var(--sidebar-w);
-    flex-shrink: 0;
+    width: 100%;
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
@@ -232,11 +229,17 @@
     letter-spacing: normal;
   }
 
-  /* Stats Grid */
+  /* Stats Grid (3x2 layout) */
   .trend-stats-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: var(--space-3);
+  }
+
+  @media (max-width: 600px) {
+    .trend-stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 
   .trend-stat-card {
@@ -275,6 +278,10 @@
     color: var(--chart-purple);
   }
 
+  .trend-stat-value.orange-val {
+    color: var(--chart-orange);
+  }
+
   /* Tables Card */
   .trend-table-card {
     background: var(--card-bg-trend);
@@ -284,6 +291,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    width: 100%;
   }
 
   .trend-table-header-sticky {
@@ -307,30 +315,33 @@
     font-weight: 600;
     color: var(--fg-muted);
     text-align: left;
-    padding: 10px 12px;
+    padding: 10px 8px;
     font-size: 11px;
+    white-space: nowrap;
   }
 
   .trend-compact-table td {
-    padding: 10px 12px;
+    padding: 10px 8px;
     color: var(--fg);
     border-bottom: 1px solid var(--border-subtle);
     transition: background-color var(--duration-fast);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible; /* Prevent truncation */
+    text-overflow: clip;
   }
 
   .trend-compact-table tr:last-child td {
     border-bottom: 0;
   }
 
-  /* Column widths */
-  .col-date { width: 32%; }
-  .col-units { width: 20%; }
-  .col-orders { width: 18%; }
-  .col-spend { width: 17%; }
-  .col-roas { width: 13%; }
+  /* Multi-column complete widths */
+  .col-date { width: 19%; }
+  .col-units { width: 11%; }
+  .col-orders { width: 15%; }
+  .col-sales { width: 15%; }
+  .col-spend { width: 14%; }
+  .col-metaroas { width: 13%; }
+  .col-realroas { width: 13%; }
 
   .trend-table-row {
     cursor: pointer;
@@ -340,7 +351,6 @@
     background-color: var(--bg-subtle);
   }
 
-  /* Row Highlight Linking class */
   .trend-table-row.is-active-row {
     background-color: var(--accent-subtle) !important;
   }
@@ -350,9 +360,16 @@
     font-weight: 600;
   }
 
-  /* Main Content Area (Right) */
+  /* Specific design requirement: recent 7 days daily order counts enlarged 1.5x and bolded */
+  .recent-orders-highlight {
+    font-size: 1.45em !important;
+    font-weight: 800 !important;
+    color: var(--fg-strong) !important;
+  }
+
+  /* Right Panel (Content) */
   .trend-content {
-    flex: 1;
+    width: 100%;
     min-width: 0;
   }
 
@@ -531,51 +548,49 @@
     </div>
   </div>
 
-  <!-- Primary Modern Layout -->
+  <!-- Primary 50/50 Layout -->
   <div class="trend-main-layout">
     
-    <!-- Sidebar (Left) -->
+    <!-- Left Sidebar (Aggregations and complete table) -->
     <div class="trend-sidebar">
-      <!-- Aggregated Stats Title -->
       <div class="sidebar-section-title">
         <span>数据概览</span>
         <span class="period-badge" id="statsPeriodLabel">最近 30 天</span>
       </div>
-      <!-- Metric Cards Grid -->
-      <div class="trend-stats-grid" id="trendStatsSummary">
-        <!-- JS Aggregates Inject -->
-      </div>
       
-      <!-- List Title -->
+      <!-- 3x2 Metric Cards Grid -->
+      <div class="trend-stats-grid" id="trendStatsSummary"></div>
+      
       <div class="sidebar-section-title">
         <span>每日销量明细</span>
       </div>
-      <!-- Historical Table -->
+      
+      <!-- Complete Table Grid -->
       <div class="trend-table-card">
         <div class="trend-table-header-sticky">
           <table class="trend-compact-table">
             <thead>
               <tr>
                 <th class="col-date">日期</th>
-                <th class="col-units">销量(件)</th>
+                <th class="col-units">销量</th>
                 <th class="col-orders">订单数</th>
+                <th class="col-sales">销售额</th>
                 <th class="col-spend">广告费</th>
-                <th class="col-roas">ROAS</th>
+                <th class="col-metaroas">MetaROAS</th>
+                <th class="col-realroas">真实ROAS</th>
               </tr>
             </thead>
           </table>
         </div>
         <div class="trend-table-body-scrollable" id="tableScrollContainer">
           <table class="trend-compact-table">
-            <tbody id="trendTableBody">
-              <!-- JS Rows Inject -->
-            </tbody>
+            <tbody id="trendTableBody"></tbody>
           </table>
         </div>
       </div>
     </div>
 
-    <!-- Chart Panel (Right) -->
+    <!-- Right Content Area (SVG curves) -->
     <div class="trend-content">
       <div class="trend-chart-card">
         <div class="chart-card-header">
@@ -603,10 +618,7 @@
 </div>
 
 <script>
-  // Injected data from controller
   var trendData = {{ data|tojson|safe if data else 'null' }};
-  
-  // Track active sub-tab globally
   var currentActiveTab = 'daily';
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -615,7 +627,7 @@
       return;
     }
 
-    // 1. Setup tab switching
+    // Tab switcher
     var tabBtns = document.querySelectorAll('[data-trend-tab]');
     tabBtns.forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -633,15 +645,13 @@
       });
     });
 
-    // 2. Initialize graphs and stats table
     renderCharts();
     renderStatsAndTable('daily');
 
-    // 3. Setup Autocomplete
     setupSearchAutocomplete();
   });
 
-  // Autocomplete functionality
+  // Autocomplete search
   function setupSearchAutocomplete() {
     var searchInput = document.getElementById('trendSearchInput');
     var searchResults = document.getElementById('trendSearchResults');
@@ -699,16 +709,17 @@
   function escapeHtml(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
-  
   function escapeHtmlAttr(s) {
     return String(s || '').replace(/"/g, '&quot;');
   }
-
   function fmtInt(val) {
     return Number(val || 0).toLocaleString();
   }
+  function fmtPrice(val) {
+    return val > 0 ? '$' + Number(val).toFixed(2) : '-';
+  }
 
-  // Render metric cards and left明细 table
+  // Render Left aggregates & Descending chronological table
   function renderStatsAndTable(tab) {
     var periodLabel = document.getElementById('statsPeriodLabel');
     var summaryEl = document.getElementById('trendStatsSummary');
@@ -719,32 +730,40 @@
       
       var totalUnits = 0;
       var totalOrders = 0;
+      var totalSales = 0.0;
       var totalSpend = 0.0;
       var totalPurchaseValue = 0.0;
       
       trendData.daily.forEach(function(day) {
         totalUnits += day.units;
         totalOrders += day.orders;
+        totalSales += day.sales || 0.0;
         totalSpend += day.spend;
         totalPurchaseValue += day.purchase_value;
       });
-      var overallRoas = totalSpend > 0 ? (totalPurchaseValue / totalSpend).toFixed(2) : '-';
+      var overallMetaRoas = totalSpend > 0 ? (totalPurchaseValue / totalSpend).toFixed(2) : '-';
+      var overallRealRoas = totalSpend > 0 ? (totalSales / totalSpend).toFixed(2) : '-';
 
       summaryEl.innerHTML = 
         statBox('销售件数', fmtInt(totalUnits), 'accent-val') +
         statBox('订单量', fmtInt(totalOrders), '') +
-        statBox('广告花费', '$' + totalSpend.toFixed(2), '') +
-        statBox('综合 ROAS', overallRoas, 'purple-val');
+        statBox('销售额', fmtPrice(totalSales), 'accent-val') +
+        statBox('广告花费', fmtPrice(totalSpend), '') +
+        statBox('Meta ROAS', overallMetaRoas, 'purple-val') +
+        statBox('真实 ROAS', overallRealRoas, 'orange-val');
 
-      // Yesterday is sorted at the top (from new to old)
+      // Yesterday at the top, index < 7 bolded and 1.5x font size
       bodyEl.innerHTML = trendData.daily.slice().reverse().map(function(day, index) {
         var revIdx = trendData.daily.length - 1 - index;
+        var ordersClass = index < 7 ? 'col-orders recent-orders-highlight' : 'col-orders';
         return '<tr class="trend-table-row" data-index="' + revIdx + '" data-date="' + day.date + '">' +
           '<td class="col-date">' + day.date + '</td>' +
           '<td class="col-units">' + fmtInt(day.units) + '</td>' +
-          '<td class="col-orders">' + fmtInt(day.orders) + '</td>' +
-          '<td class="col-spend">' + (day.spend > 0 ? '$' + day.spend.toFixed(2) : '-') + '</td>' +
-          '<td class="col-roas">' + (day.roas !== null ? day.roas.toFixed(2) : '-') + '</td>' +
+          '<td class="' + ordersClass + '">' + fmtInt(day.orders) + '</td>' +
+          '<td class="col-sales">' + fmtPrice(day.sales) + '</td>' +
+          '<td class="col-spend">' + fmtPrice(day.spend) + '</td>' +
+          '<td class="col-metaroas">' + (day.meta_roas !== null ? day.meta_roas.toFixed(2) : '-') + '</td>' +
+          '<td class="col-realroas">' + (day.real_roas !== null ? day.real_roas.toFixed(2) : '-') + '</td>' +
           '</tr>';
       }).join('');
 
@@ -753,26 +772,32 @@
 
       var totalUnits = 0;
       var totalOrders = 0;
+      var totalSales = 0.0;
       trendData.weekly.forEach(function(w) {
         totalUnits += w.units;
         totalOrders += w.orders;
+        totalSales += w.sales || 0.0;
       });
 
       summaryEl.innerHTML = 
         statBox('总销量', fmtInt(totalUnits), 'accent-val') +
         statBox('总订单数', fmtInt(totalOrders), '') +
+        statBox('总销售额', fmtPrice(totalSales), 'accent-val') +
         statBox('周均销量', (totalUnits / 12).toFixed(1), '') +
-        statBox('周均订单', (totalOrders / 12).toFixed(1), '');
+        statBox('周均订单', (totalOrders / 12).toFixed(1), '') +
+        statBox('周均销售额', fmtPrice(totalSales / 12), 'accent-val');
 
       bodyEl.innerHTML = trendData.weekly.slice().reverse().map(function(w, index) {
         var revIdx = trendData.weekly.length - 1 - index;
-        var cleanLabel = w.label.split(' ')[0]; // W22
+        var ordersClass = index < 7 ? 'col-orders recent-orders-highlight' : 'col-orders';
         return '<tr class="trend-table-row" data-index="' + revIdx + '" data-date="' + w.label + '">' +
           '<td class="col-date">' + escapeHtml(w.label) + '</td>' +
           '<td class="col-units">' + fmtInt(w.units) + '</td>' +
-          '<td class="col-orders">' + fmtInt(w.orders) + '</td>' +
+          '<td class="' + ordersClass + '">' + fmtInt(w.orders) + '</td>' +
+          '<td class="col-sales">' + fmtPrice(w.sales) + '</td>' +
           '<td class="col-spend">-</td>' +
-          '<td class="col-roas">-</td>' +
+          '<td class="col-metaroas">-</td>' +
+          '<td class="col-realroas">-</td>' +
           '</tr>';
       }).join('');
 
@@ -781,30 +806,36 @@
 
       var totalUnits = 0;
       var totalOrders = 0;
+      var totalSales = 0.0;
       trendData.monthly.forEach(function(m) {
         totalUnits += m.units;
         totalOrders += m.orders;
+        totalSales += m.sales || 0.0;
       });
 
       summaryEl.innerHTML = 
         statBox('总销量', fmtInt(totalUnits), 'accent-val') +
         statBox('总订单数', fmtInt(totalOrders), '') +
+        statBox('总销售额', fmtPrice(totalSales), 'accent-val') +
         statBox('月均销量', (totalUnits / 12).toFixed(1), '') +
-        statBox('月均订单', (totalOrders / 12).toFixed(1), '');
+        statBox('月均订单', (totalOrders / 12).toFixed(1), '') +
+        statBox('月均销售额', fmtPrice(totalSales / 12), 'accent-val');
 
       bodyEl.innerHTML = trendData.monthly.slice().reverse().map(function(m, index) {
         var revIdx = trendData.monthly.length - 1 - index;
+        var ordersClass = index < 7 ? 'col-orders recent-orders-highlight' : 'col-orders';
         return '<tr class="trend-table-row" data-index="' + revIdx + '" data-date="' + m.label + '">' +
           '<td class="col-date">' + escapeHtml(m.label) + '</td>' +
           '<td class="col-units">' + fmtInt(m.units) + '</td>' +
-          '<td class="col-orders">' + fmtInt(m.orders) + '</td>' +
+          '<td class="' + ordersClass + '">' + fmtInt(m.orders) + '</td>' +
+          '<td class="col-sales">' + fmtPrice(m.sales) + '</td>' +
           '<td class="col-spend">-</td>' +
-          '<td class="col-roas">-</td>' +
+          '<td class="col-metaroas">-</td>' +
+          '<td class="col-realroas">-</td>' +
           '</tr>';
       }).join('');
     }
 
-    // Attach bi-directional hover events on table rows
     setupTableHoverEvents();
   }
 
@@ -815,14 +846,13 @@
       '</div>';
   }
 
-  // Draw smooth SVG charts
+  // Draw smooth Bezier curves
   function renderCharts() {
     renderDailyChart();
     renderWeeklyChart();
     renderMonthlyChart();
   }
 
-  // Bezier curve interpolation algorithm for smooth lines
   function getBezierCurvePath(pts, xGetter, yGetter) {
     if (pts.length === 0) return "";
     if (pts.length === 1) return "M" + xGetter(pts[0], 0).toFixed(1) + "," + yGetter(pts[0], 0).toFixed(1);
@@ -834,14 +864,12 @@
       var x1 = xGetter(pts[i+1], i+1);
       var y1 = yGetter(pts[i+1], i+1);
       
-      // Control points offsets (40% of horizontal distance)
       var cpW = (x1 - x0) * 0.35;
       var cp1x = x0 + cpW;
       var cp1y = y0;
       var cp2x = x1 - cpW;
       var cp2y = y1;
       
-      // Smooth tangent slope adjustments
       if (i > 0) {
         var prevY = yGetter(pts[i-1], i-1);
         cp1y = y0 + (y1 - prevY) * 0.17;
@@ -856,7 +884,7 @@
     return d;
   }
 
-  // Daily Chart Rendering (Bezier curves with dual Y-axis & crosshair guide)
+  // Daily curves containing both Meta ROAS & Real ROAS
   function renderDailyChart() {
     var el = document.getElementById('trendChartDaily');
     var points = trendData.daily;
@@ -868,10 +896,11 @@
     var maxUnits = Math.max.apply(null, points.map(function(p) { return p.units; }));
     maxUnits = Math.max(maxUnits, 1);
     
-    var maxRoas = Math.max.apply(null, points.map(function(p) { return p.roas || 0; }));
+    var maxMetaRoas = Math.max.apply(null, points.map(function(p) { return p.meta_roas || 0; }));
+    var maxRealRoas = Math.max.apply(null, points.map(function(p) { return p.real_roas || 0; }));
+    var maxRoas = Math.max(maxMetaRoas, maxRealRoas);
     maxRoas = Math.max(maxRoas, 1.0);
 
-    // Dynamic width calculation on load
     var parentW = el.clientWidth || 800;
     var width = parentW, height = 340, padL = 45, padR = 45, padT = 40, padB = 40;
     var innerW = width - padL - padR, innerH = height - padT - padB;
@@ -880,16 +909,16 @@
     function yUnits(v) { return padT + innerH - (innerH * v / maxUnits); }
     function yRoas(v) { return padT + innerH - (innerH * v / maxRoas); }
 
-    // Bezier Curves Paths
     var unitsBezier = getBezierCurvePath(points, function(p, i) { return x(i); }, function(p) { return yUnits(p.units); });
     
-    var roasPoints = points.filter(function(p) { return p.roas !== null; });
-    var roasBezier = getBezierCurvePath(points, function(p, i) { return x(i); }, function(p) { return yRoas(p.roas || 0); });
+    var metaRoasPoints = points.filter(function(p) { return p.meta_roas !== null; });
+    var metaRoasBezier = getBezierCurvePath(points, function(p, i) { return x(i); }, function(p) { return yRoas(p.meta_roas || 0); });
 
-    // Shaded Area beneath units curve
+    var realRoasPoints = points.filter(function(p) { return p.real_roas !== null; });
+    var realRoasBezier = getBezierCurvePath(points, function(p, i) { return x(i); }, function(p) { return yRoas(p.real_roas || 0); });
+
     var areaPath = unitsBezier + " L" + x(29).toFixed(1) + "," + (padT + innerH).toFixed(1) + " L" + x(0).toFixed(1) + "," + (padT + innerH).toFixed(1) + " Z";
 
-    // Y Grid and values
     var gridY = [0, 0.25, 0.5, 0.75, 1].map(function(pct) {
       var yUnitsVal = Math.round(maxUnits * pct);
       var yRoasVal = (maxRoas * pct).toFixed(1);
@@ -899,30 +928,35 @@
              '<text x="' + (width - padR + 10) + '" y="' + (currY + 4) + '" text-anchor="start" class="svg-text">' + yRoasVal + '</text>';
     }).join('');
 
-    // X axis labels
     var labelsX = points.map(function(p, i) {
       if (i % 5 === 0 || i === 29) {
-        var label = p.date.substring(5); // MM-DD
+        var label = p.date.substring(5);
         return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 12) + '" text-anchor="middle" class="svg-text">' + label + '</text>' +
                '<line x1="' + x(i).toFixed(1) + '" y1="' + (padT + innerH) + '" x2="' + x(i).toFixed(1) + '" y2="' + (padT + innerH + 4) + '" stroke="var(--border-strong)"/>';
       }
       return '';
     }).join('');
 
-    // Data points (Dots)
     var dots = points.map(function(p, i) {
       var cx = x(i).toFixed(1);
       var cyU = yUnits(p.units).toFixed(1);
-      var cyR = yRoas(p.roas || 0).toFixed(1);
+      var cyM = yRoas(p.meta_roas || 0).toFixed(1);
+      var cyR = yRoas(p.real_roas || 0).toFixed(1);
       
-      var tipText = '<strong>' + p.date + '</strong>销量: ' + p.units + ' 件 (' + p.orders + ' 单)<br/>广告花费: $' + p.spend.toFixed(2) + '<br/>ROAS: ' + (p.roas !== null ? p.roas.toFixed(2) : '-');
+      var tipText = '<strong>' + p.date + '</strong>' +
+                    '销量: ' + p.units + ' 件 (' + p.orders + ' 单)<br/>' +
+                    '销售额: ' + fmtPrice(p.sales) + '<br/>' +
+                    '广告费: ' + fmtPrice(p.spend) + '<br/>' +
+                    'Meta ROAS: ' + (p.meta_roas !== null ? p.meta_roas.toFixed(2) : '-') + '<br/>' +
+                    '真实 ROAS: ' + (p.real_roas !== null ? p.real_roas.toFixed(2) : '-');
       
       var dotsHtml = '';
-      // Units
       dotsHtml += '<circle cx="' + cx + '" cy="' + cyU + '" r="3" fill="var(--chart-teal)" stroke="#ffffff" stroke-width="1" class="svg-dot dot-units" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
-      // ROAS
-      if (p.roas !== null) {
-        dotsHtml += '<circle cx="' + cx + '" cy="' + cyR + '" r="3" fill="var(--chart-purple)" stroke="#ffffff" stroke-width="1" class="svg-dot dot-roas" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
+      if (p.meta_roas !== null) {
+        dotsHtml += '<circle cx="' + cx + '" cy="' + cyM + '" r="3" fill="var(--chart-purple)" stroke="#ffffff" stroke-width="1" class="svg-dot dot-metaroas" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
+      }
+      if (p.real_roas !== null) {
+        dotsHtml += '<circle cx="' + cx + '" cy="' + cyR + '" r="3" fill="var(--chart-orange)" stroke="#ffffff" stroke-width="1" class="svg-dot dot-realroas" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
       }
       return dotsHtml;
     }).join('');
@@ -935,44 +969,33 @@
             '<stop offset="100%" stop-color="var(--chart-teal)" stop-opacity="0.0"/>' +
           '</linearGradient>' +
         '</defs>' +
-        
-        // Grid lines
         gridY +
-        
-        // Horizontal baseline
         '<line x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (width - padR) + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
         '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
         '<line x1="' + (width - padR) + '" y1="' + padT + '" x2="' + (width - padR) + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
         
         // Legends
         '<text x="' + padL + '" y="20" fill="var(--chart-teal)" font-size="11" font-weight="700">● 销量 (件)</text>' +
-        '<text x="' + (width - padR) + '" y="20" fill="var(--chart-purple)" font-size="11" font-weight="700" text-anchor="end">● Meta ROAS</text>' +
+        '<text x="' + (padL + 95) + '" y="20" fill="var(--chart-purple)" font-size="11" font-weight="700">● Meta ROAS</text>' +
+        '<text x="' + (padL + 205) + '" y="20" fill="var(--chart-orange)" font-size="11" font-weight="700">● 真实 ROAS</text>' +
 
-        // Vertical guide line
         '<line id="dailyCrosshairLine" class="vertical-guide" x1="0" y1="0" x2="0" y2="0" style="display:none;"/>' +
-
-        // Gradient Area beneath units
         '<path d="' + areaPath + '" fill="url(#areaGradTeal)"/>' +
         
-        // Smooth lines
+        // Curves
         '<path d="' + unitsBezier + '" class="svg-chart-path" stroke="var(--chart-teal)" stroke-width="2.5"/>' +
-        (roasPoints.length ? '<path d="' + roasBezier + '" class="svg-chart-path" stroke="var(--chart-purple)" stroke-width="2.5" stroke-dasharray="0.5 0.5" stroke-dashoffset="0"/>' : '') +
+        (metaRoasPoints.length ? '<path d="' + metaRoasBezier + '" class="svg-chart-path" stroke="var(--chart-purple)" stroke-width="2" stroke-dasharray="2 2"/>' : '') +
+        (realRoasPoints.length ? '<path d="' + realRoasBezier + '" class="svg-chart-path" stroke="var(--chart-orange)" stroke-width="2"/>' : '') +
         
-        // Interactive circles
         dots +
-        
-        // Date labels
         labelsX +
-        
-        // Mouse tracker layer for crosshair Guide Line
         '<rect x="' + padL + '" y="' + padT + '" width="' + innerW + '" height="' + innerH + '" class="chart-interactive-overlay" id="dailyInteractiveOverlay"/>' +
       '</svg>';
 
-    // Attach mouse interaction on overlay
     setupCrosshairInteraction(el, points, x, padL, innerW);
   }
 
-  // Weekly Chart (Rounded bars with tooltips)
+  // Weekly Chart (Rounded bars)
   function renderWeeklyChart() {
     var el = document.getElementById('trendChartWeekly');
     var points = trendData.weekly;
@@ -1004,7 +1027,7 @@
       var by = y(p.units);
       var bh = Math.max(4, padT + innerH - by);
       
-      var tipText = '<strong>' + p.label + '</strong>销量: ' + p.units + ' 件<br/>订单数: ' + p.orders + ' 单';
+      var tipText = '<strong>' + p.label + '</strong>销量: ' + p.units + ' 件<br/>订单数: ' + p.orders + ' 单<br/>销售额: ' + fmtPrice(p.sales);
       
       return '<g class="svg-bar-group" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '">' +
              '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + barW + '" height="' + bh.toFixed(1) + '" rx="4" fill="var(--chart-blue)" style="cursor:pointer; opacity: 0.82; transition: opacity 0.15s, fill 0.15s;"/>' +
@@ -1013,7 +1036,7 @@
 
     var labelsX = points.map(function(p, i) {
       if (i % 2 === 0 || i === 11) {
-        var cleanLabel = p.label.split(' ')[0]; // W24
+        var cleanLabel = p.label.split(' ')[0];
         return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 12) + '" text-anchor="middle" class="svg-text">' + cleanLabel + '</text>' +
                '<line x1="' + x(i).toFixed(1) + '" y1="' + (padT + innerH) + '" x2="' + x(i).toFixed(1) + '" y2="' + (padT + innerH + 4) + '" stroke="var(--border-strong)"/>';
       }
@@ -1035,7 +1058,7 @@
     setupCrosshairInteraction(el, points, x, padL, innerW);
   }
 
-  // Monthly Chart (Area curve + dots)
+  // Monthly Chart (Area Bezier)
   function renderMonthlyChart() {
     var el = document.getElementById('trendChartMonthly');
     var points = trendData.monthly;
@@ -1067,7 +1090,7 @@
     var dots = points.map(function(p, i) {
       var cx = x(i).toFixed(1);
       var cy = y(p.units).toFixed(1);
-      var tipText = '<strong>' + p.label + '</strong>销量: ' + p.units + ' 件<br/>订单数: ' + p.orders + ' 单';
+      var tipText = '<strong>' + p.label + '</strong>销量: ' + p.units + ' 件<br/>订单数: ' + p.orders + ' 单<br/>销售额: ' + fmtPrice(p.sales);
       return '<circle cx="' + cx + '" cy="' + cy + '" r="3" fill="var(--chart-teal)" stroke="#ffffff" stroke-width="1" class="svg-dot" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
     }).join('');
 
@@ -1103,7 +1126,7 @@
     setupCrosshairInteraction(el, points, x, padL, innerW);
   }
 
-  // Crosshair Guide-line and Hover Interactivity Coordinator
+  // Crosshair Guide-line & Hover Coordinator
   function setupCrosshairInteraction(container, points, xGetter, padL, innerW) {
     var overlay = container.querySelector('.chart-interactive-overlay');
     var svg = container.querySelector('svg');
@@ -1113,16 +1136,13 @@
     if (!overlay) return;
 
     overlay.addEventListener('mousemove', function(e) {
-      // Calculate cursor offsetX within SVG element coords
       var rect = svg.getBoundingClientRect();
       var offsetX = e.clientX - rect.left;
       
-      // Calculate corresponding relative index
       var pct = (offsetX - padL) / innerW;
       var i = Math.round(pct * (points.length - 1));
       i = Math.max(0, Math.min(points.length - 1, i));
 
-      // 1. Move vertical crosshair guide
       var cx = xGetter(i);
       crosshair.setAttribute('x1', cx);
       crosshair.setAttribute('x2', cx);
@@ -1130,7 +1150,7 @@
       crosshair.setAttribute('y2', 300);
       crosshair.style.display = 'block';
 
-      // 2. Highlight SVG Dots/Bars
+      // Highlight dots
       svg.querySelectorAll('.svg-dot').forEach(function(dot) {
         if (Number(dot.dataset.index) === i) {
           dot.classList.add('is-hovered');
@@ -1138,6 +1158,7 @@
           dot.classList.remove('is-hovered');
         }
       });
+      // Highlight bars
       svg.querySelectorAll('.svg-bar-group rect').forEach(function(barRect) {
         var group = barRect.parentNode;
         if (Number(group.dataset.index) === i) {
@@ -1149,7 +1170,7 @@
         }
       });
 
-      // 3. Show Tooltip bubble
+      // Show tooltip bubble
       var targetDot = svg.querySelector('.svg-dot[data-index="' + i + '"]') || svg.querySelector('.svg-bar-group[data-index="' + i + '"]');
       if (targetDot) {
         var text = targetDot.getAttribute('data-tooltip') || targetDot.parentNode.getAttribute('data-tooltip');
@@ -1157,17 +1178,13 @@
         tooltip.style.display = 'block';
         
         var tWidth = tooltip.offsetWidth;
-        var tHeight = tooltip.offsetHeight;
-        
-        // Position bubble centered horizontally over the guide line
         var leftPos = cx - tWidth / 2;
-        var topPos = 120; // Default center height
+        var topPos = 110;
         
         tooltip.style.left = leftPos + 'px';
         tooltip.style.top = topPos + 'px';
       }
 
-      // 4. Bi-directional Link: Highlighting left list row
       highlightTableRow(i);
     });
 
@@ -1187,15 +1204,12 @@
     });
   }
 
-  // Highlight Table Row by index
   function highlightTableRow(idx) {
     clearTableRowHighlight();
-    
     var row = document.querySelector('.trend-table-row[data-index="' + idx + '"]');
     if (row) {
       row.classList.add('is-active-row');
       
-      // Auto scroll container slightly if row is out of view (smooth viewport adjustment)
       var container = document.getElementById('tableScrollContainer');
       var rTop = row.offsetTop;
       var rHeight = row.offsetHeight;
@@ -1216,14 +1230,13 @@
     });
   }
 
-  // Setup Table row hover -> Highlighting chart dot/bar
+  // Row hover trigger
   function setupTableHoverEvents() {
     var rows = document.querySelectorAll('.trend-table-row');
     rows.forEach(function(row) {
       row.addEventListener('mouseenter', function() {
         var idx = Number(row.dataset.index);
         
-        // Find corresponding chart wrapper depending on active tab
         var activeContainerId = '';
         if (currentActiveTab === 'daily') activeContainerId = 'trendChartDaily';
         else if (currentActiveTab === 'weekly') activeContainerId = 'trendChartWeekly';
@@ -1235,12 +1248,10 @@
         var svg = container.querySelector('svg');
         if (!svg) return;
         
-        // Trigger dot hover
         var dot = svg.querySelector('.svg-dot[data-index="' + idx + '"]');
         if (dot) {
           dot.classList.add('is-hovered');
           
-          // Show tooltip on dot
           var tooltip = document.getElementById('chartTooltip');
           var text = dot.getAttribute('data-tooltip');
           tooltip.innerHTML = text;
@@ -1248,9 +1259,8 @@
           
           var cx = Number(dot.getAttribute('cx'));
           tooltip.style.left = (cx - tooltip.offsetWidth / 2) + 'px';
-          tooltip.style.top = '120px';
+          tooltip.style.top = '110px';
           
-          // Show vertical crosshair
           var crosshair = svg.querySelector('.vertical-guide');
           if (crosshair) {
             crosshair.setAttribute('x1', cx);
@@ -1261,7 +1271,6 @@
           }
         }
         
-        // Trigger bar hover
         var barRect = svg.querySelector('.svg-bar-group[data-index="' + idx + '"] rect');
         if (barRect) {
           barRect.style.opacity = '1';
@@ -1276,7 +1285,7 @@
           var bw = Number(barRect.getAttribute('width'));
           var cx = bx + bw / 2;
           tooltip.style.left = (cx - tooltip.offsetWidth / 2) + 'px';
-          tooltip.style.top = '120px';
+          tooltip.style.top = '110px';
           
           var crosshair = svg.querySelector('.vertical-guide');
           if (crosshair) {

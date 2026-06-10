@@ -22,6 +22,7 @@ def test_find_unprocessed_products_filters_configured_rows_but_allows_empty_base
     assert "NOT EXISTS (" in captured["sql"]
     assert "FROM media_product_skus s" in captured["sql"]
     assert "NULLIF(TRIM(s.dianxiaomi_sku), '') IS NOT NULL" in captured["sql"]
+    assert "TRIM(s.dianxiaomi_sku)=TRIM(COALESCE(s.shopify_variant_id, ''))" in captured["sql"]
     assert "NULLIF(TRIM(s.dianxiaomi_sku_code), '') IS NOT NULL" in captured["sql"]
     assert "NULLIF(TRIM(s.dianxiaomi_name), '') IS NOT NULL" not in captured["sql"]
     assert "COALESCE(s.manual_override, 0)=1" in captured["sql"]
@@ -88,6 +89,11 @@ def test_configured_local_sku_row_count_ignores_empty_shopify_base_rows():
             "shopify_sku": "front-sku",
             "dianxiaomi_name": "Only a product title",
             "source": "mingkong_batch_sync_repaired",
+        },
+        {
+            "shopify_variant_id": "46078664442029",
+            "dianxiaomi_sku": "46078664442029",
+            "source": "auto",
         },
         {
             "shopify_variant_id": "variant-2",

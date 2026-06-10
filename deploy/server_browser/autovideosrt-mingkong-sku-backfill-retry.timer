@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AutoVideoSrt Mingkong weekly SKU backfill retry
+
+[Timer]
+OnCalendar=Tue *-*-* 03:30:00
+Persistent=true
+Unit=autovideosrt-mingkong-sku-backfill-retry.service
+
+[Install]
+WantedBy=timers.target

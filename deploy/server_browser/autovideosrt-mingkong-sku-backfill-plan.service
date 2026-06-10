@@ -1,0 +1,14 @@
+[Unit]
+Description=AutoVideoSrt Mingkong weekly SKU backfill planning
+Wants=autovideosrt-dxm02-mk-vnc.service autovideosrt-dxm03-rjc-vnc.service
+After=network-online.target autovideosrt-dxm02-mk-vnc.service autovideosrt-dxm03-rjc-vnc.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+Environment=PYTHONUNBUFFERED=1
+Environment=DXM02_MINGKONG_CDP_URL=http://127.0.0.1:9223
+Environment=DXM03_DIANXIAOMI_CDP_URL=http://127.0.0.1:9225
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/mingkong_weekly_sync_orchestrator.py --phase plan --scan-limit 80 --created-within-days 14 --plan-delay-seconds 5
+TimeoutStartSec=7200

@@ -18,7 +18,7 @@
 ## 目标
 
 1. 新增本地“明空产品库”数据模型，保存明空全量 Shopify 在线商品、产品链接、产品 code、Shopify 商品/variant、SKU、1688 采购链接、供应商、采购配对状态。
-2. 新增每周北京时间周一 04:00 同步任务，从 DXM02-MK 店小秘拉取明空数据。
+2. 新增每周北京时间周一 03:30 同步任务，从 DXM02-MK 店小秘拉取明空数据。
 3. 同步范围首版按明空 Shopify 在线商品全量分页同步，后续可在全量基线稳定后增加增量优化。
 4. 新品 SKU 工作台改为优先查本地明空产品库；本地库缺失时按产品 code 实时访问 DXM02 补采并回写，再用本地库结果渲染。
 5. 针对 `adjustable-claw-clippers-rjc`，先用本地明空产品库完成可解释的候选匹配；如果明空侧缺精确采购关系，工作台展示候选与缺口，不自动猜测。
@@ -196,7 +196,7 @@
 
 ## 同步流程
 
-每周一 04:00 运行 `mingkong_product_library_sync`：
+每周一 03:30 运行 `mingkong_product_library_sync`：
 
 1. 连接 DXM02-MK CDP `127.0.0.1:9223`。
 2. 全量分页拉取 Shopify 在线商品。
@@ -420,6 +420,51 @@ DXM03 写入仍遵守：
 - DXM02-MK 全量 Shopify variants 里存在超过 128 字符的 SKU，`shopify_sku`、`pair_key`、`dxm_sku`、`dxm_product_sku`、组合父/子 SKU、采购配对 SKU 统一使用 `VARCHAR(512)`。
 - 迁移文件必须同时包含 `CREATE TABLE` 的 `TEXT` 定义和对既有表的 `ALTER TABLE ... MODIFY ... TEXT NULL`，确保线上已创建表后重新执行同步也能自愈。
 
+## 2026-06-10 周同步节奏固化
+
+明空产品库和明空配对的自动同步采用“每周全量打底 + 周一分阶段低频补齐 + 周二只重试瞬时失败”的节奏，避免每天全量扫描 DXM02-MK 两万级商品，也避免 DXM03 写入/配对和其它浏览器自动化任务争抢 CDP。
+
+时间表（北京时间）：
+
+1. 周一 03:30 跑 `mingkong_product_library_sync` 全量底座同步：
+   - 命令：`tools/mingkong_product_library_sync.py --days 0`
+   - systemd：`autovideosrt-mingkong-product-library-sync.timer`
+   - 节流：分页间隔 2 秒，每 50 页休息 60 秒；SKU 搜索间隔 2 秒；1688 配对查询间隔 3 秒；公开 Shopify variant 补齐间隔 1 秒。
+   - 只写本地 `mingkong_*` 产品库表，不写 DXM03。
+2. 周一 07:30 跑未处理 SKU 计划报告：
+   - 命令：`tools/mingkong_weekly_sync_orchestrator.py --phase plan`
+   - systemd：`autovideosrt-mingkong-sku-backfill-plan.timer`
+   - 只 dry-run 分类，输出 ready / base_only / no_pairs / error 报告，不写 DXM03。
+3. 周一 09:30 跑 ready SKU 执行：
+   - 命令：`tools/mingkong_weekly_sync_orchestrator.py --phase ready --execute`
+   - systemd：`autovideosrt-mingkong-sku-backfill-ready.timer`
+   - 只执行有真实明空店小秘 SKU 的产品；每次最多 25 个产品，单品 SKU 行数上限 80，产品间隔 90 秒。
+4. 周一 14:30 跑 base-only 慢速补齐：
+   - 命令：`tools/mingkong_weekly_sync_orchestrator.py --phase base --execute`
+   - systemd：`autovideosrt-mingkong-sku-backfill-base.timer`
+   - 只补齐 Shopify variant 基底且保留明空 SKU 缺口；每次最多 30 个产品，单品 SKU 行数上限 250，产品间隔 120 秒，不触发 DXM03 采购配对写入。
+5. 周二 03:30 跑 ready SKU 重试：
+   - 命令：`tools/mingkong_weekly_sync_orchestrator.py --phase ready --execute`
+   - systemd：`autovideosrt-mingkong-sku-backfill-retry.timer`
+   - 只重试仍处于未处理候选里的 transient 失败产品；明确业务缺口（明空没有 SKU、组合组件未配齐、采购链接缺失）继续留在报告里，不伪造成成功。
+
+周编排脚本行为：
+
+- `phase=plan`：只生成报告。
+- `phase=ready`：执行 `new_fillable_sku_count > 0` 的产品，仍遵守已配置 SKU 保护。
+- `phase=base`：执行 `new_fillable_sku_count = 0` 但能生成 Shopify variant 基底的产品；默认只作为工作台缺口数据，不写 DXM03。
+- `created-within-days` 默认 14 天，防止长期无明空 SKU 的老产品每周无限重刷。
+- 所有报告写入 `output/mingkong_weekly_sync/`；单品批处理原始报告继续写入 `output/mingkong_sku_backfill/`。
+
+部署文件：
+
+- `tools/mingkong_weekly_sync_orchestrator.py`
+- `deploy/server_browser/autovideosrt-mingkong-sku-backfill-plan.service|timer`
+- `deploy/server_browser/autovideosrt-mingkong-sku-backfill-ready.service|timer`
+- `deploy/server_browser/autovideosrt-mingkong-sku-backfill-base.service|timer`
+- `deploy/server_browser/autovideosrt-mingkong-sku-backfill-retry.service|timer`
+- `deploy/server_browser/install_mingkong_weekly_sync_timers.sh`
+
 ## adjustable-claw-clippers-rjc 当前预期
 
 本地产品：
@@ -562,7 +607,7 @@ DXM03 普通商品新增接口 `POST /api/dxmCommodityProduct/addCommodityProduc
 
 1. 数据表迁移存在并可重复执行。
 2. 同步服务 pure 解析函数有单元测试，覆盖 Shopify 商品、ERP SKU、1688 配对候选。
-3. 定时任务登记到 `appcore/scheduled_tasks.py`，计划为每周一 04:00。
+3. 定时任务登记到 `appcore/scheduled_tasks.py`，计划为每周一 03:30。
 4. 同步脚本支持手动运行，只读拉 DXM02 并输出 products/variants/procurement counts。
 5. 工作台读取本地明空产品库，不依赖每次实时访问 DXM02。
 6. 聚焦测试通过；不跑全量 pytest，除非涉及迁移/定时任务广影响时按规则扩大。

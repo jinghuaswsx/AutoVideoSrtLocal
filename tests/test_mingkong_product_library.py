@@ -1,3 +1,5 @@
+import sys
+import types
 from pathlib import Path
 
 
@@ -84,9 +86,12 @@ def test_mingkong_product_library_scheduler_registered():
     task = scheduled_tasks.get_task_definition("mingkong_product_library_sync")
 
     assert task["code"] == "mingkong_product_library_sync"
-    assert task["schedule"] == "每周一 04:00（北京时间）"
+    assert task["schedule"] == "每周一 03:30（北京时间，低频全量）"
     assert task["source_ref"] == "autovideosrt-mingkong-product-library-sync.timer"
-    assert task["runner"] == "tools/mingkong_product_library_sync.py --days 0"
+    assert "tools/mingkong_product_library_sync.py --days 0" in task["runner"]
+    assert "--page-delay-seconds 2" in task["runner"]
+    assert "--rest-every-pages 50" in task["runner"]
+    assert "--pair-delay-seconds 3" in task["runner"]
     assert task["log_table"] == "mingkong_product_library_sync_runs"
 
 
@@ -98,7 +103,7 @@ def test_mingkong_product_library_systemd_timer_is_weekly():
         / "autovideosrt-mingkong-product-library-sync.timer"
     ).read_text(encoding="utf-8")
 
-    assert "OnCalendar=Mon *-*-* 04:00:00" in body
+    assert "OnCalendar=Mon *-*-* 03:30:00" in body
     assert "OnCalendar=*-*-* 04:00:00" not in body
 
 
@@ -351,6 +356,34 @@ def test_mingkong_product_library_builds_full_base_from_product_link():
     assert rows[0]["dianxiaomi_sku"] == ""
 
 
+def test_mingkong_product_library_public_base_trusts_product_link_when_shopifyid_is_stale():
+    from appcore import mingkong_product_library as library
+
+    rows = library.public_shopify_sku_rows_from_product(
+        {
+            "product_link": "https://kiddomind.example/products/footstep-rocket-launcher",
+            "shopifyid": "stale-shopify-product-id",
+        },
+        fetch_json_fn=lambda _url: {
+            "id": 10106995638561,
+            "handle": "footstep-rocket-launcher",
+            "variants": [
+                {
+                    "id": 51616507199777,
+                    "sku": None,
+                    "title": "1 launcher + 3 rockets",
+                    "price": 2995,
+                    "compare_at_price": 3998,
+                }
+            ],
+        },
+    )
+
+    assert rows[0]["shopify_product_id"] == "10106995638561"
+    assert rows[0]["shopify_variant_id"] == "51616507199777"
+    assert rows[0]["shopify_variant_title"] == "1 launcher + 3 rockets"
+
+
 def test_mingkong_product_library_drops_out_of_range_public_shopify_weight():
     from appcore import mingkong_product_library as library
 
@@ -372,3 +405,39 @@ def test_mingkong_product_library_drops_out_of_range_public_shopify_weight():
     )
 
     assert rows[0]["shopify_weight_grams"] is None
+
+
+def test_mingkong_product_library_refresh_builds_complete_runner_args(monkeypatch):
+    from appcore import mingkong_product_library as library
+
+    captured = {}
+
+    def fake_run_sync(args):
+        captured.update(vars(args))
+        return {"products_seen": 1}
+
+    fake_runner = types.SimpleNamespace(run_sync=fake_run_sync)
+    monkeypatch.setitem(sys.modules, "tools.mingkong_product_library_sync", fake_runner)
+
+    result = library.refresh_product_from_dxm02(
+        {"product_code": "sample-rjc"},
+        cdp_url="http://127.0.0.1:9222",
+        timeout_seconds=45,
+    )
+
+    assert result == {"products_seen": 1}
+    assert captured == {
+        "cdp_url": "http://127.0.0.1:9222",
+        "days": 0,
+        "product_code": "sample",
+        "max_pages": 5,
+        "timeout_seconds": 45,
+        "lock_timeout": 180,
+        "include_combo_components": True,
+        "page_delay_seconds": 0.0,
+        "rest_every_pages": 0,
+        "rest_seconds": 0.0,
+        "sku_delay_seconds": 0.0,
+        "pair_delay_seconds": 0.0,
+        "public_variant_delay_seconds": 0.0,
+    }

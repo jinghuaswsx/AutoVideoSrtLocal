@@ -326,6 +326,48 @@ def test_dianxiaomi_listing_ranking_sync_timer_uses_dxm02_at_1240_for_30_day_sal
     assert "Persistent=true" in timer
 
 
+def test_mingkong_weekly_sync_timers_are_staggered_and_paced():
+    library_service = _read("deploy/server_browser/autovideosrt-mingkong-product-library-sync.service")
+    library_timer = _read("deploy/server_browser/autovideosrt-mingkong-product-library-sync.timer")
+    plan_service = _read("deploy/server_browser/autovideosrt-mingkong-sku-backfill-plan.service")
+    plan_timer = _read("deploy/server_browser/autovideosrt-mingkong-sku-backfill-plan.timer")
+    ready_service = _read("deploy/server_browser/autovideosrt-mingkong-sku-backfill-ready.service")
+    ready_timer = _read("deploy/server_browser/autovideosrt-mingkong-sku-backfill-ready.timer")
+    base_service = _read("deploy/server_browser/autovideosrt-mingkong-sku-backfill-base.service")
+    base_timer = _read("deploy/server_browser/autovideosrt-mingkong-sku-backfill-base.timer")
+    retry_service = _read("deploy/server_browser/autovideosrt-mingkong-sku-backfill-retry.service")
+    retry_timer = _read("deploy/server_browser/autovideosrt-mingkong-sku-backfill-retry.timer")
+    installer = _read("deploy/server_browser/install_mingkong_weekly_sync_timers.sh")
+
+    assert "OnCalendar=Mon *-*-* 03:30:00" in library_timer
+    assert "--page-delay-seconds 2" in library_service
+    assert "--rest-every-pages 50" in library_service
+    assert "--pair-delay-seconds 3" in library_service
+
+    assert "OnCalendar=Mon *-*-* 07:30:00" in plan_timer
+    assert "--phase plan" in plan_service
+    assert "--plan-delay-seconds 5" in plan_service
+
+    assert "OnCalendar=Mon *-*-* 09:30:00" in ready_timer
+    assert "--phase ready --execute" in ready_service
+    assert "--max-products 25" in ready_service
+    assert "--product-delay-seconds 90" in ready_service
+
+    assert "OnCalendar=Mon *-*-* 14:30:00" in base_timer
+    assert "--phase base --execute" in base_service
+    assert "--base-refresh-existing" in base_service
+    assert "--product-delay-seconds 120" in base_service
+
+    assert "OnCalendar=Tue *-*-* 03:30:00" in retry_timer
+    assert "--phase ready --execute" in retry_service
+    assert "--max-products 20" in retry_service
+
+    assert "autovideosrt-mingkong-sku-backfill-plan.timer" in installer
+    assert "autovideosrt-mingkong-sku-backfill-ready.timer" in installer
+    assert "autovideosrt-mingkong-sku-backfill-base.timer" in installer
+    assert "autovideosrt-mingkong-sku-backfill-retry.timer" in installer
+
+
 def test_mingkong_material_snapshot_service_runs_serially_without_sleep():
     service = _read("deploy/server_browser/autovideosrt-mingkong-material-daily-snapshot.service")
 

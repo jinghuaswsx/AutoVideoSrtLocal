@@ -402,7 +402,7 @@ def build_pair_rows(
                 "shopify_inventory_quantity": variant.get("shopify_inventory_quantity"),
                 "shopify_weight_grams": variant.get("shopify_weight_grams"),
                 "shopify_variant_title": variant.get("shopify_variant_title"),
-                "dianxiaomi_sku": (dxm_match or {}).get("dianxiaomi_sku") or pair_key,
+                "dianxiaomi_sku": (dxm_match or {}).get("dianxiaomi_sku"),
                 "dianxiaomi_product_sku": (dxm_match or {}).get("dianxiaomi_product_sku"),
                 "dianxiaomi_sku_code": (dxm_match or {}).get("dianxiaomi_sku_code"),
                 "dianxiaomi_name": (dxm_match or {}).get("dianxiaomi_name"),

@@ -1,0 +1,14 @@
+[Unit]
+Description=AutoVideoSrt Mingkong weekly base SKU backfill
+Wants=autovideosrt-dxm02-mk-vnc.service autovideosrt-dxm03-rjc-vnc.service
+After=network-online.target autovideosrt-dxm02-mk-vnc.service autovideosrt-dxm03-rjc-vnc.service mysql.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/autovideosrt
+Environment=PYTHONUNBUFFERED=1
+Environment=DXM02_MINGKONG_CDP_URL=http://127.0.0.1:9223
+Environment=DXM03_DIANXIAOMI_CDP_URL=http://127.0.0.1:9225
+ExecStart=/opt/autovideosrt/venv/bin/python /opt/autovideosrt/tools/mingkong_weekly_sync_orchestrator.py --phase base --execute --scan-limit 80 --max-products 30 --max-sku-rows 250 --created-within-days 14 --base-refresh-existing --plan-delay-seconds 5 --product-delay-seconds 120
+TimeoutStartSec=14400

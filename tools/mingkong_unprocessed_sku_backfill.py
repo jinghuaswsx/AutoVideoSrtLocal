@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -26,7 +27,12 @@ _CONFIGURED_SKU_ROW_SQL = (
     "COALESCE(s.manual_override, 0)=1 "
     "OR s.manual_unit_price_rmb IS NOT NULL "
     "OR NULLIF(TRIM(s.manual_goods_name), '') IS NOT NULL "
-    "OR NULLIF(TRIM(s.dianxiaomi_sku), '') IS NOT NULL "
+    "OR (NULLIF(TRIM(s.dianxiaomi_sku), '') IS NOT NULL AND NOT ("
+    "COALESCE(s.source, '') IN ('', 'auto', 'dianxiaomi_sku', 'shopify_public', 'shopify_public_base') "
+    "AND TRIM(s.dianxiaomi_sku)=TRIM(COALESCE(s.shopify_variant_id, '')) "
+    "AND NULLIF(TRIM(COALESCE(s.dianxiaomi_product_sku, '')), '') IS NULL "
+    "AND NULLIF(TRIM(COALESCE(s.dianxiaomi_sku_code, '')), '') IS NULL"
+    ")) "
     "OR NULLIF(TRIM(s.dianxiaomi_product_sku), '') IS NOT NULL "
     "OR NULLIF(TRIM(s.dianxiaomi_sku_code), '') IS NOT NULL"
 )
@@ -34,6 +40,11 @@ _CONFIGURED_SKU_ROW_SQL = (
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _sleep_seconds(seconds: float) -> None:
+    if seconds and seconds > 0:
+        time.sleep(float(seconds))
 
 
 def _best_value(*values: Any) -> str:
@@ -49,14 +60,16 @@ def is_configured_local_sku_row(row: dict[str, Any]) -> bool:
         return True
     if row.get("manual_unit_price_rmb") is not None:
         return True
-    for key in (
-        "manual_goods_name",
-        "dianxiaomi_sku",
-        "dianxiaomi_product_sku",
-        "dianxiaomi_sku_code",
-    ):
+    for key in ("manual_goods_name", "dianxiaomi_product_sku", "dianxiaomi_sku_code"):
         if _clean_text(row.get(key)):
             return True
+    sku = _clean_text(row.get("dianxiaomi_sku"))
+    if sku and not (
+        _clean_text(row.get("source")).lower()
+        in {"", "auto", "dianxiaomi_sku", "shopify_public", "shopify_public_base"}
+        and sku == _clean_text(row.get("shopify_variant_id"))
+    ):
+        return True
     return False
 
 
@@ -596,6 +609,7 @@ def run_batch(
     force_refresh_mingkong: bool = False,
     overwrite_existing_pairing: bool = False,
     protect_configured_local_skus: bool = False,
+    product_delay_seconds: float = 0.0,
     progress_fn: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     started_at = datetime.now().isoformat(timespec="seconds")
@@ -614,7 +628,7 @@ def run_batch(
             product_code=product_code,
         )
     results: list[dict[str, Any]] = []
-    for product in products:
+    for index, product in enumerate(products):
         try:
             result = run_product_sync(
                 product,
@@ -633,6 +647,8 @@ def run_batch(
         results.append(result)
         if progress_fn is not None:
             progress_fn(result)
+        if index < len(products) - 1:
+            _sleep_seconds(product_delay_seconds)
     finished_at = datetime.now().isoformat(timespec="seconds")
     summary = {
         "execute": execute,
@@ -679,6 +695,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--force-refresh-mingkong", action="store_true")
     parser.add_argument("--overwrite-existing-pairing", action="store_true")
     parser.add_argument("--protect-configured-local-skus", action="store_true")
+    parser.add_argument("--product-delay-seconds", type=float, default=0.0)
     args = parser.parse_args(argv)
     product_ids = [
         int(part.strip())
@@ -709,6 +726,7 @@ def main(argv: list[str] | None = None) -> int:
         force_refresh_mingkong=bool(args.force_refresh_mingkong),
         overwrite_existing_pairing=bool(args.overwrite_existing_pairing),
         protect_configured_local_skus=bool(args.protect_configured_local_skus),
+        product_delay_seconds=float(args.product_delay_seconds or 0),
         progress_fn=print_progress,
     )
     path = write_report(report)

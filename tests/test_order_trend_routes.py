@@ -43,9 +43,11 @@ def test_order_trend_detail_route_authenticated_200(authed_client_no_db):
                 "date": "2026-06-01",
                 "units": 10,
                 "orders": 8,
+                "sales": 200.0,
                 "spend": 50.0,
                 "purchase_value": 100.0,
-                "roas": 2.0
+                "meta_roas": 2.0,
+                "real_roas": 4.0
             }
         ],
         "weekly": [
@@ -53,6 +55,7 @@ def test_order_trend_detail_route_authenticated_200(authed_client_no_db):
                 "label": "W22 (06-01 ~ 06-07)",
                 "units": 10,
                 "orders": 8,
+                "sales": 200.0,
                 "start_date": "2026-06-01",
                 "end_date": "2026-06-07"
             }
@@ -61,7 +64,8 @@ def test_order_trend_detail_route_authenticated_200(authed_client_no_db):
             {
                 "label": "2026-06",
                 "units": 10,
-                "orders": 8
+                "orders": 8,
+                "sales": 200.0
             }
         ]
     }

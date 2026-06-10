@@ -166,8 +166,6 @@ def public_shopify_sku_rows_from_product(
     urls = _public_product_urls_from_link(product.get("product_link"))
     if not urls:
         return []
-    expected_product_id = str(product.get("shopifyid") or "").strip()
-
     def default_fetch_json(url: str) -> dict[str, Any]:
         request = Request(
             url,
@@ -189,8 +187,6 @@ def public_shopify_sku_rows_from_product(
         if not isinstance(source_product, dict):
             continue
         shopify_product_id = str(source_product.get("id") or "").strip()
-        if expected_product_id and shopify_product_id != expected_product_id:
-            continue
         rows: list[dict[str, Any]] = []
         for variant in source_product.get("variants") or []:
             if not isinstance(variant, dict):
@@ -932,5 +928,11 @@ def refresh_product_from_dxm02(
         timeout_seconds=timeout_seconds,
         lock_timeout=180,
         include_combo_components=True,
+        page_delay_seconds=0.0,
+        rest_every_pages=0,
+        rest_seconds=0.0,
+        sku_delay_seconds=0.0,
+        pair_delay_seconds=0.0,
+        public_variant_delay_seconds=0.0,
     )
     return runner.run_sync(args)

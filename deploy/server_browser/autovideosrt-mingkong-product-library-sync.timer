@@ -2,7 +2,7 @@
 Description=Run AutoVideoSrt Mingkong product library sync weekly
 
 [Timer]
-OnCalendar=Mon *-*-* 04:00:00
+OnCalendar=Mon *-*-* 03:30:00
 Persistent=true
 Unit=autovideosrt-mingkong-product-library-sync.service
 
