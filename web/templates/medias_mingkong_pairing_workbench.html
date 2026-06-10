@@ -404,6 +404,7 @@
     background: #fff;
     font: inherit;
     font-size: 12px;
+    box-sizing: border-box;
   }
   .mkp-result {
     padding: 12px 16px;
@@ -436,8 +437,8 @@
     box-shadow: 0 20px 60px rgba(15, 23, 42, .24);
   }
   .mkp-sync-modal {
-    width: min(1320px, 100%);
-    max-height: min(860px, calc(100vh - 32px));
+    width: min(1560px, 98vw);
+    max-height: min(920px, calc(100vh - 24px));
   }
   .mkp-modal-head {
     display: flex;
@@ -618,6 +619,7 @@
     background: #fff;
     font: inherit;
     font-size: 12px;
+    box-sizing: border-box;
   }
   .mkp-sync-footer {
     display: flex;
@@ -909,6 +911,33 @@
   [data-theme='dark'] .mkp-card-action-val {
     color: #cbd5e1 !important;
   }
+  .mkp-btn-toggle-log {
+    background: none;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: #475569;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+  }
+  .mkp-btn-toggle-log:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #0f172a;
+  }
+  [data-theme='dark'] .mkp-btn-toggle-log {
+    border-color: #475569;
+    color: #cbd5e1;
+  }
+  [data-theme='dark'] .mkp-btn-toggle-log:hover {
+    background: #1e293b;
+    border-color: #64748b;
+    color: #f8fafc;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -1000,11 +1029,17 @@
       </div>
       <div class="mkp-modal-body mkp-sync-body">
         <div class="mkp-sync-top">
-          <div class="mkp-modal-status">
-            <span id="mkpSyncState">待确认</span>
-            <span class="mkp-mono" id="mkpSyncElapsed">00:00</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+            <div class="mkp-modal-status">
+              <span id="mkpSyncState">待确认</span>
+              <span class="mkp-mono" id="mkpSyncElapsed">00:00</span>
+            </div>
+            <button type="button" class="mkp-btn-toggle-log" id="mkpSyncLogToggle">
+              <span>收起日志</span>
+              <svg class="toggle-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s;"><polyline points="18 15 12 9 6 15"></polyline></svg>
+            </button>
           </div>
-          <div class="mkp-progress" aria-hidden="true"><span></span></div>
+          <div class="mkp-progress" aria-hidden="true" style="margin-top: 8px;"><span></span></div>
           <ul class="mkp-modal-log" id="mkpSyncLog"></ul>
           <div class="mkp-ai-review" id="mkpSyncAiReviewBox" hidden></div>
         </div>
@@ -1711,6 +1746,18 @@
     syncProgress.running = false;
     $('mkpSyncElapsed').textContent = '00:00';
     $('mkpSyncLog').innerHTML = '';
+    
+    // Ensure log is expanded when resetting/opening
+    const logEl = $('mkpSyncLog');
+    const toggleBtn = $('mkpSyncLogToggle');
+    if (logEl && logEl.style.display === 'none') {
+      logEl.style.display = '';
+      if (toggleBtn) {
+        toggleBtn.querySelector('span').textContent = '收起日志';
+        toggleBtn.querySelector('.toggle-icon').style.transform = '';
+      }
+    }
+
     $('mkpSyncRun').textContent = '确认并执行同步';
     $('mkpSyncRun').disabled = false;
     $('mkpSyncAiReview').disabled = false;
@@ -2038,6 +2085,25 @@
   $('mkpSyncCancel').addEventListener('click', closeSyncModal);
   $('mkpSyncClose').addEventListener('click', closeSyncModal);
   $('mkpProgressClose').addEventListener('click', closeProgressModal);
+
+  // Sync log toggle click handler
+  const syncLog = $('mkpSyncLog');
+  const syncLogToggle = $('mkpSyncLogToggle');
+  if (syncLogToggle && syncLog) {
+    syncLogToggle.addEventListener('click', () => {
+      const isCollapsed = syncLog.style.display === 'none';
+      if (isCollapsed) {
+        syncLog.style.display = '';
+        syncLogToggle.querySelector('span').textContent = '收起日志';
+        syncLogToggle.querySelector('.toggle-icon').style.transform = '';
+      } else {
+        syncLog.style.display = 'none';
+        syncLogToggle.querySelector('span').textContent = '展开日志';
+        syncLogToggle.querySelector('.toggle-icon').style.transform = 'rotate(180deg)';
+      }
+    });
+  }
+
   load();
 })();
 </script>
