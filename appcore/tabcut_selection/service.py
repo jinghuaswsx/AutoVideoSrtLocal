@@ -599,6 +599,69 @@ def _next_tabcut_material_filename(product_id: int, base_filename: str) -> str:
     stem = Path(base).stem or "tabcut_video"
     ext = Path(base).suffix or ".mp4"
     candidate = f"{stem}{ext}"
+    if local_cover_path:
+        cover_filename = f"{Path(filename).stem}_cover.jpg"
+        cover_key = object_keys.build_media_object_key(owner_uid, product_id, cover_filename)
+        with open(local_cover_path, "rb") as handle:
+            local_media_storage.write_stream(cover_key, handle)
+
+    # 5. Insert media item via create_item
+    duration_val = row.get("local_video_duration_seconds") or 0
+    try:
+        duration_seconds = float(duration_val)
+    except (TypeError, ValueError):
+        duration_seconds = 0.0
+
+    item_id = create_item(
+        product_id=product_id,
+        user_id=owner_uid,
+        filename=filename,
+        object_key=dest_key,
+        display_name=filename,
+        duration_seconds=duration_seconds if duration_seconds > 0 else None,
+        file_size=file_size,
+        cover_object_key=cover_key,
+        lang="en",
+    )
+
+    # Save thumbnail to local media_thumbs and update metadata in DB
+    try:
+        thumb_dir = os.path.join(config.OUTPUT_DIR, "media_thumbs", str(product_id))
+        os.makedirs(thumb_dir, exist_ok=True)
+        final_thumb_path = os.path.join(thumb_dir, f"{item_id}.jpg")
+
+        if local_cover_path and local_cover_path.exists():
+            import shutil
+            shutil.copyfile(str(local_cover_path), final_thumb_path)
+            relative_thumb_path = os.path.relpath(final_thumb_path, config.OUTPUT_DIR).replace("\\", "/")
+            medias_mod_update_thumbnail(item_id, relative_thumb_path, duration_seconds if duration_seconds > 0 else None)
+        elif local_path and local_path.exists():
+            from pipeline.ffutil import extract_thumbnail
+            extracted = extract_thumbnail(str(local_path), thumb_dir, scale="360:-1")
+            if extracted:
+                if os.path.exists(final_thumb_path):
+                    os.remove(final_thumb_path)
+                os.rename(extracted, final_thumb_path)
+                relative_thumb_path = os.path.relpath(final_thumb_path, config.OUTPUT_DIR).replace("\\", "/")
+                medias_mod_update_thumbnail(item_id, relative_thumb_path, duration_seconds if duration_seconds > 0 else None)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception("Save thumbnail for imported tabcut video failed: %s", exc)
+
+    # 6. Update mapping back to tabcut_videos
+    execute(
+        "UPDATE tabcut_videos SET local_product_id = %s, local_media_item_id = %s WHERE video_id = %s",
+        (product_id, item_id, str(video_id))
+    )
+
+    return {
+        "media_product_id": product_id,
+        "media_item_id": item_id,
+        "is_new_product": is_new,
+    }
+
+
+
     suffix = 2
     while True:
         row = query_one(

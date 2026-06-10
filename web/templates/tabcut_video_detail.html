@@ -553,7 +553,135 @@
   .submit-task-btn:disabled {
     background: #93c5fd;
     cursor: not-allowed;
+
+  /* ------------------------------------ */
+  /* mki-modal & toast variables / styles */
+  /* ------------------------------------ */
+  :root {
+    --mh-bg:#f8fafc; --mh-panel:#fff; --mh-line:#dbe3ef; --mh-strong:#c6d3e1;
+    --mh-text:#1f2937; --mh-muted:#64748b; --mh-subtle:#94a3b8;
+    --mh-accent:#0f766e; --mh-soft:#ecfdf5; --mh-danger:#dc2626; --mh-radius:8px;
+    --oc-bg: oklch(99% 0.004 230); --oc-bg-subtle: oklch(97% 0.006 230);
+    --oc-bg-muted: oklch(94% 0.010 230); --oc-border: oklch(91% 0.012 230);
+    --oc-border-strong: oklch(84% 0.015 230); --oc-fg: oklch(22% 0.020 235);
+    --oc-fg-muted: oklch(48% 0.018 230); --oc-fg-subtle: oklch(62% 0.015 230);
+    --oc-accent: oklch(56% 0.16 230); --oc-accent-hover: oklch(50% 0.17 230);
+    --oc-accent-subtle: oklch(94% 0.04 225); --oc-danger: oklch(58% 0.18 25);
+    --oc-success: oklch(62% 0.13 165);
+    --oc-success-bg: oklch(95% 0.04 165); --oc-success-fg: oklch(38% 0.09 165);
+    --oc-warning-bg: oklch(96% 0.05 85); --oc-warning-fg: oklch(42% 0.10 60);
+    --oc-r: 6px; --oc-r-md: 8px; --oc-r-lg: 12px;
   }
+  .mki-btn:disabled, .mki-btn--disabled {
+    background: var(--oc-bg-muted); color: var(--oc-fg-muted);
+    cursor: not-allowed; border-color: var(--oc-border);
+  }
+  .mki-toast {
+    position: fixed; bottom: 24px; right: 24px; padding: 12px 16px;
+    border-radius: var(--oc-r-md); font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 2000; max-width: 400px;
+  }
+  .mki-toast--success { background: var(--oc-success-bg); color: var(--oc-success-fg); }
+  .mki-toast--warning { background: var(--oc-warning-bg); color: var(--oc-warning-fg); }
+  .mki-toast--error { background: oklch(96% 0.04 25); color: oklch(42% 0.14 25); }
+
+  .mki-xiao-backdrop {
+    position: fixed; inset: 0; z-index: 2200; display: none; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(15, 23, 42, .42);
+  }
+  .mki-xiao-dialog {
+    width: min(1040px, 94vw); max-height: 86vh; overflow: auto; padding: 28px;
+    border: 1px solid var(--oc-border); border-radius: var(--oc-r-lg); background: #fff;
+    box-shadow: 0 18px 45px rgba(15, 23, 42, .22);
+  }
+  .mki-xiao-title { margin: 0 0 18px; font-size: 20px; line-height: 1.35; font-weight: 800; }
+  .mki-xiao-fine-ai { margin-bottom: 18px; }
+  .mki-xiao-field { margin-bottom: 18px; }
+  .mki-xiao-label { display: block; margin-bottom: 8px; font-weight: 700; font-size: 13px; color: var(--oc-fg); }
+  .mki-xiao-lang-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .mki-xiao-lang-pill { display: inline-flex; cursor: pointer; user-select: none; }
+  .mki-xiao-lang-card--disabled,
+  .mki-xiao-lang-pill:has(.mki-xiao-lang-card--disabled) {
+    cursor: not-allowed !important;
+  }
+  .mki-xiao-lang-card--disabled {
+    opacity: 0.65;
+    background: var(--oc-bg-muted) !important;
+    border-color: var(--oc-border) !important;
+  }
+  .mki-xiao-lang-card--disabled .mki-xiao-lang-pill-box {
+    background: #f3f4f6 !important;
+    border-color: #d1d5db !important;
+    color: #9ca3af !important;
+    cursor: not-allowed !important;
+  }
+  .mki-xiao-lang-card--disabled .mki-xiao-ai-suggestion {
+    color: #9ca3af !important;
+  }
+  .mki-xiao-lang-pill:hover .mki-xiao-lang-card--disabled .mki-xiao-lang-pill-box {
+    border-color: #d1d5db !important;
+    color: #9ca3af !important;
+  }
+  .mki-xiao-lang-card {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 5px;
+    padding: 5px; border: 1px solid transparent; border-radius: var(--oc-r-lg);
+    background: var(--oc-bg); transition: background 120ms, border-color 120ms;
+  }
+  .mki-xiao-lang-card--high { border-color: oklch(83% 0.06 165); background: var(--oc-success-bg); }
+  .mki-xiao-lang-card--medium { border-color: oklch(86% 0.08 85); background: var(--oc-warning-bg); }
+  .mki-xiao-lang-card--low { border-color: oklch(86% 0.07 25); background: oklch(97% 0.04 25); }
+  .mki-xiao-lang-check {
+    position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+  }
+  .mki-xiao-lang-pill-box {
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    min-width: 74px; min-height: 50px; padding: 7px 14px; border: 1.5px solid var(--oc-border-strong);
+    border-radius: 9999px; background: #fff; color: var(--oc-fg);
+    transition: background 120ms, border-color 120ms, color 120ms;
+  }
+  .mki-xiao-lang-main { font-size: 14px; font-weight: 800; line-height: 1.1; }
+  .mki-xiao-ai-suggestion { font-size: 10px; font-weight: 700; line-height: 1.1; color: var(--oc-fg-muted); white-space: nowrap; }
+  .mki-xiao-lang-owner { width: 190px; max-width: 100%; min-height: 30px; font-size: 12px; padding: 4px 8px; }
+  .mki-xiao-lang-card--high .mki-xiao-ai-suggestion { color: var(--oc-success-fg); }
+  .mki-xiao-lang-card--medium .mki-xiao-ai-suggestion { color: var(--oc-warning-fg); }
+  .mki-xiao-lang-card--low .mki-xiao-ai-suggestion { color: var(--oc-danger); }
+  .mki-xiao-lang-pill:hover .mki-xiao-lang-pill-box { border-color: var(--oc-accent); color: var(--oc-accent); }
+  .mki-xiao-lang-check:checked + span,
+  .mki-xiao-lang-check:checked + .mki-xiao-lang-pill-box {
+    background: var(--oc-accent); border-color: var(--oc-accent); color: #fff;
+  }
+  .mki-xiao-lang-check:focus-visible + .mki-xiao-lang-pill-box {
+    outline: 2px solid var(--oc-accent-subtle); outline-offset: 2px;
+  }
+  .mki-xiao-status {
+    margin-top: 14px; padding: 12px 14px; border-radius: var(--oc-r-md);
+    border: 1px solid var(--oc-border); font-size: 13px; line-height: 1.55;
+  }
+  .mki-xiao-status--running {
+    border-color: #bfdbfe; background: #eff6ff; color: #1e3a8a;
+  }
+  .mki-xiao-status--success {
+    border-color: #bbf7d0; background: #f0fdf4; color: #14532d;
+  }
+  .mki-xiao-status--error {
+    border-color: #fecaca; background: #fef2f2; color: #7f1d1d;
+  }
+  .mki-xiao-status-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .mki-xiao-options { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 4px; }
+  .mki-xiao-option { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--oc-fg); cursor: pointer; }
+  .mki-xiao-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 22px; }
+
+  .mh-modal[hidden] { display:none; }
+  .mh-modal { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15,23,42,.42); }
+  .mh-modal-panel { width:min(980px, 96vw); max-height:86vh; overflow:hidden; border-radius:8px; background:#fff; box-shadow:0 24px 70px rgba(15,23,42,.22); }
+  .mh-modal-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--mh-line); }
+  .mh-modal-head h3 { margin:0; font-size:16px; }
+  .mh-modal-body { max-height:calc(86vh - 58px); overflow:auto; padding:14px 16px; }
+  .mh-modal-actions { display:flex; align-items:center; gap:8px; }
+
+  .mh-input, .mh-select { width:100%; height:34px; padding:0 9px; border:1px solid var(--mh-strong); border-radius:6px; background:#fff; color:var(--mh-text); font-size:14px; }
+  .mh-btn { height:34px; padding:0 13px; border:1px solid var(--mh-accent); border-radius:6px; background:var(--mh-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
+  .mh-btn.secondary { border-color:var(--mh-strong); background:#fff; color:#334155; }
 </style>
 {% endblock %}
 
@@ -669,6 +797,14 @@
                 清除标记
               </button>
             {% endif %}
+
+            {% if video.local_product_id and video.local_media_item_id %}
+              <button class="mark-btn" disabled style="background:#f1f5f9; color:#94a3b8; border-color:#e2e8f0; cursor:not-allowed;">已入素材库</button>
+            {% elif video.local_video_status == 'success' %}
+              <button class="mark-btn" style="background:#0f766e; color:#fff; border-color:#0f766e;" onclick="mkiImportTabcutVideo(this, '{{ video.video_id }}')">只入素材库</button>
+            {% else %}
+              <button class="mark-btn" disabled style="background:#f1f5f9; color:#94a3b8; border-color:#e2e8f0; cursor:not-allowed;" title="等待本地视频下载完成">只入素材库 (等待视频)</button>
+            {% endif %}
           </div>
         </div>
 
@@ -683,46 +819,28 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <div style="flex: 1;">
-                <strong>已关联翻译新品开发任务：</strong>
-                <a href="/tasks/detail/{{ video.new_product_parent_task_id }}" class="task-link" target="_blank" rel="noopener noreferrer">
+                <strong>已关联开发任务：</strong>
+                <a href="/tasks/?task_id={{ video.new_product_parent_task_id }}" class="task-link" target="_blank" rel="noopener noreferrer">
                   任务 #{{ video.new_product_parent_task_id }}
                 </a>
               </div>
             </div>
           {% elif video.local_video_status == 'success' %}
-            <form id="createTaskForm" onsubmit="submitNewProductTask(event)">
-              <div class="form-group">
-                <label class="form-label">指派开发人 (产品负责人) <span style="color:red;">*</span></label>
-                <select class="form-select" id="owner_id" name="owner_id" required>
-                  <option value="">-- 请选择负责人 --</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">指派剪辑人 (视频处理人) <span style="color:red;">*</span></label>
-                <select class="form-select" id="raw_processor_id" name="raw_processor_id" required>
-                  <option value="">-- 请选择剪辑人 --</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">选择目的语种/开发国家 <span style="color:red;">*</span></label>
-                <div class="countries-grid" id="countries_container">
-                  <div style="padding: 8px; color: #94a3b8; font-size: 12px;">正在加载语种国家...</div>
-                </div>
-              </div>
-
-              <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
-                <input type="checkbox" id="is_urgent" name="is_urgent" style="width: 16px; height: 16px; cursor: pointer;">
-                <label for="is_urgent" style="font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; user-select: none;">
-                  标记为紧急任务 (加急优先处理)
-                </label>
-              </div>
-
-              <button type="submit" class="submit-task-btn" id="submitTaskBtn">
-                确认创建新品开发任务
+            <div style="display: flex; gap: 10px;">
+              <button class="mh-btn" type="button" onclick="mkiCreateNewProductTaskFromTabcut(this, '{{ video.video_id }}')">
+                创建新品任务
               </button>
-            </form>
+              
+              {% if video.local_product_id and video.local_media_item_id %}
+                <button class="mh-btn secondary" type="button" onclick="mkiCreateSmallLangTaskFromTabcut(this, '{{ video.video_id }}')" data-mki-local-product-id="{{ video.local_product_id }}" data-mki-local-item-id="{{ video.local_media_item_id }}">
+                  创建小语种任务
+                </button>
+              {% else %}
+                <button class="mh-btn secondary" type="button" disabled title="请先只入素材库" style="opacity: 0.65; cursor: not-allowed; background: #f1f5f9; color: #94a3b8; border-color: #cbd5e1;">
+                  创建小语种任务
+                </button>
+              {% endif %}
+            </div>
           {% else %}
             <div class="task-info-warning">
               <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color: #ea580c; flex-shrink: 0; margin-right: 8px;">
@@ -834,6 +952,75 @@
   </div>
 </div>
 
+<!-- 选择产品负责人 Modal -->
+<div class="mh-modal" id="mhImportOwnerModal" hidden>
+  <div class="mh-modal-panel" style="width: 420px;">
+    <div class="mh-modal-head">
+      <h3>选择产品负责人</h3>
+      <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhImportOwnerModal')">关闭</button>
+    </div>
+    <div class="mh-modal-body">
+      <div style="margin-bottom: 15px;">
+        <label for="mhImportOwnerSelect" style="display:block; margin-bottom:6px; font-weight:bold; font-size:13px;">产品负责人：</label>
+        <select id="mhImportOwnerSelect" class="mh-select" style="width:100%; height:36px;"></select>
+      </div>
+      <div class="mh-modal-actions" style="justify-content: flex-end; display: flex; gap: 8px;">
+        <button class="mh-btn secondary" type="button" onclick="closeMetaHotModal('mhImportOwnerModal')">取消</button>
+        <button id="mhImportOwnerConfirm" class="mh-btn" type="button">确认只入库</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 创建小语种翻译任务 Modal -->
+<div id="mkiXiaoModal" class="mki-xiao-backdrop" style="display: none;">
+  <div class="mki-xiao-dialog" role="dialog" aria-modal="true" aria-labelledby="mkiXiaoTitle">
+    <h3 id="mkiXiaoTitle" class="mki-xiao-title">创建小语种翻译任务</h3>
+    <div id="mkiXiaoTaskKindWrap" class="mki-xiao-field" hidden>
+      <span class="mki-xiao-label">任务类型：</span>
+      <div class="mki-xiao-options">
+        <label class="mki-xiao-option"><input type="radio" name="mkiXiaoTaskKind" value="new_product" checked> 新品任务</label>
+        <label class="mki-xiao-option"><input type="radio" name="mkiXiaoTaskKind" value="supplement"> 补充素材</label>
+      </div>
+    </div>
+    <div id="mkiXiaoProductSearchWrap" class="mki-xiao-field" hidden>
+      <label class="mki-xiao-label" for="mkiXiaoProductSearch">选择目标产品：</label>
+      <div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px;">
+        <input id="mkiXiaoProductSearch" class="mh-select" type="search" placeholder="产品名 / Product Code / 产品 ID" style="height:36px;">
+        <button id="mkiXiaoProductSearchBtn" class="mh-btn secondary" type="button">搜索</button>
+      </div>
+      <div id="mkiXiaoSelectedProduct" class="mki-xiao-status" hidden></div>
+      <div id="mkiXiaoProductResults" style="display:grid; gap:6px; margin-top:8px; max-height:220px; overflow:auto;"></div>
+    </div>
+    <div class="mki-xiao-field">
+      <label class="mki-xiao-label" for="mkiXiaoTranslator">产品负责人 / 默认翻译负责人：</label>
+      <select id="mkiXiaoTranslator" class="mh-select" style="width:100%; height:36px;"></select>
+      <div class="mki-progress-domain-subtitle" style="font-size:11px; color:var(--mh-muted); margin-top:4px;">新品任务中用于产品归属；补充素材沿用目标产品负责人。每个目标语种可单独改负责人。</div>
+    </div>
+    <div class="mki-xiao-field">
+      <label class="mki-xiao-label" for="mkiXiaoRawProcessor">原视频处理人：</label>
+      <select id="mkiXiaoRawProcessor" class="mh-select" style="width:100%; height:36px;"></select>
+    </div>
+    <div class="mki-xiao-field">
+      <span class="mki-xiao-label">目标国家（至少勾选一个）：</span>
+      <div id="mkiXiaoLangs" class="mki-xiao-lang-pills"></div>
+    </div>
+    <div class="mki-xiao-field">
+      <div class="mki-xiao-options">
+        <label class="mki-xiao-option" for="mkiXiaoUrgent">
+          <input id="mkiXiaoUrgent" type="checkbox">
+          紧急任务
+        </label>
+      </div>
+    </div>
+    <div id="mkiXiaoStatus" class="mki-xiao-status" hidden></div>
+    <div class="mki-xiao-actions">
+      <button id="mkiXiaoCancel" class="mh-btn secondary" onclick="mkiXiaoCancel()">取消</button>
+      <button id="mkiXiaoConfirm" class="mh-btn" onclick="mkiXiaoOK()">确认创建</button>
+    </div>
+  </div>
+</div>
+
 <script>
   // 1. 素材标记接口调用
   async function setMarkStatus(status) {
@@ -863,128 +1050,714 @@
     return meta ? meta.getAttribute('content') : '';
   }
 
-  // 2. 异步加载开发任务指派的选项
-  document.addEventListener("DOMContentLoaded", async () => {
-    const ownerSelect = document.getElementById("owner_id");
-    const rawProcessorSelect = document.getElementById("raw_processor_id");
-    const countriesContainer = document.getElementById("countries_container");
+  // Toast 提示
+  function mkiToast(kind, msg) {
+    const t = document.createElement('div');
+    t.className = `mki-toast mki-toast--${kind}`;
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 4000);
+  }
 
-    if (!ownerSelect || !rawProcessorSelect) return; // 已经关联任务或视频未下载成功时表单不存在
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
 
-    try {
-      // 加载用户列表
-      const userResp = await fetch("/tasks/api/translation-work-users");
-      const userData = await userResp.json();
-      if (userData.users) {
-        userData.users.forEach(user => {
-          // 负责人下拉菜单
-          const optOwner = document.createElement("option");
-          optOwner.value = user.id;
-          optOwner.textContent = user.display_name;
-          ownerSelect.appendChild(optOwner);
-
-          // 剪辑人下拉菜单
-          const optProcessor = document.createElement("option");
-          optProcessor.value = user.id;
-          optProcessor.textContent = user.display_name;
-          rawProcessorSelect.appendChild(optProcessor);
-        });
-        
-        // 自动选择当前登录人作为负责人（如果存在）
-        const currentUserId = "{{ current_user.id }}";
-        if (currentUserId) {
-          ownerSelect.value = currentUserId;
-        }
-      }
-
-      // 加载国家/语言列表
-      const langResp = await fetch("/tasks/api/languages");
-      const langData = await langResp.json();
-      if (langData.languages && countriesContainer) {
-        countriesContainer.innerHTML = "";
-        langData.languages.forEach(lang => {
-          const label = document.createElement("label");
-          label.className = "country-checkbox-item";
-          
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.name = "countries";
-          checkbox.value = lang.code;
-          
-          label.appendChild(checkbox);
-          label.appendChild(document.createTextNode(" " + lang.name));
-          countriesContainer.appendChild(label);
-        });
-      }
-    } catch (err) {
-      console.error("加载任务表单选项失败: ", err);
+  function mkiUserLabel(user) {
+    const fallback = user && user.id ? `用户 #${user.id}` : '';
+    const baseName = String((user && (user.display_name || user.username)) || fallback).trim();
+    if (user && user.todo_count !== undefined && user.urgent_count !== undefined && user.completed_today_count !== undefined) {
+      return `${baseName}  待处理 ${user.todo_count}  紧急 ${user.urgent_count}  今天已完成 ${user.completed_today_count}`;
     }
-  });
+    return baseName;
+  }
 
-  // 3. 提交新品开发任务
-  async function submitNewProductTask(event) {
-    event.preventDefault();
+  function mkiUserOption(user) {
+    return `<option value="${escapeHtml(user.id)}">${escapeHtml(mkiUserLabel(user))}</option>`;
+  }
 
-    const ownerId = parseInt(document.getElementById("owner_id").value);
-    const rawProcessorId = parseInt(document.getElementById("raw_processor_id").value);
-    const isUrgent = document.getElementById("is_urgent").checked;
+  function mkiUserOptions(selectedId, includeEmpty) {
+    const selectedText = String(selectedId || '');
+    return (includeEmpty ? '<option value="">请选择负责人</option>' : '') + (mkiXiaoTranslatorsCache || []).map(function(user) {
+      const value = String(user && user.id || '');
+      const selected = value && value === selectedText ? ' selected' : '';
+      return '<option value="' + escapeHtml(value) + '"' + selected + '>' + escapeHtml(mkiUserLabel(user)) + '</option>';
+    }).join('');
+  }
+
+  async function mkiFetchActiveUsers() {
+    const r = await fetch('/tasks/api/translation-work-users');
+    const data = await r.json();
+    return data.users || [];
+  }
+
+  function closeMetaHotModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) modal.hidden = true;
+  }
+
+  // 只入素材库
+  let mkiImportingVideoId = null;
+  async function mkiImportTabcutVideo(btn, videoId) {
+    mkiImportingVideoId = videoId;
+    const modal = document.getElementById('mhImportOwnerModal');
+    const select = document.getElementById('mhImportOwnerSelect');
+    const confirmBtn = document.getElementById('mhImportOwnerConfirm');
     
-    // 获取勾选的国家
-    const checkboxes = document.getElementsByName("countries");
-    const selectedCountries = [];
-    checkboxes.forEach(cb => {
-      if (cb.checked) {
-        selectedCountries.push(cb.value);
-      }
-    });
-
-    if (selectedCountries.length === 0) {
-      alert("请至少选择一个目的开发国家/语种！");
+    if (!modal || !select || !confirmBtn) return;
+    
+    select.innerHTML = '<option value="">加载中...</option>';
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '确认只入库';
+    modal.hidden = false;
+    
+    let activeUsers = [];
+    try {
+      activeUsers = await mkiFetchActiveUsers();
+    } catch (e) {
+      activeUsers = [];
+    }
+    
+    if (!activeUsers.length) {
+      select.innerHTML = '<option value="">没有可用产品负责人</option>';
       return;
     }
+    
+    select.innerHTML = '<option value="">请选择产品负责人</option>' + activeUsers.map(mkiUserOption).join('');
+    // 默认选择当前登录用户（如果有的话）
+    const currentUserId = "{{ current_user.id }}";
+    if (currentUserId && activeUsers.some(u => String(u.id) === String(currentUserId))) {
+      select.value = String(currentUserId);
+    }
+    confirmBtn.disabled = false;
+    
+    confirmBtn.onclick = async function() {
+      const ownerId = Number(select.value || 0);
+      if (!ownerId) {
+        alert('请选择产品负责人');
+        return;
+      }
+      
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '入库中...';
+      
+      try {
+        const res = await fetch(`/xuanpin/api/tabcut/videos/${videoId}/import`, {
+          method: 'POST',
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCsrfToken()
+          },
+          body: JSON.stringify({ owner_id: ownerId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || 'import_failed');
+        
+        closeMetaHotModal('mhImportOwnerModal');
+        mkiToast('success', '只入素材库成功');
+        setTimeout(() => window.location.reload(), 1200);
+      } catch (err) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '确认只入库';
+        alert('导入失败：' + (err.message || '网络错误'));
+      }
+    };
+  }
 
-    // 默认分配策略：每个国家翻译任务归属当前选定的负责人 (owner_id)
-    const languageAssignments = {};
-    selectedCountries.forEach(code => {
-      languageAssignments[code.toUpperCase()] = ownerId;
+  // 小语种任务 Modal 核心逻辑
+  function mkiXiaoForceUnlock(event, btn, code) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    var card = btn.closest('.mki-xiao-lang-card');
+    if (!card) return;
+    var cb = card.querySelector('.mki-xiao-lang-check');
+    if (cb) {
+      cb.removeAttribute('disabled');
+      cb.setAttribute('data-mki-force', '1');
+      cb.checked = true;
+      card.classList.remove('mki-xiao-lang-card--disabled');
+      card.style.borderColor = '#d9534f';
+      card.style.boxShadow = '0 0 4px rgba(217, 83, 79, 0.4)';
+      btn.style.display = 'none';
+      var small = card.querySelector('.mki-xiao-ai-suggestion');
+      if (small) {
+        small.innerHTML = '<span style="color: #d9534f; font-weight: bold;">已强选</span>';
+      }
+      var mainTextEl = card.querySelector('.mki-xiao-lang-main');
+      if (mainTextEl) {
+        mainTextEl.textContent = mainTextEl.textContent.replace(' (已有任务)', ' (强创)');
+      }
+      var ownerSelect = card.querySelector('[data-mki-lang-owner]');
+      if (ownerSelect) ownerSelect.disabled = false;
+    }
+  }
+
+  function mkiXiaoIsForce() {
+    var cbs = document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]');
+    for (var i = 0; i < cbs.length; i++) {
+      if (cbs[i].checked && cbs[i].getAttribute('data-mki-force') === '1') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  let mkiXiaoResolve = null;
+  let mkiXiaoTranslatorsCache = null;
+  let mkiXiaoRawProcessorsCache = null;
+  let mkiXiaoLangsCache = null;
+  let mkiXiaoLockTranslator = false;
+  let mkiXiaoCurrentEndpoint = '/tasks/api/parent';
+  let mkiXiaoAiProductId = null;
+  let mkiXiaoFineAiSourceButton = null;
+  let mkiXiaoEnableTaskKind = false;
+  let mkiXiaoSelectedProduct = null;
+
+  function mkiXiaoLangCode(lang) {
+    if (lang && typeof lang === 'object') {
+      return String(lang.code || '').trim().toUpperCase();
+    }
+    return String(lang || '').trim().toUpperCase();
+  }
+
+  function mkiXiaoLangLabel(lang) {
+    var code = mkiXiaoLangCode(lang);
+    if (!code) return '';
+    if (lang && typeof lang === 'object') {
+      var directLabel = String(lang.label || '').trim();
+      if (directLabel) return directLabel;
+      var name = String(lang.name_zh || lang.name || '').trim();
+      if (name) return name + ' (' + code + ')';
+    }
+    var fallback = {
+      DE: '德语', FR: '法语', ES: '西班牙语', IT: '意大利语', JA: '日语',
+      PT: '葡萄牙语', NL: '荷兰语', SV: '瑞典语', FI: '芬兰语'
+    }[code];
+    return fallback ? fallback + ' (' + code + ')' : code;
+  }
+
+  function mkiXiaoSetStatus(kind, html) {
+    var statusEl = document.getElementById('mkiXiaoStatus');
+    if (!statusEl) return;
+    statusEl.hidden = false;
+    statusEl.className = 'mki-xiao-status mki-xiao-status--' + kind;
+    statusEl.innerHTML = html;
+  }
+
+  function mkiXiaoHideStatus() {
+    var statusEl = document.getElementById('mkiXiaoStatus');
+    if (!statusEl) return;
+    statusEl.hidden = true;
+    statusEl.innerHTML = '';
+  }
+
+  function mkiXiaoSetControlsDisabled(disabled) {
+    var translator = document.getElementById('mkiXiaoTranslator');
+    var raw = document.getElementById('mkiXiaoRawProcessor');
+    var urgent = document.getElementById('mkiXiaoUrgent');
+    var productSearch = document.getElementById('mkiXiaoProductSearch');
+    var productSearchBtn = document.getElementById('mkiXiaoProductSearchBtn');
+    if (translator) translator.disabled = !!disabled || !!mkiXiaoLockTranslator;
+    if (raw) raw.disabled = !!disabled;
+    if (urgent) urgent.disabled = !!disabled;
+    if (productSearch) productSearch.disabled = !!disabled;
+    if (productSearchBtn) productSearchBtn.disabled = !!disabled;
+    document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+      radio.disabled = !!disabled;
     });
+    document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]').forEach(function(cb) {
+      var isExisting = cb.getAttribute('data-mki-existing') === '1';
+      cb.disabled = !!disabled || isExisting;
+    });
+    document.querySelectorAll('#mkiXiaoLangs [data-mki-lang-owner]').forEach(function(sel) {
+      var card = sel.closest('.mki-xiao-lang-card');
+      var cb = card ? card.querySelector('.mki-xiao-lang-check') : null;
+      var isExisting = cb && cb.getAttribute('data-mki-existing') === '1' && cb.getAttribute('data-mki-force') !== '1';
+      sel.disabled = !!disabled || !!isExisting;
+    });
+  }
 
-    const submitBtn = document.getElementById("submitTaskBtn");
-    submitBtn.disabled = true;
-    submitBtn.textContent = "正在创建中...";
+  function mkiXiaoSetBusy(isBusy) {
+    var confirmBtn = document.getElementById('mkiXiaoConfirm');
+    var cancelBtn = document.getElementById('mkiXiaoCancel');
+    mkiXiaoSetControlsDisabled(isBusy);
+    if (confirmBtn) {
+      confirmBtn.disabled = !!isBusy;
+      confirmBtn.textContent = isBusy ? '创建中...' : '确认创建';
+    }
+    if (cancelBtn) {
+      cancelBtn.disabled = !!isBusy;
+      cancelBtn.textContent = '取消';
+    }
+  }
+
+  function mkiXiaoTaskHref(taskId) {
+    return '/tasks/?task_id=' + encodeURIComponent(taskId);
+  }
+
+  function mkiXiaoShowCreateSuccess(taskId) {
+    var href = mkiXiaoTaskHref(taskId);
+    var confirmBtn = document.getElementById('mkiXiaoConfirm');
+    var cancelBtn = document.getElementById('mkiXiaoCancel');
+    mkiXiaoSetControlsDisabled(true);
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '已创建';
+    }
+    if (cancelBtn) {
+      cancelBtn.disabled = false;
+      cancelBtn.textContent = '关闭';
+    }
+    mkiXiaoSetStatus('success',
+      '<strong>任务已创建，父任务 #' + escapeHtml(taskId) + '</strong>'
+      + '<div>下一步：进入任务中心处理这个任务。</div>'
+      + '<div class="mki-xiao-status-actions"><a class="mh-btn" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(href) + '">打开任务 #' + escapeHtml(taskId) + '</a></div>'
+    );
+  }
+
+  function mkiXiaoShowCreateFailure(endpoint, error) {
+    var message = error && error.message ? error.message : String(error || '未知错误');
+    var confirmBtn = document.getElementById('mkiXiaoConfirm');
+    var cancelBtn = document.getElementById('mkiXiaoCancel');
+    mkiXiaoSetControlsDisabled(true);
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = '创建失败';
+    }
+    if (cancelBtn) {
+      cancelBtn.disabled = false;
+      cancelBtn.textContent = '关闭';
+    }
+    mkiXiaoSetStatus('error',
+      '<strong>请求失败</strong>'
+      + '<div>请求：' + escapeHtml(endpoint || mkiXiaoCurrentEndpoint) + '</div>'
+      + '<div>原因：' + escapeHtml(message) + '</div>'
+      + '<div>关闭后可回到当前卡片重新发起创建。</div>'
+    );
+  }
+
+  function mkiXiaoRequestError(endpoint, rsp, data) {
+    var statusText = rsp ? (rsp.status + (rsp.statusText ? ' ' + rsp.statusText : '')) : 'unknown';
+    var detail = data && (data.error || data.detail || data.message);
+    return new Error('请求 ' + endpoint + ' 返回 ' + statusText + '：' + (detail || '无错误详情'));
+  }
+
+  function mkiXiaoCurrentTaskKind() {
+    if (!mkiXiaoEnableTaskKind) return 'new_product';
+    var checked = document.querySelector('input[name="mkiXiaoTaskKind"]:checked');
+    return checked && checked.value === 'supplement' ? 'supplement' : 'new_product';
+  }
+
+  function mkiXiaoRenderSelectedProduct(product) {
+    var box = document.getElementById('mkiXiaoSelectedProduct');
+    if (!box) return;
+    if (!product) {
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+    box.hidden = false;
+    box.className = 'mki-xiao-status mki-xiao-status--success';
+    box.innerHTML = '<strong>已选择产品 #' + escapeHtml(product.id) + '</strong>'
+      + '<div>' + escapeHtml(product.name || '') + '</div>'
+      + '<div>Product Code: ' + escapeHtml(product.product_code || '-')
+      + ' · 负责人: ' + escapeHtml(product.owner_name || product.owner_id || '-') + '</div>';
+  }
+
+  function mkiXiaoSelectProduct(product) {
+    mkiXiaoSelectedProduct = product || null;
+    mkiXiaoRenderSelectedProduct(mkiXiaoSelectedProduct);
+    var input = document.getElementById('mkiXiaoProductSearch');
+    var results = document.getElementById('mkiXiaoProductResults');
+    if (input && product) input.value = product.name || product.product_code || product.id || '';
+    if (results && product) results.innerHTML = '';
+  }
+
+  function mkiXiaoRenderProductResults(items) {
+    var results = document.getElementById('mkiXiaoProductResults');
+    if (!results) return;
+    if (!items.length) {
+      results.innerHTML = '<div class="mki-xiao-status">没有匹配产品</div>';
+      return;
+    }
+    results.innerHTML = items.map(function(product) {
+      return '<div class="mki-xiao-status" style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center;">'
+        + '<div><strong>#' + escapeHtml(product.id) + ' ' + escapeHtml(product.name || '') + '</strong>'
+        + '<div>Product Code: ' + escapeHtml(product.product_code || '-')
+        + ' · 负责人: ' + escapeHtml(product.owner_name || product.owner_id || '-') + '</div></div>'
+        + '<button class="mh-btn secondary" type="button" data-mki-xiao-product="' + escapeHtml(product.id) + '">选择</button>'
+        + '</div>';
+    }).join('');
+    results.querySelectorAll('[data-mki-xiao-product]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = Number(btn.dataset.mkiXiaoProduct || 0);
+        mkiXiaoSelectProduct(items.find(function(item) { return Number(item.id) === id; }) || null);
+      });
+    });
+  }
+
+  async function mkiXiaoSearchProducts(productId) {
+    var input = document.getElementById('mkiXiaoProductSearch');
+    var results = document.getElementById('mkiXiaoProductResults');
+    var url = productId
+      ? '/tasks/api/material-products?product_id=' + encodeURIComponent(productId)
+      : '/tasks/api/material-products?q=' + encodeURIComponent(input ? input.value || '' : '');
+    if (results) results.innerHTML = '<div class="mki-xiao-status">搜索中...</div>';
+    var resp = await fetch(url);
+    var data = await resp.json().catch(function() { return {}; });
+    if (!resp.ok) throw new Error(data.error || '产品搜索失败');
+    var items = data.items || [];
+    if (productId && items.length) mkiXiaoSelectProduct(items[0]);
+    else mkiXiaoRenderProductResults(items);
+  }
+
+  function mkiXiaoSyncTaskKindUI() {
+    var wrap = document.getElementById('mkiXiaoProductSearchWrap');
+    if (!wrap) return;
+    wrap.hidden = !mkiXiaoEnableTaskKind || mkiXiaoCurrentTaskKind() !== 'supplement';
+  }
+
+  async function mkiXiaoOpenModal(options = {}) {
+    mkiXiaoLockTranslator = !!options.lockTranslator;
+    mkiXiaoCurrentEndpoint = options.endpoint || '/tasks/api/parent';
+    mkiXiaoAiProductId = Number(options.productId || 0) || null;
+    mkiXiaoFineAiSourceButton = options.sourceButton || null;
+    mkiXiaoEnableTaskKind = !!options.enableTaskKind;
+    mkiXiaoSelectedProduct = null;
+
+    var kindWrap = document.getElementById('mkiXiaoTaskKindWrap');
+    var searchWrap = document.getElementById('mkiXiaoProductSearchWrap');
+    var searchInput = document.getElementById('mkiXiaoProductSearch');
+    var searchBtn = document.getElementById('mkiXiaoProductSearchBtn');
+    var results = document.getElementById('mkiXiaoProductResults');
+    if (kindWrap) kindWrap.hidden = !mkiXiaoEnableTaskKind;
+    if (searchWrap) searchWrap.hidden = true;
+    if (searchInput) searchInput.value = '';
+    if (results) results.innerHTML = '';
+    mkiXiaoRenderSelectedProduct(null);
+    document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+      radio.checked = radio.value === (options.defaultTaskKind || 'new_product');
+      radio.onchange = function() { mkiXiaoSyncTaskKindUI(); };
+    });
+    if (searchBtn) {
+      searchBtn.onclick = function() {
+        mkiXiaoSearchProducts().catch(function(error) {
+          var productResults = document.getElementById('mkiXiaoProductResults');
+          if (productResults) productResults.innerHTML = '<div class="mki-xiao-status mki-xiao-status--error">搜索失败：' + escapeHtml(error.message || error) + '</div>';
+        });
+      };
+    }
+    if (searchInput) {
+      searchInput.onkeydown = function(event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (searchBtn) searchBtn.click();
+        }
+      };
+    }
+    mkiXiaoSyncTaskKindUI();
+    if (mkiXiaoEnableTaskKind && options.targetProductId) {
+      document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
+        radio.checked = radio.value === 'supplement';
+      });
+      mkiXiaoSyncTaskKindUI();
+      mkiXiaoSearchProducts(Number(options.targetProductId)).catch(function(error) {
+        var productResults = document.getElementById('mkiXiaoProductResults');
+        if (productResults) productResults.innerHTML = '<div class="mki-xiao-status mki-xiao-status--error">预选产品失败：' + escapeHtml(error.message || error) + '</div>';
+      });
+    }
 
     try {
-      const resp = await fetch("/tasks/api/new-product", {
-        method: "POST",
+      mkiXiaoTranslatorsCache = await mkiFetchActiveUsers();
+    } catch (e) { mkiXiaoTranslatorsCache = []; }
+    mkiXiaoRawProcessorsCache = mkiXiaoTranslatorsCache;
+    if (!mkiXiaoTranslatorsCache.length) {
+      alert('没有可用翻译工作用户');
+      return null;
+    }
+    
+    const sel = document.getElementById('mkiXiaoTranslator');
+    sel.innerHTML = mkiXiaoTranslatorsCache.map(mkiUserOption).join('');
+    if (options.translatorId) sel.value = String(options.translatorId);
+    
+    // 自动选中当前登录用户
+    const currentUserId = "{{ current_user.id }}";
+    if (currentUserId && mkiXiaoTranslatorsCache.some(u => String(u.id) === String(currentUserId))) {
+      sel.value = String(currentUserId);
+    }
+    
+    const rawSel = document.getElementById('mkiXiaoRawProcessor');
+    rawSel.innerHTML = '<option value="">请选择原视频处理人</option>' + mkiXiaoRawProcessorsCache.map(mkiUserOption).join('');
+    const rawDefault = options.rawProcessorId || (
+      sel.value && mkiXiaoRawProcessorsCache.some(function(u) { return Number(u.id) === Number(sel.value); })
+        ? sel.value
+        : null
+    );
+    if (rawDefault) rawSel.value = String(rawDefault);
+    const titleEl = document.getElementById('mkiXiaoTitle');
+    if (titleEl) titleEl.textContent = options.title || '创建小语种翻译任务';
+    const urgentEl = document.getElementById('mkiXiaoUrgent');
+    if (urgentEl) {
+      urgentEl.checked = !!options.isUrgent;
+    }
+    const defaultLangOwnerId = String(sel.value || options.translatorId || '');
+
+    let langs = [];
+    try {
+      const url = options.itemId 
+        ? '/tasks/api/languages?media_item_id=' + encodeURIComponent(options.itemId)
+        : '/tasks/api/languages';
+      const r = await fetch(url);
+      const data = await r.json();
+      langs = data.languages || [];
+    } catch (e) { 
+      langs = []; 
+    }
+    var langsDiv = document.getElementById('mkiXiaoLangs');
+    langsDiv.innerHTML = langs.map(function(l) {
+      var code = mkiXiaoLangCode(l);
+      var label = mkiXiaoLangLabel(l); // 内部会自动使用 l.name_zh || l.name
+      if (!code) return '';
+      var isExisting = !!l.existing;
+      var disabledAttr = isExisting ? ' disabled data-mki-existing="1"' : '';
+      var ownerDisabledAttr = isExisting ? ' disabled' : '';
+      var labelText = isExisting ? label + ' (已有任务)' : label;
+      var cardClass = isExisting ? 'mki-xiao-lang-card mki-xiao-lang-card--disabled' : 'mki-xiao-lang-card';
+      var forceBtnHtml = isExisting
+        ? '<button type="button" class="mki-xiao-force-btn" onclick="mkiXiaoForceUnlock(event, this, \'' + escapeHtml(code) + '\')" style="margin-top: 4px; padding: 2px 4px; font-size: 10px; line-height: 1; border: 1px solid #d9534f; color: #d9534f; background: transparent; border-radius: 3px; cursor: pointer; scale: 0.9; transform-origin: center; pointer-events: auto !important;">强制创建</button>'
+        : '';
+      return '<label class="mki-xiao-lang-pill">'
+        + '<span class="' + cardClass + '" data-mki-ai-lang-card="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
+        + '<input class="mki-xiao-lang-check" type="checkbox" value="' + escapeHtml(code) + '"' + disabledAttr + '>'
+        + '<span class="mki-xiao-lang-pill-box" data-mki-ai-lang="' + escapeHtml(code) + '" title="' + (isExisting ? '已有活跃或完成任务' : '当前还没有 AI 评估结果') + '">'
+        + '<span class="mki-xiao-lang-main">' + escapeHtml(labelText) + '</span>'
+        + '</span>'
+        + '<select class="mh-select mki-xiao-lang-owner" data-mki-lang-owner="' + escapeHtml(code) + '"' + ownerDisabledAttr + '>'
+        + mkiUserOptions(defaultLangOwnerId, true)
+        + '</select>'
+        + '<small class="mki-xiao-ai-suggestion" style="display: flex; flex-direction: column; align-items: center; gap: 2px;">'
+        + '<span class="mki-xiao-ai-suggestion-text">' + (isExisting ? '已有任务' : 'AI建议：暂无') + '</span>'
+        + forceBtnHtml
+        + '</small>'
+        + '</span></label>';
+    }).join('');
+    
+    // 给语言 owner 的下拉列表绑定事件，不要在点击下拉框时选中复选框，且把默认 owner 同步过去
+    document.querySelectorAll('#mkiXiaoLangs [data-mki-lang-owner]').forEach(function(ownerSelect) {
+      ownerSelect.addEventListener('mousedown', function(event) {
+        event.stopPropagation();
+      });
+      ownerSelect.addEventListener('click', function(event) {
+        event.stopPropagation();
+      });
+      ownerSelect.addEventListener('change', function() {
+        ownerSelect.setAttribute('data-mki-owner-touched', '1');
+      });
+    });
+    
+    sel.onchange = function() {
+      var nextValue = String(sel.value || '');
+      document.querySelectorAll('#mkiXiaoLangs [data-mki-lang-owner]').forEach(function(ownerSelect) {
+        if (ownerSelect.getAttribute('data-mki-owner-touched') === '1') return;
+        ownerSelect.value = nextValue;
+      });
+    };
+
+    mkiXiaoHideStatus();
+    mkiXiaoSetBusy(false);
+    document.getElementById('mkiXiaoModal').style.display = 'flex';
+    return new Promise(function(resolve) { mkiXiaoResolve = resolve; });
+  }
+
+  function mkiXiaoSelectedCountries() {
+    var cbs = document.querySelectorAll('#mkiXiaoLangs input[type=checkbox]');
+    var checked = [];
+    for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) checked.push(cbs[i].value); }
+    return checked;
+  }
+
+  function mkiXiaoOK() {
+    var translatorId = parseInt(document.getElementById('mkiXiaoTranslator').value);
+    var rawProcessorId = parseInt(document.getElementById('mkiXiaoRawProcessor').value);
+    var countries = mkiXiaoSelectedCountries();
+    var urgentEl = document.getElementById('mkiXiaoUrgent');
+    var currentTaskKind = mkiXiaoCurrentTaskKind();
+    var languageAssignments = {};
+    if (!translatorId) { alert('请选择小语种翻译负责人'); return; }
+    if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
+    if (mkiXiaoEnableTaskKind && currentTaskKind === 'supplement' && (!mkiXiaoSelectedProduct || !mkiXiaoSelectedProduct.id)) {
+      alert('请先搜索并选择要补充素材的目标产品');
+      return;
+    }
+    if (!countries.length) { alert('请选择目标国家'); return; }
+    for (var i = 0; i < countries.length; i++) {
+      var code = String(countries[i] || '').trim().toUpperCase();
+      var ownerSelect = document.querySelector('#mkiXiaoLangs [data-mki-lang-owner="' + code + '"]');
+      var ownerId = ownerSelect && ownerSelect.value ? parseInt(ownerSelect.value, 10) : translatorId;
+      if (!ownerId) { alert('请为 ' + code + ' 选择翻译负责人'); return; }
+      languageAssignments[code] = ownerId;
+    }
+    mkiXiaoSetBusy(true);
+    mkiXiaoSetStatus('running', '<strong>正在创建任务</strong><div>正在请求 ' + escapeHtml(mkiXiaoCurrentEndpoint) + '</div>');
+    if (mkiXiaoResolve) {
+      mkiXiaoResolve({
+        translatorId: translatorId,
+        rawProcessorId: rawProcessorId,
+        countries: countries,
+        languageAssignments: languageAssignments,
+        force: mkiXiaoIsForce(),
+        isUrgent: !!(urgentEl && urgentEl.checked),
+        taskKind: currentTaskKind,
+        targetProductId: mkiXiaoSelectedProduct && mkiXiaoSelectedProduct.id ? Number(mkiXiaoSelectedProduct.id) : null
+      });
+      mkiXiaoResolve = null;
+    }
+  }
+
+  function mkiXiaoCancel() {
+    document.getElementById('mkiXiaoModal').style.display = 'none';
+    if (mkiXiaoResolve) { mkiXiaoResolve(null); mkiXiaoResolve = null; }
+  }
+
+  function mkiXiaoLanguageAssignments(selection) {
+    if (selection && selection.languageAssignments && typeof selection.languageAssignments === 'object') {
+      return selection.languageAssignments;
+    }
+    var assignments = {};
+    var translatorId = Number(selection && selection.translatorId || 0);
+    var countries = selection && Array.isArray(selection.countries) ? selection.countries : [];
+    countries.forEach(function(country) {
+      var code = String(country || '').trim().toUpperCase();
+      if (code && translatorId) assignments[code] = translatorId;
+    });
+    return assignments;
+  }
+
+  // 创建新品开发/补充素材任务
+  async function mkiCreateNewProductTaskFromTabcut(btn, videoId) {
+    const endpoint = '/tasks/api/new-product';
+    const itemId = Number("{{ video.local_media_item_id or 0 }}");
+    const productId = Number("{{ video.local_product_id or 0 }}");
+    
+    const selection = await mkiXiaoOpenModal({
+      title: '创建新品任务',
+      endpoint: endpoint,
+      productId: productId || null,
+      itemId: itemId || null,
+      sourceButton: btn,
+      enableTaskKind: true,
+      defaultTaskKind: 'new_product'
+    });
+    if (!selection) return;
+    if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
+    if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }
+    if (!selection.rawProcessorId) { mkiToast('error', '请选择原视频处理人'); return; }
+
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '创建中...';
+    try {
+      const rsp = await fetch(endpoint, {
+        method: 'POST',
         headers: {
           "Content-Type": "application/json",
           "X-CSRFToken": getCsrfToken()
         },
         body: JSON.stringify({
-          source: "tabcut_video",
-          video_id: "{{ video.video_id }}",
-          owner_id: ownerId,
-          raw_processor_id: rawProcessorId,
-          countries: selectedCountries.map(c => c.toUpperCase()),
-          language_assignments: languageAssignments,
-          is_urgent: isUrgent
+          source: 'tabcut_video',
+          task_kind: selection.taskKind || 'new_product',
+          video_id: videoId,
+          owner_id: selection.translatorId,
+          target_product_id: selection.taskKind === 'supplement' ? selection.targetProductId : null,
+          raw_processor_id: selection.rawProcessorId,
+          countries: selection.countries,
+          language_assignments: selection.languageAssignments,
+          is_urgent: !!selection.isUrgent,
+          force: !!selection.force
         })
       });
+      const data = await rsp.json().catch(() => ({}));
+      if (!rsp.ok) throw mkiXiaoRequestError(endpoint, rsp, data);
+      const taskId = Number(data.parent_task_id || 0);
+      if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+      
+      btn.textContent = '任务 #' + taskId;
+      btn.classList.add('mki-btn--disabled');
+      btn.disabled = true;
+      mkiXiaoShowCreateSuccess(taskId);
+      mkiToast('success', (selection.taskKind === 'supplement' ? '补充素材任务' : '新品任务') + '已创建 #' + taskId);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = original;
+      mkiXiaoShowCreateFailure(endpoint, e);
+      mkiToast('error', '创建失败：' + e.message);
+    }
+  }
 
-      const data = await resp.json();
-      if (resp.status === 201 || data.ok) {
-        alert("新品开发任务创建成功！");
-        window.location.reload();
-      } else {
-        alert("任务创建失败: " + (data.error || "未知错误"));
-        submitBtn.disabled = false;
-        submitBtn.textContent = "确认创建新品开发任务";
-      }
-    } catch (err) {
-      console.error(err);
-      alert("网络请求失败，请稍后重试");
-      submitBtn.disabled = false;
-      submitBtn.textContent = "确认创建新品开发任务";
+  // 创建小语种任务
+  async function mkiCreateSmallLangTaskFromTabcut(btn, videoId) {
+    const productId = Number(btn.dataset.mkiLocalProductId || 0);
+    const itemId = Number(btn.dataset.mkiLocalItemId || 0);
+    if (!productId || !itemId) {
+      mkiToast('warning', '请先只入素材库后才能创建小语种任务');
+      return;
+    }
+    const endpoint = '/tasks/api/parent';
+    const selection = await mkiXiaoOpenModal({
+      title: '创建小语种翻译任务',
+      endpoint: endpoint,
+      productId: productId,
+      itemId: itemId,
+      sourceButton: btn
+    });
+    if (!selection) return;
+    if (!selection.countries.length) { mkiToast('error', '请至少勾选一个国家'); return; }
+    if (!selection.translatorId) { mkiToast('error', '请选择小语种翻译负责人'); return; }
+    if (!selection.rawProcessorId) { mkiToast('error', '请选择原视频处理人'); return; }
+
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '创建中...';
+    try {
+      const rsp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        body: JSON.stringify({
+          media_product_id: productId,
+          media_item_id: itemId,
+          product_link: "{{ video.primary_item_url or '' }}",
+          translator_id: selection.translatorId,
+          raw_processor_id: selection.rawProcessorId,
+          is_urgent: !!selection.isUrgent,
+          language_assignments: selection.languageAssignments,
+          countries: selection.countries,
+          force: !!selection.force
+        })
+      });
+      const data = await rsp.json().catch(() => ({}));
+      if (!rsp.ok) throw mkiXiaoRequestError(endpoint, rsp, data);
+      const taskId = Number(data.parent_task_id || 0);
+      if (!taskId) throw new Error('创建成功但响应缺少 parent_task_id');
+      
+      btn.textContent = '任务 #' + taskId;
+      btn.classList.add('mki-btn--disabled');
+      btn.disabled = true;
+      mkiXiaoShowCreateSuccess(taskId);
+      mkiToast('success', '小语种任务已创建 #' + taskId);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = original;
+      mkiXiaoShowCreateFailure(endpoint, e);
+      mkiToast('error', '创建失败：' + e.message);
     }
   }
 </script>
