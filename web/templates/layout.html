@@ -1402,6 +1402,9 @@
       if (!root || !toggle || !badge || !menu || !list) return;
 
       var unreadCount = 0;
+      var STORAGE_KEY_UNREAD = 'notifications_unread_count';
+      var STORAGE_KEY_LAST_FETCH = 'notifications_last_fetch_time';
+      var CACHE_VALID_DURATION = 50000; // 50s cache validity duration
 
       function csrfToken() {
         var meta = document.querySelector('meta[name="csrf-token"]');
@@ -1440,14 +1443,41 @@
             + '</div>';
         }).join('');
       }
-      async function fetchSummary() {
+      async function fetchSummary(force) {
+        force = force === true;
+        // If the page is hidden, skip background fetch
+        if (document.hidden && !force) {
+          return;
+        }
+
+        var now = Date.now();
+        var lastFetchStr = localStorage.getItem(STORAGE_KEY_LAST_FETCH);
+        var cachedCountStr = localStorage.getItem(STORAGE_KEY_UNREAD);
+
+        var lastFetch = lastFetchStr ? parseInt(lastFetchStr, 10) : 0;
+        var cachedCount = cachedCountStr ? parseInt(cachedCountStr, 10) : 0;
+
+        // If not forced and last fetch is within cache limit, use local cache
+        if (!force && (now - lastFetch < CACHE_VALID_DURATION) && cachedCountStr !== null) {
+          setBadge(cachedCount);
+          return;
+        }
+
         try {
           var rsp = await fetch('/notifications/api/summary', {credentials: 'same-origin'});
           if (!rsp.ok) throw new Error(rsp.statusText || 'summary failed');
           var data = await rsp.json();
-          setBadge(data.unread_count || 0);
+          var newCount = data.unread_count || 0;
+          
+          localStorage.setItem(STORAGE_KEY_UNREAD, String(newCount));
+          localStorage.setItem(STORAGE_KEY_LAST_FETCH, String(Date.now()));
+          setBadge(newCount);
         } catch (err) {
-          setBadge(0);
+          if (cachedCountStr !== null) {
+            setBadge(cachedCount);
+          } else {
+            setBadge(0);
+          }
         }
       }
       async function fetchList() {
@@ -1487,7 +1517,7 @@
       if (refreshBtn) {
         refreshBtn.addEventListener('click', function(e) {
           e.stopPropagation();
-          fetchSummary();
+          fetchSummary(true);
           fetchList();
         });
       }
@@ -1501,7 +1531,12 @@
         try {
           await markRead(id);
           var wasUnread = row && row.getAttribute('data-notification-unread') === '1';
-          if (wasUnread) setBadge(unreadCount - 1);
+          if (wasUnread) {
+            var nextCount = Math.max(0, unreadCount - 1);
+            setBadge(nextCount);
+            localStorage.setItem(STORAGE_KEY_UNREAD, String(nextCount));
+            localStorage.setItem(STORAGE_KEY_LAST_FETCH, String(Date.now()));
+          }
           if (row) row.remove();
           if (open) {
             window.location.href = open.getAttribute('data-target-url') || '/tasks/';
@@ -1518,6 +1553,22 @@
       document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closeMenu();
       });
+
+      // Synchronize state across tabs via localStorage
+      window.addEventListener('storage', function(e) {
+        if (e.key === STORAGE_KEY_UNREAD) {
+          var val = e.newValue ? parseInt(e.newValue, 10) : 0;
+          setBadge(val);
+        }
+      });
+
+      // Trigger fetch when tab is active and cache has expired
+      document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+          fetchSummary();
+        }
+      });
+
       fetchSummary();
       window.setInterval(fetchSummary, 60000);
     })();
