@@ -255,6 +255,46 @@ def test_build_workbench_payload_realtime_refreshes_dxm02_on_library_miss(monkey
     assert payload["items"][0]["dianxiaomi_sku"] == "43237580030146"
 
 
+def test_build_workbench_payload_realtime_refreshes_when_library_has_no_replicable_sku(monkeypatch):
+    product = {
+        "id": 758,
+        "product_code": "ultra-absorbent-miracle-cleaning-shammy-rjc",
+        "purchase_1688_url": "",
+    }
+    calls = {"library": 0, "refresh": 0}
+
+    def fake_library(_product):
+        calls["library"] += 1
+        if calls["library"] == 1:
+            return [{
+                "shopify_product_id": "7540269842498",
+                "shopify_variant_id": "43237580030146",
+                "shopify_variant_title": "3 PCS",
+                "source": "shopify_public",
+            }]
+        return [{
+            "shopify_product_id": "7540269842498",
+            "shopify_variant_id": "43237580030146",
+            "shopify_variant_title": "3 PCS",
+            "dianxiaomi_sku": "43237580030146",
+            "dianxiaomi_sku_code": "980001",
+            "source": "mingkong_library",
+        }]
+
+    def fake_refresh(_product):
+        calls["refresh"] += 1
+        return {"products_seen": 1, "variants_seen": 1}
+
+    monkeypatch.setattr(pairing.mingkong_product_library, "sku_rows_from_library", fake_library)
+    monkeypatch.setattr(pairing.mingkong_product_library, "refresh_product_from_dxm02", fake_refresh)
+
+    payload = pairing.build_workbench_payload(product, [], include_live=False)
+
+    assert calls == {"library": 2, "refresh": 1}
+    assert payload["summary"]["realtime_refresh"] == {"products_seen": 1, "variants_seen": 1}
+    assert payload["items"][0]["dianxiaomi_sku"] == "43237580030146"
+
+
 def test_build_workbench_payload_adds_mingkong_reference_when_enabled(monkeypatch):
     product = {
         "id": 747,

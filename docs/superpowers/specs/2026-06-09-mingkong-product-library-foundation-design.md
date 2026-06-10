@@ -218,7 +218,7 @@
 
 1. 先读取本地 `media_product_skus`；如果已有我们 DXM03 自营 SKU，则沿用现有数据。
 2. 如果本地 SKU 为空，读取本地 `mingkong_products` / `mingkong_product_variants` / `mingkong_procurement_links` / `mingkong_combo_components`。
-3. 如果明空本地库仍然没有命中，按当前产品 code、明空历史素材表、商品链接、Shopify product id 生成搜索词，实时访问 DXM02-MK 店小秘后台补采该产品，写回本地明空产品库。
+3. 如果明空本地库仍然没有命中，或只有 Shopify variant 基底但没有任何可复刻的明空店小秘 SKU，按当前产品 code、明空历史素材表、商品链接、Shopify product id 生成搜索词，实时访问 DXM02-MK 店小秘后台补采该产品，写回本地明空产品库。
 4. 补采完成后再次只读本地明空产品库渲染工作台；如果仍无结果，则展示“无明空匹配数据”，不自动猜测。
 
 ## Shopify variants 完整性补充

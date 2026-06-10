@@ -1303,10 +1303,14 @@ def _operation_logs(action: str, items: list[dict[str, Any]]) -> list[dict[str, 
     return logs
 
 
+def _has_replicable_mingkong_sku(rows: list[dict[str, Any]]) -> bool:
+    return any(str((row or {}).get("dianxiaomi_sku") or "").strip() for row in rows or [])
+
+
 def load_mingkong_library_sku_rows(product: dict[str, Any]) -> dict[str, Any]:
     library_rows = mingkong_product_library.sku_rows_from_library(product)
     realtime_refresh_summary: dict[str, Any] | None = None
-    if not library_rows:
+    if not _has_replicable_mingkong_sku(library_rows):
         realtime_refresh_summary = mingkong_product_library.refresh_product_from_dxm02(product)
         library_rows = mingkong_product_library.sku_rows_from_library(product)
     base_rows = mingkong_product_library.public_shopify_sku_rows_from_product(product)
