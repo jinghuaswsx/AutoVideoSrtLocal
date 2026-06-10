@@ -31,6 +31,7 @@ DXM_VIEW_COMMODITY_API = "/api/dxmCommodityProduct/viewDxmCommodityProduct.json"
 DXM_ADD_COMMODITY_API = "/api/dxmCommodityProduct/addCommodityProduct.json"
 DXM_ADD_COMMODITY_GROUP_API = "/api/dxmCommodityProduct/addCommodityProductGroup.json"
 DXM_ADD_COMMODITY_BZ_API = "/api/dxmCommodityProduct/addCommProBz.json"
+DXM_EDIT_COMMODITY_API = "/api/dxmCommodityProduct/editCommodityProduct.json"
 DXM_UPDATE_SOURCE_URL_API = "/api/dxmCommodityProduct/updateUrl.json"
 DXM_CHILD_SKU_INFO_API = "/api/dxmCommodityProduct/getChildSkuInfo.json"
 PAIR_LIST_API = "/api/dxmAlibabaProductPair/alibabaProductPairPageList.json"
@@ -351,10 +352,17 @@ _COMMODITY_COPY_FIELDS = (
     "spu",
     "price",
     "weight",
+    "allowWeightError",
     "length",
     "width",
     "height",
     "volume",
+    "packageLength",
+    "packageWidth",
+    "packageHeight",
+    "packageWeight",
+    "containWeight",
+    "exportDeclaredValue",
     "imgUrl",
     "attr",
     "productType",
@@ -365,6 +373,10 @@ _COMMODITY_COPY_FIELDS = (
     "isStock",
     "saleMode",
     "remark",
+    "ncm",
+    "cest",
+    "unit",
+    "origin",
 )
 
 _DXM_IDENTITY_KEYS = {
@@ -452,6 +464,121 @@ def _source_packs_from_detail(detail: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in packs if isinstance(item, dict)] if isinstance(packs, list) else []
 
 
+def _form_text(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    return str(value)
+
+
+def _form_value(value: Any, default: Any = "") -> Any:
+    return default if value is None else value
+
+
+def _is_missing_dxm_value(value: Any, *, zero_is_missing: bool = False) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    if zero_is_missing:
+        try:
+            return float(value) == 0
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def _dxm_values_equal(left: Any, right: Any) -> bool:
+    if left is None:
+        left = ""
+    if right is None:
+        right = ""
+    try:
+        return abs(float(left or 0) - float(right or 0)) < 0.0001
+    except (TypeError, ValueError):
+        return str(left or "").strip() == str(right or "").strip()
+
+
+def _merge_missing_dxm_value(
+    target_value: Any,
+    source_value: Any,
+    *,
+    zero_is_missing: bool = False,
+) -> Any:
+    if _is_missing_dxm_value(target_value, zero_is_missing=zero_is_missing):
+        return _form_value(source_value)
+    return _form_value(target_value)
+
+
+_CUSTOMS_FIELD_MAP = (
+    ("nameCnBg", "nameCn", False),
+    ("nameEnBg", "nameEn", False),
+    ("priceBg", "price", True),
+    ("weightBg", "weight", True),
+    ("exportDeclaredValueBg", "exportDeclaredValue", True),
+    ("materialBg", "material", False),
+    ("purposeBg", "purpose", False),
+    ("hgbmBg", "hgbm", False),
+    ("inHsCode", "inHsCode", False),
+    ("dangerDesBg", "dangerDes", False),
+)
+
+
+def _customs_form_payload_from_source(
+    source_detail: dict[str, Any],
+    *,
+    target_detail: dict[str, Any] | None = None,
+    protect_existing: bool = False,
+) -> tuple[dict[str, Any], list[str]]:
+    source_customs = _source_customs_from_detail(source_detail)
+    target_customs = _source_customs_from_detail(target_detail or {})
+    payload: dict[str, Any] = {}
+    changed_fields: list[str] = []
+    for form_key, raw_key, zero_is_missing in _CUSTOMS_FIELD_MAP:
+        source_value = source_customs.get(raw_key)
+        target_value = target_customs.get(raw_key)
+        if protect_existing:
+            value = _merge_missing_dxm_value(
+                target_value,
+                source_value,
+                zero_is_missing=zero_is_missing,
+            )
+        else:
+            value = _form_value(source_value)
+        if protect_existing and not _dxm_values_equal(value, target_value):
+            changed_fields.append(f"customs.{raw_key}")
+        payload[form_key] = _form_value(value)
+    if "dangerDesBg" not in payload or payload["dangerDesBg"] == "":
+        payload["dangerDesBg"] = "0"
+    else:
+        payload["dangerDesBg"] = _form_text(payload["dangerDesBg"])
+    return payload, changed_fields
+
+
+def _source_customs_form_payload(source_detail: dict[str, Any]) -> dict[str, Any]:
+    payload, _changed = _customs_form_payload_from_source(source_detail)
+    return payload
+
+
+def _product_packs_form_payload_from_source(
+    source_detail: dict[str, Any],
+    *,
+    target_detail: dict[str, Any] | None = None,
+    protect_existing: bool = False,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    source_packs = _strip_dxm_identity_fields(_source_packs_from_detail(source_detail))
+    target_packs = _strip_dxm_identity_fields(_source_packs_from_detail(target_detail or {}))
+    if protect_existing and target_packs:
+        return target_packs, []
+    if protect_existing and source_packs and not target_packs:
+        return source_packs, ["packs"]
+    return source_packs, []
+
+
+def _source_packs_form_payload(source_detail: dict[str, Any]) -> list[dict[str, Any]]:
+    packs, _changed = _product_packs_form_payload_from_source(source_detail)
+    return packs
+
+
 def _target_sku_code(
     ctx,
     desired_sku_code: str,
@@ -512,20 +639,22 @@ def _replicated_commodity_form(
         "dxmCommodityProduct": json.dumps(commodity, ensure_ascii=False),
         "dxmWarehouseProductList": json.dumps([], ensure_ascii=False),
         "supplierProductRelationMapList": json.dumps([], ensure_ascii=False),
+        "dxmProductCustoms": json.dumps(
+            _source_customs_form_payload(source_detail),
+            ensure_ascii=False,
+        ),
+        "dxmProductPacks": json.dumps(
+            _source_packs_form_payload(source_detail),
+            ensure_ascii=False,
+        ),
     }
-    customs = _strip_dxm_identity_fields(_source_customs_from_detail(source_detail))
-    if customs:
-        form["dxmProductCustoms"] = json.dumps(customs, ensure_ascii=False)
-    packs = _strip_dxm_identity_fields(_source_packs_from_detail(source_detail))
-    if packs:
-        form["dxmProductPacks"] = json.dumps(packs, ensure_ascii=False)
     return _commodity_save_payload(form)
 
 
-def _commodity_save_payload(form: dict[str, Any]) -> dict[str, str]:
+def _commodity_save_payload(form: dict[str, Any], *, pid: str = "") -> dict[str, str]:
     return {
         "obj": json.dumps(form, ensure_ascii=False),
-        "pid": "",
+        "pid": str(pid or ""),
         "vid": "",
         "orderStatus": "",
         "shopId": "-1",
@@ -534,6 +663,173 @@ def _commodity_save_payload(form: dict[str, Any]) -> dict[str, str]:
         "orderWarehoseId": "-1",
         "orderCount": "0",
     }
+
+
+def _target_warehouse_id_list(detail: dict[str, Any]) -> str:
+    ids: list[str] = []
+    warehouse_rows = _product_dto(detail).get("dxmWarehouseProductList") or []
+    if isinstance(warehouse_rows, list):
+        for row in warehouse_rows:
+            if not isinstance(row, dict):
+                continue
+            warehouse_id = row.get("warehouseId") or row.get("warehoseId") or row.get("id")
+            if warehouse_id:
+                ids.append(str(warehouse_id))
+    return ",".join(ids)
+
+
+def _target_supplier_relations(detail: dict[str, Any]) -> list[dict[str, Any]]:
+    dto = _product_dto(detail)
+    for key in ("supplierProductRelationMapList", "dxmSupplierProductRelationMapList"):
+        rows = dto.get(key)
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+    return []
+
+
+_PRODUCT_EDIT_BASE_FIELDS = (
+    "name",
+    "nameEn",
+    "skuCode",
+    "sku",
+    "productVariationStr",
+    "sbmId",
+    "agentId",
+    "developmentId",
+    "salesId",
+    "price",
+    "sourceUrl",
+    "imgUrl",
+    "isUsed",
+    "fullCid",
+    "productType",
+    "qcType",
+    "productStatus",
+    "childIds",
+    "childNums",
+    "processFee",
+    "qcContent",
+    "qcImgStr",
+    "qcImgNum",
+    "groupState",
+    "origin",
+)
+
+_PRODUCT_LOGISTICS_FIELDS = (
+    ("weight", True),
+    ("allowWeightError", False),
+    ("length", True),
+    ("width", True),
+    ("height", True),
+    ("packageWeight", True),
+    ("packageLength", True),
+    ("packageWidth", True),
+    ("packageHeight", True),
+    ("containWeight", True),
+    ("exportDeclaredValue", True),
+    ("ncm", False),
+    ("cest", False),
+    ("unit", False),
+)
+
+
+def _commodity_edit_product_payload(
+    source_detail: dict[str, Any],
+    target_detail: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    source_product = _source_commodity_from_detail(source_detail)
+    target_product = _source_commodity_from_detail(target_detail)
+    product_id = str(target_product.get("id") or target_product.get("productId") or "").strip()
+    if not product_id:
+        raise DianxiaomiPairingError("DXM03 commodity detail is missing product id")
+
+    payload: dict[str, Any] = {"productId": product_id}
+    for key in _PRODUCT_EDIT_BASE_FIELDS:
+        value = target_product.get(key)
+        if key == "fullCid" and not value:
+            value = dxm03_default_full_cid()
+        if key == "productType" and not value:
+            value = "100"
+        if key == "groupState" and value is None:
+            value = "0"
+        if key == "origin" and value is None:
+            value = "0"
+        payload[key] = _form_value(value)
+
+    changed_fields: list[str] = []
+    for key, zero_is_missing in _PRODUCT_LOGISTICS_FIELDS:
+        target_value = target_product.get(key)
+        source_value = source_product.get(key)
+        value = _merge_missing_dxm_value(
+            target_value,
+            source_value,
+            zero_is_missing=zero_is_missing,
+        )
+        if not _dxm_values_equal(value, target_value):
+            changed_fields.append(f"product.{key}")
+        payload[key] = _form_value(value)
+    return payload, changed_fields
+
+
+def _logistics_packaging_edit_payload(
+    source_detail: dict[str, Any],
+    target_detail: dict[str, Any],
+) -> tuple[dict[str, str], list[str]]:
+    target_product = _source_commodity_from_detail(target_detail)
+    product_id = str(target_product.get("id") or target_product.get("productId") or "").strip()
+    product_payload, product_changed = _commodity_edit_product_payload(
+        source_detail,
+        target_detail,
+    )
+    customs_payload, customs_changed = _customs_form_payload_from_source(
+        source_detail,
+        target_detail=target_detail,
+        protect_existing=True,
+    )
+    packs_payload, packs_changed = _product_packs_form_payload_from_source(
+        source_detail,
+        target_detail=target_detail,
+        protect_existing=True,
+    )
+    form: dict[str, Any] = {
+        "dxmCommodityProduct": json.dumps(product_payload, ensure_ascii=False),
+        "dxmProductCustoms": json.dumps(customs_payload, ensure_ascii=False),
+        "warehouseIdList": _target_warehouse_id_list(target_detail),
+        "supplierProductRelationMapList": json.dumps(
+            _target_supplier_relations(target_detail),
+            ensure_ascii=False,
+        ),
+        "dxmProductPacks": json.dumps(packs_payload, ensure_ascii=False),
+        "imageUrls": "",
+        "_imageUrls": "",
+        "imgUrl": _form_text(target_product.get("imgUrl")),
+    }
+    changed_fields = product_changed + customs_changed + packs_changed
+    return _commodity_save_payload(form, pid=product_id), changed_fields
+
+
+def _sync_existing_commodity_logistics_packaging(
+    ctx,
+    source_detail: dict[str, Any],
+    target_detail: dict[str, Any],
+) -> dict[str, Any]:
+    payload, changed_fields = _logistics_packaging_edit_payload(source_detail, target_detail)
+    if not changed_fields:
+        return {"status": "already_complete", "changed_fields": []}
+    response = _post_form(
+        ctx,
+        DXM_EDIT_COMMODITY_API,
+        payload,
+        account_label="DXM03",
+    )
+    _ensure_success(response, "sync DXM03 logistics packaging")
+    data = response.get("data") if isinstance(response.get("data"), dict) else {}
+    data_code = data.get("code")
+    if data_code not in (0, "0", 1, "1", None):
+        raise DianxiaomiPairingError(
+            data.get("msg") or data.get("message") or "sync DXM03 logistics packaging failed"
+        )
+    return {"status": "updated", "changed_fields": changed_fields}
 
 
 def _replicated_combo_form(
@@ -605,12 +901,15 @@ def _replicated_combo_form(
     form: dict[str, Any] = {
         "dxmCommodityProduct": json.dumps(commodity, ensure_ascii=False),
         "dxmProductCustoms": json.dumps(
-            _strip_dxm_identity_fields(_source_customs_from_detail(source_detail)) or {},
+            _source_customs_form_payload(source_detail),
             ensure_ascii=False,
         ),
         "warehouseIdList": "",
         "supplierProductRelationMapList": json.dumps([], ensure_ascii=False),
-        "dxmProductPacks": json.dumps([], ensure_ascii=False),
+        "dxmProductPacks": json.dumps(
+            _source_packs_form_payload(source_detail),
+            ensure_ascii=False,
+        ),
         "imageUrls": "",
         "imgUrl": commodity["imgUrl"],
     }
@@ -1751,12 +2050,46 @@ def _replicate_mingkong_skus_to_dxm03_impl(
                 try:
                     existing_target = _search_commodity(target_ctx, sku)
                     if existing_target:
+                        logistics_packaging: dict[str, Any] = {
+                            "status": "skipped",
+                            "changed_fields": [],
+                        }
+                        source_commodity = _search_commodity(source_ctx, sku)
+                        if source_commodity and source_commodity.get("id"):
+                            source_detail = _view_commodity_detail(
+                                source_ctx,
+                                source_commodity["id"],
+                                account_label="DXM02",
+                            )
+                            target_detail = _view_commodity_detail(
+                                target_ctx,
+                                existing_target["id"],
+                                account_label="DXM03",
+                            )
+                            logistics_packaging = _sync_existing_commodity_logistics_packaging(
+                                target_ctx,
+                                source_detail,
+                                target_detail,
+                            )
+                        else:
+                            logistics_packaging = {
+                                "status": "skipped_missing_dxm02_source",
+                                "changed_fields": [],
+                            }
+                        logistics_message = "已检查物流与包装"
+                        if logistics_packaging.get("status") == "updated":
+                            logistics_message = "已补齐物流与包装缺失字段"
+                        elif logistics_packaging.get("status") == "already_complete":
+                            logistics_message = "物流与包装已有信息，未覆盖"
+                        elif logistics_packaging.get("status") == "skipped_missing_dxm02_source":
+                            logistics_message = "DXM02 找不到源 SKU，物流与包装未补齐"
                         item_result.update({
                             "status": "already_exists",
-                            "message": "DXM03 已存在同 SKU，直接复用",
+                            "message": f"DXM03 已存在同 SKU，直接复用；{logistics_message}",
                             "commodity": existing_target,
                             "dxm03_sku_code": existing_target.get("sku_code") or "",
                             "sku_code_strategy": "existing",
+                            "logistics_packaging": logistics_packaging,
                         })
                         successful_by_sku[sku] = item_result
                         results.append(item_result)
@@ -1993,6 +2326,21 @@ def _replicate_mingkong_skus_to_dxm03_impl(
     summary = {
         "created_count": sum(1 for item in results if item.get("status") == "created"),
         "existing_count": sum(1 for item in results if item.get("status") == "already_exists"),
+        "logistics_packaging_updated_count": sum(
+            1
+            for item in results
+            if (item.get("logistics_packaging") or {}).get("status") == "updated"
+        ),
+        "logistics_packaging_complete_count": sum(
+            1
+            for item in results
+            if (item.get("logistics_packaging") or {}).get("status") == "already_complete"
+        ),
+        "logistics_packaging_skipped_count": sum(
+            1
+            for item in results
+            if str((item.get("logistics_packaging") or {}).get("status") or "").startswith("skipped")
+        ),
         "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
         "error_count": sum(1 for item in results if item.get("status") == "error"),
         "local_update": update_summary,

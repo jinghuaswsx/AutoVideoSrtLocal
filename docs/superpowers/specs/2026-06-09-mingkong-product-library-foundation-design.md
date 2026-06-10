@@ -238,6 +238,22 @@
 1. 先从当前产品的 `product_link` 或 DXM03 Shopify 在线商品公开 JSON 建全量 variant/SKU 基底，唯一键是 `shopify_variant_id`。
 2. 再按 `shopify_variant_id`、`shopify_sku` / 明空 `dxm_sku`、规格标题 `variant_title` 从明空产品库填充采购相关字段，包括店小秘 SKU、SKUID、商品名、图片、供应商、1688 商品 ID、1688 SKU ID、采购链接。搬品后 Shopify variant id 不一致但规格标题一致时，可以用规格标题做保守填充。
 3. 明空库命中的行填充完整后可参与 DXM03 商品复刻和 1688 配对。
+
+## DXM03 物流与包装同步口径
+
+2026-06-10 对 `hygienic-silicone-back-scrub-rjc` 线上单品验证确认，DXM03 商品编辑页“物流与包装” tab 保存接口为 `/api/dxmCommodityProduct/editCommodityProduct.json`，报关字段必须使用页面表单字段名：
+
+- `nameCnBg` / `nameEnBg`
+- `priceBg` / `weightBg` / `exportDeclaredValueBg`
+- `materialBg` / `purposeBg`
+- `hgbmBg` / `inHsCode` / `dangerDesBg`
+
+明空 SKU 同步到 DXM03 的业务流程必须同步以下信息：
+
+1. 新建 DXM03 商品时，从 DXM02 明空商品详情复制商品重量、允许称重误差、尺寸、报关信息和包装信息。
+2. DXM03 已存在同 SKU 时，不再只返回“已存在”，必须读取 DXM02 明空详情并补齐 DXM03 物流与包装缺失字段。
+3. 已存在 SKU 的补齐是保护性同步：DXM03 已有非空值时保留；DXM03 为空或数值字段为 0 时，才使用 DXM02 明空值补齐。包装材料同理，DXM03 已有包装行时保留，DXM03 无包装行且明空有包装行时才复制。
+4. 物流与包装同步失败必须在逐 SKU 结果中可见，不能静默吞掉；同步成功后继续走 1688 配对、小秘云仓添加商品、采购价刷新等后续闭环。
 4. 明空库没有命中的行也必须保留在工作台和本地 `media_product_skus`，但店小秘 SKU 和采购字段置空，后续运营在真实发货/采购前手动维护；不得把 Shopify 前台 SKU / `pair_key` 兜底写成店小秘 SKU。
 5. 后端不得按 `dianxiaomi_sku` 对目标行去重；同一个采购 SKU 被多个前台 variant 复用时也必须保留所有 `shopify_variant_id` 行。
 
