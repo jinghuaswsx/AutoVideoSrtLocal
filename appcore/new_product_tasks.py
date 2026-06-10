@@ -426,6 +426,35 @@ def _create_or_reuse_product(
     return int(product_id), int(owner_id), True
 
 
+def _localize_product_main_image(product_id: int, image_url: str) -> str:
+    """Download external product main image to local storage and return local proxied URL.
+    Falls back to the original image_url if download fails.
+    """
+    if not image_url or not image_url.startswith(("http://", "https://")):
+        return image_url
+    try:
+        product = medias.get_product(int(product_id)) or {}
+        user_id = int(product.get("user_id") or 1)
+        from appcore.product_cover_backfill import download_image_to_media_storage
+        object_key = download_image_to_media_storage(image_url, int(product_id), user_id)
+        if object_key:
+            from urllib.parse import quote
+            local_url = f"/medias/object?object_key={quote(object_key)}"
+            import logging
+            logging.getLogger(__name__).info(
+                "Localized product main image for product_id=%s: %s -> %s",
+                product_id, image_url, local_url
+            )
+            return local_url
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Failed to localize product main image for product_id=%s, url=%s: %s",
+            product_id, image_url, exc
+        )
+    return image_url
+
+
 def _sync_product_link_fields(
     product_id: int,
     *,
@@ -440,12 +469,13 @@ def _sync_product_link_fields(
         links["en"] = link
         medias.update_product(int(product_id), localized_links_json=links)
     if link or image_url:
+        local_image_url = _localize_product_main_image(int(product_id), image_url)
         execute(
             "UPDATE media_products SET "
             "product_link=COALESCE(NULLIF(%s, ''), product_link), "
             "main_image=COALESCE(NULLIF(%s, ''), main_image) "
             "WHERE id=%s",
-            (link, image_url, int(product_id)),
+            (link, local_image_url, int(product_id)),
         )
 
 

@@ -1195,7 +1195,17 @@ function safeMediaSrc(value) {
   if (/^\/(medias\/object|xuanpin\/api\/mk-media|xuanpin\/api\/mk-video)\?/i.test(url)) {
     return escapeHtml(url);
   }
-  if (/^https?:\/\//i.test(url)) return escapeHtml(url);
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      if (parsed.host !== window.location.host) {
+        return escapeHtml('/medias/external-image?url=' + encodeURIComponent(parsed.href));
+      }
+      return escapeHtml(parsed.href);
+    } catch (e) {
+      return escapeHtml(url);
+    }
+  }
   return '';
 }
 

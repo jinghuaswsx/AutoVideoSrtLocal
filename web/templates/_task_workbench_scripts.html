@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   const socket = io();
   {% if pipeline_step_order is defined and pipeline_step_order %}
   const STEP_ORDER = {{ pipeline_step_order|tojson }};
@@ -5254,7 +5254,12 @@
     try {
       const parsed = new URL(raw, window.location.origin);
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
-      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return parsed.href;
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) {
+        if (parsed.host !== window.location.host) {
+          return "/medias/external-image?url=" + encodeURIComponent(parsed.href);
+        }
+        return parsed.href;
+      }
       return parsed.pathname + parsed.search + parsed.hash;
     } catch (_) {
       return "";
