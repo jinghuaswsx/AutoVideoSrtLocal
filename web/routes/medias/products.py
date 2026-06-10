@@ -325,12 +325,31 @@ def _build_mingkong_pairing_confirm_response(pid: int, product: dict, body: dict
         sku_rows,
         selections=body.get("items") if isinstance(body, dict) else None,
     )
+    yuncang_pairing_items = _successful_pairing_items_for_yuncang(confirm_result)
     if not confirm_result.get("ok"):
-        return confirm_result
+        if not yuncang_pairing_items:
+            return confirm_result
+        yuncang_result = dianxiaomi_yuncang.add_product_skus_to_yuncang(
+            product,
+            sku_rows,
+            pairing_items=yuncang_pairing_items,
+        )
+        return {
+            "ok": False,
+            "message": (
+                f"{confirm_result.get('message') or '采购配对存在阻断'}；"
+                f"已对可用 SKU 执行云仓：{yuncang_result.get('message')}"
+            ),
+            "logs": _stage_logs("确认 DXM03 采购配对", confirm_result)
+            + _stage_logs("添加 DXM03 小秘云仓商品", yuncang_result),
+            "items": yuncang_result.get("items") or confirm_result.get("items") or [],
+            "confirm": confirm_result,
+            "yuncang": yuncang_result,
+        }
     yuncang_result = dianxiaomi_yuncang.add_product_skus_to_yuncang(
         product,
         sku_rows,
-        pairing_items=confirm_result.get("items") or sku_rows,
+        pairing_items=yuncang_pairing_items or confirm_result.get("items") or sku_rows,
     )
     ok = bool(confirm_result.get("ok")) and bool(yuncang_result.get("ok"))
     return {
@@ -366,6 +385,23 @@ def _stage_logs(stage: str, payload: dict) -> list[dict]:
                 "message": entry.get("message") or entry.get("text") or "",
             })
     return logs
+
+
+_YUNCANG_PAIRING_SUCCESS_STATUSES = {
+    "confirmed",
+    "already_paired",
+    "already_paired_combo_components",
+}
+
+
+def _successful_pairing_items_for_yuncang(confirm_result: dict) -> list[dict]:
+    items = confirm_result.get("items") if isinstance(confirm_result, dict) else []
+    return [
+        item
+        for item in items or []
+        if isinstance(item, dict)
+        and str(item.get("status") or "").strip() in _YUNCANG_PAIRING_SUCCESS_STATUSES
+    ]
 
 
 def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
@@ -484,6 +520,50 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
         }
     logs.extend(_stage_logs("确认 DXM03 采购配对", confirm_result))
     if not confirm_result.get("ok"):
+        yuncang_pairing_items = _successful_pairing_items_for_yuncang(confirm_result)
+        if yuncang_pairing_items:
+            try:
+                yuncang_result = dianxiaomi_yuncang.add_product_skus_to_yuncang(
+                    product_after_replicate,
+                    local_rows,
+                    pairing_items=yuncang_pairing_items,
+                )
+            except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
+                current_app.logger.exception(
+                    "mingkong pairing partial yuncang add failed product_id=%s",
+                    pid,
+                )
+                error_payload = _mingkong_pairing_action_error_payload(
+                    "添加 DXM03 小秘云仓商品",
+                    exc,
+                )
+                return {
+                    "ok": False,
+                    "error": "yuncang_failed",
+                    "message": error_payload["message"],
+                    "logs": logs + _stage_logs("添加 DXM03 小秘云仓商品", error_payload),
+                    "items": error_payload.get("items") or confirm_result.get("items") or [],
+                    "import": {"stats": stats},
+                    "replicate": replicate_result,
+                    "confirm": confirm_result,
+                    "yuncang": error_payload,
+                    "realtime_refresh": import_payload.get("realtime_refresh"),
+                }
+            logs.extend(_stage_logs("添加 DXM03 小秘云仓商品", yuncang_result))
+            return {
+                "ok": False,
+                "message": (
+                    f"{confirm_result.get('message') or '同步明空店小秘SKU存在阻断'}；"
+                    f"已对可用 SKU 执行云仓：{yuncang_result.get('message')}"
+                ),
+                "logs": logs,
+                "items": yuncang_result.get("items") or confirm_result.get("items") or [],
+                "import": {"stats": stats},
+                "replicate": replicate_result,
+                "confirm": confirm_result,
+                "yuncang": yuncang_result,
+                "realtime_refresh": import_payload.get("realtime_refresh"),
+            }
         return {
             "ok": False,
             "message": confirm_result.get("message") or "同步明空店小秘SKU存在阻断",
@@ -499,7 +579,9 @@ def _build_mingkong_pairing_sync_response(pid: int, product: dict, body: dict):
         yuncang_result = dianxiaomi_yuncang.add_product_skus_to_yuncang(
             product_after_replicate,
             local_rows,
-            pairing_items=confirm_result.get("items") or local_rows,
+            pairing_items=_successful_pairing_items_for_yuncang(confirm_result)
+            or confirm_result.get("items")
+            or local_rows,
         )
     except Exception as exc:  # noqa: BLE001 - keep modal JSON-readable
         current_app.logger.exception("mingkong pairing yuncang add failed product_id=%s", pid)

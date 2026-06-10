@@ -909,6 +909,95 @@ def test_mingkong_pairing_sync_response_imports_targets_then_replicates_and_conf
     assert result["yuncang"]["message"] == "云仓完成"
 
 
+def test_mingkong_pairing_sync_runs_yuncang_for_successful_items_when_confirm_partially_blocks(monkeypatch):
+    product = {"id": 747, "product_code": "sample-rjc", "shopifyid": "shopify-product"}
+    library_items = [
+        {
+            "shopify_product_id": "shopify-product",
+            "shopify_variant_id": "variant-1",
+            "dianxiaomi_sku": "mk-sku-ok",
+            "dianxiaomi_sku_code": "mk-erp-ok",
+        },
+        {
+            "shopify_product_id": "shopify-product",
+            "shopify_variant_id": "variant-2",
+            "dianxiaomi_sku": "mk-sku-blocked",
+            "dianxiaomi_sku_code": "mk-erp-blocked",
+        },
+    ]
+    calls = {"yuncang": None}
+
+    monkeypatch.setattr(
+        products_route.dianxiaomi_mingkong_pairing,
+        "build_mingkong_library_sku_import_payload",
+        lambda _product: {
+            "ok": True,
+            "pairs": [],
+            "items": library_items,
+            "realtime_refresh": None,
+        },
+    )
+    monkeypatch.setattr(
+        products_route.medias,
+        "replace_product_skus",
+        lambda *_args, **_kwargs: {"inserted": 0, "updated": 2, "deleted": 0, "preserved": 0},
+    )
+    monkeypatch.setattr(products_route.medias, "update_product", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(products_route.medias, "get_product", lambda _pid: product)
+    monkeypatch.setattr(products_route.medias, "list_product_skus", lambda _pid: library_items)
+    monkeypatch.setattr(
+        products_route.dianxiaomi_mingkong_pairing,
+        "replicate_mingkong_skus_to_dxm03",
+        lambda *_args, **_kwargs: {
+            "ok": True,
+            "message": "复刻完成",
+            "logs": [],
+            "items": [{"status": "already_exists", "dianxiaomi_sku": "mk-sku-ok"}],
+        },
+    )
+    monkeypatch.setattr(
+        products_route.dianxiaomi_mingkong_pairing,
+        "confirm_dxm03_pairing",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "message": "采购配对存在阻断",
+            "logs": [],
+            "items": [
+                {"status": "already_paired", "dianxiaomi_sku": "mk-sku-ok"},
+                {"status": "blocked", "dianxiaomi_sku": "mk-sku-blocked"},
+            ],
+        },
+    )
+
+    def fake_yuncang(product_arg, rows_arg, **kwargs):
+        calls["yuncang"] = (product_arg, rows_arg, kwargs)
+        return {
+            "ok": True,
+            "message": "云仓完成",
+            "logs": [],
+            "items": [{"status": "already_exists", "sku": "mk-sku-ok"}],
+        }
+
+    monkeypatch.setattr(
+        products_route.dianxiaomi_yuncang,
+        "add_product_skus_to_yuncang",
+        fake_yuncang,
+    )
+
+    result = products_route._build_mingkong_pairing_sync_response(
+        747,
+        product,
+        {"items": library_items},
+    )
+
+    assert result["ok"] is False
+    assert "已对可用 SKU 执行云仓" in result["message"]
+    assert calls["yuncang"][2]["pairing_items"] == [
+        {"status": "already_paired", "dianxiaomi_sku": "mk-sku-ok"}
+    ]
+    assert result["yuncang"]["message"] == "云仓完成"
+
+
 def test_mingkong_pairing_template_has_review_modal_and_single_sync_entry():
     source = Path("web/templates/medias_mingkong_pairing_workbench.html").read_text(
         encoding="utf-8"
