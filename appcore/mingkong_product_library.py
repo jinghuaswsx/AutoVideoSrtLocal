@@ -1085,6 +1085,31 @@ def refresh_fuzzy_candidates_from_dxm02(
                             continue
                         save_fuzzy_candidate_commodity(product_id, p)
                         candidates_seen += 1
+
+                # Fallback: if 0 candidates found and keyword has length > 2, retry using its last 2 characters
+                if candidates_seen == 0 and len(keyword) > 2:
+                    fallback_keyword = keyword[-2:]
+                    payload = build_dxm_payload(
+                        1,
+                        searchValue=fallback_keyword,
+                        searchType=2,
+                        productSearchType=0,
+                        pageSize=100
+                    )
+                    data = _post_form(context, DXM_PRODUCT_API, payload, timeout_ms=int(timeout_seconds * 1000))
+                    page = data.get("data", {}).get("page", {})
+                    lst = page.get("list", []) if page else []
+                    
+                    for group in lst:
+                        if not isinstance(group, dict):
+                            continue
+                        products = group.get("dxmCommodityProductList") or []
+                        for p in products:
+                            if not isinstance(p, dict):
+                                continue
+                            save_fuzzy_candidate_commodity(product_id, p)
+                            candidates_seen += 1
+                    keyword = f"{keyword} -> {fallback_keyword}"
                         
         return {"status": "success", "candidates_seen": candidates_seen, "keyword": keyword}
     except Exception as exc:
