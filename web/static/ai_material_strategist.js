@@ -640,7 +640,17 @@
       return ['supplement_workbench', 'translation_tasks', 'product_materials'].includes(action.type);
     });
     return actions.map((action) => {
-      return `<a class="aims-btn primary" href="${esc(action.url)}" target="_blank" rel="noopener noreferrer">${esc(action.label)}</a>`;
+      let url = action.url;
+      let label = action.label;
+      if (action.type === 'supplement_workbench') {
+        if (label === '补素材工作台') {
+          label = '素材工作台';
+        }
+        if (url && url.includes('/medias/product/addvideo/')) {
+          url = url.replace('/medias/product/addvideo/', '/medias/product/video_workbench/');
+        }
+      }
+      return `<a class="aims-btn primary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
     }).join('');
   }
 
