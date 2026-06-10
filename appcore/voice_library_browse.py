@@ -126,8 +126,8 @@ def list_voices(
 
     if q:
         like = f"%{_escape_like(q)}%"
-        where.append("(name LIKE %s OR descriptive LIKE %s)")
-        params.extend([like, like])
+        where.append("(name LIKE %s OR descriptive LIKE %s OR voice_id LIKE %s)")
+        params.extend([like, like, like])
 
     where_sql = " AND ".join(where) if where else "1=1"
     table = _BASE_TABLE if ignore_language else _table_for_language(language)
