@@ -327,6 +327,24 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "mingkong_request_rate_monitor": {
+        "code": "mingkong_request_rate_monitor",
+        "name": "明空外呼频率监控",
+        "description": (
+            "每 10 分钟统计本系统真实发往明空/wedev 的服务端外呼；"
+            "任意 1 分钟超过 60 次请求时写入 failed 并立即触发飞书/后台告警。"
+            "Docs-anchor: "
+            "docs/superpowers/specs/2026-06-10-mingkong-outbound-request-rate-monitor.md"
+        ),
+        "schedule": "每 10 分钟（任意 1 分钟 > 60 次即报警）",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "mingkong_request_rate_monitor",
+        "runner": "appcore.mingkong_request_monitor.run_scheduled_check",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+        "failure_alert_immediate": True,
+    },
     "mingkong_fine_ai_auto_evaluation_tick": {
         "code": "mingkong_fine_ai_auto_evaluation_tick",
         "name": "明空视频卡片 AI 精细评估任务池",

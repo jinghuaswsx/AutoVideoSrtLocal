@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from appcore import local_media_storage, pushes
+from appcore import local_media_storage, mingkong_request_monitor, pushes
 from appcore import scheduled_tasks
 from appcore.db import get_conn, query
 from appcore.link_check_fetcher import extract_images_from_html
@@ -477,8 +477,10 @@ def search_mingkong_materials_for_product_code(
 ) -> list[dict[str, Any]]:
     if not product_code or ("Authorization" not in headers and "Cookie" not in headers):
         return []
-    resp = session.get(
+    resp = mingkong_request_monitor.tracked_get(
         f"{base_url}/api/marketing/medias",
+        source="dianxiaomi_listing_ranking_sync.search_mingkong",
+        request_fn=session.get,
         params={"page": 1, "q": product_code, "source": "", "level": "", "show_attention": 0},
         headers=headers,
         timeout=timeout_seconds,

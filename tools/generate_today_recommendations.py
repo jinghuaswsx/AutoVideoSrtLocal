@@ -18,7 +18,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from appcore import llm_client, media_video_materials, pushes, today_recommendations
+from appcore import (
+    llm_client,
+    media_video_materials,
+    mingkong_request_monitor,
+    pushes,
+    today_recommendations,
+)
 from appcore.db import query, query_one
 from web.services.media_mk_selection import normalize_mk_media_path
 
@@ -154,8 +160,10 @@ def _search_mk_items(
     handle: str,
     timeout: int,
 ) -> list[dict[str, Any]]:
-    resp = session.get(
+    resp = mingkong_request_monitor.tracked_get(
         f"{base_url}/api/marketing/medias",
+        source="generate_today_recommendations.search_mk",
+        request_fn=session.get,
         params={"page": 1, "q": handle, "source": "", "level": "", "show_attention": 0},
         headers=headers,
         timeout=timeout,

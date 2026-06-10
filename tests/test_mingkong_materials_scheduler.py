@@ -51,6 +51,54 @@ def test_mingkong_material_ad_status_scheduler_registered_in_app_scheduler():
     assert "mingkong_material_ad_status_scheduler.register(_scheduler)" in source
 
 
+def test_mingkong_request_rate_monitor_registered():
+    from appcore import scheduled_tasks
+
+    task = scheduled_tasks.get_task_definition("mingkong_request_rate_monitor")
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+    enriched = definitions["mingkong_request_rate_monitor"]
+
+    assert task["code"] == "mingkong_request_rate_monitor"
+    assert task["source_type"] == "apscheduler"
+    assert task["source_ref"] == "mingkong_request_rate_monitor"
+    assert task["runner"] == "appcore.mingkong_request_monitor.run_scheduled_check"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert task["failure_alert_immediate"] is True
+    assert "10 分钟" in task["schedule"]
+    assert "60 次" in task["description"]
+    assert "2026-06-10-mingkong-outbound-request-rate-monitor.md" in task["description"]
+    assert enriched["control_strategy"] == "apscheduler"
+    assert enriched["log_source"] == "db:scheduled_task_runs"
+
+
+def test_mingkong_request_monitor_scheduler_registers_ten_minute_job():
+    from appcore import mingkong_request_monitor, mingkong_request_monitor_scheduler
+
+    calls = []
+
+    class FakeScheduler:
+        def add_job(self, func, trigger, **kwargs):
+            calls.append((func, trigger, kwargs))
+
+    mingkong_request_monitor_scheduler.register(FakeScheduler())
+
+    assert len(calls) == 1
+    func, trigger, kwargs = calls[0]
+    assert getattr(func, "__wrapped__", None) is mingkong_request_monitor_scheduler.tick_once
+    assert trigger == "interval"
+    assert kwargs["minutes"] == 10
+    assert kwargs["id"] == mingkong_request_monitor.TASK_CODE
+    assert kwargs["replace_existing"] is True
+    assert kwargs["max_instances"] == 1
+
+
+def test_mingkong_request_monitor_registered_in_app_scheduler():
+    source = (Path(__file__).resolve().parents[1] / "appcore" / "scheduler.py").read_text(encoding="utf-8")
+
+    assert "mingkong_request_monitor_scheduler" in source
+    assert "mingkong_request_monitor_scheduler.register(_scheduler)" in source
+
+
 def test_mingkong_fine_ai_auto_evaluation_registered():
     from appcore import scheduled_tasks
 

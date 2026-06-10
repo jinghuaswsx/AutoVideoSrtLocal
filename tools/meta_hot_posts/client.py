@@ -9,6 +9,8 @@ from urllib.parse import urlencode, urlparse, urlunparse
 
 import requests
 
+from appcore import mingkong_request_monitor
+
 
 FetchFn = Callable[..., dict[str, Any]]
 HeadersFn = Callable[[], dict[str, str]]
@@ -229,7 +231,15 @@ def _default_headers() -> dict[str, str]:
 
 
 def _requests_fetch(method: str, url: str, *, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
-    response = requests.request(method, url, params=params, headers=headers, timeout=30)
+    response = mingkong_request_monitor.tracked_request(
+        method,
+        url,
+        source="meta_hot_posts.client",
+        request_fn=requests.request,
+        params=params,
+        headers=headers,
+        timeout=30,
+    )
     response.raise_for_status()
     return response.json()
 

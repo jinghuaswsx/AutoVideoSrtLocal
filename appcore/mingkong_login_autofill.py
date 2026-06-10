@@ -12,7 +12,7 @@ from typing import Any
 
 import requests
 
-from appcore import settings as system_settings
+from appcore import mingkong_request_monitor, settings as system_settings
 from appcore.browser_automation_lock import BrowserAutomationLockTimeout, browser_automation_lock
 
 
@@ -162,8 +162,10 @@ def verify_wedev_credentials(
         return False
     http = session or requests.Session()
     try:
-        resp = http.get(
+        resp = mingkong_request_monitor.tracked_get(
             f"{base_url.rstrip('/')}/api/marketing/medias",
+            source="mingkong_login_autofill.verify_credentials",
+            request_fn=http.get,
             params={"page": 1, "q": product_code or "__credential_probe__", "source": "", "level": "", "show_attention": 0},
             headers=headers,
             timeout=timeout_seconds,
