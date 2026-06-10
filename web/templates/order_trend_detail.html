@@ -3,7 +3,7 @@
 {% block title %}单品订单曲线 - {{ product_code }} — AutoVideoSrt{% endblock %}
 
 {% block page_title %}
-<span class="oa-page-heading">单品订单曲线</span>
+<span class="oa-page-heading">数据分析</span>
 <span class="oa-tabs oa-tabs-topbar" role="tablist" aria-label="数据分析模块">
   <button type="button" class="oa-tab" onclick="window.location.href='/order-analytics/realtime'">实时大盘</button>
   <button type="button" class="oa-tab" onclick="window.location.href='/order-analytics/new-product-launch'">新品投放分析</button>
@@ -15,7 +15,6 @@
 {% endblock %}
 
 {% block extra_style %}
-<style>
   :root {
     --bg-trend: oklch(99.2% 0.003 240);
     --card-glow: 0 4px 20px 0 rgba(0, 0, 0, 0.02), 0 1px 3px 0 rgba(0, 0, 0, 0.02);
@@ -503,7 +502,6 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
     padding-bottom: 4px;
   }
-</style>
 {% endblock %}
 
 {% block content %}
