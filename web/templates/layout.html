@@ -85,6 +85,9 @@
       display: flex;
       transition: background-color 0.3s ease, color 0.3s ease;
     }
+    body.modal-open {
+      overflow: hidden !important;
+    }
 
     /* ── Sidebar ── */
     .sidebar {
@@ -1671,5 +1674,61 @@
     })();
   </script>
   {% block scripts %}{% endblock %}
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var selectors = [
+        '.mki-progress-backdrop',
+        '.mki-xiao-backdrop',
+        '.mk-card-data-backdrop',
+        '.mk-preselection-modal-backdrop',
+        '.vw-flow-backdrop',
+        '.vw-modal-mask',
+        '.npr-modal-overlay',
+        '.tiktok-modal-mask',
+        '.mh-video-overlay',
+        '.oc-modal-mask'
+      ];
+
+      function checkModals() {
+        var hasVisibleModal = false;
+        for (var i = 0; i < selectors.length; i++) {
+          var selector = selectors[i];
+          var els = document.querySelectorAll(selector);
+          for (var j = 0; j < els.length; j++) {
+            var el = els[j];
+            var style = window.getComputedStyle(el);
+            if (!el.hasAttribute('hidden') && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+              hasVisibleModal = true;
+              break;
+            }
+          }
+          if (hasVisibleModal) break;
+        }
+        if (hasVisibleModal) {
+          document.body.classList.add('modal-open');
+        } else {
+          document.body.classList.remove('modal-open');
+        }
+      }
+
+      var frameId = null;
+      var observer = new MutationObserver(function() {
+        if (frameId) return;
+        frameId = requestAnimationFrame(function() {
+          checkModals();
+          frameId = null;
+        });
+      });
+
+      observer.observe(document.body, {
+        attributes: true,
+        childList: true,
+        subtree: true,
+        attributeFilter: ['class', 'style', 'hidden']
+      });
+
+      checkModals();
+    });
+  </script>
 </body>
 </html>
