@@ -3235,11 +3235,9 @@ def _previous_material_snapshot_for(
         (snapshot_date, snapshot_at),
     )
     if rows:
-        candidates = _filter_compatible_snapshot_candidates(
-            rows,
-            min_source_product_count=min_source_product_count,
-            min_source_product_limit=min_source_product_limit,
-        )
+        # Video card data is universal and 90-day spend data does not change based on target row count.
+        # We bypass compatible check to compare with the closest snapshot in time regardless of product caps.
+        candidates = rows
         return choose_previous_snapshot_for_24h(snapshot_at, candidates)
 
     fallback_rows = query(

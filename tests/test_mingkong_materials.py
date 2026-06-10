@@ -577,7 +577,7 @@ def test_choose_previous_snapshot_prefers_candidate_closest_to_24_hours():
     assert chosen["comparison_interval_seconds"] == 86520
 
 
-def test_previous_material_snapshot_prefers_compatible_source_count(monkeypatch):
+def test_previous_material_snapshot_ignores_compatible_source_count(monkeypatch):
     monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
 
     def fake_query(sql, args=()):
@@ -609,8 +609,8 @@ def test_previous_material_snapshot_prefers_compatible_source_count(monkeypatch)
         min_source_product_limit=500,
     )
 
-    assert chosen["snapshot_at"] == "2026-05-20 13:27:11"
-    assert chosen["source_product_count"] == 500
+    assert chosen["snapshot_at"] == "2026-05-20 06:00:12"
+    assert chosen["source_product_count"] == 300
 
 
 def test_build_top100_rows_does_not_inflate_untracked_products():
