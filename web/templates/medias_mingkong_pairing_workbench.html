@@ -672,6 +672,71 @@
     background: #0f1d36;
     color: #e2e8f0;
   }
+  /* Initial page loading backdrop */
+  .mkp-loading-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(4px);
+    transition: opacity 0.3s ease;
+  }
+  [data-theme='dark'] .mkp-loading-backdrop {
+    background: rgba(15, 23, 42, 0.85);
+  }
+  .mkp-loading-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 32px 48px;
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
+    animation: mkp-fade-in 0.3s ease;
+  }
+  [data-theme='dark'] .mkp-loading-box {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  }
+  .mkp-loading-text {
+    font-size: 39px;
+    font-weight: 700;
+    color: #2563eb;
+    letter-spacing: 2px;
+    animation: mkp-pulse 1.5s ease-in-out infinite;
+  }
+  [data-theme='dark'] .mkp-loading-text {
+    color: #3b82f6;
+  }
+  .mkp-spinner {
+    width: 64px;
+    height: 64px;
+    border: 5px solid #e2e8f0;
+    border-top-color: #2563eb;
+    border-radius: 50%;
+    animation: mkp-spin 1s linear infinite;
+  }
+  [data-theme='dark'] .mkp-spinner {
+    border-color: #334155;
+    border-top-color: #3b82f6;
+  }
+  @keyframes mkp-spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes mkp-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  @keyframes mkp-fade-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
   @media (max-width: 900px) {
     .mkp-head {
       flex-direction: column;
@@ -709,6 +774,14 @@
 {% endblock %}
 {% block content %}
 <div class="mkp-page" data-product-id="{{ product_id }}">
+  <!-- Page loading backdrop overlay -->
+  <div class="mkp-loading-backdrop" id="mkpPageLoading" hidden>
+    <div class="mkp-loading-box">
+      <div class="mkp-spinner"></div>
+      <div class="mkp-loading-text">加载中......</div>
+    </div>
+  </div>
+
   <div class="mkp-head">
     <div class="mkp-title">
       <h2>{{ product.name or product.product_code }}</h2>
@@ -778,7 +851,7 @@
           </tr>
         </thead>
         <tbody id="mkpRows">
-          <tr><td colspan="19" class="mkp-empty">加载中</td></tr>
+          <tr><td colspan="19" class="mkp-empty"><span class="mkp-loading-text">加载中......</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -1192,6 +1265,8 @@
     if (showModal) {
       openProgressModal('刷新状态', '重新读取我们系统 SKU、DXM03 实时状态和明空参考数据');
       appendProgressLog('info', '开始刷新工作台数据');
+    } else {
+      $('mkpPageLoading').hidden = false;
     }
     try {
       const payload = await fetchJson(`/medias/api/products/${productId}/mingkong-pairing`);
@@ -1225,6 +1300,9 @@
       return null;
     } finally {
       $('mkpReload').disabled = false;
+      if (!showModal) {
+        $('mkpPageLoading').hidden = true;
+      }
     }
   }
 
