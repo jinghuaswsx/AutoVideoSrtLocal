@@ -81,8 +81,8 @@
     @media (max-width: 720px) {
       .main-content { padding: 12px; }
     }
+    {% block extra_style %}{% endblock %}
   </style>
-  {% block extra_style %}{% endblock %}
 </head>
 <body>
   <main class="main-content">
