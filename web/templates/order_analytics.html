@@ -3755,6 +3755,23 @@
 </div>
 
 <div class="oa-panel {% if active_tab == 'dxmOrders' %}active{% endif %}" id="panelDxmOrders">
+  <!-- 子 Tab 导航 -->
+  <div class="oa-subtabs" role="tablist" aria-label="订单分析子 Tab" style="padding: 10px 0; margin-bottom: var(--space-4); border-bottom: 1px solid var(--border); display: flex; gap: var(--space-2);">
+    <button type="button" class="oa-subtab-btn {% if active_subtab != 'orderTrend' %}is-active{% endif %}" onclick="window.location.href='/order-analytics/dxm-orders-view'">商品销量统计</button>
+    <button type="button" class="oa-subtab-btn {% if active_subtab == 'orderTrend' %}is-active{% endif %}" onclick="window.location.href='/order-analytics/dxm-orders-view/order-trend'">单品订单曲线</button>
+  </div>
+
+  <!-- 单品搜索框 (仅在单品订单曲线 Tab 展示) -->
+  {% if active_subtab == 'orderTrend' %}
+  <div class="oa-controls" style="margin: var(--space-4) 0; display: flex; justify-content: center;">
+    <div class="oa-search-box" style="width: 100%; max-width: 600px; position: relative;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--fg-subtle); pointer-events: none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="dxmProductSearchInput" placeholder="输入商品 ID 或是 Product Code 搜索商品..." style="height: 44px; font-size: 15px; padding-left: 40px; width: 100%; box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: var(--radius); transition: all var(--duration-fast);">
+      <div class="oa-search-results" id="dxmProductSearchResults" style="width: 100%; box-sizing: border-box; position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); z-index: 100; max-height: 280px; overflow-y: auto; display: none;"></div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
       <div class="oad-range-presets" role="group" aria-label="订单分析时间范围">
@@ -3806,7 +3823,7 @@
       </table>
     </div>
   </div>
-  <div class="oa-table-wrap">
+  <div class="oa-table-wrap" {% if active_subtab == 'orderTrend' %}style="display:none;"{% endif %}>
     <div class="oa-table-header">
       <div class="oa-table-title">店小秘订单明细</div>
       <div class="oar-note" id="dxmOrderPageInfo">第 1 页</div>
@@ -4664,6 +4681,62 @@
         });
       });
       attachInfiniteScroll('dxmOrderScroll', loadMoreDxmOrders);
+
+      // 单品订单曲线大搜索框绑定
+      var trendInput = document.getElementById('dxmProductSearchInput');
+      var trendResults = document.getElementById('dxmProductSearchResults');
+      if (trendInput && trendResults) {
+        var trendTimer = null;
+        var escapeHtmlAttr = function(s) { return String(s || '').replace(/"/g, '&quot;'); };
+        trendInput.addEventListener('input', function() {
+          clearTimeout(trendTimer);
+          var q = trendInput.value.trim();
+          if (!q) {
+            trendResults.style.display = 'none';
+            trendResults.innerHTML = '';
+            return;
+          }
+          trendTimer = setTimeout(function() {
+            fetch('/order-analytics/search?q=' + encodeURIComponent(q))
+              .then(function(r) { return r.json(); })
+              .then(function(items) {
+                if (!items || !items.length) {
+                  trendResults.innerHTML = '<div style="padding:10px 14px;color:var(--fg-subtle);font-size:13px;">无匹配产品</div>';
+                  trendResults.style.display = 'block';
+                  return;
+                }
+                trendResults.innerHTML = items.map(function(item) {
+                  var code = item.product_code || '';
+                  var displayName = item.display_name || item.name || '';
+                  return '<div class="oa-search-results-item" data-code="' + escapeHtmlAttr(code) + '" style="padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border);">' +
+                    '<div style="font-size: 13px; font-weight: 600; color: var(--fg);">' + escapeHtml(displayName) + '</div>' +
+                    '<div style="font-size: 11px; color: var(--fg-subtle);">' + escapeHtml(code) + '</div>' +
+                    '</div>';
+                }).join('');
+                trendResults.style.display = 'block';
+                
+                trendResults.querySelectorAll('.oa-search-results-item').forEach(function(el) {
+                  el.addEventListener('click', function() {
+                    var code = el.dataset.code;
+                    if (code) {
+                      window.location.href = '/order-analytics/dxm-orders-view/order-trend/' + encodeURIComponent(code);
+                    }
+                  });
+                });
+              })
+              .catch(function(err) {
+                console.error('Search error:', err);
+              });
+          }, 250);
+        });
+
+        document.addEventListener('click', function(e) {
+          if (!trendInput.contains(e.target) && !trendResults.contains(e.target)) {
+            trendResults.style.display = 'none';
+          }
+        });
+      }
+
       setDxmRange('thisMonth');
     } else {
       loadDxmOrders(1);
@@ -4968,17 +5041,26 @@
       bodyEl.innerHTML = '<tr><td colspan="6" class="oad-empty">暂无商品销量数据</td></tr>';
       return;
     }
+    var activeSubtab = '{{ active_subtab }}';
     bodyEl.innerHTML = rows.map(function(row) {
       var product = (row.product_name || '未知商品') +
         (row.product_code ? ' · ' + row.product_code : '');
-      return '<tr>' +
-        '<td>' + escapeHtml(product) + '</td>' +
+      
+      var tdStyle = '';
+      var trAttrs = '';
+      if (activeSubtab === 'orderTrend' && row.product_code) {
+        tdStyle = ' style="color: var(--accent); font-weight: 600; cursor: pointer; text-decoration: underline;"';
+        trAttrs = ' class="oa-row-clickable" style="cursor:pointer;" onclick="window.location.href=\'/order-analytics/dxm-orders-view/order-trend/' + encodeURIComponent(row.product_code) + '\'"';
+      }
+
+      return '<tr' + trAttrs + '>' +
+        '<td' + tdStyle + '>' + escapeHtml(product) + '</td>' +
         '<td>' + fmtInt(row.order_count) + '</td>' +
         '<td>' + fmtInt(row.units) + '</td>' +
         '<td>' + fmtMoney(row.product_net_sales) + '</td>' +
         '<td>' + fmtMoney(row.shipping) + '</td>' +
         '<td>' + fmtMoney(row.total_sales) + '</td>' +
-      '</tr>';
+        '</tr>';
     }).join('');
   }
 
