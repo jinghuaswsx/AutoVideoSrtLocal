@@ -851,6 +851,54 @@
       padding-left: 46px;
     }
   }
+
+  .mkp-card-warning-header {
+    grid-column: span 3;
+    background: #fff5f5;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  [data-theme='dark'] .mkp-card-warning-header {
+    background: #2d1616 !important;
+    border-color: #7f1d1d !important;
+  }
+  .mkp-card-warning-text {
+    color: #c53030;
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 500;
+  }
+  [data-theme='dark'] .mkp-card-warning-text {
+    color: #fca5a5 !important;
+  }
+  .mkp-card-warning-label {
+    font-weight: 700;
+    color: #e53e3e;
+    margin-right: 6px;
+  }
+  [data-theme='dark'] .mkp-card-warning-label {
+    color: #f87171 !important;
+  }
+  .mkp-card-action-label {
+    font-weight: 700;
+    color: #4a5568;
+    margin-right: 6px;
+  }
+  [data-theme='dark'] .mkp-card-action-label {
+    color: #94a3b8 !important;
+  }
+  .mkp-card-action-val {
+    color: #2d3748;
+  }
+  [data-theme='dark'] .mkp-card-action-val {
+    color: #cbd5e1 !important;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -1288,9 +1336,57 @@
       const isPaired = pairing.is_paired || item.status === 'paired' || item.status === 'already_paired' || item.status === 'confirmed';
       const cardClass = isPaired ? 'paired-card' : 'issue-card';
 
+      let warningHeaderHtml = '';
+      if (!isPaired) {
+        let issueText = '';
+        let actionText = '';
+        const status = item.status || '';
+        
+        if (status === 'combo_components_paired') {
+          issueText = '该组合变体的子组件在云仓配对已存在，但主组合变体的配对关系尚未同步至店小秘！';
+          actionText = '建议点击右侧“去同步此变体”来确认并完成同步配对。';
+        } else if (status === 'ready_to_confirm') {
+          issueText = '明空库中发现了变体候选，处于“待确认”状态，需人工复核！';
+          actionText = '建议点击右侧“去同步此变体”在弹窗中选择确认匹配数据。';
+        } else if (status === 'combo_components_incomplete') {
+          issueText = '这是组合商品，但其部分子组件在云仓/系统仍缺配对！';
+          actionText = '请先到下方各子组件对应的明细行中完成配对。';
+        } else if (status === 'missing_pair_row') {
+          issueText = '当前变体没有配对记录，属于缺配对行！';
+          actionText = '建议点击右侧“去同步此变体”尝试根据明空库配对；或在店小秘后台手动配对。';
+        } else if (status === 'missing_dxm03_commodity') {
+          issueText = '此 SKU 尚未在店小秘 ERP 中创建！';
+          actionText = '请先去店小秘创建对应的 ERP SKU，然后刷新本页。';
+        } else if (status === 'missing_local_sku') {
+          issueText = '我们系统数据缺失该 Shopify SKU！';
+          actionText = '请重新从 Shopify 同步变体数据。';
+        } else if (status === 'pending_add') {
+          issueText = '已配置配对，但尚未正式加入小秘云仓！';
+          actionText = '建议点击右侧“去同步此变体”进行云仓同步。';
+        } else if (status === 'blocked' || status === 'error') {
+          issueText = `配对已被阻断或出错（状态：${statusText(status)}）！`;
+          actionText = '请点击右侧同步按钮查看错误日志，或在后台手动核对。';
+        } else {
+          issueText = `配对存在问题（状态：${statusText(status) || '待处理'}）！`;
+          actionText = '建议点击右侧“去同步此变体”人工进行检查或覆盖同步。';
+        }
+        
+        warningHeaderHtml = `<div class="mkp-card-warning-header">
+          <div class="mkp-card-warning-text">
+            <span class="mkp-card-warning-label">⚠️ 问题点:</span>${esc(issueText)}
+            <br>
+            <span class="mkp-card-action-label">💡 怎么做:</span><span class="mkp-card-action-val">${esc(actionText)}</span>
+          </div>
+          <button type="button" class="mkp-btn btn-single-sync" data-shopify-variant-id="${esc(item.shopify_variant_id)}" style="background: #fff; border-color: #fecaca; color: #c53030; font-size: 12px; font-weight: 600; padding: 4px 10px; height: 28px; white-space: nowrap;">
+            去同步此变体
+          </button>
+        </div>`;
+      }
+
       return `<div class="mkp-card ${cardClass}" data-row="1"
           data-dianxiaomi-sku="${esc(item.dianxiaomi_sku || '')}"
           data-shopify-variant-id="${esc(item.shopify_variant_id || '')}">
+        ${warningHeaderHtml}
         
         <!-- Left Side: Local / DXM03 -->
         <div class="mkp-card-side local-side">
@@ -1485,6 +1581,10 @@
         valueBlock('DXM03 1688 SKU ID', pairing.sku_id_alibaba, { mono: true })
       ].join('');
       const targetFields = [
+        `<div style="margin-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="mkp-btn btn-use-mingkong" data-index="${index}" style="height: 26px; padding: 0 10px; font-size: 11px; border-color: #10b981; color: #10b981; background: #f0fdf4;">使用明空数据</button>
+          <button type="button" class="mkp-btn btn-use-local" data-index="${index}" style="height: 26px; padding: 0 10px; font-size: 11px; border-color: #3b82f6; color: #3b82f6; background: #eff6ff;">使用我们数据</button>
+        </div>`,
         inputBlock('目标变体', 'variant_title', target.variant_title, { index }),
         inputBlock('目标店小秘 SKU', 'dianxiaomi_sku', target.dianxiaomi_sku, { index, mono: true }),
         inputBlock('目标 Product SKU', 'dianxiaomi_product_sku', target.dianxiaomi_product_sku, { index, mono: true }),
@@ -1636,12 +1736,17 @@
     setSyncState(level, text);
   }
 
-  async function openSyncReviewModal() {
+  async function openSyncReviewModal(filterShopifyVariantId) {
     if (!state.payload) {
       await load();
     }
     resetSyncModal();
-    renderSyncRows((state.payload || {}).items || []);
+    let items = (state.payload || {}).items || [];
+    if (filterShopifyVariantId && typeof filterShopifyVariantId !== 'object') {
+      items = items.filter(item => String(item.shopify_variant_id) === String(filterShopifyVariantId));
+    }
+    state.syncItems = items;
+    renderSyncRows(items);
     $('mkpSyncBackdrop').hidden = false;
     appendSyncLog('info', '请确认三栏数据；右侧目标效果可手动编辑');
   }
@@ -1809,6 +1914,78 @@
         btn.textContent = isHidden ? '收起详情' : '查看详情';
         btn.classList.toggle('primary', isHidden);
       }
+    }
+  });
+
+  // 填充数据辅助函数
+  function fillSyncRowTargetData(index, item, type) {
+    const commodity = (item.dxm03 && item.dxm03.commodity) || {};
+    const pairing = (item.dxm03 && item.dxm03.pairing) || {};
+    const mingkong = item.mingkong || {};
+    
+    const setVal = (field, val) => {
+      const input = document.getElementById(`mkpSync_${field}_${index}`);
+      if (input) {
+        input.value = val || '';
+      }
+    };
+
+    if (type === 'mingkong') {
+      const purchaseUrl = bestValue(mingkong.purchase_1688_url, item.purchase_1688_url);
+      const productIdAlibaba = bestValue(mingkong.alibaba_product_id, pairing.alibaba_product_id, item.alibaba_product_id);
+      setVal('variant_title', mingkong.variant_title || item.variant_title);
+      setVal('dianxiaomi_sku', mingkong.sku);
+      setVal('dianxiaomi_product_sku', mingkong.product_sku);
+      setVal('dianxiaomi_sku_code', mingkong.sku_code);
+      setVal('dianxiaomi_name', mingkong.name);
+      setVal('purchase_1688_url', purchaseUrl);
+      setVal('product_id_alibaba', productIdAlibaba);
+      setVal('sku_id_alibaba', mingkong.sku_id_alibaba);
+      setVal('image_url', mingkong.image_url);
+    } else {
+      setVal('variant_title', item.variant_title);
+      setVal('dianxiaomi_sku', item.dianxiaomi_sku);
+      setVal('dianxiaomi_product_sku', item.dianxiaomi_product_sku);
+      setVal('dianxiaomi_sku_code', item.dianxiaomi_sku_code || commodity.sku_code);
+      setVal('dianxiaomi_name', item.dianxiaomi_name || commodity.name);
+      setVal('purchase_1688_url', item.purchase_1688_url);
+      setVal('product_id_alibaba', pairing.alibaba_product_id || item.alibaba_product_id);
+      setVal('sku_id_alibaba', pairing.sku_id_alibaba);
+      setVal('image_url', item.image_url || commodity.image_url);
+    }
+  }
+
+  // 绑定警告条里的“去同步此变体”按钮以及一键数据选择填充按钮的点击事件
+  document.addEventListener('click', function(e) {
+    const singleSyncBtn = e.target.closest('.btn-single-sync');
+    if (singleSyncBtn) {
+      const varId = singleSyncBtn.getAttribute('data-shopify-variant-id');
+      if (varId) {
+        openSyncReviewModal(varId).catch((err) => {
+          $('mkpResult').textContent = err.message || String(err);
+        });
+      }
+      return;
+    }
+
+    const useMingkongBtn = e.target.closest('.btn-use-mingkong');
+    if (useMingkongBtn) {
+      const index = Number(useMingkongBtn.getAttribute('data-index'));
+      const item = state.syncItems && state.syncItems[index];
+      if (item) {
+        fillSyncRowTargetData(index, item, 'mingkong');
+      }
+      return;
+    }
+
+    const useLocalBtn = e.target.closest('.btn-use-local');
+    if (useLocalBtn) {
+      const index = Number(useLocalBtn.getAttribute('data-index'));
+      const item = state.syncItems && state.syncItems[index];
+      if (item) {
+        fillSyncRowTargetData(index, item, 'local');
+      }
+      return;
     }
   });
 
