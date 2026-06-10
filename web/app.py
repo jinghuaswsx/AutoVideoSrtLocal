@@ -243,11 +243,24 @@ def _run_ai_material_strategist_startup_recovery() -> dict | None:
     project_id = int(project.get("id") or 0)
     if not project_id:
         return None
-    start_background_task(
-        ai_material_strategist.run_project,
-        project_id,
-        user_id=project.get("user_id"),
-    )
+    try:
+        start_background_task(
+            ai_material_strategist.run_project,
+            project_id,
+            user_id=project.get("user_id"),
+        )
+    except Exception:
+        interrupted = ai_material_strategist.mark_project_interrupted(
+            project_id,
+            reason="startup_resume_schedule_failed",
+            message="服务重启后自动恢复未能排队，已标记为中断；请点击步骤卡片「从此步继续」。",
+        )
+        log.warning(
+            "AI material strategist startup auto-resume scheduling failed; project marked interrupted: project_id=%s",
+            project_id,
+            exc_info=True,
+        )
+        return interrupted
     log.warning("AI material strategist startup auto-resume scheduled: project_id=%s", project_id)
     return project
 

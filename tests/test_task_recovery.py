@@ -1193,6 +1193,41 @@ def test_ai_material_startup_recovery_schedules_background_resume(monkeypatch):
     assert scheduled["kwargs"] == {"user_id": 3}
 
 
+def test_ai_material_startup_recovery_marks_interrupted_when_schedule_fails(monkeypatch):
+    import web.app as web_app
+    from appcore import ai_material_strategist
+
+    interrupted = {}
+    monkeypatch.setattr(
+        ai_material_strategist,
+        "mark_startup_interrupted_project_for_recovery",
+        lambda: {"id": 9, "status": "running", "user_id": 3},
+    )
+    monkeypatch.setattr(
+        web_app,
+        "start_background_task",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("spawn failed")),
+    )
+
+    def fake_mark_project_interrupted(project_id, **kwargs):
+        interrupted["project_id"] = project_id
+        interrupted["kwargs"] = kwargs
+        return {"id": project_id, "status": "interrupted"}
+
+    monkeypatch.setattr(
+        ai_material_strategist,
+        "mark_project_interrupted",
+        fake_mark_project_interrupted,
+    )
+
+    project = web_app._run_ai_material_strategist_startup_recovery()
+
+    assert project == {"id": 9, "status": "interrupted"}
+    assert interrupted["project_id"] == 9
+    assert interrupted["kwargs"]["reason"] == "startup_resume_schedule_failed"
+    assert "中断" in interrupted["kwargs"]["message"]
+
+
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):
     import web.app as web_app
 

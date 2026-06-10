@@ -55,6 +55,7 @@
   function statusLabel(status) {
     if (status === 'success') return '完成';
     if (status === 'failed') return '失败';
+    if (status === 'interrupted') return '中断';
     return '运行中';
   }
 
@@ -64,6 +65,7 @@
       running: '运行中',
       done: '已完成',
       failed: '失败',
+      interrupted: '中断',
       skipped: '已跳过',
     };
     return map[status] || status || '等待中';
@@ -105,6 +107,15 @@
   function taskRank(task) {
     const map = { in_progress: 0, pending: 1, completed: 2, cancelled: 3 };
     return map[task && task.status_group] == null ? 9 : map[task.status_group];
+  }
+
+  function checkpointResumeReasonLabel(reason) {
+    const map = {
+      terminal_status: '保留已完成产品结果，继续未完成分析',
+      stale_heartbeat: '运行心跳已超过 10 分钟未推进，可接管续跑',
+      stale_scheduled: '恢复排队长时间未启动，可重新排队',
+    };
+    return map[reason] || '保留已有断点继续执行';
   }
 
   function collectProductTasks(item) {
@@ -384,6 +395,63 @@
     }
   }
 
+  async function resumeFromStep(stepKey) {
+    if (state.publicMode || !state.activeProjectId || !stepKey) return;
+    const project = state.activeProject || {};
+    const step = ((project.progress || {}).steps || []).find((item) => item.key === stepKey) || {};
+    const label = step.label || stepKey;
+    if (!window.confirm(`确定从「${label}」起点继续吗？后续断点会被清理并重新执行。`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await fetchJson('/medias/api/ai-material-strategist/projects/' + encodeURIComponent(state.activeProjectId) + '/resume-from-step', {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ step_key: stepKey, run_ai: true }),
+      });
+      showToast('已从指定步骤重新排队');
+      state.activeProject = data.project;
+      await loadProject(state.activeProjectId);
+    } catch (err) {
+      if (err.data && err.data.project) {
+        state.activeProject = err.data.project;
+        await loadProject(state.activeProjectId);
+      }
+      showToast(err.message || '从此步继续失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resumeCheckpoint() {
+    if (state.publicMode || !state.activeProjectId) return;
+    const project = state.activeProject || {};
+    const reason = checkpointResumeReasonLabel(project.resume_checkpoint_reason);
+    if (!window.confirm(`确定继续未完成项目吗？${reason}，不会清理已完成产品结果。`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await fetchJson('/medias/api/ai-material-strategist/projects/' + encodeURIComponent(state.activeProjectId) + '/resume-checkpoint', {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ run_ai: true }),
+      });
+      showToast('已继续未完成项目');
+      state.activeProject = data.project;
+      await loadProject(state.activeProjectId);
+    } catch (err) {
+      if (err.data && err.data.project) {
+        state.activeProject = err.data.project;
+        await loadProject(state.activeProjectId);
+      }
+      showToast(err.message || '继续未完成失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function renderProjects() {
     if (!els.list) return;
     if (!state.projects.length) {
@@ -475,6 +543,8 @@
     const productLine = Number(pp.total || 0) > 0
       ? `产品 ${esc(pp.current_index || 0)} / ${esc(pp.total)}${currentProduct ? ` · ${esc(currentProduct)}` : ''}`
       : '产品分析待开始';
+    const canResumeCheckpoint = !state.publicMode && project && project.can_resume_checkpoint;
+    const resumeReason = checkpointResumeReasonLabel(project && project.resume_checkpoint_reason);
     return `
       <section class="aims-run-card ${esc(project.status)}">
         <div class="aims-run-head">
@@ -492,13 +562,20 @@
           <span>${productLine}</span>
           <span>更新 ${esc((progress.updated_at || project.updated_at || '').slice(0, 19))}</span>
         </div>
-        ${steps.length ? renderProgressSteps(steps) : ''}
+        ${canResumeCheckpoint ? `
+          <div class="aims-run-actions">
+            <button type="button" class="aims-step-resume" data-resume-checkpoint>继续未完成</button>
+            <span class="aims-run-note">${esc(resumeReason)}</span>
+          </div>
+        ` : ''}
+        ${steps.length ? renderProgressSteps(project, steps) : ''}
         ${renderProgressLogs(progress.logs || [])}
       </section>
     `;
   }
 
-  function renderProgressSteps(steps) {
+  function renderProgressSteps(project, steps) {
+    const canResume = !state.publicMode && project && project.status !== 'running';
     return `
       <div class="aims-step-grid">
         ${steps.map((step) => `
@@ -508,6 +585,7 @@
               <span>${esc(progressStepLabel(step.status))}</span>
             </div>
             <p>${esc(step.message || step.description || '')}</p>
+            ${canResume ? `<button type="button" class="aims-step-resume" data-resume-step="${esc(step.key)}">从此步继续</button>` : ''}
           </article>
         `).join('')}
       </div>
@@ -838,6 +916,16 @@
   }
   if (els.detail) {
     els.detail.addEventListener('click', (event) => {
+      const checkpointButton = event.target.closest('[data-resume-checkpoint]');
+      if (checkpointButton) {
+        resumeCheckpoint();
+        return;
+      }
+      const resumeButton = event.target.closest('[data-resume-step]');
+      if (resumeButton) {
+        resumeFromStep(resumeButton.getAttribute('data-resume-step'));
+        return;
+      }
       const button = event.target.closest('[data-import-action]');
       if (!button) return;
       importMaterial(button);

@@ -164,7 +164,12 @@ def test_mark_startup_interrupted_project_for_recovery_writes_recovery_checkpoin
     monkeypatch.setattr(svc, "_with_project_lock", lambda timeout_seconds=0: fake_lock)
     monkeypatch.setattr(svc, "_release_project_lock", lambda conn: None)
     monkeypatch.setattr(svc.db, "query_one", lambda *args, **kwargs: row)
-    monkeypatch.setattr(svc.db, "execute", lambda sql, params=None: writes.append((sql, params)))
+    monkeypatch.setattr(svc.db, "query", lambda *args, **kwargs: [])
+    def fake_execute(sql, params=None):
+        writes.append((sql, params))
+        return 1
+
+    monkeypatch.setattr(svc.db, "execute", fake_execute)
     project = svc.mark_startup_interrupted_project_for_recovery()
 
     assert project["id"] == 9
@@ -180,11 +185,144 @@ def test_mark_startup_interrupted_project_for_recovery_writes_recovery_checkpoin
     assert "服务重启导致运行线程中断" in saved["logs"][-1]["message"]
 
 
+def test_mark_startup_interrupted_project_for_recovery_reschedules_already_scheduled(monkeypatch):
+    progress = svc._initial_progress(message="queued")
+    progress["recovery"] = {
+        "reason": "service_restart",
+        "status": "scheduled",
+        "project_id": 9,
+    }
+    row = {
+        "id": 9,
+        "project_name": "AI素材军师 demo",
+        "status": "running",
+        "user_id": 1,
+        "provider_code": "openrouter",
+        "model_id": "google/gemini-3.5-flash",
+        "summary_json": "{}",
+        "progress_json": json.dumps(progress, ensure_ascii=False),
+        "share_token": None,
+        "share_enabled_at": None,
+        "error_message": "",
+        "started_at": "2026-06-10 19:00:00",
+        "finished_at": None,
+        "created_at": "2026-06-10 19:00:00",
+        "updated_at": "2026-06-10 19:04:00",
+    }
+
+    writes = []
+    fake_lock = object()
+    monkeypatch.setattr(svc, "_with_project_lock", lambda timeout_seconds=0: fake_lock)
+    monkeypatch.setattr(svc, "_release_project_lock", lambda conn: None)
+    monkeypatch.setattr(svc.db, "query_one", lambda *args, **kwargs: row)
+    monkeypatch.setattr(svc.db, "query", lambda *args, **kwargs: [])
+
+    def fake_execute(sql, params=None):
+        writes.append((sql, params))
+        return 1
+
+    monkeypatch.setattr(svc.db, "execute", fake_execute)
+
+    project = svc.mark_startup_interrupted_project_for_recovery()
+
+    assert project["id"] == 9
+    assert writes
+    saved = json.loads(writes[0][1][0])
+    assert saved["runner_state"] == "resume_scheduled"
+    assert saved["recovery"]["status"] == "scheduled"
+
+
+def test_mark_startup_interrupted_project_for_recovery_reschedules_previous_running_recovery(monkeypatch):
+    progress = svc._initial_progress(message="running")
+    progress["recovery"] = {
+        "reason": "service_restart",
+        "status": "running",
+        "project_id": 9,
+    }
+    row = {
+        "id": 9,
+        "project_name": "AI素材军师 demo",
+        "status": "running",
+        "user_id": 1,
+        "provider_code": "openrouter",
+        "model_id": "google/gemini-3.5-flash",
+        "summary_json": "{}",
+        "progress_json": json.dumps(progress, ensure_ascii=False),
+        "share_token": None,
+        "share_enabled_at": None,
+        "error_message": "",
+        "started_at": "2026-06-10 19:00:00",
+        "finished_at": None,
+        "created_at": "2026-06-10 19:00:00",
+        "updated_at": "2026-06-10 19:04:00",
+    }
+    writes = []
+
+    fake_lock = object()
+    monkeypatch.setattr(svc, "_with_project_lock", lambda timeout_seconds=0: fake_lock)
+    monkeypatch.setattr(svc, "_release_project_lock", lambda conn: None)
+    monkeypatch.setattr(svc.db, "query_one", lambda *args, **kwargs: row)
+    monkeypatch.setattr(svc.db, "query", lambda *args, **kwargs: [])
+
+    def fake_execute(sql, params=None):
+        writes.append((sql, params))
+        return 1
+
+    monkeypatch.setattr(svc.db, "execute", fake_execute)
+
+    project = svc.mark_startup_interrupted_project_for_recovery()
+
+    assert project["id"] == 9
+    assert writes
+    saved = json.loads(writes[0][1][0])
+    assert saved["recovery"]["status"] == "scheduled"
+
+
 def test_mark_startup_interrupted_project_for_recovery_skips_when_lock_busy(monkeypatch):
     monkeypatch.setattr(svc, "_with_project_lock", lambda timeout_seconds=0: None)
     monkeypatch.setattr(svc.db, "query_one", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no query")))
 
     assert svc.mark_startup_interrupted_project_for_recovery() is None
+
+
+def test_mark_startup_interrupted_project_for_recovery_marks_other_running_interrupted(monkeypatch):
+    progress = svc._initial_progress(message="queued")
+    latest = {
+        "id": 9,
+        "project_name": "AI素材军师 latest",
+        "status": "running",
+        "user_id": 1,
+        "provider_code": "openrouter",
+        "model_id": "google/gemini-3.5-flash",
+        "summary_json": "{}",
+        "progress_json": json.dumps(progress, ensure_ascii=False),
+        "share_token": None,
+        "share_enabled_at": None,
+        "error_message": "",
+        "started_at": "2026-06-10 19:00:00",
+        "finished_at": None,
+        "created_at": "2026-06-10 19:00:00",
+        "updated_at": "2026-06-10 19:04:00",
+    }
+    writes = []
+
+    monkeypatch.setattr(svc, "_with_project_lock", lambda timeout_seconds=0: object())
+    monkeypatch.setattr(svc, "_release_project_lock", lambda conn: None)
+    monkeypatch.setattr(svc.db, "query_one", lambda *args, **kwargs: latest)
+    monkeypatch.setattr(
+        svc.db,
+        "query",
+        lambda *args, **kwargs: [{"id": 8, "progress_json": json.dumps(progress, ensure_ascii=False)}],
+    )
+    monkeypatch.setattr(svc.db, "execute", lambda sql, params=None: writes.append((sql, params)) or 1)
+
+    project = svc.mark_startup_interrupted_project_for_recovery()
+
+    assert project["id"] == 9
+    assert len(writes) == 2
+    assert "status = 'interrupted'" in writes[1][0]
+    interrupted_progress = json.loads(writes[1][1][1])
+    assert interrupted_progress["recovery"]["reason"] == "replaced_by_startup_recovery"
 
 
 def test_prepare_project_for_run_marks_scheduled_recovery_running(monkeypatch):
@@ -213,6 +351,138 @@ def test_prepare_project_for_run_marks_scheduled_recovery_running(monkeypatch):
     assert saved["recovery"]["status"] == "running"
     assert saved["recovery"]["reason"] == "service_restart"
     assert saved["recovery"]["resumed_at"]
+
+
+def test_mark_project_interrupted_writes_terminal_interrupted_status(monkeypatch):
+    progress = svc._progress_update(
+        svc._initial_progress(message="running"),
+        step_key="product_analysis",
+        step_status="running",
+        percent=63,
+        message="分析第 7/20 个产品",
+    )
+    row = {
+        "id": 9,
+        "status": "running",
+        "progress_json": json.dumps(progress, ensure_ascii=False),
+    }
+    writes = []
+
+    monkeypatch.setattr(svc, "_load_project_row", lambda project_id: row)
+    monkeypatch.setattr(svc.db, "execute", lambda sql, params=None: writes.append((sql, params)) or 1)
+    monkeypatch.setattr(svc, "get_project", lambda project_id: {"id": project_id, "status": "interrupted"})
+
+    project = svc.mark_project_interrupted(
+        9,
+        reason="startup_resume_schedule_failed",
+        message="自动恢复未能排队，已中断。",
+    )
+
+    assert project == {"id": 9, "status": "interrupted"}
+    assert writes
+    saved = json.loads(writes[0][1][1])
+    assert "status = 'interrupted'" in writes[0][0]
+    assert saved["status"] == "interrupted"
+    assert saved["runner_state"] == "interrupted"
+    assert saved["recovery"]["status"] == "interrupted"
+    assert saved["steps"][4]["status"] == "interrupted"
+
+
+def test_resume_project_from_step_clears_downstream_checkpoints(monkeypatch):
+    progress = svc._initial_progress(message="done")
+    row = {
+        "id": 9,
+        "status": "interrupted",
+        "progress_json": json.dumps(progress, ensure_ascii=False),
+    }
+    writes = []
+    deletes = []
+    fake_lock = object()
+
+    monkeypatch.setattr(svc, "_with_project_lock", lambda timeout_seconds=0: fake_lock)
+    monkeypatch.setattr(svc, "_release_project_lock", lambda conn: None)
+    monkeypatch.setattr(svc, "_load_project_row", lambda project_id: row)
+    monkeypatch.setattr(svc.db, "query", lambda *args, **kwargs: [])
+
+    def fake_execute(sql, params=None):
+        if sql.strip().startswith("DELETE FROM ai_material_strategist_product_results"):
+            deletes.append((sql, params))
+        else:
+            writes.append((sql, params))
+        return 1
+
+    monkeypatch.setattr(svc.db, "execute", fake_execute)
+    monkeypatch.setattr(svc, "get_project", lambda project_id: {"id": project_id, "status": "running"})
+
+    project = svc.resume_project_from_step(9, "ai_ranking", user_id=1)
+
+    assert project == {"id": 9, "status": "running"}
+    assert writes
+    sql, params = writes[0]
+    assert "status = 'running'" in sql
+    assert "ranking_prompt_json = NULL" in sql
+    assert "ranking_result_json = NULL" in sql
+    assert "data_snapshot_json = NULL" not in sql
+    assert deletes
+    saved = json.loads(params[0])
+    assert saved["current_step"] == "ai_ranking"
+    assert saved["recovery"]["reason"] == "manual_step_resume"
+    assert saved["recovery"]["user_id"] == 1
+
+
+def test_resume_project_checkpoint_preserves_product_results(monkeypatch):
+    progress = svc._initial_progress(message="failed")
+    progress["current_step"] = "product_analysis"
+    row = {
+        "id": 9,
+        "status": "interrupted",
+        "progress_json": json.dumps(progress, ensure_ascii=False),
+    }
+    writes = []
+    deletes = []
+
+    monkeypatch.setattr(svc, "_with_project_lock", lambda timeout_seconds=0: object())
+    monkeypatch.setattr(svc, "_release_project_lock", lambda conn: None)
+    monkeypatch.setattr(svc, "_load_project_row", lambda project_id: row)
+    monkeypatch.setattr(svc.db, "query", lambda *args, **kwargs: [])
+
+    def fake_execute(sql, params=None):
+        if "DELETE FROM ai_material_strategist_product_results" in sql:
+            deletes.append((sql, params))
+        else:
+            writes.append((sql, params))
+        return 1
+
+    monkeypatch.setattr(svc.db, "execute", fake_execute)
+    monkeypatch.setattr(svc, "get_project", lambda project_id: {"id": project_id, "status": "running"})
+
+    project = svc.resume_project_checkpoint(9, user_id=1)
+
+    assert project == {"id": 9, "status": "running"}
+    assert writes
+    assert not deletes
+    sql, params = writes[0]
+    assert "summary_json = NULL" in sql
+    assert "data_snapshot_json = NULL" not in sql
+    assert "ranking_result_json = NULL" not in sql
+    saved = json.loads(params[0])
+    assert saved["runner_state"] == "checkpoint_resume_scheduled"
+    assert saved["recovery"]["reason"] == "manual_checkpoint_resume"
+    assert saved["recovery"]["user_id"] == 1
+
+
+def test_checkpoint_resume_state_marks_stale_running_as_resumable():
+    progress = svc._initial_progress(message="running")
+    progress["runner_state"] = "running"
+    progress["runner_heartbeat_at"] = "2026-06-10 19:00:00"
+
+    can_resume, reason = svc._checkpoint_resume_state(
+        {"status": "running", "updated_at": "2026-06-10 19:00:00"},
+        progress,
+    )
+
+    assert can_resume is True
+    assert reason == "stale_heartbeat"
 
 
 def test_selected_product_ids_from_stored_ranking_wrapper_and_legacy_payload():
