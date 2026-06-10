@@ -1473,11 +1473,18 @@
     const tbody = document.getElementById('push-tbody');
     const colspan = window.PUSH_IS_ADMIN ? 13 : 12;
     tbody.innerHTML = `<tr><td colspan="${colspan}">加载中…</td></tr>`;
+    const totalCountEl = document.getElementById('push-total-count');
+    if (totalCountEl) {
+      totalCountEl.textContent = '…';
+    }
     try {
       const data = await fetchJSON('/pushes/api/items?' + buildQuery());
       state.total = data.total;
       state.pageSize = data.page_size || state.pageSize;
       state.items = data.items || [];
+      if (totalCountEl) {
+        totalCountEl.textContent = String(data.total || 0);
+      }
       if (!state.items.length) {
         tbody.innerHTML = `<tr><td colspan="${colspan}">无数据</td></tr>`;
       } else {
@@ -1486,6 +1493,9 @@
       renderPagination();
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="${colspan}">加载失败: ${escapeHtml(e.message)}</td></tr>`;
+      if (totalCountEl) {
+        totalCountEl.textContent = '0';
+      }
     }
   }
 

@@ -2893,3 +2893,36 @@
   border-color: var(--oc-border);
   cursor: not-allowed;
 }
+
+/* ================================================================
+ * Push Management Total Filter Count Block
+ * ================================================================ */
+.filter-group-total {
+  min-width: auto !important;
+  margin-left: auto;
+  align-self: flex-end;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 2px;
+}
+
+.total-count-text {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--oc-fg-muted);
+  display: flex;
+  align-items: baseline;
+  line-height: 1;
+}
+
+.total-count-text .count-number {
+  color: var(--oc-accent); /* Ocean Blue */
+  font-size: 28px; /* 2x size of base 14px font */
+  font-weight: 800; /* Extra bold */
+  margin: 0 4px;
+  line-height: 0.8;
+  font-family: inherit;
+}
+

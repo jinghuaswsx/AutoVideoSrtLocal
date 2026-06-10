@@ -100,7 +100,7 @@ def _sample_project(project_id=11):
 
 
 def test_unsettled_payout_template_contains_tab_and_fetch_wiring():
-    html = Path("web/templates/order_analytics.html").read_text()
+    html = Path("web/templates/order_analytics.html").read_text(encoding="utf-8")
 
     assert 'data-tab="unsettledPayouts"' in html
     assert 'id="panelUnsettledPayouts"' in html

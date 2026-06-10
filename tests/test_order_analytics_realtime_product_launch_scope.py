@@ -516,6 +516,127 @@ def test_range_unmatched_scope_returns_campaign_details(monkeypatch):
     assert any("d.product_id IS NULL" in sql for sql, _ in calls)
 
 
+def test_range_global_profit_summary_uses_realtime_detail_not_status_summary(monkeypatch):
+    """Global top card must share the realtime-detail mouth with launch scopes."""
+
+    status_summary_calls = {"count": 0}
+
+    def fake_status_summary(*args, **kwargs):
+        status_summary_calls["count"] += 1
+        return {
+            "overview": {"line_count": 1, "total_profit_usd": 999},
+            "summary": {
+                "ok": {
+                    "return_reserve": 0,
+                    "purchase_actual": 0,
+                    "purchase_estimate": 0,
+                    "shipping_cost_actual": 0,
+                    "shipping_cost_estimate": 0,
+                    "shopify_fee": 0,
+                    "ad_cost": 0,
+                },
+                "incomplete": {},
+            },
+            "total_revenue_usd": 100,
+            "purchase_cost_with_estimate_usd": 0,
+            "shipping_cost_with_estimate_usd": 0,
+            "unallocated_ad_spend_usd": 0,
+            "estimated": {"lines": 0},
+        }
+
+    monkeypatch.setattr(
+        realtime_oa,
+        "get_order_profit_status_summary",
+        fake_status_summary,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        realtime_oa,
+        "_apply_realtime_ad_cost_adjustments",
+        lambda *args, **kwargs: None,
+    )
+
+    def fake_query(sql, args=()):
+        if "COUNT(DISTINCT d.dxm_package_id) AS order_count" in sql:
+            return [
+                {
+                    "meta_business_date": date(2026, 5, 8),
+                    "order_count": 1,
+                    "line_count": 1,
+                    "units": 1,
+                    "order_revenue": 100,
+                    "line_revenue": 100,
+                    "shipping_revenue": 0,
+                    "last_order_at": datetime(2026, 5, 8, 19, 0),
+                    "last_order_updated_at": datetime(2026, 5, 8, 19, 10),
+                }
+            ]
+        if "SELECT meta_business_date, ad_account_id, matched_product_code" in sql:
+            return []
+        if "FROM meta_ad_daily_campaign_metrics" in sql and "GROUP BY meta_business_date" in sql:
+            return [
+                {
+                    "meta_business_date": date(2026, 5, 8),
+                    "ad_spend": 20,
+                    "meta_purchase_value": 30,
+                    "meta_purchases": 1,
+                    "last_ad_updated_at": datetime(2026, 5, 9, 10, 0),
+                }
+            ]
+        if "SELECT d.meta_business_date, d.site_code" in sql:
+            return [
+                {
+                    "meta_business_date": date(2026, 5, 8),
+                    "site_code": "newjoy",
+                    "dxm_package_id": "PKG-RANGE",
+                    "dxm_order_id": "DXM-RANGE",
+                    "package_number": "PN-RANGE",
+                    "order_state": "paid",
+                    "buyer_country": "US",
+                    "buyer_country_name": "United States",
+                    "order_time": datetime(2026, 5, 8, 19, 0),
+                    "line_count": 1,
+                    "profit_line_count": 1,
+                    "package_profit_line_count": 1,
+                    "profit_ok_count": 1,
+                    "profit_incomplete_count": 0,
+                    "purchase_missing_count": 0,
+                    "logistics_missing_count": 0,
+                    "units": 1,
+                    "product_revenue": 100,
+                    "shipping_revenue": 0,
+                    "total_revenue": 100,
+                    "refund_amount_usd": 0,
+                    "return_reserve_usd": 1,
+                    "purchase_cost": 10,
+                    "purchase_estimate": 0,
+                    "logistics_cost": 5,
+                    "logistics_estimate": 0,
+                    "ad_cost": 7,
+                    "stored_shopify_fee_total": 2,
+                    "skus": "SKU-RANGE",
+                    "product_names": "Range product",
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_realtime_roas_overview(
+        now=datetime(2026, 5, 10, 12, 0),
+        start_date="2026-05-07",
+        end_date="2026-05-08",
+        include_profit_summary=True,
+    )
+
+    summary = result["order_profit_summary"]
+    assert status_summary_calls["count"] == 0
+    assert summary["total_ad_spend_usd"] == 20.0
+    assert summary["ad_cost_usd"] == 7.0
+    assert summary["unallocated_ad_spend_usd"] == 13.0
+    assert summary["profit_with_estimate_usd"] == 62.0
+
+
 def test_route_rejects_invalid_product_launch_scope():
     response, status = _call_realtime_overview("?product_launch_scope=maybe")
 
