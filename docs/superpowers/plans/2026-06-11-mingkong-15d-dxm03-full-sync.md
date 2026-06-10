@@ -42,7 +42,7 @@
 - Modify: `tests/test_mingkong_recent_15d_full_sync.py`
 - Modify: `tools/mingkong_unprocessed_sku_backfill.py`
 
-- [ ] **Step 1: Write failing selector tests**
+- [x] **Step 1: Write failing selector tests**
 
 Create `tests/test_mingkong_recent_15d_full_sync.py` with:
 
@@ -95,7 +95,7 @@ def test_list_recent_products_for_full_sync_can_include_archived_and_unlisted_pr
     assert "mp.listing_status" not in captured["sql"]
 ```
 
-- [ ] **Step 2: Run selector tests and verify RED**
+- [x] **Step 2: Run selector tests and verify RED**
 
 Run:
 
@@ -105,11 +105,11 @@ python -m pytest tests/test_mingkong_recent_15d_full_sync.py::test_list_recent_p
 
 Expected: fail with `AttributeError` for `list_recent_products_for_full_sync`.
 
-- [ ] **Step 3: Implement selector**
+- [x] **Step 3: Implement selector**
 
 Add `list_recent_products_for_full_sync` near the existing recent selector. It may reuse the same SQL shape as the old local selector, but its public name and report semantics must be full-sync.
 
-- [ ] **Step 4: Re-run selector tests**
+- [x] **Step 4: Re-run selector tests**
 
 Run the same command from Step 2.
 
@@ -121,7 +121,7 @@ Expected: pass.
 - Modify: `tests/test_mingkong_unprocessed_sku_backfill.py`
 - Modify: `tools/mingkong_unprocessed_sku_backfill.py`
 
-- [ ] **Step 1: Update failing protect-mode test**
+- [x] **Step 1: Update failing protect-mode test**
 
 Replace the existing `test_protective_sync_only_sends_newly_filled_rows_to_dxm03` expectations so it asserts:
 
@@ -136,7 +136,7 @@ assert [row["shopify_variant_id"] for row in captured["yuncang_rows"]] == ["vari
 
 The test should monkeypatch `mod.protective_upsert_product_skus` and make `mod.medias.replace_product_skus` fail if called while `protect_configured_local_skus=True`.
 
-- [ ] **Step 2: Run protect-mode test and verify RED**
+- [x] **Step 2: Run protect-mode test and verify RED**
 
 Run:
 
@@ -146,7 +146,7 @@ python -m pytest tests/test_mingkong_unprocessed_sku_backfill.py::test_protectiv
 
 Expected: fail because current `run_product_sync` still calls `medias.replace_product_skus` before the DXM03 stages.
 
-- [ ] **Step 3: Implement protective upsert**
+- [x] **Step 3: Implement protective upsert**
 
 Add:
 
@@ -167,7 +167,7 @@ It updates/inserts only non-protected variants, never deletes stale rows, and re
 
 Update `run_product_sync` so protect mode uses `protective_upsert_product_skus(... source=FULL_SYNC_SOURCE)` while legacy non-protect mode still uses `medias.replace_product_skus(... source="mingkong_batch_sync")`.
 
-- [ ] **Step 4: Re-run protect-mode test**
+- [x] **Step 4: Re-run protect-mode test**
 
 Run the same command from Step 2.
 
@@ -179,7 +179,7 @@ Expected: pass.
 - Modify: `tests/test_mingkong_recent_15d_full_sync.py`
 - Modify: `tools/mingkong_unprocessed_sku_backfill.py`
 
-- [ ] **Step 1: Write failing batch/report tests**
+- [x] **Step 1: Write failing batch/report tests**
 
 Append tests:
 
@@ -230,7 +230,7 @@ def test_write_recent_full_sync_report_writes_json_file(tmp_path):
     assert json.loads(path.read_text(encoding="utf-8"))["summary"]["candidate_product_count"] == 1
 ```
 
-- [ ] **Step 2: Run batch/report tests and verify RED**
+- [x] **Step 2: Run batch/report tests and verify RED**
 
 Run:
 
@@ -240,11 +240,11 @@ python -m pytest tests/test_mingkong_recent_15d_full_sync.py::test_run_recent_15
 
 Expected: fail with missing full-sync batch/report helpers.
 
-- [ ] **Step 3: Implement batch and report writer**
+- [x] **Step 3: Implement batch and report writer**
 
 Add `run_recent_15d_full_sync_batch`, `_empty_full_sync_summary`, `_accumulate_full_sync_result`, and `write_recent_full_sync_report`.
 
-- [ ] **Step 4: Re-run batch/report tests**
+- [x] **Step 4: Re-run batch/report tests**
 
 Run the same command from Step 2.
 
@@ -257,7 +257,7 @@ Expected: pass.
 - Modify: `tools/mingkong_local_pairing_15d.py`
 - Modify: `tests/test_mingkong_recent_15d_full_sync.py`
 
-- [ ] **Step 1: Write failing CLI tests**
+- [x] **Step 1: Write failing CLI tests**
 
 Append tests:
 
@@ -290,7 +290,7 @@ def test_old_local_pairing_cli_is_deprecated(capsys):
     assert "mingkong_recent_15d_full_sync.py" in out
 ```
 
-- [ ] **Step 2: Run CLI tests and verify RED**
+- [x] **Step 2: Run CLI tests and verify RED**
 
 Run:
 
@@ -300,7 +300,7 @@ python -m pytest tests/test_mingkong_recent_15d_full_sync.py::test_full_sync_cli
 
 Expected: fail because the new CLI does not exist and old CLI still runs local-only.
 
-- [ ] **Step 3: Implement new CLI and old deprecation stub**
+- [x] **Step 3: Implement new CLI and old deprecation stub**
 
 Create `tools/mingkong_recent_15d_full_sync.py` with args:
 
@@ -317,7 +317,7 @@ Create `tools/mingkong_recent_15d_full_sync.py` with args:
 
 Modify `tools/mingkong_local_pairing_15d.py::main` to print a deprecation message and return 2.
 
-- [ ] **Step 4: Re-run CLI tests**
+- [x] **Step 4: Re-run CLI tests**
 
 Run the same command from Step 2.
 
@@ -329,11 +329,11 @@ Expected: pass.
 - Delete: `tests/test_mingkong_local_pairing_15d.py`
 - Modify: `docs/superpowers/plans/2026-06-11-mingkong-15d-dxm03-full-sync.md`
 
-- [ ] **Step 1: Delete old local-only test file**
+- [x] **Step 1: Delete old local-only test file**
 
 Delete `tests/test_mingkong_local_pairing_15d.py` after the new full-sync tests cover the selector, protective import, batch, report, and CLI behavior.
 
-- [ ] **Step 2: Run new full-sync tests**
+- [x] **Step 2: Run new full-sync tests**
 
 Run:
 
@@ -348,7 +348,7 @@ Expected: pass.
 **Files:**
 - All modified files.
 
-- [ ] **Step 1: Run focused new tests**
+- [x] **Step 1: Run focused new tests**
 
 Run:
 
@@ -358,7 +358,7 @@ python -m pytest tests/test_mingkong_recent_15d_full_sync.py -q
 
 Expected: pass.
 
-- [ ] **Step 2: Run existing Mingkong tests**
+- [x] **Step 2: Run existing Mingkong tests**
 
 Run:
 
@@ -368,7 +368,7 @@ python -m pytest tests/test_mingkong_unprocessed_sku_backfill.py tests/test_ming
 
 Expected: pass.
 
-- [ ] **Step 3: Run related-test helper**
+- [x] **Step 3: Run related-test helper**
 
 Run:
 
@@ -378,7 +378,7 @@ python scripts/pytest_related.py --base origin/master --run
 
 Expected: pass or report no direct pytest coverage. Do not run full `pytest -q` unless the helper reports a broad trigger.
 
-- [ ] **Step 4: Run static diff check**
+- [x] **Step 4: Run static diff check**
 
 Run:
 
@@ -388,7 +388,7 @@ git diff --check
 
 Expected: no whitespace errors.
 
-- [ ] **Step 5: Commit implementation**
+- [x] **Step 5: Commit implementation**
 
 Run:
 

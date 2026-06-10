@@ -244,33 +244,61 @@ def test_protective_sync_only_sends_newly_filled_rows_to_dxm03(monkeypatch):
         },
         {"shopify_variant_id": "variant-2"},
     ]
-    captured = {"replace_pairs": None, "replicate_rows": None, "confirm_rows": None, "yuncang_rows": None}
+    captured = {
+        "upsert": None,
+        "replace_called": False,
+        "replicate_rows": None,
+        "confirm_rows": None,
+        "yuncang_rows": None,
+    }
 
     def fake_list_product_skus(_product_id):
-        if captured["replace_pairs"] is None:
+        if captured["upsert"] is None:
             return existing_rows
-        return captured["replace_pairs"]
+        return [
+            existing_rows[0],
+            {
+                "shopify_variant_id": "variant-2",
+                "dianxiaomi_sku": "mk-fill",
+                "dianxiaomi_sku_code": "mk-code-fill",
+            },
+        ]
 
     def fake_replace(_product_id, pairs, *, source):
-        captured["replace_pairs"] = pairs
-        captured["replace_source"] = source
-        return {"inserted": 0, "updated": 2, "deleted": 0, "preserved": 0}
+        captured["replace_called"] = True
+        raise AssertionError("protect mode must not call replace_product_skus")
+
+    def fake_upsert(**kwargs):
+        captured["upsert"] = kwargs
+        return {"inserted": 0, "updated": 1, "skipped_protected": 1}
 
     def fake_replicate(_product, rows, **_kwargs):
         captured["replicate_rows"] = rows
-        return {"ok": True, "summary": {}, "message": "replicated"}
+        return {
+            "ok": True,
+            "summary": {"created_count": 1},
+            "message": "replicated",
+            "items": [{"status": "created", "logistics_packaging": {"status": "updated"}}],
+        }
 
     def fake_confirm(_product, rows, **_kwargs):
         captured["confirm_rows"] = rows
-        return {"ok": True, "summary": {}, "message": "confirmed", "items": rows}
+        return {"ok": True, "summary": {"confirmed_count": 1}, "message": "confirmed", "items": rows}
 
     def fake_yuncang(_product, rows, **kwargs):
         captured["yuncang_rows"] = rows
         captured["yuncang_items"] = kwargs.get("pairing_items")
-        return {"ok": True, "summary": {}, "message": "yuncang", "items": rows}
+        return {
+            "ok": True,
+            "summary": {"added_count": 1},
+            "message": "yuncang",
+            "items": rows,
+            "purchase_price_status": "updated",
+        }
 
     monkeypatch.setattr(mod.medias, "list_product_skus", fake_list_product_skus)
     monkeypatch.setattr(mod.medias, "replace_product_skus", fake_replace)
+    monkeypatch.setattr(mod, "protective_upsert_product_skus", fake_upsert, raising=False)
     monkeypatch.setattr(mod.medias, "get_product", lambda _product_id: {"id": 1, "product_code": "sample-rjc"})
     monkeypatch.setattr(mod.medias, "update_product", lambda *_args, **_kwargs: 1)
     monkeypatch.setattr(mod, "product_order_summary", lambda *_args, **_kwargs: {"total": 0})
@@ -310,12 +338,16 @@ def test_protective_sync_only_sends_newly_filled_rows_to_dxm03(monkeypatch):
     assert result["status"] == "ok"
     assert result["protected_local_sku_count"] == 1
     assert result["new_fillable_sku_count"] == 1
-    assert captured["replace_pairs"][0]["dianxiaomi_sku"] == "keep-old"
-    assert captured["replace_pairs"][0]["dianxiaomi_sku_code"] == "keep-code"
+    assert captured["upsert"]["source"] == mod.FULL_SYNC_SOURCE
+    assert captured["upsert"]["protected_variant_ids"] == {"variant-1"}
+    assert captured["replace_called"] is False
     assert [row["shopify_variant_id"] for row in captured["replicate_rows"]] == ["variant-2"]
     assert [row["shopify_variant_id"] for row in captured["confirm_rows"]] == ["variant-2"]
     assert [row["shopify_variant_id"] for row in captured["yuncang_rows"]] == ["variant-2"]
     assert result["yuncang"]["message"] == "yuncang"
+    assert result["replicate"]["items"][0]["logistics_packaging"]["status"] == "updated"
+    assert result["confirm"]["items"] == captured["confirm_rows"]
+    assert result["yuncang"]["purchase_price_status"] == "updated"
 
 
 def test_protective_replace_product_skus_merges_action_rows_without_deleting_existing(monkeypatch):

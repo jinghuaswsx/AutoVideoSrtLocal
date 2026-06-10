@@ -22,8 +22,8 @@ from appcore.db import query_one as db_query_one
 
 
 OUTPUT_DIR = REPO_ROOT / "output" / "mingkong_sku_backfill"
-LOCAL_PAIRING_SOURCE = "mingkong_local_pairing_15d"
-LOCAL_PAIRING_OUTPUT_DIR = REPO_ROOT / "output" / "mingkong_local_pairing_15d"
+FULL_SYNC_SOURCE = "mingkong_15d_dxm03_full_sync"
+FULL_SYNC_OUTPUT_DIR = REPO_ROOT / "output" / "mingkong_recent_15d_full_sync"
 
 _CONFIGURED_SKU_ROW_SQL = (
     "COALESCE(s.manual_override, 0)=1 "
@@ -246,14 +246,14 @@ def protective_replace_product_skus(product_id: int, action_pairs: list[dict[str
     )
 
 
-def upsert_local_pairing_pairs(
+def _upsert_product_sku_pairs(
     *,
     product_id: int,
     pairs: list[dict[str, Any]],
     existing_rows: list[dict[str, Any]],
     protected_variant_ids: set[str],
     execute_fn: Callable[..., Any] = db_execute,
-    source: str = LOCAL_PAIRING_SOURCE,
+    source: str,
 ) -> dict[str, int]:
     existing_by_variant = {
         _clean_text(row.get("shopify_variant_id")): row
@@ -315,6 +315,25 @@ def upsert_local_pairing_pairs(
     return {"updated": updated, "inserted": inserted, "skipped_protected": skipped_protected}
 
 
+def protective_upsert_product_skus(
+    *,
+    product_id: int,
+    pairs: list[dict[str, Any]],
+    existing_rows: list[dict[str, Any]],
+    protected_variant_ids: set[str],
+    source: str,
+    execute_fn: Callable[..., Any] = db_execute,
+) -> dict[str, int]:
+    return _upsert_product_sku_pairs(
+        product_id=product_id,
+        pairs=pairs,
+        existing_rows=existing_rows,
+        protected_variant_ids=protected_variant_ids,
+        execute_fn=execute_fn,
+        source=source,
+    )
+
+
 def find_unprocessed_products(
     *,
     limit: int = 0,
@@ -356,7 +375,7 @@ def find_unprocessed_products(
     return list(query_fn(sql, tuple(args)) or [])
 
 
-def list_recent_products_for_local_pairing(
+def list_recent_products_for_full_sync(
     *,
     days: int = 15,
     limit: int = 0,
@@ -518,150 +537,98 @@ def _empty_product_result(product: dict[str, Any], status: str, message: str) ->
     }
 
 
-def _target_lookup_by_variant(targets: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    return {
-        _clean_text(target.get("shopify_variant_id")): target
-        for target in targets or []
-        if _clean_text(target.get("shopify_variant_id"))
-    }
+def _summary_int(summary: dict[str, Any], *keys: str) -> int:
+    return sum(int(summary.get(key) or 0) for key in keys)
 
 
-def _classify_local_pairing_pair(pair: dict[str, Any], protected_variant_ids: set[str]) -> tuple[str, str]:
-    variant_id = _clean_text(pair.get("shopify_variant_id"))
-    if variant_id in protected_variant_ids:
-        return "preserved_existing_local_config", "local sku row already configured; skipped"
-    if _clean_text(pair.get("dianxiaomi_sku")):
-        return "synced_from_mingkong", "deterministic Mingkong sku applied to local pairing"
-    return "blank_base_no_mingkong_data", "Shopify base row kept blank because Mingkong sku is missing"
-
-
-def _local_pairing_status(summary: dict[str, int]) -> str:
-    synced = int(summary.get("synced_sku_count") or 0)
-    preserved = int(summary.get("preserved_sku_count") or 0)
-    blank = int(summary.get("blank_base_sku_count") or 0)
-    if synced and blank:
-        return "partial"
-    if synced:
-        return "completed"
-    if blank:
-        return "suspended"
-    if preserved:
-        return "already_configured"
-    return "skipped_no_shopify_base"
-
-
-def run_product_local_pairing(
-    product: dict[str, Any],
-    *,
-    execute: bool,
-    force_refresh_mingkong: bool = False,
-) -> dict[str, Any]:
-    product_id = int(product["id"])
-    existing_rows = medias.list_product_skus(product_id)
-    protected = configured_variant_ids(existing_rows)
-    payload = pairing.build_workbench_payload(
-        product,
-        existing_rows,
-        include_live=False,
-        include_mingkong_reference=True,
-        force_refresh=force_refresh_mingkong,
-    )
-    targets = build_default_targets(payload)
-    pairs = pairing.build_target_sku_import_pairs(product, payload.get("items") or [], targets)
-    target_by_variant = _target_lookup_by_variant(targets)
-    summary = {
-        "synced_sku_count": 0,
-        "preserved_sku_count": 0,
-        "blank_base_sku_count": 0,
-        "suspended_sku_count": 0,
-    }
-    sku_details: list[dict[str, Any]] = []
-    for pair in pairs or []:
-        variant_id = _clean_text(pair.get("shopify_variant_id"))
-        target = target_by_variant.get(variant_id) or {}
-        action, message = _classify_local_pairing_pair(pair, protected)
-        if action == "synced_from_mingkong":
-            summary["synced_sku_count"] += 1
-        elif action == "preserved_existing_local_config":
-            summary["preserved_sku_count"] += 1
-        else:
-            summary["blank_base_sku_count"] += 1
-            summary["suspended_sku_count"] += 1
-        sku_details.append({
-            "shopify_variant_id": variant_id,
-            "shopify_sku": pair.get("shopify_sku") or "",
-            "shopify_variant_title": pair.get("shopify_variant_title") or pair.get("variant_title") or "",
-            "dianxiaomi_sku": pair.get("dianxiaomi_sku") or "",
-            "dianxiaomi_product_sku": pair.get("dianxiaomi_product_sku") or "",
-            "dianxiaomi_sku_code": pair.get("dianxiaomi_sku_code") or "",
-            "dianxiaomi_name": pair.get("dianxiaomi_name") or "",
-            "purchase_1688_url": target.get("purchase_1688_url") or "",
-            "product_id_alibaba": target.get("product_id_alibaba") or "",
-            "sku_id_alibaba": target.get("sku_id_alibaba") or "",
-            "image_url": target.get("image_url") or "",
-            "action": action,
-            "message": message,
-        })
-    write_result = {"updated": 0, "inserted": 0, "skipped_protected": 0}
-    if execute:
-        write_result = upsert_local_pairing_pairs(
-            product_id=product_id,
-            pairs=pairs,
-            existing_rows=existing_rows,
-            protected_variant_ids=protected,
-        )
-    status = _local_pairing_status(summary)
-    return {
-        "product_id": product_id,
-        "product_code": product.get("product_code") or "",
-        "product_name": product.get("product_name") or product.get("name") or "",
-        "product_link": product.get("product_link") or "",
-        "created_at": product.get("created_at"),
-        "status": status,
-        "summary": summary,
-        "write_result": write_result,
-        "sku_details": sku_details,
-        "target_count": len(targets or []),
-    }
-
-
-def _empty_local_pairing_summary() -> dict[str, int]:
+def _empty_full_sync_summary() -> dict[str, int]:
     return {
         "candidate_product_count": 0,
         "scanned_product_count": 0,
         "completed_product_count": 0,
-        "partial_product_count": 0,
         "already_configured_product_count": 0,
+        "partial_product_count": 0,
         "suspended_product_count": 0,
-        "skipped_product_count": 0,
         "failed_product_count": 0,
         "synced_sku_count": 0,
-        "preserved_sku_count": 0,
-        "blank_base_sku_count": 0,
-        "suspended_sku_count": 0,
+        "protected_sku_count": 0,
+        "dxm03_replicated_sku_count": 0,
+        "dxm03_existing_sku_count": 0,
+        "dxm03_confirmed_sku_count": 0,
+        "yuncang_added_sku_count": 0,
+        "yuncang_existing_sku_count": 0,
+        "purchase_price_updated_product_count": 0,
+        "purchase_price_missing_product_count": 0,
+        "logistics_packaging_updated_sku_count": 0,
+        "logistics_packaging_skipped_sku_count": 0,
     }
 
 
-def _accumulate_local_pairing_result(summary: dict[str, int], result: dict[str, Any]) -> None:
+def _iter_logistics_packaging_items(result: dict[str, Any]) -> list[dict[str, Any]]:
+    items = []
+    for source in (
+        (result.get("replicate") or {}).get("items") or [],
+        result.get("skus") or [],
+    ):
+        for item in source or []:
+            logistics = item.get("logistics_packaging") if isinstance(item, dict) else None
+            if isinstance(logistics, dict):
+                items.append(logistics)
+    return items
+
+
+def _accumulate_full_sync_result(summary: dict[str, int], result: dict[str, Any]) -> None:
     status = _clean_text(result.get("status"))
-    if status == "completed":
+    if status == "ok":
         summary["completed_product_count"] += 1
-    elif status == "partial":
-        summary["partial_product_count"] += 1
     elif status == "already_configured":
         summary["already_configured_product_count"] += 1
-    elif status == "suspended":
-        summary["suspended_product_count"] += 1
-    elif status == "failed":
+    elif status == "error":
         summary["failed_product_count"] += 1
+    elif status.endswith("_blocked") or status.startswith("blocked_") or status.startswith("skipped"):
+        summary["suspended_product_count"] += 1
+    elif status == "dry_run":
+        pass
     else:
-        summary["skipped_product_count"] += 1
-    product_summary = result.get("summary") or {}
-    for key in ("synced_sku_count", "preserved_sku_count", "blank_base_sku_count", "suspended_sku_count"):
-        summary[key] += int(product_summary.get(key) or 0)
+        summary["partial_product_count"] += 1
+
+    summary["synced_sku_count"] += int(result.get("new_fillable_sku_count") or 0)
+    summary["protected_sku_count"] += int(result.get("protected_local_sku_count") or 0)
+    replicate_summary = (result.get("replicate") or {}).get("summary") or {}
+    confirm_summary = (result.get("confirm") or {}).get("summary") or {}
+    yuncang = result.get("yuncang") or {}
+    yuncang_summary = yuncang.get("summary") or {}
+    summary["dxm03_replicated_sku_count"] += _summary_int(
+        replicate_summary,
+        "created_count",
+        "replicated_count",
+    )
+    summary["dxm03_existing_sku_count"] += _summary_int(
+        replicate_summary,
+        "existing_count",
+        "already_exists_count",
+    )
+    summary["dxm03_confirmed_sku_count"] += _summary_int(confirm_summary, "confirmed_count")
+    summary["yuncang_added_sku_count"] += _summary_int(yuncang_summary, "added_count")
+    summary["yuncang_existing_sku_count"] += _summary_int(
+        yuncang_summary,
+        "existing_count",
+        "already_exists_count",
+    )
+    purchase_status = _clean_text(yuncang.get("purchase_price_status"))
+    if purchase_status == "updated":
+        summary["purchase_price_updated_product_count"] += 1
+    elif purchase_status == "purchase_price_missing":
+        summary["purchase_price_missing_product_count"] += 1
+    for logistics in _iter_logistics_packaging_items(result):
+        logistics_status = _clean_text(logistics.get("status"))
+        if logistics_status == "updated":
+            summary["logistics_packaging_updated_sku_count"] += 1
+        elif logistics_status and logistics_status != "already_complete":
+            summary["logistics_packaging_skipped_sku_count"] += 1
 
 
-def run_local_pairing_batch(
+def run_recent_15d_full_sync_batch(
     *,
     days: int = 15,
     limit: int = 0,
@@ -669,54 +636,46 @@ def run_local_pairing_batch(
     listed_only: bool = True,
     execute: bool = False,
     force_refresh_mingkong: bool = False,
+    overwrite_existing_pairing: bool = False,
     product_delay_seconds: float = 0,
     progress_fn: Callable[[dict[str, Any]], Any] | None = None,
 ) -> dict[str, Any]:
-    products = list_recent_products_for_local_pairing(
+    products = list_recent_products_for_full_sync(
         days=days,
         limit=limit,
         include_archived=include_archived,
         listed_only=listed_only,
     )
-    summary = _empty_local_pairing_summary()
+    summary = _empty_full_sync_summary()
     summary["candidate_product_count"] = len(products)
     product_results: list[dict[str, Any]] = []
+    started_at = datetime.now().isoformat(timespec="seconds")
     for index, product in enumerate(products, start=1):
-        if progress_fn:
-            progress_fn({"event": "product_start", "index": index, "total": len(products), "product": product})
         try:
-            result = run_product_local_pairing(
+            result = run_product_sync(
                 product,
                 execute=execute,
                 force_refresh_mingkong=force_refresh_mingkong,
+                overwrite_existing_pairing=overwrite_existing_pairing,
+                protect_configured_local_skus=True,
             )
-        except Exception as exc:
-            result = {
-                "product_id": product.get("id"),
-                "product_code": product.get("product_code") or "",
-                "product_name": product.get("product_name") or product.get("name") or "",
-                "product_link": product.get("product_link") or "",
-                "created_at": product.get("created_at"),
-                "status": "failed",
-                "message": str(exc),
-                "summary": {
-                    "synced_sku_count": 0,
-                    "preserved_sku_count": 0,
-                    "blank_base_sku_count": 0,
-                    "suspended_sku_count": 0,
-                },
-                "write_result": {},
-                "sku_details": [],
-            }
+        except Exception as exc:  # noqa: BLE001 - full-sync report must continue
+            result = _empty_product_result(product, "error", str(exc))
         product_results.append(result)
         summary["scanned_product_count"] += 1
-        _accumulate_local_pairing_result(summary, result)
+        _accumulate_full_sync_result(summary, result)
         if progress_fn:
-            progress_fn({"event": "product_done", "index": index, "total": len(products), "result": result})
+            progress_fn({
+                "event": "product_done",
+                "index": index,
+                "total": len(products),
+                "result": result,
+            })
         if index < len(products):
             _sleep_seconds(product_delay_seconds)
     return {
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "started_at": started_at,
+        "finished_at": datetime.now().isoformat(timespec="seconds"),
         "mode": "execute" if execute else "plan",
         "criteria": {
             "days": int(days),
@@ -724,21 +683,22 @@ def run_local_pairing_batch(
             "include_archived": bool(include_archived),
             "listed_only": bool(listed_only),
             "force_refresh_mingkong": bool(force_refresh_mingkong),
+            "overwrite_existing_pairing": bool(overwrite_existing_pairing),
         },
         "summary": summary,
         "products": product_results,
     }
 
 
-def write_local_pairing_report(
+def write_recent_full_sync_report(
     report: dict[str, Any],
     *,
-    output_dir: Path = LOCAL_PAIRING_OUTPUT_DIR,
+    output_dir: Path = FULL_SYNC_OUTPUT_DIR,
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     mode = _clean_text(report.get("mode")) or "plan"
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = output_dir / f"mingkong-local-pairing-15d-{mode}-{stamp}.json"
+    path = output_dir / f"mingkong-recent-15d-full-sync-{mode}-{stamp}.json"
     path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
@@ -832,7 +792,16 @@ def run_product_sync(
 
     if force_reset_no_orders:
         result["force_deleted_local_skus"] = delete_local_product_skus(product_id)
-    stats = medias.replace_product_skus(product_id, pairs, source="mingkong_batch_sync")
+    if protect_configured_local_skus:
+        stats = protective_upsert_product_skus(
+            product_id=product_id,
+            pairs=pairs,
+            existing_rows=existing_rows,
+            protected_variant_ids=protected_variant_ids,
+            source=FULL_SYNC_SOURCE,
+        )
+    else:
+        stats = medias.replace_product_skus(product_id, pairs, source="mingkong_batch_sync")
     result["import"] = {"stats": stats}
     if protect_configured_local_skus and not action_variant_ids:
         result.update({
@@ -877,6 +846,7 @@ def run_product_sync(
         "ok": bool(replicate_result.get("ok")),
         "summary": replicate_result.get("summary") or {},
         "message": replicate_result.get("message") or "",
+        "items": replicate_result.get("items") or [],
     }
     if not replicate_result.get("ok"):
         result.update({
@@ -904,6 +874,7 @@ def run_product_sync(
         "ok": bool(confirm_result.get("ok")),
         "summary": confirm_result.get("summary") or {},
         "message": confirm_result.get("message") or "",
+        "items": confirm_result.get("items") or [],
     }
     if not confirm_result.get("ok"):
         result["status"] = "confirm_blocked"
@@ -921,6 +892,8 @@ def run_product_sync(
         "ok": bool(yuncang_result.get("ok")),
         "summary": yuncang_result.get("summary") or {},
         "message": yuncang_result.get("message") or "",
+        "purchase_price_status": yuncang_result.get("purchase_price_status") or "",
+        "local_refresh": yuncang_result.get("local_refresh") or {},
     }
     result["status"] = "ok" if yuncang_result.get("ok") else "yuncang_blocked"
     result["message"] = (
