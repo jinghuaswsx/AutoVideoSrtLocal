@@ -1912,6 +1912,23 @@ def create_project_record(user_id: int | None, project_name: str | None = None) 
     return get_project(project_id) or {"id": project_id, "project_name": name, "status": "running"}
 
 
+def _resolve_billing_user_id(explicit_user_id: int | None = None) -> int | None:
+    if explicit_user_id:
+        return int(explicit_user_id)
+    try:
+        row = db.query_one(
+            "SELECT id FROM users "
+            "WHERE is_active=1 AND role IN ('superadmin','admin') "
+            "ORDER BY CASE WHEN username='admin' THEN 0 WHEN role='superadmin' THEN 1 ELSE 2 END, id ASC "
+            "LIMIT 1"
+        )
+        if row:
+            return int(row["id"])
+    except Exception:
+        log.warning("Failed to resolve billing user ID", exc_info=True)
+    return None
+
+
 def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
     lock_conn = _with_project_lock(timeout_seconds=5)
     if lock_conn is None:
@@ -1924,6 +1941,7 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
 
 
 def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
+    user_id = _resolve_billing_user_id(user_id)
     project_row = _prepare_project_for_run(project_id)
     if project_row.get("status") == "success":
         return get_project(project_id) or {"id": project_id, "status": "success"}
