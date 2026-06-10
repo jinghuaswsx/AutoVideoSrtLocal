@@ -280,6 +280,62 @@ CREATE TABLE IF NOT EXISTS system_audit_logs (
   KEY idx_target (target_type, target_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Docs-anchor: docs/superpowers/specs/2026-06-10-shopify-unsettled-payout-ledger-design.md
+CREATE TABLE IF NOT EXISTS shopify_unsettled_payout_projects (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  store_code VARCHAR(32) NOT NULL,
+  project_name VARCHAR(180) NOT NULL,
+  source_filename VARCHAR(255) NOT NULL,
+  source_file_ext VARCHAR(16) DEFAULT NULL,
+  currency VARCHAR(16) NOT NULL DEFAULT 'USD',
+  currency_breakdown_json JSON NULL,
+  imported_row_count INT NOT NULL DEFAULT 0,
+  included_row_count INT NOT NULL DEFAULT 0,
+  ignored_row_count INT NOT NULL DEFAULT 0,
+  pending_order_count INT NOT NULL DEFAULT 0,
+  pending_amount_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  pending_fee_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  pending_net_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  paid_order_count INT NOT NULL DEFAULT 0,
+  paid_amount_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  paid_fee_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  paid_net_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  scheduled_order_count INT NOT NULL DEFAULT 0,
+  scheduled_amount_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  scheduled_fee_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  scheduled_net_total DECIMAL(14,4) NOT NULL DEFAULT 0,
+  imported_by BIGINT UNSIGNED NULL,
+  summary_json JSON NULL,
+  columns_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_shopify_unsettled_store_created (store_code, created_at),
+  KEY idx_shopify_unsettled_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Shopify Payments payout status project archive';
+
+CREATE TABLE IF NOT EXISTS shopify_unsettled_payout_rows (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  project_id BIGINT UNSIGNED NOT NULL,
+  row_number INT NOT NULL,
+  payout_status VARCHAR(32) NOT NULL DEFAULT '',
+  payout_status_raw VARCHAR(64) NOT NULL DEFAULT '',
+  transaction_date VARCHAR(64) DEFAULT NULL,
+  transaction_type VARCHAR(32) DEFAULT NULL,
+  order_name VARCHAR(64) DEFAULT NULL,
+  payout_date VARCHAR(64) DEFAULT NULL,
+  payout_id VARCHAR(64) DEFAULT NULL,
+  available_on VARCHAR(64) DEFAULT NULL,
+  currency VARCHAR(16) NOT NULL DEFAULT 'USD',
+  amount DECIMAL(14,4) NOT NULL DEFAULT 0,
+  fee DECIMAL(14,4) NOT NULL DEFAULT 0,
+  net DECIMAL(14,4) NOT NULL DEFAULT 0,
+  raw_row_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_shopify_unsettled_rows_project (project_id, row_number),
+  KEY idx_shopify_unsettled_rows_status (project_id, payout_status),
+  KEY idx_shopify_unsettled_rows_order (order_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Shopify Payments payout status imported rows';
+
 -- TTS 变速短路收敛 AI 评估记录
 -- 每次 ElevenLabs 变速短路（duration loop ±10% 分支）跑一行；
 -- 同 task_id + round_index 唯一，重新评估只更新该行。

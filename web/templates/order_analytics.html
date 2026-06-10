@@ -19,6 +19,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'unsettledPayouts' %}active{% endif %}" data-tab="unsettledPayouts" role="tab" aria-selected="{% if active_tab == 'unsettledPayouts' %}true{% else %}false{% endif %}">未结算货款</button>
 </span>
 {% endblock %}
 {% block topbar_actions %}
@@ -1831,6 +1832,7 @@
   font-weight: 500;
 }
 .ppr-dialog-body select,
+.ppr-dialog-body input[type="text"],
 .ppr-dialog-body input[type="date"],
 .ppr-dialog-body input[type="file"] {
   font-size: 13px;
@@ -1875,6 +1877,247 @@
 }
 .ppr-dialog-result.is-error { color: #b91c1c; background: #fee2e2; }
 .ppr-dialog-result.is-ok { color: #166534; background: #dcfce7; }
+
+/* Docs-anchor: docs/superpowers/specs/2026-06-10-shopify-unsettled-payout-ledger-design.md */
+.sup-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.sup-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-xs);
+}
+.sup-toolbar-main {
+  min-width: 0;
+}
+.sup-title-row,
+.sup-toolbar-actions,
+.sup-project-head,
+.sup-detail-title-row,
+.sup-filter-row,
+.sup-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.sup-title {
+  margin: 0;
+  color: var(--fg);
+  font-size: 18px;
+  line-height: 1.35;
+}
+.sup-note,
+.sup-project-meta,
+.sup-card-sub,
+.sup-row-muted {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+}
+.sup-chip,
+.sup-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sup-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.sup-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-xs);
+}
+.sup-status-card--pending { border-color: var(--warning-fg); background: color-mix(in oklab, var(--warning-bg) 36%, var(--bg-card)); }
+.sup-status-card--paid { border-color: var(--success-fg); background: color-mix(in oklab, var(--success-bg) 34%, var(--bg-card)); }
+.sup-status-card--scheduled { border-color: var(--info-fg); background: color-mix(in oklab, var(--info-bg) 38%, var(--bg-card)); }
+.sup-status-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.sup-status-label {
+  color: var(--fg);
+  font-weight: 700;
+}
+.sup-status-count {
+  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.sup-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.sup-metric {
+  min-width: 0;
+}
+.sup-metric span {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.sup-metric strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--fg);
+  font-size: 17px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+.sup-project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-4);
+}
+.sup-project-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 188px;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: var(--shadow-xs);
+}
+.sup-project-card:hover,
+.sup-project-card:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+  outline: none;
+}
+.sup-project-head {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.sup-project-title {
+  color: var(--fg);
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1.35;
+  min-width: 0;
+  word-break: break-word;
+}
+.sup-project-status-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: auto;
+}
+.sup-project-money {
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+.sup-project-money span {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.sup-project-money strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--fg);
+  font-size: 13px;
+  word-break: break-word;
+}
+.sup-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+.sup-filter-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.sup-filter-row select {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  color: var(--fg);
+}
+.sup-status-pill--pending { color: var(--warning-fg); border-color: var(--warning-fg); background: var(--warning-bg); }
+.sup-status-pill--paid { color: var(--success-fg); border-color: var(--success-fg); background: var(--success-bg); }
+.sup-status-pill--scheduled { color: var(--info-fg); border-color: var(--info-fg); background: var(--info-bg); }
+.sup-error {
+  display: none;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  color: var(--danger-fg);
+  background: var(--danger-bg);
+  border: 1px solid color-mix(in oklab, var(--danger-fg) 32%, transparent);
+}
+.sup-error.is-visible {
+  display: block;
+}
+.sup-empty {
+  padding: var(--space-7);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--fg-muted);
+  text-align: center;
+  background: var(--bg-subtle);
+}
+.sup-pager {
+  justify-content: flex-end;
+}
+
+@media (max-width: 980px) {
+  .sup-status-grid,
+  .sup-metric-grid,
+  .sup-project-status-row {
+    grid-template-columns: 1fr;
+  }
+  .sup-toolbar,
+  .sup-detail-head {
+    flex-direction: column;
+  }
+  .sup-toolbar-actions {
+    width: 100%;
+  }
+  .sup-toolbar-actions .ppr-btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
 
 @media (max-width: 768px) {
   /* Docs-anchor: docs/superpowers/specs/2026-05-10-data-analysis-mobile-actions-placement.md */
@@ -2025,6 +2268,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
+  <button type="button" class="oa-tab {% if active_tab == 'unsettledPayouts' %}active{% endif %}" data-tab="unsettledPayouts" role="tab" aria-selected="{% if active_tab == 'unsettledPayouts' %}true{% else %}false{% endif %}">未结算货款</button>
 </nav>
 
 
@@ -3593,6 +3837,128 @@
   </div>
 </div>
 
+<!-- Docs-anchor: docs/superpowers/specs/2026-06-10-shopify-unsettled-payout-ledger-design.md -->
+<section class="oa-panel {% if active_tab == 'unsettledPayouts' %}active{% endif %}" id="panelUnsettledPayouts">
+  <div class="sup-shell" data-sup-root>
+    <div class="sup-toolbar">
+      <div class="sup-toolbar-main">
+        <div class="sup-title-row">
+          <h2 class="sup-title">未结算货款</h2>
+          <span class="sup-chip">独立存档</span>
+        </div>
+        <div class="sup-note">Shopify Payments 导入项目按 pending / paid / scheduled 分区核算。</div>
+      </div>
+      <div class="sup-toolbar-actions">
+        <button type="button" class="ppr-btn" id="supRefreshBtn">刷新</button>
+        <button type="button" class="ppr-btn ppr-btn-primary" id="supCreateOpenBtn">新建项目</button>
+      </div>
+    </div>
+
+    <div class="sup-error" id="supErrorBox"></div>
+
+    <div class="oa-loading" id="supLoadingBox" hidden>
+      <div class="oa-spinner"></div>
+      <div>加载中...</div>
+    </div>
+
+    <section class="sup-list-view" id="supListView">
+      <div class="sup-status-grid" id="supAggregateSummary"></div>
+      <div class="sup-project-grid" id="supProjectGrid"></div>
+      <div class="sup-empty" id="supEmptyState" hidden>暂无项目</div>
+    </section>
+
+    <section class="sup-detail-view" id="supDetailView" hidden>
+      <div class="sup-detail-head">
+        <div>
+          <div class="sup-detail-title-row">
+            <button type="button" class="ppr-btn" id="supBackBtn">返回</button>
+            <h2 class="sup-title" id="supDetailTitle">项目详情</h2>
+          </div>
+          <div class="sup-note" id="supDetailMeta"></div>
+        </div>
+        <div class="sup-chip" id="supDetailCurrency">USD</div>
+      </div>
+
+      <div class="sup-status-grid" id="supDetailSummary"></div>
+
+      <div class="sup-filter-row">
+        <div class="sup-title-row">
+          <h3 class="sup-title">订单明细</h3>
+          <span class="sup-note" id="supRowsCount">0 行</span>
+        </div>
+        <select id="supStatusFilter" aria-label="Payout Status">
+          <option value="all">全部状态</option>
+          <option value="pending">pending</option>
+          <option value="paid">paid</option>
+          <option value="scheduled">scheduled</option>
+        </select>
+      </div>
+
+      <div class="oa-table-wrap">
+        <div class="oa-table-scroll">
+          <table class="oa-table">
+            <thead>
+              <tr>
+                <th>状态</th>
+                <th>交易时间</th>
+                <th>类型</th>
+                <th>订单</th>
+                <th>销售额</th>
+                <th>手续费</th>
+                <th>打款额</th>
+                <th>Payout Date</th>
+                <th>Payout ID</th>
+              </tr>
+            </thead>
+            <tbody id="supRowsBody">
+              <tr><td colspan="9" class="oad-loading">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="sup-pager">
+        <button type="button" class="ppr-btn" id="supPrevPageBtn">上一页</button>
+        <span class="sup-note" id="supPageInfo">1 / 1</span>
+        <button type="button" class="ppr-btn" id="supNextPageBtn">下一页</button>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="supCreateDialog" class="ppr-dialog">
+    <form method="dialog" id="supCreateForm">
+      <div class="ppr-dialog-head">
+        <span>新建未结算货款项目</span>
+        <button type="button" class="ppr-dialog-close" data-sup-close aria-label="关闭">×</button>
+      </div>
+      <div class="ppr-dialog-body">
+        <label>
+          <span>店铺</span>
+          <select name="store_code" required>
+            <option value="">请选择店铺</option>
+            {% for store in realtime_store_options %}
+            <option value="{{ store.code }}">{{ store.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>项目名称</span>
+          <input type="text" name="project_name" maxlength="180" placeholder="不填则使用文件名">
+        </label>
+        <label>
+          <span>Shopify Payments 明细文件</span>
+          <input type="file" name="file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+        </label>
+        <div class="ppr-dialog-result" id="supCreateResult"></div>
+      </div>
+      <div class="ppr-dialog-foot">
+        <button type="button" class="ppr-btn" data-sup-close>取消</button>
+        <button type="submit" class="ppr-btn ppr-btn-primary" id="supCreateSubmitBtn">导入并建档</button>
+      </div>
+    </form>
+  </dialog>
+</section>
+
 <!-- ═══════ Tab 1: 导入文件 ═══════ -->
 <div class="oa-panel {% if active_tab == 'import' %}active{% endif %}" id="panelImport">
   <div class="oa-upload-zone" id="uploadZone">
@@ -4525,6 +4891,7 @@
     'trueRoas': '/order-analytics/true-roas-view',
     'weeklyRoas': '/order-analytics/weekly-roas-view',
     'weeklyAiAnalysis': '/order-analytics/weekly-ai-analysis-view',
+    'unsettledPayouts': '/order-analytics/unsettled-payouts',
     'import': '/order-analytics/import-view',
     'analytics': '/order-analytics/shopify-analytics-view'
   };
@@ -12066,6 +12433,376 @@
       amsWireModal();
     }
   })();
+</script>
+
+<script>
+(function() {
+  'use strict';
+  var root = document.querySelector('[data-sup-root]');
+  if (!root) return;
+
+  var initialTab = "{{ active_tab }}";
+  var statusOrder = ['pending', 'paid', 'scheduled'];
+  var statusMeta = {
+    pending: { label: '未结算订单', netLabel: '预计打款总额' },
+    paid: { label: '已结算订单', netLabel: '已打款总额' },
+    scheduled: { label: '已排期订单', netLabel: '已排期打款总额' }
+  };
+  var state = {
+    currentProjectId: null,
+    status: 'all',
+    page: 1,
+    pageSize: 100,
+    projects: []
+  };
+
+  var listView = document.getElementById('supListView');
+  var detailView = document.getElementById('supDetailView');
+  var aggregateSummary = document.getElementById('supAggregateSummary');
+  var projectGrid = document.getElementById('supProjectGrid');
+  var emptyState = document.getElementById('supEmptyState');
+  var loadingBox = document.getElementById('supLoadingBox');
+  var errorBox = document.getElementById('supErrorBox');
+  var detailSummary = document.getElementById('supDetailSummary');
+  var detailTitle = document.getElementById('supDetailTitle');
+  var detailMeta = document.getElementById('supDetailMeta');
+  var detailCurrency = document.getElementById('supDetailCurrency');
+  var rowsBody = document.getElementById('supRowsBody');
+  var rowsCount = document.getElementById('supRowsCount');
+  var pageInfo = document.getElementById('supPageInfo');
+  var prevPageBtn = document.getElementById('supPrevPageBtn');
+  var nextPageBtn = document.getElementById('supNextPageBtn');
+  var statusFilter = document.getElementById('supStatusFilter');
+  var createDialog = document.getElementById('supCreateDialog');
+  var createForm = document.getElementById('supCreateForm');
+  var createResult = document.getElementById('supCreateResult');
+  var createSubmitBtn = document.getElementById('supCreateSubmitBtn');
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : '';
+  }
+
+  function formatDateTime(value) {
+    if (!value) return '-';
+    return String(value).replace('T', ' ').slice(0, 19);
+  }
+
+  function formatMoney(value, currency) {
+    var numberValue = Number(value || 0);
+    if (!Number.isFinite(numberValue)) numberValue = 0;
+    var sign = numberValue < 0 ? '-' : '';
+    var text = Math.abs(numberValue).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    if (!currency) return sign + text;
+    if (currency === 'USD') return sign + '$' + text;
+    return sign + currency + ' ' + text;
+  }
+
+  function bucketFor(summary, status) {
+    var buckets = (summary && summary.buckets) || {};
+    var bucket = buckets[status] || {};
+    var meta = statusMeta[status];
+    return {
+      status: status,
+      label: bucket.label || meta.label,
+      net_label: bucket.net_label || meta.netLabel,
+      order_count: Number(bucket.order_count || 0),
+      amount_total: Number(bucket.amount_total || 0),
+      fee_total: Number(bucket.fee_total || 0),
+      net_total: Number(bucket.net_total || 0)
+    };
+  }
+
+  function renderStatusCards(container, summary, currency) {
+    container.innerHTML = statusOrder.map(function(status) {
+      var bucket = bucketFor(summary, status);
+      return [
+        '<article class="sup-status-card sup-status-card--' + status + '">',
+          '<div class="sup-status-head">',
+            '<div>',
+              '<div class="sup-status-label">' + escapeHtml(bucket.label) + '</div>',
+              '<div class="sup-card-sub">' + status + '</div>',
+            '</div>',
+            '<div class="sup-status-count">' + bucket.order_count.toLocaleString('zh-CN') + ' 笔</div>',
+          '</div>',
+          '<div class="sup-metric-grid">',
+            '<div class="sup-metric"><span>销售额总额</span><strong>' + escapeHtml(formatMoney(bucket.amount_total, currency)) + '</strong></div>',
+            '<div class="sup-metric"><span>手续费</span><strong>' + escapeHtml(formatMoney(bucket.fee_total, currency)) + '</strong></div>',
+            '<div class="sup-metric"><span>' + escapeHtml(bucket.net_label) + '</span><strong>' + escapeHtml(formatMoney(bucket.net_total, currency)) + '</strong></div>',
+          '</div>',
+        '</article>'
+      ].join('');
+    }).join('');
+  }
+
+  function setLoading(isLoading) {
+    if (loadingBox) loadingBox.hidden = !isLoading;
+  }
+
+  function showError(message) {
+    if (!errorBox) return;
+    if (!message) {
+      errorBox.textContent = '';
+      errorBox.classList.remove('is-visible');
+      return;
+    }
+    errorBox.textContent = message;
+    errorBox.classList.add('is-visible');
+  }
+
+  function fetchJson(url, options) {
+    return fetch(url, options || {}).then(function(response) {
+      return response.json().catch(function() { return {}; }).then(function(data) {
+        if (!response.ok) {
+          throw new Error(data.detail || data.error || ('HTTP ' + response.status));
+        }
+        return data;
+      });
+    });
+  }
+
+  function renderProjects(projects) {
+    if (!projects.length) {
+      projectGrid.innerHTML = '';
+      emptyState.hidden = false;
+      return;
+    }
+    emptyState.hidden = true;
+    projectGrid.innerHTML = projects.map(function(project) {
+      var summary = project.summary || {};
+      var pending = bucketFor(summary, 'pending');
+      var paid = bucketFor(summary, 'paid');
+      var scheduled = bucketFor(summary, 'scheduled');
+      var currency = project.currency || summary.currency || '';
+      return [
+        '<button type="button" class="sup-project-card" data-sup-project-id="' + escapeHtml(project.id) + '">',
+          '<div class="sup-project-head">',
+            '<div class="sup-project-title">' + escapeHtml(project.project_name || 'Shopify Payments 导入') + '</div>',
+            '<span class="sup-chip">' + escapeHtml(project.store_code || '-') + '</span>',
+          '</div>',
+          '<div class="sup-project-meta">' + escapeHtml(project.source_filename || '-') + '</div>',
+          '<div class="sup-project-meta">导入 ' + Number(project.imported_row_count || 0).toLocaleString('zh-CN') + ' 行 · 计入 ' + Number(project.included_row_count || 0).toLocaleString('zh-CN') + ' 行 · ' + escapeHtml(formatDateTime(project.created_at)) + '</div>',
+          '<div class="sup-project-status-row">',
+            '<div class="sup-project-money"><span>pending</span><strong>' + escapeHtml(formatMoney(pending.net_total, currency)) + '</strong></div>',
+            '<div class="sup-project-money"><span>paid</span><strong>' + escapeHtml(formatMoney(paid.net_total, currency)) + '</strong></div>',
+            '<div class="sup-project-money"><span>scheduled</span><strong>' + escapeHtml(formatMoney(scheduled.net_total, currency)) + '</strong></div>',
+          '</div>',
+        '</button>'
+      ].join('');
+    }).join('');
+  }
+
+  function loadProjects() {
+    showError('');
+    setLoading(true);
+    return fetchJson('/order-analytics/unsettled-payouts/projects?limit=200')
+      .then(function(data) {
+        state.projects = data.projects || [];
+        renderStatusCards(aggregateSummary, data.summary || {}, '');
+        renderProjects(state.projects);
+      })
+      .catch(function(error) {
+        showError(error.message || '项目列表加载失败');
+      })
+      .finally(function() {
+        setLoading(false);
+      });
+  }
+
+  function renderRows(rows, project) {
+    if (!rows.length) {
+      rowsBody.innerHTML = '<tr><td colspan="9" class="oad-loading">暂无明细</td></tr>';
+      return;
+    }
+    var currency = (project && project.currency) || '';
+    rowsBody.innerHTML = rows.map(function(row) {
+      var status = row.payout_status || '';
+      var label = (statusMeta[status] && statusMeta[status].label) || row.payout_status_raw || status || '-';
+      return [
+        '<tr>',
+          '<td><span class="sup-status-pill sup-status-pill--' + escapeHtml(status) + '">' + escapeHtml(label) + '</span></td>',
+          '<td>' + escapeHtml(row.transaction_date || '-') + '</td>',
+          '<td>' + escapeHtml(row.transaction_type || '-') + '</td>',
+          '<td>' + escapeHtml(row.order_name || '-') + '</td>',
+          '<td>' + escapeHtml(formatMoney(row.amount, currency)) + '</td>',
+          '<td>' + escapeHtml(formatMoney(row.fee, currency)) + '</td>',
+          '<td>' + escapeHtml(formatMoney(row.net, currency)) + '</td>',
+          '<td>' + escapeHtml(row.payout_date || '-') + '</td>',
+          '<td>' + escapeHtml(row.payout_id || '-') + '</td>',
+        '</tr>'
+      ].join('');
+    }).join('');
+  }
+
+  function renderDetail(data) {
+    var project = data.project || {};
+    var page = data.page || {};
+    var rows = data.rows || [];
+    var currency = project.currency || (project.summary && project.summary.currency) || 'USD';
+    detailTitle.textContent = project.project_name || '项目详情';
+    detailMeta.textContent = [
+      project.store_code || '-',
+      project.source_filename || '-',
+      '导入 ' + Number(project.imported_row_count || 0).toLocaleString('zh-CN') + ' 行',
+      formatDateTime(project.created_at)
+    ].join(' · ');
+    detailCurrency.textContent = currency;
+    renderStatusCards(detailSummary, project.summary || {}, currency);
+    renderRows(rows, project);
+    rowsCount.textContent = Number(page.total || 0).toLocaleString('zh-CN') + ' 行';
+    pageInfo.textContent = String(page.page || 1) + ' / ' + String(page.pages || 1);
+    prevPageBtn.disabled = (page.page || 1) <= 1;
+    nextPageBtn.disabled = (page.pages || 0) === 0 || (page.page || 1) >= (page.pages || 1);
+  }
+
+  function loadProjectDetail() {
+    if (!state.currentProjectId) return Promise.resolve();
+    showError('');
+    setLoading(true);
+    var url = '/order-analytics/unsettled-payouts/projects/' + encodeURIComponent(state.currentProjectId)
+      + '?page=' + encodeURIComponent(state.page)
+      + '&page_size=' + encodeURIComponent(state.pageSize)
+      + '&status=' + encodeURIComponent(state.status);
+    return fetchJson(url)
+      .then(renderDetail)
+      .catch(function(error) {
+        showError(error.message || '项目详情加载失败');
+      })
+      .finally(function() {
+        setLoading(false);
+      });
+  }
+
+  function openProject(projectId) {
+    state.currentProjectId = projectId;
+    state.page = 1;
+    if (listView) listView.hidden = true;
+    if (detailView) detailView.hidden = false;
+    loadProjectDetail();
+  }
+
+  function showCreateResult(message, type) {
+    if (!createResult) return;
+    createResult.className = 'ppr-dialog-result ' + (type === 'error' ? 'is-error' : 'is-ok');
+    createResult.textContent = message;
+    createResult.style.display = 'block';
+  }
+
+  function openCreateDialog() {
+    if (!createDialog || !createForm) return;
+    createForm.reset();
+    if (createResult) {
+      createResult.textContent = '';
+      createResult.style.display = 'none';
+      createResult.className = 'ppr-dialog-result';
+    }
+    if (createDialog.showModal) createDialog.showModal();
+    else createDialog.setAttribute('open', 'open');
+  }
+
+  function closeCreateDialog() {
+    if (!createDialog) return;
+    if (createDialog.close) createDialog.close();
+    else createDialog.removeAttribute('open');
+  }
+
+  function wireEvents() {
+    var refreshBtn = document.getElementById('supRefreshBtn');
+    var createOpenBtn = document.getElementById('supCreateOpenBtn');
+    var backBtn = document.getElementById('supBackBtn');
+    if (refreshBtn) refreshBtn.addEventListener('click', loadProjects);
+    if (createOpenBtn) createOpenBtn.addEventListener('click', openCreateDialog);
+    if (backBtn) backBtn.addEventListener('click', function() {
+      state.currentProjectId = null;
+      if (detailView) detailView.hidden = true;
+      if (listView) listView.hidden = false;
+      loadProjects();
+    });
+    if (projectGrid) {
+      projectGrid.addEventListener('click', function(event) {
+        var card = event.target.closest('[data-sup-project-id]');
+        if (card) openProject(card.dataset.supProjectId);
+      });
+    }
+    if (statusFilter) {
+      statusFilter.addEventListener('change', function() {
+        state.status = statusFilter.value || 'all';
+        state.page = 1;
+        loadProjectDetail();
+      });
+    }
+    if (prevPageBtn) {
+      prevPageBtn.addEventListener('click', function() {
+        if (state.page <= 1) return;
+        state.page -= 1;
+        loadProjectDetail();
+      });
+    }
+    if (nextPageBtn) {
+      nextPageBtn.addEventListener('click', function() {
+        state.page += 1;
+        loadProjectDetail();
+      });
+    }
+    document.querySelectorAll('[data-sup-close]').forEach(function(btn) {
+      btn.addEventListener('click', closeCreateDialog);
+    });
+    if (createForm) {
+      createForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        var formData = new FormData(createForm);
+        if (!formData.get('store_code') || !formData.get('file')) {
+          showCreateResult('请选择店铺并上传文件', 'error');
+          return;
+        }
+        createSubmitBtn.disabled = true;
+        createSubmitBtn.textContent = '导入中...';
+        showCreateResult('正在解析并建档...', 'ok');
+        fetchJson('/order-analytics/unsettled-payouts/projects', {
+          method: 'POST',
+          headers: { 'X-CSRFToken': csrfToken() },
+          body: formData
+        }).then(function(data) {
+          var projectId = data.project && data.project.id;
+          closeCreateDialog();
+          return loadProjects().then(function() {
+            if (projectId) openProject(projectId);
+          });
+        }).catch(function(error) {
+          showCreateResult(error.message || '导入失败', 'error');
+        }).finally(function() {
+          createSubmitBtn.disabled = false;
+          createSubmitBtn.textContent = '导入并建档';
+        });
+      });
+    }
+  }
+
+  function init() {
+    wireEvents();
+    if (initialTab === 'unsettledPayouts') {
+      loadProjects();
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
 </script>
 
 <!-- ═══════ 产品盈亏报表 / Payments 导入对话框 ═══════ -->

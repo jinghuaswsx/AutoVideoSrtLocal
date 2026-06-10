@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -26,6 +27,7 @@ from appcore import system_audit
 from appcore import weekly_roas_report as wrr
 from appcore.order_analytics import data_quality as dq
 from appcore.order_analytics import manual_ad_spend, order_profit_aggregation
+from appcore.order_analytics import shopify_unsettled_payouts
 from appcore.order_analytics import unmatched_details
 from appcore.order_analytics import weekly_ai_report as wai
 
@@ -34,6 +36,7 @@ log = logging.getLogger(__name__)
 _CST = ZoneInfo("Asia/Shanghai")
 _REALTIME_UNMATCHED_DETAIL_PAGE_SIZE = 50
 _REALTIME_UNMATCHED_DETAIL_MAX_PAGE_SIZE = 100
+_STORE_CODE_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 
 
 def _today_in_cst() -> date:
@@ -402,6 +405,132 @@ def page():
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
+
+
+@bp.route("/order-analytics/unsettled-payouts")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def unsettled_payouts_page():
+    """Docs-anchor: docs/superpowers/specs/2026-06-10-shopify-unsettled-payout-ledger-design.md"""
+    resp = make_response(render_template(
+        "order_analytics.html",
+        realtime_store_options=_realtime_store_options(),
+        active_tab="unsettledPayouts",
+        active_subtab="trend",
+    ))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
+
+
+@bp.route("/order-analytics/unsettled-payouts/projects", methods=["GET"])
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def unsettled_payout_projects():
+    """Docs-anchor: docs/superpowers/specs/2026-06-10-shopify-unsettled-payout-ledger-design.md"""
+    try:
+        limit = _parse_positive_int_arg("limit", 100, max_value=200)
+        result = shopify_unsettled_payouts.list_projects(limit=limit)
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:  # noqa: BLE001
+        log.exception("list unsettled payout projects failed: %s", exc)
+        return _json_response(error="internal_error", detail="unsettled payout project list failed"), 500
+    return _json_response(_json_safe({"ok": True, **result}))
+
+
+@bp.route("/order-analytics/unsettled-payouts/projects/<int:project_id>", methods=["GET"])
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def unsettled_payout_project_detail(project_id: int):
+    """Docs-anchor: docs/superpowers/specs/2026-06-10-shopify-unsettled-payout-ledger-design.md"""
+    try:
+        page = _parse_positive_int_arg("page", 1)
+        page_size = _parse_positive_int_arg("page_size", 100, max_value=500)
+        status = (request.args.get("status") or "all").strip().lower()
+        if status not in ("all", "pending", "paid", "scheduled"):
+            return _json_response(error="invalid_param", detail="status must be all/pending/paid/scheduled"), 400
+        result = shopify_unsettled_payouts.get_project_detail(
+            project_id,
+            status=status,
+            page=page,
+            page_size=page_size,
+        )
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:  # noqa: BLE001
+        log.exception("get unsettled payout project detail failed: %s", exc)
+        return _json_response(error="internal_error", detail="unsettled payout project detail failed"), 500
+    if not result:
+        return _json_response(error="not_found", detail="project not found"), 404
+    return _json_response(_json_safe({"ok": True, **result}))
+
+
+@bp.route("/order-analytics/unsettled-payouts/projects", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def unsettled_payout_project_create():
+    """Docs-anchor: docs/superpowers/specs/2026-06-10-shopify-unsettled-payout-ledger-design.md"""
+    store_code = (request.form.get("store_code") or "").strip().lower()
+    if (
+        not store_code
+        or not _STORE_CODE_RE.match(store_code)
+        or store_code not in meta_ad_accounts.AVAILABLE_STORE_CODES
+    ):
+        return _json_response(error="invalid_store", detail="请选择有效店铺"), 400
+
+    file_storage = request.files.get("file")
+    if not file_storage or not file_storage.filename:
+        return _json_response(error="missing_file", detail="请选择 Shopify Payments 导出文件"), 400
+
+    filename = client_filename_basename(file_storage.filename)
+    if not filename:
+        return _json_response(error="missing_file", detail="文件名无效"), 400
+    project_name = (request.form.get("project_name") or "").strip()
+    content = file_storage.read()
+    if not content:
+        return _json_response(error="empty_file", detail="文件为空或格式不正确"), 400
+
+    try:
+        project = shopify_unsettled_payouts.create_project_from_file(
+            store_code=store_code,
+            project_name=project_name,
+            filename=filename,
+            content=content,
+            imported_by=getattr(current_user, "id", None),
+        )
+    except ValueError as exc:
+        _audit_order_analytics_action(
+            "order_analytics_unsettled_payout_project_create_failed",
+            status="failed",
+            detail={"store_code": store_code, "filename": filename, "error": str(exc)},
+        )
+        return _json_response(error="parse_failed", detail=str(exc)), 400
+    except Exception as exc:  # noqa: BLE001
+        log.exception("create unsettled payout project failed: %s", exc)
+        _audit_order_analytics_action(
+            "order_analytics_unsettled_payout_project_create_failed",
+            status="failed",
+            detail={"store_code": store_code, "filename": filename, "error": str(exc)},
+        )
+        return _json_response(error="internal_error", detail="unsettled payout project create failed"), 500
+
+    _audit_order_analytics_action(
+        "order_analytics_unsettled_payout_project_created",
+        target_type="shopify_unsettled_payout_project",
+        target_id=project.get("id"),
+        target_label=project.get("project_name"),
+        detail={
+            "store_code": store_code,
+            "filename": filename,
+            "included_row_count": project.get("included_row_count"),
+            "ignored_row_count": project.get("ignored_row_count"),
+        },
+    )
+    return _json_response(_json_safe({"ok": True, "project": project}))
 
 
 @bp.route("/order-analytics/dxm-orders-view/order-trend/<product_code>")
