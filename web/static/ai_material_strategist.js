@@ -675,10 +675,10 @@
     const importButton = !state.publicMode && actionIndex >= 0
       ? `<button type="button" class="aims-btn teal" data-import-action data-product-index="${productIndex}" data-action-index="${actionIndex}">加入素材库</button>`
       : '';
-    const videoNode = !state.publicMode && material.video_url
+    const videoNode = material.video_url
       ? `<video controls preload="metadata" src="${esc(material.video_url)}"></video>`
       : '';
-    const videoLink = !state.publicMode && material.video_url
+    const videoLink = material.video_url
       ? `<a class="aims-btn" href="${esc(material.video_url)}" target="_blank" rel="noopener noreferrer">看视频</a>`
       : '';
     return `

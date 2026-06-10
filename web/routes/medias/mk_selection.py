@@ -7,10 +7,18 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import re
 from flask import abort, request
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from appcore import local_media_storage, pushes
+from appcore.ai_material_strategist import get_project_by_share_token
+
+_SHARE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,100}$")
+
+def _valid_share_token(share_token: str) -> bool:
+    return bool(_SHARE_TOKEN_RE.fullmatch(str(share_token or "")))
+
 
 from . import bp
 from ._helpers import (
@@ -178,11 +186,21 @@ def api_mk_media_proxy():
 
 
 @bp.route("/api/mk-video", methods=["GET"])
-@login_required
 def api_mk_video_proxy():
     """Cache a wedev video source locally, then serve it for in-page preview."""
-    if not _is_admin():
-        return _routes()._mk_admin_required_response()
+    share_token = request.args.get("share_token")
+    is_share_valid = False
+    if share_token and _valid_share_token(share_token):
+        project = get_project_by_share_token(share_token)
+        if project:
+            is_share_valid = True
+
+    if not is_share_valid:
+        if not current_user.is_authenticated:
+            abort(401)
+        if not _is_admin():
+            return _routes()._mk_admin_required_response()
+
     media_path = _normalize_mk_media_path(request.args.get("path") or "")
     if not media_path:
         abort(404)

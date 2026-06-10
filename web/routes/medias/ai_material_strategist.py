@@ -56,11 +56,30 @@ def _strip_public_links(value):
     return value
 
 
-def _public_project_payload(project: dict) -> dict:
+def _public_project_payload(project: dict, share_token: str) -> dict:
     payload = _strip_public_links(project)
     payload.pop("ranking_prompt", None)
     payload.pop("data_snapshot", None)
     payload["public"] = True
+
+    if "products" in payload:
+        for p_idx, p in enumerate(payload["products"]):
+            orig_p = project["products"][p_idx]
+            if "mingkong_materials" in p and "mingkong_materials" in orig_p:
+                for m_idx, m in enumerate(p["mingkong_materials"]):
+                    orig_m = orig_p["mingkong_materials"][m_idx]
+                    orig_video_url = orig_m.get("video_url")
+                    if orig_video_url:
+                        if "?" in orig_video_url:
+                            m["video_url"] = f"{orig_video_url}&share_token={share_token}"
+                        else:
+                            m["video_url"] = f"{orig_video_url}?share_token={share_token}"
+            if "local_materials" in p and "local_materials" in orig_p:
+                for lm_idx, lm in enumerate(p["local_materials"]):
+                    orig_lm = orig_p["local_materials"][lm_idx]
+                    object_key = orig_lm.get("object_key")
+                    if object_key:
+                        lm["video_url"] = f"/medias/obj/{object_key}"
     return payload
 
 
@@ -181,7 +200,7 @@ def api_ai_material_strategist_public_project(share_token: str):
     project = service.get_project_by_share_token(share_token)
     if not project:
         abort(404)
-    return _json({"success": True, "project": _public_project_payload(project)})
+    return _json({"success": True, "project": _public_project_payload(project, share_token)})
 
 
 @bp.route("/api/ai-material-strategist/preview", methods=["GET"])

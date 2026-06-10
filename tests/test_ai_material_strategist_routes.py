@@ -93,7 +93,13 @@ def test_ai_material_strategist_public_share_api_returns_sanitized_project_witho
                     "mingkong_materials": [
                         {
                             "video_name": "demo.mp4",
-                            "video_url": "/medias/api/mk/video/demo.mp4",
+                            "video_url": "/medias/api/mk-video?path=demo.mp4",
+                        }
+                    ],
+                    "local_materials": [
+                        {
+                            "object_key": "tasks/12/medias/test.mp4",
+                            "video_url": "/medias/object?object_key=tasks/12/medias/test.mp4",
                         }
                     ],
                 }
@@ -117,7 +123,14 @@ def test_ai_material_strategist_public_share_api_returns_sanitized_project_witho
     assert "method" not in action
     assert "payload" not in action
     assert "task_url" not in project["products"][0]["country_summary"][0]["blocking_task"]
-    assert "video_url" not in project["products"][0]["mingkong_materials"][0]
+    
+    # 验证视频链接已正确加回并且拼接了 share_token
+    mk_video = project["products"][0]["mingkong_materials"][0]["video_url"]
+    assert "share_token=share_token_1234567890" in mk_video
+    
+    # 验证本地素材视频链接转换成了公开格式
+    local_video = project["products"][0]["local_materials"][0]["video_url"]
+    assert local_video == "/medias/obj/tasks/12/medias/test.mp4"
 
 
 def test_ai_material_strategist_public_share_api_rejects_invalid_token(authed_client_no_db):
