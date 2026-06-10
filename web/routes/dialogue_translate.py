@@ -1550,14 +1550,18 @@ def voice_library_for_speaker(task_id: str):
     page, page_size = _parse_voice_library_paging()
     gender = request.args.get("gender") or None
     q = request.args.get("q") or None
+    all_languages = request.args.get("all_languages") in ("true", "1", "True")
     try:
-        data = list_voices(
-            language=lang,
-            gender=gender,
-            q=q,
-            page=page,
-            page_size=page_size,
-        )
+        kwargs = {
+            "language": lang,
+            "gender": gender,
+            "q": q,
+            "page": page,
+            "page_size": page_size,
+        }
+        if all_languages:
+            kwargs["ignore_language"] = True
+        data = list_voices(**kwargs)
     except ValueError as exc:
         return _json_response({"error": str(exc)}, 400)
 

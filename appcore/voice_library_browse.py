@@ -86,14 +86,19 @@ def list_voices(
     q: Optional[str] = None,
     page: int = 1,
     page_size: int = 48,
+    ignore_language: bool = False,
 ) -> dict:
-    if not language:
+    if not ignore_language and not language:
         raise ValueError("language is required")
     page = max(1, int(page))
     page_size = max(1, min(200, int(page_size)))
 
-    where = ["language = %s"]
-    params: list = [language]
+    where: list[str] = []
+    params: list = []
+
+    if not ignore_language:
+        where.append("language = %s")
+        params.append(language)
 
     if gender in ("male", "female"):
         where.append("gender = %s")
@@ -124,8 +129,8 @@ def list_voices(
         where.append("(name LIKE %s OR descriptive LIKE %s)")
         params.extend([like, like])
 
-    where_sql = " AND ".join(where)
-    table = _table_for_language(language)
+    where_sql = " AND ".join(where) if where else "1=1"
+    table = _BASE_TABLE if ignore_language else _table_for_language(language)
 
     total_row = query_one(
         f"SELECT COUNT(*) AS c FROM {table} WHERE {where_sql}",

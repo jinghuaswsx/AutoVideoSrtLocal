@@ -52,6 +52,7 @@
   const modalCloseBtn = document.getElementById("vs-modal-close-btn");
   const genderFilter = document.getElementById("vs-gender-filter");
   const recommendedOnly = document.getElementById("vs-recommended-only");
+  const ignoreLanguage = document.getElementById("vs-ignore-language");
   const aiRankStatusPill = document.getElementById("vs-ai-rank-status-pill");
   const aiRankDebugBtn = document.getElementById("vs-ai-rank-debug-btn");
   const aiRankRunBtn = document.getElementById("vs-ai-rank-run-btn");
@@ -778,6 +779,7 @@
         activeGender,
         search: searchInput ? searchInput.value : "",
         recommendedOnly: recommendedOnly ? recommendedOnly.checked : false,
+        ignoreLanguage: ignoreLanguage ? ignoreLanguage.checked : false,
         modalOpen: currentModalOpen(),
         activeVoiceId: (findActiveVoiceElement() || {}).dataset?.voiceId || selectedVoiceId,
       }));
@@ -799,6 +801,7 @@
     if (!saved) return null;
     if (searchInput && typeof saved.search === "string") searchInput.value = saved.search;
     if (recommendedOnly) recommendedOnly.checked = !!saved.recommendedOnly;
+    if (ignoreLanguage) ignoreLanguage.checked = !!saved.ignoreLanguage;
     activeGender = saved.activeGender === "male" || saved.activeGender === "female" ? saved.activeGender : null;
     selectedVoiceId = saved.selectedVoiceId || selectedVoiceId;
     selectedVoiceName = saved.selectedVoiceName || selectedVoiceName;
@@ -963,6 +966,7 @@
       page_size: String(VOICE_PAGE_SIZE),
     });
     if (activeGender) params.set("gender", activeGender);
+    if (ignoreLanguage && ignoreLanguage.checked) params.set("all_languages", "true");
     const q = currentVoiceSearch();
     if (q) params.set("q", q);
     params.set("_t", Date.now().toString());
@@ -1582,6 +1586,12 @@
     render();
     saveReloadState();
   });
+  if (ignoreLanguage) {
+    ignoreLanguage.addEventListener("change", () => {
+      loadLibrary();
+      saveReloadState();
+    });
+  }
   if (voiceSelect) voiceSelect.addEventListener("change", selectVoiceFromControl);
   if (openModalBtn) openModalBtn.addEventListener("click", openVoiceModal);
   if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeVoiceModal);
