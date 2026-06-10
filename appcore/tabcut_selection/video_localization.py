@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 import config
@@ -11,6 +13,33 @@ from appcore.tabcut_selection import store
 from pipeline.ffutil import get_media_duration
 
 log = logging.getLogger(__name__)
+
+
+def resolve_output_relative_file_path(
+    relative_path: str | None,
+    *,
+    output_dir: str | Path = config.OUTPUT_DIR,
+) -> Path | None:
+    raw = str(relative_path or "").strip().replace("\\", "/")
+    if not raw or raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
+        return None
+    root = Path(output_dir).resolve()
+    candidate = (root / raw).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    if not candidate.is_file():
+        return None
+    return candidate
+
+
+def resolve_local_video_path(
+    relative_path: str | None,
+    *,
+    output_dir: str | Path = config.OUTPUT_DIR,
+) -> Path | None:
+    return resolve_output_relative_file_path(relative_path, output_dir=output_dir)
 
 
 def download_tiktok_video(video_id: str, author_name: str, tk_video_url: str | None = None) -> tuple[bool, str, str]:

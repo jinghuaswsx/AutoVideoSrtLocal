@@ -1056,6 +1056,11 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "tabcut-video-grid" in body
     assert "function normalizeTabcutGotoPage(raw, totalPages)" in body
     assert 'class="tabcut-pager-goto"' in body
+    assert 'id="tabcutTaskModal"' in body
+    assert 'name="tabcutTaskKind"' in body
+    assert "/tasks/api/material-products" in body
+    assert 'source: "tabcut_video"' in body
+    assert "renderTabcutTaskButton(row)" in body
 
 
 def test_xuanpin_new_products_page_uses_xuanpin_tabs_and_api(

@@ -2,6 +2,7 @@
 
 Docs-anchor: docs/superpowers/specs/2026-06-06-task-center-new-product-task-video-flow-design.md
 Docs-anchor: docs/superpowers/specs/2026-06-07-task-center-new-material-task-existing-product-design.md
+Docs-anchor: docs/superpowers/specs/2026-06-10-tabcut-video-new-material-task-integration.md
 """
 
 from __future__ import annotations
@@ -183,6 +184,62 @@ def create_from_meta_hot_post(
     )
 
 
+def create_from_tabcut_video(
+    *,
+    video_id: str,
+    owner_id: int,
+    target_product_id: int | None = None,
+    task_kind: str = TASK_KIND_NEW_PRODUCT,
+    countries: list[str],
+    language_assignments: dict[str, int] | None,
+    raw_processor_id: int,
+    created_by: int,
+    is_urgent: bool = False,
+    force: bool = False,
+) -> dict[str, Any]:
+    normalized_video_id = str(video_id or "").strip()
+    if not normalized_video_id:
+        raise NewProductTaskError("video_id required")
+    if int(owner_id or 0) <= 0:
+        raise NewProductTaskError("owner_id required")
+    kind = _normalize_task_kind(task_kind)
+
+    norm_countries, assignment_map = _validate_task_assignment(
+        countries=countries,
+        language_assignments=language_assignments,
+        raw_processor_id=raw_processor_id,
+    )
+
+    from appcore.tabcut_selection.service import import_tabcut_video
+
+    imported = import_tabcut_video(
+        video_id=normalized_video_id,
+        owner_id=int(owner_id),
+        actor_user_id=int(created_by),
+        target_product_id=int(target_product_id or 0) if kind == TASK_KIND_SUPPLEMENT else None,
+    )
+    product_id = int(imported.get("media_product_id") or 0)
+    item_id = int(imported.get("media_item_id") or 0)
+    if product_id <= 0 or item_id <= 0:
+        raise NewProductTaskError("tabcut video import did not return media ids")
+
+    return _create_task_for_item(
+        product_id=product_id,
+        item_id=item_id,
+        countries=norm_countries,
+        language_assignments=assignment_map,
+        raw_processor_id=int(raw_processor_id),
+        created_by=int(created_by),
+        is_urgent=bool(is_urgent),
+        force=bool(force),
+        is_new_product=bool(imported.get("is_new_product")),
+        source="tabcut_video",
+        task_kind=kind,
+        product_link=str(imported.get("product_link") or ""),
+        tabcut_video_id=normalized_video_id,
+    )
+
+
 def _create_task_for_item(
     *,
     product_id: int,
@@ -198,6 +255,7 @@ def _create_task_for_item(
     task_kind: str,
     product_link: str = "",
     meta_hot_post_id: int | None = None,
+    tabcut_video_id: str | None = None,
 ) -> dict[str, Any]:
     raw_source_reuse = task_raw_source_bridge.find_ready_raw_source_for_media_item(item_id)
     create_kwargs: dict[str, Any] = {
@@ -256,6 +314,7 @@ def _create_task_for_item(
         "product_detail_url": _product_detail_url(product_id),
         **({"product_link": product_link} if product_link else {}),
         **({"meta_hot_post_id": int(meta_hot_post_id)} if meta_hot_post_id else {}),
+        **({"tabcut_video_id": str(tabcut_video_id)} if tabcut_video_id else {}),
     }
 
 
