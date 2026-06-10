@@ -1495,6 +1495,43 @@
         inputBlock('目标 1688 SKU ID', 'sku_id_alibaba', target.sku_id_alibaba, { index, mono: true }),
         inputBlock('目标图片 URL', 'image_url', target.image_url, { index })
       ].join('');
+
+      let fuzzyHtml = '';
+      const fuzzyCandidates = state.payload?.fuzzy_candidates || [];
+      if (fuzzyCandidates.length) {
+        fuzzyHtml = `<div class="mkp-fuzzy-candidates-selector" style="margin-top: 15px; padding-top: 10px; border-top: 1px dashed #cbd5e1;">
+          <strong style="font-size: 12px; color: #475569; display: block; margin-bottom: 5px;">备选明空 ERP SKU (点击快速回填):</strong>
+          <div class="mkp-fuzzy-list" style="max-height: 150px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc;">`;
+        fuzzyCandidates.forEach((cand) => {
+          fuzzyHtml += `<div class="mkp-fuzzy-item" 
+            style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; cursor: pointer; transition: all 0.2s ease;"
+            onmouseover="this.style.background='#e2e8f0'"
+            onmouseout="this.style.background=''"
+            onclick="
+              const row = this.closest('.mkp-sync-row');
+              if (row) {
+                row.querySelector('[data-sync-field=\\'dianxiaomi_sku\\']').value = '${esc(cand.sku)}';
+                row.querySelector('[data-sync-field=\\'dianxiaomi_sku_code\\']').value = '${esc(cand.sku_code || '')}';
+                row.querySelector('[data-sync-field=\\'dianxiaomi_name\\']').value = '${esc(cand.dxm_name || '')}';
+                row.querySelector('[data-sync-field=\\'image_url\\']').value = '${esc(cand.image_url || '')}';
+                row.querySelector('[data-sync-field=\\'purchase_1688_url\\']').value = '${esc(cand.purchase_1688_url || '')}';
+                row.querySelector('[data-sync-field=\\'product_id_alibaba\\']').value = '${esc(cand.alibaba_product_id || '')}';
+                
+                // Refresh target image preview
+                const img = row.querySelector('.target img');
+                if (img && '${esc(cand.image_url || '')}') img.src = '${esc(cand.image_url || '')}';
+              }
+            ">
+            ${imageHtml(cand.image_url, 'mkp-fuzzy-thumb')}
+            <div style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <span class="mkp-mono" style="font-weight: bold; color: #1e293b;">${esc(cand.sku)}</span> 
+              <span style="color: #64748b;">(${esc(cand.dxm_name)})</span>
+            </div>
+          </div>`;
+        });
+        fuzzyHtml += `</div></div>`;
+      }
+
       return `<div class="mkp-sync-row" data-sync-row="1"
           data-shopify-product-id="${esc(target.shopify_product_id)}"
           data-shopify-variant-id="${esc(target.shopify_variant_id)}"
@@ -1527,7 +1564,7 @@
           <div class="mkp-sync-row-cards">
             ${syncCardHtml('明空 SKU 数据', mingkong.image_url, mingkongFields)}
             ${syncCardHtml('当前我们系统 / DXM03', currentImageUrl, currentFields)}
-            ${syncCardHtml('执行后的目标效果', target.image_url, targetFields, 'target')}
+            ${syncCardHtml('执行后的目标效果', target.image_url, targetFields + fuzzyHtml, 'target')}
           </div>
         </div>
       </div>`;
@@ -1651,6 +1688,32 @@
       ${rankingHtml}
       <div>${esc(review?.variant_mapping_notes || '')}</div>`;
     box.hidden = false;
+
+    // Auto-fill variant mappings if returned by AI
+    const mappings = Array.isArray(review?.variant_mappings) ? review.variant_mappings : [];
+    if (mappings.length) {
+      appendSyncLog('info', `AI 建议了 ${mappings.length} 个变体的 SKU 配对映射，正在自动回填目标效果表格...`);
+      mappings.forEach((mapping) => {
+        const row = document.querySelector(`[data-shopify-variant-id="${mapping.shopify_variant_id}"]`);
+        if (row) {
+          const skuInput = row.querySelector('[data-sync-field="dianxiaomi_sku"]');
+          const codeInput = row.querySelector('[data-sync-field="dianxiaomi_sku_code"]');
+          const nameInput = row.querySelector('[data-sync-field="dianxiaomi_name"]');
+          
+          if (skuInput && mapping.recommended_sku) {
+            skuInput.value = mapping.recommended_sku;
+          }
+          if (codeInput && mapping.recommended_sku_code) {
+            codeInput.value = mapping.recommended_sku_code;
+          }
+          if (nameInput && mapping.recommended_name) {
+            nameInput.value = mapping.recommended_name;
+          }
+          
+          appendSyncLog('ok', `变体 '${mapping.variant_title || '—'}' 自动回填建议 SKU: ${mapping.recommended_sku}`);
+        }
+      });
+    }
   }
 
   async function runAiReview() {

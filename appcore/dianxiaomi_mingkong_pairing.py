@@ -1243,6 +1243,7 @@ def _local_sku_payload(row: dict[str, Any]) -> dict[str, Any]:
         "mingkong_procurement": row.get("mingkong_procurement"),
         "is_combo": bool(row.get("is_combo")),
         "combo_components": row.get("combo_components") or [],
+        "fuzzy_candidates": row.get("fuzzy_candidates") or [],
     }
 
 
@@ -1441,6 +1442,7 @@ def _overlay_sku_fill(base: dict[str, Any], fill: dict[str, Any]) -> dict[str, A
         "mingkong_procurement",
         "is_combo",
         "combo_components",
+        "fuzzy_candidates",
     ):
         value = fill.get(key)
         if value not in (None, "", []):
@@ -1858,7 +1860,47 @@ def build_workbench_payload(
                 "pairing": pairing,
             },
             "status": status,
+            "fuzzy_candidates": row.get("fuzzy_candidates") or [],
         })
+
+    # Fetch fuzzy candidates from mingkong_procurement_links table
+    fuzzy_candidates = []
+    try:
+        product_id = int(product.get("id") or 0)
+        if product_id:
+            from appcore.db import query as db_query
+            rows = db_query(
+                """
+                SELECT id, sku, sku_code, dxm_name, purchase_1688_url, raw_json
+                FROM mingkong_procurement_links
+                WHERE mingkong_product_id = %s AND confidence = 'keyword_candidate'
+                ORDER BY last_synced_at DESC
+                """,
+                (product_id,),
+            )
+            for r in rows:
+                raw_item = json.loads(r.get("raw_json") or "{}")
+                img_url = raw_item.get("imgUrl") or raw_item.get("imageUrl") or ""
+                if img_url:
+                    from appcore.mingkong_product_library import normalize_image_url
+                    img_url = normalize_image_url(img_url)
+                
+                fuzzy_candidates.append({
+                    "sku": r.get("sku"),
+                    "sku_code": r.get("sku_code"),
+                    "dxm_name": r.get("dxm_name") or raw_item.get("name") or "",
+                    "image_url": img_url,
+                    "purchase_1688_url": r.get("purchase_1688_url") or raw_item.get("sourceUrl") or "",
+                    "alibaba_product_id": r.get("alibaba_product_id") or normalize_1688_offer_id(r.get("purchase_1688_url")),
+                })
+    except Exception as exc:
+        log.warning("Failed to fetch fuzzy candidates in build_workbench_payload: %s", exc)
+
+    # Make sure fuzzy candidates are attached to items if they are empty
+    for item in items:
+        if not item.get("fuzzy_candidates") and fuzzy_candidates:
+            item["fuzzy_candidates"] = fuzzy_candidates
+
     return {
         "product": {
             "id": product.get("id"),
@@ -1887,6 +1929,7 @@ def build_workbench_payload(
             ),
             "realtime_refresh": realtime_refresh_summary,
         },
+        "fuzzy_candidates": fuzzy_candidates,
     }
 
 

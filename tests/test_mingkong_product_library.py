@@ -441,3 +441,12 @@ def test_mingkong_product_library_refresh_builds_complete_runner_args(monkeypatc
         "pair_delay_seconds": 0.0,
         "public_variant_delay_seconds": 0.0,
     }
+
+
+def test_extract_keyword_from_name():
+    from appcore import mingkong_product_library as library
+
+    assert library.extract_keyword_from_name("儿童脚踩小火箭") == "脚踩火箭"
+    assert library.extract_keyword_from_name("新款 3D 打印 恐龙玩具") == "打印恐龙"
+    assert library.extract_keyword_from_name("Yopoll AstroStomp") == ""
+
