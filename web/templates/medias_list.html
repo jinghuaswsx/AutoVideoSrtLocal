@@ -4295,7 +4295,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   <nav class="oc-page-tabs" role="tablist" aria-label="素材管理类型">
     <a href="{{ url_for('medias.product_tab_page') }}" class="oc-page-tab{% if medias_active_tab == 'products' %} active{% endif %}" data-media-tab="products" role="tab" aria-selected="{{ 'true' if medias_active_tab == 'products' else 'false' }}">产品管理</a>
     <a href="{{ url_for('medias.video_tab_page') }}" class="oc-page-tab{% if medias_active_tab == 'videos' %} active{% endif %}" data-media-tab="videos" role="tab" aria-selected="{{ 'true' if medias_active_tab == 'videos' else 'false' }}">视频素材管理</a>
-    <a href="{{ url_for('medias.ai_material_strategist_page') }}" class="oc-page-tab" role="tab" aria-selected="false">投放素材AI分析</a>
+    <a href="{{ url_for('medias.ai_material_strategist_page') }}" class="oc-page-tab" role="tab" aria-selected="false">AI素材军师</a>
   </nav>
 
   <section id="mediaProductsPanel" class="oc-panel-page" role="tabpanel"{% if medias_active_tab != 'products' %} hidden{% endif %}>

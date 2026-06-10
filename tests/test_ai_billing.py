@@ -205,7 +205,7 @@ def test_log_request_saves_request_and_response_payloads():
     )
 
 
-def test_log_request_for_material_strategist():
+def test_log_request_for_ad_material_ai_analysis():
     ai_billing = importlib.import_module("appcore.ai_billing")
     ai_billing = importlib.reload(ai_billing)
 
@@ -214,9 +214,9 @@ def test_log_request_for_material_strategist():
 
     # 1. 排名用例测试
     ai_billing.log_request(
-        use_case_code="medias.ai_material_strategist_rank_products",
+        use_case_code="medias.ad_material_ai_analysis_rank_products",
         user_id=1,
-        project_id="strategist-project-1",
+        project_id="ad-material-project-1",
         provider="google_wj",
         model="gemini-3.5-flash",
         input_tokens=2000,
@@ -225,9 +225,9 @@ def test_log_request_for_material_strategist():
     
     # 2. 单品分析用例测试
     ai_billing.log_request(
-        use_case_code="medias.ai_material_strategist_product_analysis",
+        use_case_code="medias.ad_material_ai_analysis_product_analysis",
         user_id=1,
-        project_id="strategist-project-1",
+        project_id="ad-material-project-1",
         provider="google_wj",
         model="gemini-3.5-flash",
         input_tokens=1500,
@@ -239,8 +239,8 @@ def test_log_request_for_material_strategist():
     
     # 验证第一次调用（排名）
     args1, kwargs1 = calls[0]
-    assert args1 == (1, "strategist-project-1", "google_wj")
-    assert kwargs1["use_case_code"] == "medias.ai_material_strategist_rank_products"
+    assert args1 == (1, "ad-material-project-1", "google_wj")
+    assert kwargs1["use_case_code"] == "medias.ad_material_ai_analysis_rank_products"
     assert kwargs1["module"] == "material"
     assert kwargs1["provider"] == "google_wj"
     assert kwargs1["model_name"] == "gemini-3.5-flash"
@@ -248,8 +248,8 @@ def test_log_request_for_material_strategist():
     
     # 验证第二次调用（分析）
     args2, kwargs2 = calls[1]
-    assert args2 == (1, "strategist-project-1", "google_wj")
-    assert kwargs2["use_case_code"] == "medias.ai_material_strategist_product_analysis"
+    assert args2 == (1, "ad-material-project-1", "google_wj")
+    assert kwargs2["use_case_code"] == "medias.ad_material_ai_analysis_product_analysis"
     assert kwargs2["module"] == "material"
     assert kwargs2["provider"] == "google_wj"
     assert kwargs2["model_name"] == "gemini-3.5-flash"

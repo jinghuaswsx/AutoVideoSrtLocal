@@ -11,8 +11,13 @@ import re
 from flask import abort, request
 from flask_login import current_user, login_required
 
-from appcore import local_media_storage, mingkong_request_monitor, pushes
-from appcore.ai_material_strategist import get_project_by_share_token
+from appcore import (
+    ad_material_ai_analysis,
+    ai_material_strategist,
+    local_media_storage,
+    mingkong_request_monitor,
+    pushes,
+)
 
 _SHARE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,100}$")
 
@@ -197,7 +202,10 @@ def api_mk_video_proxy():
     share_token = request.args.get("share_token")
     is_share_valid = False
     if share_token and _valid_share_token(share_token):
-        project = get_project_by_share_token(share_token)
+        project = (
+            ai_material_strategist.get_project_by_share_token(share_token)
+            or ad_material_ai_analysis.get_project_by_share_token(share_token)
+        )
         if project:
             is_share_valid = True
 

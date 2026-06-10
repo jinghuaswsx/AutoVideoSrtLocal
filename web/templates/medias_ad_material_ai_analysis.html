@@ -1,11 +1,12 @@
 {% extends aims_layout_template|default("layout.html") %}
-{% block title %}AI素材军师 - AutoVideoSrt{% endblock %}
+{% block title %}投放素材AI分析 - AutoVideoSrt{% endblock %}
 {% block page_title %}
-<span class="selection-center-title">AI素材军师</span>
-<span class="selection-center-title-note" id="aimsPageNote">项目化补素材建议</span>
+<span class="selection-center-title">投放素材AI分析</span>
+<span class="selection-center-title-note" id="aimsPageNote">商品历史、达人与视频取证综合评审</span>
 {% endblock %}
 
 {% block extra_style %}
+  {{ super() }}
   .aims-page {
     --aims-bg: #f7f9fc;
     --aims-surface: #fff;
@@ -216,6 +217,14 @@
   .aims-roas-green { color: #16a34a !important; font-weight: 800; }
   .aims-roas-orange { color: #ea580c !important; font-weight: 800; }
   .aims-roas-red { color: #dc2626 !important; font-weight: 800; }
+
+  .aims-bar-spend-val {
+    display: block;
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    padding-right: 4px;
+  }
 
   .aims-detail {
     padding: 10px;
@@ -573,7 +582,7 @@
   .aims-task-link.cancelled { background: #f1f5f9; color: #64748b; }
   .aims-country-grid {
     display: grid;
-    grid-template-columns: 120px repeat(8, minmax(74px, 1fr));
+    grid-template-columns: 120px repeat(8, minmax(84px, 1fr));
     gap: 1px;
     overflow: auto;
     background: var(--aims-border);
@@ -582,19 +591,198 @@
     margin-bottom: 10px;
   }
   .aims-country-cell {
-    min-height: 34px;
+    min-height: 62px;
     padding: 6px;
     background: #fff;
     font-size: 11px;
+    color: #475569;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    text-align: center;
+    border-left: 3px solid transparent;
+    transition: all 0.15s ease;
   }
   .aims-country-cell.head {
     background: #f8fafc;
     color: #475569;
     font-weight: 800;
+    border-left: none;
   }
-  .aims-country-cell.active { background: #ecfdf5; color: #166534; }
-  .aims-country-cell.stopped { background: #fef2f2; color: #991b1b; }
-  .aims-country-cell.never { background: #fff7ed; color: #9a3412; }
+  .aims-country-cell.active {
+    background-color: #f0fdf4 !important;
+    border-left-color: #22c55e;
+  }
+  .aims-country-cell.stopped {
+    background-color: #fff5f5 !important;
+    border-left-color: #ef4444;
+  }
+  .aims-country-cell.never {
+    background-color: #fafafa !important;
+    border-left-color: #cbd5e1;
+  }
+  .aims-country-cell.is-zero {
+    background-color: #ffffff !important;
+    border-left-color: transparent !important;
+    opacity: 0.6;
+  }
+  .aims-country-cell.is-zero:hover {
+    opacity: 1;
+  }
+  .aims-country-cell:hover {
+    background-color: #f1f5f9 !important;
+    border-left-color: #94a3b8;
+    z-index: 2;
+  }
+  .aims-cell-spend {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+  }
+  .aims-cell-spend.zero {
+    color: #94a3b8;
+    font-weight: 500;
+  }
+  /* Green heatmap background levels for positive ROAS */
+  .aims-country-cell.green-level-1 {
+    background-color: #f0fdf4 !important;
+    border-left-color: #86efac !important;
+  }
+  .aims-country-cell.green-level-1 .aims-cell-spend {
+    color: #15803d !important;
+  }
+  .aims-country-cell.green-level-2 {
+    background-color: #dcfce7 !important;
+    border-left-color: #4ade80 !important;
+  }
+  .aims-country-cell.green-level-2 .aims-cell-spend {
+    color: #166534 !important;
+  }
+  .aims-country-cell.green-level-3 {
+    background-color: #bbf7d0 !important;
+    border-left-color: #22c55e !important;
+  }
+  .aims-country-cell.green-level-3 .aims-cell-spend {
+    color: #14532d !important;
+  }
+  .aims-country-cell.green-level-4 {
+    background-color: #86efac !important;
+    border-left-color: #16a34a !important;
+  }
+  .aims-country-cell.green-level-4 .aims-cell-spend {
+    color: #064e3b !important;
+  }
+  .aims-country-cell.green-level-5 {
+    background-color: #4ade80 !important;
+    border-left-color: #15803d !important;
+  }
+  .aims-country-cell.green-level-5 .aims-cell-spend {
+    color: #022c22 !important;
+  }
+  .aims-country-cell.green-level-6 {
+    background-color: #22c55e !important;
+    border-left-color: #14532d !important;
+  }
+  .aims-country-cell.green-level-6 .aims-cell-spend {
+    color: #ffffff !important;
+  }
+  /* Hover effects for green heatmap cells */
+  .aims-country-cell.green-level-1:hover,
+  .aims-country-cell.green-level-2:hover,
+  .aims-country-cell.green-level-3:hover,
+  .aims-country-cell.green-level-4:hover,
+  .aims-country-cell.green-level-5:hover,
+  .aims-country-cell.green-level-6:hover {
+    filter: brightness(0.95);
+    z-index: 2;
+  }
+  .aims-cell-roas {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    line-height: 1.2;
+    margin: 1px 0;
+    border: 1px solid transparent;
+  }
+  .aims-cell-roas.roas-green {
+    background-color: #dcfce7;
+    color: #15803d;
+    border-color: #bbf7d0;
+  }
+  .aims-cell-roas.roas-orange {
+    background-color: #ffedd5;
+    color: #c2410c;
+    border-color: #fed7aa;
+  }
+  .aims-cell-roas.roas-red {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+  .aims-cell-roas.roas-zero {
+    color: #cbd5e1;
+    background: transparent;
+    border: none;
+    font-weight: 500;
+  }
+  .aims-country-cell .aims-task-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    padding: 0px 5px;
+    min-height: 16px;
+    line-height: 12px;
+    font-weight: 700;
+    margin-top: 2px;
+    border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    border: 1px solid transparent;
+    text-decoration: none;
+    width: max-content;
+    max-width: 100%;
+  }
+  .aims-country-cell .aims-task-link.completed {
+    background-color: #f0fdf4;
+    color: #166534;
+    border-color: #bbf7d0;
+  }
+  .aims-country-cell .aims-task-link.in_progress {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+  }
+  .aims-country-cell .aims-task-link.pending {
+    background-color: #fff7ed;
+    color: #c2410c;
+    border-color: #fed7aa;
+  }
+  .aims-country-cell .aims-task-link.cancelled {
+    background-color: #f8fafc;
+    color: #475569;
+    border-color: #e2e8f0;
+  }
+  .aims-table td.aims-table-spend {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .aims-table td.aims-table-roas {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 700;
+  }
   .aims-product-sections {
     display: grid;
     gap: 10px;
@@ -619,7 +807,7 @@
   }
   .aims-product-body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    grid-template-columns: 1fr 1fr;
     gap: 10px;
     padding: 10px;
   }
@@ -630,7 +818,7 @@
   }
   .aims-material-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(140px, 170px));
     gap: 10px;
   }
   .aims-material {
@@ -642,10 +830,9 @@
   .aims-material video {
     width: 100%;
     aspect-ratio: 9 / 16;
-    max-height: 300px;
     border-radius: 6px;
     background: #111827;
-    object-fit: contain;
+    object-fit: cover;
   }
   .aims-material-title {
     margin-top: 8px;
@@ -745,6 +932,257 @@
       grid-template-columns: 1fr;
     }
   }
+
+  /* Recommendation badge */
+  .aims-rec-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 4px;
+    background: #e2e8f0;
+    color: #475569;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .aims-rec-badge.expand_country { background: #e0f2fe; color: #0369a1; }
+  .aims-rec-badge.same_country_new_material { background: #f3e8ff; color: #6b21a8; }
+  .aims-rec-badge.weak_country_retest { background: #fef9c3; color: #713f12; }
+  .aims-rec-badge.investigate { background: #fee2e2; color: #991b1b; }
+  .aims-rec-badge.hold { background: #f1f5f9; color: #475569; }
+
+  /* Task count button */
+  .aims-task-count-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 800;
+    border-radius: 6px;
+    border: 1px solid var(--aims-blue);
+    background: #eff6ff;
+    color: var(--aims-blue);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    line-height: 1.2;
+  }
+  .aims-task-count-btn:hover {
+    background: var(--aims-blue);
+    color: #fff;
+  }
+
+  /* Modal Styles */
+  .aims-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .aims-modal[hidden] {
+    display: none;
+  }
+  .aims-modal-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+  }
+  .aims-modal-content {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 480px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--aims-border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    animation: aimsModalFadeIn 0.2s ease-out;
+  }
+  @keyframes aimsModalFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .aims-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--aims-border);
+    background: #f8fafc;
+  }
+  .aims-modal-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--aims-fg);
+  }
+  .aims-modal-close {
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--aims-muted);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+  }
+  .aims-modal-close:hover {
+    color: var(--aims-fg);
+  }
+  .aims-modal-body {
+    padding: 16px;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+  .aims-modal-task-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .aims-modal-task-item:last-child {
+    border-bottom: none;
+  }
+  .aims-modal-task-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .aims-modal-task-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--aims-fg);
+  }
+  .aims-modal-task-meta {
+    font-size: 11px;
+    color: var(--aims-muted);
+  }
+  .aims-status-text {
+    font-weight: 700;
+  }
+  .aims-status-text.completed {
+    color: var(--aims-green);
+  }
+  .aims-status-text.in_progress {
+    color: var(--aims-blue);
+  }
+  .aims-status-text.pending {
+    color: var(--aims-amber);
+  }
+  .aims-status-text.cancelled {
+    color: var(--aims-muted);
+  }
+
+  /* LLM Detail Modal Styles */
+  .aims-llm-modal-content {
+    max-width: 900px;
+    width: 95%;
+    height: 85vh;
+    max-height: 850px;
+  }
+  .aims-llm-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--aims-border);
+    background: #f8fafc;
+    padding: 0 16px;
+  }
+  .aims-llm-tab-btn {
+    padding: 10px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--aims-muted);
+    cursor: pointer;
+  }
+  .aims-llm-tab-btn.active {
+    color: var(--aims-blue);
+    border-bottom-color: var(--aims-blue);
+  }
+  .aims-llm-tab-content {
+    display: none;
+    padding: 16px;
+    height: calc(100% - 41px);
+    overflow-y: auto;
+  }
+  .aims-llm-tab-content.active {
+    display: block;
+  }
+  .aims-llm-code-block {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 14px;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0 0 10px 0;
+    overflow-x: auto;
+    max-height: 500px;
+  }
+  .aims-llm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .aims-llm-param-section {
+    border: 1px solid var(--aims-border);
+    border-radius: 6px;
+    background: #fff;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .aims-llm-param-title {
+    padding: 8px 12px;
+    background: #f1f5f9;
+    font-weight: 700;
+    font-size: 12px;
+    border-bottom: 1px solid var(--aims-border);
+  }
+  .aims-llm-param-body {
+    padding: 12px;
+    font-size: 12px;
+  }
+  .aims-llm-visual-card {
+    border: 1px solid var(--aims-border);
+    border-radius: 6px;
+    padding: 12px;
+    background: #f8fafc;
+    margin-bottom: 12px;
+  }
+  .aims-llm-visual-card h4 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .aims-llm-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 4px;
+    background: #eff6ff;
+    color: var(--aims-blue);
+    border: 1px solid #bfdbfe;
+    margin-bottom: 10px;
+  }
 {% endblock %}
 
 {% block content %}
@@ -796,6 +1234,37 @@
     </section>
   </div>
   <div class="aims-toast" id="aimsToast" hidden></div>
+
+  <div class="aims-modal" id="aimsTaskModal" hidden>
+    <div class="aims-modal-backdrop" id="aimsTaskModalBackdrop"></div>
+    <div class="aims-modal-content">
+      <div class="aims-modal-header">
+        <h3 id="aimsTaskModalTitle">任务清单</h3>
+        <button type="button" class="aims-modal-close" id="aimsTaskModalClose">&times;</button>
+      </div>
+      <div class="aims-modal-body" id="aimsTaskModalBody"></div>
+    </div>
+  </div>
+
+  <div class="aims-modal" id="aimsLlmModal" hidden>
+    <div class="aims-modal-backdrop" id="aimsLlmModalBackdrop"></div>
+    <div class="aims-modal-content aims-llm-modal-content" style="display: flex; flex-direction: column;">
+      <div class="aims-modal-header">
+        <h3 id="aimsLlmModalTitle">大模型调用评估详情</h3>
+        <button type="button" class="aims-modal-close" id="aimsLlmModalClose">&times;</button>
+      </div>
+      <div class="aims-llm-tabs">
+        <button type="button" class="aims-llm-tab-btn active" data-llm-tab="visual">可视化详情</button>
+        <button type="button" class="aims-llm-tab-btn" data-llm-tab="prompt">完整提示词 (Prompt)</button>
+        <button type="button" class="aims-llm-tab-btn" data-llm-tab="payload">原始 JSON 报文</button>
+      </div>
+      <div class="aims-modal-body" id="aimsLlmModalBody" style="max-height: none; flex: 1; overflow-y: auto; padding: 20px;">
+        <div class="aims-llm-tab-content active" id="aimsLlmTabVisual"></div>
+        <div class="aims-llm-tab-content" id="aimsLlmTabPrompt"></div>
+        <div class="aims-llm-tab-content" id="aimsLlmTabPayload"></div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -805,5 +1274,5 @@
   window.AIMS_PUBLIC_MODE = {{ public_mode|default(false)|tojson }};
   window.AIMS_SHARE_TOKEN = {{ share_token|default("", true)|tojson }};
 </script>
-<script src="{{ url_for('static', filename='ai_material_strategist.js') }}"></script>
+<script src="{{ url_for('static', filename='ad_material_ai_analysis.js', v='20260610-v4') }}"></script>
 {% endblock %}

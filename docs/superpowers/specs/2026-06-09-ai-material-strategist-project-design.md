@@ -2,6 +2,15 @@
 
 日期：2026-06-09
 
+## 2026-06-10 功能拆分纠偏
+
+`AI素材军师` 和 `投放素材AI分析` 是两个独立功能，不能再共用入口、路由、项目表、运行锁、前端脚本或 LLM use case。2026-06-10 之前的文档段落曾把“素材管理内 AI素材军师 子 Tab”和“左侧投放素材AI分析”写成同一工具入口；该写法作废，以本节为后续代码锚点。
+
+- `AI素材军师` 保留原稳定入口：素材管理页子 Tab 文案为 `AI素材军师`，路由继续使用 `GET /medias/ai-material-strategist`、`GET /medias/ai-material-strategist/projects/<id>` 和 `/medias/api/ai-material-strategist/*`，后端继续使用 `appcore.ai_material_strategist`、`ai_material_strategist_projects`、`ai_material_strategist_product_results`、运行锁 `ai_material_strategist_single_running_project`。默认 LLM 绑定恢复为 OpenRouter `google/gemini-3.5-flash`。
+- `投放素材AI分析` 是左侧菜单的独立入口：路由使用 `GET /medias/ad-material-ai-analysis`、`GET /medias/ad-material-ai-analysis/projects/<id>` 和 `/medias/api/ad-material-ai-analysis/*`，后端使用 `appcore.ad_material_ai_analysis`、`ad_material_ai_analysis_projects`、`ad_material_ai_analysis_product_results`、运行锁 `ad_material_ai_analysis_single_running_project`。默认 LLM 绑定为 GoogleWJ `gemini-3.5-flash`。
+- 两个功能的项目列表、运行中互斥、分享 token、公开报告、前端脚本和 API 请求都必须各查各的命名空间。左侧菜单只进入 `投放素材AI分析`；素材管理子 Tab 只进入 `AI素材军师`。
+- 已经误写进 `ai_material_strategist_projects` 且 `project_name LIKE '投放素材AI分析%'` 或 `provider_code='google_wj'` 的投放分析项目，迁移到 `ad_material_ai_analysis_*` 后从旧 AI素材军师列表移除，避免污染旧功能历史项目。
+
 ## 背景
 
 运营每天需要把 `素材管理` 产品列表过一轮，从当前产品中找出“有量且 ROAS 好”的头部机会品，再结合广告、订单、国家投放、素材翻译反馈和明空选品中心素材，决定下一步补素材动作。
@@ -65,7 +74,7 @@
 
 ## 目标
 
-1. 在左侧菜单的任务中心下方新增管理员可见入口 `投放素材AI分析`，指向项目化分析页；素材管理内可保留 `AI素材军师` 子 Tab 作为同一工具入口。
+1. 在左侧菜单的任务中心下方新增管理员可见入口 `投放素材AI分析`，指向独立项目化分析页；素材管理内 `AI素材军师` 子 Tab 保留旧功能入口，不再指向同一工具。
 2. 每次运行生成一个项目，项目保存完整结论和快照，不被后续数据变化覆盖。
 3. 找出当前产品里综合表现最好的 20 个产品，必须同时考虑“量”和“ROAS”，不能让 1-2 单高 ROAS 产品冒头。
 4. 对 Top 20 每个产品单独分析投放、订单、国家、素材翻译反馈、明空素材候选，并给出补素材建议。
@@ -82,7 +91,7 @@
 
 ## 2026-06-10 投放素材 AI 分析评审契约
 
-本轮需求把现有 `AI素材军师` 扩展为“评估哪些产品需要补素材”的投放素材 AI 分析模块。模型最终评审采用四段输入：
+本轮需求新增独立的 `投放素材AI分析` 模块，用于“评估哪些产品需要补素材”。模型最终评审采用四段输入：
 
 ```json
 {
@@ -257,7 +266,7 @@
 
 ### Step 3: LLM 分批复评
 
-注册 use case：`medias.ai_material_strategist_rank_products`。
+注册 use case：`medias.ad_material_ai_analysis_rank_products`。
 
 - provider: `google_wj`
 - model: `gemini-3.5-flash`
@@ -296,7 +305,7 @@
 
 ## 逐产品分析流程
 
-注册 use case：`medias.ai_material_strategist_product_analysis`。
+注册 use case：`medias.ad_material_ai_analysis_product_analysis`。
 
 每个 Top 20 产品单独调用，不合并成一次调用。单产品数据包包含：
 
@@ -510,7 +519,7 @@ LLM 节点提供 `提示词` 按钮，展示：
 - Top 20 规则打分不会让低量高 ROAS 产品进榜。
 - `meta_ad_realtime_daily_ad_metrics` 按 `(business_date, ad_account_id)` 取最新快照。
 - 本地产品 code 去掉 `-rjc` 后能匹配明空素材快照。
-- 两个 AI use case 当前默认 provider 都是 `google_wj`，model 都是 `gemini-3.5-flash`。
+- `投放素材AI分析` 两个 AI use case 当前默认 provider 都是 `google_wj`，model 都是 `gemini-3.5-flash`；`AI素材军师` 原 use case 保持 OpenRouter。
 - 单产品 prompt 包含 EN + 8 小语种阶梯、明空素材候选、本地素材和翻译反馈。
 - AI 返回的操作入口能序列化到项目详情。
 - 已有待处理 / 进行中 / 已完成任务时，服务端不会生成重复 `create_translation_task`，而是输出任务链接。
@@ -520,7 +529,7 @@ LLM 节点提供 `提示词` 按钮，展示：
 
 前端 focused tests：
 
-- 左侧菜单任务中心下方存在管理员可见 `投放素材AI分析` 入口，素材管理子 Tab 可继续指向同一页面。
+- 左侧菜单任务中心下方存在管理员可见 `投放素材AI分析` 入口，素材管理子 Tab 显示 `AI素材军师` 且指向旧入口。
 - 项目列表、项目详情路由未登录 302，登录有权限 200。
 - 项目详情渲染 Top 20 表、图表容器、国家矩阵、素材卡片和操作按钮。
 - POST 创建项目带 `X-CSRFToken`。
@@ -534,8 +543,9 @@ python3 scripts/pytest_related.py --base origin/master --run
 若脚本无直接覆盖，改跑：
 
 ```bash
-pytest tests/test_ai_material_strategist.py tests/test_medias_pages_routes.py tests/test_llm_use_cases.py -q
+pytest tests/test_ai_material_strategist.py tests/test_ai_material_strategist_routes.py tests/test_ad_material_ai_analysis.py tests/test_ad_material_ai_analysis_routes.py tests/test_llm_use_cases_registry.py tests/test_ai_billing.py -q
 node --check web/static/ai_material_strategist.js
+node --check web/static/ad_material_ai_analysis.js
 ```
 
 本功能不需要全量 pytest，除非后续实现触碰 pytest fixture、鉴权、部署、LLM provider 基础设施或共享调度逻辑。

@@ -1,7 +1,7 @@
-"""AI素材军师页面和 API。
+"""投放素材AI分析页面和 API。
 
 Docs anchor:
-docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md
+docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md#2026-06-10-功能拆分纠偏
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import re
 from flask import abort, jsonify, render_template, request, url_for
 from flask_login import current_user, login_required
 
-from appcore import ai_material_strategist as service
+from appcore import ad_material_ai_analysis as service
 from web.auth import admin_required, permission_required
 from web.background import start_background_task
 
@@ -83,46 +83,46 @@ def _public_project_payload(project: dict, share_token: str) -> dict:
     return payload
 
 
-@bp.route("/ai-material-strategist", methods=["GET"])
+@bp.route("/ad-material-ai-analysis", methods=["GET"])
 @login_required
 @admin_required
 @permission_required("medias")
-def ai_material_strategist_page():
+def ad_material_ai_analysis_page():
     return render_template(
-        "medias_ai_material_strategist.html",
+        "medias_ad_material_ai_analysis.html",
         initial_project_id=None,
     )
 
 
-@bp.route("/ai-material-strategist/projects/<int:project_id>", methods=["GET"])
+@bp.route("/ad-material-ai-analysis/projects/<int:project_id>", methods=["GET"])
 @login_required
 @admin_required
 @permission_required("medias")
-def ai_material_strategist_project_page(project_id: int):
+def ad_material_ai_analysis_project_page(project_id: int):
     return render_template(
-        "medias_ai_material_strategist.html",
+        "medias_ad_material_ai_analysis.html",
         initial_project_id=project_id,
     )
 
 
-@bp.route("/ai-material-strategist/share/<share_token>", methods=["GET"])
-def ai_material_strategist_public_report(share_token: str):
+@bp.route("/ad-material-ai-analysis/share/<share_token>", methods=["GET"])
+def ad_material_ai_analysis_public_report(share_token: str):
     if not _valid_share_token(share_token):
         abort(404)
     return render_template(
-        "medias_ai_material_strategist.html",
+        "medias_ad_material_ai_analysis.html",
         initial_project_id=None,
         public_mode=True,
         share_token=share_token,
-        aims_layout_template="medias_ai_material_strategist_public_base.html",
+        aims_layout_template="medias_ad_material_ai_analysis_public_base.html",
     )
 
 
-@bp.route("/api/ai-material-strategist/projects", methods=["GET"])
+@bp.route("/api/ad-material-ai-analysis/projects", methods=["GET"])
 @login_required
 @admin_required
 @permission_required("medias")
-def api_ai_material_strategist_projects():
+def api_ad_material_ai_analysis_projects():
     limit = request.args.get("limit", "30")
     try:
         limit_value = int(limit)
@@ -131,11 +131,11 @@ def api_ai_material_strategist_projects():
     return _json({"success": True, "projects": service.list_projects(limit_value)})
 
 
-@bp.route("/api/ai-material-strategist/projects", methods=["POST"])
+@bp.route("/api/ad-material-ai-analysis/projects", methods=["POST"])
 @login_required
 @admin_required
 @permission_required("medias")
-def api_ai_material_strategist_create_project():
+def api_ad_material_ai_analysis_create_project():
     payload = request.get_json(silent=True) or {}
     run_ai = payload.get("run_ai", True) is not False
     sync = bool(payload.get("sync"))
@@ -148,7 +148,7 @@ def api_ai_material_strategist_create_project():
         running = exc.project or service.get_running_project() or {}
         return _json({
             "success": False,
-            "message": "已有 AI素材军师项目正在运行，同一时间只能运行一个项目。",
+            "message": "已有投放素材AI分析项目正在运行，同一时间只能运行一个项目。",
             "running_project": running,
             "project": running,
         }, 409)
@@ -166,35 +166,35 @@ def api_ai_material_strategist_create_project():
     return _json({"success": True, "project": project}, 202)
 
 
-@bp.route("/api/ai-material-strategist/projects/<int:project_id>", methods=["GET"])
+@bp.route("/api/ad-material-ai-analysis/projects/<int:project_id>", methods=["GET"])
 @login_required
 @admin_required
 @permission_required("medias")
-def api_ai_material_strategist_project(project_id: int):
+def api_ad_material_ai_analysis_project(project_id: int):
     project = service.get_project(project_id)
     if not project:
         abort(404)
     return _json({"success": True, "project": project})
 
 
-@bp.route("/api/ai-material-strategist/projects/<int:project_id>/share", methods=["POST"])
+@bp.route("/api/ad-material-ai-analysis/projects/<int:project_id>/share", methods=["POST"])
 @login_required
 @admin_required
 @permission_required("medias")
-def api_ai_material_strategist_share_project(project_id: int):
+def api_ad_material_ai_analysis_share_project(project_id: int):
     share = service.ensure_project_share(project_id)
     if not share:
         abort(404)
     share["share_url"] = url_for(
-        "medias.ai_material_strategist_public_report",
+        "medias.ad_material_ai_analysis_public_report",
         share_token=share["share_token"],
         _external=True,
     )
     return _json({"success": True, "share": share})
 
 
-@bp.route("/api/ai-material-strategist/share/<share_token>", methods=["GET"])
-def api_ai_material_strategist_public_project(share_token: str):
+@bp.route("/api/ad-material-ai-analysis/share/<share_token>", methods=["GET"])
+def api_ad_material_ai_analysis_public_project(share_token: str):
     if not _valid_share_token(share_token):
         abort(404)
     project = service.get_project_by_share_token(share_token)
@@ -203,9 +203,43 @@ def api_ai_material_strategist_public_project(share_token: str):
     return _json({"success": True, "project": _public_project_payload(project, share_token)})
 
 
-@bp.route("/api/ai-material-strategist/preview", methods=["GET"])
+@bp.route("/api/ad-material-ai-analysis/preview", methods=["GET"])
 @login_required
 @admin_required
 @permission_required("medias")
-def api_ai_material_strategist_preview():
+def api_ad_material_ai_analysis_preview():
     return _json({"success": True, "preview": service.build_preview()})
+
+
+@bp.route("/api/ad-material-ai-analysis/llm-payload/<int:log_id>", methods=["GET"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_ad_material_ai_analysis_llm_payload(log_id: int):
+    import json
+    from appcore import usage_log
+    payload = usage_log.get_user_usage_payload(log_id, user_id=_current_user_id())
+    if not payload:
+        return _json({"success": False, "message": "未找到大模型调用报文记录"}, 404)
+
+    req_data = None
+    if payload.get("request_data"):
+        try:
+            req_data = json.loads(payload["request_data"])
+        except Exception:
+            req_data = payload["request_data"]
+
+    resp_data = None
+    if payload.get("response_data"):
+        try:
+            resp_data = json.loads(payload["response_data"])
+        except Exception:
+            resp_data = payload["response_data"]
+
+    return _json({
+        "success": True,
+        "payload": {
+            "request_data": req_data,
+            "response_data": resp_data
+        }
+    })

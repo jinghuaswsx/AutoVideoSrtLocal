@@ -1,60 +1,60 @@
 from __future__ import annotations
 
-from appcore.ai_material_strategist import ProjectAlreadyRunningError
+from appcore.ad_material_ai_analysis import ProjectAlreadyRunningError
 
 
-def test_ai_material_strategist_page_requires_login(authed_client_no_db):
+def test_ad_material_ai_analysis_page_requires_login(authed_client_no_db):
     raw_client = authed_client_no_db.application.test_client()
 
-    response = raw_client.get("/medias/ai-material-strategist")
+    response = raw_client.get("/medias/ad-material-ai-analysis")
 
     assert response.status_code == 302
 
 
-def test_ai_material_strategist_page_requires_admin(authed_user_client_no_db):
-    response = authed_user_client_no_db.get("/medias/ai-material-strategist")
+def test_ad_material_ai_analysis_page_requires_admin(authed_user_client_no_db):
+    response = authed_user_client_no_db.get("/medias/ad-material-ai-analysis")
 
     assert response.status_code in {302, 403}
 
 
-def test_ai_material_strategist_page_renders_for_admin(authed_client_no_db):
-    response = authed_client_no_db.get("/medias/ai-material-strategist")
+def test_ad_material_ai_analysis_page_renders_for_admin(authed_client_no_db):
+    response = authed_client_no_db.get("/medias/ad-material-ai-analysis")
 
     assert response.status_code == 200
-    assert "AI素材军师".encode() in response.data
+    assert "投放素材AI分析".encode() in response.data
 
 
-def test_ai_material_strategist_public_share_page_does_not_require_login(authed_client_no_db):
+def test_ad_material_ai_analysis_public_share_page_does_not_require_login(authed_client_no_db):
     raw_client = authed_client_no_db.application.test_client()
 
-    response = raw_client.get("/medias/ai-material-strategist/share/share_token_1234567890")
+    response = raw_client.get("/medias/ad-material-ai-analysis/share/share_token_1234567890")
 
     assert response.status_code == 200
     assert b"window.AIMS_PUBLIC_MODE = true;" in response.data
-    assert b"medias_ai_material_strategist_public_base" not in response.data
+    assert b"medias_ad_material_ai_analysis_public_base" not in response.data
 
 
-def test_ai_material_strategist_public_share_page_rejects_invalid_token(authed_client_no_db):
+def test_ad_material_ai_analysis_public_share_page_rejects_invalid_token(authed_client_no_db):
     raw_client = authed_client_no_db.application.test_client()
 
-    response = raw_client.get("/medias/ai-material-strategist/share/bad.token")
+    response = raw_client.get("/medias/ad-material-ai-analysis/share/bad.token")
 
     assert response.status_code == 404
 
 
-def test_ai_material_strategist_projects_api_delegates_service(authed_client_no_db, monkeypatch):
+def test_ad_material_ai_analysis_projects_api_delegates_service(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
-        "web.routes.medias.ai_material_strategist.service.list_projects",
+        "web.routes.medias.ad_material_ai_analysis.service.list_projects",
         lambda limit=30: [{"id": 7, "project_name": "demo", "status": "success"}],
     )
 
-    response = authed_client_no_db.get("/medias/api/ai-material-strategist/projects")
+    response = authed_client_no_db.get("/medias/api/ad-material-ai-analysis/projects")
 
     assert response.status_code == 200
     assert response.get_json()["projects"] == [{"id": 7, "project_name": "demo", "status": "success"}]
 
 
-def test_ai_material_strategist_public_share_api_returns_sanitized_project_without_login(
+def test_ad_material_ai_analysis_public_share_api_returns_sanitized_project_without_login(
     authed_client_no_db,
     monkeypatch,
 ):
@@ -107,11 +107,11 @@ def test_ai_material_strategist_public_share_api_returns_sanitized_project_witho
         }
 
     monkeypatch.setattr(
-        "web.routes.medias.ai_material_strategist.service.get_project_by_share_token",
+        "web.routes.medias.ad_material_ai_analysis.service.get_project_by_share_token",
         fake_get_project_by_share_token,
     )
 
-    response = raw_client.get("/medias/api/ai-material-strategist/share/share_token_1234567890")
+    response = raw_client.get("/medias/api/ad-material-ai-analysis/share/share_token_1234567890")
 
     assert response.status_code == 200
     project = response.get_json()["project"]
@@ -123,27 +123,27 @@ def test_ai_material_strategist_public_share_api_returns_sanitized_project_witho
     assert "method" not in action
     assert "payload" not in action
     assert "task_url" not in project["products"][0]["country_summary"][0]["blocking_task"]
-    
+
     # 验证视频链接已正确加回并且拼接了 share_token
     mk_video = project["products"][0]["mingkong_materials"][0]["video_url"]
     assert "share_token=share_token_1234567890" in mk_video
-    
+
     # 验证本地素材视频链接转换成了公开格式
     local_video = project["products"][0]["local_materials"][0]["video_url"]
     assert local_video == "/medias/obj/tasks/12/medias/test.mp4"
 
 
-def test_ai_material_strategist_public_share_api_rejects_invalid_token(authed_client_no_db):
+def test_ad_material_ai_analysis_public_share_api_rejects_invalid_token(authed_client_no_db):
     raw_client = authed_client_no_db.application.test_client()
 
-    response = raw_client.get("/medias/api/ai-material-strategist/share/bad.token")
+    response = raw_client.get("/medias/api/ad-material-ai-analysis/share/bad.token")
 
     assert response.status_code == 404
 
 
-def test_ai_material_strategist_share_project_api_returns_public_url(authed_client_no_db, monkeypatch):
+def test_ad_material_ai_analysis_share_project_api_returns_public_url(authed_client_no_db, monkeypatch):
     monkeypatch.setattr(
-        "web.routes.medias.ai_material_strategist.service.ensure_project_share",
+        "web.routes.medias.ad_material_ai_analysis.service.ensure_project_share",
         lambda project_id: {
             "project_id": project_id,
             "share_token": "share_token_1234567890",
@@ -151,22 +151,22 @@ def test_ai_material_strategist_share_project_api_returns_public_url(authed_clie
         },
     )
 
-    response = authed_client_no_db.post("/medias/api/ai-material-strategist/projects/7/share")
+    response = authed_client_no_db.post("/medias/api/ad-material-ai-analysis/projects/7/share")
 
     assert response.status_code == 200
     share = response.get_json()["share"]
     assert share["project_id"] == 7
-    assert share["share_url"].endswith("/medias/ai-material-strategist/share/share_token_1234567890")
+    assert share["share_url"].endswith("/medias/ad-material-ai-analysis/share/share_token_1234567890")
 
 
-def test_ai_material_strategist_create_project_starts_background_job(
+def test_ad_material_ai_analysis_create_project_starts_background_job(
     authed_client_no_db,
     monkeypatch,
 ):
     calls = {}
 
     monkeypatch.setattr(
-        "web.routes.medias.ai_material_strategist.service.create_project_record",
+        "web.routes.medias.ad_material_ai_analysis.service.create_project_record",
         lambda user_id, project_name=None: {"id": 9, "project_name": project_name, "status": "running"},
     )
 
@@ -177,12 +177,12 @@ def test_ai_material_strategist_create_project_starts_background_job(
         return object()
 
     monkeypatch.setattr(
-        "web.routes.medias.ai_material_strategist.start_background_task",
+        "web.routes.medias.ad_material_ai_analysis.start_background_task",
         fake_start_background_task,
     )
 
     response = authed_client_no_db.post(
-        "/medias/api/ai-material-strategist/projects",
+        "/medias/api/ad-material-ai-analysis/projects",
         json={"project_name": "demo run", "run_ai": False},
     )
 
@@ -193,7 +193,7 @@ def test_ai_material_strategist_create_project_starts_background_job(
     assert calls["kwargs"]["run_ai"] is False
 
 
-def test_ai_material_strategist_create_project_rejects_when_running(
+def test_ad_material_ai_analysis_create_project_rejects_when_running(
     authed_client_no_db,
     monkeypatch,
 ):
@@ -203,12 +203,12 @@ def test_ai_material_strategist_create_project_rejects_when_running(
         raise ProjectAlreadyRunningError(running)
 
     monkeypatch.setattr(
-        "web.routes.medias.ai_material_strategist.service.create_project_record",
+        "web.routes.medias.ad_material_ai_analysis.service.create_project_record",
         fake_create_project_record,
     )
 
     response = authed_client_no_db.post(
-        "/medias/api/ai-material-strategist/projects",
+        "/medias/api/ad-material-ai-analysis/projects",
         json={"project_name": "demo run"},
     )
 
