@@ -21,6 +21,11 @@
     windowText: document.getElementById('aimsWindowText'),
     qualityText: document.getElementById('aimsQualityText'),
     toast: document.getElementById('aimsToast'),
+    taskModal: document.getElementById('aimsTaskModal'),
+    taskModalTitle: document.getElementById('aimsTaskModalTitle'),
+    taskModalBody: document.getElementById('aimsTaskModalBody'),
+    taskModalClose: document.getElementById('aimsTaskModalClose'),
+    taskModalBackdrop: document.getElementById('aimsTaskModalBackdrop'),
   };
 
   function fmtNumber(value, digits) {
@@ -163,6 +168,33 @@
     }
   }
 
+  function getSpendStyle(spendVal) {
+    const val = Number(spendVal || 0);
+    if (val > 1000) {
+      return 'color: #15803d; font-size: 22px; font-weight: 800; line-height: 1.1;';
+    } else if (val >= 300) {
+      return 'color: #22c55e; font-size: 16px; font-weight: 700; line-height: 1.2;';
+    } else {
+      return 'color: #000000; font-size: 11px; font-weight: normal;';
+    }
+  }
+
+  function renderRecommendationBadge(act) {
+    if (!act) return '';
+    const label = act.duplicate_suppressed ? '已有任务' : actionLabel(act.action);
+    const cls = esc(act.action || '');
+    return `<span class="aims-rec-badge ${cls}">${esc(label)}</span>`;
+  }
+
+  function renderTaskCountLink(item, productIndex) {
+    const tasks = collectProductTasks(item);
+    const count = tasks.length;
+    if (count === 0) {
+      return '<span class="aims-muted" style="font-size: 11px;">无任务</span>';
+    }
+    return `<button type="button" class="aims-task-count-btn" data-show-tasks="${productIndex}">${count} 个任务</button>`;
+  }
+
   function renderTaskLink(task, compact) {
     const id = Number(task && (task.task_id || task.id) || 0);
     if (!id) return '';
@@ -191,6 +223,60 @@
     showToast._timer = setTimeout(() => {
       els.toast.hidden = true;
     }, 2800);
+  }
+
+  function showTasksModal(productIndex) {
+    const products = state.activeProject?.products || [];
+    const item = products[productIndex];
+    if (!item) return;
+    const tasks = collectProductTasks(item);
+    
+    if (els.taskModalTitle) {
+      els.taskModalTitle.textContent = `#${item.rank_no} ${item.product_code || item.product_name} 任务清单`;
+    }
+    
+    if (els.taskModalBody) {
+      if (tasks.length === 0) {
+        els.taskModalBody.innerHTML = '<div class="aims-empty">暂无任务</div>';
+      } else {
+        els.taskModalBody.innerHTML = tasks.map(task => {
+          const id = Number(task.task_id || task.id || 0);
+          const url = task.task_url || task.url || ('/tasks/detail/' + id);
+          const label = taskStatusLabel(task);
+          const taskType = task.type_label || task.task_type || '翻译/处理任务';
+          const statusGroup = task.status_group || '';
+          
+          let linkHtml = '';
+          if (state.publicMode) {
+            linkHtml = `<span class="aims-task-link ${esc(statusGroup)}">任务 #${id}</span>`;
+          } else {
+            linkHtml = `<a class="aims-task-link ${esc(statusGroup)}" href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="font-weight: 800; font-size: 13px;">任务 #${id}</a>`;
+          }
+          
+          return `
+            <div class="aims-modal-task-item">
+              <div class="aims-modal-task-info">
+                <div class="aims-modal-task-title">${esc(taskType)}</div>
+                <div class="aims-modal-task-meta">状态: <span class="aims-status-text ${esc(statusGroup)}">${esc(label)}</span></div>
+              </div>
+              <div>
+                ${linkHtml}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+    
+    if (els.taskModal) {
+      els.taskModal.hidden = false;
+    }
+  }
+
+  function hideTasksModal() {
+    if (els.taskModal) {
+      els.taskModal.hidden = true;
+    }
   }
 
   function csrfHeaders(extra) {
@@ -596,7 +682,7 @@
   }
 
   function renderProductsTable(products) {
-    const rows = products.map((item) => {
+    const rows = products.map((item, index) => {
       const m = item.metrics || {};
       const ai = item.ai_result || {};
       const mk = (item.mingkong_materials || [])[0] || {};
@@ -618,7 +704,7 @@
           <td><span class="aims-chip ${String(ai.priority || '').toLowerCase()}">${esc(ai.priority || 'P3')}</span></td>
           <td>${esc(actionLabel(ai.primary_action))}</td>
           <td>${mk.video_name ? `${esc(mk.video_name)}<br><span>${fmtUsd(mk.cumulative_90_spend)} · 广告 ${fmtNumber(mk.video_ads_count)}</span>` : '—'}</td>
-          <td>${renderTaskBadges(item, 3)}</td>
+          <td>${renderTaskCountLink(item, index)}</td>
           ${state.publicMode ? '' : `<td><div class="aims-actions">${renderInlineActions(item)}</div></td>`}
         </tr>
       `;
@@ -673,13 +759,12 @@
         <div class="aims-product-body">
           <div>
             <p class="aims-rec">${esc(ai.overall_judgement || '')}</p>
-            ${renderCountryActions(ai)}
-            <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskBadges(item, 5)}</div>
+            <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskCountLink(item, productIndex)}</div>
             <div class="aims-material-grid">${materials.map((material, materialIndex) => renderMaterial(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:48px;">暂无明空候选</div>'}</div>
           </div>
           <div class="aims-band">
             <div class="aims-band-title">国家反馈</div>
-            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas)}</div>
+            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas, ai)}</div>
           </div>
         </div>
       </section>
@@ -730,18 +815,32 @@
     `;
   }
 
-  function renderCountryBars(countries, breakevenRoas) {
-    const maxSpend = Math.max(1, ...countries.map((country) => Number(country.ad_spend_usd || 0)));
+  function renderCountryBars(countries, breakevenRoas, aiResult) {
+    const actions = (aiResult && aiResult.country_actions) || [];
+    const actionLookup = {};
+    actions.forEach((act) => {
+      const code = String(act.country_code || act.lang || '').toUpperCase().trim();
+      if (code) {
+        actionLookup[code] = act;
+      }
+    });
+
     return countries.map((country) => {
-      const width = Math.max(3, Math.round((Number(country.ad_spend_usd || 0) / maxSpend) * 100));
+      const code = String(country.country_code || country.lang || '').toUpperCase().trim();
+      const act = actionLookup[code] || null;
+      
+      const spendStyle = getSpendStyle(country.ad_spend_usd);
+      const task = country.blocking_task || country.cancelled_task || (act && (act.existing_task || act.cancelled_task));
+      const taskHtml = task ? renderTaskLink(task, true) : '';
+
       return `
-        <div class="aims-bar-row" style="grid-template-columns:32px minmax(64px, auto) minmax(60px, 1fr) minmax(50px, auto) 44px minmax(80px, auto); align-items: center; gap: 8px;">
+        <div class="aims-bar-row" style="grid-template-columns: 32px minmax(50px, auto) minmax(60px, auto) 44px minmax(80px, auto) minmax(80px, auto); align-items: center; gap: 8px;">
           <span>${esc(country.country_code || country.lang)}</span>
           <span>${renderDeliveryStatusBadge(country.delivery_status)}</span>
-          <span class="aims-bar-track"><span class="aims-bar-fill" style="width:${width}%"></span></span>
-          <strong style="color: var(--aims-muted); font-size: 11px;">${fmtUsd(country.ad_spend_usd)}</strong>
+          <strong style="${spendStyle}">${fmtUsd(country.ad_spend_usd)}</strong>
           <span class="${esc(getRoasColorClass(country.ad_roas, breakevenRoas))}">${fmtRoas(country.ad_roas)}</span>
-          <span>${country.blocking_task ? renderTaskLink(country.blocking_task, true) : (country.cancelled_task ? renderTaskLink(country.cancelled_task, true) : '')}</span>
+          <span>${act ? renderRecommendationBadge(act) : '—'}</span>
+          <span>${taskHtml}</span>
         </div>
       `;
     }).join('');
@@ -778,11 +877,28 @@
   }
   if (els.detail) {
     els.detail.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-import-action]');
-      if (!button) return;
-      importMaterial(button);
+      const importBtn = event.target.closest('[data-import-action]');
+      if (importBtn) {
+        importMaterial(importBtn);
+        return;
+      }
+
+      const showTasksBtn = event.target.closest('[data-show-tasks]');
+      if (showTasksBtn) {
+        const productIndex = Number(showTasksBtn.getAttribute('data-show-tasks'));
+        showTasksModal(productIndex);
+        return;
+      }
     });
   }
+
+  if (els.taskModalClose) {
+    els.taskModalClose.addEventListener('click', hideTasksModal);
+  }
+  if (els.taskModalBackdrop) {
+    els.taskModalBackdrop.addEventListener('click', hideTasksModal);
+  }
+
   if (els.create) els.create.addEventListener('click', createProject);
   if (els.refresh) els.refresh.addEventListener('click', () => loadProjects().catch((err) => showToast(err.message)));
   if (els.share) els.share.addEventListener('click', shareProject);
