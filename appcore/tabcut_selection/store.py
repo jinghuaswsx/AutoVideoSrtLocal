@@ -248,6 +248,7 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
         SELECT COUNT(*) AS cnt
         FROM tabcut_video_candidates c
         LEFT JOIN tabcut_videos v ON v.video_id = c.video_id
+        LEFT JOIN tabcut_goods g ON g.item_id = c.primary_item_id
         WHERE {where_sql}
         """,
         list(params),
