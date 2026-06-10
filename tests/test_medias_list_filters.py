@@ -339,23 +339,23 @@ def test_medias_mobile_adaptation_keeps_tables_scrollable_and_aligned():
     assert "::before { content:" not in mobile_block
 
 
-def test_medias_mobile_filter_collapse_controls_cover_both_tabs():
+def test_medias_mobile_filters_remove_collapse_controls_and_keep_both_tabs():
     from pathlib import Path
 
     html = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
     assert 'id="mediaProductFilters"' in html
     assert 'id="videoMaterialFilters"' in html
-    assert 'aria-controls="mediaProductFilters"' in html
-    assert 'aria-controls="videoMaterialFilters"' in html
-    assert html.count('data-mobile-filter-toggle') >= 2
-    assert html.count('data-mobile-filter-toolbar') >= 2
-    assert '<use href="#ic-filter"/>' in html
-    assert ".oc-mobile-filter-toggle {\n  display:none;" in html
-    assert ".oc-mobile-filter-toggle { display:flex; }" in html
-    assert ".oc-toolbar.is-filter-collapsed .oc-toolbar-filter-row" in html
-    assert ".oc-vm-toolbar.is-filter-collapsed .oc-vm-filter-row" in html
     assert ".oc-vm-filter-row {\n  display:grid;" in html
+    assert 'data-mobile-filter-toolbar' not in html
+    assert 'data-mobile-filter-body' not in html
+    assert 'data-mobile-filter-label' not in html
+    assert 'data-mobile-filter-state' not in html
+    assert 'data-mobile-filter-toggle' not in html
+    assert 'aria-controls="mediaProductFilters"' not in html
+    assert 'aria-controls="videoMaterialFilters"' not in html
+    assert ".oc-mobile-filter-toggle" not in html
+    assert ".is-filter-collapsed" not in html
 
 
 def test_medias_mobile_minimal_controls_hide_actions_and_keep_search_only():
@@ -375,16 +375,14 @@ def test_medias_mobile_minimal_controls_hide_actions_and_keep_search_only():
     assert ".oc-toolbar-filter-row,\n  .oc-vm-filter-row {\n    grid-template-columns:1fr !important;\n  }" in mobile_block
 
 
-def test_medias_mobile_filter_auto_collapses_on_list_scroll():
+def test_medias_mobile_filter_does_not_auto_collapse_on_list_scroll():
     from pathlib import Path
 
     html = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
-    assert "docs/superpowers/specs/2026-06-07-medias-mobile-filter-collapse-design.md" in html
-    assert "var mobileFilterMql = window.matchMedia ? window.matchMedia('(max-width: 768px)') : null;" in html
-    assert "document.querySelectorAll('.oc-panel-page .oc-list').forEach(function(list)" in html
-    assert "list.addEventListener('scroll', function()" in html
-    assert "currentTop > 24 && currentTop > previousTop + 12" in html
-    assert "setMobileFilterCollapsed(activeMobileFilterToolbar(), true);" in html
-    assert "toolbar.classList.remove('is-filter-collapsed')" in html
-    assert "window.addEventListener('resize', syncMobileFilterViewport);" in html
+    assert "var mobileFilterMql = window.matchMedia ? window.matchMedia('(max-width: 768px)') : null;" not in html
+    assert "syncMobileFilterToggle" not in html
+    assert "setMobileFilterCollapsed" not in html
+    assert "activeMobileFilterToolbar" not in html
+    assert "syncMobileFilterViewport" not in html
+    assert "currentTop > 24 && currentTop > previousTop + 12" not in html
