@@ -2216,6 +2216,10 @@ def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(mon
                 self.rowcount = 1
                 sequence.append(("reopen_parent", args))
                 return
+            if "UPDATE tasks SET archived_at=NULL, updated_at=NOW() WHERE id=%s AND parent_task_id IS NULL" in sql:
+                self.rowcount = 1
+                sequence.append(("clear_parent_archive", args))
+                return
             if "INSERT INTO task_events" in sql:
                 payload = json.loads(args[3]) if args[3] else {}
                 sequence.append(("event", args[0], args[1], payload))
@@ -2296,6 +2300,7 @@ def test_reject_child_from_push_reopens_done_child_and_records_issue_payload(mon
     assert event[3]["task_check_keys"] == ["translated_video", "push_texts"]
     assert event[3]["issue_labels"] == ["视频", "英文文案格式"]
     assert ("reopen_parent", (tasks.PARENT_RAW_DONE, 10, tasks.PARENT_ALL_DONE)) in sequence
+    assert ("clear_parent_archive", (10,)) in sequence
     assert ("delete_events", (1001,)) in sequence
     assert ("delete_overrides", (99, "final_push_confirmed")) in sequence
     assert notifications == [{"task_id": 44, "product_name": "硬币收纳盒"}]

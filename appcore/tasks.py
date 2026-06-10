@@ -4900,7 +4900,7 @@ def reject_child(*, task_id: int, actor_user_id: int, reason: str) -> None:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE tasks SET status=%s, last_reason=%s, updated_at=NOW() "
+                    "UPDATE tasks SET status=%s, last_reason=%s, completed_at=NULL, archived_at=NULL, updated_at=NOW() "
                     "WHERE id=%s AND parent_task_id IS NOT NULL AND status=%s",
                     (CHILD_ASSIGNED, reason, int(task_id), CHILD_REVIEW),
                 )
@@ -4970,7 +4970,7 @@ def reject_child_from_push(
 
                 cur.execute(
                     "UPDATE tasks SET status=%s, last_reason=%s, completed_at=NULL, "
-                    "updated_at=NOW() WHERE id=%s AND parent_task_id IS NOT NULL "
+                    "archived_at=NULL, updated_at=NOW() WHERE id=%s AND parent_task_id IS NOT NULL "
                     "AND status IN (%s,%s,%s)",
                     (
                         CHILD_ASSIGNED,
@@ -5049,11 +5049,17 @@ def reject_child_from_push(
                 parent_id = _positive_int(row.get("parent_task_id"))
                 if parent_id is not None:
                     cur.execute(
-                        "UPDATE tasks SET status=%s, completed_at=NULL, updated_at=NOW() "
+                        "UPDATE tasks SET status=%s, completed_at=NULL, archived_at=NULL, updated_at=NOW() "
                         "WHERE id=%s AND parent_task_id IS NULL AND status=%s",
                         (PARENT_RAW_DONE, int(parent_id), PARENT_ALL_DONE),
                     )
-                    if cur.rowcount:
+                    is_reopened = bool(cur.rowcount)
+                    cur.execute(
+                        "UPDATE tasks SET archived_at=NULL, updated_at=NOW() "
+                        "WHERE id=%s AND parent_task_id IS NULL",
+                        (int(parent_id),),
+                    )
+                    if is_reopened:
                         _write_event(
                             cur,
                             parent_id,
