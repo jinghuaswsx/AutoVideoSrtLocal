@@ -1,3 +1,5 @@
+import json
+
 from appcore import ad_material_ai_analysis as svc
 
 
@@ -295,6 +297,82 @@ def test_cancelled_task_keeps_link_and_allows_new_translation_action():
     ]
     assert create_actions
     assert create_actions[0]["target_lang"] == "ja"
+
+
+def test_import_mk_video_action_payload_contains_required_download_fields():
+    product = _row(product_id=10, product_code="demo-rjc", user_id=7)
+    material = {
+        "material_key": "mk1",
+        "product_code": "demo",
+        "product_name": "Demo",
+        "product_url": "https://cozyhoome.com/products/demo-rjc",
+        "mk_product_id": 456,
+        "mk_product_name": "MK Demo",
+        "video_name": "demo.mp4",
+        "video_path": "folder/demo.mp4",
+        "video_image_path": "folder/demo.jpg",
+        "cumulative_90_spend": 123,
+        "video_ads_count": 4,
+        "video_duration_seconds": 15,
+    }
+
+    actions = svc._build_action_items(product, {}, [material], [])
+    import_action = next(item for item in actions if item["type"] == "import_mk_video")
+    meta = import_action["payload"]["mk_video_metadata"]
+
+    assert import_action["payload"]["product_owner_id"] == 7
+    assert meta["filename"] == "demo.mp4"
+    assert meta["mp4_url"] == "/medias/api/mk-video?path=folder%2Fdemo.mp4"
+    assert meta["cover_url"] == "/medias/api/mk-media?path=folder%2Fdemo.jpg"
+    assert meta["duration_seconds"] == 15
+    assert meta["mk_product_id"] == 456
+
+
+def test_serialize_product_result_upgrades_legacy_import_payload():
+    material = {
+        "material_key": "mk1",
+        "product_code": "demo",
+        "product_name": "Demo",
+        "product_url": "https://cozyhoome.com/products/demo-rjc",
+        "video_name": "legacy.mp4",
+        "video_path": "legacy/legacy.mp4",
+        "video_image_path": "legacy/legacy.jpg",
+        "mk_video_metadata": {"product_code": "demo-rjc"},
+    }
+    row = {
+        "id": 1,
+        "project_id": 2,
+        "rank_no": 3,
+        "product_id": 10,
+        "product_code": "demo-rjc",
+        "product_name": "Demo",
+        "score": 88,
+        "metrics_json": "{}",
+        "country_summary_json": "[]",
+        "local_materials_json": "[]",
+        "mingkong_materials_json": json.dumps([material], ensure_ascii=False),
+        "ai_result_json": "{}",
+        "action_items_json": json.dumps([
+            {
+                "type": "import_mk_video",
+                "material_key": "mk1",
+                "payload": {
+                    "mk_video_metadata": {"product_code": "demo-rjc"},
+                    "product_owner_id": 7,
+                },
+            }
+        ], ensure_ascii=False),
+        "created_at": None,
+        "updated_at": None,
+    }
+
+    result = svc._serialize_product_result(row)
+    meta = result["action_items"][0]["payload"]["mk_video_metadata"]
+
+    assert meta["product_code"] == "demo-rjc"
+    assert meta["filename"] == "legacy.mp4"
+    assert meta["mp4_url"] == "/medias/api/mk-video?path=legacy%2Flegacy.mp4"
+    assert meta["cover_url"] == "/medias/api/mk-media?path=legacy%2Flegacy.jpg"
 
 
 def test_english_action_does_not_create_small_language_translation_task():

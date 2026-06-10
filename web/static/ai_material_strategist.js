@@ -220,7 +220,7 @@
     const res = await fetch(url, options || {});
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.success === false) {
-      const err = new Error(data.message || data.error_message || data.error || ('HTTP ' + res.status));
+      const err = new Error(data.detail || data.message || data.error_message || data.error || ('HTTP ' + res.status));
       err.status = res.status;
       err.data = data;
       throw err;
