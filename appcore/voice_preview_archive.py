@@ -108,42 +108,50 @@ def _archive_rows_for_items(items: list[dict], *, language: str) -> dict[tuple[s
 def attach_local_preview_urls(items: list[dict], *, language: str) -> list[dict]:
     """Attach local preview metadata when an archive exists for current URL hash."""
     out = [dict(item) for item in (items or [])]
-    lang = str(language or "").strip().lower()
     for item in out:
         preview_url = str(item.get("preview_url") or "").strip()
         if preview_url:
             item["preview_url_hash"] = hash_preview_url(preview_url)
-    if not lang or not out:
+    if not out:
         return out
 
-    try:
-        archive_rows = _archive_rows_for_items(out, language=lang)
-    except Exception as exc:
-        log.warning("voice preview archive lookup failed for %s: %s", lang, exc)
-        return out
-
+    from collections import defaultdict
+    items_by_lang = defaultdict(list)
     for item in out:
-        voice_id = str(item.get("voice_id") or "").strip()
-        preview_hash = str(item.get("preview_url_hash") or "").strip()
-        row = archive_rows.get((voice_id, preview_hash))
-        if not row or str(row.get("status") or "").strip() != "ready":
+        item_lang = str(item.get("language") or language).strip().lower()
+        items_by_lang[item_lang].append(item)
+
+    for item_lang, lang_items in items_by_lang.items():
+        if not item_lang:
             continue
-        if not _safe_existing_archive_file(row.get("local_path")):
+        try:
+            archive_rows = _archive_rows_for_items(lang_items, language=item_lang)
+        except Exception as exc:
+            log.warning("voice preview archive lookup failed for %s: %s", item_lang, exc)
             continue
-        item["preview_local_url"] = _local_preview_url(
-            language=lang,
-            voice_id=voice_id,
-            preview_url_hash=preview_hash,
-        )
-        duration = row.get("duration_seconds")
-        if duration is not None:
-            try:
-                item["preview_duration_seconds"] = float(duration)
-            except (TypeError, ValueError):
-                pass
-        transcript = str(row.get("transcript_text") or "").strip()
-        if transcript:
-            item["preview_transcript_text"] = transcript
+
+        for item in lang_items:
+            voice_id = str(item.get("voice_id") or "").strip()
+            preview_hash = str(item.get("preview_url_hash") or "").strip()
+            row = archive_rows.get((voice_id, preview_hash))
+            if not row or str(row.get("status") or "").strip() != "ready":
+                continue
+            if not _safe_existing_archive_file(row.get("local_path")):
+                continue
+            item["preview_local_url"] = _local_preview_url(
+                language=item_lang,
+                voice_id=voice_id,
+                preview_url_hash=preview_hash,
+            )
+            duration = row.get("duration_seconds")
+            if duration is not None:
+                try:
+                    item["preview_duration_seconds"] = float(duration)
+                except (TypeError, ValueError):
+                    pass
+            transcript = str(row.get("transcript_text") or "").strip()
+            if transcript:
+                item["preview_transcript_text"] = transcript
     return out
 
 

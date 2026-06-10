@@ -194,6 +194,7 @@ def voice_library_for_task(task_id: str):
 
     gender = request.args.get("gender") or None
     q = request.args.get("q") or None
+    all_languages = request.args.get("all_languages") in ("true", "1", "True")
     try:
         page = max(1, int(request.args.get("page") or 1))
     except (TypeError, ValueError):
@@ -203,7 +204,16 @@ def voice_library_for_task(task_id: str):
     except (TypeError, ValueError):
         page_size = 30
     try:
-        data = list_voices(language=lang, gender=gender, q=q, page=page, page_size=page_size)
+        kwargs = {
+            "language": lang,
+            "gender": gender,
+            "q": q,
+            "page": page,
+            "page_size": page_size,
+        }
+        if all_languages:
+            kwargs["ignore_language"] = True
+        data = list_voices(**kwargs)
     except ValueError as exc:
         return _json_response({"error": str(exc)}, 400)
 
