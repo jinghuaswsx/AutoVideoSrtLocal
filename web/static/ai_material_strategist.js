@@ -184,6 +184,17 @@
     }
   }
 
+  function getSpendGreenLevelClass(spendVal, roasStatus) {
+    if (roasStatus !== 'green') return '';
+    const val = Number(spendVal || 0);
+    if (val < 100) return 'green-level-1';
+    if (val < 500) return 'green-level-2';
+    if (val < 1000) return 'green-level-3';
+    if (val < 3000) return 'green-level-4';
+    if (val < 10000) return 'green-level-5';
+    return 'green-level-6';
+  }
+
   function getSpendStyle(spendVal) {
     const val = Number(spendVal || 0);
     if (val > 1000) {
@@ -688,8 +699,11 @@
         const isZero = spend === 0;
         const cellCls = `${cls} ${isZero ? 'is-zero' : ''}`;
         
-        const spendClass = isZero ? 'aims-cell-spend zero' : 'aims-cell-spend';
         const roasStatus = getRoasStatus(country.ad_roas, item.effective_breakeven_roas);
+        const spendLevelClass = getSpendGreenLevelClass(spend, roasStatus);
+        const spendClass = isZero 
+          ? 'aims-cell-spend zero' 
+          : `aims-cell-spend ${spendLevelClass}`;
         const roasClass = `aims-cell-roas roas-${roasStatus}`;
         
         const task = country.blocking_task || country.cancelled_task;
