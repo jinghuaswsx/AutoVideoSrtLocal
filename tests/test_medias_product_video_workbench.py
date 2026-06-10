@@ -104,13 +104,12 @@ def test_video_workbench_page_requires_login(authed_client_no_db):
     assert response.status_code == 302
 
 
-def test_product_list_has_separate_supplement_and_workbench_entries():
+def test_product_list_has_material_workbench_entry():
     script = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
     template = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
 
     assert "data-material-workbench" in script
     assert "素材工作台" in script
-    assert "window.open(`/medias/product/addvideo/${pid}`, '_blank');" in script
     assert "window.open(`/medias/product/video_workbench/${pid}`, '_blank');" in script
     assert ".material-workbench-btn" in template
 
