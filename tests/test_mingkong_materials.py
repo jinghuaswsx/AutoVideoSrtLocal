@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
+import pytest
+
 import appcore.mingkong_materials as mm
 
 
@@ -2756,7 +2758,11 @@ def test_run_daily_snapshot_marks_material_run_failed_on_fatal_error(monkeypatch
         "create_or_reuse_run",
         lambda **kwargs: {"id": 42, "status": "running"},
     )
-    monkeypatch.setattr(mm, "_mk_headers", lambda: (_ for _ in ()).throw(RuntimeError("no token")))
+    monkeypatch.setattr(
+        mm,
+        "_wait_for_mingkong_material_api_health",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("no token")),
+    )
     monkeypatch.setattr(mm, "execute", lambda sql, args=(): writes.append((sql, args)) or 1)
 
     try:
@@ -2769,6 +2775,139 @@ def test_run_daily_snapshot_marks_material_run_failed_on_fatal_error(monkeypatch
     assert any("UPDATE mingkong_material_sync_runs" in sql and "status='failed'" in sql for sql, _ in writes)
     assert any(args[-1] == 42 for _, args in writes)
     assert finishes == [(77, {"status": "failed", "error_message": "no token"})]
+
+
+def test_wait_for_mingkong_material_api_health_retries_until_healthy(monkeypatch):
+    calls = []
+    sleeps = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": {"items": []}}
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            if len(calls) == 1:
+                raise RuntimeError("temporarily down")
+            return FakeResponse()
+
+    monkeypatch.setattr(mm.requests, "Session", lambda: FakeSession())
+    monkeypatch.setattr(mm, "_mk_base_url", lambda: "https://os.wedev.vip")
+    monkeypatch.setattr(mm, "_mk_headers", lambda: {"Authorization": "Bearer token"})
+    ticks = iter([0.0, 0.0, 10.0])
+
+    result = mm._wait_for_mingkong_material_api_health(
+        max_wait_seconds=60,
+        interval_seconds=10,
+        request_timeout_seconds=10,
+        sleeper=lambda seconds: sleeps.append(seconds),
+        monotonic=lambda: next(ticks),
+    )
+
+    assert [call[0] for call in calls] == [
+        "https://os.wedev.vip/api/marketing/medias",
+        "https://os.wedev.vip/api/marketing/medias",
+    ]
+    assert sleeps == [10]
+    assert result["attempts"] == 2
+    assert result["headers"] == {"Authorization": "Bearer token"}
+
+
+def test_wait_for_mingkong_material_api_health_times_out(monkeypatch):
+    closed = []
+
+    class BrokenSession:
+        def get(self, url, **kwargs):
+            raise RuntimeError("still down")
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(mm.requests, "Session", lambda: BrokenSession())
+    monkeypatch.setattr(mm, "_mk_base_url", lambda: "https://os.wedev.vip")
+    monkeypatch.setattr(mm, "_mk_headers", lambda: {"Authorization": "Bearer token"})
+    ticks = iter([0.0, 3600.0])
+
+    with pytest.raises(TimeoutError) as excinfo:
+        mm._wait_for_mingkong_material_api_health(
+            max_wait_seconds=3600,
+            interval_seconds=10,
+            request_timeout_seconds=10,
+            sleeper=lambda seconds: (_ for _ in ()).throw(AssertionError("must not sleep after deadline")),
+            monotonic=lambda: next(ticks),
+        )
+
+    assert "within 3600 seconds" in str(excinfo.value)
+    assert closed == [True]
+
+
+def test_run_daily_snapshot_defaults_to_top500_and_one_second_product_interval(monkeypatch):
+    limits = []
+    sleeps = []
+    statuses = []
+    finishes = []
+    health_kwargs = {}
+
+    monkeypatch.setattr(mm, "guard_against_windows_local_mysql", lambda: None)
+    monkeypatch.setattr(mm.scheduled_tasks, "start_run", lambda code: 77)
+    monkeypatch.setattr(
+        mm.scheduled_tasks,
+        "finish_run",
+        lambda run_id, **kwargs: finishes.append((run_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        mm,
+        "latest_top_products",
+        lambda limit=0: limits.append(limit)
+        or (
+            "2026-06-10",
+            [
+                {"product_code": "first", "rank_position": 1},
+                {"product_code": "second", "rank_position": 2},
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        mm,
+        "create_or_reuse_run",
+        lambda **kwargs: {"id": 42, "status": "running"},
+    )
+    monkeypatch.setattr(
+        mm,
+        "_wait_for_mingkong_material_api_health",
+        lambda **kwargs: health_kwargs.update(kwargs)
+        or {
+            "headers": {"Authorization": "Bearer token"},
+            "base_url": "https://os.wedev.vip",
+            "session": object(),
+            "attempts": 1,
+            "wait_seconds": 0.0,
+        },
+    )
+    monkeypatch.setattr(mm, "_search_mingkong_items", lambda *args, **kwargs: [])
+    monkeypatch.setattr(mm, "record_product_status", lambda **kwargs: statuses.append(kwargs))
+    monkeypatch.setattr(mm, "generate_daily_top100", lambda snapshot_date, snapshot_at: {"top300_count": 0})
+    monkeypatch.setattr(mm, "execute", lambda *args, **kwargs: 1)
+    monkeypatch.setattr(mm.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    summary = mm.run_daily_snapshot(snapshot_date="2026-06-10")
+
+    assert limits == [500]
+    assert health_kwargs == {
+        "max_wait_seconds": 3600,
+        "interval_seconds": 10,
+        "request_timeout_seconds": 10,
+    }
+    assert [row["source_product"]["product_code"] for row in statuses] == ["first", "second"]
+    assert sleeps == [1.0]
+    assert summary["source_product_count"] == 2
+    assert summary["processed_product_count"] == 2
+    assert summary["health_check"] == {"attempts": 1, "wait_seconds": 0.0}
+    assert finishes[-1][1]["status"] == "success"
 
 
 def test_enrich_live_material_yesterday_archive_fallback(monkeypatch):

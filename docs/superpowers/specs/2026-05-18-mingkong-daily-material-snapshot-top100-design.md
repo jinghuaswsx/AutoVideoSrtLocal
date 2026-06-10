@@ -104,17 +104,29 @@ Register one scheduled task in `appcore/scheduled_tasks.py`.
 The job is two scheduled daily runs, not a task that wakes every 10 minutes all day.
 
 Expected runtime is bounded by Mingkong response time for 500 products. The
-runner sends requests serially and does not sleep between products.
+runner processes the Top500 product sync queue serially and waits at least 1
+second between products. This interval does not add throttling to a product's
+detail, cover-cache, login-retry, or other internal requests.
+
+Before processing the product queue, the runner must check that the Mingkong
+material API is healthy. The health gate probes once every 10 seconds and may
+wait for at most 1 hour. If Mingkong becomes healthy within that window, the
+same run continues into the Top500 sync flow. If the gate times out, the runner
+cancels that snapshot round, marks the run failed, and does not process any
+product rows.
 
 The runner behavior:
 
 1. Start a `scheduled_task_runs` row.
 2. Load the latest Dianxiaomi Top500 queue.
-3. Process products in internal batches of 10.
-4. Continue serially without a fixed sleep interval between products.
-5. Continue until the 500-product queue is finished.
-6. Finalize material snapshots and generate the Top300 archive.
-7. Finish the run with summary counters.
+3. Create or reuse the snapshot run; if the same snapshot slot already succeeded,
+   skip without probing Mingkong again.
+4. Run the Mingkong health gate: 10-second interval, 1-hour maximum wait.
+5. Process products in internal batches of 10.
+6. Continue serially with a minimum 1-second interval between products in the Top500 queue.
+7. Continue until the 500-product queue is finished.
+8. Finalize material snapshots and generate the Top300 archive.
+9. Finish the run with summary counters.
 
 If a previous run for the same `snapshot_date + snapshot_slot` is already complete,
 a new automatic run must not duplicate the work. Manual repair is out of scope for this
@@ -468,8 +480,8 @@ The page changes stay inside `mk_selection.html`:
 
 ## Error Handling
 
-- Missing wedev credentials: fail the run with a clear error in `scheduled_task_runs`.
-- Expired Mingkong login: fail fast so operators refresh credentials.
+- Missing wedev credentials or expired Mingkong login before the product loop: keep probing
+  through the health gate and cancel the round after 1 hour if still unhealthy.
 - Per-product request failure: record product status failed, increment failure count, and
   continue unless failures exceed a conservative threshold such as 50 consecutive failures.
 - Missing product handle: record skipped product state.
