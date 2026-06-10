@@ -1235,14 +1235,28 @@ def test_replicated_commodity_form_clears_account_bound_fields():
                 "sourceUrl": "https://shop.tiktok.com/view/product/1730",
                 "groupState": 0,
                 "productType": "100",
+                "allowWeightError": 0,
+                "packageWeight": 12,
             },
             "dxmProductCustoms": {
                 "id": "customs-id",
                 "productId": "mk-product",
                 "puid": "mk-account",
                 "nameCn": "驼背矫正器",
+                "nameEn": "Posture Corrector",
+                "price": 5,
                 "weight": 146,
             },
+            "dxmProductPacks": [
+                {
+                    "id": "pack-row",
+                    "productId": "mk-product",
+                    "puid": "mk-account",
+                    "packId": "pack-1",
+                    "quantity": 2,
+                    "packName": "气泡袋",
+                }
+            ],
             "dxmWarehouseProductList": [
                 {"warehoseId": "mk-warehouse", "supplierId": "mk-supplier"}
             ],
@@ -1278,6 +1292,12 @@ def test_replicated_commodity_form_clears_account_bound_fields():
     assert "id" not in customs
     assert "productId" not in customs
     assert "puid" not in customs
+    assert customs["nameCnBg"] == "驼背矫正器"
+    assert customs["nameEnBg"] == "Posture Corrector"
+    assert customs["priceBg"] == 5
+    assert customs["weightBg"] == 146
+    packs = json.loads(form["dxmProductPacks"])
+    assert packs == [{"packId": "pack-1", "quantity": 2, "packName": "气泡袋"}]
     assert json.loads(form["dxmWarehouseProductList"]) == []
     assert json.loads(form["supplierProductRelationMapList"]) == []
 
@@ -1317,6 +1337,14 @@ def test_replicate_mingkong_sku_reuses_existing_dxm03_commodity(monkeypatch):
     monkeypatch.setattr(pairing, "_close_dxm03_context", lambda _playwright, _browser: None)
 
     def fake_search(ctx, sku):
+        if ctx == "source":
+            return {
+                "id": "mk-product",
+                "sku": sku,
+                "sku_code": "98012311",
+                "name": "明空商品",
+                "is_combo": False,
+            }
         if ctx == "target":
             return {
                 "id": "dxm03-product",
@@ -1325,7 +1353,62 @@ def test_replicate_mingkong_sku_reuses_existing_dxm03_commodity(monkeypatch):
                 "name": "DXM03 商品",
                 "product_sku": "PRODUCT-SKU",
             }
-        raise AssertionError("DXM02 source should not be searched when DXM03 already has SKU")
+        return None
+
+    def fake_detail(_ctx, product_id, **_kwargs):
+        if product_id == "mk-product":
+            return {
+                "productDTO": {
+                    "dxmCommodityProduct": {
+                        "id": "mk-product",
+                        "name": "明空商品",
+                        "nameEn": "Source Product",
+                        "sku": "50853279039762",
+                        "skuCode": "98012311",
+                        "weight": 146,
+                        "length": 10,
+                        "width": 5,
+                        "height": 2,
+                        "groupState": 0,
+                        "productType": "100",
+                    },
+                    "dxmProductCustoms": {
+                        "nameCn": "驼背矫正器",
+                        "nameEn": "Posture Corrector",
+                        "price": 5,
+                        "weight": 146,
+                        "dangerDes": 0,
+                    },
+                    "dxmProductPacks": [{"packId": "pack-1", "quantity": 1}],
+                }
+            }
+        return {
+            "productDTO": {
+                "dxmCommodityProduct": {
+                    "id": "dxm03-product",
+                    "name": "DXM03 商品",
+                    "nameEn": "Target Product",
+                    "sku": "50853279039762",
+                    "skuCode": "DXM03-CODE",
+                    "weight": 0,
+                    "length": 0,
+                    "width": 0,
+                    "height": 0,
+                    "groupState": 0,
+                    "productType": "100",
+                    "fullCid": pairing.DEFAULT_DXM03_FULL_CID,
+                },
+                "dxmProductCustoms": {},
+                "dxmProductPacks": [],
+                "supplierProductRelationMapList": [{"supplierId": "dxm03-supplier"}],
+            }
+        }
+
+    edit_calls = []
+
+    def fake_post(_ctx, path, payload, **_kwargs):
+        edit_calls.append((path, payload))
+        return {"code": 0, "data": {"code": 0}}
 
     def fake_replace(product_id, pairs, *, source):
         replaced["product_id"] = product_id
@@ -1334,6 +1417,8 @@ def test_replicate_mingkong_sku_reuses_existing_dxm03_commodity(monkeypatch):
         return {"inserted": 0, "updated": 1, "deleted": 0, "preserved": 0}
 
     monkeypatch.setattr(pairing, "_search_commodity", fake_search)
+    monkeypatch.setattr(pairing, "_view_commodity_detail", fake_detail)
+    monkeypatch.setattr(pairing, "_post_form", fake_post)
     result = pairing.replicate_mingkong_skus_to_dxm03(
         {"id": 747, "product_code": "posture-rjc", "purchase_1688_url": ""},
         [
@@ -1352,7 +1437,22 @@ def test_replicate_mingkong_sku_reuses_existing_dxm03_commodity(monkeypatch):
     assert result["ok"] is True
     assert result["items"][0]["status"] == "already_exists"
     assert result["items"][0]["dxm03_sku_code"] == "DXM03-CODE"
+    assert result["items"][0]["logistics_packaging"]["status"] == "updated"
+    assert result["summary"]["logistics_packaging_updated_count"] == 1
     assert result["logs"][1]["level"] == "ok"
+    assert edit_calls[0][0] == pairing.DXM_EDIT_COMMODITY_API
+    edit_form = json.loads(edit_calls[0][1]["obj"])
+    edit_product = json.loads(edit_form["dxmCommodityProduct"])
+    edit_customs = json.loads(edit_form["dxmProductCustoms"])
+    edit_packs = json.loads(edit_form["dxmProductPacks"])
+    assert edit_calls[0][1]["pid"] == "dxm03-product"
+    assert edit_product["productId"] == "dxm03-product"
+    assert edit_product["skuCode"] == "DXM03-CODE"
+    assert edit_product["weight"] == 146
+    assert edit_product["length"] == 10
+    assert edit_customs["nameCnBg"] == "驼背矫正器"
+    assert edit_customs["priceBg"] == 5
+    assert edit_packs == [{"packId": "pack-1", "quantity": 1}]
     assert replaced["product_id"] == 747
     assert replaced["source"] == "mingkong_replicated"
     assert replaced["pairs"][0]["dianxiaomi_sku_code"] == "DXM03-CODE"
