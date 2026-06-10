@@ -1228,10 +1228,10 @@
       const taskHtml = renderCountryTaskCountLink(country, act, productIndex, code);
 
       return `
-        <div class="aims-bar-row" style="grid-template-columns: 32px minmax(50px, auto) minmax(60px, auto) 44px minmax(80px, auto) minmax(80px, auto); align-items: center; gap: 8px;">
+        <div class="aims-bar-row" style="grid-template-columns: 32px 70px 85px 44px minmax(80px, auto) minmax(80px, auto); align-items: center; gap: 8px;">
           <span>${esc(country.country_code || country.lang)}</span>
           <span>${renderDeliveryStatusBadge(country.delivery_status)}</span>
-          <strong style="${spendStyle}">${fmtUsd(country.ad_spend_usd)}</strong>
+          <strong class="aims-bar-spend-val" style="${spendStyle}">${fmtUsd(country.ad_spend_usd)}</strong>
           <span class="${esc(getRoasColorClass(country.ad_roas, breakevenRoas))}">${fmtRoas(country.ad_roas)}</span>
           <span>${act ? renderRecommendationBadge(act) : '—'}</span>
           <span>${taskHtml}</span>
