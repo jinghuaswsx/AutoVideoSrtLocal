@@ -26,8 +26,8 @@
   var pollTimer = null;
   var selection = { A: "", B: "" };
   var libraryState = {
-    A: { q: "", items: [], loaded: false, loading: false, error: "", total: 0, recommendedOnly: false },
-    B: { q: "", items: [], loaded: false, loading: false, error: "", total: 0, recommendedOnly: false }
+    A: { q: "", items: [], loaded: false, loading: false, error: "", total: 0, recommendedOnly: false, ignoreLanguage: false },
+    B: { q: "", items: [], loaded: false, loading: false, error: "", total: 0, recommendedOnly: false, ignoreLanguage: false }
   };
   var lastTask = null;
   var isSubmitting = false;
@@ -531,6 +531,9 @@
         page: "1",
         page_size: "200"
       });
+      if (state.ignoreLanguage) {
+        params.set("all_languages", "true");
+      }
       if (state.q) {
         params.set("q", state.q);
       }
@@ -1055,6 +1058,24 @@
       loadVoiceLibrary(speaker);
     });
 
+    var checkboxGroup = document.createElement("div");
+    checkboxGroup.style.display = "flex";
+    checkboxGroup.style.alignItems = "center";
+    checkboxGroup.style.gap = "12px";
+    checkboxGroup.style.marginLeft = "auto";
+
+    var ignoreLanguage = document.createElement("label");
+    ignoreLanguage.className = "dialogue-recommended-only";
+    var ignoreLanguageInput = document.createElement("input");
+    ignoreLanguageInput.type = "checkbox";
+    ignoreLanguageInput.checked = !!speakerLibrary.ignoreLanguage;
+    ignoreLanguageInput.addEventListener("change", function () {
+      libraryState[speaker].ignoreLanguage = ignoreLanguageInput.checked;
+      loadVoiceLibrary(speaker);
+    });
+    ignoreLanguage.appendChild(ignoreLanguageInput);
+    ignoreLanguage.appendChild(document.createTextNode("不限语种"));
+
     var recommendedOnly = document.createElement("label");
     recommendedOnly.className = "dialogue-recommended-only";
     var recommendedOnlyInput = document.createElement("input");
@@ -1067,10 +1088,13 @@
     recommendedOnly.appendChild(recommendedOnlyInput);
     recommendedOnly.appendChild(document.createTextNode("只看推荐"));
 
+    checkboxGroup.appendChild(ignoreLanguage);
+    checkboxGroup.appendChild(recommendedOnly);
+
     toolbar.appendChild(search);
     toolbar.appendChild(select);
     toolbar.appendChild(loadBtn);
-    toolbar.appendChild(recommendedOnly);
+    toolbar.appendChild(checkboxGroup);
     card.appendChild(toolbar);
 
     var libraryMeta = document.createElement("div");
