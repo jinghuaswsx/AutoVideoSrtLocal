@@ -32,11 +32,11 @@ def test_tabcut_selection_page_renders_tabs(authed_client_no_db):
     assert "function handleTabcutGotoPage(event, totalPages)" in body
     assert 'class="tabcut-pager-goto"' in body
     assert 'onkeydown="handleTabcutGotoPage(event, ${totalPages})"' in body
-    assert 'id="tabcutTaskModal"' in body
-    assert 'name="tabcutTaskKind"' in body
+    assert 'id="mkiXiaoModal"' in body
+    assert 'name="mkiXiaoTaskKind"' in body
     assert "/tasks/api/material-products" in body
     assert "/tasks/api/new-product" in body
-    assert 'source: "tabcut_video"' in body
+    assert "source: 'tabcut_video'" in body
     assert "renderTabcutTaskButton(row)" in body
     assert "tabcutHasReadyLocalVideo" in body
 
