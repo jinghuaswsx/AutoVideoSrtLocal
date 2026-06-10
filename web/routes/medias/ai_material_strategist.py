@@ -177,6 +177,23 @@ def api_ai_material_strategist_project(project_id: int):
     return _json({"success": True, "project": project})
 
 
+@bp.route("/api/ai-material-strategist/projects/<int:project_id>", methods=["DELETE"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_ai_material_strategist_delete_project(project_id: int):
+    result = service.delete_project(project_id)
+    if result.get("deleted"):
+        return _json({"success": True, **result})
+    if result.get("reason") == "running":
+        return _json({
+            "success": False,
+            "message": "运行中的 AI素材军师项目不能删除，请等待完成或失败后再删除。",
+            **result,
+        }, 409)
+    return _json({"success": False, "message": "AI素材军师项目不存在。"}, 404)
+
+
 @bp.route("/api/ai-material-strategist/projects/<int:project_id>/share", methods=["POST"])
 @login_required
 @admin_required

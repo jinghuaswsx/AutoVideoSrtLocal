@@ -354,6 +354,36 @@
     }
   }
 
+  async function deleteProject(projectId) {
+    const project = (state.projects || []).find((item) => Number(item.id) === Number(projectId));
+    if (!project) return;
+    if (project.status === 'running') {
+      showToast('运行中的项目不能删除');
+      return;
+    }
+    const name = project.project_name || ('项目 #' + project.id);
+    if (!window.confirm(`确定删除「${name}」吗？删除后不可恢复。`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await fetchJson('/medias/api/ai-material-strategist/projects/' + encodeURIComponent(projectId), {
+        method: 'DELETE',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+      });
+      if (Number(state.activeProjectId) === Number(projectId)) {
+        state.activeProjectId = null;
+        state.activeProject = null;
+      }
+      showToast('项目已删除');
+      await loadProjects();
+    } catch (err) {
+      showToast(err.message || '删除失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function renderProjects() {
     if (!els.list) return;
     if (!state.projects.length) {
@@ -366,17 +396,28 @@
       const topCount = summary.top_product_count || 0;
       const progress = project.progress || {};
       const pct = Number(progress.percent || 0);
+      const canDelete = project.status !== 'running';
       return `
-        <button type="button" class="aims-project-item${active}" data-project-id="${esc(project.id)}">
-          <span class="aims-project-name">${esc(project.project_name || ('项目 #' + project.id))}</span>
-          <span class="aims-project-meta">
-            <span class="aims-status ${esc(project.status)}">${statusLabel(project.status)}</span>
-            <span>Top ${esc(topCount)}</span>
-            ${project.status === 'running' ? `<span>${esc(pct)}%</span>` : ''}
-            <span>${esc((project.created_at || '').slice(0, 16))}</span>
-          </span>
-          ${project.status === 'running' ? `<span class="aims-mini-progress"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></span>` : ''}
-        </button>
+        <div class="aims-project-row${active}">
+          <button type="button" class="aims-project-item" data-project-id="${esc(project.id)}">
+            <span class="aims-project-name">${esc(project.project_name || ('项目 #' + project.id))}</span>
+            <span class="aims-project-meta">
+              <span class="aims-status ${esc(project.status)}">${statusLabel(project.status)}</span>
+              <span>Top ${esc(topCount)}</span>
+              ${project.status === 'running' ? `<span>${esc(pct)}%</span>` : ''}
+              <span>${esc((project.created_at || '').slice(0, 16))}</span>
+            </span>
+            ${project.status === 'running' ? `<span class="aims-mini-progress"><span style="width:${Math.max(0, Math.min(100, pct))}%"></span></span>` : ''}
+          </button>
+          <button
+            type="button"
+            class="aims-project-delete"
+            data-delete-project-id="${esc(project.id)}"
+            ${canDelete ? '' : 'disabled'}
+            title="${canDelete ? '删除项目' : '运行中的项目不能删除'}"
+            aria-label="删除项目"
+          >×</button>
+        </div>
       `;
     }).join('');
   }
@@ -781,6 +822,15 @@
 
   if (els.list) {
     els.list.addEventListener('click', (event) => {
+      const deleteButton = event.target.closest('[data-delete-project-id]');
+      if (deleteButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!deleteButton.disabled) {
+          deleteProject(deleteButton.getAttribute('data-delete-project-id'));
+        }
+        return;
+      }
       const button = event.target.closest('[data-project-id]');
       if (!button) return;
       loadProject(button.getAttribute('data-project-id')).catch((err) => showToast(err.message));

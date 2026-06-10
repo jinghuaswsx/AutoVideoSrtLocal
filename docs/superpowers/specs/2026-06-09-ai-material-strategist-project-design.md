@@ -10,6 +10,7 @@
 - `投放素材AI分析` 是左侧菜单的独立入口：路由使用 `GET /medias/ad-material-ai-analysis`、`GET /medias/ad-material-ai-analysis/projects/<id>` 和 `/medias/api/ad-material-ai-analysis/*`，后端使用 `appcore.ad_material_ai_analysis`、`ad_material_ai_analysis_projects`、`ad_material_ai_analysis_product_results`、运行锁 `ad_material_ai_analysis_single_running_project`。默认 LLM 绑定为 GoogleWJ `gemini-3.5-flash`。
 - 两个功能的项目列表、运行中互斥、分享 token、公开报告、前端脚本和 API 请求都必须各查各的命名空间。左侧菜单只进入 `投放素材AI分析`；素材管理子 Tab 只进入 `AI素材军师`。
 - 已经误写进 `ai_material_strategist_projects` 且 `project_name LIKE '投放素材AI分析%'` 或 `provider_code='google_wj'` 的投放分析项目，迁移到 `ad_material_ai_analysis_*` 后从旧 AI素材军师列表移除，避免污染旧功能历史项目。
+- `AI素材军师` 项目列表必须支持删除已完成或失败项目；运行中项目不能删除，避免后台执行器仍写入同一项目。删除接口为 `DELETE /medias/api/ai-material-strategist/projects/<id>`，必须登录、管理员和 `medias` 权限，并依赖外键级联清理 `ai_material_strategist_product_results`。
 
 ## 背景
 
@@ -531,6 +532,7 @@ LLM 节点提供 `提示词` 按钮，展示：
 
 - 左侧菜单任务中心下方存在管理员可见 `投放素材AI分析` 入口，素材管理子 Tab 显示 `AI素材军师` 且指向旧入口。
 - 项目列表、项目详情路由未登录 302，登录有权限 200。
+- `AI素材军师` 项目列表提供删除按钮，删除请求带 `X-CSRFToken`，运行中项目删除返回 `409`。
 - 项目详情渲染 Top 20 表、图表容器、国家矩阵、素材卡片和操作按钮。
 - POST 创建项目带 `X-CSRFToken`。
 

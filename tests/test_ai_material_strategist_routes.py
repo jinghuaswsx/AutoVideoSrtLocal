@@ -216,3 +216,56 @@ def test_ai_material_strategist_create_project_rejects_when_running(
     payload = response.get_json()
     assert payload["success"] is False
     assert payload["running_project"]["id"] == 8
+
+
+def test_ai_material_strategist_delete_project_delegates_service(authed_client_no_db, monkeypatch):
+    calls = {}
+
+    def fake_delete_project(project_id):
+        calls["project_id"] = project_id
+        return {"deleted": True, "project_id": project_id}
+
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.delete_project",
+        fake_delete_project,
+    )
+
+    response = authed_client_no_db.delete("/medias/api/ai-material-strategist/projects/7")
+
+    assert response.status_code == 200
+    assert response.get_json()["success"] is True
+    assert response.get_json()["project_id"] == 7
+    assert calls["project_id"] == 7
+
+
+def test_ai_material_strategist_delete_project_rejects_running(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.delete_project",
+        lambda project_id: {
+            "deleted": False,
+            "reason": "running",
+            "project": {"id": project_id, "status": "running"},
+        },
+    )
+
+    response = authed_client_no_db.delete("/medias/api/ai-material-strategist/projects/8")
+
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["reason"] == "running"
+
+
+def test_ai_material_strategist_delete_project_returns_404_when_missing(
+    authed_client_no_db,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "web.routes.medias.ai_material_strategist.service.delete_project",
+        lambda project_id: {"deleted": False, "reason": "not_found"},
+    )
+
+    response = authed_client_no_db.delete("/medias/api/ai-material-strategist/projects/404")
+
+    assert response.status_code == 404
+    assert response.get_json()["success"] is False
