@@ -3216,6 +3216,24 @@ def _is_duplicate_key_error(exc: Exception) -> bool:
 
 
 def _serialize_product_result(row: Mapping[str, Any]) -> dict:
+    action_items = _json_loads(row.get("action_items_json"), []) or []
+    if isinstance(action_items, list):
+        upgraded_actions = []
+        for action in action_items:
+            if isinstance(action, dict):
+                act_type = action.get("type")
+                if act_type == "supplement_workbench":
+                    action["label"] = "素材工作台"
+                    url = action.get("url")
+                    if isinstance(url, str) and "/medias/product/addvideo/" in url:
+                        action["url"] = url.replace("/medias/product/addvideo/", "/medias/product/video_workbench/")
+                elif act_type == "create_translation_task":
+                    url = action.get("url")
+                    if isinstance(url, str) and "/medias/product/addvideo/" in url:
+                        action["url"] = url.replace("/medias/product/addvideo/", "/medias/product/video_workbench/")
+            upgraded_actions.append(action)
+        action_items = upgraded_actions
+
     return {
         "id": _safe_int(row.get("id")),
         "project_id": _safe_int(row.get("project_id")),
@@ -3229,7 +3247,7 @@ def _serialize_product_result(row: Mapping[str, Any]) -> dict:
         "local_materials": _json_loads(row.get("local_materials_json"), []) or [],
         "mingkong_materials": _json_loads(row.get("mingkong_materials_json"), []) or [],
         "ai_result": _json_loads(row.get("ai_result_json"), {}) or {},
-        "action_items": _json_loads(row.get("action_items_json"), []) or [],
+        "action_items": action_items,
         "created_at": _iso(row.get("created_at")),
         "updated_at": _iso(row.get("updated_at")),
     }
