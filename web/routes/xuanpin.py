@@ -1197,3 +1197,52 @@ def api_tabcut_video_cover(video_id: str):
         return redirect(original_cover_url)
 
     abort(404, description="No cover available")
+
+
+@bp.route("/api/tabcut/videos/<video_id>/import", methods=["POST"])
+@login_required
+@admin_required
+def api_tabcut_video_import(video_id: str):
+    payload = request.get_json(silent=True) or {}
+    try:
+        owner_id = int(payload.get("owner_id") or payload.get("translator_id") or 0)
+    except (TypeError, ValueError):
+        owner_id = 0
+    if not owner_id:
+        return jsonify({"success": False, "error": "owner_id_required"}), 400
+
+    from appcore.tabcut_selection.service import import_tabcut_video
+    from appcore import runner_lifecycle, material_evaluation
+
+    try:
+        res = import_tabcut_video(
+            video_id=video_id,
+            owner_id=owner_id,
+            actor_user_id=int(current_user.id),
+        )
+
+        if res.get("media_product_id"):
+            runner_lifecycle.start_tracked_thread(
+                project_type="material_evaluation",
+                task_id=str(res["media_product_id"]),
+                target=material_evaluation.evaluate_product_if_ready,
+                args=(res["media_product_id"],),
+                kwargs={"force": True, "manual": True},
+                daemon=True,
+                user_id=int(current_user.id),
+                runner="appcore.material_evaluation.evaluate_product_if_ready",
+                entrypoint="tabcut_video.import",
+                stage="queued_evaluation",
+                details={"source": "tabcut_video_import"},
+            )
+
+        return jsonify({
+            "success": True,
+            "media_product_id": res["media_product_id"],
+            "media_item_id": res["media_item_id"],
+            "is_new_product": res["is_new_product"]
+        })
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"success": False, "error": f"Internal error: {exc}"}), 500

@@ -599,105 +599,6 @@ def _next_tabcut_material_filename(product_id: int, base_filename: str) -> str:
     stem = Path(base).stem or "tabcut_video"
     ext = Path(base).suffix or ".mp4"
     candidate = f"{stem}{ext}"
-=======
-    from appcore.db import execute, query_one
-    from appcore import object_keys, local_media_storage
-    from appcore.medias import create_item
-    import config
-    import os
-    from pathlib import Path
-
-    # 1. Fetch tabcut video and check existing import
-    row = query_one(
-        "SELECT v.*, g.item_name, g.item_pic_url, g.raw_json "
-        "FROM tabcut_videos v "
-        "LEFT JOIN tabcut_goods g ON g.item_id = v.primary_item_id "
-        "WHERE v.video_id = %s LIMIT 1",
-        (str(video_id),)
-    )
-    if not row:
-        raise ValueError(f"Tabcut video not found: {video_id}")
-
-    target_pid = int(target_product_id or 0)
-    local_product_id = row.get("local_product_id")
-    local_media_item_id = row.get("local_media_item_id")
-    if target_pid <= 0 and local_product_id and local_media_item_id:
-        return {
-            "media_product_id": int(local_product_id),
-            "media_item_id": int(local_media_item_id),
-            "is_new_product": False,
-        }
-
-    # 2. Check localized video file
-    if row.get("local_video_status") != "success" or not row.get("local_video_path"):
-        raise ValueError("本地视频尚未就绪，请等待视频本地化完成")
-
-    local_path = Path(os.path.join(config.OUTPUT_DIR, str(row.get("local_video_path") or "")))
-    if not local_path.exists():
-        raise ValueError("本地视频文件不存在")
-
-    # Resolve cover
-    local_cover_path = None
-    if row.get("local_video_cover_path"):
-        cover_res = Path(os.path.join(config.OUTPUT_DIR, str(row.get("local_video_cover_path") or "")))
-        if cover_res.exists():
-            local_cover_path = cover_res
-
-    # 3. Create or reuse media product
-    product_code = f"tabcut-{video_id}"
-    if target_pid > 0:
-        existing_product = query_one(
-            "SELECT id, user_id FROM media_products WHERE id = %s AND deleted_at IS NULL LIMIT 1",
-            (target_pid,),
-        )
-        if not existing_product:
-            raise ValueError("target product not found")
-    else:
-        existing_product = query_one(
-            "SELECT id, user_id FROM media_products WHERE product_code = %s AND deleted_at IS NULL LIMIT 1",
-            (product_code,)
-        )
-
-    is_new = existing_product is None
-    if is_new:
-        product_title = row.get("item_name") or f"Tabcut视频产品 {video_id}"
-        # 获得 product_url
-        product_url = ""
-        raw_json = json.loads(row.get("raw_json") or "{}") if isinstance(row.get("raw_json"), str) else (row.get("raw_json") or {})
-        for key in ("itemUrl", "productUrl", "tkItemUrl", "shopProductUrl", "shop_product_url", "tiktokProductUrl"):
-            val = str(raw_json.get(key) or "").strip()
-            if val.startswith(("http://", "https://")):
-                product_url = val
-                break
-        if not product_url and row.get("primary_item_id"):
-            product_url = f"https://www.tiktok.com/shop/pdp/{row['primary_item_id']}"
-
-        main_image = row.get("item_pic_url") or row.get("video_cover_url") or ""
-        product_id = execute(
-            "INSERT INTO media_products (user_id, name, product_code, product_link, main_image) "
-            "VALUES (%s, %s, %s, %s, %s)",
-            (
-                int(translator_id),
-                str(product_title)[:255],
-                product_code,
-                str(product_url)[:2047],
-                str(main_image)[:2047],
-            )
-        )
-        owner_uid = int(translator_id)
-    else:
-        product_id = int(existing_product["id"])
-        owner_uid = int(existing_product["user_id"])
-
-    # 4. Copy video to local media store
-    filename = _next_tabcut_material_filename(product_id, f"tabcut_{video_id}.mp4")
-    dest_key = object_keys.build_media_object_key(owner_uid, product_id, filename)
-    with open(local_path, "rb") as handle:
-        local_media_storage.write_stream(dest_key, handle)
-    file_size = local_path.stat().st_size
-
-    # Copy cover to local media store if exists
-    cover_key = None
     if local_cover_path:
         cover_filename = f"{Path(filename).stem}_cover.jpg"
         cover_key = object_keys.build_media_object_key(owner_uid, product_id, cover_filename)
@@ -760,16 +661,7 @@ def _next_tabcut_material_filename(product_id: int, base_filename: str) -> str:
     }
 
 
-def _next_tabcut_material_filename(product_id: int, base_filename: str) -> str:
-    from appcore.db import query_one
-    base = str(base_filename or "tabcut_video.mp4").strip() or "tabcut_video.mp4"
-    if "." in base:
-        stem, ext = base.rsplit(".", 1)
-        ext = f".{ext}"
-    else:
-        stem, ext = base, ""
-    candidate = base
->>>>>>> bf0aa994 (feat(tabcut): add mark and task creation entry to video detail page)
+
     suffix = 2
     while True:
         row = query_one(
