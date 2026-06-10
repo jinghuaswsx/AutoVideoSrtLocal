@@ -38,7 +38,7 @@
 - Create: `tests/test_mingkong_local_pairing_15d.py`
 - Modify: `tools/mingkong_unprocessed_sku_backfill.py`
 
-- [ ] **Step 1: Write failing tests for recent candidate SQL**
+- [x] **Step 1: Write failing tests for recent candidate SQL**
 
 Add these tests to `tests/test_mingkong_local_pairing_15d.py`:
 
@@ -72,7 +72,7 @@ def test_list_recent_products_for_local_pairing_uses_created_at_cutoff_without_c
     )
 
     assert rows[0]["id"] == 11
-    assert "mp.created_at >= ?" in captured["sql"]
+    assert "mp.created_at >= %s" in captured["sql"]
     assert "NOT EXISTS" not in captured["sql"]
     assert captured["params"][0] == "2026-05-26 12:00:00"
 
@@ -94,10 +94,10 @@ def test_list_recent_products_for_local_pairing_can_include_archived_and_unliste
     )
 
     assert "COALESCE(mp.archived, 0) = 0" not in captured["sql"]
-    assert "COALESCE(mp.is_listed, 0) = 1" not in captured["sql"]
+    assert "mp.listing_status" not in captured["sql"]
 ```
 
-- [ ] **Step 2: Run the focused failing tests**
+- [x] **Step 2: Run the focused failing tests**
 
 Run:
 
@@ -107,7 +107,7 @@ python -m pytest tests/test_mingkong_local_pairing_15d.py::test_list_recent_prod
 
 Expected: both tests fail with `AttributeError: module ... has no attribute 'list_recent_products_for_local_pairing'`.
 
-- [ ] **Step 3: Implement candidate selector**
+- [x] **Step 3: Implement candidate selector**
 
 Add this public helper to `tools/mingkong_unprocessed_sku_backfill.py` near `find_unprocessed_products`:
 
@@ -128,14 +128,15 @@ def list_recent_products_for_local_pairing(
     cutoff = now_fn() - timedelta(days=days)
     where = [
         "mp.deleted_at IS NULL",
-        "mp.created_at >= ?",
+        "mp.created_at >= %s",
         "(COALESCE(mp.product_code, '') <> '' OR COALESCE(mp.product_link, '') <> '' OR COALESCE(mp.shopifyid, '') <> '')",
     ]
     params: list[Any] = [cutoff.strftime("%Y-%m-%d %H:%M:%S")]
     if not include_archived:
         where.append("COALESCE(mp.archived, 0) = 0")
     if listed_only:
-        where.append("COALESCE(mp.is_listed, 0) = 1")
+        where.append("(mp.listing_status IS NULL OR mp.listing_status=%s)")
+        params.append(medias.LISTING_STATUS_ON)
     sql = f"""
         SELECT
             mp.id,
@@ -154,7 +155,7 @@ def list_recent_products_for_local_pairing(
     return [dict(row) for row in query_fn(sql, tuple(params))]
 ```
 
-- [ ] **Step 4: Re-run the candidate tests**
+- [x] **Step 4: Re-run the candidate tests**
 
 Run the same command from Step 2.
 
@@ -166,7 +167,7 @@ Expected: both tests pass.
 - Modify: `tests/test_mingkong_local_pairing_15d.py`
 - Modify: `tools/mingkong_unprocessed_sku_backfill.py`
 
-- [ ] **Step 1: Write failing test for local-only upsert**
+- [x] **Step 1: Write failing test for local-only upsert**
 
 Append:
 
@@ -242,7 +243,7 @@ def test_upsert_local_pairing_pairs_skips_configured_variants_and_does_not_delet
     assert all("variant-protected" not in str(params) for _sql, params in executed)
 ```
 
-- [ ] **Step 2: Run the focused failing test**
+- [x] **Step 2: Run the focused failing test**
 
 Run:
 
@@ -252,11 +253,11 @@ python -m pytest tests/test_mingkong_local_pairing_15d.py::test_upsert_local_pai
 
 Expected: fail with missing `upsert_local_pairing_pairs`.
 
-- [ ] **Step 3: Implement schema-safe upsert**
+- [x] **Step 3: Implement schema-safe upsert**
 
 Add `LOCAL_PAIRING_SKU_FIELDS`, `_normalise_local_pairing_value`, and `upsert_local_pairing_pairs` to `tools/mingkong_unprocessed_sku_backfill.py`. The function updates rows whose `shopify_variant_id` exists in `existing_rows`, inserts rows that do not exist, skips `protected_variant_ids`, and never deletes rows.
 
-- [ ] **Step 4: Re-run the upsert test**
+- [x] **Step 4: Re-run the upsert test**
 
 Run the same command from Step 2.
 
@@ -268,7 +269,7 @@ Expected: pass.
 - Modify: `tests/test_mingkong_local_pairing_15d.py`
 - Modify: `tools/mingkong_unprocessed_sku_backfill.py`
 
-- [ ] **Step 1: Write failing tests for dry-run and execute local-only product runner**
+- [x] **Step 1: Write failing tests for dry-run and execute local-only product runner**
 
 Append:
 
@@ -283,8 +284,8 @@ def test_run_product_local_pairing_preserves_configured_rows_and_reports_partial
     monkeypatch.setattr(mod.medias, "list_product_skus", lambda product_id: existing_rows)
     monkeypatch.setattr(
         mod.pairing,
-        "build_pairing_workbench_payload",
-        lambda _product, include_mingkong_reference=True: {
+        "build_workbench_payload",
+        lambda _product, _existing_rows, **kwargs: {
             "items": [
                 {"shopify_variant_id": "v1", "shopify_sku": "BASE-1"},
                 {"shopify_variant_id": "v2", "shopify_sku": "BASE-2"},
@@ -333,8 +334,8 @@ def test_run_product_local_pairing_execute_does_not_call_dxm03_or_yuncang(monkey
     monkeypatch.setattr(mod.medias, "list_product_skus", lambda product_id: [])
     monkeypatch.setattr(
         mod.pairing,
-        "build_pairing_workbench_payload",
-        lambda _product, include_mingkong_reference=True: {"items": [], "mingkong_procurement": {}, "existing_sku_ids": {}},
+        "build_workbench_payload",
+        lambda _product, _existing_rows, **kwargs: {"items": [], "mingkong_procurement": {}, "existing_sku_ids": {}},
     )
     monkeypatch.setattr(mod, "build_default_targets", lambda _payload: [{"shopify_variant_id": "v1", "dianxiaomi_sku": "MK-1"}])
     monkeypatch.setattr(
@@ -358,7 +359,7 @@ def test_run_product_local_pairing_execute_does_not_call_dxm03_or_yuncang(monkey
     assert len(calls) == 1
 ```
 
-- [ ] **Step 2: Run product runner failing tests**
+- [x] **Step 2: Run product runner failing tests**
 
 Run:
 
@@ -368,7 +369,7 @@ python -m pytest tests/test_mingkong_local_pairing_15d.py::test_run_product_loca
 
 Expected: fail with missing `run_product_local_pairing`.
 
-- [ ] **Step 3: Implement product runner**
+- [x] **Step 3: Implement product runner**
 
 Add helpers:
 
@@ -388,7 +389,7 @@ def _classify_local_pairing_pair(pair: dict[str, Any], protected_variant_ids: se
 
 Implement `run_product_local_pairing(product, *, execute=False, force_refresh_mingkong=False) -> dict[str, Any]` by composing existing workbench and mapper helpers, then calling `upsert_local_pairing_pairs` only when `execute=True`.
 
-- [ ] **Step 4: Re-run product runner tests**
+- [x] **Step 4: Re-run product runner tests**
 
 Run the same command from Step 2.
 
@@ -400,7 +401,7 @@ Expected: pass.
 - Modify: `tests/test_mingkong_local_pairing_15d.py`
 - Modify: `tools/mingkong_unprocessed_sku_backfill.py`
 
-- [ ] **Step 1: Write failing batch/report tests**
+- [x] **Step 1: Write failing batch/report tests**
 
 Append:
 
@@ -439,7 +440,7 @@ def test_write_local_pairing_report_writes_json_file(tmp_path):
     assert '"synced_sku_count": 1' in path.read_text(encoding="utf-8")
 ```
 
-- [ ] **Step 2: Run failing batch/report tests**
+- [x] **Step 2: Run failing batch/report tests**
 
 Run:
 
@@ -449,11 +450,11 @@ python -m pytest tests/test_mingkong_local_pairing_15d.py::test_run_local_pairin
 
 Expected: fail with missing batch/report helpers.
 
-- [ ] **Step 3: Implement batch and report writer**
+- [x] **Step 3: Implement batch and report writer**
 
 Add `run_local_pairing_batch` and `write_local_pairing_report` to `tools/mingkong_unprocessed_sku_backfill.py`. The report must include `generated_at`, `mode`, `criteria`, `summary`, and `products`.
 
-- [ ] **Step 4: Re-run batch/report tests**
+- [x] **Step 4: Re-run batch/report tests**
 
 Run the same command from Step 2.
 
@@ -465,7 +466,7 @@ Expected: pass.
 - Create: `tools/mingkong_local_pairing_15d.py`
 - Modify: `tests/test_mingkong_local_pairing_15d.py`
 
-- [ ] **Step 1: Write failing CLI test**
+- [x] **Step 1: Write failing CLI test**
 
 Append:
 
@@ -488,7 +489,7 @@ def test_cli_main_runs_plan_mode_and_prints_report_path(monkeypatch, tmp_path, c
     assert '"synced_sku_count": 1' in out
 ```
 
-- [ ] **Step 2: Run the failing CLI test**
+- [x] **Step 2: Run the failing CLI test**
 
 Run:
 
@@ -498,7 +499,7 @@ python -m pytest tests/test_mingkong_local_pairing_15d.py::test_cli_main_runs_pl
 
 Expected: fail with import error for `tools.mingkong_local_pairing_15d`.
 
-- [ ] **Step 3: Implement CLI**
+- [x] **Step 3: Implement CLI**
 
 Create `tools/mingkong_local_pairing_15d.py` with `argparse` options:
 
@@ -514,7 +515,7 @@ Create `tools/mingkong_local_pairing_15d.py` with `argparse` options:
 
 Default mode is dry-run plan. `--execute` performs local writes only.
 
-- [ ] **Step 4: Re-run CLI test**
+- [x] **Step 4: Re-run CLI test**
 
 Run the same command from Step 2.
 
@@ -525,7 +526,7 @@ Expected: pass.
 **Files:**
 - Modify: only files already listed above.
 
-- [ ] **Step 1: Run new focused test file**
+- [x] **Step 1: Run new focused test file**
 
 Run:
 
@@ -535,7 +536,7 @@ python -m pytest tests/test_mingkong_local_pairing_15d.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 2: Run existing Mingkong backfill tests**
+- [x] **Step 2: Run existing Mingkong backfill tests**
 
 Run:
 
@@ -545,7 +546,7 @@ python -m pytest tests/test_mingkong_unprocessed_sku_backfill.py tests/test_ming
 
 Expected: all tests pass.
 
-- [ ] **Step 3: Run related-test helper**
+- [x] **Step 3: Run related-test helper**
 
 Run:
 
@@ -555,7 +556,7 @@ python scripts/pytest_related.py --base origin/master --run
 
 Expected: the helper runs the tests it maps from changed files, or reports no direct pytest coverage. Do not fall back to full pytest unless the helper reports a repository-level trigger.
 
-- [ ] **Step 4: Run static diff check**
+- [x] **Step 4: Run static diff check**
 
 Run:
 
@@ -565,7 +566,7 @@ git diff --check
 
 Expected: no whitespace errors.
 
-- [ ] **Step 5: Commit implementation**
+- [x] **Step 5: Commit implementation**
 
 Run:
 
