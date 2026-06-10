@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from html.parser import HTMLParser
 
 
@@ -455,6 +456,36 @@ def test_meta_hot_posts_page_keeps_default_zoom_and_2x_uses_50_item_pages(
     assert "/xuanpin/api/meta-hot-posts/europe-top?limit=50" in body
     assert "/xuanpin/api/meta-hot-posts/video-copyability/top50?limit=50" in body
     assert "page_size: mhPageSize" in body
+
+
+def test_meta_hot_posts_mobile_scroll_hides_top_controls_and_expands_video_width(
+    authed_client_no_db, monkeypatch
+):
+    monkeypatch.setattr(
+        "appcore.meta_hot_posts.service.category_options",
+        lambda: [{"value": "Kitchenware", "label": "厨房用品", "label_en": "Kitchenware"}],
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/meta-hot-posts")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    template = Path("web/templates/meta_hot_posts.html").read_text(encoding="utf-8")
+    assert "Docs-anchor: docs/superpowers/specs/2026-06-10-meta-hot-posts-mobile-scroll-controls-and-video-width.md" in template
+    assert "const MH_MOBILE_STICKY_CONTROLS_QUERY = '(max-width: 768px)';" in body
+    assert "function initMetaHotMobileStickyControls()" in body
+    assert "page.classList.add('mh-mobile-controls-hidden')" in body
+    assert "page.classList.remove('mh-mobile-controls-hidden')" in body
+    assert "window.addEventListener('scroll', onScroll, {passive: true});" in body
+    assert "window.requestAnimationFrame(update);" in body
+    assert "controls.addEventListener('focusin', showControls);" in body
+    assert "controls.addEventListener('pointerdown', showControls);" in body
+    assert "initMetaHotMobileStickyControls();" in body
+    assert ".meta-hot-page.mh-mobile-controls-hidden .mh-sticky-controls" in body
+    assert "transform:translateY(calc(-100% - 10px));" in body
+    assert "pointer-events:none;" in body
+    assert ".mh-media {\n    width:100%;\n    max-width:100%;\n    aspect-ratio:267 / 476;" in body
+    assert "margin-left:0;\n    margin-right:0;" in body
 
 
 def test_meta_hot_posts_template_has_ai_card_translate_zh_buttons(authed_client_no_db, monkeypatch):

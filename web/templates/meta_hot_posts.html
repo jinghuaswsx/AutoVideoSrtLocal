@@ -1,4 +1,5 @@
 {% extends "layout.html" %}
+{# Docs-anchor: docs/superpowers/specs/2026-06-10-meta-hot-posts-mobile-scroll-controls-and-video-width.md #}
 {% block title %}选品中心 - Meta热帖{% endblock %}
 {% block page_title %}
 <span class="selection-center-title">选品中心</span>
@@ -318,6 +319,20 @@ button.mh-link-btn { cursor:pointer; }
     top:60px;
     gap:6px;
     padding:8px;
+    transition:transform 160ms ease, opacity 160ms ease;
+    will-change:transform, opacity;
+  }
+  .meta-hot-page.mh-mobile-controls-hidden .mh-sticky-controls {
+    transform:translateY(calc(-100% - 10px));
+    opacity:0;
+    pointer-events:none;
+  }
+  .mh-media {
+    width:100%;
+    max-width:100%;
+    aspect-ratio:267 / 476;
+    margin-left:0;
+    margin-right:0;
   }
   .mh-video-action {
     width:36px;
@@ -1124,6 +1139,49 @@ function toggleMetaHotCardZoom() {
 }
 function restoreMetaHotCardZoom() {
   applyMetaHotCardZoom(localStorage.getItem(MH_CARD_ZOOM_STORAGE_KEY) === '1');
+}
+const MH_MOBILE_STICKY_CONTROLS_QUERY = '(max-width: 768px)';
+function initMetaHotMobileStickyControls() {
+  const page = document.querySelector('.meta-hot-page');
+  const controls = page ? page.querySelector('.mh-sticky-controls') : null;
+  const mediaQuery = window.matchMedia ? window.matchMedia(MH_MOBILE_STICKY_CONTROLS_QUERY) : null;
+  if (!page || !controls || !mediaQuery) return;
+  let lastScrollY = window.scrollY || window.pageYOffset || 0;
+  let ticking = false;
+  const showControls = () => page.classList.remove('mh-mobile-controls-hidden');
+  const hideControls = () => page.classList.add('mh-mobile-controls-hidden');
+  const controlsHaveFocus = () => controls.contains(document.activeElement);
+  const update = () => {
+    const currentY = window.scrollY || window.pageYOffset || 0;
+    const delta = currentY - lastScrollY;
+    if (!mediaQuery.matches || controlsHaveFocus() || currentY < 80) {
+      showControls();
+    } else if (delta > 12 && currentY > 140) {
+      hideControls();
+    } else if (delta < -8) {
+      showControls();
+    }
+    lastScrollY = currentY;
+    ticking = false;
+  };
+  const onScroll = () => {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(update);
+  };
+  const onViewportChange = () => {
+    lastScrollY = window.scrollY || window.pageYOffset || 0;
+    if (!mediaQuery.matches) showControls();
+  };
+  window.addEventListener('scroll', onScroll, {passive: true});
+  controls.addEventListener('focusin', showControls);
+  controls.addEventListener('pointerdown', showControls);
+  if (mediaQuery.addEventListener) {
+    mediaQuery.addEventListener('change', onViewportChange);
+  } else if (mediaQuery.addListener) {
+    mediaQuery.addListener(onViewportChange);
+  }
+  onViewportChange();
 }
 const MH_AI_ANALYSIS_TOGGLES = {
   us: {buttonId: 'mhUsAiAnalysisToggle', showText: '显示美国AI分析', hideText: '隐藏美国AI分析'},
@@ -2383,6 +2441,7 @@ async function showFailureRecords() {
 restoreVideoSource();
 restoreMetaHotCardZoom();
 restoreMetaHotAiAnalysisVisibility();
+initMetaHotMobileStickyControls();
 // 根据 URL hash 初始化子 tab（支持 #library / #today / #europe / #us / #favorites / #products）
 function initMetaHotSubtabFromHash() {
   const tab = location.hash.replace('#', '') || 'library';
