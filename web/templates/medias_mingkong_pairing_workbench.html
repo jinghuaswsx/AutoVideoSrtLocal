@@ -1755,12 +1755,16 @@
     }
     resetSyncModal();
     let items = (state.payload || {}).items || [];
+    console.log("Sync items count:", items.length);
     if (filterShopifyVariantId && typeof filterShopifyVariantId !== 'object') {
       items = items.filter(item => String(item.shopify_variant_id) === String(filterShopifyVariantId));
     }
     state.syncItems = items;
+    console.log("Filtered sync items count:", items.length);
     renderSyncRows(items);
+    console.log("Rendered sync rows.");
     $('mkpSyncBackdrop').hidden = false;
+    console.log("Set backdrop hidden to false.");
     appendSyncLog('info', '请确认三栏数据；右侧目标效果可手动编辑');
   }
 
