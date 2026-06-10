@@ -1750,9 +1750,13 @@
 
   async function openSyncReviewModal(filterShopifyVariantId) {
     console.log("openSyncReviewModal called!", filterShopifyVariantId);
+    console.log("state.payload is:", state.payload);
     if (!state.payload) {
+      console.log("state.payload is null, calling load()...");
       await load();
+      console.log("load() completed.");
     }
+    console.log("After load check, state.payload is:", state.payload);
     resetSyncModal();
     let items = (state.payload || {}).items || [];
     console.log("Sync items count:", items.length);
