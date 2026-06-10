@@ -358,6 +358,23 @@ def test_medias_mobile_filter_collapse_controls_cover_both_tabs():
     assert ".oc-vm-filter-row {\n  display:grid;" in html
 
 
+def test_medias_mobile_minimal_controls_hide_actions_and_keep_search_only():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
+
+    assert "docs/superpowers/specs/2026-06-10-medias-mobile-minimal-controls.md" in html
+
+    anchor = html.index("docs/superpowers/specs/2026-06-07-medias-mobile-adaptation-design.md")
+    mobile_start = html.index("@media (max-width: 768px)", anchor)
+    mobile_block = html[mobile_start:html.index("@media (max-width: 480px)", mobile_start)]
+
+    assert ".oc-header-actions {\n    display:none !important;\n  }" in mobile_block
+    assert ".oc-toolbar-filter-row > :not(.oc-search)," in mobile_block
+    assert ".oc-vm-filter-row > :not(.oc-search)" in mobile_block
+    assert ".oc-toolbar-filter-row,\n  .oc-vm-filter-row {\n    grid-template-columns:1fr !important;\n  }" in mobile_block
+
+
 def test_medias_mobile_filter_auto_collapses_on_list_scroll():
     from pathlib import Path
 
