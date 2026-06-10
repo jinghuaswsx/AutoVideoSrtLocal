@@ -228,6 +228,20 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
         mark_status=_mark_status_arg(args),
     )
 
+    q = _text_arg(args, "q")
+    if q:
+        where.append(
+            """(
+                v.video_desc LIKE %s OR 
+                g.item_name LIKE %s OR 
+                v.primary_item_name LIKE %s OR 
+                v.author_name LIKE %s OR 
+                c.primary_item_id = %s OR 
+                c.video_id = %s
+            )"""
+        )
+        params.extend([f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%", q, q])
+
     where_sql = " AND ".join(where)
     count_rows = query_fn(
         f"""
@@ -384,6 +398,17 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
         alias="g",
         mark_status=_mark_status_arg(args),
     )
+
+    q = _text_arg(args, "q")
+    if q:
+        where.append(
+            """(
+                g.item_name LIKE %s OR 
+                g.seller_name LIKE %s OR 
+                g.item_id = %s
+            )"""
+        )
+        params.extend([f"%{q}%", f"%{q}%", q])
 
     where_sql = " AND ".join(where)
     count_rows = query_fn(
