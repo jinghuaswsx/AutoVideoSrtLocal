@@ -309,6 +309,16 @@ def run_material_ingest(state: dict, *, user_id: int = 0) -> None:
     video_path = _video_path(state)
     video_filename = str(state.get("video_filename") or "")
 
+    # 0. Check and retrieve fallback Chinese name if product_name_cn is not Chinese
+    if not any("\u4e00" <= char <= "\u9fff" for char in product_name_cn):
+        try:
+            from appcore.mk_import import _find_fallback_chinese_name
+            fallback_cn = _find_fallback_chinese_name(product_code)
+            if fallback_cn:
+                product_name_cn = fallback_cn
+        except Exception:
+            pass
+
     # 1. Create media_product
     product_id = medias.create_product(
         user_id=user_id,
@@ -317,11 +327,12 @@ def run_material_ingest(state: dict, *, user_id: int = 0) -> None:
         product_code=product_code,
     )
 
-    # 2. Save shopify title via update
+    # 2. Save shopify title and main image via update
+    main_image_url = str(sp.get("main_image_url") or "").strip()
     from appcore.db import execute
     execute(
-        "UPDATE media_products SET shopify_title=%s WHERE id=%s",
-        (shopify_title, product_id),
+        "UPDATE media_products SET shopify_title=%s, main_image=%s WHERE id=%s",
+        (shopify_title, main_image_url if main_image_url else None, product_id),
     )
 
     # 3. Build standardized filename

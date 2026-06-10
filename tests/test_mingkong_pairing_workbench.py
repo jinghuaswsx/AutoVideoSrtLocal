@@ -391,7 +391,7 @@ def test_build_workbench_payload_treats_variant_id_auto_skus_as_empty_base(monke
 
     def fake_library(_product):
         calls["library"] += 1
-        return [] if calls["library"] == 1 else [mingkong_row]
+        return [] if calls["library"] < 3 else [mingkong_row]
 
     def fake_refresh(_product):
         calls["refresh"] += 1
@@ -412,7 +412,7 @@ def test_build_workbench_payload_treats_variant_id_auto_skus_as_empty_base(monke
         include_mingkong_reference=True,
     )
 
-    assert calls == {"library": 2, "refresh": 1}
+    assert calls == {"library": 3, "refresh": 1}
     assert payload["summary"]["realtime_refresh"] == {"products_seen": 1, "variants_seen": 1}
     assert payload["items"][0]["shopify_product_id"] == "10106995638561"
     assert payload["items"][0]["shopify_variant_id"] == "51616507199777"
@@ -420,6 +420,60 @@ def test_build_workbench_payload_treats_variant_id_auto_skus_as_empty_base(monke
     assert payload["items"][0]["dianxiaomi_sku_code"] == "98070901"
     assert payload["items"][0]["mingkong"]["sku"] == "0424-rocket-1"
     assert payload["items"][0]["mingkong"]["sku_id_alibaba"] == "1688-rocket-1"
+
+
+def test_build_workbench_payload_refreshes_reference_when_existing_rows_lack_mingkong_sku(monkeypatch):
+    product = {
+        "id": 747,
+        "product_code": "sample-rjc",
+        "shopifyid": "shopify-product",
+    }
+    local_row = {
+        "shopify_product_id": "shopify-product",
+        "shopify_variant_id": "our-variant",
+        "shopify_variant_title": "Blue / S",
+        "source": "shopify_public",
+    }
+    library_row = {
+        "shopify_product_id": "mk-shopify-product",
+        "shopify_variant_id": "mk-variant",
+        "shopify_variant_title": "Blue / S",
+        "dianxiaomi_sku": "mk-sku-title",
+        "dianxiaomi_sku_code": "mk-code-title",
+        "dianxiaomi_name": "明空标题兜底商品",
+        "source": "mingkong_library",
+        "mingkong_procurement": {"sku_id_alibaba": "1688-sku-title"},
+    }
+    calls = {"library": 0, "refresh": 0}
+
+    def fake_library(_product):
+        calls["library"] += 1
+        return [library_row] if calls["library"] >= 3 else []
+
+    def fake_refresh(_product):
+        calls["refresh"] += 1
+        return {"products_seen": 1, "variants_seen": 1}
+
+    monkeypatch.setattr(
+        pairing.mingkong_product_library,
+        "public_shopify_sku_rows_from_product",
+        lambda _product: [local_row],
+    )
+    monkeypatch.setattr(pairing.mingkong_product_library, "sku_rows_from_library", fake_library)
+    monkeypatch.setattr(pairing.mingkong_product_library, "refresh_product_from_dxm02", fake_refresh)
+
+    payload = pairing.build_workbench_payload(
+        product,
+        [local_row],
+        include_live=False,
+        include_mingkong_reference=True,
+    )
+
+    assert calls == {"library": 3, "refresh": 1}
+    assert payload["summary"]["realtime_refresh"] == {"products_seen": 1, "variants_seen": 1}
+    assert payload["items"][0]["shopify_variant_id"] == "our-variant"
+    assert payload["items"][0]["dianxiaomi_sku"] == "mk-sku-title"
+    assert payload["items"][0]["mingkong"]["sku_id_alibaba"] == "1688-sku-title"
 
 
 def test_build_workbench_payload_uses_full_shopify_base_then_fills_mingkong(monkeypatch):
@@ -655,6 +709,39 @@ def test_build_target_sku_import_pairs_uses_editable_target_values():
         }
     ]
     assert purchase_url == "https://detail.1688.com/offer/987654321.html"
+
+
+def test_build_target_sku_import_pairs_fills_mingkong_source_by_title():
+    product = {"id": 747, "product_code": "sample-rjc", "shopifyid": "our-shopify-product"}
+    library_items = [
+        {
+            "shopify_product_id": "mk-shopify-product",
+            "shopify_variant_id": "mk-variant",
+            "shopify_variant_title": "Blue / S",
+            "shopify_sku": "mk-shopify-sku",
+            "dianxiaomi_sku": "mk-sku-title",
+            "dianxiaomi_product_sku": "mk-product-sku",
+            "dianxiaomi_sku_code": "mk-erp-title",
+            "dianxiaomi_name": "明空标题商品",
+            "purchase_1688_url": "https://detail.1688.com/offer/123456789.html",
+        }
+    ]
+    targets = [
+        {
+            "shopify_product_id": "our-shopify-product",
+            "shopify_variant_id": "our-variant",
+            "variant_title": " Blue   /   S ",
+        }
+    ]
+
+    pairs = pairing.build_target_sku_import_pairs(product, library_items, targets)
+    purchase_url = pairing.first_purchase_url_from_targets(product, library_items, targets)
+
+    assert pairs[0]["shopify_product_id"] == "our-shopify-product"
+    assert pairs[0]["shopify_variant_id"] == "our-variant"
+    assert pairs[0]["dianxiaomi_sku"] == "mk-sku-title"
+    assert pairs[0]["dianxiaomi_sku_code"] == "mk-erp-title"
+    assert purchase_url == "https://detail.1688.com/offer/123456789.html"
 
 
 def test_build_target_sku_import_pairs_keeps_repeated_skus_for_distinct_variants():
@@ -959,6 +1046,12 @@ def test_mingkong_pairing_sync_response_imports_targets_then_replicates_and_conf
             "message": "云仓完成",
             "logs": [{"level": "ok", "message": "云仓完成"}],
             "items": [{"status": "already_exists", "sku": "mk-sku"}],
+            "summary": {
+                "local_refresh": {
+                    "purchase_price": Decimal("12.34"),
+                    "upsert": {"rows": 1, "affected": 1},
+                }
+            },
         }
 
     monkeypatch.setattr(
@@ -985,6 +1078,14 @@ def test_mingkong_pairing_sync_response_imports_targets_then_replicates_and_conf
     assert calls["yuncang"][2]["pairing_items"][0]["dianxiaomi_sku"] == "mk-sku"
     assert "确认完成" in result["message"]
     assert result["yuncang"]["message"] == "云仓完成"
+    assert result["state"] == "completed"
+    assert [stage["stage"] for stage in result["stage_summary"]] == [
+        "local_import",
+        "dxm03_replicate",
+        "purchase_pairing",
+        "yuncang_add",
+        "purchase_price_refresh",
+    ]
 
 
 def test_mingkong_pairing_sync_runs_yuncang_for_successful_items_when_confirm_partially_blocks(monkeypatch):
@@ -1054,6 +1155,12 @@ def test_mingkong_pairing_sync_runs_yuncang_for_successful_items_when_confirm_pa
             "message": "云仓完成",
             "logs": [],
             "items": [{"status": "already_exists", "sku": "mk-sku-ok"}],
+            "summary": {
+                "local_refresh": {
+                    "purchase_price": Decimal("9.99"),
+                    "upsert": {"rows": 1, "affected": 1},
+                }
+            },
         }
 
     monkeypatch.setattr(
@@ -1074,6 +1181,77 @@ def test_mingkong_pairing_sync_runs_yuncang_for_successful_items_when_confirm_pa
         {"status": "already_configured_preserved", "dianxiaomi_sku": "mk-sku-ok"}
     ]
     assert result["yuncang"]["message"] == "云仓完成"
+    assert result["state"] == "partial_blocked"
+    assert result["blocked_items"] == [{"status": "blocked", "dianxiaomi_sku": "mk-sku-blocked"}]
+
+
+def test_mingkong_pairing_sync_marks_missing_targets_as_blocked(monkeypatch):
+    product = {"id": 747, "product_code": "sample-rjc", "shopifyid": "shopify-product"}
+
+    monkeypatch.setattr(
+        products_route.dianxiaomi_mingkong_pairing,
+        "build_mingkong_library_sku_import_payload",
+        lambda _product: {
+            "ok": True,
+            "pairs": [],
+            "items": [],
+            "message": "已建立全量 Shopify SKU 基底，但明空产品库未找到可复刻的店小秘 SKU",
+            "realtime_refresh": {"products_seen": 0},
+        },
+    )
+    monkeypatch.setattr(
+        products_route.medias,
+        "replace_product_skus",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not write")),
+    )
+
+    result = products_route._build_mingkong_pairing_sync_response(
+        747,
+        product,
+        {"items": []},
+    )
+
+    assert result["ok"] is False
+    assert result["state"] == "blocked"
+    assert result["stage_summary"][0]["stage"] == "local_import"
+    assert result["stage_summary"][0]["status"] == "blocked"
+    assert result["needs_manual"] is True
+
+
+def test_mingkong_sync_status_marks_purchase_price_missing_as_warning():
+    payload = products_route._mingkong_sync_status_payload(
+        import_stats={"inserted": 1, "updated": 0, "deleted": 0, "preserved": 0},
+        replicate_result={
+            "ok": True,
+            "message": "复刻完成",
+            "summary": {"created_count": 1, "blocked_count": 0, "error_count": 0},
+            "items": [{"status": "created", "dianxiaomi_sku": "mk-sku"}],
+        },
+        confirm_result={
+            "ok": True,
+            "message": "配对完成",
+            "summary": {"confirmed_count": 1, "blocked_count": 0, "error_count": 0},
+            "items": [{"status": "confirmed", "dianxiaomi_sku": "mk-sku"}],
+        },
+        yuncang_result={
+            "ok": True,
+            "message": "云仓完成",
+            "summary": {
+                "added_count": 1,
+                "blocked_count": 0,
+                "error_count": 0,
+                "local_refresh": {
+                    "purchase_price": None,
+                    "upsert": {"rows": 1, "affected": 1},
+                },
+            },
+            "items": [{"status": "added", "sku": "mk-sku"}],
+        },
+    )
+
+    assert payload["state"] == "completed_with_warnings"
+    assert payload["needs_manual"] is True
+    assert payload["stage_summary"][-1]["status"] == "purchase_price_missing"
 
 
 def test_mingkong_pairing_template_has_review_modal_and_single_sync_entry():
@@ -1664,6 +1842,67 @@ def test_replicate_mingkong_sku_reuses_existing_dxm03_commodity(monkeypatch):
     assert replaced["source"] == "mingkong_replicated"
     assert replaced["pairs"][0]["dianxiaomi_sku_code"] == "DXM03-CODE"
     assert replaced["pairs"][0]["dianxiaomi_product_sku"] == "PRODUCT-SKU"
+
+
+def test_replicate_mingkong_sku_marks_existing_combo_logistics_as_skipped(monkeypatch):
+    @contextmanager
+    def fake_lock(**_kwargs):
+        yield
+
+    replaced = {}
+
+    monkeypatch.setattr(pairing, "browser_automation_lock", fake_lock)
+    monkeypatch.setattr(pairing, "_open_dxm02_context", lambda _url: ("spw", "sbrowser", "source"))
+    monkeypatch.setattr(pairing, "_connect_dxm_context", lambda _playwright, _url: ("tbrowser", "target"))
+    monkeypatch.setattr(pairing, "_close_dxm03_context", lambda _playwright, _browser: None)
+
+    def fake_search(ctx, sku):
+        if ctx == "target":
+            return {
+                "id": "dxm03-combo",
+                "sku": sku,
+                "sku_code": "DXM03-COMBO",
+                "name": "DXM03 组合商品",
+                "product_sku": "COMBO-PRODUCT-SKU",
+                "is_combo": True,
+            }
+        raise AssertionError("existing combo logistics should not query DXM02 source commodity")
+
+    def fake_replace(product_id, pairs, *, source):
+        replaced["product_id"] = product_id
+        replaced["pairs"] = pairs
+        replaced["source"] = source
+        return {"inserted": 0, "updated": 1, "deleted": 0, "preserved": 0}
+
+    monkeypatch.setattr(pairing, "_search_commodity", fake_search)
+    monkeypatch.setattr(
+        pairing,
+        "_view_commodity_detail",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not edit combo logistics")),
+    )
+
+    result = pairing.replicate_mingkong_skus_to_dxm03(
+        {"id": 747, "product_code": "combo-rjc", "purchase_1688_url": ""},
+        [
+            {
+                "shopify_product_id": "mk-product",
+                "shopify_variant_id": "mk-variant",
+                "shopify_variant_title": "Combo",
+                "dianxiaomi_sku": "combo-sku",
+                "dianxiaomi_sku_code": "mk-combo-code",
+                "dianxiaomi_name": "明空组合商品",
+                "is_combo": True,
+            }
+        ],
+        replace_product_skus_fn=fake_replace,
+    )
+
+    assert result["ok"] is True
+    assert result["items"][0]["status"] == "already_exists"
+    assert result["items"][0]["logistics_packaging"]["status"] == "skipped_combo_existing"
+    assert result["summary"]["logistics_packaging_skipped_count"] == 1
+    assert "物流与包装暂未自动补齐" in result["items"][0]["message"]
+    assert replaced["pairs"][0]["dianxiaomi_sku_code"] == "DXM03-COMBO"
 
 
 def test_replicate_mingkong_sku_creates_missing_dxm03_commodity(monkeypatch):

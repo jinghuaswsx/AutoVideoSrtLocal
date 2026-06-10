@@ -17,11 +17,14 @@ from appcore import mingkong_materials  # noqa: E402
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run daily Mingkong material snapshot.")
-    parser.add_argument("--source-limit", type=int, default=0)
+    parser.add_argument("--source-limit", type=int, default=500)
     parser.add_argument("--batch-size", type=int, default=10)
-    parser.add_argument("--sleep-after-products", type=int, default=0)
-    parser.add_argument("--sleep-seconds", type=float, default=0)
+    parser.add_argument("--sleep-after-products", type=int, default=1)
+    parser.add_argument("--sleep-seconds", type=float, default=1)
     parser.add_argument("--timeout-seconds", type=int, default=20)
+    parser.add_argument("--health-check-max-seconds", type=float, default=3600)
+    parser.add_argument("--health-check-interval-seconds", type=float, default=10)
+    parser.add_argument("--health-check-request-timeout-seconds", type=float, default=10)
     parser.add_argument("--snapshot-date", default="")
     parser.add_argument("--snapshot-at", default="")
     return parser
@@ -35,6 +38,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         sleep_after_products=args.sleep_after_products,
         sleep_seconds=args.sleep_seconds,
         timeout_seconds=args.timeout_seconds,
+        health_check_max_seconds=args.health_check_max_seconds,
+        health_check_interval_seconds=args.health_check_interval_seconds,
+        health_check_request_timeout_seconds=args.health_check_request_timeout_seconds,
         snapshot_date=args.snapshot_date or None,
         snapshot_at=args.snapshot_at or None,
     )

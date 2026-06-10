@@ -774,6 +774,7 @@ def _add_product_skus_to_yuncang_impl(
                 pass
 
     local_refresh = {"upsert": {"rows": 0, "affected": 0}, "purchase_price": None}
+    purchase_price_status = "skipped_no_live_yuncang_rows"
     if refresh_local and live_items_by_sku:
         upsert_summary = upsert_skus(list(live_items_by_sku.values()))
         purchase_price = None
@@ -786,6 +787,9 @@ def _add_product_skus_to_yuncang_impl(
                     product.get("id"),
                     exc_info=True,
                 )
+        purchase_price_status = (
+            "updated" if purchase_price is not None else "purchase_price_missing"
+        )
         local_refresh = {"upsert": upsert_summary, "purchase_price": purchase_price}
 
     success_statuses = {"added", "already_exists"}
@@ -797,6 +801,7 @@ def _add_product_skus_to_yuncang_impl(
         "blocked_count": sum(1 for item in results if item.get("status") == "blocked"),
         "error_count": sum(1 for item in results if item.get("status") == "error"),
         "local_refresh": local_refresh,
+        "purchase_price_status": purchase_price_status,
     }
     message = (
         "DXM03 小秘云仓添加商品完成："
@@ -805,12 +810,18 @@ def _add_product_skus_to_yuncang_impl(
         f"阻断 {summary['blocked_count']}，"
         f"失败 {summary['error_count']}"
     )
+    logs = _yuncang_operation_logs("添加基础 SKU 到 DXM03 小秘云仓", results)
+    if ok and purchase_price_status == "purchase_price_missing":
+        logs.append({
+            "level": "warn",
+            "message": "云仓商品已添加/已存在，但本地采购价没有可用云仓单价可回写",
+        })
     return {
         "ok": ok,
         "product_id": product.get("id"),
         "product_code": product.get("product_code") or "",
         "message": message,
-        "logs": _yuncang_operation_logs("添加基础 SKU 到 DXM03 小秘云仓", results),
+        "logs": logs,
         "items": results,
         "summary": summary,
     }

@@ -3493,6 +3493,95 @@ def _search_mingkong_items(
     return [item for item in ((data.get("data") or {}).get("items") or []) if isinstance(item, dict)]
 
 
+def _probe_mingkong_material_api(
+    session: requests.Session,
+    *,
+    base_url: str,
+    headers: dict[str, str],
+    timeout_seconds: float,
+    allow_login_refresh: bool = True,
+) -> None:
+    resp = session.get(
+        f"{base_url}/api/marketing/medias",
+        params={"page": 1, "q": "__credential_probe__", "source": "", "level": "", "show_attention": 0},
+        headers=headers,
+        timeout=timeout_seconds,
+    )
+    resp.raise_for_status()
+    data = resp.json() or {}
+    if not isinstance(data, dict):
+        raise RuntimeError("Mingkong health check returned non-object JSON")
+    if _is_mingkong_login_expired(data):
+        if allow_login_refresh:
+            refreshed = _refresh_mingkong_headers_after_login("__credential_probe__", int(timeout_seconds))
+            headers.clear()
+            headers.update(refreshed)
+            return _probe_mingkong_material_api(
+                session,
+                base_url=base_url,
+                headers=headers,
+                timeout_seconds=timeout_seconds,
+                allow_login_refresh=False,
+            )
+        raise RuntimeError("Mingkong credentials expired")
+    payload = data.get("data")
+    if not isinstance(payload, dict):
+        raise RuntimeError("Mingkong health check returned invalid data payload")
+    if "items" in payload and not isinstance(payload.get("items"), list):
+        raise RuntimeError("Mingkong health check returned invalid items payload")
+
+
+def _wait_for_mingkong_material_api_health(
+    *,
+    max_wait_seconds: float = 3600,
+    interval_seconds: float = 10,
+    request_timeout_seconds: float = 10,
+    sleeper=time.sleep,
+    monotonic=time.monotonic,
+) -> dict[str, Any]:
+    session = requests.Session()
+    start = float(monotonic())
+    deadline = start + max(0.0, float(max_wait_seconds or 0))
+    interval = max(0.0, float(interval_seconds or 0))
+    request_timeout = max(1.0, float(request_timeout_seconds or 1))
+    attempts = 0
+    last_error = ""
+    while True:
+        attempts += 1
+        headers: dict[str, str] = {}
+        base_url = _mk_base_url()
+        try:
+            headers = _mk_headers()
+            _probe_mingkong_material_api(
+                session,
+                base_url=base_url,
+                headers=headers,
+                timeout_seconds=request_timeout,
+            )
+            return {
+                "session": session,
+                "base_url": base_url,
+                "headers": headers,
+                "attempts": attempts,
+                "wait_seconds": round(max(0.0, float(monotonic()) - start), 3),
+            }
+        except Exception as exc:
+            last_error = str(exc)[:1000] or exc.__class__.__name__
+            now = float(monotonic())
+            if now >= deadline:
+                try:
+                    session.close()
+                except Exception:
+                    pass
+                raise TimeoutError(
+                    f"Mingkong health check did not become healthy within {int(max_wait_seconds)} seconds: "
+                    f"{last_error}"
+                ) from exc
+            sleep_for = min(interval, max(0.0, deadline - now))
+            if sleep_for > 0:
+                sleeper(sleep_for)
+
+
 def _fetch_mingkong_product_detail(
     session: requests.Session,
     *,
@@ -3578,11 +3667,14 @@ def _select_mingkong_product(items: list[dict[str, Any]], product_code: str) -> 
 
 def run_daily_snapshot(
     *,
-    source_limit: int = 0,
+    source_limit: int = 500,
     batch_size: int = 10,
-    sleep_after_products: int = 2,
-    sleep_seconds: float = 30,
+    sleep_after_products: int = 1,
+    sleep_seconds: float = 1,
     timeout_seconds: int = 20,
+    health_check_max_seconds: float = 3600,
+    health_check_interval_seconds: float = 10,
+    health_check_request_timeout_seconds: float = 10,
     snapshot_date: str | None = None,
     snapshot_at: str | None = None,
 ) -> dict[str, Any]:
@@ -3619,9 +3711,14 @@ def run_daily_snapshot(
             return summary
 
         run_id = int(run_row["id"])
-        headers = _mk_headers()
-        base_url = _mk_base_url()
-        session = requests.Session()
+        health = _wait_for_mingkong_material_api_health(
+            max_wait_seconds=health_check_max_seconds,
+            interval_seconds=health_check_interval_seconds,
+            request_timeout_seconds=health_check_request_timeout_seconds,
+        )
+        headers = health["headers"]
+        base_url = health["base_url"]
+        session = health["session"]
         consecutive_failures = 0
         for index, product in enumerate(products, start=1):
             try:
@@ -3737,6 +3834,10 @@ def run_daily_snapshot(
             "processed_product_count": processed,
             "material_count": material_count,
             "failed_product_count": failed,
+            "health_check": {
+                "attempts": health.get("attempts"),
+                "wait_seconds": health.get("wait_seconds"),
+            },
             "top100": top100,
         }
         execute(

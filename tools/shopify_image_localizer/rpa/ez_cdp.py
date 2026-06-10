@@ -37,6 +37,7 @@ POST_SAVE_MARKER_VERIFY_INTERVAL_MS = 1000
 POST_SAVE_MARKER_MAX_ATTEMPTS = 2
 STARTUP_URL = "https://www.google.com"
 MAX_BROWSER_TABS = 20
+CDP_CONNECT_TIMEOUT_MS = 20000
 
 
 def _timestamp() -> str:
@@ -110,6 +111,55 @@ def _cdp_ws_endpoint(port: int = DEFAULT_CDP_PORT) -> str:
     if not endpoint:
         raise RuntimeError(f"Chrome CDP 127.0.0.1:{port} 未返回 webSocketDebuggerUrl")
     return endpoint
+
+
+def _connect_over_cdp_with_timeout(
+    playwright,
+    port: int = DEFAULT_CDP_PORT,
+    *,
+    timeout_ms: int = CDP_CONNECT_TIMEOUT_MS,
+):
+    endpoint = _cdp_ws_endpoint(port)
+    try:
+        return playwright.chromium.connect_over_cdp(endpoint, timeout=timeout_ms)
+    except TypeError as exc:
+        if "timeout" not in str(exc):
+            raise
+        return playwright.chromium.connect_over_cdp(endpoint)
+
+
+def connect_cdp_browser(
+    playwright,
+    user_data_dir: str,
+    *,
+    port: int = DEFAULT_CDP_PORT,
+    cancel_token: cancellation.CancellationToken | None = None,
+    timeout_ms: int = CDP_CONNECT_TIMEOUT_MS,
+):
+    cancellation.throw_if_cancelled(cancel_token)
+    try:
+        return _connect_over_cdp_with_timeout(playwright, port, timeout_ms=timeout_ms)
+    except cancellation.OperationCancelled:
+        raise
+    except Exception as first_exc:
+        cancellation.throw_if_cancelled(cancel_token)
+        _log(
+            "Chrome CDP handshake failed; restarting managed Chrome once "
+            f"before retry: {first_exc}"
+        )
+        _kill_cdp_chrome_for_port(port)
+        session.kill_chrome_for_profile(user_data_dir)
+        ensure_cdp_chrome(user_data_dir, port=port, cancel_token=cancel_token)
+        cancellation.throw_if_cancelled(cancel_token)
+        try:
+            return _connect_over_cdp_with_timeout(playwright, port, timeout_ms=timeout_ms)
+        except cancellation.OperationCancelled:
+            raise
+        except Exception as second_exc:
+            raise RuntimeError(
+                "Chrome CDP connect failed after managed Chrome restart: "
+                f"first={first_exc}; retry={second_exc}"
+            ) from second_exc
 
 
 def _normalize_path_token(value: str) -> str:
@@ -291,7 +341,7 @@ def prune_browser_tabs(context, *, keep_pages: list | tuple = (), max_tabs: int 
 def _ensure_google_home_tab_via_cdp(port: int) -> None:
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
+            browser = _connect_over_cdp_with_timeout(playwright, port)
             try:
                 context = browser.contexts[0] if browser.contexts else browser.new_context()
                 ensure_google_home_tab(context)
@@ -313,7 +363,7 @@ def open_managed_tab(
     ensure_cdp_chrome(user_data_dir, port=port, cancel_token=cancel_token)
     cancellation.throw_if_cancelled(cancel_token)
     with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
+        browser = connect_cdp_browser(playwright, user_data_dir, port=port, cancel_token=cancel_token)
         try:
             context = browser.contexts[0] if browser.contexts else browser.new_context()
             ensure_google_home_tab(context)
@@ -684,7 +734,7 @@ def verify_many_language_markers(
 ) -> dict:
     ensure_cdp_chrome(user_data_dir, port=port, cancel_token=cancel_token)
     with sync_playwright() as playwright:
-        browser = playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port))
+        browser = connect_cdp_browser(playwright, user_data_dir, port=port, cancel_token=cancel_token)
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         context.set_default_timeout(15000)
         page = context.new_page()
@@ -964,7 +1014,7 @@ def replace_many(
             browser = _run_step(
                 "[轮播图]",
                 "连接 Chrome CDP",
-                lambda: playwright.chromium.connect_over_cdp(_cdp_ws_endpoint(port)),
+                lambda: connect_cdp_browser(playwright, user_data_dir, port=port, cancel_token=cancel_token),
                 lambda value: f"context 数={len(getattr(value, 'contexts', []) or [])}",
             )
             context = browser.contexts[0] if browser.contexts else browser.new_context()

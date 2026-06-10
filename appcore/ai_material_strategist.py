@@ -935,7 +935,15 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 timeout_seconds=180,
             )
             parsed = _llm_json(result)
-            batch_results.append({"input": payload, "output": parsed})
+            batch_results.append({
+                "input": payload,
+                "output": parsed,
+                "usage_log_id": result.get("usage_log_id"),
+                "prompt": _ranking_prompt(payload),
+                "response_text": result.get("text"),
+                "provider": PROVIDER_CODE,
+                "model": MODEL_ID
+            })
             ids = {_safe_int(item.get("product_id")) for item in parsed.get("ranked_products") or []}
             by_id = {_safe_int(item.get("product_id")): item for item in batch}
             merged_candidates.extend(by_id[pid] for pid in ids if pid in by_id)
@@ -975,6 +983,11 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 "batch_results": batch_results,
                 "final_input": final_payload,
                 "final_output": parsed_final,
+                "final_usage_log_id": final.get("usage_log_id"),
+                "final_prompt": _ranking_prompt(final_payload),
+                "final_response_text": final.get("text"),
+                "provider": PROVIDER_CODE,
+                "model": MODEL_ID
             },
             "prompt_debug": {
                 "provider": PROVIDER_CODE,
@@ -1430,6 +1443,13 @@ def _run_product_analysis(
             fallback["ai_error"] = "empty model response"
             return fallback
         parsed.setdefault("mode", "ai")
+        parsed["_prompt_debug"] = {
+            "provider": PROVIDER_CODE,
+            "model": MODEL_ID,
+            "usage_log_id": result.get("usage_log_id"),
+            "prompt": _product_prompt(payload),
+            "response_text": result.get("text"),
+        }
         return parsed
     except Exception as exc:
         log.exception("AI material strategist product analysis failed product_id=%s", product.get("product_id"))
@@ -1895,6 +1915,23 @@ def create_project_record(user_id: int | None, project_name: str | None = None) 
     return get_project(project_id) or {"id": project_id, "project_name": name, "status": "running"}
 
 
+def _resolve_billing_user_id(explicit_user_id: int | None = None) -> int | None:
+    if explicit_user_id:
+        return int(explicit_user_id)
+    try:
+        row = db.query_one(
+            "SELECT id FROM users "
+            "WHERE is_active=1 AND role IN ('superadmin','admin') "
+            "ORDER BY CASE WHEN username='admin' THEN 0 WHEN role='superadmin' THEN 1 ELSE 2 END, id ASC "
+            "LIMIT 1"
+        )
+        if row:
+            return int(row["id"])
+    except Exception:
+        log.warning("Failed to resolve billing user ID", exc_info=True)
+    return None
+
+
 def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
     lock_conn = _with_project_lock(timeout_seconds=5)
     if lock_conn is None:
@@ -1907,6 +1944,7 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
 
 
 def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
+    user_id = _resolve_billing_user_id(user_id)
     project_row = _prepare_project_for_run(project_id)
     if project_row.get("status") == "success":
         return get_project(project_id) or {"id": project_id, "status": "success"}

@@ -537,6 +537,22 @@ DXM03 写入仍遵守：
 3. 如果基础 SKU 已经存在于云仓列表，标记 `already_exists`，不得重复添加。
 4. 如果商品管理存在但云仓选择列表没有可添加项，需先回查云仓列表：能查到则视为已存在；查不到则标记 `missing_yuncang_candidate`。
 5. 云仓添加完成后只回写本次涉及的 SKU 到 `dianxiaomi_yuncang_skus`，并调用采购价刷新逻辑；不强制跑全量云仓同步。
+6. 云仓商品添加成功但本地采购价仍无法从云仓单价回写时，流程不得静默视为完整完成；接口必须标记 `purchase_price_missing`，并在最终状态中提示采购价仍需人工维护或等待云仓单价同步。
+
+### 明空 SKU 同步最终状态闭环
+
+2026-06-10 追加：同步明空店小秘 SKU 的写入接口必须给每个产品返回明确最终状态，不能只返回笼统的 `ok=false` 或停在中间阶段。
+
+1. 工作台读取时，本地已有 `media_product_skus` 但缺少可复刻的明空店小秘 SKU / 采购配对参考时，也必须按产品 code / 链接 / Shopify 商品 ID 定向刷新 DXM02-MK，并把结果回写明空产品库后再重新读取。
+2. 工作台展示和确认写入必须使用同一套匹配规则：优先 `shopify_variant_id`，其次店小秘 SKU，最后规格标题归一化匹配。只要 Shopify variant 基底存在，即使明空没有对应 SKU，也要保留该 variant 行，并标记为缺明空 SKU。
+3. 写入接口的返回体必须包含 `state` 和 `stage_summary`：
+   - `completed`：本地 SKU、DXM03 商品 SKU、1688 采购配对、云仓添加和采购价回写全部完成。
+   - `completed_with_warnings`：核心可采购链路已完成，但存在非阻断提示，例如采购价暂未回写。
+   - `partial_blocked`：部分 SKU 已完成，部分 SKU 缺明空 SKU、缺 1688 SKU ID、缺 DXM03 商品、缺云仓候选或组合组件不完整。
+   - `blocked`：没有任何 SKU 进入可采购闭环，且阻断原因是业务数据缺口。
+   - `failed`：店小秘接口、浏览器自动化或本地写入异常导致阶段失败。
+4. 每个阶段都必须有结构化状态：`local_import`、`dxm03_replicate`、`purchase_pairing`、`yuncang_add`、`purchase_price_refresh`。未执行阶段必须标记 `not_started` 或 `skipped`，并说明原因。
+5. 已有 DXM03 组合 SKU 的物流与包装信息不得误用普通商品编辑接口；在组合商品专用编辑接口未落地前，返回 `skipped_combo_existing`，清晰标注为“已有组合 SKU，物流包装暂未自动补齐”，不影响组件采购和云仓基础 SKU 闭环。
 
 ## 2026-06-09 追加：明空 SKU 同步与页面标注
 
