@@ -45,16 +45,8 @@
     padding: var(--space-5);
     box-shadow: var(--card-glow);
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-4);
-  }
-
-  .trend-detail-meta {
-    display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-3);
   }
 
   .trend-breadcrumb {
@@ -69,10 +61,29 @@
     color: var(--accent);
     text-decoration: none;
     font-weight: 500;
+    transition: color var(--duration-fast);
   }
 
   .trend-breadcrumb a:hover {
+    color: var(--accent-hover);
     text-decoration: underline;
+  }
+
+  .trend-header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+
+  .trend-detail-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: calc(100% - 300px);
+    min-width: 300px;
+    flex-grow: 1;
   }
 
   .trend-detail-title {
@@ -80,22 +91,32 @@
     font-weight: 700;
     color: var(--fg-strong);
     margin: 0;
-    line-height: 1.3;
+    line-height: 1.4;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .trend-detail-subtitle {
     font-size: var(--text-xs);
     color: var(--fg-muted);
     margin: 0;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 
   .highlight-code {
     font-family: var(--font-mono, monospace);
     background: var(--bg-subtle);
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
     color: var(--fg-strong);
     font-weight: 600;
+    font-size: 11px;
   }
 
   /* Pill Search Box */
@@ -519,26 +540,29 @@
 <div class="trend-detail-container">
   <!-- Header Section -->
   <div class="trend-detail-header">
-    <div class="trend-detail-meta">
-      <div class="trend-breadcrumb">
-        <a href="/order-analytics/dxm-orders-view">订单分析</a>
-        <span>/</span>
-        <span style="color: var(--fg);">单品订单曲线</span>
-      </div>
-      <h1 class="trend-detail-title">{{ data.product_name or product_code }}</h1>
-      <p class="trend-detail-subtitle">
-        产品编码: <span class="highlight-code">{{ product_code }}</span>
-        {% if data.product_id %} · 内部 ID: {{ data.product_id }}{% endif %}
-      </p>
+    <div class="trend-breadcrumb">
+      <a href="/order-analytics/dxm-orders-view">订单分析</a>
+      <span>/</span>
+      <span style="color: var(--fg-muted);">单品订单曲线</span>
     </div>
     
-    <!-- Autocomplete Search -->
-    <div class="trend-search-pill">
-      <div class="trend-search-input-wrap">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="trendSearchInput" placeholder="搜索单品并快速跳转..." autocomplete="off">
+    <div class="trend-header-main">
+      <div class="trend-detail-meta">
+        <h1 class="trend-detail-title" title="{{ data.product_name or product_code }}">{{ data.product_name or product_code }}</h1>
+        <div class="trend-detail-subtitle">
+          <span>产品编码:</span> <span class="highlight-code">{{ product_code }}</span>
+          {% if data.product_id %}<span>· 内部 ID: {{ data.product_id }}</span>{% endif %}
+        </div>
       </div>
-      <div class="trend-search-results" id="trendSearchResults"></div>
+      
+      <!-- Autocomplete Search -->
+      <div class="trend-search-pill">
+        <div class="trend-search-input-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="trendSearchInput" placeholder="搜索单品并快速跳转..." autocomplete="off">
+        </div>
+        <div class="trend-search-results" id="trendSearchResults"></div>
+      </div>
     </div>
   </div>
 
@@ -661,6 +685,7 @@
           setTimeout(function() {
             highlightTableRow(latestIdx);
             triggerChartHighlight(latestIdx);
+            document.getElementById('tableScrollContainer').scrollTop = 0;
           }, 50);
         }
       });
@@ -674,7 +699,9 @@
       var latestIdx = activeDaily.length - 1;
       highlightTableRow(latestIdx);
       triggerChartHighlight(latestIdx);
-      document.getElementById('tableScrollContainer').scrollTop = 0;
+      setTimeout(function() {
+        document.getElementById('tableScrollContainer').scrollTop = 0;
+      }, 50);
     }
 
     setupSearchAutocomplete();
@@ -1222,18 +1249,11 @@
     });
 
     overlay.addEventListener('mouseleave', function() {
-      crosshair.style.display = 'none';
-      tooltip.style.display = 'none';
-      
-      svg.querySelectorAll('.svg-dot').forEach(function(dot) {
-        dot.classList.remove('is-hovered');
-      });
-      svg.querySelectorAll('.svg-bar-group rect').forEach(function(barRect) {
-        barRect.style.opacity = '0.82';
-        barRect.style.fill = 'var(--chart-blue)';
-      });
-
-      clearTableRowHighlight();
+      if (points.length > 0) {
+        var latestIdx = points.length - 1;
+        triggerChartHighlight(latestIdx);
+        highlightTableRow(latestIdx);
+      }
     });
   }
 
@@ -1332,32 +1352,11 @@
       });
       
       row.addEventListener('mouseleave', function() {
-        var idx = Number(row.dataset.index);
-        
-        var activeContainerId = '';
-        if (currentActiveTab === 'daily') activeContainerId = 'trendChartDaily';
-        else if (currentActiveTab === 'weekly') activeContainerId = 'trendChartWeekly';
-        else if (currentActiveTab === 'monthly') activeContainerId = 'trendChartMonthly';
-        
-        var container = document.getElementById(activeContainerId);
-        if (!container) return;
-        var svg = container.querySelector('svg');
-        if (!svg) return;
-        
-        var dot = svg.querySelector('.svg-dot[data-index="' + idx + '"]');
-        if (dot) {
-          dot.classList.remove('is-hovered');
-        }
-        var barRect = svg.querySelector('.svg-bar-group[data-index="' + idx + '"] rect');
-        if (barRect) {
-          barRect.style.opacity = '0.82';
-          barRect.style.fill = 'var(--chart-blue)';
-        }
-        
-        document.getElementById('chartTooltip').style.display = 'none';
-        var crosshair = svg.querySelector('.vertical-guide');
-        if (crosshair) {
-          crosshair.style.display = 'none';
+        var currentData = (currentActiveTab === 'daily') ? activeDaily : ((currentActiveTab === 'weekly') ? activeWeekly : activeMonthly);
+        if (currentData.length > 0) {
+          var latestIdx = currentData.length - 1;
+          triggerChartHighlight(latestIdx);
+          highlightTableRow(latestIdx);
         }
       });
     });
