@@ -212,7 +212,8 @@ def test_search_q_matches_name():
     count_args = cap.query_one_calls[-1][1]
     assert "name LIKE %s" in count_sql
     assert "descriptive LIKE %s" in count_sql
-    assert count_args == ("en", "%rachel%", "%rachel%")
+    assert "voice_id LIKE %s" in count_sql
+    assert count_args == ("en", "%rachel%", "%rachel%", "%rachel%")
 
 
 def test_pagination():
