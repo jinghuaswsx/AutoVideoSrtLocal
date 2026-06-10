@@ -789,13 +789,14 @@
         
         const cls = country.delivery_status || 'never';
         const isZero = spend === 0;
-        const cellCls = `${cls} ${isZero ? 'is-zero' : ''}`;
         
         const roasStatus = getRoasStatus(country.ad_roas, item.effective_breakeven_roas);
         const spendLevelClass = getSpendGreenLevelClass(spend, roasStatus);
+        const cellCls = `${cls} ${isZero ? 'is-zero' : ''} ${spendLevelClass}`;
+        
         const spendClass = isZero 
           ? 'aims-cell-spend zero' 
-          : `aims-cell-spend ${spendLevelClass}`;
+          : 'aims-cell-spend';
         const roasClass = `aims-cell-roas roas-${roasStatus}`;
         
         const task = country.blocking_task || country.cancelled_task;

@@ -640,12 +640,59 @@
     color: #94a3b8;
     font-weight: 500;
   }
-  .aims-cell-spend.green-level-1 { color: #22c55e !important; }
-  .aims-cell-spend.green-level-2 { color: #16a34a !important; }
-  .aims-cell-spend.green-level-3 { color: #15803d !important; }
-  .aims-cell-spend.green-level-4 { color: #166534 !important; }
-  .aims-cell-spend.green-level-5 { color: #14532d !important; }
-  .aims-cell-spend.green-level-6 { color: #022c22 !important; }
+  /* Green heatmap background levels for positive ROAS */
+  .aims-country-cell.green-level-1 {
+    background-color: #f0fdf4 !important;
+    border-left-color: #86efac !important;
+  }
+  .aims-country-cell.green-level-1 .aims-cell-spend {
+    color: #15803d !important;
+  }
+  .aims-country-cell.green-level-2 {
+    background-color: #dcfce7 !important;
+    border-left-color: #4ade80 !important;
+  }
+  .aims-country-cell.green-level-2 .aims-cell-spend {
+    color: #166534 !important;
+  }
+  .aims-country-cell.green-level-3 {
+    background-color: #bbf7d0 !important;
+    border-left-color: #22c55e !important;
+  }
+  .aims-country-cell.green-level-3 .aims-cell-spend {
+    color: #14532d !important;
+  }
+  .aims-country-cell.green-level-4 {
+    background-color: #86efac !important;
+    border-left-color: #16a34a !important;
+  }
+  .aims-country-cell.green-level-4 .aims-cell-spend {
+    color: #064e3b !important;
+  }
+  .aims-country-cell.green-level-5 {
+    background-color: #4ade80 !important;
+    border-left-color: #15803d !important;
+  }
+  .aims-country-cell.green-level-5 .aims-cell-spend {
+    color: #022c22 !important;
+  }
+  .aims-country-cell.green-level-6 {
+    background-color: #22c55e !important;
+    border-left-color: #14532d !important;
+  }
+  .aims-country-cell.green-level-6 .aims-cell-spend {
+    color: #ffffff !important;
+  }
+  /* Hover effects for green heatmap cells */
+  .aims-country-cell.green-level-1:hover,
+  .aims-country-cell.green-level-2:hover,
+  .aims-country-cell.green-level-3:hover,
+  .aims-country-cell.green-level-4:hover,
+  .aims-country-cell.green-level-5:hover,
+  .aims-country-cell.green-level-6:hover {
+    filter: brightness(0.95);
+    z-index: 2;
+  }
   .aims-cell-roas {
     display: inline-flex;
     align-items: center;
@@ -1103,5 +1150,5 @@
   window.AIMS_PUBLIC_MODE = {{ public_mode|default(false)|tojson }};
   window.AIMS_SHARE_TOKEN = {{ share_token|default("", true)|tojson }};
 </script>
-<script src="{{ url_for('static', filename='ai_material_strategist.js', v='20260610-v3') }}"></script>
+<script src="{{ url_for('static', filename='ai_material_strategist.js', v='20260610-v4') }}"></script>
 {% endblock %}
