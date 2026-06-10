@@ -203,9 +203,13 @@ def _serialize_product(p: dict, items_count: int | None = None,
     if roas_rmb_per_usd is None:
         roas_rmb_per_usd = product_roas.DEFAULT_RMB_PER_USD
     has_en_cover = "en" in covers
-    cover_url = f"/medias/cover/{p['id']}?lang=en" if has_en_cover else (
-        f"/medias/thumb/{cover_item_id}" if cover_item_id else None
-    )
+    cover_url = None
+    if has_en_cover:
+        cover_url = f"/medias/cover/{p['id']}?lang=en"
+    elif p.get("main_image"):
+        cover_url = p.get("main_image")
+    elif cover_item_id:
+        cover_url = f"/medias/thumb/{cover_item_id}"
     # localized_links_json 鍙兘鏄?str / dict / None
     raw_links = p.get("localized_links_json")
     localized_links: dict = {}
