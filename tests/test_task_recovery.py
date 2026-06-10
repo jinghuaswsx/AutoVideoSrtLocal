@@ -1130,7 +1130,7 @@ def test_recover_all_interrupted_tasks_clears_stale_live_active_rows(monkeypatch
     assert cleared == [("video_creation", "vc-stale-live")]
 
 
-def test_startup_recovery_does_not_resume_runners(monkeypatch):
+def test_startup_recovery_only_auto_resumes_checkpointed_ai_material(monkeypatch):
     import web.app as web_app
 
     calls = []
@@ -1148,6 +1148,11 @@ def test_startup_recovery_does_not_resume_runners(monkeypatch):
         lambda: {"completed": 0, "failed": 0},
     )
     monkeypatch.setattr(
+        web_app,
+        "_run_ai_material_strategist_startup_recovery",
+        lambda: calls.append("ai_material"),
+    )
+    monkeypatch.setattr(
         "web.routes.subtitle_removal.resume_inflight_tasks",
         lambda: calls.append("subtitle_resume"),
     )
@@ -1158,13 +1163,40 @@ def test_startup_recovery_does_not_resume_runners(monkeypatch):
 
     web_app._run_startup_recovery()
 
-    assert calls == ["generic", "bulk", "fine_ai"]
+    assert calls == ["generic", "bulk", "fine_ai", "ai_material"]
+
+
+def test_ai_material_startup_recovery_schedules_background_resume(monkeypatch):
+    import web.app as web_app
+    from appcore import ai_material_strategist
+
+    scheduled = {}
+    monkeypatch.setattr(
+        ai_material_strategist,
+        "mark_startup_interrupted_project_for_recovery",
+        lambda: {"id": 9, "status": "running", "user_id": 3},
+    )
+
+    def fake_start_background_task(target, *args, **kwargs):
+        scheduled["target"] = target
+        scheduled["args"] = args
+        scheduled["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(web_app, "start_background_task", fake_start_background_task)
+
+    project = web_app._run_ai_material_strategist_startup_recovery()
+
+    assert project["id"] == 9
+    assert scheduled["target"] is ai_material_strategist.run_project
+    assert scheduled["args"] == (9,)
+    assert scheduled["kwargs"] == {"user_id": 3}
 
 
 def test_create_app_runs_interrupted_task_recovery(monkeypatch):
     import web.app as web_app
 
-    called = {"generic": 0, "bulk": 0, "fine_ai": 0}
+    called = {"generic": 0, "bulk": 0, "fine_ai": 0, "ai_material": 0}
     monkeypatch.setattr(web_app, "recover_all_interrupted_tasks", lambda: called.update({"generic": called["generic"] + 1}))
     monkeypatch.setattr(
         web_app,
@@ -1182,9 +1214,14 @@ def test_create_app_runs_interrupted_task_recovery(monkeypatch):
         "appcore.tasks.recover_pending_manual_raw_results",
         lambda: {"completed": 0, "failed": 0},
     )
+    monkeypatch.setattr(
+        web_app,
+        "_run_ai_material_strategist_startup_recovery",
+        lambda: called.update({"ai_material": called["ai_material"] + 1}),
+    )
     monkeypatch.setattr(web_app, "_seed_default_prompts", lambda: None)
 
     app = create_app()
 
     assert app
-    assert called == {"generic": 1, "bulk": 1, "fine_ai": 1}
+    assert called == {"generic": 1, "bulk": 1, "fine_ai": 1, "ai_material": 1}

@@ -1811,6 +1811,7 @@ def test_create_app_does_not_resume_subtitle_removal_on_startup(monkeypatch):
     monkeypatch.delenv("DISABLE_STARTUP_RECOVERY", raising=False)
     monkeypatch.setattr("web.app.recover_all_interrupted_tasks", lambda: called.append("mark_generic"))
     monkeypatch.setattr("web.app.mark_interrupted_bulk_translate_tasks", lambda: called.append("mark_bulk"))
+    monkeypatch.setattr("web.app._run_ai_material_strategist_startup_recovery", lambda: None)
     monkeypatch.setattr(
         "web.routes.subtitle_removal.resume_inflight_tasks",
         lambda: called.append("resume"),

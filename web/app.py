@@ -25,6 +25,7 @@ from appcore import realtime_events
 from appcore.bulk_translate_recovery import mark_interrupted_bulk_translate_tasks
 from appcore.fine_ai_evaluation_service import recover_interrupted_fine_ai_evaluations
 from appcore.task_recovery import recover_all_interrupted_tasks
+from web.background import start_background_task
 from web.extensions import socketio
 from web.auth import login_manager
 import web.services.dialogue_pipeline_runner  # runner dispatch registration
@@ -227,12 +228,37 @@ def _register_cookie_api_csrf_guard(app: Flask) -> None:
         return jsonify({"error": "csrf_required"}), 400
 
 
-def _run_startup_recovery() -> None:
-    """Startup recovery is intentionally state-only.
+def _run_ai_material_strategist_startup_recovery() -> dict | None:
+    """Auto-resume the single AI素材军师 project left running by a restart.
 
-    Do not start, resume, or retry any runner here. Historical startup auto-resume
-    could create a restart storm: service boots, many failed tasks immediately
-    restart, load spikes, service dies, then repeats.
+    Docs anchor:
+    docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md#断点续跑与恢复
+    """
+    from appcore import ai_material_strategist
+
+    project = ai_material_strategist.mark_startup_interrupted_project_for_recovery()
+    if not project:
+        return None
+
+    project_id = int(project.get("id") or 0)
+    if not project_id:
+        return None
+    start_background_task(
+        ai_material_strategist.run_project,
+        project_id,
+        user_id=project.get("user_id"),
+    )
+    log.warning("AI material strategist startup auto-resume scheduled: project_id=%s", project_id)
+    return project
+
+
+def _run_startup_recovery() -> None:
+    """Startup recovery is state-only except for checkpointed single-task flows.
+
+    Generic historical startup auto-resume can create a restart storm: service
+    boots, many failed tasks immediately restart, load spikes, service dies, then
+    repeats. AI素材军师 is the narrow exception because it has a DB checkpoint and
+    only one project can run at a time.
     """
     disable = os.getenv("DISABLE_STARTUP_RECOVERY", "").strip().lower()
     if disable in {"1", "true", "yes"}:
@@ -259,6 +285,10 @@ def _run_startup_recovery() -> None:
             log.warning("task center manual raw result recovery: %s", result)
     except Exception:
         log.warning("task center manual raw result recovery failed", exc_info=True)
+    try:
+        _run_ai_material_strategist_startup_recovery()
+    except Exception:
+        log.warning("AI material strategist startup auto-resume failed", exc_info=True)
 
 
 def create_app() -> Flask:

@@ -103,6 +103,9 @@ def _initial_progress(*, message: str = "已创建，等待后台任务启动。
     now = _now_iso()
     return {
         "status": "running",
+        "runner_state": "queued",
+        "runner_heartbeat_at": None,
+        "recovery": {},
         "percent": 0,
         "current_step": "queued",
         "current_step_label": "等待启动",
@@ -183,6 +186,8 @@ def _progress_update(
     logs.append({"time": now, "level": level, "message": message})
     progress.update({
         "status": project_status,
+        "runner_state": project_status,
+        "runner_heartbeat_at": now,
         "percent": int(round(_clamp(float(percent), 0, 100))),
         "current_step": step_key,
         "current_step_label": _step_label(step_key),
@@ -206,8 +211,8 @@ def _normalize_progress(progress: Mapping[str, Any] | None, *, message: str) -> 
         return base
 
     for key in (
-        "status", "percent", "current_step", "current_step_label",
-        "message", "updated_at",
+        "status", "runner_state", "runner_heartbeat_at", "recovery",
+        "percent", "current_step", "current_step_label", "message", "updated_at",
     ):
         if key in progress:
             base[key] = progress[key]
@@ -235,6 +240,22 @@ def _normalize_progress(progress: Mapping[str, Any] | None, *, message: str) -> 
     if isinstance(logs, list) and logs:
         base["logs"] = logs[-_PROGRESS_LOG_LIMIT:]
     return base
+
+
+def _mark_recovery_state(
+    progress: dict[str, Any],
+    status: str,
+    *,
+    timestamp_key: str,
+) -> dict[str, Any]:
+    recovery = progress.get("recovery")
+    if not isinstance(recovery, Mapping) or not recovery:
+        return progress
+    updated = dict(recovery)
+    updated["status"] = status
+    updated[timestamp_key] = _now_iso()
+    progress["recovery"] = updated
+    return progress
 
 
 def _with_project_lock(timeout_seconds: int = 5):
@@ -1705,6 +1726,8 @@ def _prepare_project_for_run(project_id: int) -> dict:
         _json_loads(row.get("progress_json"), {}) or {},
         message="从断点恢复执行。",
     )
+    progress = _mark_recovery_state(progress, "running", timestamp_key="resumed_at")
+    progress["runner_state"] = "running"
     db.execute(
         """
         UPDATE ai_material_strategist_projects
@@ -1845,6 +1868,87 @@ def get_running_project() -> dict | None:
         """
     )
     return _serialize_project_row(row, include_products=False) if row else None
+
+
+def mark_startup_interrupted_project_for_recovery() -> dict | None:
+    """Mark the newest running project as interrupted by a service restart.
+
+    Docs anchor:
+    docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md#断点续跑与恢复
+    """
+    lock_conn = _with_project_lock(timeout_seconds=0)
+    if lock_conn is None:
+        log.info("AI material strategist startup recovery skipped; runner lock is busy")
+        return None
+    try:
+        row = db.query_one(
+            """
+            SELECT id, project_name, status, user_id, provider_code, model_id,
+                   summary_json, progress_json, share_token, share_enabled_at,
+                   error_message, started_at, finished_at, created_at, updated_at
+            FROM ai_material_strategist_projects
+            WHERE status = 'running'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+            """
+        )
+        if not row:
+            return None
+
+        project_id = _safe_int(row.get("id"))
+        if not project_id:
+            return None
+
+        detected_at = _now_iso()
+        previous_updated_at = _iso(row.get("updated_at"))
+        progress = _normalize_progress(
+            _json_loads(row.get("progress_json"), {}) or {},
+            message="检测到服务重启，准备从断点自动恢复。",
+        )
+        recovery = progress.get("recovery") if isinstance(progress.get("recovery"), Mapping) else {}
+        recovery = dict(recovery or {})
+        recovery.update({
+            "reason": "service_restart",
+            "status": "scheduled",
+            "detected_at": detected_at,
+            "scheduled_at": detected_at,
+            "previous_updated_at": previous_updated_at,
+            "project_id": project_id,
+            "auto_resume": True,
+        })
+        progress["recovery"] = recovery
+        progress["runner_state"] = "resume_scheduled"
+
+        current_step = str(progress.get("current_step") or "snapshot")
+        progress = _progress_update(
+            progress,
+            step_key=current_step if current_step != "queued" else "snapshot",
+            step_status="running",
+            percent=_safe_float(progress.get("percent")),
+            message="检测到服务重启导致运行线程中断，已加入自动恢复队列。",
+            project_status="running",
+            level="warning",
+        )
+        progress["runner_state"] = "resume_scheduled"
+        progress["recovery"] = recovery
+        db.execute(
+            """
+            UPDATE ai_material_strategist_projects
+            SET progress_json = %s,
+                error_message = NULL,
+                finished_at = NULL,
+                updated_at = NOW()
+            WHERE id = %s AND status = 'running'
+            """,
+            (_json_dumps(progress), project_id),
+        )
+        updated_row = dict(row)
+        updated_row["progress_json"] = _json_dumps(progress)
+        updated_row["error_message"] = ""
+        updated_row["finished_at"] = None
+        return _serialize_project_row(updated_row, include_products=False)
+    finally:
+        _release_project_lock(lock_conn)
 
 
 def create_project_record(user_id: int | None, project_name: str | None = None) -> dict:
@@ -2091,6 +2195,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
             message="项目运行完成。",
             project_status="success",
         )
+        progress = _mark_recovery_state(progress, "success", timestamp_key="finished_at")
         db.execute(
             """
             UPDATE ai_material_strategist_projects
@@ -2127,6 +2232,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
             project_status="failed",
             level="error",
         )
+        progress = _mark_recovery_state(progress, "failed", timestamp_key="finished_at")
         db.execute(
             """
             UPDATE ai_material_strategist_projects
