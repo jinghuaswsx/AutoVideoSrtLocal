@@ -3253,6 +3253,91 @@ def test_ez_replace_many_skips_slots_that_already_have_language_marker(monkeypat
     assert "[轮播图] 整体完成：请求=2 成功=1 跳过=1 失败=0" in output
 
 
+def test_ez_replace_many_recovers_when_cdp_handshake_times_out(monkeypatch):
+    from tools.shopify_image_localizer.rpa import ez_cdp
+
+    calls = []
+
+    class FakePage:
+        def goto(self, url, wait_until=None, timeout=None):
+            calls.append(("goto", url))
+
+        def close(self):
+            calls.append(("page_close",))
+
+    class FakeContext:
+        def __init__(self):
+            self.page = FakePage()
+
+        def set_default_timeout(self, timeout):
+            calls.append(("timeout", timeout))
+
+        def new_page(self):
+            calls.append(("new_page",))
+            return self.page
+
+    class FakeBrowser:
+        def __init__(self):
+            self.contexts = [FakeContext()]
+
+        def close(self):
+            calls.append(("browser_close",))
+
+    class FakeChromium:
+        def __init__(self):
+            self.connect_attempts = 0
+
+        def connect_over_cdp(self, endpoint, **kwargs):
+            self.connect_attempts += 1
+            calls.append(("connect", endpoint, kwargs.get("timeout")))
+            if self.connect_attempts == 1:
+                raise TimeoutError("BrowserType.connect_over_cdp: Timeout 180000ms exceeded")
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(
+        ez_cdp,
+        "ensure_cdp_chrome",
+        lambda user_data_dir, **kwargs: calls.append(("ensure", user_data_dir, kwargs.get("port"))),
+    )
+    monkeypatch.setattr(ez_cdp, "_cdp_ws_endpoint", lambda port: "ws://example.test")
+    monkeypatch.setattr(ez_cdp, "_kill_cdp_chrome_for_port", lambda port: calls.append(("kill_port", port)))
+    monkeypatch.setattr(ez_cdp.session, "kill_chrome_for_profile", lambda profile: calls.append(("kill_profile", profile)))
+    monkeypatch.setattr(ez_cdp, "sync_playwright", lambda: FakePlaywright())
+    monkeypatch.setattr(ez_cdp, "_wait_plugin_frame", lambda page, **kwargs: object())
+    monkeypatch.setattr(
+        ez_cdp,
+        "filter_pairs_missing_language_markers",
+        lambda frame, pairs, language: ([], list(pairs)),
+    )
+
+    result = ez_cdp.replace_many(
+        ez_url="https://admin.shopify.com/store/0ixug9-pv/apps/ez-product-image-translate/product/8559445180589",
+        user_data_dir=r"C:\chrome-shopify-image",
+        pairs=[],
+        language="German",
+        port=7777,
+    )
+
+    assert result == []
+    assert [call for call in calls if call[0] == "connect"] == [
+        ("connect", "ws://example.test", ez_cdp.CDP_CONNECT_TIMEOUT_MS),
+        ("connect", "ws://example.test", ez_cdp.CDP_CONNECT_TIMEOUT_MS),
+    ]
+    assert ("kill_port", 7777) in calls
+    assert ("kill_profile", r"C:\chrome-shopify-image") in calls
+    assert calls.index(("kill_port", 7777)) < calls.index(("kill_profile", r"C:\chrome-shopify-image"))
+    assert calls.count(("ensure", r"C:\chrome-shopify-image", 7777)) == 2
+
+
 def test_ez_replace_many_force_existing_reprocesses_marked_slots(monkeypatch):
     from tools.shopify_image_localizer.rpa import ez_cdp
 
