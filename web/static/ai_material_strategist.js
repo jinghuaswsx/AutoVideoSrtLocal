@@ -222,6 +222,40 @@
     return `<button type="button" class="aims-task-count-btn" data-show-tasks="${productIndex}">${count} 个任务</button>`;
   }
 
+  function collectCountryTasks(country, act) {
+    const seen = new Set();
+    const tasks = [];
+    function add(task) {
+      const id = Number(task && (task.task_id || task.id) || 0);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      tasks.push(task);
+    }
+    if (country) {
+      (country.tasks || []).forEach(add);
+      add(country.blocking_task);
+      add(country.cancelled_task);
+    }
+    if (act) {
+      add(act.existing_task);
+      add(act.cancelled_task);
+    }
+    return tasks.sort((a, b) => {
+      const rank = taskRank(a) - taskRank(b);
+      if (rank !== 0) return rank;
+      return Number(b.task_id || b.id || 0) - Number(a.task_id || a.id || 0);
+    });
+  }
+
+  function renderCountryTaskCountLink(country, act, productIndex, countryCode) {
+    const tasks = collectCountryTasks(country, act);
+    const count = tasks.length;
+    if (count === 0) {
+      return '—';
+    }
+    return `<button type="button" class="aims-task-count-btn" data-show-country-tasks="${productIndex}:${countryCode}">${count} 个任务</button>`;
+  }
+
   function renderTaskLink(task, compact) {
     const id = Number(task && (task.task_id || task.id) || 0);
     if (!id) return '';
@@ -260,6 +294,64 @@
     
     if (els.taskModalTitle) {
       els.taskModalTitle.textContent = `#${item.rank_no} ${item.product_code || item.product_name} 任务清单`;
+    }
+    
+    if (els.taskModalBody) {
+      if (tasks.length === 0) {
+        els.taskModalBody.innerHTML = '<div class="aims-empty">暂无任务</div>';
+      } else {
+        els.taskModalBody.innerHTML = tasks.map(task => {
+          const id = Number(task.task_id || task.id || 0);
+          const url = task.task_url || task.url || ('/tasks/detail/' + id);
+          const label = taskStatusLabel(task);
+          const taskType = task.type_label || task.task_type || '翻译/处理任务';
+          const statusGroup = task.status_group || '';
+          
+          let linkHtml = '';
+          if (state.publicMode) {
+            linkHtml = `<span class="aims-task-link ${esc(statusGroup)}">任务 #${id}</span>`;
+          } else {
+            linkHtml = `<a class="aims-task-link ${esc(statusGroup)}" href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="font-weight: 800; font-size: 13px;">任务 #${id}</a>`;
+          }
+          
+          return `
+            <div class="aims-modal-task-item">
+              <div class="aims-modal-task-info">
+                <div class="aims-modal-task-title">${esc(taskType)}</div>
+                <div class="aims-modal-task-meta">状态: <span class="aims-status-text ${esc(statusGroup)}">${esc(label)}</span></div>
+              </div>
+              <div>
+                ${linkHtml}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+    
+    if (els.taskModal) {
+      els.taskModal.hidden = false;
+    }
+  }
+
+  function showCountryTasksModal(productIndex, countryCode) {
+    const products = state.activeProject?.products || [];
+    const item = products[productIndex];
+    if (!item) return;
+    
+    const country = (item.country_summary || []).find(c => {
+      return String(c.country_code || c.lang || '').toUpperCase().trim() === countryCode;
+    });
+    
+    const actions = (item.ai_result && item.ai_result.country_actions) || [];
+    const act = actions.find(a => {
+      return String(a.country_code || a.lang || '').toUpperCase().trim() === countryCode;
+    }) || null;
+    
+    const tasks = collectCountryTasks(country, act);
+    
+    if (els.taskModalTitle) {
+      els.taskModalTitle.textContent = `#${item.rank_no} ${item.product_code || item.product_name} - ${countryCode} 任务清单`;
     }
     
     if (els.taskModalBody) {
@@ -805,7 +897,7 @@
           </div>
           <div class="aims-band">
             <div class="aims-band-title">国家反馈</div>
-            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas, ai)}</div>
+            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas, ai, productIndex)}</div>
           </div>
         </div>
       </section>
@@ -856,7 +948,7 @@
     `;
   }
 
-  function renderCountryBars(countries, breakevenRoas, aiResult) {
+  function renderCountryBars(countries, breakevenRoas, aiResult, productIndex) {
     const actions = (aiResult && aiResult.country_actions) || [];
     const actionLookup = {};
     actions.forEach((act) => {
@@ -871,8 +963,7 @@
       const act = actionLookup[code] || null;
       
       const spendStyle = getSpendStyle(country.ad_spend_usd);
-      const task = country.blocking_task || country.cancelled_task || (act && (act.existing_task || act.cancelled_task));
-      const taskHtml = task ? renderTaskLink(task, true) : '';
+      const taskHtml = renderCountryTaskCountLink(country, act, productIndex, code);
 
       return `
         <div class="aims-bar-row" style="grid-template-columns: 32px minmax(50px, auto) minmax(60px, auto) 44px minmax(80px, auto) minmax(80px, auto); align-items: center; gap: 8px;">
@@ -928,6 +1019,16 @@
       if (showTasksBtn) {
         const productIndex = Number(showTasksBtn.getAttribute('data-show-tasks'));
         showTasksModal(productIndex);
+        return;
+      }
+
+      const showCountryTasksBtn = event.target.closest('[data-show-country-tasks]');
+      if (showCountryTasksBtn) {
+        const val = showCountryTasksBtn.getAttribute('data-show-country-tasks');
+        const parts = val.split(':');
+        const productIndex = Number(parts[0]);
+        const countryCode = parts[1];
+        showCountryTasksModal(productIndex, countryCode);
         return;
       }
     });
