@@ -588,6 +588,12 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     aistudio = resolve_cover_model_selection("gemini_aistudio", "nano_banana_2")
     assert aistudio.provider == "gemini_aistudio"
     assert aistudio.model == "gemini-3.1-flash-image-preview"
+    googlewj = resolve_cover_model_selection("googlewj", "nano_banana_pro")
+    assert googlewj.provider == "googlewj"
+    assert googlewj.model == "gemini-3-pro-image-preview"
+    legacy_googlewj = resolve_cover_model_selection("google_wj", "gemini-3.1-flash-image-preview")
+    assert legacy_googlewj.provider == "googlewj"
+    assert legacy_googlewj.alias == "nano_banana_2"
     retired_adc = resolve_cover_model_selection("gemini_vertex_adc", "nano_banana_2")
     assert retired_adc.provider == "gemini_aistudio"
     assert retired_adc.model == "gemini-3.1-flash-image-preview"
@@ -605,12 +611,17 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert options["steps"]["cover_generation"]["default_provider"] == "local_image_2"
     assert options["steps"]["cover_generation"]["providers"]["local_image_2"] == "本地 Image 2"
     assert options["steps"]["cover_generation"]["providers"]["gemini_aistudio"] == "GOOGLE AI STUDIO"
+    assert options["steps"]["cover_generation"]["providers"]["googlewj"] == "GOOGLEWJ"
     assert "gemini_vertex_adc" not in options["steps"]["video_analysis"]["providers"]
     assert "gemini_vertex_adc" not in options["steps"]["cover_generation"]["providers"]
     assert options["steps"]["cover_generation"]["models"]["local_image_2"]["gpt_image_2"] == "gpt-image-2"
     assert options["steps"]["cover_generation"]["models"]["openrouter"]["openai_image_2_mid"] == "openai/gpt-5.4-image-2:mid"
     assert options["steps"]["cover_generation"]["models"]["openrouter"]["nano_banana_2"] == "google/gemini-3.1-flash-image-preview"
     assert options["steps"]["cover_generation"]["models"]["gemini_aistudio"]["nano_banana_2"] == "gemini-3.1-flash-image-preview"
+    assert options["steps"]["cover_generation"]["models"]["googlewj"] == {
+        "nano_banana_2": "gemini-3.1-flash-image-preview",
+        "nano_banana_pro": "gemini-3-pro-image-preview",
+    }
     assert options["steps"]["cover_generation"]["providers"]["apimart"] == "APIMART"
     assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_gpt_image_2"] == "gpt-image-2"
     assert options["steps"]["cover_generation"]["models"]["apimart"]["apimart_nano_banana_2"] == "gemini-3.1-flash-image-preview"
@@ -649,6 +660,39 @@ def test_generate_cover_image_uses_aistudio_channel(monkeypatch):
     assert mime == "image/png"
     assert captured["kwargs"]["channel"] == "aistudio"
     assert captured["kwargs"]["model"] == "gemini-3.1-flash-image-preview"
+    assert captured["kwargs"]["service"] == "video_cover.generate"
+
+
+def test_generate_cover_image_uses_googlewj_channel(monkeypatch):
+    from appcore.video_cover_generation import generate_cover_image, resolve_cover_model_selection
+
+    captured = {}
+
+    def fake_generate_image(prompt, *, source_image, source_mime, **kwargs):
+        captured.update({
+            "prompt": prompt,
+            "source_image": source_image,
+            "source_mime": source_mime,
+            "kwargs": kwargs,
+        })
+        return _png_bytes(), "image/png"
+
+    monkeypatch.setattr("appcore.video_cover_generation.gemini_image.generate_image", fake_generate_image)
+
+    selection = resolve_cover_model_selection("googlewj", "nano_banana_pro")
+    payload, mime = generate_cover_image(
+        "make a cover",
+        source_image=_png_bytes(),
+        source_mime="image/png",
+        selection=selection,
+        user_id=8,
+        task_id="task-1",
+    )
+
+    assert payload.startswith(b"\x89PNG")
+    assert mime == "image/png"
+    assert captured["kwargs"]["channel"] == "googlewj"
+    assert captured["kwargs"]["model"] == "gemini-3-pro-image-preview"
     assert captured["kwargs"]["service"] == "video_cover.generate"
 
 
@@ -1097,6 +1141,7 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     assert "execution.value = 'parallel'" in html
     assert "Nano Banana 2" in html
     assert "GOOGLE AI STUDIO" in html
+    assert "GOOGLEWJ" in html
     assert "APIMART" in html
     assert "google/gemini-3.1-flash-image-preview" in html
     assert "gemini-3.1-flash-image-preview" in html
@@ -1124,6 +1169,7 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
     assert normalize_cover_execution_mode("openrouter", "") == "parallel"
     assert normalize_cover_execution_mode("local", "parallel") == "parallel"
     assert normalize_cover_execution_mode("apimart", "parallel") == "serial"
+    assert normalize_cover_execution_mode("googlewj", "parallel") == "serial"
 
     builtin = video_cover_settings.builtin_model_defaults()["cover_generation"]
     assert builtin == {
@@ -1181,6 +1227,19 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
     assert apimart["cover_generation"] == {
         "provider": "apimart",
         "model_id": "gemini-3.1-flash-image-preview",
+        "execution_mode": "serial",
+    }
+
+    googlewj = video_cover_settings.normalize_model_defaults({
+        "cover_generation": {
+            "provider": "googlewj",
+            "model_id": "gemini-3-pro-image-preview",
+            "execution_mode": "parallel",
+        }
+    })
+    assert googlewj["cover_generation"] == {
+        "provider": "googlewj",
+        "model_id": "gemini-3-pro-image-preview",
         "execution_mode": "serial",
     }
 
@@ -1506,6 +1565,111 @@ def test_video_cover_background_chain_uses_project_model_default_snapshot(monkey
     ]
 
 
+def test_video_cover_regenerate_cover_with_model_updates_snapshot_and_restarts_fourth_step(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(tmp_path / "lamp.mp4"),
+        "video_filename": "lamp.mp4",
+        "image_count": 4,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "step_messages": {
+            "video_analysis": "已完成",
+            "product_analysis": "已完成",
+            "ad_copy": "已完成",
+            "cover_generation": "已完成",
+        },
+        "model_defaults": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
+            "product_analysis": {"provider": "gemini_aistudio", "model_id": "gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid", "execution_mode": "parallel"},
+        },
+        "models": {
+            "cover_generation": {"provider": "openrouter", "model_id": "openai/gpt-5.4-image-2:mid", "execution_mode": "parallel"},
+        },
+        "step_requests": {"cover_generation": {"prompt": "old prompt"}},
+        "step_results": {"cover_generation": {"structured_result": {"covers": [{"index": 1}]}}},
+        "result": {"covers": [{"index": 1, "object_key": "artifacts/video_cover/1/task-1/old.png"}]},
+    }
+    row = {"id": "task-1", "user_id": 8, "state_json": json.dumps(state, ensure_ascii=False)}
+    saved = []
+    started = []
+
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+
+    def fake_save_state(task_id, next_state, *, status):
+        saved.append({
+            "task_id": task_id,
+            "status": status,
+            "state": json.loads(json.dumps(next_state, ensure_ascii=False)),
+        })
+
+    monkeypatch.setattr(video_cover, "_save_state", fake_save_state)
+    monkeypatch.setattr(
+        video_cover,
+        "try_register_active_task",
+        lambda project_type, task_id, **metadata: started.append(("register", project_type, task_id, metadata)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "start_background_task",
+        lambda fn, *args: started.append(("start", args)),
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/task-1/regenerate-cover",
+        json={"provider": "googlewj", "model_id": "gemini-3-pro-image-preview"},
+    )
+
+    assert resp.status_code == 202
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    next_state = saved[0]["state"]
+    assert saved[0]["status"] == "running"
+    assert started[0][0] == "register"
+    assert started[0][1] == video_cover.video_cover_project_store.VIDEO_COVER_TYPE
+    assert started[0][2] == "task-1"
+    assert started[0][3]["stage"] == "cover_generation"
+    assert started[0][3]["details"] == {
+        "model_provider": "googlewj",
+        "model_id": "gemini-3-pro-image-preview",
+    }
+    assert started[1] == ("start", ("task-1", "cover_generation", None))
+    assert next_state["model_defaults"]["cover_generation"] == {
+        "provider": "googlewj",
+        "model_id": "gemini-3-pro-image-preview",
+        "execution_mode": "serial",
+    }
+    assert next_state["steps"]["video_analysis"] == "done"
+    assert next_state["steps"]["product_analysis"] == "done"
+    assert next_state["steps"]["ad_copy"] == "done"
+    assert next_state["steps"]["cover_generation"] == "running"
+    assert "result" not in next_state
+    assert "cover_generation" not in next_state.get("step_requests", {})
+    assert "cover_generation" not in next_state.get("step_results", {})
+    assert "cover_generation" not in next_state.get("models", {})
+    assert payload["state"]["model_defaults"]["cover_generation"]["provider"] == "googlewj"
+
+
 def test_video_cover_detail_renders_progress_restart_and_four_process_cards(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
@@ -1610,6 +1774,15 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "window.confirm" in html
     assert "selectedRestartCount()" in html
     assert "image_count: selectedRestartCount()" in html
+    assert "重选模型后生成" in html
+    assert 'id="vcdCoverRegenerateModal"' in html
+    assert 'id="vcdCoverProvider"' in html
+    assert 'id="vcdCoverModel"' in html
+    assert 'data-regenerate-cover-open' in html
+    assert "GOOGLEWJ" in html
+    assert "function refreshCoverModelSelect" in html
+    assert "/regenerate-cover" in html
+    assert "model_id: coverModelSelect.value" in html
     assert "全部报文预览" in html
     assert 'id="vcdAllPayloadModal"' in html
     assert 'id="vcdAllPayloadBody"' in html

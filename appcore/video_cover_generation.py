@@ -144,6 +144,7 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
         "local_image_2": "本地 Image 2",
         "openrouter": "OPENROUTER",
         "gemini_aistudio": "GOOGLE AI STUDIO",
+        "googlewj": "GOOGLEWJ",
         "apimart": "APIMART",
     },
     "models": {
@@ -165,6 +166,10 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "nano_banana_2": "gemini-3.1-flash-image-preview",
             "nano_banana_pro": "gemini-3-pro-image-preview",
             "nano_banana_1": "gemini-2.5-flash-image-preview",
+        },
+        "googlewj": {
+            "nano_banana_2": "gemini-3.1-flash-image-preview",
+            "nano_banana_pro": "gemini-3-pro-image-preview",
         },
         "apimart": {
             "apimart_gpt_image_2": "gpt-image-2",
@@ -202,6 +207,10 @@ COVER_MODEL_OPTIONS: dict[str, Any] = {
             "gemini-3-pro-image-preview": "nano_banana_pro",
             "gemini-2.5-flash-image-preview": "nano_banana_1",
         },
+        "googlewj": {
+            "gemini-3.1-flash-image-preview": "nano_banana_2",
+            "gemini-3-pro-image-preview": "nano_banana_pro",
+        },
         "apimart": {
             "gpt_image_2": "apimart_gpt_image_2",
             "gpt-image-2": "apimart_gpt_image_2",
@@ -225,6 +234,8 @@ def _normalize_retired_adc_provider(provider_key: str, providers: dict[str, Any]
 def _normalize_cover_provider(provider_key: str, providers: dict[str, Any]) -> str:
     if provider_key in {"local", "local_image", "local_image2"} and "local_image_2" in providers:
         return "local_image_2"
+    if provider_key in {"google_wj", "google_wj_image", "googlewj_image"} and "googlewj" in providers:
+        return "googlewj"
     return _normalize_retired_adc_provider(provider_key, providers)
 
 
@@ -1331,6 +1342,17 @@ def generate_cover_image(
             project_id=task_id,
             service="video_cover.generate",
             channel="aistudio",
+        )
+    if selection.provider == "googlewj":
+        return gemini_image.generate_image(
+            prompt,
+            source_image=source_image,
+            source_mime=source_mime,
+            model=selection.model,
+            user_id=user_id,
+            project_id=task_id,
+            service="video_cover.generate",
+            channel="googlewj",
         )
     if selection.provider == "apimart":
         return gemini_image.generate_image(

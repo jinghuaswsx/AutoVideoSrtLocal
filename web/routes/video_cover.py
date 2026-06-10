@@ -1160,6 +1160,8 @@ def _cover_provider_config_code(provider: str) -> str:
         return "apimart_image"
     if normalized == "gemini_aistudio":
         return "gemini_aistudio_image"
+    if normalized in {"googlewj", "google_wj"}:
+        return "google_wj_image"
     if normalized == "gemini_vertex_adc":
         return "gemini_cloud_image"
     raise VideoCoverGenerationError(f"未知封面供应商：{provider}")
@@ -1383,7 +1385,7 @@ def _build_cover_full_request(state: dict, request_payload: dict, prompt_index: 
         replay["reason"] = "该供应商暂不支持调试生成"
         return full_request, replay
 
-    if provider in {"gemini_aistudio", "gemini_vertex"}:
+    if provider in {"gemini_aistudio", "gemini_vertex", "googlewj", "google_wj"}:
         full_request = {
             "method": "SDK",
             "url": provider,
@@ -1590,6 +1592,69 @@ def api_run_project_step(task_id: str, step: str):
         return _json_response({"ok": False, "error": str(exc)}, 400)
     if not _start_video_cover_background(task_id, step):
         return _json_response({"ok": False, "error": "任务正在运行中"}, 409)
+    return _json_response({"ok": True, "state": _state_with_urls(task_id, state)}, 202)
+
+
+@bp.route("/video-cover/api/<task_id>/regenerate-cover", methods=["POST"])
+@login_required
+@admin_required
+def api_regenerate_cover_with_model(task_id: str):
+    row, state = _load_user_project(task_id)
+    if not row:
+        return _json_response({"ok": False, "error": "not found"}, 404)
+    payload = _request_json_payload()
+    provider = (
+        payload.get("provider")
+        or payload.get("cover_provider")
+        or request.form.get("provider")
+        or request.form.get("cover_provider")
+        or ""
+    )
+    model = (
+        payload.get("model_id")
+        or payload.get("model")
+        or payload.get("cover_model")
+        or request.form.get("model_id")
+        or request.form.get("model")
+        or request.form.get("cover_model")
+        or ""
+    )
+    state.setdefault("id", task_id)
+    state.setdefault("steps", _initial_steps())
+    state.setdefault("step_messages", {name: "" for name in STEP_ORDER})
+    try:
+        _ensure_previous_steps_done(state, "cover_generation")
+        selection = resolve_cover_model_selection(provider, model)
+    except VideoCoverGenerationError as exc:
+        return _json_response({"ok": False, "error": str(exc)}, 400)
+
+    if not try_register_active_task(
+        video_cover_project_store.VIDEO_COVER_TYPE,
+        task_id,
+        runner="web.routes.video_cover._run_video_cover_chain_with_tracking",
+        entrypoint="video_cover.regenerate_cover",
+        stage="cover_generation",
+        details={"model_provider": selection.provider, "model_id": selection.model},
+    ):
+        return _json_response({"ok": False, "error": "任务正在运行中"}, 409)
+
+    model_defaults = _project_model_defaults(state)
+    model_defaults["cover_generation"] = {
+        "provider": selection.provider,
+        "model_id": selection.model,
+        "execution_mode": "serial",
+    }
+    state["model_defaults"] = model_defaults
+    if isinstance(state.get("models"), dict):
+        state["models"].pop("cover_generation", None)
+    _clear_step_outputs(state, "cover_generation")
+    _mark_step_running(state, "cover_generation")
+    try:
+        _save_state(task_id, state, status="running")
+        start_background_task(_run_video_cover_chain_with_tracking, task_id, "cover_generation", None)
+    except BaseException:
+        unregister_active_task(video_cover_project_store.VIDEO_COVER_TYPE, task_id)
+        raise
     return _json_response({"ok": True, "state": _state_with_urls(task_id, state)}, 202)
 
 

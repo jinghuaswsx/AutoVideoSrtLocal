@@ -1,0 +1,69 @@
+# 文案封面重选模型后生成设计
+
+日期：2026-06-10
+状态：已确认
+
+## 背景
+
+`docs/superpowers/specs/2026-05-14-video-cover-generation-design.md` 已定义文案封面项目的四步自动流程，`docs/superpowers/specs/2026-05-15-video-cover-image-provider-concurrency-design.md` 已定义第四步封面生成的供应商、模型池和执行方式。
+
+生产使用中，第四步封面生成完成后，运营需要在不重跑视频分析、产品分析、文案创作的前提下，重新选择图片模型并生成封面。入口位置为详情页第四步「封面生成」卡片标题行右侧操作区。
+
+## 目标
+
+- 在详情页第四步「封面生成」卡片中增加「重选模型后生成」按钮。
+- 点击后弹出模型选择弹窗，仅选择第四步封面生成的供应商和模型。
+- 弹窗可选范围复用文案封面默认配置中的第四步图片模型池。
+- 新增 `GOOGLEWJ` 图片通道，模型池只开放：
+  - `nano_banana_2`：`gemini-3.1-flash-image-preview`
+  - `nano_banana_pro`：`gemini-3-pro-image-preview`
+- 「重选模型后生成」触发后只清空并重跑第四步 `cover_generation`；前三步结果和文案保持不变。
+- 本入口统一按串行执行，不展示也不提交并发选项。
+
+## 非目标
+
+- 不改变新建项目和「默认配置」弹窗的四步配置结构。
+- 不重跑前三步分析与文案。
+- 不新增单张封面重试；仍按项目当前 `image_count` 重新生成全部封面。
+- 不新增新的凭据存储行；`GOOGLEWJ` 复用现有 `google_wj_image` / `google_wj_text` 配置。
+
+## 后端设计
+
+- `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。
+- `resolve_cover_model_selection("googlewj", ...)` 返回 provider `googlewj` 和裸 Gemini 图片模型 ID。
+- `generate_cover_image()` 对 provider `googlewj` 调用 `appcore.gemini_image.generate_image(channel="googlewj")`。
+- 新增详情页专用 POST API：
+  - `POST /video-cover/api/<task_id>/regenerate-cover`
+  - 仅 `@login_required + @admin_required`
+  - 入参：`provider`、`model_id`
+  - 服务端归一模型选择，并强制 `execution_mode="serial"`
+  - 写回 `state_json.model_defaults.cover_generation`
+  - 启动后台链路从 `cover_generation` 开始
+- 若任务正在运行，返回 409；若前三步未完成，返回 400。
+
+## 前端设计
+
+- 第四步卡片标题行增加 `重选模型后生成` 按钮。
+- 弹窗包含：
+  - 供应商下拉
+  - 模型 ID 下拉，随供应商联动
+  - 取消、生成按钮
+- 弹窗初始值优先取当前实际第四步模型，其次取项目级默认配置。
+- 提交时带 `X-CSRFToken`。
+- 提交成功后关闭弹窗并进入轮询；第四步状态显示为运行中。
+
+## 验收
+
+- 封面生成卡片显示「重选模型后生成」按钮。
+- 模型选择弹窗包含 `GOOGLEWJ`，其模型只包含 Nano Banana 2 / Nano Banana Pro。
+- 选择 `GOOGLEWJ / Nano Banana Pro` 后提交，状态里的 `model_defaults.cover_generation.provider` 为 `googlewj`，`model_id` 为 `gemini-3-pro-image-preview`，`execution_mode` 为 `serial`。
+- 后台只从第四步重新生成，前三步结果保留。
+- 运行中重复点击接口返回 409。
+
+## 测试
+
+- `tests/test_video_cover_generation.py`
+  - 覆盖 `GOOGLEWJ` 模型池和 `generate_cover_image(channel="googlewj")`。
+  - 覆盖详情页渲染按钮和弹窗 JS。
+  - 覆盖 `POST /video-cover/api/<task_id>/regenerate-cover` 写回串行配置并从第四步启动。
+

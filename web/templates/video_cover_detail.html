@@ -142,6 +142,14 @@
 .vcd-debug-result { display:grid; gap:10px; }
 .vcd-debug-result img { width:min(260px, 100%); aspect-ratio:9/16; object-fit:cover; border:1px solid var(--border-main); border-radius:8px; background:#e5e7eb; }
 .vcd-pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.55; padding:12px; border:1px solid var(--border-main); border-radius:8px; background:#0f172a; color:#e5e7eb; }
+.vcd-model-modal { width:min(640px, 100%); }
+.vcd-model-form { display:grid; gap:14px; }
+.vcd-model-grid { display:grid; grid-template-columns:180px minmax(0, 1fr); gap:12px; }
+.vcd-model-field { display:grid; gap:6px; min-width:0; }
+.vcd-model-field label { font-size:12px; font-weight:900; color:#64748b; }
+.vcd-model-field select { height:34px; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); color:var(--text-main); padding:0 10px; font-size:13px; min-width:0; }
+.vcd-model-status { min-height:18px; color:#64748b; font-size:12px; font-weight:800; }
+.vcd-model-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
 @media (max-width:1080px) {
   .vcd-project-grid { grid-template-columns:1fr; }
   .vcd-input-panel { position:static; top:auto; max-height:none; overflow:visible; }
@@ -156,6 +164,7 @@
   .vcd-cover-results-grid { grid-template-columns:minmax(0, 280px); justify-content:center; }
   .vcd-prompt-debug-modal { width:min(96vw, 100%); }
   .vcd-debug-form { grid-template-columns:1fr; }
+  .vcd-model-grid { grid-template-columns:1fr; }
 }
 {% endblock %}
 
@@ -252,6 +261,9 @@
               {% if status == 'running' %}<span class="vcd-timer-spinner spinner"></span><span>已运行 <b>{{ timing.get('running_seconds', 0) }}</b> 秒</span>{% elif timing.get('elapsed_seconds') is not none %}<span>耗时 <b>{{ timing.get('elapsed_seconds') }}</b> 秒</span>{% elif status == 'waiting' %}<span>等待确认</span>{% else %}<span>等待开始</span>{% endif %}
             </span>
             <button class="vcd-prompt-pill llm-prompt-pill" type="button" data-prompt-step="{{ step }}">提示词</button>
+            {% if step == 'cover_generation' %}
+            <button class="vcd-retry-btn resume-btn" type="button" data-regenerate-cover-open {% if status == 'running' %}disabled{% endif %}>重选模型后生成</button>
+            {% endif %}
             <button class="vcd-retry-btn resume-btn" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>从此步继续</button>
           </div>
           <div class="vcd-step-message step-msg" data-step-message="{{ step }}">{{ state.get('step_messages', {}).get(step, '') or '等待中...' }}</div>
@@ -277,6 +289,40 @@
     </div>
     <div class="vcd-modal-body">
       <pre class="vcd-pre" id="vcdAllPayloadBody"></pre>
+    </div>
+  </div>
+</div>
+
+<div class="vcd-modal-backdrop" id="vcdCoverRegenerateModal">
+  <div class="vcd-modal vcd-model-modal">
+    <div class="vcd-modal-head">
+      <div class="vcd-modal-title">重选模型后生成</div>
+      <button class="btn btn-ghost btn-sm" type="button" id="vcdCoverRegenerateClose">关闭</button>
+    </div>
+    <div class="vcd-modal-body">
+      <form class="vcd-model-form" id="vcdCoverRegenerateForm">
+        <div class="vcd-model-grid">
+          <div class="vcd-model-field">
+            <label for="vcdCoverProvider">供应商</label>
+            <select id="vcdCoverProvider" name="provider">
+              {% set cover_cfg = model_options.steps.get('cover_generation', {}) %}
+              {% for code, label in cover_cfg.providers.items() %}
+              <option value="{{ code }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="vcd-model-field">
+            <label for="vcdCoverModel">模型 ID</label>
+            <select id="vcdCoverModel" name="model_id"></select>
+          </div>
+        </div>
+        <div class="vcd-error" id="vcdCoverRegenerateError"></div>
+        <div class="vcd-model-status" id="vcdCoverRegenerateStatus"></div>
+        <div class="vcd-model-actions">
+          <button class="btn btn-ghost" type="button" id="vcdCoverRegenerateCancel">取消</button>
+          <button class="btn btn-primary" type="submit" id="vcdCoverRegenerateSubmit">生成</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -337,6 +383,7 @@
   const TASK_ID = {{ task_id|tojson }};
   const STEP_ORDER = {{ step_order|list|tojson }};
   const STEP_LABELS = {{ step_labels|tojson }};
+  const MODEL_OPTIONS = {{ model_options|tojson }};
   let currentState = {{ state|tojson }};
   let restartCount = Number(currentState.image_count || 4);
   const errorBox = document.getElementById('vcdError');
@@ -352,6 +399,13 @@
   const debugReplayResult = document.getElementById('vcdDebugReplayResult');
   const allPayloadModal = document.getElementById('vcdAllPayloadModal');
   const allPayloadBody = document.getElementById('vcdAllPayloadBody');
+  const coverRegenerateModal = document.getElementById('vcdCoverRegenerateModal');
+  const coverRegenerateForm = document.getElementById('vcdCoverRegenerateForm');
+  const coverProviderSelect = document.getElementById('vcdCoverProvider');
+  const coverModelSelect = document.getElementById('vcdCoverModel');
+  const coverRegenerateSubmit = document.getElementById('vcdCoverRegenerateSubmit');
+  const coverRegenerateError = document.getElementById('vcdCoverRegenerateError');
+  const coverRegenerateStatus = document.getElementById('vcdCoverRegenerateStatus');
   let currentPromptStep = '';
   let currentDebugPayload = null;
 
@@ -415,6 +469,70 @@
       if (mode) parts.push(mode);
     }
     return parts.join(' · ');
+  }
+  function coverOptions() {
+    return ((MODEL_OPTIONS.steps || {}).cover_generation) || {};
+  }
+  function coverModelRows(providerCode) {
+    const cfg = coverOptions();
+    const models = ((cfg.models || {})[providerCode]) || {};
+    const labels = cfg.model_labels || {};
+    return Object.keys(models).map(alias => ({
+      alias,
+      value: models[alias],
+      label: (labels[alias] || alias) + ' · ' + models[alias]
+    }));
+  }
+  function currentCoverSelection() {
+    const defaults = ((currentState.model_defaults || {}).cover_generation) || {};
+    const actual = ((currentState.models || {}).cover_generation) || {};
+    return {...defaults, ...actual};
+  }
+  function refreshCoverModelSelect(preferredValue) {
+    if (!coverProviderSelect || !coverModelSelect) return;
+    const rows = coverModelRows(coverProviderSelect.value);
+    const preferred = String(preferredValue || '').trim();
+    coverModelSelect.innerHTML = '';
+    let matched = false;
+    rows.forEach(row => {
+      const option = document.createElement('option');
+      option.value = row.value;
+      option.textContent = row.label;
+      if (preferred && row.value === preferred) {
+        option.selected = true;
+        matched = true;
+      }
+      coverModelSelect.appendChild(option);
+    });
+    if (preferred && !matched) {
+      const option = document.createElement('option');
+      option.value = preferred;
+      option.textContent = '当前历史值 · ' + preferred;
+      option.selected = true;
+      coverModelSelect.appendChild(option);
+    } else if (!preferred && coverModelSelect.options.length) {
+      coverModelSelect.options[0].selected = true;
+    }
+  }
+  function openCoverRegenerateModal() {
+    const selection = currentCoverSelection();
+    const cfg = coverOptions();
+    const providers = cfg.providers || {};
+    const firstProvider = Object.keys(providers)[0] || '';
+    if (coverProviderSelect) coverProviderSelect.value = selection.provider || cfg.default_provider || firstProvider;
+    refreshCoverModelSelect(selection.model_id || selection.model || '');
+    if (coverRegenerateError) coverRegenerateError.textContent = '';
+    if (coverRegenerateStatus) coverRegenerateStatus.textContent = '';
+    if (coverRegenerateModal) coverRegenerateModal.classList.add('show');
+  }
+  function closeCoverRegenerateModal() {
+    if (coverRegenerateModal) coverRegenerateModal.classList.remove('show');
+    if (coverRegenerateError) coverRegenerateError.textContent = '';
+    if (coverRegenerateStatus) coverRegenerateStatus.textContent = '';
+    if (coverRegenerateSubmit) {
+      coverRegenerateSubmit.disabled = false;
+      coverRegenerateSubmit.textContent = '生成';
+    }
   }
   function visualStatus(status) {
     if (['failed', 'interrupted', 'cancelled'].includes(status)) return 'error';
@@ -705,6 +823,12 @@
         }
       }
     });
+    const regen = document.querySelector('[data-regenerate-cover-open]');
+    if (regen) {
+      const coverStatus = steps.cover_generation || 'pending';
+      regen.disabled = coverStatus === 'running';
+      regen.textContent = coverStatus === 'running' ? '生成中...' : '重选模型后生成';
+    }
   }
   async function loadState() {
     const response = await fetch(`/video-cover/api/${encodeURIComponent(TASK_ID)}/state`, {cache: 'no-store'});
@@ -735,6 +859,26 @@
     errorBox.textContent = '';
     try { await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {image_count: selectedRestartCount()}); }
     catch (e) { errorBox.textContent = e.message || '强制重新开始失败'; }
+  }
+  async function regenerateCoverWithModel() {
+    if (!coverProviderSelect || !coverModelSelect) return;
+    coverRegenerateSubmit.disabled = true;
+    coverRegenerateSubmit.textContent = '提交中...';
+    coverRegenerateError.textContent = '';
+    coverRegenerateStatus.textContent = '';
+    try {
+      await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/regenerate-cover`, {
+        provider: coverProviderSelect.value,
+        model_id: coverModelSelect.value
+      });
+      coverRegenerateStatus.textContent = '已提交';
+      closeCoverRegenerateModal();
+    } catch (e) {
+      coverRegenerateError.textContent = e.message || '提交失败';
+    } finally {
+      coverRegenerateSubmit.disabled = false;
+      coverRegenerateSubmit.textContent = '生成';
+    }
   }
   async function openPrompt(step) {
     currentPromptStep = step;
@@ -845,6 +989,18 @@
 
     // 强制重新开始按钮
     document.getElementById('vcdRestartBtn').addEventListener('click', restart);
+    const regenerateOpenBtn = document.querySelector('[data-regenerate-cover-open]');
+    if (regenerateOpenBtn) regenerateOpenBtn.addEventListener('click', openCoverRegenerateModal);
+    if (coverProviderSelect) coverProviderSelect.addEventListener('change', () => refreshCoverModelSelect(''));
+    if (coverRegenerateForm) {
+      coverRegenerateForm.addEventListener('submit', event => {
+        event.preventDefault();
+        regenerateCoverWithModel();
+      });
+    }
+    document.getElementById('vcdCoverRegenerateClose').addEventListener('click', closeCoverRegenerateModal);
+    document.getElementById('vcdCoverRegenerateCancel').addEventListener('click', closeCoverRegenerateModal);
+    coverRegenerateModal.addEventListener('click', event => { if (event.target === coverRegenerateModal) closeCoverRegenerateModal(); });
 
     // 复制产品链接按钮
     document.querySelectorAll('[data-copy-product-url]').forEach(btn => btn.addEventListener('click', async () => {
@@ -887,6 +1043,7 @@
       if (event.key === 'Escape') {
         modal.classList.remove('show');
         allPayloadModal.classList.remove('show');
+        closeCoverRegenerateModal();
       }
     });
 
