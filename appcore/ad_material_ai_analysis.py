@@ -13,6 +13,7 @@ import secrets
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import quote
 
@@ -2082,19 +2083,50 @@ def _mk_video_url(video_path: str) -> str:
     return f"/medias/api/mk-video?path={quote(video_path, safe='')}"
 
 
+def _mk_media_url(media_path: str) -> str:
+    return f"/medias/api/mk-media?path={quote(media_path, safe='')}"
+
+
 def _mk_import_metadata(row: Mapping[str, Any]) -> dict[str, Any]:
     meta = _json_loads(row.get("mk_video_metadata_json"), {}) or {}
     if not isinstance(meta, dict):
         meta = {}
-    meta.setdefault("product_code", row.get("product_code") or "")
-    meta.setdefault("product_name", row.get("product_name") or "")
-    meta.setdefault("product_link", row.get("product_url") or row.get("mk_product_link") or "")
-    meta.setdefault("video_name", row.get("video_name") or "")
-    meta.setdefault("video_path", row.get("video_path") or "")
-    meta.setdefault("cover_path", row.get("video_image_path") or "")
-    meta.setdefault("video_image_path", row.get("video_image_path") or "")
-    meta.setdefault("spends", str(row.get("cumulative_90_spend") or ""))
-    meta.setdefault("ads_count", row.get("video_ads_count") or 0)
+    product_name = row.get("mk_product_name") or row.get("product_name") or ""
+    video_name = str(row.get("video_name") or "").strip()
+    video_path = str(row.get("video_path") or "").strip()
+    cover_path = str(row.get("video_image_path") or "").strip()
+    if not meta.get("product_code"):
+        meta["product_code"] = row.get("product_code") or ""
+    if not meta.get("product_name"):
+        meta["product_name"] = product_name
+    if not meta.get("product_link"):
+        meta["product_link"] = row.get("product_url") or row.get("mk_product_link") or ""
+    if not meta.get("mk_product_id") and row.get("mk_product_id"):
+        meta["mk_product_id"] = row.get("mk_product_id")
+    if not meta.get("mk_id") and row.get("mk_product_id"):
+        meta["mk_id"] = row.get("mk_product_id")
+    if not meta.get("mk_product_name"):
+        meta["mk_product_name"] = row.get("mk_product_name") or product_name
+    if not meta.get("video_name"):
+        meta["video_name"] = video_name
+    if not meta.get("filename"):
+        meta["filename"] = video_name or Path(video_path).name
+    if not meta.get("video_path"):
+        meta["video_path"] = video_path
+    if not meta.get("mp4_url") and video_path:
+        meta["mp4_url"] = _mk_video_url(video_path)
+    if not meta.get("cover_path"):
+        meta["cover_path"] = cover_path
+    if not meta.get("video_image_path"):
+        meta["video_image_path"] = cover_path
+    if not meta.get("cover_url") and cover_path:
+        meta["cover_url"] = _mk_media_url(cover_path)
+    if not meta.get("duration_seconds") and row.get("video_duration_seconds") is not None:
+        meta["duration_seconds"] = _safe_float(row.get("video_duration_seconds"))
+    if not meta.get("spends"):
+        meta["spends"] = str(row.get("cumulative_90_spend") or "")
+    if not meta.get("ads_count"):
+        meta["ads_count"] = row.get("video_ads_count") or 0
     return meta
 
 
@@ -2108,7 +2140,8 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
         f"""
         SELECT
           s.material_key, s.product_code, s.product_name, s.product_url,
-          s.mk_product_link, s.video_name, s.video_path, s.video_image_path,
+          s.mk_product_id, s.mk_product_name, s.mk_product_link,
+          s.video_name, s.video_path, s.video_image_path,
           s.cumulative_90_spend, s.video_ads_count, s.video_author,
           s.video_upload_time, s.video_duration_seconds, s.mk_video_metadata_json,
           COALESCE(t.yesterday_spend_delta, 0) AS yesterday_spend_delta,
@@ -2147,10 +2180,13 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
             "product_code": row.get("product_code") or "",
             "product_name": row.get("product_name") or "",
             "product_url": row.get("product_url") or "",
+            "mk_product_id": row.get("mk_product_id"),
+            "mk_product_name": row.get("mk_product_name") or "",
             "video_name": row.get("video_name") or "",
             "video_path": video_path,
             "video_image_path": row.get("video_image_path") or "",
             "video_url": _mk_video_url(video_path) if video_path else "",
+            "cover_url": _mk_media_url(row.get("video_image_path")) if row.get("video_image_path") else "",
             "cumulative_90_spend": _safe_float(row.get("cumulative_90_spend")),
             "video_ads_count": _safe_int(row.get("video_ads_count")),
             "video_author": row.get("video_author") or "",
@@ -2441,7 +2477,7 @@ def _build_action_items(
             "method": "POST",
             "material_key": material.get("material_key"),
             "payload": {
-                "mk_video_metadata": material.get("mk_video_metadata") or {},
+                "mk_video_metadata": _mk_import_metadata_from_material(material),
                 "product_owner_id": product.get("user_id"),
             },
         })
@@ -3215,7 +3251,35 @@ def _is_duplicate_key_error(exc: Exception) -> bool:
     return bool(args and args[0] == 1062)
 
 
+def _mk_import_metadata_from_material(material: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(material, Mapping):
+        return {}
+    row = dict(material)
+    if "mk_video_metadata_json" not in row and isinstance(row.get("mk_video_metadata"), Mapping):
+        row["mk_video_metadata_json"] = row.get("mk_video_metadata")
+    return _mk_import_metadata(row)
+
+
+def _upgrade_import_action_payload(action: dict, material: Mapping[str, Any] | None) -> dict:
+    payload = dict(action.get("payload") or {})
+    existing_meta = payload.get("mk_video_metadata") if isinstance(payload.get("mk_video_metadata"), Mapping) else {}
+    merged_meta = _mk_import_metadata_from_material(material)
+    for key, value in dict(existing_meta or {}).items():
+        if value not in (None, ""):
+            merged_meta[key] = value
+    if merged_meta:
+        payload["mk_video_metadata"] = merged_meta
+        action["payload"] = payload
+    return action
+
+
 def _serialize_product_result(row: Mapping[str, Any]) -> dict:
+    mingkong_materials = _json_loads(row.get("mingkong_materials_json"), []) or []
+    material_by_key = {
+        str(material.get("material_key") or ""): material
+        for material in mingkong_materials
+        if isinstance(material, Mapping)
+    }
     action_items = _json_loads(row.get("action_items_json"), []) or []
     if isinstance(action_items, list):
         upgraded_actions = []
@@ -3231,6 +3295,9 @@ def _serialize_product_result(row: Mapping[str, Any]) -> dict:
                     url = action.get("url")
                     if isinstance(url, str) and "/medias/product/addvideo/" in url:
                         action["url"] = url.replace("/medias/product/addvideo/", "/medias/product/video_workbench/")
+                elif act_type == "import_mk_video":
+                    material_key = str(action.get("material_key") or "")
+                    action = _upgrade_import_action_payload(action, material_by_key.get(material_key))
             upgraded_actions.append(action)
         action_items = upgraded_actions
 
@@ -3245,7 +3312,7 @@ def _serialize_product_result(row: Mapping[str, Any]) -> dict:
         "metrics": _json_loads(row.get("metrics_json"), {}) or {},
         "country_summary": _json_loads(row.get("country_summary_json"), []) or [],
         "local_materials": _json_loads(row.get("local_materials_json"), []) or [],
-        "mingkong_materials": _json_loads(row.get("mingkong_materials_json"), []) or [],
+        "mingkong_materials": mingkong_materials,
         "ai_result": _json_loads(row.get("ai_result_json"), {}) or {},
         "action_items": action_items,
         "created_at": _iso(row.get("created_at")),
