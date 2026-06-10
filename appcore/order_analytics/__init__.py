@@ -161,6 +161,9 @@ from .product_ad_launch import (
     refresh_ad_match_launch_dates_for_products,
     seed_missing_fallback_launch_dates,
 )
+from .order_trend import (
+    get_product_order_trend_data,
+)
 
 
 def get_orphan_orders(*, limit: int = 200, offset: int = 0) -> tuple[list[dict[str, Any]], int]:

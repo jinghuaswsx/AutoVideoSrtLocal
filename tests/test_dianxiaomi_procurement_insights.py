@@ -59,6 +59,23 @@ def test_build_insights_response_matches_media_product_sku(monkeypatch):
         mod.media_product_ad_orders_report,
         "get_product_ad_orders_report",
         lambda product_id, today=None: {
+            "total": {
+                "today_orders": 3,
+                "today_spend": 8.0,
+                "today_roas": 1.5,
+                "yesterday_orders": 2,
+                "yesterday_spend": 12.5,
+                "yesterday_roas": 2.2,
+                "last_7d_orders": 11,
+                "last_7d_spend": 30.0,
+                "last_7d_roas": 2.1,
+                "last_30d_orders": 24,
+                "last_30d_spend": 90.0,
+                "last_30d_roas": 2.4,
+                "total_orders": 42,
+                "total_spend": 120.5,
+                "total_roas": 2.345,
+            },
             "by_lang": {
                 "de": {
                     "today_orders": 1,
@@ -83,7 +100,17 @@ def test_build_insights_response_matches_media_product_sku(monkeypatch):
     assert payload["summary"]["delivery_status"] == "active"
     assert payload["summary"]["orders"]["today"] == 3
     assert payload["summary"]["orders"]["last_7d"] == 11
+    assert payload["summary"]["total_orders"] == 42
     assert payload["summary"]["true_roas"] == 2.345
+    assert payload["summary"]["periods"]["today"] == {
+        "label": "今天",
+        "orders": 3,
+        "ad_spend_usd": 8.0,
+        "roas": 1.5,
+    }
+    assert payload["summary"]["periods"]["yesterday"]["orders"] == 2
+    assert payload["summary"]["periods"]["last_7d"]["ad_spend_usd"] == 30.0
+    assert payload["summary"]["periods"]["last_30d"]["roas"] == 2.4
     de = next(item for item in payload["markets"] if item["lang"] == "de")
     assert de["delivery_status"] == "active"
     assert de["orders"]["last_7d"] == 4
@@ -205,6 +232,7 @@ def test_chrome_extension_manifest_and_assets():
     manifest = json.loads((ext_dir / "manifest.json").read_text(encoding="utf-8"))
     background = (ext_dir / "background.js").read_text(encoding="utf-8")
     content = (ext_dir / "content.js").read_text(encoding="utf-8")
+    styles = (ext_dir / "styles.css").read_text(encoding="utf-8")
 
     assert manifest["manifest_version"] == 3
     assert "https://*.dianxiaomi.com/*" in manifest["host_permissions"]
@@ -217,3 +245,18 @@ def test_chrome_extension_manifest_and_assets():
     assert "/dianxiaomi-procurement-insights/api/insights" in background
     assert 'credentials: "include"' in background
     assert "collectClues" in content
+    assert "findPurchaseModal" in content
+    assert "syncPanelPlacement" in content
+    assert "setInterval(schedulePanelPlacement" in content
+    assert "renderProductLinks" in content
+    assert "产品中心" in content
+    assert "订单中心" in content
+    assert "/medias/?q=" in content
+    assert "/order-analytics/dxm-orders-view/order-trend/" in content
+    assert "renderPeriodRows" in content
+    assert "dpi-period-table" in content
+    assert "last_30d" in content
+    assert ".dpi-modal-anchored" in styles
+    assert ".dpi-product-actions" in styles
+    assert ".dpi-total-value" in styles
+    assert ".dpi-period-table" in styles

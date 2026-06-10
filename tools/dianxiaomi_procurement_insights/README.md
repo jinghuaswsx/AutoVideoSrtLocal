@@ -39,6 +39,6 @@ docs/superpowers/specs/2026-06-09-chrome-extension-tool-release-standard.md
 ./venv/bin/python scripts/build_chrome_extension_release.py \
   --release-standard-read \
   --tool dianxiaomi_procurement_insights \
-  --version 1.0.0 \
+  --version 1.1.1 \
   --release-note "店小秘采购洞察首版"
 ```
