@@ -4,8 +4,10 @@
 """
 from __future__ import annotations
 
-from flask import abort, request
+from flask import abort, request, Response
 from flask_login import current_user, login_required
+import requests
+from urllib.parse import unquote
 
 from appcore import local_media_storage
 from web.services.media_object_access import (
@@ -104,3 +106,37 @@ def public_media_object(object_key: str):
     if result.not_found:
         abort(404)
     return _media_object_proxy_flask_response(result)
+
+
+@bp.route("/external-image", methods=["GET"])
+@login_required
+def external_image_proxy():
+    """Proxy external images (like Shopify CDN) to avoid connection failure in local client."""
+    url = request.args.get("url") or ""
+    url = unquote(url).strip()
+    if not url:
+        abort(400, "Missing url parameter")
+    if not url.startswith(("http://", "https://")):
+        abort(400, "Invalid url protocol")
+    try:
+        resp = requests.get(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "image/*,*/*;q=0.8"
+            },
+            timeout=15,
+            stream=True
+        )
+        if resp.status_code >= 400:
+            abort(resp.status_code)
+        content_type = resp.headers.get("content-type") or "image/jpeg"
+        def generate():
+            for chunk in resp.iter_content(chunk_size=1024 * 64):
+                yield chunk
+        proxied = Response(generate(), status=resp.status_code, content_type=content_type)
+        proxied.headers["Cache-Control"] = "public, max-age=86400"  # Cache for 1 day
+        return proxied
+    except Exception as exc:
+        abort(502, f"Failed to proxy image: {exc}")
+

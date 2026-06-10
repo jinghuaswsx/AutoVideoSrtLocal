@@ -692,7 +692,17 @@
   function safeMediaSrc(value) {
     const url = String(value || '').trim();
     if (!url) return '';
-    if (/^https?:\/\//i.test(url)) return url;
+    if (/^https?:\/\//i.test(url)) {
+      try {
+        const parsed = new URL(url, window.location.origin);
+        if (parsed.host !== window.location.host) {
+          return '/medias/external-image?url=' + encodeURIComponent(parsed.href);
+        }
+        return parsed.href;
+      } catch (e) {
+        return url;
+      }
+    }
     if (url.startsWith('/')) return url;
     return '';
   }

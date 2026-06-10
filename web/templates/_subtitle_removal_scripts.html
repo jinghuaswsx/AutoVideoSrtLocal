@@ -25,6 +25,9 @@
       try {
         var parsed = new URL(raw, window.location.origin);
         if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+          if (parsed.host !== window.location.host) {
+            return '/medias/external-image?url=' + encodeURIComponent(parsed.href);
+          }
           return parsed.href;
         }
         if (parsed.protocol === "blob:") {
