@@ -368,13 +368,16 @@ def test_mingkong_weekly_sync_timers_are_staggered_and_paced():
     assert "autovideosrt-mingkong-sku-backfill-retry.timer" in installer
 
 
-def test_mingkong_material_snapshot_service_runs_serially_without_sleep():
+def test_mingkong_material_snapshot_service_runs_top500_with_product_interval():
     service = _read("deploy/server_browser/autovideosrt-mingkong-material-daily-snapshot.service")
 
     assert "tools/mingkong_material_daily_snapshot.py" in service
-    assert "--source-limit 0" in service
-    assert "--sleep-after-products 0" in service
-    assert "--sleep-seconds 0" in service
+    assert "--source-limit 500" in service
+    assert "--sleep-after-products 1" in service
+    assert "--sleep-seconds 1" in service
+    assert "--health-check-max-seconds 3600" in service
+    assert "--health-check-interval-seconds 10" in service
+    assert "--health-check-request-timeout-seconds 10" in service
 
 
 def test_visible_dxm_runner_installs_novnc_paste_bridge():

@@ -198,8 +198,9 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "mingkong_material_daily_snapshot",
         "name": "明空素材每日快照",
         "description": (
-            "每天 05:00、17:00 读取店小秘 Listing 最新可用快照中近30天销量大于10的全部产品 code，"
-            "按产品全量同步明空后台视频素材库，并归档累计 90 消耗、昨日消耗差额和昨日消耗前300。"
+            "每天 05:00、17:00 读取店小秘 Listing 最新可用快照中近30天销量大于10的前500个产品 code，"
+            "同步前每 10 秒检查明空素材接口，最多等待 1 小时；正常后按产品同步明空后台视频素材库。"
+            "Top500 产品循环每个产品之间至少间隔 1 秒，并归档累计 90 消耗、昨日消耗差额和昨日消耗前300。"
             "Docs-anchor: "
             "docs/superpowers/specs/2026-05-20-mingkong-product-local-aggregate-stats-design.md；"
             "docs/superpowers/specs/2026-06-03-dxm02-listing-30d-min-sales-design.md"
