@@ -246,10 +246,7 @@ def post_json_payload(
     timeout: int | float = PUSH_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     try:
-        if mingkong_request_monitor.is_mingkong_url(
-            target_url,
-            base_url=get_localized_texts_base_url(),
-        ):
+        if mingkong_request_monitor.is_mingkong_url(target_url):
             resp = mingkong_request_monitor.tracked_post(
                 target_url,
                 source="pushes.post_json_payload",
@@ -1707,10 +1704,7 @@ def _post_unsuitable_push_type(
     target_url = request_type["target_url"]
     payload = request_type["payload"]
     try:
-        if mingkong_request_monitor.is_mingkong_url(
-            target_url,
-            base_url=get_localized_texts_base_url(),
-        ):
+        if mingkong_request_monitor.is_mingkong_url(target_url):
             resp = mingkong_request_monitor.tracked_post(
                 target_url,
                 source=f"pushes.unsuitable.{request_type.get('type') or 'unknown'}",

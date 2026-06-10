@@ -1,11 +1,11 @@
 const DPI_ROOT_ID = "dpi-procurement-root";
 const MAX_TEXT_SCAN = 7000;
-const PORTAL_BASE = "http://172.16.254.106";
 
 let lastPointerTarget = null;
 let panelCollapsed = false;
 let placementFrame = 0;
 let lastModalSignature = "";
+let portalBase = "";
 let currentState = {
   status: "idle",
   clues: null,
@@ -252,12 +252,20 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+async function loadPortalBase() {
+  const response = await sendMessage({ type: "dpi:getConfig" });
+  if (response && response.ok && response.result && response.result.backendBase) {
+    portalBase = String(response.result.backendBase || "").replace(/\/+$/, "");
+    renderPanel();
+  }
+}
+
 function renderProductLinks(product, matched) {
   const productCode = compactText(product && product.product_code, 180);
-  if (!matched || !productCode) return "";
+  if (!matched || !productCode || !portalBase) return "";
   const encodedCode = encodeURIComponent(productCode);
-  const productCenterUrl = `${PORTAL_BASE}/medias/?q=${encodedCode}`;
-  const orderCenterUrl = `${PORTAL_BASE}/order-analytics/dxm-orders-view/order-trend/${encodedCode}`;
+  const productCenterUrl = `${portalBase}/medias/?q=${encodedCode}`;
+  const orderCenterUrl = `${portalBase}/order-analytics/dxm-orders-view/order-trend/${encodedCode}`;
   return `
     <div class="dpi-product-actions">
       <a href="${escapeHtml(productCenterUrl)}" target="_blank" rel="noopener noreferrer">产品中心</a>
@@ -455,6 +463,7 @@ function installPanel() {
   window.addEventListener("resize", schedulePanelPlacement, { passive: true });
   window.addEventListener("scroll", schedulePanelPlacement, { passive: true });
   window.setInterval(schedulePanelPlacement, 500);
+  loadPortalBase();
   window.setTimeout(refreshInsights, 1200);
 }
 
