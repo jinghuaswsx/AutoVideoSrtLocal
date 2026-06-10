@@ -261,6 +261,10 @@
   {% include "_xuanpin_tabs.html" %}
 
   <section class="tabcut-toolbar">
+    <div class="tabcut-field" style="grid-column: span 3; min-width: 300px;">
+      <label for="tabcutSearch" style="font-weight: 800;">搜索 (标题/文案/作者/ID)</label>
+      <input class="tabcut-input" id="tabcutSearch" type="text" placeholder="输入搜索关键词，回车或点击筛选确认..." onkeydown="if(event.key==='Enter') loadTabcut(1)">
+    </div>
     <div class="tabcut-field">
       <label for="categoryL1">Category</label>
       <select class="tabcut-select" id="categoryL1">
@@ -1072,6 +1076,7 @@ function paramsFor(page) {
   if (val("minPrice")) params.set(tabcutView === "videos" ? "min_item_price" : "min_price", val("minPrice"));
   if (val("maxPrice")) params.set(tabcutView === "videos" ? "max_item_price" : "max_price", val("maxPrice"));
   if (val("markStatus")) params.set("mark_status", val("markStatus"));
+  if (val("tabcutSearch").trim()) params.set("q", val("tabcutSearch").trim());
   return params;
 }
 
@@ -1214,7 +1219,7 @@ async function toggleTabcutMark(event) {
 }
 
 function resetTabcut() {
-  ["categoryL1", "sourceCategory", "markStatus", "goodsBizDate", "publishDateFrom", "publishDateTo", "sourceRank", "minVideoSales", "minGoodsSales", "maxGoodsSales", "minGmv", "minPrice", "maxPrice"].forEach(id => qs(id).value = "");
+  ["tabcutSearch", "categoryL1", "sourceCategory", "markStatus", "goodsBizDate", "publishDateFrom", "publishDateTo", "sourceRank", "minVideoSales", "minGoodsSales", "maxGoodsSales", "minGmv", "minPrice", "maxPrice"].forEach(id => qs(id).value = "");
   qs("sortBy").value = "play_count";
   loadTabcut(1);
 }
