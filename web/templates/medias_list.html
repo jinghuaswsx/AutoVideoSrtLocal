@@ -3192,6 +3192,10 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   .oc-header { gap: var(--oc-sp-3); padding-bottom: var(--oc-sp-3) !important; top: 52px; }
   .oc-header .title { font-size: 18px; }
   .oc-header .subtitle { flex-wrap:wrap; gap:var(--oc-sp-2); line-height:1.45; }
+  /* Docs-anchor: docs/superpowers/specs/2026-06-10-medias-mobile-minimal-controls.md */
+  .oc-header-actions {
+    display:none !important;
+  }
   .oc-page-tabs {
     display:grid;
     grid-template-columns:repeat(2, minmax(0, 1fr));
@@ -3226,6 +3230,14 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
   .oc-vm-filter-row {
     grid-template-columns:1fr;
     gap:var(--oc-sp-2);
+  }
+  .oc-toolbar-filter-row > :not(.oc-search),
+  .oc-vm-filter-row > :not(.oc-search) {
+    display:none !important;
+  }
+  .oc-toolbar-filter-row,
+  .oc-vm-filter-row {
+    grid-template-columns:1fr !important;
   }
   .oc-toolbar.is-filter-collapsed .oc-toolbar-filter-row,
   .oc-vm-toolbar.is-filter-collapsed .oc-vm-filter-row {
