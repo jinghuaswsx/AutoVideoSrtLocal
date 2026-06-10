@@ -3958,7 +3958,6 @@
         <td style="text-align: center; vertical-align: middle;">
           <div class="supplement-cell-container">
             <span class="supplement-count-pill">${count}</span>
-            <button type="button" class="supplement-btn" data-supplement="${p.id}" data-product-code="${escapeHtml(productCode)}" data-product-name="${escapeHtml(p.name || '')}" title="补素材">补素材</button>
             <button type="button" class="material-workbench-btn" data-material-workbench="${p.id}" title="素材工作台">素材工作台</button>
           </div>
         </td>
@@ -11756,15 +11755,9 @@
   };
 })();
 
-// ======== 补素材 (Supplement Materials) Redirect ========
+// ======== 素材工作台 (Material Workbench) Redirect ========
 
 document.addEventListener('click', e => {
-  const supplementBtn = e.target.closest('[data-supplement]');
-  if (supplementBtn) {
-    const pid = supplementBtn.dataset.supplement;
-    window.open(`/medias/product/addvideo/${pid}`, '_blank');
-    return;
-  }
   const workbenchBtn = e.target.closest('[data-material-workbench]');
   if (workbenchBtn) {
     const pid = workbenchBtn.dataset.materialWorkbench;

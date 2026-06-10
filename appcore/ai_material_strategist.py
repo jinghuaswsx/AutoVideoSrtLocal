@@ -2411,8 +2411,8 @@ def _build_action_items(
     actions: list[dict] = [
         {
             "type": "supplement_workbench",
-            "label": "补素材工作台",
-            "url": f"/medias/product/addvideo/{pid}",
+            "label": "素材工作台",
+            "url": f"/medias/product/video_workbench/{pid}",
         },
         {
             "type": "translation_tasks",
@@ -2422,7 +2422,7 @@ def _build_action_items(
         {
             "type": "product_materials",
             "label": "素材库反馈",
-            "url": f"/medias/{quote(code, safe='')}" if code else f"/medias/product/addvideo/{pid}",
+            "url": f"/medias/{quote(code, safe='')}" if code else f"/medias/product/video_workbench/{pid}",
         },
     ]
     for material in mk_materials[:3]:
@@ -2468,7 +2468,7 @@ def _build_action_items(
         actions.append({
             "type": "create_translation_task",
             "label": f"创建{code_for_action or lang}翻译任务",
-            "url": f"/medias/product/addvideo/{pid}?target_lang={quote(lang)}",
+            "url": f"/medias/product/video_workbench/{pid}?target_lang={quote(lang)}",
             "target_lang": lang,
             "country_code": code_for_action or country.get("country_code"),
         })
