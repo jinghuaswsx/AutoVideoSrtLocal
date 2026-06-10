@@ -252,6 +252,62 @@ def api_ai_material_strategist_resume_from_step(project_id: int):
     return _json({"success": True, "project": project}, 202)
 
 
+@bp.route("/api/ai-material-strategist/projects/<int:project_id>/resume-checkpoint", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_ai_material_strategist_resume_checkpoint(project_id: int):
+    payload = request.get_json(silent=True) or {}
+    run_ai = payload.get("run_ai", True) is not False
+    sync = bool(payload.get("sync"))
+    try:
+        project = service.resume_project_checkpoint(
+            project_id,
+            user_id=_current_user_id(),
+        )
+    except service.ProjectAlreadyRunningError as exc:
+        running = exc.project or service.get_project(project_id) or {}
+        return _json({
+            "success": False,
+            "message": "当前 AI素材军师执行器仍在运行，请等待当前步骤结束后再继续未完成项目。",
+            "running_project": running,
+            "project": running,
+        }, 409)
+    except ValueError as exc:
+        if "不存在" in str(exc):
+            return _json({"success": False, "message": str(exc)}, 404)
+        return _json({"success": False, "message": str(exc)}, 400)
+
+    if sync:
+        project = service.run_project(project_id, user_id=_current_user_id(), run_ai=run_ai)
+        return _json({"success": True, "project": project})
+
+    try:
+        start_background_task(
+            service.run_project,
+            project_id,
+            user_id=_current_user_id(),
+            run_ai=run_ai,
+        )
+    except Exception:
+        current_app.logger.warning(
+            "AI material strategist checkpoint resume scheduling failed; project marked interrupted: project_id=%s",
+            project_id,
+            exc_info=True,
+        )
+        interrupted = service.mark_project_interrupted(
+            project_id,
+            reason="checkpoint_resume_schedule_failed",
+            message="继续未完成项目未能排队，已标记为中断；请稍后重试。",
+        )
+        return _json({
+            "success": False,
+            "message": "继续未完成项目未能排队，已标记为中断；请稍后重试。",
+            "project": interrupted or service.get_project(project_id) or project,
+        }, 500)
+    return _json({"success": True, "project": project}, 202)
+
+
 @bp.route("/api/ai-material-strategist/projects/<int:project_id>", methods=["DELETE"])
 @login_required
 @admin_required

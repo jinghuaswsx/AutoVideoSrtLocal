@@ -109,6 +109,15 @@
     return map[task && task.status_group] == null ? 9 : map[task.status_group];
   }
 
+  function checkpointResumeReasonLabel(reason) {
+    const map = {
+      terminal_status: '保留已完成产品结果，继续未完成分析',
+      stale_heartbeat: '运行心跳已超过 10 分钟未推进，可接管续跑',
+      stale_scheduled: '恢复排队长时间未启动，可重新排队',
+    };
+    return map[reason] || '保留已有断点继续执行';
+  }
+
   function collectProductTasks(item) {
     const seen = new Set();
     const tasks = [];
@@ -415,6 +424,34 @@
     }
   }
 
+  async function resumeCheckpoint() {
+    if (state.publicMode || !state.activeProjectId) return;
+    const project = state.activeProject || {};
+    const reason = checkpointResumeReasonLabel(project.resume_checkpoint_reason);
+    if (!window.confirm(`确定继续未完成项目吗？${reason}，不会清理已完成产品结果。`)) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await fetchJson('/medias/api/ai-material-strategist/projects/' + encodeURIComponent(state.activeProjectId) + '/resume-checkpoint', {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ run_ai: true }),
+      });
+      showToast('已继续未完成项目');
+      state.activeProject = data.project;
+      await loadProject(state.activeProjectId);
+    } catch (err) {
+      if (err.data && err.data.project) {
+        state.activeProject = err.data.project;
+        await loadProject(state.activeProjectId);
+      }
+      showToast(err.message || '继续未完成失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function renderProjects() {
     if (!els.list) return;
     if (!state.projects.length) {
@@ -506,6 +543,8 @@
     const productLine = Number(pp.total || 0) > 0
       ? `产品 ${esc(pp.current_index || 0)} / ${esc(pp.total)}${currentProduct ? ` · ${esc(currentProduct)}` : ''}`
       : '产品分析待开始';
+    const canResumeCheckpoint = !state.publicMode && project && project.can_resume_checkpoint;
+    const resumeReason = checkpointResumeReasonLabel(project && project.resume_checkpoint_reason);
     return `
       <section class="aims-run-card ${esc(project.status)}">
         <div class="aims-run-head">
@@ -523,6 +562,12 @@
           <span>${productLine}</span>
           <span>更新 ${esc((progress.updated_at || project.updated_at || '').slice(0, 19))}</span>
         </div>
+        ${canResumeCheckpoint ? `
+          <div class="aims-run-actions">
+            <button type="button" class="aims-step-resume" data-resume-checkpoint>继续未完成</button>
+            <span class="aims-run-note">${esc(resumeReason)}</span>
+          </div>
+        ` : ''}
         ${steps.length ? renderProgressSteps(project, steps) : ''}
         ${renderProgressLogs(progress.logs || [])}
       </section>
@@ -871,6 +916,11 @@
   }
   if (els.detail) {
     els.detail.addEventListener('click', (event) => {
+      const checkpointButton = event.target.closest('[data-resume-checkpoint]');
+      if (checkpointButton) {
+        resumeCheckpoint();
+        return;
+      }
       const resumeButton = event.target.closest('[data-resume-step]');
       if (resumeButton) {
         resumeFromStep(resumeButton.getAttribute('data-resume-step'));
