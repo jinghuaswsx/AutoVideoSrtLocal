@@ -324,7 +324,7 @@ def _row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": int(row["id"]),
         "project_id": int(row["project_id"]),
-        "row_number": int(row.get("row_number") or 0),
+        "row_number": int(row.get("source_row_number") or row.get("row_number") or 0),
         "payout_status": row.get("payout_status") or "",
         "payout_status_raw": row.get("payout_status_raw") or "",
         "transaction_date": row.get("transaction_date") or "",
@@ -390,7 +390,7 @@ def create_project_from_file(
 
     insert_row_sql = (
         "INSERT INTO shopify_unsettled_payout_rows ("
-        "  project_id, row_number, payout_status, payout_status_raw, transaction_date, "
+        "  project_id, source_row_number, payout_status, payout_status_raw, transaction_date, "
         "  transaction_type, order_name, payout_date, payout_id, available_on, "
         "  currency, amount, fee, net, raw_row_json"
         ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
@@ -485,7 +485,7 @@ def get_project_detail(
     total = int(total_row.get("total") or 0)
     rows = query(
         f"SELECT * FROM shopify_unsettled_payout_rows WHERE {where} "
-        "ORDER BY row_number ASC, id ASC LIMIT %s OFFSET %s",
+        "ORDER BY source_row_number ASC, id ASC LIMIT %s OFFSET %s",
         tuple([*params, page_size, offset]),
     )
     pages = (total + page_size - 1) // page_size if total else 0

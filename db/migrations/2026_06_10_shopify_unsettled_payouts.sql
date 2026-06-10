@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS shopify_unsettled_payout_projects (
 CREATE TABLE IF NOT EXISTS shopify_unsettled_payout_rows (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   project_id BIGINT UNSIGNED NOT NULL,
-  row_number INT NOT NULL,
+  source_row_number INT NOT NULL,
   payout_status VARCHAR(32) NOT NULL DEFAULT '',
   payout_status_raw VARCHAR(64) NOT NULL DEFAULT '',
   transaction_date VARCHAR(64) DEFAULT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS shopify_unsettled_payout_rows (
   net DECIMAL(14,4) NOT NULL DEFAULT 0,
   raw_row_json JSON NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  KEY idx_shopify_unsettled_rows_project (project_id, row_number),
+  KEY idx_shopify_unsettled_rows_project (project_id, source_row_number),
   KEY idx_shopify_unsettled_rows_status (project_id, payout_status),
   KEY idx_shopify_unsettled_rows_order (order_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Shopify Payments payout status imported rows';
