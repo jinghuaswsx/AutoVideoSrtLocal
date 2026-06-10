@@ -179,6 +179,8 @@ def _prompt(
         "不要编造字段，不要输出 DXM03 写入参数。\n"
         "如果多个候选只是不同店铺/不同 Shopify 商品 ID 下复用同一批店小秘 SKU，请指出重复关系，"
         "推荐采购配对最完整的一组，并说明最终仍需要人工确认。\n"
+        "\n【重要要求】\n"
+        "为了方便用户阅读，所有的分析结果、理由、原因、风险和备注（包括 JSON schema 中的 `reason`、`risks`、`variant_mapping_notes` 以及子项中的 `reason`、`risks`）必须全部使用简体中文编写。即使输入数据中有英文，也必须在分析后用简体中文撰写理由和说明，绝对不能使用英文输出！\n"
     )
     
     if fuzzy_candidates:
@@ -186,7 +188,7 @@ def _prompt(
             "\n特别任务：检测到有未配对的模糊匹配明空 ERP SKU 列表（`fuzzy_candidates`）。\n"
             "请仔细对比我们 Shopify 商品的各个变体规格（例如：'1 launcher + 3 rockets'）与 `fuzzy_candidates` 中的 ERP SKU（例如：'发射底座+3个火箭'）。\n"
             "分析中英文数量、颜色、特征，并在 `variant_mappings` 中给出每个 Shopify 变体对应的推荐明空 ERP SKU（`recommended_sku`）。\n"
-            "对于没匹配上的变体，请设置 `recommended_sku` 为空字符串。每一项必须包含 `shopify_variant_id` 和 `recommended_sku`，即使没有 100% 确定，也请根据数量/规格相似度给出最有可能的匹配项，并设置适当的置信度和理由。\n"
+            "对于没匹配上的变体，请设置 `recommended_sku` 为空字符串。每一项必须包含 `shopify_variant_id` 和 `recommended_sku`，即使没有 100% 确定，也请根据数量/规格相似度给出最有可能的匹配项，并设置适当的置信度和理由（理由也必须使用简体中文）。\n"
         )
         
     prompt += (
