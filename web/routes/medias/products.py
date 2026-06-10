@@ -388,6 +388,7 @@ def _stage_logs(stage: str, payload: dict) -> list[dict]:
 
 
 _YUNCANG_PAIRING_SUCCESS_STATUSES = {
+    "already_configured_preserved",
     "confirmed",
     "already_paired",
     "already_paired_combo_components",

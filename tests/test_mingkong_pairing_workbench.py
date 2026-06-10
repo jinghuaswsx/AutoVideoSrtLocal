@@ -963,7 +963,7 @@ def test_mingkong_pairing_sync_runs_yuncang_for_successful_items_when_confirm_pa
             "message": "采购配对存在阻断",
             "logs": [],
             "items": [
-                {"status": "already_paired", "dianxiaomi_sku": "mk-sku-ok"},
+                {"status": "already_configured_preserved", "dianxiaomi_sku": "mk-sku-ok"},
                 {"status": "blocked", "dianxiaomi_sku": "mk-sku-blocked"},
             ],
         },
@@ -993,7 +993,7 @@ def test_mingkong_pairing_sync_runs_yuncang_for_successful_items_when_confirm_pa
     assert result["ok"] is False
     assert "已对可用 SKU 执行云仓" in result["message"]
     assert calls["yuncang"][2]["pairing_items"] == [
-        {"status": "already_paired", "dianxiaomi_sku": "mk-sku-ok"}
+        {"status": "already_configured_preserved", "dianxiaomi_sku": "mk-sku-ok"}
     ]
     assert result["yuncang"]["message"] == "云仓完成"
 
