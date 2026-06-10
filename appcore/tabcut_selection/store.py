@@ -271,6 +271,15 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
                v.is_marked, v.mark_status, v.marked_at, v.marked_by,
                v.local_video_path, v.local_video_cover_path, v.local_video_status,
                v.local_video_duration_seconds,
+               v.local_product_id, v.local_media_item_id,
+               (
+                 SELECT MAX(t.id)
+                 FROM tasks t
+                 WHERE t.parent_task_id IS NULL
+                   AND t.media_item_id = v.local_media_item_id
+                   AND t.archived_at IS NULL
+                   AND t.status <> 'cancelled'
+               ) AS new_product_parent_task_id,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
                gs.primary_item_sold_count AS primary_item_sold_count
@@ -331,6 +340,15 @@ def get_video_candidate(video_id: str, *, query_fn: QueryFn = query) -> dict[str
                v.is_marked, v.mark_status, v.marked_at, v.marked_by,
                v.local_video_path, v.local_video_cover_path, v.local_video_status,
                v.local_video_duration_seconds,
+               v.local_product_id, v.local_media_item_id,
+               (
+                 SELECT MAX(t.id)
+                 FROM tasks t
+                 WHERE t.parent_task_id IS NULL
+                   AND t.media_item_id = v.local_media_item_id
+                   AND t.archived_at IS NULL
+                   AND t.status <> 'cancelled'
+               ) AS new_product_parent_task_id,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
                gs.primary_item_sold_count AS primary_item_sold_count
@@ -970,4 +988,22 @@ def reset_stale_running_local_videos(*, execute_fn: ExecuteFn = execute) -> Any:
           AND local_video_last_attempt_at < DATE_SUB(NOW(), INTERVAL 2 HOUR)
         """,
         [],
+    )
+
+
+def set_video_local_import_binding(
+    video_id: str,
+    *,
+    product_id: int,
+    media_item_id: int,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET local_product_id = %s,
+            local_media_item_id = %s
+        WHERE video_id = %s
+        """,
+        [int(product_id), int(media_item_id), str(video_id)],
     )

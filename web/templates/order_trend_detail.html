@@ -17,38 +17,52 @@
 {% block extra_style %}
 <style>
   :root {
-    --bg-trend: oklch(98% 0.005 230);
-    --card-glow: 0 8px 32px 0 rgba(31, 38, 135, 0.04);
-    --chart-teal: oklch(62% 0.16 180);
-    --chart-purple: oklch(58% 0.19 285);
-    --chart-blue: oklch(56% 0.16 230);
+    --bg-trend: oklch(99.2% 0.003 240);
+    --card-glow: 0 4px 20px 0 rgba(0, 0, 0, 0.02), 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+    --chart-teal: oklch(65% 0.20 195);
+    --chart-teal-light: oklch(65% 0.20 195 / 15%);
+    --chart-purple: oklch(58% 0.21 330);
+    --chart-purple-light: oklch(58% 0.21 330 / 15%);
+    --chart-blue: oklch(58% 0.17 240);
+    --sidebar-w: 420px;
+    --card-bg-trend: oklch(100% 0 0);
   }
 
-  .trend-container {
+  .trend-detail-container {
     padding: var(--space-5);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-    background: var(--bg-trend);
-    min-height: 100vh;
-  }
-
-  .trend-header-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5);
-    box-shadow: var(--card-glow);
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
+    background: var(--bg-trend);
+    min-height: calc(100vh - 80px);
+    box-sizing: border-box;
+  }
+
+  /* Compact Header */
+  .trend-detail-header {
+    background: var(--card-bg-trend);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4) var(--space-5);
+    box-shadow: var(--card-glow);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+  }
+
+  .trend-detail-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .trend-breadcrumb {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-sm);
+    gap: var(--space-1);
+    font-size: var(--text-xs);
     color: var(--fg-muted);
   }
 
@@ -62,30 +76,33 @@
     text-decoration: underline;
   }
 
-  .trend-title-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-  }
-
-  .trend-product-info h1 {
-    font-size: 24px;
+  .trend-detail-title {
+    font-size: 20px;
     font-weight: 700;
     color: var(--fg);
-    margin: 0 0 4px 0;
+    margin: 0;
+    line-height: 1.2;
   }
 
-  .trend-product-info p {
-    font-size: var(--text-sm);
+  .trend-detail-subtitle {
+    font-size: var(--text-xs);
     color: var(--fg-muted);
     margin: 0;
   }
 
-  .trend-search-section {
+  .highlight-code {
+    font-family: var(--font-mono, monospace);
+    background: var(--bg-subtle);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--fg-strong);
+    font-weight: 600;
+  }
+
+  /* Pill Search Box */
+  .trend-search-pill {
     position: relative;
-    width: 320px;
+    width: 280px;
   }
 
   .trend-search-input-wrap {
@@ -94,22 +111,22 @@
     align-items: center;
   }
 
-  .trend-search-input-wrap svg {
+  .trend-search-input-wrap .search-icon {
     position: absolute;
-    left: 12px;
-    width: 16px;
-    height: 16px;
+    left: 14px;
+    width: 14px;
+    height: 14px;
     color: var(--fg-subtle);
   }
 
   .trend-search-input-wrap input {
     width: 100%;
-    height: 38px;
-    padding: 0 12px 0 36px;
+    height: 36px;
+    padding: 0 14px 0 36px;
     border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
+    border-radius: var(--radius-full);
     background: var(--bg-card);
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
     color: var(--fg);
     transition: all var(--duration-fast) var(--ease);
   }
@@ -129,7 +146,7 @@
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
-    max-height: 280px;
+    max-height: 250px;
     overflow-y: auto;
     z-index: 100;
     display: none;
@@ -140,7 +157,7 @@
   }
 
   .trend-search-item {
-    padding: 10px 14px;
+    padding: 8px 12px;
     cursor: pointer;
     border-bottom: 1px solid var(--border);
     transition: background var(--duration-fast);
@@ -155,31 +172,193 @@
   }
 
   .trend-search-name {
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
     font-weight: 600;
     color: var(--fg);
     margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .trend-search-code {
-    font-size: var(--text-xs);
+    font-size: 10px;
     color: var(--fg-subtle);
   }
 
-  .trend-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--space-5);
+  /* Two Column Layout */
+  .trend-main-layout {
+    display: flex;
+    gap: var(--space-4);
+    align-items: flex-start;
   }
 
-  @media (min-width: 1024px) {
-    .trend-grid {
-      grid-template-columns: 2fr 1fr;
+  @media (max-width: 1100px) {
+    .trend-main-layout {
+      flex-direction: column;
+    }
+    .trend-sidebar {
+      width: 100% !important;
     }
   }
 
-  .trend-card {
+  /* Sidebar (Left) */
+  .trend-sidebar {
+    width: var(--sidebar-w);
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .sidebar-section-title {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-left: var(--space-1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .period-badge {
+    font-size: 10px;
+    color: var(--accent);
+    background: var(--accent-subtle);
+    padding: 1px 6px;
+    border-radius: var(--radius-full);
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  /* Stats Grid */
+  .trend-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+  }
+
+  .trend-stat-card {
+    background: var(--card-bg-trend);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    box-shadow: var(--card-glow);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: transform var(--duration-fast);
+  }
+
+  .trend-stat-card:hover {
+    transform: translateY(-1px);
+  }
+
+  .trend-stat-label {
+    font-size: 11px;
+    color: var(--fg-muted);
+    font-weight: 500;
+  }
+
+  .trend-stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--fg-strong);
+  }
+
+  .trend-stat-value.accent-val {
+    color: var(--chart-teal);
+  }
+
+  .trend-stat-value.purple-val {
+    color: var(--chart-purple);
+  }
+
+  /* Tables Card */
+  .trend-table-card {
+    background: var(--card-bg-trend);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-glow);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .trend-table-header-sticky {
+    border-bottom: 1px solid var(--border);
     background: var(--bg-card);
+  }
+
+  .trend-table-body-scrollable {
+    max-height: 520px;
+    overflow-y: auto;
+  }
+
+  .trend-compact-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-xs);
+    table-layout: fixed;
+  }
+
+  .trend-compact-table th {
+    font-weight: 600;
+    color: var(--fg-muted);
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+  }
+
+  .trend-compact-table td {
+    padding: 10px 12px;
+    color: var(--fg);
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background-color var(--duration-fast);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .trend-compact-table tr:last-child td {
+    border-bottom: 0;
+  }
+
+  /* Column widths */
+  .col-date { width: 32%; }
+  .col-units { width: 20%; }
+  .col-orders { width: 18%; }
+  .col-spend { width: 17%; }
+  .col-roas { width: 13%; }
+
+  .trend-table-row {
+    cursor: pointer;
+  }
+
+  .trend-table-row:hover {
+    background-color: var(--bg-subtle);
+  }
+
+  /* Row Highlight Linking class */
+  .trend-table-row.is-active-row {
+    background-color: var(--accent-subtle) !important;
+  }
+
+  .trend-table-row.is-active-row td {
+    color: var(--accent) !important;
+    font-weight: 600;
+  }
+
+  /* Main Content Area (Right) */
+  .trend-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .trend-chart-card {
+    background: var(--card-bg-trend);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: var(--space-5);
@@ -187,118 +366,76 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-    position: relative;
   }
 
-  .trend-card-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--fg);
+  .chart-card-header {
     display: flex;
-    align-items: center;
     justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
   }
 
-  .trend-card-subtitle {
-    font-size: var(--text-xs);
-    color: var(--fg-muted);
-    font-weight: 400;
+  .chart-card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--fg-strong);
   }
 
-  .chart-container {
-    position: relative;
-    width: 100%;
-    min-height: 280px;
-    background: var(--bg-subtle);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    padding: 10px;
-    border: 1px dashed var(--border);
-  }
-
-  .chart-tooltip {
-    position: absolute;
-    pointer-events: none;
-    display: none;
-    background: var(--bg-card);
-    border: 1px solid var(--border-strong);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius);
-    font-size: var(--text-xs);
-    box-shadow: var(--shadow-lg);
-    z-index: 10;
-  }
-
-  .trend-tabs {
+  /* Tab Pills */
+  .trend-tabs-pill {
     display: flex;
-    gap: var(--space-2);
-    margin-bottom: var(--space-2);
+    background: var(--bg-subtle);
+    padding: 3px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border);
   }
 
   .trend-tab-btn {
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
+    background: transparent;
+    border: 0;
     color: var(--fg-muted);
-    padding: 6px 16px;
+    padding: 6px 14px;
     border-radius: var(--radius-full);
-    font-size: var(--text-xs);
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     transition: all var(--duration-fast);
   }
 
   .trend-tab-btn:hover {
-    background: var(--bg-muted);
-    color: var(--fg);
+    color: var(--fg-strong);
   }
 
   .trend-tab-btn.is-active {
-    background: var(--accent-subtle);
-    border-color: var(--accent);
+    background: var(--card-bg-trend);
     color: var(--accent);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   }
 
-  .trend-table-wrap {
-    margin-top: var(--space-2);
-    max-height: 380px;
-    overflow-y: auto;
+  /* Charts Container */
+  .chart-wrapper {
+    position: relative;
+    width: 100%;
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-1);
+    box-sizing: border-box;
   }
 
-  .trend-stats-summary {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: var(--space-3);
+  .chart-container-inner {
+    width: 100%;
+    min-height: 340px;
   }
 
-  .trend-stat-box {
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: var(--space-3) var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .trend-stat-val {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--fg);
-  }
-
-  .trend-stat-label {
-    font-size: var(--text-xs);
-    color: var(--fg-muted);
-  }
-
-  /* SVG Chart lines styles */
+  /* SVG Styles */
   .svg-axis {
     stroke: var(--border-strong);
     stroke-width: 1;
   }
 
   .svg-grid-line {
-    stroke: var(--border);
+    stroke: var(--border-subtle);
     stroke-width: 1;
     stroke-dasharray: 4 4;
   }
@@ -312,115 +449,175 @@
 
   .svg-dot {
     cursor: pointer;
-    transition: r 0.15s ease-out;
+    transition: r 0.15s ease-out, fill 0.15s ease-out;
   }
 
-  .svg-dot:hover {
-    r: 6;
+  .svg-dot.is-hovered {
+    r: 6.5 !important;
+    stroke: #ffffff;
+    stroke-width: 1.5;
   }
 
   .svg-text {
-    font-family: inherit;
+    font-family: var(--font-sans, inherit);
     font-size: 10px;
-    fill: var(--fg-muted);
+    fill: var(--fg-subtle);
+  }
+
+  .vertical-guide {
+    stroke: var(--fg-subtle);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+    opacity: 0.45;
+    pointer-events: none;
+  }
+
+  .chart-interactive-overlay {
+    fill: transparent;
+    cursor: crosshair;
+  }
+
+  /* Tooltip Bubble */
+  .chart-tooltip-bubble {
+    position: absolute;
+    pointer-events: none;
+    display: none;
+    background: rgba(17, 24, 39, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-xs);
+    color: #ffffff;
+    box-shadow: var(--shadow-lg);
+    z-index: 10;
+    line-height: 1.5;
+    backdrop-filter: blur(4px);
+    transition: left 0.1s ease-out, top 0.1s ease-out;
+  }
+
+  .chart-tooltip-bubble strong {
+    color: #ffffff;
+    font-size: 12px;
+    display: block;
+    margin-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    padding-bottom: 4px;
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="trend-container">
-  <!-- Header Card with breadcrumb and product info -->
-  <div class="trend-header-card">
-    <div class="trend-breadcrumb">
-      <a href="/order-analytics/dxm-orders-view">订单分析</a>
-      <span>/</span>
-      <span>单品订单曲线</span>
+<div class="trend-detail-container">
+  <!-- Header Section -->
+  <div class="trend-detail-header">
+    <div class="trend-detail-meta">
+      <div class="trend-breadcrumb">
+        <a href="/order-analytics/dxm-orders-view">订单分析</a>
+        <span>/</span>
+        <span style="color: var(--fg);">单品订单曲线</span>
+      </div>
+      <h1 class="trend-detail-title">{{ data.product_name or product_code }}</h1>
+      <p class="trend-detail-subtitle">
+        产品编码: <span class="highlight-code">{{ product_code }}</span>
+        {% if data.product_id %} · 内部 ID: {{ data.product_id }}{% endif %}
+      </p>
     </div>
-    <div class="trend-title-row">
-      <div class="trend-product-info">
-        <h1>{{ data.product_name or product_code }}</h1>
-        <p>产品编码: <strong>{{ product_code }}</strong> {% if data.product_id %}· 内部 ID: {{ data.product_id }}{% endif %}</p>
+    
+    <!-- Autocomplete Search -->
+    <div class="trend-search-pill">
+      <div class="trend-search-input-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="trendSearchInput" placeholder="搜索单品并快速跳转..." autocomplete="off">
       </div>
-      
-      <!-- Real-time search bar -->
-      <div class="trend-search-section">
-        <div class="trend-search-input-wrap">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" id="trendSearchInput" placeholder="搜索其他单品并快速跳转..." autocomplete="off">
-        </div>
-        <div class="trend-search-results" id="trendSearchResults"></div>
-      </div>
+      <div class="trend-search-results" id="trendSearchResults"></div>
     </div>
   </div>
 
-  <!-- Primary Trend Layout -->
-  <div class="trend-grid">
-    <!-- Chart Card -->
-    <div class="trend-card">
-      <div class="trend-card-title">
-        <span>销量走势分析</span>
-        <div class="trend-tabs">
-          <button class="trend-tab-btn is-active" data-trend-tab="daily">30天日销量 & ROAS</button>
-          <button class="trend-tab-btn" data-trend-tab="weekly">12周销量</button>
-          <button class="trend-tab-btn" data-trend-tab="monthly">12月销量</button>
+  <!-- Primary Modern Layout -->
+  <div class="trend-main-layout">
+    
+    <!-- Sidebar (Left) -->
+    <div class="trend-sidebar">
+      <!-- Aggregated Stats Title -->
+      <div class="sidebar-section-title">
+        <span>数据概览</span>
+        <span class="period-badge" id="statsPeriodLabel">最近 30 天</span>
+      </div>
+      <!-- Metric Cards Grid -->
+      <div class="trend-stats-grid" id="trendStatsSummary">
+        <!-- JS Aggregates Inject -->
+      </div>
+      
+      <!-- List Title -->
+      <div class="sidebar-section-title">
+        <span>每日销量明细</span>
+      </div>
+      <!-- Historical Table -->
+      <div class="trend-table-card">
+        <div class="trend-table-header-sticky">
+          <table class="trend-compact-table">
+            <thead>
+              <tr>
+                <th class="col-date">日期</th>
+                <th class="col-units">销量(件)</th>
+                <th class="col-orders">订单数</th>
+                <th class="col-spend">广告费</th>
+                <th class="col-roas">ROAS</th>
+              </tr>
+            </thead>
+          </table>
+        </div>
+        <div class="trend-table-body-scrollable" id="tableScrollContainer">
+          <table class="trend-compact-table">
+            <tbody id="trendTableBody">
+              <!-- JS Rows Inject -->
+            </tbody>
+          </table>
         </div>
       </div>
-
-      <!-- Charts for different subtabs -->
-      <div id="trendChartDaily" class="chart-container">
-        <!-- Renders automatically via SVG script -->
-      </div>
-      
-      <div id="trendChartWeekly" class="chart-container" style="display:none;">
-        <!-- Renders automatically via SVG script -->
-      </div>
-      
-      <div id="trendChartMonthly" class="chart-container" style="display:none;">
-        <!-- Renders automatically via SVG script -->
-      </div>
-
-      <!-- Tooltip -->
-      <div id="chartTooltip" class="chart-tooltip"></div>
     </div>
 
-    <!-- Stats and Data Card -->
-    <div class="trend-card">
-      <div class="trend-card-title">
-        <span>数据概览与明细</span>
-        <span class="trend-card-subtitle" id="statsPeriodLabel">最近 30 天</span>
-      </div>
+    <!-- Chart Panel (Right) -->
+    <div class="trend-content">
+      <div class="trend-chart-card">
+        <div class="chart-card-header">
+          <span class="chart-card-title">销量与 ROAS 走势分析</span>
+          <div class="trend-tabs-pill">
+            <button class="trend-tab-btn is-active" data-trend-tab="daily">30天日销量 & ROAS</button>
+            <button class="trend-tab-btn" data-trend-tab="weekly">12周销量</button>
+            <button class="trend-tab-btn" data-trend-tab="monthly">12月销量</button>
+          </div>
+        </div>
 
-      <!-- Quick totals metrics -->
-      <div class="trend-stats-summary" id="trendStatsSummary">
-        <!-- Injected by JS -->
-      </div>
-
-      <!-- Detailed tabular view -->
-      <div class="oa-table-wrap trend-table-wrap">
-        <table class="oa-table oar-compact-table">
-          <thead id="trendTableHead">
-            <!-- Injected by JS -->
-          </thead>
-          <tbody id="trendTableBody">
-            <!-- Injected by JS -->
-          </tbody>
-        </table>
+        <div class="chart-wrapper">
+          <!-- Charts -->
+          <div id="trendChartDaily" class="chart-container-inner"></div>
+          <div id="trendChartWeekly" class="chart-container-inner" style="display:none;"></div>
+          <div id="trendChartMonthly" class="chart-container-inner" style="display:none;"></div>
+          
+          <!-- Shared Tooltip Bubble -->
+          <div id="chartTooltip" class="chart-tooltip-bubble"></div>
+        </div>
       </div>
     </div>
+
   </div>
 </div>
 
 <script>
-  // Injected backend data
+  // Injected data from controller
   var trendData = {{ data|tojson|safe if data else 'null' }};
   
+  // Track active sub-tab globally
+  var currentActiveTab = 'daily';
+
   document.addEventListener('DOMContentLoaded', function() {
     if (!trendData) {
-      document.querySelector('.trend-grid').innerHTML = '<div class="oa-empty">无销量与广告趋势数据。</div>';
+      document.querySelector('.trend-main-layout').innerHTML = '<div class="oa-empty" style="width:100%;">无销量与广告趋势数据。</div>';
       return;
     }
 
-    // 1. Tab switches
+    // 1. Setup tab switching
     var tabBtns = document.querySelectorAll('[data-trend-tab]');
     tabBtns.forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -428,6 +625,8 @@
         btn.classList.add('is-active');
         
         var tab = btn.dataset.trendTab;
+        currentActiveTab = tab;
+        
         document.getElementById('trendChartDaily').style.display = tab === 'daily' ? 'block' : 'none';
         document.getElementById('trendChartWeekly').style.display = tab === 'weekly' ? 'block' : 'none';
         document.getElementById('trendChartMonthly').style.display = tab === 'monthly' ? 'block' : 'none';
@@ -436,11 +635,16 @@
       });
     });
 
-    // 2. Initial render
+    // 2. Initialize graphs and stats table
     renderCharts();
     renderStatsAndTable('daily');
 
-    // 3. Autocomplete search logic
+    // 3. Setup Autocomplete
+    setupSearchAutocomplete();
+  });
+
+  // Autocomplete functionality
+  function setupSearchAutocomplete() {
     var searchInput = document.getElementById('trendSearchInput');
     var searchResults = document.getElementById('trendSearchResults');
     var timer = null;
@@ -458,7 +662,7 @@
           .then(function(r) { return r.json(); })
           .then(function(items) {
             if (!items || !items.length) {
-              searchResults.innerHTML = '<div style="padding:10px 14px;color:var(--fg-subtle);font-size:13px;">无匹配产品</div>';
+              searchResults.innerHTML = '<div style="padding:10px 14px;color:var(--fg-subtle);font-size:12px;">无匹配产品</div>';
               searchResults.classList.add('is-open');
               return;
             }
@@ -472,7 +676,6 @@
             }).join('');
             searchResults.classList.add('is-open');
             
-            // Add click events to search results items
             searchResults.querySelectorAll('.trend-search-item').forEach(function(el) {
               el.addEventListener('click', function() {
                 var code = el.dataset.code;
@@ -493,31 +696,34 @@
         searchResults.classList.remove('is-open');
       }
     });
-  });
+  }
 
-  // HTML escaping helpers
   function escapeHtml(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
+  
   function escapeHtmlAttr(s) {
     return String(s || '').replace(/"/g, '&quot;');
   }
 
-  // 4. Render stats and data table on right panel
+  function fmtInt(val) {
+    return Number(val || 0).toLocaleString();
+  }
+
+  // Render metric cards and left明细 table
   function renderStatsAndTable(tab) {
     var periodLabel = document.getElementById('statsPeriodLabel');
     var summaryEl = document.getElementById('trendStatsSummary');
-    var headEl = document.getElementById('trendTableHead');
     var bodyEl = document.getElementById('trendTableBody');
     
     if (tab === 'daily') {
       periodLabel.textContent = '最近 30 天';
       
-      // Calculate totals
       var totalUnits = 0;
       var totalOrders = 0;
       var totalSpend = 0.0;
       var totalPurchaseValue = 0.0;
+      
       trendData.daily.forEach(function(day) {
         totalUnits += day.units;
         totalOrders += day.orders;
@@ -527,19 +733,20 @@
       var overallRoas = totalSpend > 0 ? (totalPurchaseValue / totalSpend).toFixed(2) : '-';
 
       summaryEl.innerHTML = 
-        statBox('销售件数', fmtInt(totalUnits)) +
-        statBox('订单量', fmtInt(totalOrders)) +
-        statBox('广告花费', '$' + totalSpend.toFixed(2)) +
-        statBox('整体 ROAS', overallRoas);
+        statBox('销售件数', fmtInt(totalUnits), 'accent-val') +
+        statBox('订单量', fmtInt(totalOrders), '') +
+        statBox('广告花费', '$' + totalSpend.toFixed(2), '') +
+        statBox('综合 ROAS', overallRoas, 'purple-val');
 
-      headEl.innerHTML = '<tr><th>日期</th><th>销量(件)</th><th>订单数</th><th>花费</th><th>ROAS</th></tr>';
-      bodyEl.innerHTML = trendData.daily.slice().reverse().map(function(day) {
-        return '<tr>' +
-          '<td>' + day.date + '</td>' +
-          '<td>' + fmtInt(day.units) + '</td>' +
-          '<td>' + fmtInt(day.orders) + '</td>' +
-          '<td>' + (day.spend > 0 ? '$' + day.spend.toFixed(2) : '-') + '</td>' +
-          '<td>' + (day.roas !== null ? day.roas.toFixed(2) : '-') + '</td>' +
+      // Yesterday is sorted at the top (from new to old)
+      bodyEl.innerHTML = trendData.daily.slice().reverse().map(function(day, index) {
+        var revIdx = trendData.daily.length - 1 - index;
+        return '<tr class="trend-table-row" data-index="' + revIdx + '" data-date="' + day.date + '">' +
+          '<td class="col-date">' + day.date + '</td>' +
+          '<td class="col-units">' + fmtInt(day.units) + '</td>' +
+          '<td class="col-orders">' + fmtInt(day.orders) + '</td>' +
+          '<td class="col-spend">' + (day.spend > 0 ? '$' + day.spend.toFixed(2) : '-') + '</td>' +
+          '<td class="col-roas">' + (day.roas !== null ? day.roas.toFixed(2) : '-') + '</td>' +
           '</tr>';
       }).join('');
 
@@ -554,17 +761,20 @@
       });
 
       summaryEl.innerHTML = 
-        statBox('总销量', fmtInt(totalUnits)) +
-        statBox('总订单数', fmtInt(totalOrders)) +
-        statBox('周均销量', (totalUnits / 12).toFixed(1)) +
-        statBox('周均订单', (totalOrders / 12).toFixed(1));
+        statBox('总销量', fmtInt(totalUnits), 'accent-val') +
+        statBox('总订单数', fmtInt(totalOrders), '') +
+        statBox('周均销量', (totalUnits / 12).toFixed(1), '') +
+        statBox('周均订单', (totalOrders / 12).toFixed(1), '');
 
-      headEl.innerHTML = '<tr><th>周区间</th><th>销量(件)</th><th>订单数</th></tr>';
-      bodyEl.innerHTML = trendData.weekly.slice().reverse().map(function(w) {
-        return '<tr>' +
-          '<td>' + escapeHtml(w.label) + '</td>' +
-          '<td>' + fmtInt(w.units) + '</td>' +
-          '<td>' + fmtInt(w.orders) + '</td>' +
+      bodyEl.innerHTML = trendData.weekly.slice().reverse().map(function(w, index) {
+        var revIdx = trendData.weekly.length - 1 - index;
+        var cleanLabel = w.label.split(' ')[0]; // W22
+        return '<tr class="trend-table-row" data-index="' + revIdx + '" data-date="' + w.label + '">' +
+          '<td class="col-date">' + escapeHtml(w.label) + '</td>' +
+          '<td class="col-units">' + fmtInt(w.units) + '</td>' +
+          '<td class="col-orders">' + fmtInt(w.orders) + '</td>' +
+          '<td class="col-spend">-</td>' +
+          '<td class="col-roas">-</td>' +
           '</tr>';
       }).join('');
 
@@ -579,60 +789,76 @@
       });
 
       summaryEl.innerHTML = 
-        statBox('总销量', fmtInt(totalUnits)) +
-        statBox('总订单数', fmtInt(totalOrders)) +
-        statBox('月均销量', (totalUnits / 12).toFixed(1)) +
-        statBox('月均订单', (totalOrders / 12).toFixed(1));
+        statBox('总销量', fmtInt(totalUnits), 'accent-val') +
+        statBox('总订单数', fmtInt(totalOrders), '') +
+        statBox('月均销量', (totalUnits / 12).toFixed(1), '') +
+        statBox('月均订单', (totalOrders / 12).toFixed(1), '');
 
-      headEl.innerHTML = '<tr><th>月份</th><th>销量(件)</th><th>订单数</th></tr>';
-      bodyEl.innerHTML = trendData.monthly.slice().reverse().map(function(m) {
-        return '<tr>' +
-          '<td>' + escapeHtml(m.label) + '</td>' +
-          '<td>' + fmtInt(m.units) + '</td>' +
-          '<td>' + fmtInt(m.orders) + '</td>' +
+      bodyEl.innerHTML = trendData.monthly.slice().reverse().map(function(m, index) {
+        var revIdx = trendData.monthly.length - 1 - index;
+        return '<tr class="trend-table-row" data-index="' + revIdx + '" data-date="' + m.label + '">' +
+          '<td class="col-date">' + escapeHtml(m.label) + '</td>' +
+          '<td class="col-units">' + fmtInt(m.units) + '</td>' +
+          '<td class="col-orders">' + fmtInt(m.orders) + '</td>' +
+          '<td class="col-spend">-</td>' +
+          '<td class="col-roas">-</td>' +
           '</tr>';
       }).join('');
     }
+
+    // Attach bi-directional hover events on table rows
+    setupTableHoverEvents();
   }
 
-  function statBox(label, val) {
-    return '<div class="trend-stat-box">' +
-      '<div class="trend-stat-val">' + val + '</div>' +
+  function statBox(label, val, classVal) {
+    return '<div class="trend-stat-card">' +
       '<div class="trend-stat-label">' + label + '</div>' +
+      '<div class="trend-stat-value ' + classVal + '">' + val + '</div>' +
       '</div>';
   }
 
-  function fmtInt(val) {
-    return Number(val || 0).toLocaleString();
-  }
-
-  // 5. Drawing Premium SVG Charts manually
+  // Draw smooth SVG charts
   function renderCharts() {
     renderDailyChart();
     renderWeeklyChart();
     renderMonthlyChart();
   }
 
-  // Helper to attach tooltips
-  function setupChartTooltip(svg, selector, type) {
-    var tooltip = document.getElementById('chartTooltip');
-    svg.querySelectorAll(selector).forEach(function(dot) {
-      dot.addEventListener('mouseenter', function(e) {
-        var text = dot.getAttribute('data-tooltip');
-        tooltip.innerHTML = text;
-        tooltip.style.display = 'block';
-        
-        var rect = svg.getBoundingClientRect();
-        var dotRect = dot.getBoundingClientRect();
-        tooltip.style.left = (dotRect.left - rect.left + dotRect.width / 2 - tooltip.offsetWidth / 2) + 'px';
-        tooltip.style.top = (dotRect.top - rect.top - tooltip.offsetHeight - 8) + 'px';
-      });
-      dot.addEventListener('mouseleave', function() {
-        tooltip.style.display = 'none';
-      });
-    });
+  // Bezier curve interpolation algorithm for smooth lines
+  function getBezierCurvePath(pts, xGetter, yGetter) {
+    if (pts.length === 0) return "";
+    if (pts.length === 1) return "M" + xGetter(pts[0], 0).toFixed(1) + "," + yGetter(pts[0], 0).toFixed(1);
+    
+    var d = "M" + xGetter(pts[0], 0).toFixed(1) + "," + yGetter(pts[0], 0).toFixed(1);
+    for (var i = 0; i < pts.length - 1; i++) {
+      var x0 = xGetter(pts[i], i);
+      var y0 = yGetter(pts[i], i);
+      var x1 = xGetter(pts[i+1], i+1);
+      var y1 = yGetter(pts[i+1], i+1);
+      
+      // Control points offsets (40% of horizontal distance)
+      var cpW = (x1 - x0) * 0.35;
+      var cp1x = x0 + cpW;
+      var cp1y = y0;
+      var cp2x = x1 - cpW;
+      var cp2y = y1;
+      
+      // Smooth tangent slope adjustments
+      if (i > 0) {
+        var prevY = yGetter(pts[i-1], i-1);
+        cp1y = y0 + (y1 - prevY) * 0.17;
+      }
+      if (i < pts.length - 2) {
+        var nextY = yGetter(pts[i+2], i+2);
+        cp2y = y1 - (nextY - y0) * 0.17;
+      }
+      
+      d += " C" + cp1x.toFixed(1) + "," + cp1y.toFixed(1) + " " + cp2x.toFixed(1) + "," + cp2y.toFixed(1) + " " + x1.toFixed(1) + "," + y1.toFixed(1);
+    }
+    return d;
   }
 
+  // Daily Chart Rendering (Bezier curves with dual Y-axis & crosshair guide)
   function renderDailyChart() {
     var el = document.getElementById('trendChartDaily');
     var points = trendData.daily;
@@ -647,24 +873,25 @@
     var maxRoas = Math.max.apply(null, points.map(function(p) { return p.roas || 0; }));
     maxRoas = Math.max(maxRoas, 1.0);
 
-    var width = 800, height = 280, padL = 40, padR = 40, padT = 30, padB = 40;
+    // Dynamic width calculation on load
+    var parentW = el.clientWidth || 800;
+    var width = parentW, height = 340, padL = 45, padR = 45, padT = 40, padB = 40;
     var innerW = width - padL - padR, innerH = height - padT - padB;
 
     function x(i) { return padL + (innerW * i / 29); }
     function yUnits(v) { return padT + innerH - (innerH * v / maxUnits); }
     function yRoas(v) { return padT + innerH - (innerH * v / maxRoas); }
 
-    // Paths
-    var unitsPath = points.map(function(p, i) {
-      return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + yUnits(p.units).toFixed(1);
-    }).join(' ');
-
+    // Bezier Curves Paths
+    var unitsBezier = getBezierCurvePath(points, function(p, i) { return x(i); }, function(p) { return yUnits(p.units); });
+    
     var roasPoints = points.filter(function(p) { return p.roas !== null; });
-    var roasPath = points.map(function(p, i) {
-      return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + yRoas(p.roas || 0).toFixed(1);
-    }).join(' ');
+    var roasBezier = getBezierCurvePath(points, function(p, i) { return x(i); }, function(p) { return yRoas(p.roas || 0); });
 
-    // Grid and Axes
+    // Shaded Area beneath units curve
+    var areaPath = unitsBezier + " L" + x(29).toFixed(1) + "," + (padT + innerH).toFixed(1) + " L" + x(0).toFixed(1) + "," + (padT + innerH).toFixed(1) + " Z";
+
+    // Y Grid and values
     var gridY = [0, 0.25, 0.5, 0.75, 1].map(function(pct) {
       var yUnitsVal = Math.round(maxUnits * pct);
       var yRoasVal = (maxRoas * pct).toFixed(1);
@@ -674,63 +901,80 @@
              '<text x="' + (width - padR + 10) + '" y="' + (currY + 4) + '" text-anchor="start" class="svg-text">' + yRoasVal + '</text>';
     }).join('');
 
-    // X Axis Labels (every 5 days)
+    // X axis labels
     var labelsX = points.map(function(p, i) {
       if (i % 5 === 0 || i === 29) {
         var label = p.date.substring(5); // MM-DD
-        return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 15) + '" text-anchor="middle" class="svg-text">' + label + '</text>' +
+        return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 12) + '" text-anchor="middle" class="svg-text">' + label + '</text>' +
                '<line x1="' + x(i).toFixed(1) + '" y1="' + (padT + innerH) + '" x2="' + x(i).toFixed(1) + '" y2="' + (padT + innerH + 4) + '" stroke="var(--border-strong)"/>';
       }
       return '';
     }).join('');
 
-    // Interactivity dots
+    // Data points (Dots)
     var dots = points.map(function(p, i) {
       var cx = x(i).toFixed(1);
       var cyU = yUnits(p.units).toFixed(1);
       var cyR = yRoas(p.roas || 0).toFixed(1);
       
-      var tipText = '<strong>' + p.date + '</strong><br/>销量: ' + p.units + ' 件 (' + p.orders + ' 单)<br/>广告花费: $' + p.spend.toFixed(2) + '<br/>ROAS: ' + (p.roas !== null ? p.roas.toFixed(2) : '-');
+      var tipText = '<strong>' + p.date + '</strong>销量: ' + p.units + ' 件 (' + p.orders + ' 单)<br/>广告花费: $' + p.spend.toFixed(2) + '<br/>ROAS: ' + (p.roas !== null ? p.roas.toFixed(2) : '-');
       
       var dotsHtml = '';
-      // Units dot
-      dotsHtml += '<circle cx="' + cx + '" cy="' + cyU + '" r="3.5" fill="var(--chart-teal)" class="svg-dot" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
+      // Units
+      dotsHtml += '<circle cx="' + cx + '" cy="' + cyU + '" r="3" fill="var(--chart-teal)" stroke="#ffffff" stroke-width="1" class="svg-dot dot-units" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
+      // ROAS
       if (p.roas !== null) {
-        // ROAS dot
-        dotsHtml += '<circle cx="' + cx + '" cy="' + cyR + '" r="3.5" fill="var(--chart-purple)" class="svg-dot" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
+        dotsHtml += '<circle cx="' + cx + '" cy="' + cyR + '" r="3" fill="var(--chart-purple)" stroke="#ffffff" stroke-width="1" class="svg-dot dot-roas" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
       }
       return dotsHtml;
     }).join('');
 
     el.innerHTML =
-      '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="280">' +
-        // Background Grid
+      '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '" style="overflow: visible;">' +
+        '<defs>' +
+          '<linearGradient id="areaGradTeal" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-color="var(--chart-teal)" stop-opacity="0.22"/>' +
+            '<stop offset="100%" stop-color="var(--chart-teal)" stop-opacity="0.0"/>' +
+          '</linearGradient>' +
+        '</defs>' +
+        
+        // Grid lines
         gridY +
-        // X Axis line
+        
+        // Horizontal baseline
         '<line x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (width - padR) + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
-        // Left Y Axis (Units)
         '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
-        // Right Y Axis (ROAS)
         '<line x1="' + (width - padR) + '" y1="' + padT + '" x2="' + (width - padR) + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
         
         // Legends
-        '<text x="' + padL + '" y="15" fill="var(--chart-teal)" font-size="11" font-weight="700">● 销量 (件)</text>' +
-        '<text x="' + (width - padR) + '" y="15" fill="var(--chart-purple)" font-size="11" font-weight="700" text-anchor="end">● Meta ROAS</text>' +
+        '<text x="' + padL + '" y="20" fill="var(--chart-teal)" font-size="11" font-weight="700">● 销量 (件)</text>' +
+        '<text x="' + (width - padR) + '" y="20" fill="var(--chart-purple)" font-size="11" font-weight="700" text-anchor="end">● Meta ROAS</text>' +
 
-        // Units Path
-        '<path d="' + unitsPath + '" class="svg-chart-path" stroke="var(--chart-teal)" stroke-width="2.5"/>' +
-        // ROAS Path
-        (roasPoints.length ? '<path d="' + roasPath + '" class="svg-chart-path" stroke="var(--chart-purple)" stroke-width="2.5" stroke-dasharray="3 3"/>' : '') +
+        // Vertical guide line
+        '<line id="dailyCrosshairLine" class="vertical-guide" x1="0" y1="0" x2="0" y2="0" style="display:none;"/>' +
+
+        // Gradient Area beneath units
+        '<path d="' + areaPath + '" fill="url(#areaGradTeal)"/>' +
         
-        // Dots
+        // Smooth lines
+        '<path d="' + unitsBezier + '" class="svg-chart-path" stroke="var(--chart-teal)" stroke-width="2.5"/>' +
+        (roasPoints.length ? '<path d="' + roasBezier + '" class="svg-chart-path" stroke="var(--chart-purple)" stroke-width="2.5" stroke-dasharray="0.5 0.5" stroke-dashoffset="0"/>' : '') +
+        
+        // Interactive circles
         dots +
-        // X labels
+        
+        // Date labels
         labelsX +
+        
+        // Mouse tracker layer for crosshair Guide Line
+        '<rect x="' + padL + '" y="' + padT + '" width="' + innerW + '" height="' + innerH + '" class="chart-interactive-overlay" id="dailyInteractiveOverlay"/>' +
       '</svg>';
 
-    setupChartTooltip(el.querySelector('svg'), '.svg-dot', 'daily');
+    // Attach mouse interaction on overlay
+    setupCrosshairInteraction(el, points, x, padL, innerW);
   }
 
+  // Weekly Chart (Rounded bars with tooltips)
   function renderWeeklyChart() {
     var el = document.getElementById('trendChartWeekly');
     var points = trendData.weekly;
@@ -742,13 +986,13 @@
     var maxUnits = Math.max.apply(null, points.map(function(p) { return p.units; }));
     maxUnits = Math.max(maxUnits, 1);
 
-    var width = 800, height = 280, padL = 40, padR = 20, padT = 30, padB = 40;
+    var parentW = el.clientWidth || 800;
+    var width = parentW, height = 340, padL = 45, padR = 25, padT = 40, padB = 40;
     var innerW = width - padL - padR, innerH = height - padT - padB;
 
     function x(i) { return padL + (innerW * i / 11); }
     function y(v) { return padT + innerH - (innerH * v / maxUnits); }
 
-    // Grid and Y axis
     var gridY = [0, 0.25, 0.5, 0.75, 1].map(function(pct) {
       var val = Math.round(maxUnits * pct);
       var currY = padT + innerH - (innerH * pct);
@@ -756,53 +1000,44 @@
              '<text x="' + (padL - 10) + '" y="' + (currY + 4) + '" text-anchor="end" class="svg-text">' + val + '</text>';
     }).join('');
 
-    // Round columns (Bar Chart)
-    var barW = Math.max(12, Math.floor(innerW / 24));
+    var barW = Math.max(16, Math.floor(innerW / 24));
     var bars = points.map(function(p, i) {
       var bx = x(i) - barW / 2;
       var by = y(p.units);
       var bh = Math.max(4, padT + innerH - by);
       
-      var tipText = '<strong>' + p.label + '</strong><br/>销量: ' + p.units + ' 件<br/>订单数: ' + p.orders + ' 单';
+      var tipText = '<strong>' + p.label + '</strong>销量: ' + p.units + ' 件<br/>订单数: ' + p.orders + ' 单';
       
-      // Draw rectangular bars with round top corners
-      return '<g class="svg-bar-group" data-tooltip="' + escapeHtmlAttr(tipText) + '">' +
-             '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + barW + '" height="' + bh.toFixed(1) + '" rx="3" fill="var(--chart-blue)" style="cursor:pointer; opacity: 0.85; transition: opacity 0.15s;"/>' +
+      return '<g class="svg-bar-group" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '">' +
+             '<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + barW + '" height="' + bh.toFixed(1) + '" rx="4" fill="var(--chart-blue)" style="cursor:pointer; opacity: 0.82; transition: opacity 0.15s, fill 0.15s;"/>' +
              '</g>';
     }).join('');
 
-    // X Axis Labels
     var labelsX = points.map(function(p, i) {
-      // Show every 2 weeks to avoid overlap
       if (i % 2 === 0 || i === 11) {
-        var cleanLabel = p.label.split(' ')[0]; // Just W24
-        return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 15) + '" text-anchor="middle" class="svg-text">' + cleanLabel + '</text>' +
+        var cleanLabel = p.label.split(' ')[0]; // W24
+        return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 12) + '" text-anchor="middle" class="svg-text">' + cleanLabel + '</text>' +
                '<line x1="' + x(i).toFixed(1) + '" y1="' + (padT + innerH) + '" x2="' + x(i).toFixed(1) + '" y2="' + (padT + innerH + 4) + '" stroke="var(--border-strong)"/>';
       }
       return '';
     }).join('');
 
     el.innerHTML =
-      '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="280">' +
+      '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '">' +
         gridY +
         '<line x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (width - padR) + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
         '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
-        '<text x="' + padL + '" y="15" fill="var(--chart-blue)" font-size="11" font-weight="700">● 周销量 (件)</text>' +
+        '<text x="' + padL + '" y="20" fill="var(--chart-blue)" font-size="11" font-weight="700">● 周销量 (件)</text>' +
         bars +
         labelsX +
+        '<line id="weeklyCrosshairLine" class="vertical-guide" x1="0" y1="0" x2="0" y2="0" style="display:none;"/>' +
+        '<rect x="' + padL + '" y="' + padT + '" width="' + innerW + '" height="' + innerH + '" class="chart-interactive-overlay" id="weeklyInteractiveOverlay"/>' +
       '</svg>';
 
-    // Hover effect on bars
-    var svg = el.querySelector('svg');
-    svg.querySelectorAll('.svg-bar-group').forEach(function(g) {
-      var rect = g.querySelector('rect');
-      g.addEventListener('mouseenter', function() { rect.style.opacity = '1'; });
-      g.addEventListener('mouseleave', function() { rect.style.opacity = '0.85'; });
-    });
-
-    setupChartTooltip(svg, '.svg-bar-group', 'weekly');
+    setupCrosshairInteraction(el, points, x, padL, innerW);
   }
 
+  // Monthly Chart (Area curve + dots)
   function renderMonthlyChart() {
     var el = document.getElementById('trendChartMonthly');
     var points = trendData.monthly;
@@ -814,19 +1049,15 @@
     var maxUnits = Math.max.apply(null, points.map(function(p) { return p.units; }));
     maxUnits = Math.max(maxUnits, 1);
 
-    var width = 800, height = 280, padL = 40, padR = 20, padT = 30, padB = 40;
+    var parentW = el.clientWidth || 800;
+    var width = parentW, height = 340, padL = 45, padR = 25, padT = 40, padB = 40;
     var innerW = width - padL - padR, innerH = height - padT - padB;
 
     function x(i) { return padL + (innerW * i / 11); }
     function y(v) { return padT + innerH - (innerH * v / maxUnits); }
 
-    // Area path filled with vertical gradient
-    var linePoints = points.map(function(p, i) {
-      return x(i).toFixed(1) + ',' + y(p.units).toFixed(1);
-    });
-    
-    var linePath = 'M' + linePoints.join(' L');
-    var areaPath = linePath + ' L' + x(11).toFixed(1) + ',' + (padT + innerH) + ' L' + x(0).toFixed(1) + ',' + (padT + innerH) + ' Z';
+    var bezierPath = getBezierCurvePath(points, function(p, i) { return x(i); }, function(p) { return y(p.units); });
+    var areaPath = bezierPath + " L" + x(11).toFixed(1) + "," + (padT + innerH).toFixed(1) + " L" + x(0).toFixed(1) + "," + (padT + innerH).toFixed(1) + " Z";
 
     var gridY = [0, 0.25, 0.5, 0.75, 1].map(function(pct) {
       var val = Math.round(maxUnits * pct);
@@ -838,41 +1069,258 @@
     var dots = points.map(function(p, i) {
       var cx = x(i).toFixed(1);
       var cy = y(p.units).toFixed(1);
-      var tipText = '<strong>' + p.label + '</strong><br/>销量: ' + p.units + ' 件<br/>订单数: ' + p.orders + ' 单';
-      return '<circle cx="' + cx + '" cy="' + cy + '" r="3.5" fill="var(--chart-teal)" class="svg-dot" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
+      var tipText = '<strong>' + p.label + '</strong>销量: ' + p.units + ' 件<br/>订单数: ' + p.orders + ' 单';
+      return '<circle cx="' + cx + '" cy="' + cy + '" r="3" fill="var(--chart-teal)" stroke="#ffffff" stroke-width="1" class="svg-dot" data-index="' + i + '" data-tooltip="' + escapeHtmlAttr(tipText) + '"/>';
     }).join('');
 
     var labelsX = points.map(function(p, i) {
       if (i % 2 === 0 || i === 11) {
-        return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 15) + '" text-anchor="middle" class="svg-text">' + p.label + '</text>' +
+        return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 12) + '" text-anchor="middle" class="svg-text">' + p.label + '</text>' +
                '<line x1="' + x(i).toFixed(1) + '" y1="' + (padT + innerH) + '" x2="' + x(i).toFixed(1) + '" y2="' + (padT + innerH + 4) + '" stroke="var(--border-strong)"/>';
       }
       return '';
     }).join('');
 
     el.innerHTML =
-      '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="280">' +
+      '<svg viewBox="0 0 ' + width + ' ' + height + '" width="100%" height="' + height + '">' +
         '<defs>' +
-          '<linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">' +
-            '<stop offset="0%" stop-color="var(--chart-teal)" stop-opacity="0.3"/>' +
+          '<linearGradient id="areaGradTealMonthly" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0%" stop-color="var(--chart-teal)" stop-opacity="0.22"/>' +
             '<stop offset="100%" stop-color="var(--chart-teal)" stop-opacity="0.0"/>' +
           '</linearGradient>' +
         '</defs>' +
         gridY +
         '<line x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (width - padR) + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
         '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + innerH) + '" class="svg-axis"/>' +
-        '<text x="' + padL + '" y="15" fill="var(--chart-teal)" font-size="11" font-weight="700">● 月销量 (件)</text>' +
+        '<text x="' + padL + '" y="20" fill="var(--chart-teal)" font-size="11" font-weight="700">● 月销量 (件)</text>' +
         
-        // Area
-        '<path d="' + areaPath + '" fill="url(#areaGrad)"/>' +
-        // Line
-        '<path d="' + linePath + '" class="svg-chart-path" stroke="var(--chart-teal)" stroke-width="2.5"/>' +
-        
+        '<line id="monthlyCrosshairLine" class="vertical-guide" x1="0" y1="0" x2="0" y2="0" style="display:none;"/>' +
+        '<path d="' + areaPath + '" fill="url(#areaGradTealMonthly)"/>' +
+        '<path d="' + bezierPath + '" class="svg-chart-path" stroke="var(--chart-teal)" stroke-width="2.5"/>' +
         dots +
         labelsX +
+        '<rect x="' + padL + '" y="' + padT + '" width="' + innerW + '" height="' + innerH + '" class="chart-interactive-overlay" id="monthlyInteractiveOverlay"/>' +
       '</svg>';
 
-    setupChartTooltip(el.querySelector('svg'), '.svg-dot', 'monthly');
+    setupCrosshairInteraction(el, points, x, padL, innerW);
+  }
+
+  // Crosshair Guide-line and Hover Interactivity Coordinator
+  function setupCrosshairInteraction(container, points, xGetter, padL, innerW) {
+    var overlay = container.querySelector('.chart-interactive-overlay');
+    var svg = container.querySelector('svg');
+    var crosshair = container.querySelector('.vertical-guide');
+    var tooltip = document.getElementById('chartTooltip');
+
+    if (!overlay) return;
+
+    overlay.addEventListener('mousemove', function(e) {
+      // Calculate cursor offsetX within SVG element coords
+      var rect = svg.getBoundingClientRect();
+      var offsetX = e.clientX - rect.left;
+      
+      // Calculate corresponding relative index
+      var pct = (offsetX - padL) / innerW;
+      var i = Math.round(pct * (points.length - 1));
+      i = Math.max(0, Math.min(points.length - 1, i));
+
+      // 1. Move vertical crosshair guide
+      var cx = xGetter(i);
+      crosshair.setAttribute('x1', cx);
+      crosshair.setAttribute('x2', cx);
+      crosshair.setAttribute('y1', 40);
+      crosshair.setAttribute('y2', 300);
+      crosshair.style.display = 'block';
+
+      // 2. Highlight SVG Dots/Bars
+      svg.querySelectorAll('.svg-dot').forEach(function(dot) {
+        if (Number(dot.dataset.index) === i) {
+          dot.classList.add('is-hovered');
+        } else {
+          dot.classList.remove('is-hovered');
+        }
+      });
+      svg.querySelectorAll('.svg-bar-group rect').forEach(function(barRect) {
+        var group = barRect.parentNode;
+        if (Number(group.dataset.index) === i) {
+          barRect.style.opacity = '1';
+          barRect.style.fill = 'var(--chart-teal)';
+        } else {
+          barRect.style.opacity = '0.82';
+          barRect.style.fill = 'var(--chart-blue)';
+        }
+      });
+
+      // 3. Show Tooltip bubble
+      var targetDot = svg.querySelector('.svg-dot[data-index="' + i + '"]') || svg.querySelector('.svg-bar-group[data-index="' + i + '"]');
+      if (targetDot) {
+        var text = targetDot.getAttribute('data-tooltip') || targetDot.parentNode.getAttribute('data-tooltip');
+        tooltip.innerHTML = text;
+        tooltip.style.display = 'block';
+        
+        var tWidth = tooltip.offsetWidth;
+        var tHeight = tooltip.offsetHeight;
+        
+        // Position bubble centered horizontally over the guide line
+        var leftPos = cx - tWidth / 2;
+        var topPos = 120; // Default center height
+        
+        tooltip.style.left = leftPos + 'px';
+        tooltip.style.top = topPos + 'px';
+      }
+
+      // 4. Bi-directional Link: Highlighting left list row
+      highlightTableRow(i);
+    });
+
+    overlay.addEventListener('mouseleave', function() {
+      crosshair.style.display = 'none';
+      tooltip.style.display = 'none';
+      
+      svg.querySelectorAll('.svg-dot').forEach(function(dot) {
+        dot.classList.remove('is-hovered');
+      });
+      svg.querySelectorAll('.svg-bar-group rect').forEach(function(barRect) {
+        barRect.style.opacity = '0.82';
+        barRect.style.fill = 'var(--chart-blue)';
+      });
+
+      clearTableRowHighlight();
+    });
+  }
+
+  // Highlight Table Row by index
+  function highlightTableRow(idx) {
+    clearTableRowHighlight();
+    
+    var row = document.querySelector('.trend-table-row[data-index="' + idx + '"]');
+    if (row) {
+      row.classList.add('is-active-row');
+      
+      // Auto scroll container slightly if row is out of view (smooth viewport adjustment)
+      var container = document.getElementById('tableScrollContainer');
+      var rTop = row.offsetTop;
+      var rHeight = row.offsetHeight;
+      var cScroll = container.scrollTop;
+      var cHeight = container.clientHeight;
+      
+      if (rTop < cScroll) {
+        container.scrollTop = rTop - 10;
+      } else if (rTop + rHeight > cScroll + cHeight) {
+        container.scrollTop = rTop + rHeight - cHeight + 10;
+      }
+    }
+  }
+
+  function clearTableRowHighlight() {
+    document.querySelectorAll('.trend-table-row').forEach(function(row) {
+      row.classList.remove('is-active-row');
+    });
+  }
+
+  // Setup Table row hover -> Highlighting chart dot/bar
+  function setupTableHoverEvents() {
+    var rows = document.querySelectorAll('.trend-table-row');
+    rows.forEach(function(row) {
+      row.addEventListener('mouseenter', function() {
+        var idx = Number(row.dataset.index);
+        
+        // Find corresponding chart wrapper depending on active tab
+        var activeContainerId = '';
+        if (currentActiveTab === 'daily') activeContainerId = 'trendChartDaily';
+        else if (currentActiveTab === 'weekly') activeContainerId = 'trendChartWeekly';
+        else if (currentActiveTab === 'monthly') activeContainerId = 'trendChartMonthly';
+        
+        var container = document.getElementById(activeContainerId);
+        if (!container) return;
+        
+        var svg = container.querySelector('svg');
+        if (!svg) return;
+        
+        // Trigger dot hover
+        var dot = svg.querySelector('.svg-dot[data-index="' + idx + '"]');
+        if (dot) {
+          dot.classList.add('is-hovered');
+          
+          // Show tooltip on dot
+          var tooltip = document.getElementById('chartTooltip');
+          var text = dot.getAttribute('data-tooltip');
+          tooltip.innerHTML = text;
+          tooltip.style.display = 'block';
+          
+          var cx = Number(dot.getAttribute('cx'));
+          tooltip.style.left = (cx - tooltip.offsetWidth / 2) + 'px';
+          tooltip.style.top = '120px';
+          
+          // Show vertical crosshair
+          var crosshair = svg.querySelector('.vertical-guide');
+          if (crosshair) {
+            crosshair.setAttribute('x1', cx);
+            crosshair.setAttribute('x2', cx);
+            crosshair.setAttribute('y1', 40);
+            crosshair.setAttribute('y2', 300);
+            crosshair.style.display = 'block';
+          }
+        }
+        
+        // Trigger bar hover
+        var barRect = svg.querySelector('.svg-bar-group[data-index="' + idx + '"] rect');
+        if (barRect) {
+          barRect.style.opacity = '1';
+          barRect.style.fill = 'var(--chart-teal)';
+          
+          var tooltip = document.getElementById('chartTooltip');
+          var text = barRect.parentNode.getAttribute('data-tooltip');
+          tooltip.innerHTML = text;
+          tooltip.style.display = 'block';
+          
+          var bx = Number(barRect.getAttribute('x'));
+          var bw = Number(barRect.getAttribute('width'));
+          var cx = bx + bw / 2;
+          tooltip.style.left = (cx - tooltip.offsetWidth / 2) + 'px';
+          tooltip.style.top = '120px';
+          
+          var crosshair = svg.querySelector('.vertical-guide');
+          if (crosshair) {
+            crosshair.setAttribute('x1', cx);
+            crosshair.setAttribute('x2', cx);
+            crosshair.setAttribute('y1', 40);
+            crosshair.setAttribute('y2', 300);
+            crosshair.style.display = 'block';
+          }
+        }
+      });
+      
+      row.addEventListener('mouseleave', function() {
+        var idx = Number(row.dataset.index);
+        
+        var activeContainerId = '';
+        if (currentActiveTab === 'daily') activeContainerId = 'trendChartDaily';
+        else if (currentActiveTab === 'weekly') activeContainerId = 'trendChartWeekly';
+        else if (currentActiveTab === 'monthly') activeContainerId = 'trendChartMonthly';
+        
+        var container = document.getElementById(activeContainerId);
+        if (!container) return;
+        var svg = container.querySelector('svg');
+        if (!svg) return;
+        
+        var dot = svg.querySelector('.svg-dot[data-index="' + idx + '"]');
+        if (dot) {
+          dot.classList.remove('is-hovered');
+        }
+        var barRect = svg.querySelector('.svg-bar-group[data-index="' + idx + '"] rect');
+        if (barRect) {
+          barRect.style.opacity = '0.82';
+          barRect.style.fill = 'var(--chart-blue)';
+        }
+        
+        document.getElementById('chartTooltip').style.display = 'none';
+        var crosshair = svg.querySelector('.vertical-guide');
+        if (crosshair) {
+          crosshair.style.display = 'none';
+        }
+      });
+    });
   }
 </script>
 {% endblock %}

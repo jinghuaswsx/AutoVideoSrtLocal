@@ -33,6 +33,8 @@ def test_list_video_candidates_applies_filters_and_sort_whitelist():
     assert "LEFT JOIN tabcut_videos" in data_sql
     assert "LEFT JOIN (" in data_sql
     assert "FROM tabcut_goods_snapshots" in data_sql
+    assert "v.local_product_id" in data_sql
+    assert "new_product_parent_task_id" in data_sql
     assert "ORDER BY c.goods_gmv_7d DESC" in data_sql
     assert data_params[:4] == ["US", "Food", 10, 99.5]
 
@@ -498,6 +500,24 @@ def test_set_tabcut_goods_mark_status_clears_goods_row():
     assert result == 1
     assert "UPDATE tabcut_goods" in sql
     assert params == [None, 0, 0, 0, 7, "i1"]
+
+
+def test_set_tabcut_video_local_import_binding_updates_video_row():
+    calls = []
+
+    result = store.set_video_local_import_binding(
+        "v1",
+        product_id=12,
+        media_item_id=34,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert result == 1
+    assert "UPDATE tabcut_videos" in sql
+    assert "local_product_id = %s" in sql
+    assert "local_media_item_id = %s" in sql
+    assert params == [12, 34, "v1"]
 
 
 def test_build_tabcut_refresh_response_delegates_to_runner():

@@ -144,6 +144,90 @@ def test_create_from_meta_hot_post_supplement_targets_existing_product(monkeypat
     assert captured_task["is_new_product"] is False
 
 
+def test_create_from_tabcut_video_creates_new_product_task(monkeypatch):
+    captured_import = {}
+    captured_task = {}
+
+    def fake_import_tabcut_video(**kwargs):
+        captured_import.update(kwargs)
+        return {
+            "media_product_id": 12,
+            "media_item_id": 34,
+            "is_new_product": True,
+            "product_link": "https://www.tiktok.com/shop/pdp/i1",
+        }
+
+    monkeypatch.setattr("appcore.tabcut_selection.service.import_tabcut_video", fake_import_tabcut_video)
+
+    def fake_create_task_for_item(**kwargs):
+        captured_task.update(kwargs)
+        return {"ok": True, "source": kwargs["source"], "tabcut_video_id": kwargs["tabcut_video_id"]}
+
+    monkeypatch.setattr(new_product_tasks, "_create_task_for_item", fake_create_task_for_item)
+
+    result = new_product_tasks.create_from_tabcut_video(
+        video_id="v1",
+        owner_id=9,
+        countries=["DE"],
+        language_assignments={"DE": 10},
+        raw_processor_id=11,
+        created_by=1,
+    )
+
+    assert result["source"] == "tabcut_video"
+    assert result["tabcut_video_id"] == "v1"
+    assert captured_import == {
+        "video_id": "v1",
+        "owner_id": 9,
+        "actor_user_id": 1,
+        "target_product_id": None,
+    }
+    assert captured_task["product_id"] == 12
+    assert captured_task["item_id"] == 34
+    assert captured_task["source"] == "tabcut_video"
+    assert captured_task["task_kind"] == "new_product"
+    assert captured_task["product_link"] == "https://www.tiktok.com/shop/pdp/i1"
+
+
+def test_create_from_tabcut_video_supplement_targets_existing_product(monkeypatch):
+    captured_import = {}
+    captured_task = {}
+
+    def fake_import_tabcut_video(**kwargs):
+        captured_import.update(kwargs)
+        return {"media_product_id": 88, "media_item_id": 89, "is_new_product": False}
+
+    monkeypatch.setattr("appcore.tabcut_selection.service.import_tabcut_video", fake_import_tabcut_video)
+
+    def fake_create_task_for_item(**kwargs):
+        captured_task.update(kwargs)
+        return {"ok": True, "task_kind": kwargs["task_kind"]}
+
+    monkeypatch.setattr(new_product_tasks, "_create_task_for_item", fake_create_task_for_item)
+
+    result = new_product_tasks.create_from_tabcut_video(
+        video_id="v1",
+        task_kind="supplement",
+        target_product_id=88,
+        owner_id=9,
+        countries=["FR"],
+        language_assignments={"FR": 10},
+        raw_processor_id=11,
+        created_by=1,
+    )
+
+    assert result["task_kind"] == "supplement"
+    assert captured_import == {
+        "video_id": "v1",
+        "owner_id": 9,
+        "actor_user_id": 1,
+        "target_product_id": 88,
+    }
+    assert captured_task["product_id"] == 88
+    assert captured_task["item_id"] == 89
+    assert captured_task["is_new_product"] is False
+
+
 def test_create_from_upload_import_only_when_countries_empty(monkeypatch):
     captured_item = {}
     sync_calls = []
@@ -264,5 +348,4 @@ def test_create_english_item_from_upload_extracts_thumbnail(monkeypatch, tmp_pat
     assert metadata_calls[0][0] == 999
     assert metadata_calls[0][1] == "media_thumbs/88/999.jpg"
     assert metadata_calls[0][2] == 15.5
-
 

@@ -192,13 +192,40 @@
   gap: 8px;
   align-items: center;
   margin-top: 4px;
+  flex-wrap: wrap;
 }
+.tabcut-task-btn { height:24px; padding:0 10px; border:1px solid #2563eb; border-radius:6px; background:#2563eb; color:#fff; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
+.tabcut-task-btn:hover:not(:disabled) { background:#1d4ed8; }
+.tabcut-task-btn:disabled, .tabcut-task-btn.is-disabled { opacity:.58; cursor:not-allowed; background:#e2e8f0; border-color:#cbd5e1; color:#64748b; }
+.tabcut-task-modal { position:fixed; inset:0; z-index:2600; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(15,23,42,.55); }
+.tabcut-task-modal[hidden] { display:none !important; }
+.tabcut-task-panel { width:min(720px, 96vw); max-height:92vh; overflow:auto; border-radius:8px; background:#fff; box-shadow:0 24px 60px rgba(15,23,42,.28); }
+.tabcut-task-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 18px; border-bottom:1px solid #e2e8f0; }
+.tabcut-task-title { margin:0; color:#0f172a; font-size:18px; font-weight:900; }
+.tabcut-task-close { width:30px; height:30px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#334155; font-size:18px; cursor:pointer; }
+.tabcut-task-body { display:grid; gap:14px; padding:18px; }
+.tabcut-task-field { display:grid; gap:6px; }
+.tabcut-task-field label, .tabcut-task-label { color:#475569; font-size:13px; font-weight:800; }
+.tabcut-task-hint { color:#64748b; font-size:12px; }
+.tabcut-task-kind { display:flex; gap:8px; flex-wrap:wrap; }
+.tabcut-task-kind label { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 10px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#334155; font-weight:800; cursor:pointer; }
+.tabcut-task-search-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.tabcut-task-product-box, .tabcut-task-status { padding:10px; border:1px solid #dbeafe; border-radius:8px; background:#eff6ff; color:#1e3a8a; font-size:13px; }
+.tabcut-task-status.error { border-color:#fecaca; background:#fef2f2; color:#991b1b; }
+.tabcut-task-status.success { border-color:#bbf7d0; background:#f0fdf4; color:#166534; }
+.tabcut-task-results { display:grid; gap:6px; max-height:180px; overflow:auto; }
+.tabcut-task-result { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; padding:9px; border:1px solid #e2e8f0; border-radius:8px; }
+.tabcut-task-langs { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:8px; }
+.tabcut-task-lang { display:grid; gap:6px; padding:9px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc; }
+.tabcut-task-lang-main { display:flex; align-items:center; gap:6px; font-size:13px; font-weight:800; color:#334155; }
+.tabcut-task-actions { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px 18px; border-top:1px solid #e2e8f0; }
 {% if share_mode %}
 .sidebar, .topbar, .sidebar-backdrop { display: none !important; }
 .main-content { margin-left: 0 !important; width: 100% !important; padding: 14px !important; }
 .tabcut-toolbar { margin-top: 14px !important; }
 .tabcut-mark-options { display: none !important; }
 .tabcut-fine-ai-btn { display: none !important; }
+.tabcut-task-btn { display: none !important; }
 .tabcut-toolbar .tabcut-btn { display: none !important; }
 {% endif %}
 
@@ -407,6 +434,54 @@
   </div>
   <div class="tabcut-pager" id="tabcutPager"></div>
 
+  <div id="tabcutTaskModal" class="tabcut-task-modal" hidden>
+    <div class="tabcut-task-panel">
+      <div class="tabcut-task-head">
+        <h2 class="tabcut-task-title" id="tabcutTaskTitle">创建 TABCUT 新素材任务</h2>
+        <button class="tabcut-task-close" type="button" onclick="closeTabcutTaskModal()" aria-label="关闭">&times;</button>
+      </div>
+      <div class="tabcut-task-body">
+        <div class="tabcut-task-field">
+          <span class="tabcut-task-label">任务类型</span>
+          <div class="tabcut-task-kind">
+            <label><input type="radio" name="tabcutTaskKind" value="new_product" checked onchange="syncTabcutTaskKindUI()"> 新品任务</label>
+            <label><input type="radio" name="tabcutTaskKind" value="supplement" onchange="syncTabcutTaskKindUI()"> 补充素材</label>
+          </div>
+        </div>
+        <div id="tabcutTaskProductSearchWrap" class="tabcut-task-field" hidden>
+          <label for="tabcutTaskProductSearch">目标产品</label>
+          <div class="tabcut-task-search-row">
+            <input id="tabcutTaskProductSearch" class="tabcut-input" type="text" placeholder="搜索产品名或 Product Code">
+            <button id="tabcutTaskProductSearchBtn" class="tabcut-btn secondary" type="button">搜索</button>
+          </div>
+          <div id="tabcutTaskSelectedProduct" class="tabcut-task-product-box" hidden></div>
+          <div id="tabcutTaskProductResults" class="tabcut-task-results"></div>
+        </div>
+        <div class="tabcut-task-field">
+          <label for="tabcutTaskOwner">产品负责人 / 默认翻译负责人</label>
+          <select id="tabcutTaskOwner" class="tabcut-select"></select>
+          <div class="tabcut-task-hint">新品任务用于产品归属；补充素材沿用目标产品负责人。每个目标语种可单独改负责人。</div>
+        </div>
+        <div class="tabcut-task-field">
+          <label for="tabcutTaskRawProcessor">原视频处理人</label>
+          <select id="tabcutTaskRawProcessor" class="tabcut-select"></select>
+        </div>
+        <div class="tabcut-task-field">
+          <span class="tabcut-task-label">目标国家</span>
+          <div id="tabcutTaskLangs" class="tabcut-task-langs"></div>
+        </div>
+        <label class="tabcut-task-lang-main" for="tabcutTaskUrgent">
+          <input id="tabcutTaskUrgent" type="checkbox"> 紧急任务
+        </label>
+        <div id="tabcutTaskStatus" class="tabcut-task-status" hidden></div>
+      </div>
+      <div class="tabcut-task-actions">
+        <button class="tabcut-btn secondary" type="button" onclick="closeTabcutTaskModal()">取消</button>
+        <button id="tabcutTaskConfirm" class="tabcut-btn" type="button" onclick="submitTabcutVideoTask()">确认创建</button>
+      </div>
+    </div>
+  </div>
+
   <!-- TikTok Browser Modal Mockup -->
   <div id="tiktokBrowserModal" class="tiktok-modal-mask" onclick="closeTiktokBrowserModal()">
     <div class="tiktok-modal-container" onclick="event.stopPropagation()">
@@ -427,6 +502,14 @@
 <script>
 let tabcutView = "{{ initial_view or 'videos' }}";
 let tabcutPage = 1;
+const tabcutItemsByVideoId = new Map();
+let tabcutTaskState = {
+  videoId: "",
+  button: null,
+  users: [],
+  languages: [],
+  selectedProduct: null,
+};
 
 const recommendedProducts = [
   {
@@ -971,6 +1054,29 @@ function renderFineAiButton(row) {
   </button>`;
 }
 
+function tabcutHasReadyLocalVideo(row) {
+  const status = String(row && row.local_video_status || "").toLowerCase();
+  return Boolean(row && (status === "success" || status === "downloaded") && row.local_video_path);
+}
+
+function tabcutLocalVideoWaitMessage(row) {
+  const status = String(row && row.local_video_status || "").trim();
+  return status ? `本地视频未就绪：${status}` : "本地视频未就绪，等待本地化完成";
+}
+
+function renderTabcutTaskButton(row) {
+  const videoId = String(row.video_id || "");
+  if (!videoId) return "";
+  const taskId = Number(row.new_product_parent_task_id || 0);
+  if (taskId) {
+    return `<button class="tabcut-task-btn is-disabled" type="button" disabled>任务 #${taskId}</button>`;
+  }
+  if (!tabcutHasReadyLocalVideo(row)) {
+    return `<button class="tabcut-task-btn is-disabled" type="button" disabled title="${esc(tabcutLocalVideoWaitMessage(row))}">创建新品任务</button>`;
+  }
+  return `<button class="tabcut-task-btn" type="button" onclick="openTabcutVideoTaskModal(this, '${esc(videoId)}')">创建新品任务</button>`;
+}
+
 function renderVideoCard(row) {
   return `
     <article class="tabcut-video-card">
@@ -985,6 +1091,7 @@ function renderVideoCard(row) {
         <div class="tabcut-card-actions">
           ${renderMarkOptions(row)}
           ${renderFineAiButton(row)}
+          ${renderTabcutTaskButton(row)}
         </div>
         <div class="tabcut-stats">
           <div><div class="tabcut-stat-label">播放量</div><div class="tabcut-stat-value">${fmtCompact(row.play_count)}</div></div>
@@ -1104,6 +1211,11 @@ async function loadTabcut(page) {
 
 function renderTabcut(data) {
   const rows = data.items || [];
+  if (tabcutView === "videos") {
+    rows.forEach(row => {
+      if (row.video_id) tabcutItemsByVideoId.set(String(row.video_id), row);
+    });
+  }
   qs("tabcutStatus").textContent = `${fmtInt(data.total)} rows`;
   if (tabcutView === "videos") {
     qs("tabcutTableWrap").hidden = true;
@@ -1215,6 +1327,307 @@ async function toggleTabcutMark(event) {
     qs("tabcutStatus").textContent = "标注失败";
   } finally {
     setTabcutMarkDisabled(entityType, entityId, false);
+  }
+}
+
+function tabcutTaskUserLabel(user) {
+  const name = String(user && (user.display_name || user.username) || "").trim() || `用户 #${user && user.id || ""}`;
+  if (user && user.todo_count !== undefined && user.urgent_count !== undefined && user.completed_today_count !== undefined) {
+    return `${name}  待处理 ${user.todo_count}  紧急 ${user.urgent_count}  今天已完成 ${user.completed_today_count}`;
+  }
+  return name;
+}
+
+function tabcutTaskUserOptions(selectedId, includeEmpty = false) {
+  const selected = String(selectedId || "");
+  const empty = includeEmpty ? '<option value="">请选择负责人</option>' : "";
+  return empty + tabcutTaskState.users.map(user => {
+    const value = String(user.id || "");
+    return `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(tabcutTaskUserLabel(user))}</option>`;
+  }).join("");
+}
+
+function tabcutTaskLangCode(lang) {
+  return String((lang && typeof lang === "object" ? lang.code : lang) || "").trim().toUpperCase();
+}
+
+function tabcutTaskLangLabel(lang) {
+  const code = tabcutTaskLangCode(lang);
+  if (!code) return "";
+  if (lang && typeof lang === "object") {
+    const label = String(lang.label || "").trim();
+    if (label) return label;
+    const name = String(lang.name_zh || lang.name || "").trim();
+    if (name) return `${name} (${code})`;
+  }
+  const fallback = {DE:"德语", FR:"法语", ES:"西班牙语", IT:"意大利语", JA:"日语", JP:"日语", PT:"葡萄牙语", NL:"荷兰语", SV:"瑞典语", FI:"芬兰语"}[code];
+  return fallback ? `${fallback} (${code})` : code;
+}
+
+function tabcutTaskSetStatus(kind, html) {
+  const el = qs("tabcutTaskStatus");
+  if (!el) return;
+  el.hidden = false;
+  el.className = `tabcut-task-status ${kind || ""}`.trim();
+  el.innerHTML = html;
+}
+
+function tabcutTaskHideStatus() {
+  const el = qs("tabcutTaskStatus");
+  if (!el) return;
+  el.hidden = true;
+  el.innerHTML = "";
+}
+
+function tabcutTaskKind() {
+  const checked = document.querySelector('input[name="tabcutTaskKind"]:checked');
+  return checked && checked.value === "supplement" ? "supplement" : "new_product";
+}
+
+function syncTabcutTaskKindUI() {
+  const wrap = qs("tabcutTaskProductSearchWrap");
+  if (wrap) wrap.hidden = tabcutTaskKind() !== "supplement";
+}
+
+function tabcutTaskSetBusy(busy) {
+  const confirm = qs("tabcutTaskConfirm");
+  if (confirm) {
+    confirm.disabled = !!busy;
+    confirm.textContent = busy ? "创建中..." : "确认创建";
+  }
+  ["tabcutTaskOwner", "tabcutTaskRawProcessor", "tabcutTaskProductSearch", "tabcutTaskProductSearchBtn", "tabcutTaskUrgent"].forEach(id => {
+    const el = qs(id);
+    if (el) el.disabled = !!busy;
+  });
+  document.querySelectorAll('input[name="tabcutTaskKind"], #tabcutTaskLangs input, #tabcutTaskLangs select').forEach(el => {
+    el.disabled = !!busy;
+  });
+}
+
+async function tabcutTaskFetchUsers() {
+  const resp = await fetch("/tasks/api/translation-work-users");
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || "负责人加载失败");
+  return data.users || [];
+}
+
+async function tabcutTaskFetchLanguages() {
+  const resp = await fetch("/tasks/api/languages");
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || "目标国家加载失败");
+  return data.languages || [];
+}
+
+function renderTabcutTaskLanguages() {
+  const ownerId = qs("tabcutTaskOwner") ? qs("tabcutTaskOwner").value : "";
+  const container = qs("tabcutTaskLangs");
+  if (!container) return;
+  container.innerHTML = tabcutTaskState.languages.map(lang => {
+    const code = tabcutTaskLangCode(lang);
+    if (!code) return "";
+    return `<label class="tabcut-task-lang">
+      <span class="tabcut-task-lang-main"><input class="tabcut-task-lang-check" type="checkbox" value="${esc(code)}"> ${esc(tabcutTaskLangLabel(lang))}</span>
+      <select class="tabcut-select tabcut-task-lang-owner" data-tabcut-lang-owner="${esc(code)}">${tabcutTaskUserOptions(ownerId, true)}</select>
+    </label>`;
+  }).join("");
+}
+
+function selectedTabcutTaskCountries() {
+  return Array.from(document.querySelectorAll("#tabcutTaskLangs input[type=checkbox]:checked"))
+    .map(cb => String(cb.value || "").trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function selectedTabcutTaskLanguageAssignments(countries, fallbackOwnerId) {
+  const assignments = {};
+  countries.forEach(code => {
+    const select = document.querySelector(`#tabcutTaskLangs [data-tabcut-lang-owner="${code}"]`);
+    const ownerId = Number(select && select.value || fallbackOwnerId || 0);
+    if (ownerId) assignments[code] = ownerId;
+  });
+  return assignments;
+}
+
+function renderTabcutTaskSelectedProduct(product) {
+  const box = qs("tabcutTaskSelectedProduct");
+  if (!box) return;
+  if (!product) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `<strong>已选择产品 #${esc(product.id)}</strong><div>${esc(product.name || "")}</div><div>Product Code: ${esc(product.product_code || "-")} · 负责人: ${esc(product.owner_name || product.owner_id || "-")}</div>`;
+}
+
+function selectTabcutTaskProduct(product) {
+  tabcutTaskState.selectedProduct = product || null;
+  renderTabcutTaskSelectedProduct(tabcutTaskState.selectedProduct);
+  const input = qs("tabcutTaskProductSearch");
+  const results = qs("tabcutTaskProductResults");
+  if (input && product) input.value = product.name || product.product_code || product.id || "";
+  if (results && product) results.innerHTML = "";
+}
+
+function renderTabcutTaskProductResults(items) {
+  const results = qs("tabcutTaskProductResults");
+  if (!results) return;
+  if (!items.length) {
+    results.innerHTML = '<div class="tabcut-task-status">没有匹配产品</div>';
+    return;
+  }
+  results.innerHTML = items.map(product => `
+    <div class="tabcut-task-result">
+      <div><strong>#${esc(product.id)} ${esc(product.name || "")}</strong><div class="tabcut-task-hint">Product Code: ${esc(product.product_code || "-")} · 负责人: ${esc(product.owner_name || product.owner_id || "-")}</div></div>
+      <button class="tabcut-btn secondary" type="button" data-tabcut-product-id="${esc(product.id)}">选择</button>
+    </div>`).join("");
+  results.querySelectorAll("[data-tabcut-product-id]").forEach(btn => {
+    btn.onclick = () => {
+      const id = Number(btn.dataset.tabcutProductId || 0);
+      selectTabcutTaskProduct(items.find(item => Number(item.id) === id) || null);
+    };
+  });
+}
+
+async function searchTabcutTaskProducts() {
+  const input = qs("tabcutTaskProductSearch");
+  const results = qs("tabcutTaskProductResults");
+  if (results) results.innerHTML = '<div class="tabcut-task-status">搜索中...</div>';
+  const resp = await fetch("/tasks/api/material-products?q=" + encodeURIComponent(input ? input.value || "" : ""));
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || "产品搜索失败");
+  renderTabcutTaskProductResults(data.items || []);
+}
+
+async function openTabcutVideoTaskModal(btn, videoId) {
+  const row = tabcutItemsByVideoId.get(String(videoId));
+  if (!tabcutHasReadyLocalVideo(row)) {
+    mkiToast("warning", tabcutLocalVideoWaitMessage(row));
+    return;
+  }
+  tabcutTaskState = {videoId: String(videoId), button: btn, users: [], languages: [], selectedProduct: null};
+  const modal = qs("tabcutTaskModal");
+  if (!modal) return;
+  modal.hidden = false;
+  tabcutTaskSetBusy(true);
+  tabcutTaskSetStatus("", "正在加载任务配置...");
+  document.querySelectorAll('input[name="tabcutTaskKind"]').forEach(radio => {
+    radio.checked = radio.value === "new_product";
+  });
+  syncTabcutTaskKindUI();
+  selectTabcutTaskProduct(null);
+  const results = qs("tabcutTaskProductResults");
+  if (results) results.innerHTML = "";
+  const searchInput = qs("tabcutTaskProductSearch");
+  if (searchInput) searchInput.value = "";
+  try {
+    const [users, languages] = await Promise.all([tabcutTaskFetchUsers(), tabcutTaskFetchLanguages()]);
+    tabcutTaskState.users = users;
+    tabcutTaskState.languages = languages;
+    if (!users.length) throw new Error("没有可用任务负责人");
+    qs("tabcutTaskOwner").innerHTML = tabcutTaskUserOptions(users[0].id);
+    qs("tabcutTaskRawProcessor").innerHTML = '<option value="">请选择原视频处理人</option>' + tabcutTaskUserOptions(users[0].id);
+    renderTabcutTaskLanguages();
+    qs("tabcutTaskOwner").onchange = renderTabcutTaskLanguages;
+    qs("tabcutTaskProductSearchBtn").onclick = () => {
+      searchTabcutTaskProducts().catch(error => tabcutTaskSetStatus("error", "搜索失败：" + esc(error.message || error)));
+    };
+    qs("tabcutTaskProductSearch").onkeydown = event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        qs("tabcutTaskProductSearchBtn").click();
+      }
+    };
+    tabcutTaskHideStatus();
+  } catch (error) {
+    tabcutTaskSetStatus("error", esc(error.message || error));
+  } finally {
+    tabcutTaskSetBusy(false);
+  }
+}
+
+function closeTabcutTaskModal() {
+  const modal = qs("tabcutTaskModal");
+  if (modal) modal.hidden = true;
+}
+
+function tabcutTaskRequestError(endpoint, resp, data) {
+  const detail = data && (data.error || data.detail || data.message);
+  return new Error(`请求 ${endpoint} 返回 ${resp.status}${resp.statusText ? " " + resp.statusText : ""}：${detail || "无错误详情"}`);
+}
+
+async function submitTabcutVideoTask() {
+  const endpoint = "/tasks/api/new-product";
+  const ownerId = Number(qs("tabcutTaskOwner") && qs("tabcutTaskOwner").value || 0);
+  const rawProcessorId = Number(qs("tabcutTaskRawProcessor") && qs("tabcutTaskRawProcessor").value || 0);
+  const countries = selectedTabcutTaskCountries();
+  const kind = tabcutTaskKind();
+  if (!ownerId) { alert("请选择产品负责人 / 默认翻译负责人"); return; }
+  if (!rawProcessorId) { alert("请选择原视频处理人"); return; }
+  if (kind === "supplement" && (!tabcutTaskState.selectedProduct || !tabcutTaskState.selectedProduct.id)) {
+    alert("请先搜索并选择要补充素材的目标产品");
+    return;
+  }
+  if (!countries.length) { alert("请选择目标国家"); return; }
+  const assignments = selectedTabcutTaskLanguageAssignments(countries, ownerId);
+  for (const code of countries) {
+    if (!assignments[code]) { alert("请为 " + code + " 选择翻译负责人"); return; }
+  }
+
+  tabcutTaskSetBusy(true);
+  tabcutTaskSetStatus("", `<strong>正在创建任务</strong><div>正在请求 ${esc(endpoint)}</div>`);
+  let created = false;
+  try {
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: tabcutJsonHeaders(),
+      body: JSON.stringify({
+        source: "tabcut_video",
+        video_id: tabcutTaskState.videoId,
+        task_kind: kind,
+        owner_id: ownerId,
+        target_product_id: kind === "supplement" ? Number(tabcutTaskState.selectedProduct.id) : null,
+        raw_processor_id: rawProcessorId,
+        countries: countries,
+        language_assignments: assignments,
+        is_urgent: !!(qs("tabcutTaskUrgent") && qs("tabcutTaskUrgent").checked),
+        force: false
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw tabcutTaskRequestError(endpoint, resp, data);
+    const taskId = Number(data.parent_task_id || 0);
+    if (!taskId) throw new Error("创建成功但响应缺少 parent_task_id");
+    const row = tabcutItemsByVideoId.get(String(tabcutTaskState.videoId));
+    if (row) {
+      row.local_product_id = data.media_product_id || row.local_product_id;
+      row.local_media_item_id = data.media_item_id || row.local_media_item_id;
+      row.new_product_parent_task_id = taskId;
+    }
+    if (tabcutTaskState.button) {
+      tabcutTaskState.button.textContent = "任务 #" + taskId;
+      tabcutTaskState.button.classList.add("is-disabled");
+      tabcutTaskState.button.disabled = true;
+    }
+    tabcutTaskSetStatus("success",
+      `<strong>${kind === "supplement" ? "补充素材任务" : "新品任务"}已创建 #${esc(taskId)}</strong>`
+      + `<div><a href="/tasks/?task_id=${encodeURIComponent(taskId)}" target="_blank" rel="noopener noreferrer">打开任务 #${esc(taskId)}</a></div>`
+    );
+    created = true;
+    mkiToast("success", (kind === "supplement" ? "补充素材任务" : "新品任务") + "已创建 #" + taskId);
+  } catch (error) {
+    tabcutTaskSetStatus("error", esc(error.message || error));
+    mkiToast("error", "创建失败：" + (error.message || error));
+  } finally {
+    if (created) {
+      const confirm = qs("tabcutTaskConfirm");
+      if (confirm) {
+        confirm.disabled = true;
+        confirm.textContent = "已创建";
+      }
+    } else {
+      tabcutTaskSetBusy(false);
+    }
   }
 }
 
