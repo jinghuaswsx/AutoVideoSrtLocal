@@ -1450,13 +1450,15 @@
 
   async function load(options) {
     const showModal = Boolean(options && options.modal);
+    const force = Boolean(options && options.force);
     $('mkpReload').disabled = true;
     if (showModal) {
       openProgressModal('刷新状态', '重新读取我们系统 SKU、DXM03 实时状态和明空参考数据');
       appendProgressLog('info', '开始刷新工作台数据');
     }
     try {
-      const payload = await fetchJson(`/medias/api/products/${productId}/mingkong-pairing`);
+      const url = `/medias/api/products/${productId}/mingkong-pairing` + (force ? '?force=1' : '');
+      const payload = await fetchJson(url);
       state.payload = payload;
       renderMeta(payload);
       renderRows(payload.items || []);
@@ -1873,7 +1875,7 @@
       });
       payloadLogs(result).forEach((entry) => appendSyncLog(entry.level, entry.message));
       appendSyncLog('info', '正在刷新工作台状态');
-      await load();
+      await load({ force: true });
       appendSyncLog('ok', '工作台状态已刷新');
       finishSyncProgress(result.ok === false ? 'warn' : 'ok', result.message || '同步完成');
       $('mkpResult').textContent = resultText(result, '同步明空店小秘SKU完成');
@@ -1887,7 +1889,7 @@
       }
       if (Array.isArray(payload.items) && payload.items.length) {
         appendSyncLog('info', '检测到逐 SKU 结果，正在刷新工作台状态');
-        await load();
+        await load({ force: true });
         appendSyncLog('ok', '工作台状态已刷新');
       }
       const hasErrorLog = logs.some((entry) => entry.level === 'error');
@@ -1990,7 +1992,7 @@
   });
 
   $('mkpReload').addEventListener('click', () => {
-    load({ modal: true }).catch(() => {});
+    load({ modal: true, force: true }).catch(() => {});
   });
   $('mkpConfirm').addEventListener('click', () => {
     openSyncReviewModal().catch((err) => {

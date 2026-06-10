@@ -1352,24 +1352,34 @@ def _has_replicable_mingkong_sku(rows: list[dict[str, Any]]) -> bool:
     return any(str((row or {}).get("dianxiaomi_sku") or "").strip() for row in rows or [])
 
 
-def load_mingkong_library_sku_rows(product: dict[str, Any]) -> dict[str, Any]:
+_LAST_DXM_REFRESH: dict[int, float] = {}
+
+
+def load_mingkong_library_sku_rows(product: dict[str, Any], *, force_refresh: bool = False) -> dict[str, Any]:
     library_rows = mingkong_product_library.sku_rows_from_library(product)
     realtime_refresh_summary: dict[str, Any] | None = None
-    if not _has_replicable_mingkong_sku(library_rows):
+
+    product_id = int(product.get("id") or 0)
+    now = time.time()
+    last_refresh = _LAST_DXM_REFRESH.get(product_id, 0.0) if product_id else 0.0
+    should_refresh = force_refresh or (now - last_refresh > 600.0)
+
+    if should_refresh and (force_refresh or not _has_replicable_mingkong_sku(library_rows)):
+        if product_id:
+            _LAST_DXM_REFRESH[product_id] = now
         realtime_refresh_summary = mingkong_product_library.refresh_product_from_dxm02(product)
         library_rows = mingkong_product_library.sku_rows_from_library(product)
         
         # If still no replicable SKU, trigger fuzzy candidate sync if not already done
         if not _has_replicable_mingkong_sku(library_rows):
-            product_id = int(product.get("id") or 0)
             has_candidates = False
-            if product_id:
+            if product_id and not force_refresh:
                 from appcore.db import query_one
                 has_candidates = bool(query_one(
                     "SELECT id FROM mingkong_procurement_links WHERE mingkong_product_id = %s AND confidence = 'keyword_candidate' LIMIT 1",
                     (product_id,)
                 ))
-            if not has_candidates:
+            if force_refresh or not has_candidates:
                 try:
                     fuzzy_res = mingkong_product_library.refresh_fuzzy_candidates_from_dxm02(product)
                     if fuzzy_res.get("status") == "success":
@@ -1522,8 +1532,8 @@ def merge_full_sku_base_with_fill_rows(
     return out
 
 
-def build_mingkong_library_sku_import_payload(product: dict[str, Any]) -> dict[str, Any]:
-    loaded = load_mingkong_library_sku_rows(product)
+def build_mingkong_library_sku_import_payload(product: dict[str, Any], *, force_refresh: bool = False) -> dict[str, Any]:
+    loaded = load_mingkong_library_sku_rows(product, force_refresh=force_refresh)
     pairs: list[dict[str, Any]] = []
     replicable_count = 0
     for row in loaded["rows"]:
@@ -1771,6 +1781,7 @@ def build_workbench_payload(
     *,
     include_live: bool = True,
     include_mingkong_reference: bool = False,
+    force_refresh: bool = False,
     fetch_live_fn=fetch_dxm03_pairing_snapshot,
 ) -> dict[str, Any]:
     purchase_url = str(product.get("purchase_1688_url") or "").strip()
@@ -1789,7 +1800,7 @@ def build_workbench_payload(
         full_sku_base_error = str(exc)
     if not source_rows:
         try:
-            loaded_library = load_mingkong_library_sku_rows(product)
+            loaded_library = load_mingkong_library_sku_rows(product, force_refresh=force_refresh)
             library_rows = loaded_library["rows"]
             realtime_refresh_summary = loaded_library["realtime_refresh"]
             source_rows = library_rows
@@ -1805,7 +1816,7 @@ def build_workbench_payload(
                     for row in raw_library_rows
                 ]
             else:
-                loaded_library = load_mingkong_library_sku_rows(product)
+                loaded_library = load_mingkong_library_sku_rows(product, force_refresh=force_refresh)
                 library_rows = loaded_library["rows"]
                 realtime_refresh_summary = loaded_library["realtime_refresh"]
         except Exception as exc:

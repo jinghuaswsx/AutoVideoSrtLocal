@@ -254,12 +254,13 @@ def _refresh_shopify_sku_flask_response(result):
     return _refresh_shopify_sku_flask_response_impl(result)
 
 
-def _build_mingkong_pairing_workbench_response(pid: int, product: dict):
+def _build_mingkong_pairing_workbench_response(pid: int, product: dict, force: bool = False):
     sku_rows = medias.list_product_skus(pid)
     return dianxiaomi_mingkong_pairing.build_workbench_payload(
         product,
         sku_rows,
         include_mingkong_reference=True,
+        force_refresh=force,
     )
 
 
@@ -1110,7 +1111,8 @@ def api_mingkong_pairing_workbench(pid: int):
     p = medias.get_product(pid)
     if not routes._can_access_product(p):
         abort(404)
-    return routes._build_mingkong_pairing_workbench_response(pid, p)
+    force = request.args.get("force") == "1"
+    return routes._build_mingkong_pairing_workbench_response(pid, p, force=force)
 
 
 @bp.route("/api/products/<int:pid>/mingkong-pairing/import-skus", methods=["POST"])
