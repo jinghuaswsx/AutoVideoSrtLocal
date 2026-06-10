@@ -65,14 +65,15 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
     sales_rows = query(
         "SELECT meta_business_date AS d, "
         "       SUM(COALESCE(quantity, 0)) AS units, "
-        "       COUNT(DISTINCT dxm_package_id) AS order_count "
+        "       COUNT(DISTINCT dxm_package_id) AS order_count, "
+        "       SUM(COALESCE(line_amount, 0)) AS sales "
         "FROM dianxiaomi_order_lines "
         "WHERE product_code = %s AND meta_business_date BETWEEN %s AND %s "
         "GROUP BY meta_business_date",
         (product_code, start_of_12_months_ago, today)
     )
 
-    sales_by_date: dict[date, dict[str, int]] = {}
+    sales_by_date: dict[date, dict[str, Any]] = {}
     for r in sales_rows:
         d_val = r.get("d")
         if isinstance(d_val, str):
@@ -82,7 +83,8 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
         if d_val:
             sales_by_date[d_val] = {
                 "units": int(r.get("units") or 0),
-                "orders": int(r.get("order_count") or 0)
+                "orders": int(r.get("order_count") or 0),
+                "sales": float(r.get("sales") or 0.0)
             }
 
     # 3. Query ad metrics for the last 30 days if product_id exists
@@ -114,22 +116,28 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
     daily_trend = []
     for i in range(30):
         d_val = today - timedelta(days=29 - i)
-        s_data = sales_by_date.get(d_val, {"units": 0, "orders": 0})
+        s_data = sales_by_date.get(d_val, {"units": 0, "orders": 0, "sales": 0.0})
         ad_data = ad_by_date.get(d_val, {"spend": Decimal("0"), "purchase_value": Decimal("0")})
         
         spend = float(ad_data["spend"])
         purchase_value = float(ad_data["purchase_value"])
-        roas = None
+        sales = float(s_data["sales"])
+        
+        meta_roas = None
+        real_roas = None
         if spend > 0:
-            roas = round(purchase_value / spend, 2)
+            meta_roas = round(purchase_value / spend, 2)
+            real_roas = round(sales / spend, 2)
             
         daily_trend.append({
             "date": d_val.isoformat(),
             "units": s_data["units"],
             "orders": s_data["orders"],
+            "sales": sales,
             "spend": spend,
             "purchase_value": purchase_value,
-            "roas": roas
+            "meta_roas": meta_roas,
+            "real_roas": real_roas
         })
 
     # 5. Generate weekly trend (Last 12 Weeks)
@@ -142,6 +150,7 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
         
         w_units = 0
         w_orders = 0
+        w_sales = 0.0
         
         # Aggregate daily sales in this week
         curr_d = w_start
@@ -150,6 +159,7 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
             if s_data:
                 w_units += s_data["units"]
                 w_orders += s_data["orders"]
+                w_sales += s_data["sales"]
             curr_d += timedelta(days=1)
             
         label = f"W{w_start.isocalendar()[1]} ({w_start.strftime('%m-%d')} ~ {w_end.strftime('%m-%d')})"
@@ -157,6 +167,7 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
             "label": label,
             "units": w_units,
             "orders": w_orders,
+            "sales": w_sales,
             "start_date": w_start.isoformat(),
             "end_date": w_end.isoformat()
         })
@@ -179,17 +190,20 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
     for y, m in month_starts:
         m_units = 0
         m_orders = 0
+        m_sales = 0.0
         # Calculate start and end date of that month
         # For simplicity, aggregate daily sales where date has matching y and m
         for d_val, s_data in sales_by_date.items():
             if d_val.year == y and d_val.month == m:
                 m_units += s_data["units"]
                 m_orders += s_data["orders"]
+                m_sales += s_data["sales"]
                 
         monthly_trend.append({
             "label": f"{y}-{m:02d}",
             "units": m_units,
-            "orders": m_orders
+            "orders": m_orders,
+            "sales": m_sales
         })
 
     return {
