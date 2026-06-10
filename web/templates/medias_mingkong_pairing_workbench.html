@@ -818,6 +818,16 @@
   [data-theme='dark'] .mkp-loading-text {
     color: #3b82f6;
   }
+  .mkp-ai-loading {
+    color: #2563eb;
+    font-size: 2em;
+    font-weight: bold;
+    text-align: center;
+    padding: 20px 0;
+  }
+  [data-theme='dark'] .mkp-ai-loading {
+    color: #3b82f6;
+  }
   @media (max-width: 900px) {
     .mkp-head {
       flex-direction: column;
@@ -1828,6 +1838,9 @@
     const original = btn.textContent;
     btn.disabled = true;
     btn.textContent = '判断中';
+    const box = $('mkpSyncAiReviewBox');
+    box.innerHTML = '<div class="mkp-ai-loading">AI判断中....</div>';
+    box.hidden = false;
     appendSyncLog('info', '正在调用 AI 辅助判断明空候选，仅输出建议，不会写入 DXM03');
     try {
       const result = await fetchJson(`/medias/api/products/${productId}/mingkong-pairing/ai-review`, {
@@ -1844,6 +1857,7 @@
         appendSyncLog('info', `AI 调用已记录 usage_log_id=${result.usage_log_id}`);
       }
     } catch (err) {
+      box.hidden = true;
       const payload = err.payload || {};
       const logs = payloadLogs(payload);
       if (logs.length) {
