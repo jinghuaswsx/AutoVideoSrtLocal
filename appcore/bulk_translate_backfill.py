@@ -313,6 +313,29 @@ def sync_video_result(
             bound_task_id = None
         if bound_task_id is not None and bound_task_id <= 0:
             bound_task_id = None
+
+    real_file_size = None
+    real_duration = None
+    try:
+        from appcore import local_media_storage
+        from pipeline.ffutil import probe_media_info
+        local_path = local_media_storage.safe_local_path_for(video_object_key)
+        if not local_path.is_file():
+            try:
+                local_media_storage.download_to(video_object_key, local_path)
+            except Exception:
+                pass
+        if local_path.is_file():
+            real_file_size = local_path.stat().st_size
+            info = probe_media_info(str(local_path))
+            if info and info.get("duration"):
+                real_duration = info["duration"]
+    except Exception:
+        pass
+
+    duration_val = real_duration if real_duration is not None else raw_source.get("duration_seconds")
+    file_size_val = real_file_size if real_file_size is not None else raw_source.get("file_size")
+
     with _acquire_video_sync_lock(
         parent_task_id=parent_task_id,
         product_id=product_id,
@@ -342,8 +365,8 @@ def sync_video_result(
                         filename,
                         video_object_key,
                         cover_object_key,
-                        raw_source.get("duration_seconds"),
-                        raw_source.get("file_size"),
+                        duration_val,
+                        file_size_val,
                         source_raw_id,
                         bound_task_id,
                         target_id,
@@ -362,8 +385,8 @@ def sync_video_result(
                         filename,
                         video_object_key,
                         cover_object_key,
-                        raw_source.get("duration_seconds"),
-                        raw_source.get("file_size"),
+                        duration_val,
+                        file_size_val,
                         source_raw_id,
                         target_id,
                     ),
@@ -376,8 +399,8 @@ def sync_video_result(
                 object_key=video_object_key,
                 display_name=filename,
                 cover_object_key=cover_object_key,
-                duration_seconds=raw_source.get("duration_seconds"),
-                file_size=raw_source.get("file_size"),
+                duration_seconds=duration_val,
+                file_size=file_size_val,
                 lang=lang,
                 task_id=bound_task_id,
             )

@@ -101,7 +101,7 @@
     const size = Number(value || 0);
     if (!size) return '大小未知';
     if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
-    return `${(size / (1024 * 1024)).toFixed(size >= 100 * 1024 * 1024 ? 0 : 1)} MB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   function fmtDuration(seconds) {
