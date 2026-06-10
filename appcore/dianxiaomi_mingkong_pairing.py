@@ -1299,6 +1299,7 @@ _RESULT_STATUS_LABELS = {
     "created": "已复刻",
     "error": "失败",
     "pending": "待处理",
+    "skipped_combo_existing": "已有组合 SKU，已标注跳过",
 }
 
 
@@ -1498,11 +1499,14 @@ def merge_full_sku_base_with_fill_rows(
 def build_mingkong_library_sku_import_payload(product: dict[str, Any]) -> dict[str, Any]:
     loaded = load_mingkong_library_sku_rows(product)
     pairs: list[dict[str, Any]] = []
+    replicable_count = 0
     for row in loaded["rows"]:
         variant_id = str(row.get("shopify_variant_id") or "").strip()
         dianxiaomi_sku = str(row.get("dianxiaomi_sku") or "").strip()
         if not variant_id:
             continue
+        if dianxiaomi_sku:
+            replicable_count += 1
         pairs.append({
             "shopify_product_id": row.get("shopify_product_id") or product.get("shopifyid") or "",
             "shopify_variant_id": variant_id,
@@ -1514,12 +1518,20 @@ def build_mingkong_library_sku_import_payload(product: dict[str, Any]) -> dict[s
             "dianxiaomi_sku_code": row.get("dianxiaomi_sku_code") or None,
             "dianxiaomi_name": row.get("dianxiaomi_name") or None,
         })
+    if not pairs:
+        message = "明空产品库未找到可同步的 SKU 行"
+    elif not replicable_count:
+        message = "已建立全量 Shopify SKU 基底，但明空产品库未找到可复刻的店小秘 SKU"
+    else:
+        message = ""
     return {
         "ok": bool(pairs),
         "pairs": pairs,
+        "replicable_count": replicable_count,
+        "variant_count": len(pairs),
         "items": loaded["rows"],
         "realtime_refresh": loaded["realtime_refresh"],
-        "message": "" if pairs else "明空产品库未找到可同步的 SKU 行",
+        "message": message,
     }
 
 
@@ -1544,18 +1556,26 @@ def _target_value(
 
 def _target_source_indexes(
     rows: list[dict[str, Any]],
-) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+]:
     by_variant: dict[str, dict[str, Any]] = {}
     by_sku: dict[str, dict[str, Any]] = {}
+    by_title: dict[str, dict[str, Any]] = {}
     for raw in rows or []:
         row = _local_sku_payload(raw)
         variant_id = str(row.get("shopify_variant_id") or "").strip()
         sku = str(row.get("dianxiaomi_sku") or "").strip()
+        title = _row_title_key(row)
         if variant_id:
             by_variant.setdefault(variant_id, row)
         if sku:
             by_sku.setdefault(sku, row)
-    return by_variant, by_sku
+        if title:
+            by_title.setdefault(title, row)
+    return by_variant, by_sku, by_title
 
 
 def build_target_sku_import_pairs(
@@ -1565,7 +1585,7 @@ def build_target_sku_import_pairs(
 ) -> list[dict[str, Any]]:
     """Build local media SKU rows from the editable sync-review target column."""
 
-    by_variant, by_sku = _target_source_indexes(library_items)
+    by_variant, by_sku, by_title = _target_source_indexes(library_items)
     pairs: list[dict[str, Any]] = []
     seen_variants: set[str] = set()
     for raw_target in targets or []:
@@ -1575,6 +1595,7 @@ def build_target_sku_import_pairs(
         source = (
             by_variant.get(str(target.get("shopify_variant_id") or "").strip())
             or by_sku.get(str(target.get("dianxiaomi_sku") or "").strip())
+            or by_title.get(_row_title_key(target))
             or {}
         )
         variant_id = str(
@@ -1638,7 +1659,7 @@ def first_purchase_url_from_targets(
     library_items: list[dict[str, Any]],
     targets: list[dict[str, Any]] | None,
 ) -> str:
-    by_variant, by_sku = _target_source_indexes(library_items)
+    by_variant, by_sku, by_title = _target_source_indexes(library_items)
     for raw_target in targets or []:
         if not isinstance(raw_target, dict):
             continue
@@ -1646,6 +1667,7 @@ def first_purchase_url_from_targets(
         source = (
             by_variant.get(str(target.get("shopify_variant_id") or "").strip())
             or by_sku.get(str(target.get("dianxiaomi_sku") or "").strip())
+            or by_title.get(_row_title_key(target))
             or {}
         )
         selected_offer_id = (
@@ -1667,18 +1689,26 @@ def first_purchase_url_from_targets(
 
 def _mingkong_reference_indexes(
     rows: list[dict[str, Any]],
-) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+    dict[str, dict[str, Any]],
+]:
     by_variant: dict[str, dict[str, Any]] = {}
     by_sku: dict[str, dict[str, Any]] = {}
+    by_title: dict[str, dict[str, Any]] = {}
     for item in rows:
         row = _local_sku_payload(item)
         variant_id = str(row.get("shopify_variant_id") or "").strip()
         sku = str(row.get("dianxiaomi_sku") or "").strip()
+        title = _row_title_key(row)
         if variant_id:
             by_variant.setdefault(variant_id, row)
         if sku:
             by_sku.setdefault(sku, row)
-    return by_variant, by_sku
+        if title:
+            by_title.setdefault(title, row)
+    return by_variant, by_sku, by_title
 
 
 def _mingkong_reference_payload(row: dict[str, Any] | None, fallback: dict[str, Any]) -> dict[str, Any]:
@@ -1742,10 +1772,11 @@ def build_workbench_payload(
             library_rows = []
     elif include_mingkong_reference:
         try:
-            if has_configured_local_sku:
+            raw_library_rows = mingkong_product_library.sku_rows_from_library(product)
+            if has_configured_local_sku or _has_replicable_mingkong_sku(raw_library_rows):
                 library_rows = [
                     _local_sku_payload(row)
-                    for row in mingkong_product_library.sku_rows_from_library(product)
+                    for row in raw_library_rows
                 ]
             else:
                 loaded_library = load_mingkong_library_sku_rows(product)
@@ -1767,7 +1798,7 @@ def build_workbench_payload(
         )
     else:
         local_rows = [_local_sku_payload(row) for row in source_rows]
-    mingkong_by_variant, mingkong_by_sku = _mingkong_reference_indexes(library_rows)
+    mingkong_by_variant, mingkong_by_sku, mingkong_by_title = _mingkong_reference_indexes(library_rows)
     sku_values = [row["dianxiaomi_sku"] for row in local_rows if row.get("dianxiaomi_sku")]
     live_error = ""
     snapshot: dict[str, dict[str, Any]] = {}
@@ -1788,6 +1819,7 @@ def build_workbench_payload(
         mingkong_reference = (
             mingkong_by_variant.get(str(row.get("shopify_variant_id") or "").strip())
             or mingkong_by_sku.get(sku)
+            or mingkong_by_title.get(_row_title_key(row))
         )
         row_purchase_url = str(row.get("purchase_1688_url") or "").strip()
         row_alibaba_product_id = normalize_1688_offer_id(row_purchase_url)
@@ -2113,28 +2145,35 @@ def _replicate_mingkong_skus_to_dxm03_impl(
                             "status": "skipped",
                             "changed_fields": [],
                         }
-                        source_commodity = _search_commodity(source_ctx, sku)
-                        if source_commodity and source_commodity.get("id"):
-                            source_detail = _view_commodity_detail(
-                                source_ctx,
-                                source_commodity["id"],
-                                account_label="DXM02",
-                            )
-                            target_detail = _view_commodity_detail(
-                                target_ctx,
-                                existing_target["id"],
-                                account_label="DXM03",
-                            )
-                            logistics_packaging = _sync_existing_commodity_logistics_packaging(
-                                target_ctx,
-                                source_detail,
-                                target_detail,
-                            )
-                        else:
+                        if existing_target.get("is_combo"):
                             logistics_packaging = {
-                                "status": "skipped_missing_dxm02_source",
+                                "status": "skipped_combo_existing",
                                 "changed_fields": [],
+                                "message": "DXM03 已有组合 SKU，物流与包装暂不使用普通商品接口自动补齐",
                             }
+                        if logistics_packaging.get("status") != "skipped_combo_existing":
+                            source_commodity = _search_commodity(source_ctx, sku)
+                            if source_commodity and source_commodity.get("id"):
+                                source_detail = _view_commodity_detail(
+                                    source_ctx,
+                                    source_commodity["id"],
+                                    account_label="DXM02",
+                                )
+                                target_detail = _view_commodity_detail(
+                                    target_ctx,
+                                    existing_target["id"],
+                                    account_label="DXM03",
+                                )
+                                logistics_packaging = _sync_existing_commodity_logistics_packaging(
+                                    target_ctx,
+                                    source_detail,
+                                    target_detail,
+                                )
+                            else:
+                                logistics_packaging = {
+                                    "status": "skipped_missing_dxm02_source",
+                                    "changed_fields": [],
+                                }
                         logistics_message = "已检查物流与包装"
                         if logistics_packaging.get("status") == "updated":
                             logistics_message = "已补齐物流与包装缺失字段"
@@ -2142,6 +2181,8 @@ def _replicate_mingkong_skus_to_dxm03_impl(
                             logistics_message = "物流与包装已有信息，未覆盖"
                         elif logistics_packaging.get("status") == "skipped_missing_dxm02_source":
                             logistics_message = "DXM02 找不到源 SKU，物流与包装未补齐"
+                        elif logistics_packaging.get("status") == "skipped_combo_existing":
+                            logistics_message = "已有组合 SKU，物流与包装暂未自动补齐"
                         item_result.update({
                             "status": "already_exists",
                             "message": f"DXM03 已存在同 SKU，直接复用；{logistics_message}",
