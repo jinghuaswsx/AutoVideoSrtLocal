@@ -365,8 +365,8 @@ def test_build_workbench_payload_treats_variant_id_auto_skus_as_empty_base(monke
     ]
     full_base = [
         {
-            "shopify_product_id": "8602535035053",
-            "shopify_variant_id": "46078664442029",
+            "shopify_product_id": "10106995638561",
+            "shopify_variant_id": "51616507199777",
             "shopify_variant_title": "1 launcher + 3 rockets",
             "source": "shopify_public",
         }
@@ -414,7 +414,8 @@ def test_build_workbench_payload_treats_variant_id_auto_skus_as_empty_base(monke
 
     assert calls == {"library": 2, "refresh": 1}
     assert payload["summary"]["realtime_refresh"] == {"products_seen": 1, "variants_seen": 1}
-    assert payload["items"][0]["shopify_variant_id"] == "46078664442029"
+    assert payload["items"][0]["shopify_product_id"] == "10106995638561"
+    assert payload["items"][0]["shopify_variant_id"] == "51616507199777"
     assert payload["items"][0]["dianxiaomi_sku"] == "0424-rocket-1"
     assert payload["items"][0]["dianxiaomi_sku_code"] == "98070901"
     assert payload["items"][0]["mingkong"]["sku"] == "0424-rocket-1"

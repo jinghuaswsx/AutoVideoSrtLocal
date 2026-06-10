@@ -356,6 +356,34 @@ def test_mingkong_product_library_builds_full_base_from_product_link():
     assert rows[0]["dianxiaomi_sku"] == ""
 
 
+def test_mingkong_product_library_public_base_trusts_product_link_when_shopifyid_is_stale():
+    from appcore import mingkong_product_library as library
+
+    rows = library.public_shopify_sku_rows_from_product(
+        {
+            "product_link": "https://kiddomind.example/products/footstep-rocket-launcher",
+            "shopifyid": "stale-shopify-product-id",
+        },
+        fetch_json_fn=lambda _url: {
+            "id": 10106995638561,
+            "handle": "footstep-rocket-launcher",
+            "variants": [
+                {
+                    "id": 51616507199777,
+                    "sku": None,
+                    "title": "1 launcher + 3 rockets",
+                    "price": 2995,
+                    "compare_at_price": 3998,
+                }
+            ],
+        },
+    )
+
+    assert rows[0]["shopify_product_id"] == "10106995638561"
+    assert rows[0]["shopify_variant_id"] == "51616507199777"
+    assert rows[0]["shopify_variant_title"] == "1 launcher + 3 rockets"
+
+
 def test_mingkong_product_library_drops_out_of_range_public_shopify_weight():
     from appcore import mingkong_product_library as library
 
