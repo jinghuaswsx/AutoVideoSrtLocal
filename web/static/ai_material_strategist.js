@@ -26,6 +26,15 @@
     taskModalBody: document.getElementById('aimsTaskModalBody'),
     taskModalClose: document.getElementById('aimsTaskModalClose'),
     taskModalBackdrop: document.getElementById('aimsTaskModalBackdrop'),
+    llmModal: document.getElementById('aimsLlmModal'),
+    llmModalTitle: document.getElementById('aimsLlmModalTitle'),
+    llmModalBody: document.getElementById('aimsLlmModalBody'),
+    llmModalClose: document.getElementById('aimsLlmModalClose'),
+    llmModalBackdrop: document.getElementById('aimsLlmModalBackdrop'),
+    llmTabVisual: document.getElementById('aimsLlmTabVisual'),
+    llmTabPrompt: document.getElementById('aimsLlmTabPrompt'),
+    llmTabPayload: document.getElementById('aimsLlmTabPayload'),
+    llmTabButtons: document.querySelectorAll('[data-llm-tab]'),
   };
 
   function fmtNumber(value, digits) {
@@ -398,6 +407,243 @@
     }
   }
 
+  function hideLlmModal() {
+    if (els.llmModal) {
+      els.llmModal.hidden = true;
+    }
+  }
+
+  function renderProjLlmVisual(rankingResult) {
+    let html = `<div style="display:flex; flex-direction:column; gap:16px;">`;
+    const batches = rankingResult.batch_results || [];
+    batches.forEach((b, idx) => {
+      const inCount = (b.input && b.input.products && b.input.products.length) || 0;
+      const outCount = (b.output && b.output.ranked_products && b.output.ranked_products.length) || 0;
+      const logBtn = b.usage_log_id ? `<button type="button" class="aims-btn" data-llm-log-id="${b.usage_log_id}" style="height:20px; line-height:1; padding:0 6px; font-size:10px;">查看该批次报文</button>` : '';
+      html += `
+        <div class="aims-llm-visual-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4>第 ${idx + 1} 批 AI 复评 (输入 ${inCount} 个, 输出 ${outCount} 个)</h4>
+            ${logBtn}
+          </div>
+          <div class="aims-llm-grid">
+            <div class="aims-llm-param-section">
+              <div class="aims-llm-param-title">输入候选产品</div>
+              <div class="aims-llm-param-body" style="max-height:150px; overflow-y:auto; padding:8px;">
+                <table style="width:100%; font-size:11px; border-collapse:collapse;">
+                  <thead><tr style="text-align:left; border-bottom:1px solid #ddd;"><th>Code</th><th>得分</th><th>消耗</th></tr></thead>
+                  <tbody>
+                    ${(b.input.products || []).map(p => `<tr><td>${esc(p.product_code)}</td><td>${fmtNumber(p.score, 1)}</td><td>${fmtUsd(p.spend_30d)}</td></tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="aims-llm-param-section">
+              <div class="aims-llm-param-title">AI 选择产品</div>
+              <div class="aims-llm-param-body" style="max-height:150px; overflow-y:auto; padding:8px;">
+                <ol style="margin:0; padding-left:16px;">
+                  ${(b.output.ranked_products || []).map(p => `<li><strong>${esc(p.product_code)}</strong> (Rank ${esc(p.rank)}): ${esc(p.why_selected || '')}</li>`).join('')}
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    if (rankingResult.final_input) {
+      const finalIn = (rankingResult.final_input.products && rankingResult.final_input.products.length) || 0;
+      const finalOut = (rankingResult.final_output && rankingResult.final_output.ranked_products && rankingResult.final_output.ranked_products.length) || 0;
+      const finalLogBtn = rankingResult.final_usage_log_id ? `<button type="button" class="aims-btn" data-llm-log-id="${rankingResult.final_usage_log_id}" style="height:20px; line-height:1; padding:0 6px; font-size:10px;">查看决赛报文</button>` : '';
+      html += `
+        <div class="aims-llm-visual-card" style="border-color:#bfdbfe; background:#eff6ff;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4 style="color:#1e3a8a;">最终决赛 Top 20 AI 复评 (输入 ${finalIn} 个, 输出 ${finalOut} 个)</h4>
+            ${finalLogBtn}
+          </div>
+          <div class="aims-llm-grid">
+            <div class="aims-llm-param-section">
+              <div class="aims-llm-param-title">决赛输入产品</div>
+              <div class="aims-llm-param-body" style="max-height:180px; overflow-y:auto; padding:8px;">
+                <table style="width:100%; font-size:11px; border-collapse:collapse;">
+                  <thead><tr style="text-align:left; border-bottom:1px solid #ddd;"><th>Code</th><th>得分</th><th>消耗</th></tr></thead>
+                  <tbody>
+                    ${(rankingResult.final_input.products || []).map(p => `<tr><td>${esc(p.product_code)}</td><td>${fmtNumber(p.score, 1)}</td><td>${fmtUsd(p.spend_30d)}</td></tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="aims-llm-param-section">
+              <div class="aims-llm-param-title">决赛决定 Top 20</div>
+              <div class="aims-llm-param-body" style="max-height:180px; overflow-y:auto; padding:8px;">
+                <ol style="margin:0; padding-left:16px;">
+                  ${(rankingResult.final_output.ranked_products || []).map(p => `<li><strong>${esc(p.product_code)}</strong> (Rank ${esc(p.rank)}): ${esc(p.why_selected || '')}</li>`).join('')}
+                </ol>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    
+    html += `</div>`;
+    return html;
+  }
+
+  function renderProductLlmVisual(item) {
+    const ai = item.ai_result || {};
+    const countries = ai.country_actions || [];
+    const materials = ai.material_actions || [];
+    return `
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <div class="aims-llm-visual-card">
+          <h4>分析研判总结</h4>
+          <p style="font-size:13px; line-height:1.6; color:#1e293b; margin:6px 0 0 0;">${esc(ai.overall_judgement || '暂无研判结论')}</p>
+          <div style="display:flex; gap:8px; margin-top:10px;">
+            <span class="aims-chip ${String(ai.priority || '').toLowerCase()}">优先级：${esc(ai.priority || 'P3')}</span>
+            <span class="aims-chip">建议首选动作：${esc(actionLabel(ai.primary_action))}</span>
+          </div>
+        </div>
+        
+        <div class="aims-llm-grid">
+          <div class="aims-llm-param-section">
+            <div class="aims-llm-param-title">AI 国家拓展建议 (输入与反馈)</div>
+            <div class="aims-llm-param-body" style="padding:8px;">
+              ${countries.length === 0 ? '<div class="aims-muted">无建议</div>' : `
+                <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                  <thead><tr style="text-align:left; border-bottom:1px solid #ddd;"><th>国家</th><th>建议操作</th><th>优先级</th><th>原因</th></tr></thead>
+                  <tbody>
+                    ${countries.map(c => `
+                      <tr style="border-bottom:1px solid #f1f5f9;">
+                        <td style="padding:6px 0;"><strong>${esc(c.country_code || c.lang)}</strong></td>
+                        <td>${esc(actionLabel(c.action))}</td>
+                        <td>${esc(c.priority)}</td>
+                        <td style="color:#64748b;">${esc(c.reason)}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              `}
+            </div>
+          </div>
+          
+          <div class="aims-llm-param-section">
+            <div class="aims-llm-param-title">AI 明空素材补充建议</div>
+            <div class="aims-llm-param-body" style="padding:8px;">
+              ${materials.length === 0 ? '<div class="aims-muted">无建议</div>' : `
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                  ${materials.map(m => `
+                    <div style="padding:8px; border:1px solid #e2e8f0; border-radius:4px; background:#f8fafc;">
+                      <div style="font-weight:700; color:#0f172a; margin-bottom:4px;">${esc(m.action === 'import_or_translate' ? '导入或翻译明空素材' : m.action)}</div>
+                      <div style="font-size:11px; color:#475569; margin-bottom:4px;">素材路径: <code style="background:#e2e8f0; padding:2px 4px; border-radius:3px;">${esc(m.video_path || m.material_key)}</code></div>
+                      <div style="font-size:11px; color:#475569; margin-bottom:4px;">目标语种: ${esc((m.target_langs || []).join(', ') || '无')}</div>
+                      <div style="font-size:11px; color:#64748b;">原因: ${esc(m.reason)}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              `}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function showLlmModal(title, provider, model, usageLogId, debugInfo) {
+    if (els.llmModalTitle) {
+      els.llmModalTitle.textContent = title;
+    }
+    
+    switchLlmTab('visual');
+    
+    if (els.llmTabVisual) {
+      if (debugInfo.type === 'ranking') {
+        els.llmTabVisual.innerHTML = renderProjLlmVisual(debugInfo.rankingResult);
+      } else if (debugInfo.type === 'product') {
+        els.llmTabVisual.innerHTML = renderProductLlmVisual(debugInfo.productItem);
+      } else {
+        els.llmTabVisual.innerHTML = '<div class="aims-empty">暂无可视化内容</div>';
+      }
+    }
+    
+    if (els.llmTabPrompt) {
+      const promptText = debugInfo.prompt || '未找到发送的完整 Prompt';
+      els.llmTabPrompt.innerHTML = `
+        <div class="aims-llm-badge">供应商: ${esc(provider)} | 模型: ${esc(model)}</div>
+        <pre class="aims-llm-code-block">${esc(promptText)}</pre>
+      `;
+    }
+    
+    if (els.llmTabPayload) {
+      if (!usageLogId || state.publicMode) {
+        const respText = debugInfo.response_text || '未找到大模型响应报文';
+        els.llmTabPayload.innerHTML = `
+          <div class="aims-llm-badge">仅展示本地保存的响应结果 (无 usage_log_id / 处于公开分享模式)</div>
+          <h4 style="margin:10px 0 6px;">大模型返回原始文本</h4>
+          <pre class="aims-llm-code-block">${esc(respText)}</pre>
+        `;
+      } else {
+        fetchLlmPayload(usageLogId).catch(console.error);
+      }
+    }
+    
+    if (els.llmModal) {
+      els.llmModal.hidden = false;
+    }
+  }
+
+  async function fetchLlmPayload(logId) {
+    if (!els.llmTabPayload) return;
+    if (state.publicMode) {
+      els.llmTabPayload.innerHTML = '<div class="aims-llm-badge">公开分享模式下无法查看原始报文</div>';
+      return;
+    }
+    els.llmTabPayload.innerHTML = '<div class="aims-loading">正在从服务器读取原始 JSON 报文...</div>';
+    try {
+      const res = await fetchJson('/medias/api/ai-material-strategist/llm-payload/' + logId);
+      const reqJson = JSON.stringify(res.payload.request_data, null, 2);
+      const respJson = JSON.stringify(res.payload.response_data, null, 2);
+      els.llmTabPayload.innerHTML = `
+        <div class="aims-llm-badge">已连接 usage_log_payloads 数据表，拉取到 log_id #${logId} 的原始报文</div>
+        <div class="aims-llm-grid">
+          <div>
+            <h4 style="margin:0 0 6px 0;">Request Payload (请求报文)</h4>
+            <pre class="aims-llm-code-block" style="max-height: 400px;">${esc(reqJson)}</pre>
+          </div>
+          <div>
+            <h4 style="margin:0 0 6px 0;">Response Payload (返回报文)</h4>
+            <pre class="aims-llm-code-block" style="max-height: 400px;">${esc(respJson)}</pre>
+          </div>
+        </div>
+      `;
+    } catch (err) {
+      els.llmTabPayload.innerHTML = `
+        <div class="aims-llm-badge" style="background:#fee2e2; color:#dc2626; border-color:#fecaca;">读取原始报文失败: ${esc(err.message)}</div>
+      `;
+    }
+  }
+
+  function switchLlmTab(tabName) {
+    const btns = document.querySelectorAll('[data-llm-tab]');
+    btns.forEach(btn => {
+      if (btn.getAttribute('data-llm-tab') === tabName) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+    
+    const contents = [els.llmTabVisual, els.llmTabPrompt, els.llmTabPayload];
+    contents.forEach(c => {
+      if (!c) return;
+      if (c.id === 'aimsLlmTab' + tabName.charAt(0).toUpperCase() + tabName.slice(1)) {
+        c.classList.add('active');
+      } else {
+        c.classList.remove('active');
+      }
+    });
+  }
+
   function csrfHeaders(extra) {
     const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
     return token ? { ...(extra || {}), 'X-CSRFToken': token } : (extra || {});
@@ -696,6 +942,10 @@
     const summary = project.summary || {};
     const p0 = (summary.priority_counts || {}).P0 || 0;
     const p1 = (summary.priority_counts || {}).P1 || 0;
+    const isAi = project.ranking_result && project.ranking_result.mode === 'ai';
+    const llmBtn = (project.status === 'success' && isAi) 
+      ? `<button type="button" class="aims-btn" id="aimsProjLlmBtn" style="height:22px; line-height:1; padding:0 8px; font-size:11px; margin-left: 8px;">AI复评详情</button>`
+      : '';
     return `
       <div class="aims-title-row">
         <div>
@@ -706,6 +956,7 @@
             <span>Model ${esc(project.model_id || 'google/gemini-3.5-flash')}</span>
             <span>开始 ${esc((project.started_at || '').slice(0, 16))}</span>
             ${project.finished_at ? `<span>完成 ${esc(project.finished_at.slice(0, 16))}</span>` : ''}
+            ${llmBtn}
           </div>
         </div>
         <div class="aims-actions">
@@ -876,6 +1127,15 @@
     const ai = item.ai_result || {};
     const m = item.metrics || {};
     const materials = (item.mingkong_materials || []).slice(0, 3);
+    const debug = ai._prompt_debug || {};
+    const provider = debug.provider || 'openrouter';
+    const model = debug.model || 'google/gemini-3.5-flash';
+    const debugBadge = ai.mode === 'ai' ? `
+      <div style="display:flex; align-items:center; gap:8px; margin: 6px 0 8px;">
+        <span class="aims-llm-badge" style="margin:0; font-size:10px;">AI评估: ${esc(provider)} / ${esc(model)}</span>
+        <button type="button" class="aims-btn" data-show-product-llm="${productIndex}" style="height:20px; line-height:1; padding:0 6px; font-size:10px; font-weight:normal;">提示词 & 报文</button>
+      </div>
+    ` : '';
     return `
       <section class="aims-product-section">
         <div class="aims-product-head">
@@ -893,6 +1153,7 @@
         <div class="aims-product-body">
           <div>
             <p class="aims-rec">${esc(ai.overall_judgement || '')}</p>
+            ${debugBadge}
             <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskCountLink(item, productIndex)}</div>
             <div class="aims-material-grid">${materials.map((material, materialIndex) => renderMaterial(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:48px;">暂无明空候选</div>'}</div>
           </div>
@@ -1032,6 +1293,52 @@
         showCountryTasksModal(productIndex, countryCode);
         return;
       }
+
+      const projLlmBtn = event.target.closest('#aimsProjLlmBtn');
+      if (projLlmBtn && state.activeProject) {
+        const ranking = state.activeProject.ranking_result || {};
+        const provider = ranking.provider || state.activeProject.provider_code || 'openrouter';
+        const model = ranking.model || state.activeProject.model_id || 'google/gemini-3.5-flash';
+        const usageLogId = ranking.final_usage_log_id;
+        showLlmModal(
+          `项目 #${state.activeProject.id} AI复评决策详情`,
+          provider,
+          model,
+          usageLogId,
+          {
+            type: 'ranking',
+            rankingResult: ranking,
+            prompt: ranking.final_prompt,
+            response_text: ranking.final_response_text
+          }
+        ).catch(console.error);
+        return;
+      }
+
+      const showProductLlmBtn = event.target.closest('[data-show-product-llm]');
+      if (showProductLlmBtn) {
+        const productIndex = Number(showProductLlmBtn.getAttribute('data-show-product-llm'));
+        const product = (state.activeProject && state.activeProject.products || [])[productIndex];
+        if (product) {
+          const ai = product.ai_result || {};
+          const debug = ai._prompt_debug || {};
+          const provider = debug.provider || 'openrouter';
+          const model = debug.model || 'google/gemini-3.5-flash';
+          showLlmModal(
+            `#${product.rank_no} ${product.product_code || product.product_name} AI评估研判详情`,
+            provider,
+            model,
+            debug.usage_log_id,
+            {
+              type: 'product',
+              productItem: product,
+              prompt: debug.prompt,
+              response_text: debug.response_text
+            }
+          ).catch(console.error);
+        }
+        return;
+      }
     });
   }
 
@@ -1040,6 +1347,34 @@
   }
   if (els.taskModalBackdrop) {
     els.taskModalBackdrop.addEventListener('click', hideTasksModal);
+  }
+
+  if (els.llmModalClose) {
+    els.llmModalClose.addEventListener('click', hideLlmModal);
+  }
+  if (els.llmModalBackdrop) {
+    els.llmModalBackdrop.addEventListener('click', hideLlmModal);
+  }
+  if (els.llmTabButtons) {
+    els.llmTabButtons.forEach(btn => {
+      btn.addEventListener('click', (event) => {
+        const tab = event.currentTarget.getAttribute('data-llm-tab');
+        if (tab) {
+          switchLlmTab(tab);
+        }
+      });
+    });
+  }
+  if (els.llmModalBody) {
+    els.llmModalBody.addEventListener('click', (event) => {
+      const logBtn = event.target.closest('[data-llm-log-id]');
+      if (!logBtn) return;
+      const logId = Number(logBtn.getAttribute('data-llm-log-id'));
+      if (logId) {
+        switchLlmTab('payload');
+        fetchLlmPayload(logId).catch(console.error);
+      }
+    });
   }
 
   if (els.create) els.create.addEventListener('click', createProject);
