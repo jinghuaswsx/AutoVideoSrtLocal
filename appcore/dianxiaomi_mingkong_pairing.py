@@ -1358,6 +1358,30 @@ def load_mingkong_library_sku_rows(product: dict[str, Any]) -> dict[str, Any]:
     if not _has_replicable_mingkong_sku(library_rows):
         realtime_refresh_summary = mingkong_product_library.refresh_product_from_dxm02(product)
         library_rows = mingkong_product_library.sku_rows_from_library(product)
+        
+        # If still no replicable SKU, trigger fuzzy candidate sync if not already done
+        if not _has_replicable_mingkong_sku(library_rows):
+            product_id = int(product.get("id") or 0)
+            has_candidates = False
+            if product_id:
+                from appcore.db import query_one
+                has_candidates = bool(query_one(
+                    "SELECT id FROM mingkong_procurement_links WHERE mingkong_product_id = %s AND confidence = 'keyword_candidate' LIMIT 1",
+                    (product_id,)
+                ))
+            if not has_candidates:
+                try:
+                    fuzzy_res = mingkong_product_library.refresh_fuzzy_candidates_from_dxm02(product)
+                    if fuzzy_res.get("status") == "success":
+                        if realtime_refresh_summary is None:
+                            realtime_refresh_summary = {}
+                        realtime_refresh_summary["fuzzy_candidates_seen"] = fuzzy_res.get("candidates_seen", 0)
+                        realtime_refresh_summary["fuzzy_keyword"] = fuzzy_res.get("keyword", "")
+                except Exception as exc:
+                    log.warning("Failed to refresh fuzzy candidates in load_mingkong_library_sku_rows: %s", exc)
+                # Reload library rows after fuzzy candidate sync to include them in returning payload
+                library_rows = mingkong_product_library.sku_rows_from_library(product)
+
     base_rows = mingkong_product_library.public_shopify_sku_rows_from_product(product)
     rows = merge_full_sku_base_with_fill_rows(
         base_rows,
