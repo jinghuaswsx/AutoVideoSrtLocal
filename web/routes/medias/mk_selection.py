@@ -11,7 +11,7 @@ import re
 from flask import abort, request
 from flask_login import current_user, login_required
 
-from appcore import local_media_storage, pushes
+from appcore import local_media_storage, mingkong_request_monitor, pushes
 from appcore.ai_material_strategist import get_project_by_share_token
 
 _SHARE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,100}$")
@@ -53,7 +53,13 @@ def _routes():
 
 
 def _mk_http_get(*args, **kwargs):
-    return _routes().requests.get(*args, **kwargs)
+    url = args[0] if args else kwargs.pop("url")
+    return mingkong_request_monitor.tracked_get(
+        url,
+        source="medias.mk_selection",
+        request_fn=_routes().requests.get,
+        **kwargs,
+    )
 
 
 def _is_admin():

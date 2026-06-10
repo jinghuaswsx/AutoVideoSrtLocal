@@ -15,7 +15,13 @@ from urllib.parse import quote, urlparse
 
 import requests
 
-from appcore import local_media_storage, mingkong_login_autofill, pushes, scheduled_tasks
+from appcore import (
+    local_media_storage,
+    mingkong_login_autofill,
+    mingkong_request_monitor,
+    pushes,
+    scheduled_tasks,
+)
 from appcore.db import execute, get_conn, query, query_one
 from appcore.mingkong_material_preselections import enrich_items_with_preselection
 from web.services.media_mk_selection import normalize_mk_media_path
@@ -1426,7 +1432,13 @@ def cache_local_cover_for_material(
         image_headers.pop("Content-Type", None)
         image_headers["Accept"] = "image/*,*/*;q=0.8"
         url = f"{base_url}/medias/{quote(cover_path, safe='/')}"
-        resp = session.get(url, headers=image_headers, timeout=timeout_seconds)
+        resp = mingkong_request_monitor.tracked_get(
+            url,
+            source="mingkong_materials.cache_local_cover",
+            request_fn=session.get,
+            headers=image_headers,
+            timeout=timeout_seconds,
+        )
         resp.raise_for_status()
         content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
         if content_type and not content_type.startswith("image/"):
@@ -3468,8 +3480,11 @@ def _search_mingkong_items(
     timeout_seconds: int,
     allow_login_refresh: bool = True,
 ) -> list[dict[str, Any]]:
-    resp = session.get(
-        f"{base_url}/api/marketing/medias",
+    url = f"{base_url}/api/marketing/medias"
+    resp = mingkong_request_monitor.tracked_get(
+        url,
+        source="mingkong_materials.search_items",
+        request_fn=session.get,
         params={"page": 1, "q": product_code, "source": "", "level": "", "show_attention": 0},
         headers=headers,
         timeout=timeout_seconds,
@@ -3594,8 +3609,11 @@ def _fetch_mingkong_product_detail(
     mk_product_id = _as_int(mk_product.get("id"))
     if mk_product_id <= 0:
         return mk_product
-    resp = session.get(
-        f"{base_url}/api/marketing/medias/{mk_product_id}",
+    url = f"{base_url}/api/marketing/medias/{mk_product_id}"
+    resp = mingkong_request_monitor.tracked_get(
+        url,
+        source="mingkong_materials.product_detail",
+        request_fn=session.get,
         headers=headers,
         timeout=timeout_seconds,
     )

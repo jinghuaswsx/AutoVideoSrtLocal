@@ -11,7 +11,7 @@ from urllib.parse import quote, urlencode
 
 import requests
 
-from appcore import pushes
+from appcore import mingkong_request_monitor, pushes
 from appcore.db import execute, query, query_one
 from appcore.order_analytics import current_meta_business_date
 from web.services.media_mk_selection import normalize_mk_media_path
@@ -848,8 +848,10 @@ def search_mk_materials(
     kw = str(keyword or "").strip()
     if not kw:
         return []
-    resp = requests.get(
+    resp = mingkong_request_monitor.tracked_get(
         f"{_mk_base_url()}/api/marketing/medias",
+        source="media_video_materials.search_mk_materials",
+        request_fn=requests.get,
         params={"page": max(1, int(page)), "q": kw, "source": "", "level": "", "show_attention": 0},
         headers=_mk_headers(),
         timeout=timeout,

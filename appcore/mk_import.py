@@ -15,7 +15,13 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import requests
 
-from appcore import local_media_storage, object_keys, product_link_domains, pushes
+from appcore import (
+    local_media_storage,
+    mingkong_request_monitor,
+    object_keys,
+    product_link_domains,
+    pushes,
+)
 
 log = logging.getLogger(__name__)
 
@@ -405,7 +411,12 @@ def _download_mp4(url: str, dest_path: str, timeout: int = 120) -> int:
         request_kwargs = {"stream": True, "timeout": timeout}
         if headers is not None:
             request_kwargs["headers"] = headers
-        with requests.get(download_url, **request_kwargs) as resp:
+        with mingkong_request_monitor.tracked_get(
+            download_url,
+            source="mk_import.download_mp4",
+            request_fn=requests.get,
+            **request_kwargs,
+        ) as resp:
             resp.raise_for_status()
             total = 0
             with open(dest_path, "wb") as f:
@@ -433,7 +444,12 @@ def _download_cover(url: str | None, dest_path: str, timeout: int = 30) -> str |
         request_kwargs = {"stream": True, "timeout": timeout}
         if headers is not None:
             request_kwargs["headers"] = headers
-        with requests.get(download_url, **request_kwargs) as resp:
+        with mingkong_request_monitor.tracked_get(
+            download_url,
+            source="mk_import.download_cover",
+            request_fn=requests.get,
+            **request_kwargs,
+        ) as resp:
             resp.raise_for_status()
             with open(dest_path, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=16 * 1024):
@@ -563,8 +579,10 @@ def _fetch_mk_product_detail(mk_id: int | str | None) -> dict:
         headers["Accept"] = "application/json"
         if "Authorization" not in headers and "Cookie" not in headers:
             return {}
-        resp = requests.get(
+        resp = mingkong_request_monitor.tracked_get(
             f"{base_url}/api/marketing/medias/{resolved_mk_id}",
+            source="mk_import.product_detail",
+            request_fn=requests.get,
             headers=headers,
             timeout=_MK_DETAIL_FETCH_TIMEOUT_SECONDS,
         )

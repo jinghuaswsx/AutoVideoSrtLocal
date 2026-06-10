@@ -44,6 +44,8 @@ def get_scheduler() -> BackgroundScheduler:
         product_cover_backfill_scheduler.register(_scheduler)
         from appcore import mingkong_material_ad_status_scheduler
         mingkong_material_ad_status_scheduler.register(_scheduler)
+        from appcore import mingkong_request_monitor_scheduler
+        mingkong_request_monitor_scheduler.register(_scheduler)
         from appcore import tos_backup_job
         tos_backup_job.register(_scheduler)
         from appcore import weekly_roas_report

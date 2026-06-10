@@ -14,6 +14,7 @@ import requests
 import config
 from appcore import (
     medias,
+    mingkong_request_monitor,
     product_link_domains,
     settings as system_settings,
     shopify_image_tasks,
@@ -143,7 +144,14 @@ def lookup_mk_id(product_code: str) -> tuple[int | None, str]:
     url = f"{base}/api/marketing/medias"
     params = {"page": 1, "q": code, "source": "", "level": "", "show_attention": 0}
     try:
-        resp = requests.get(url, params=params, headers=headers, timeout=15)
+        resp = mingkong_request_monitor.tracked_get(
+            url,
+            source="pushes.lookup_mk_id",
+            request_fn=requests.get,
+            params=params,
+            headers=headers,
+            timeout=15,
+        )
     except requests.RequestException as exc:
         log.warning("lookup_mk_id request failed: %s", exc)
         return None, "request_failed"
@@ -238,12 +246,25 @@ def post_json_payload(
     timeout: int | float = PUSH_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     try:
-        resp = requests.post(
+        if mingkong_request_monitor.is_mingkong_url(
             target_url,
-            json=payload,
-            headers=headers,
-            timeout=timeout,
-        )
+            base_url=get_localized_texts_base_url(),
+        ):
+            resp = mingkong_request_monitor.tracked_post(
+                target_url,
+                source="pushes.post_json_payload",
+                request_fn=requests.post,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            )
+        else:
+            resp = requests.post(
+                target_url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            )
     except requests.RequestException as exc:
         return {
             "ok": False,
@@ -1686,12 +1707,25 @@ def _post_unsuitable_push_type(
     target_url = request_type["target_url"]
     payload = request_type["payload"]
     try:
-        resp = requests.post(
+        if mingkong_request_monitor.is_mingkong_url(
             target_url,
-            json=payload,
-            headers=headers,
-            timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
-        )
+            base_url=get_localized_texts_base_url(),
+        ):
+            resp = mingkong_request_monitor.tracked_post(
+                target_url,
+                source=f"pushes.unsuitable.{request_type.get('type') or 'unknown'}",
+                request_fn=requests.post,
+                json=payload,
+                headers=headers,
+                timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
+            )
+        else:
+            resp = requests.post(
+                target_url,
+                json=payload,
+                headers=headers,
+                timeout=PUSH_REQUEST_TIMEOUT_SECONDS,
+            )
     except requests.RequestException as exc:
         return {
             "type": request_type.get("type"),
@@ -1977,8 +2011,10 @@ def push_product_localized_texts(product: dict | None) -> dict:
     target_url = preview["target_url"]
     payload = preview["payload"]
     try:
-        resp = requests.post(
+        resp = mingkong_request_monitor.tracked_post(
             target_url,
+            source="pushes.push_product_localized_texts",
+            request_fn=requests.post,
             json=payload,
             headers=headers,
             timeout=PUSH_REQUEST_TIMEOUT_SECONDS,

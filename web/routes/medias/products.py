@@ -6,6 +6,7 @@ from flask_login import current_user, login_required
 from appcore import (
     dianxiaomi_mingkong_pairing,
     dianxiaomi_yuncang,
+    mingkong_request_monitor,
     mingkong_pairing_ai,
     medias,
     parcel_cost_suggest,
@@ -88,7 +89,13 @@ def _mingkong_pairing_action_error_payload(action_label: str, exc: Exception) ->
 
 
 def _mk_copywriting_http_get(*args, **kwargs):
-    return _routes_module().requests.get(*args, **kwargs)
+    url = args[0] if args else kwargs.pop("url")
+    return mingkong_request_monitor.tracked_get(
+        url,
+        source="medias.mk_copywriting",
+        request_fn=_routes_module().requests.get,
+        **kwargs,
+    )
 
 
 def _build_products_list_response(args):
