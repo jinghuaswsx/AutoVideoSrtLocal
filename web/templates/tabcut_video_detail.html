@@ -402,6 +402,158 @@
     color: #334155;
     margin-bottom: 4px;
   }
+
+  .control-panel-card {
+    border-top: 4px solid #3b82f6;
+  }
+  
+  .mark-buttons {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  
+  .mark-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+    display: inline-flex;
+    align-items: center;
+  }
+  .mark-btn:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+  }
+  
+  .mark-btn.btn-ok.active {
+    background: #e6f4ea;
+    color: #137333;
+    border-color: #c6ebd0;
+  }
+  .mark-btn.btn-bad.active {
+    background: #fce8e6;
+    color: #c5221f;
+    border-color: #fad2cf;
+  }
+  .mark-btn.btn-clear {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #64748b;
+  }
+  .mark-btn.btn-clear:hover {
+    background: #e2e8f0;
+    color: #475569;
+  }
+  
+  .task-info-success {
+    display: flex;
+    gap: 12px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #166534;
+    padding: 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    align-items: center;
+  }
+  
+  .task-info-warning {
+    display: flex;
+    gap: 12px;
+    background: #fff7ed;
+    border: 1px solid #ffedd5;
+    color: #9a3412;
+    padding: 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    align-items: flex-start;
+  }
+  
+  .task-link {
+    color: #0d9488;
+    text-decoration: underline;
+    font-weight: 800;
+  }
+  .task-link:hover {
+    color: #0f766e;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: #334155;
+    margin-bottom: 6px;
+  }
+  .form-select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    font-size: 14px;
+    color: #1e293b;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-select:focus {
+    border-color: #3b82f6;
+  }
+  
+  .countries-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  
+  .country-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #475569;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .country-checkbox-item input {
+    cursor: pointer;
+  }
+
+  .submit-task-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 16px;
+    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.15);
+  }
+  .submit-task-btn:hover {
+    background: #1d4ed8;
+  }
+  .submit-task-btn:disabled {
+    background: #93c5fd;
+    cursor: not-allowed;
+  }
 </style>
 {% endblock %}
 
@@ -492,6 +644,96 @@
             <div class="metric-label">评论数</div>
             <div class="metric-value">{{ video.comment_count or 0 }}</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Control Panel Card: Material Library and Task Assignment -->
+      <div class="detail-card control-panel-card">
+        <div class="control-section">
+          <div class="stats-headline" style="margin-bottom: 16px;">素材库管理</div>
+          <div class="mark-buttons">
+            <button class="mark-btn btn-ok {% if video.mark_status == 'ok' %}active{% endif %}" onclick="setMarkStatus('ok')">
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="margin-right: 4px; pointer-events: none;">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/>
+              </svg>
+              标为“行”
+            </button>
+            <button class="mark-btn btn-bad {% if video.mark_status == 'bad' %}active{% endif %}" onclick="setMarkStatus('bad')">
+              <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="margin-right: 4px; pointer-events: none;">
+                <path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/>
+              </svg>
+              标为“不行”
+            </button>
+            {% if video.mark_status %}
+              <button class="mark-btn btn-clear" onclick="setMarkStatus(null)">
+                清除标记
+              </button>
+            {% endif %}
+          </div>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid #f1f5f9; margin: 20px 0;">
+
+        <div class="control-section">
+          <div class="stats-headline" style="margin-bottom: 16px;">开发任务指派</div>
+          
+          {% if video.new_product_parent_task_id and video.new_product_parent_task_id > 0 %}
+            <div class="task-info-success">
+              <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color: #0d9488; flex-shrink: 0; margin-right: 8px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div style="flex: 1;">
+                <strong>已关联翻译新品开发任务：</strong>
+                <a href="/tasks/detail/{{ video.new_product_parent_task_id }}" class="task-link" target="_blank" rel="noopener noreferrer">
+                  任务 #{{ video.new_product_parent_task_id }}
+                </a>
+              </div>
+            </div>
+          {% elif video.local_video_status == 'success' %}
+            <form id="createTaskForm" onsubmit="submitNewProductTask(event)">
+              <div class="form-group">
+                <label class="form-label">指派开发人 (产品负责人) <span style="color:red;">*</span></label>
+                <select class="form-select" id="owner_id" name="owner_id" required>
+                  <option value="">-- 请选择负责人 --</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">指派剪辑人 (视频处理人) <span style="color:red;">*</span></label>
+                <select class="form-select" id="raw_processor_id" name="raw_processor_id" required>
+                  <option value="">-- 请选择剪辑人 --</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">选择目的语种/开发国家 <span style="color:red;">*</span></label>
+                <div class="countries-grid" id="countries_container">
+                  <div style="padding: 8px; color: #94a3b8; font-size: 12px;">正在加载语种国家...</div>
+                </div>
+              </div>
+
+              <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                <input type="checkbox" id="is_urgent" name="is_urgent" style="width: 16px; height: 16px; cursor: pointer;">
+                <label for="is_urgent" style="font-size: 13px; font-weight: 600; color: #475569; cursor: pointer; user-select: none;">
+                  标记为紧急任务 (加急优先处理)
+                </label>
+              </div>
+
+              <button type="submit" class="submit-task-btn" id="submitTaskBtn">
+                确认创建新品开发任务
+              </button>
+            </form>
+          {% else %}
+            <div class="task-info-warning">
+              <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color: #ea580c; flex-shrink: 0; margin-right: 8px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <strong>本地视频尚未就绪</strong> (当前状态：<code>{{ video.local_video_status or 'pending' }}</code>)<br>
+                <span style="font-size: 12px; color: #64748b;">请在视频成功下载并本地化完成后再发起新品任务。</span>
+              </div>
+            </div>
+          {% endif %}
         </div>
       </div>
 
@@ -591,4 +833,159 @@
     </div>
   </div>
 </div>
+
+<script>
+  // 1. 素材标记接口调用
+  async function setMarkStatus(status) {
+    try {
+      const resp = await fetch("/xuanpin/api/tabcut/videos/{{ video.video_id }}/mark", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        body: JSON.stringify({ mark_status: status })
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        window.location.reload();
+      } else {
+        alert("操作失败: " + (data.error || "未知错误"));
+      }
+    } catch (err) {
+      console.error(err);
+      alert("网络错误，标记失败");
+    }
+  }
+
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
+
+  // 2. 异步加载开发任务指派的选项
+  document.addEventListener("DOMContentLoaded", async () => {
+    const ownerSelect = document.getElementById("owner_id");
+    const rawProcessorSelect = document.getElementById("raw_processor_id");
+    const countriesContainer = document.getElementById("countries_container");
+
+    if (!ownerSelect || !rawProcessorSelect) return; // 已经关联任务或视频未下载成功时表单不存在
+
+    try {
+      // 加载用户列表
+      const userResp = await fetch("/tasks/api/translation-work-users");
+      const userData = await userResp.json();
+      if (userData.users) {
+        userData.users.forEach(user => {
+          // 负责人下拉菜单
+          const optOwner = document.createElement("option");
+          optOwner.value = user.id;
+          optOwner.textContent = user.display_name;
+          ownerSelect.appendChild(optOwner);
+
+          // 剪辑人下拉菜单
+          const optProcessor = document.createElement("option");
+          optProcessor.value = user.id;
+          optProcessor.textContent = user.display_name;
+          rawProcessorSelect.appendChild(optProcessor);
+        });
+        
+        // 自动选择当前登录人作为负责人（如果存在）
+        const currentUserId = "{{ current_user.id }}";
+        if (currentUserId) {
+          ownerSelect.value = currentUserId;
+        }
+      }
+
+      // 加载国家/语言列表
+      const langResp = await fetch("/tasks/api/languages");
+      const langData = await langResp.json();
+      if (langData.languages && countriesContainer) {
+        countriesContainer.innerHTML = "";
+        langData.languages.forEach(lang => {
+          const label = document.createElement("label");
+          label.className = "country-checkbox-item";
+          
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.name = "countries";
+          checkbox.value = lang.code;
+          
+          label.appendChild(checkbox);
+          label.appendChild(document.createTextNode(" " + lang.name));
+          countriesContainer.appendChild(label);
+        });
+      }
+    } catch (err) {
+      console.error("加载任务表单选项失败: ", err);
+    }
+  });
+
+  // 3. 提交新品开发任务
+  async function submitNewProductTask(event) {
+    event.preventDefault();
+
+    const ownerId = parseInt(document.getElementById("owner_id").value);
+    const rawProcessorId = parseInt(document.getElementById("raw_processor_id").value);
+    const isUrgent = document.getElementById("is_urgent").checked;
+    
+    // 获取勾选的国家
+    const checkboxes = document.getElementsByName("countries");
+    const selectedCountries = [];
+    checkboxes.forEach(cb => {
+      if (cb.checked) {
+        selectedCountries.push(cb.value);
+      }
+    });
+
+    if (selectedCountries.length === 0) {
+      alert("请至少选择一个目的开发国家/语种！");
+      return;
+    }
+
+    // 默认分配策略：每个国家翻译任务归属当前选定的负责人 (owner_id)
+    const languageAssignments = {};
+    selectedCountries.forEach(code => {
+      languageAssignments[code.toUpperCase()] = ownerId;
+    });
+
+    const submitBtn = document.getElementById("submitTaskBtn");
+    submitBtn.disabled = true;
+    submitBtn.textContent = "正在创建中...";
+
+    try {
+      const resp = await fetch("/tasks/api/new-product", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        body: JSON.stringify({
+          source: "tabcut_video",
+          video_id: "{{ video.video_id }}",
+          owner_id: ownerId,
+          raw_processor_id: rawProcessorId,
+          countries: selectedCountries.map(c => c.toUpperCase()),
+          language_assignments: languageAssignments,
+          is_urgent: isUrgent
+        })
+      });
+
+      const data = await resp.json();
+      if (resp.status === 201 || data.ok) {
+        alert("新品开发任务创建成功！");
+        window.location.reload();
+      } else {
+        alert("任务创建失败: " + (data.error || "未知错误"));
+        submitBtn.disabled = false;
+        submitBtn.textContent = "确认创建新品开发任务";
+      }
+    } catch (err) {
+      console.error(err);
+      alert("网络请求失败，请稍后重试");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "确认创建新品开发任务";
+    }
+  }
+</script>
 {% endblock %}

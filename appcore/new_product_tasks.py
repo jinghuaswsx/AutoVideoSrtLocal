@@ -318,6 +318,7 @@ def _create_task_for_item(
     }
 
 
+
 def _validate_task_assignment(
     *,
     countries: list[str],
