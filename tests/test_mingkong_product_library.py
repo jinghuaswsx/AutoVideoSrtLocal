@@ -1,3 +1,5 @@
+import sys
+import types
 from pathlib import Path
 
 
@@ -375,3 +377,39 @@ def test_mingkong_product_library_drops_out_of_range_public_shopify_weight():
     )
 
     assert rows[0]["shopify_weight_grams"] is None
+
+
+def test_mingkong_product_library_refresh_builds_complete_runner_args(monkeypatch):
+    from appcore import mingkong_product_library as library
+
+    captured = {}
+
+    def fake_run_sync(args):
+        captured.update(vars(args))
+        return {"products_seen": 1}
+
+    fake_runner = types.SimpleNamespace(run_sync=fake_run_sync)
+    monkeypatch.setitem(sys.modules, "tools.mingkong_product_library_sync", fake_runner)
+
+    result = library.refresh_product_from_dxm02(
+        {"product_code": "sample-rjc"},
+        cdp_url="http://127.0.0.1:9222",
+        timeout_seconds=45,
+    )
+
+    assert result == {"products_seen": 1}
+    assert captured == {
+        "cdp_url": "http://127.0.0.1:9222",
+        "days": 0,
+        "product_code": "sample",
+        "max_pages": 5,
+        "timeout_seconds": 45,
+        "lock_timeout": 180,
+        "include_combo_components": True,
+        "page_delay_seconds": 0.0,
+        "rest_every_pages": 0,
+        "rest_seconds": 0.0,
+        "sku_delay_seconds": 0.0,
+        "pair_delay_seconds": 0.0,
+        "public_variant_delay_seconds": 0.0,
+    }

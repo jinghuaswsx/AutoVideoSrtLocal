@@ -932,5 +932,11 @@ def refresh_product_from_dxm02(
         timeout_seconds=timeout_seconds,
         lock_timeout=180,
         include_combo_components=True,
+        page_delay_seconds=0.0,
+        rest_every_pages=0,
+        rest_seconds=0.0,
+        sku_delay_seconds=0.0,
+        pair_delay_seconds=0.0,
+        public_variant_delay_seconds=0.0,
     )
     return runner.run_sync(args)
