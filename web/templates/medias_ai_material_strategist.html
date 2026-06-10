@@ -631,7 +631,7 @@
   }
   .aims-material-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(140px, 170px));
     gap: 10px;
   }
   .aims-material {
@@ -643,10 +643,9 @@
   .aims-material video {
     width: 100%;
     aspect-ratio: 9 / 16;
-    max-height: 300px;
     border-radius: 6px;
     background: #111827;
-    object-fit: contain;
+    object-fit: cover;
   }
   .aims-material-title {
     margin-top: 8px;
@@ -746,6 +745,161 @@
       grid-template-columns: 1fr;
     }
   }
+
+  /* Recommendation badge */
+  .aims-rec-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 4px;
+    background: #e2e8f0;
+    color: #475569;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .aims-rec-badge.expand_country { background: #e0f2fe; color: #0369a1; }
+  .aims-rec-badge.same_country_new_material { background: #f3e8ff; color: #6b21a8; }
+  .aims-rec-badge.weak_country_retest { background: #fef9c3; color: #713f12; }
+  .aims-rec-badge.investigate { background: #fee2e2; color: #991b1b; }
+  .aims-rec-badge.hold { background: #f1f5f9; color: #475569; }
+
+  /* Task count button */
+  .aims-task-count-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 800;
+    border-radius: 6px;
+    border: 1px solid var(--aims-blue);
+    background: #eff6ff;
+    color: var(--aims-blue);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    line-height: 1.2;
+  }
+  .aims-task-count-btn:hover {
+    background: var(--aims-blue);
+    color: #fff;
+  }
+
+  /* Modal Styles */
+  .aims-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .aims-modal[hidden] {
+    display: none;
+  }
+  .aims-modal-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+  }
+  .aims-modal-content {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 480px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--aims-border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    animation: aimsModalFadeIn 0.2s ease-out;
+  }
+  @keyframes aimsModalFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .aims-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--aims-border);
+    background: #f8fafc;
+  }
+  .aims-modal-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--aims-fg);
+  }
+  .aims-modal-close {
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--aims-muted);
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+  }
+  .aims-modal-close:hover {
+    color: var(--aims-fg);
+  }
+  .aims-modal-body {
+    padding: 16px;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+  .aims-modal-task-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .aims-modal-task-item:last-child {
+    border-bottom: none;
+  }
+  .aims-modal-task-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .aims-modal-task-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--aims-fg);
+  }
+  .aims-modal-task-meta {
+    font-size: 11px;
+    color: var(--aims-muted);
+  }
+  .aims-status-text {
+    font-weight: 700;
+  }
+  .aims-status-text.completed {
+    color: var(--aims-green);
+  }
+  .aims-status-text.in_progress {
+    color: var(--aims-blue);
+  }
+  .aims-status-text.pending {
+    color: var(--aims-amber);
+  }
+  .aims-status-text.cancelled {
+    color: var(--aims-muted);
+  }
 {% endblock %}
 
 {% block content %}
@@ -797,6 +951,17 @@
     </section>
   </div>
   <div class="aims-toast" id="aimsToast" hidden></div>
+
+  <div class="aims-modal" id="aimsTaskModal" hidden>
+    <div class="aims-modal-backdrop" id="aimsTaskModalBackdrop"></div>
+    <div class="aims-modal-content">
+      <div class="aims-modal-header">
+        <h3 id="aimsTaskModalTitle">任务清单</h3>
+        <button type="button" class="aims-modal-close" id="aimsTaskModalClose">&times;</button>
+      </div>
+      <div class="aims-modal-body" id="aimsTaskModalBody"></div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
