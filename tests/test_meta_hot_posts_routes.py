@@ -407,18 +407,28 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "function handleMetaHotVideoOverlayKey(event)" in body
     assert "function handleMetaHotVideoOverlayTouchStart(event)" in body
     assert "function handleMetaHotVideoOverlayTouchEnd(event)" in body
+    assert "function handleMetaHotVideoOverlayWheel(event)" in body
     assert "function switchMetaHotVideoOverlay(direction)" in body
+    assert "function renderMetaHotVideoOverlayCaption(item)" in body
+    assert "function toggleMetaHotVideoOverlayCaption(event)" in body
     assert "function scrollMetaHotCardIntoView(postId)" in body
     assert "mh-video-duration-badge" in body
     assert "mh-play-button bottom" in body
     assert "mh-video-fullscreen" in body
     assert 'data-post-id="${postId}"' in body
+    assert "mh-video-overlay-caption-slot" in body
+    assert "mh-video-overlay-caption-toggle" in body
+    assert "mh-video-overlay-product-image" in body
+    assert "row.product_main_image_url" in body
     assert "mh-video-overlay-download" in body
     assert 'aria-label="下载视频"' in body
     assert 'aria-label="关闭全屏播放"' in body
     assert "overlay.addEventListener('touchstart', handleMetaHotVideoOverlayTouchStart, {passive: true})" in body
     assert "overlay.addEventListener('touchend', handleMetaHotVideoOverlayTouchEnd, {passive: true})" in body
+    assert "overlay.addEventListener('wheel', handleMetaHotVideoOverlayWheel, {passive: false})" in body
     assert "overlay.dataset.currentPostId" in body
+    assert "mhVideoOverlayState.captionExpanded" in body
+    assert "aria-expanded" in body
     assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in body
     assert "document.body.classList.add('mh-video-overlay-open')" in body
     assert "document.body.classList.remove('mh-video-overlay-open')" in body
@@ -1095,13 +1105,21 @@ def test_meta_hot_post_detail_page_renders_post(authed_client_no_db, monkeypatch
     assert "function openMetaHotVideoOverlay(event, postId, videoSrc, downloadName)" in body
     assert "function handleMetaHotVideoOverlayTouchStart(event)" in body
     assert "function handleMetaHotVideoOverlayTouchEnd(event)" in body
+    assert "function handleMetaHotVideoOverlayWheel(event)" in body
     assert "function switchMetaHotVideoOverlay(direction)" in body
+    assert "function renderMetaHotVideoOverlayCaption(item)" in body
+    assert "function toggleMetaHotVideoOverlayCaption(event)" in body
     assert "function scrollMetaHotCardIntoView(postId)" in body
     assert "mh-video-fullscreen" in body
     assert 'data-post-id="${postId}"' in body
+    assert "mh-video-overlay-caption-slot" in body
+    assert "mh-video-overlay-caption-toggle" in body
+    assert "mh-video-overlay-product-image" in body
+    assert "row.product_main_image_url" in body
     assert "mh-video-overlay-download" in body
     assert 'aria-label="关闭全屏播放"' in body
     assert "overlay.dataset.currentPostId" in body
+    assert "mhVideoOverlayState.captionExpanded" in body
     assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in body
     assert "只入素材库" in body
     assert "创建新品任务" in body

@@ -138,7 +138,21 @@ body.mh-video-overlay-open { overflow:hidden; }
 .mh-video-overlay { position:fixed; inset:0; z-index:1400; display:flex; align-items:center; justify-content:center; padding:calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); background:rgba(15,23,42,.9); touch-action:pan-y; overscroll-behavior:contain; }
 .mh-video-overlay-panel { position:relative; display:flex; align-items:center; justify-content:center; width:min(100%, 820px); height:100%; touch-action:pan-y; }
 .mh-video-overlay-player { display:block; width:100%; max-width:100%; max-height:100%; border:0; border-radius:6px; background:#020617; object-fit:contain; }
-.mh-video-overlay-toolbar { position:absolute; top:10px; right:10px; z-index:2; display:flex; align-items:center; gap:8px; }
+.mh-video-overlay-toolbar { position:absolute; top:10px; left:10px; right:10px; z-index:2; display:flex; align-items:flex-start; justify-content:flex-end; gap:8px; pointer-events:none; }
+.mh-video-overlay-caption-slot { flex:1 1 auto; min-width:0; display:flex; justify-content:flex-end; pointer-events:auto; }
+.mh-video-overlay-caption { flex:0 1 min(680px, calc(100% - 104px)); min-width:0; display:block; padding:9px 10px; border:1px solid rgba(226,232,240,.35); border-radius:6px; background:rgba(15,23,42,.38); color:#fff; box-shadow:0 2px 12px rgba(15,23,42,.18); }
+.mh-video-overlay-caption-body { display:grid; grid-template-columns:minmax(0, 1fr); gap:8px; align-items:start; }
+.mh-video-overlay-caption-text { min-width:0; overflow:hidden; color:#fff; font-size:13px; font-weight:700; line-height:1.45; text-overflow:ellipsis; white-space:nowrap; word-break:break-word; }
+.mh-video-overlay-caption-text p { display:inline; margin:0; }
+.mh-video-overlay-caption-toggle { height:24px; justify-self:start; padding:0 8px; border:1px solid rgba(226,232,240,.45); border-radius:5px; background:rgba(15,23,42,.24); color:#fff; font-size:12px; font-weight:800; cursor:pointer; }
+.mh-video-overlay-caption-toggle:hover { background:rgba(15,23,42,.5); }
+.mh-video-overlay-product-image { display:none; width:100px; height:100px; border-radius:6px; object-fit:cover; background:rgba(226,232,240,.24); }
+.mh-video-overlay-caption.is-expanded { flex-basis:min(640px, calc(100% - 104px)); max-height:min(42vh, 360px); overflow:auto; }
+.mh-video-overlay-caption.is-expanded.has-product-image .mh-video-overlay-caption-body { grid-template-columns:auto minmax(0, 1fr); }
+.mh-video-overlay-caption.is-expanded .mh-video-overlay-caption-text { white-space:normal; overflow:visible; text-overflow:clip; font-weight:650; }
+.mh-video-overlay-caption.is-expanded .mh-video-overlay-caption-text p { display:block; margin:0 0 6px; }
+.mh-video-overlay-caption.is-expanded .mh-video-overlay-product-image { display:block; }
+.mh-video-overlay-actions { flex:0 0 auto; display:flex; align-items:center; gap:8px; pointer-events:auto; }
 .mh-video-overlay-download,
 .mh-video-overlay-close { display:inline-flex; align-items:center; justify-content:center; min-width:40px; height:40px; padding:0 12px; border:1px solid rgba(226,232,240,.45); border-radius:6px; background:rgba(15,23,42,.36); color:#fff; text-decoration:none; cursor:pointer; box-shadow:0 2px 12px rgba(15,23,42,.2); }
 .mh-video-overlay-download { gap:6px; font-size:13px; font-weight:800; }
@@ -356,7 +370,24 @@ button.mh-link-btn { cursor:pointer; }
   }
   .mh-video-overlay-toolbar {
     top:calc(env(safe-area-inset-top, 0px) + 10px);
+    left:calc(env(safe-area-inset-left, 0px) + 10px);
     right:calc(env(safe-area-inset-right, 0px) + 10px);
+  }
+  .mh-video-overlay-caption {
+    flex-basis:auto;
+    max-width:none;
+    padding:8px;
+  }
+  .mh-video-overlay-caption.is-expanded {
+    flex-basis:auto;
+    max-height:min(44vh, 340px);
+  }
+  .mh-video-overlay-caption-text {
+    font-size:12px;
+  }
+  .mh-video-overlay-caption-toggle {
+    height:22px;
+    padding:0 7px;
   }
   .mh-video-overlay-download span {
     display:none;
@@ -699,7 +730,7 @@ const MH_AI_ANALYSIS_VISIBILITY_CLIENT_ID = (() => {
 let mhAiAnalysisVisibility = {us: false, europe: false};
 let mhAiAnalysisVisibilitySaveVersion = Date.now();
 let mhItemsById = new Map();
-let mhVideoOverlayState = {postId: null, touchStartX: null, touchStartY: null};
+let mhVideoOverlayState = {postId: null, touchStartX: null, touchStartY: null, captionExpanded: false, item: null, lastWheelAt: 0};
 let mhAiState = {postId: null, mode: null, request: null, result: null};
 let mhProductPostHash = '';
 const mhPageSize = 50;
@@ -796,6 +827,25 @@ function directMetaHotVideoUrl(row) {
 function metaHotVideoPostId(row) {
   return Number((row && (row.id || row.post_id || row.wedev_post_id)) || 0);
 }
+function metaHotOverlayMessageHtml(row) {
+  return String((row && (row.message_html || row.message_source_html)) || '').trim();
+}
+function metaHotPlainTextFromHtml(html) {
+  const holder = document.createElement('div');
+  holder.innerHTML = String(html || '');
+  return String(holder.textContent || holder.innerText || '').replace(/\s+/g, ' ').trim();
+}
+function metaHotVideoOverlayItemFromRow(row, fallback = {}) {
+  const messageHtml = metaHotOverlayMessageHtml(row);
+  return {
+    postId: metaHotVideoPostId(row) || Number(fallback.postId || 0),
+    videoSrc: (row ? directMetaHotVideoUrl(row) : '') || String(fallback.videoSrc || '').trim(),
+    downloadName: String(fallback.downloadName || metaHotVideoDownloadName(row || fallback) || '').trim(),
+    messageHtml,
+    messageText: metaHotPlainTextFromHtml(messageHtml),
+    productImageUrl: String((row && row.product_main_image_url) || fallback.productImageUrl || '').trim()
+  };
+}
 function metaHotVideoDownloadName(row) {
   const rawId = String(row.post_id || row.wedev_post_id || row.id || 'video').trim();
   const safeId = rawId.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'video';
@@ -870,18 +920,14 @@ function ensureMetaHotVideoOverlay() {
   overlay.addEventListener('click', handleMetaHotVideoOverlayBackdropClick);
   overlay.addEventListener('touchstart', handleMetaHotVideoOverlayTouchStart, {passive: true});
   overlay.addEventListener('touchend', handleMetaHotVideoOverlayTouchEnd, {passive: true});
+  overlay.addEventListener('wheel', handleMetaHotVideoOverlayWheel, {passive: false});
   document.body.appendChild(overlay);
   return overlay;
 }
 function metaHotPlayableVideoItems() {
-  return Array.from(mhItemsById.values()).map(row => {
-    const videoSrc = directMetaHotVideoUrl(row);
-    return {
-      postId: metaHotVideoPostId(row),
-      videoSrc,
-      downloadName: metaHotVideoDownloadName(row)
-    };
-  }).filter(item => item.postId && item.videoSrc);
+  return Array.from(mhItemsById.values())
+    .map(row => metaHotVideoOverlayItemFromRow(row))
+    .filter(item => item.postId && item.videoSrc);
 }
 function metaHotAdjacentPlayableVideo(postId, direction) {
   const items = metaHotPlayableVideoItems();
@@ -890,6 +936,45 @@ function metaHotAdjacentPlayableVideo(postId, direction) {
   const nextIndex = currentIndex + (direction > 0 ? 1 : -1);
   if (nextIndex < 0 || nextIndex >= items.length) return null;
   return items[nextIndex];
+}
+function renderMetaHotVideoOverlayCaption(item) {
+  const messageHtml = String((item && item.messageHtml) || '').trim();
+  const messageText = String((item && item.messageText) || '').trim();
+  const productImageUrl = String((item && item.productImageUrl) || '').trim();
+  if (!messageHtml && !messageText && !productImageUrl) return '';
+  const expanded = Boolean(mhVideoOverlayState.captionExpanded);
+  const imageHtml = expanded && productImageUrl
+    ? `<img class="mh-video-overlay-product-image" src="${esc(productImageUrl)}" alt="" loading="lazy">`
+    : '';
+  const textHtml = expanded
+    ? (messageHtml || esc(messageText))
+    : esc(messageText || '无文案');
+  const toggleHtml = (messageHtml || messageText)
+    ? `<button class="mh-video-overlay-caption-toggle" type="button" onclick="toggleMetaHotVideoOverlayCaption(event)" aria-expanded="${expanded ? 'true' : 'false'}">${expanded ? '收起' : '展开'}</button>`
+    : '';
+  return `<div class="mh-video-overlay-caption${expanded ? ' is-expanded' : ''}${productImageUrl ? ' has-product-image' : ''}">
+    <div class="mh-video-overlay-caption-body">
+      ${imageHtml}
+      <div class="mh-video-overlay-caption-content">
+        <div class="mh-video-overlay-caption-text">${textHtml}</div>
+        ${toggleHtml}
+      </div>
+    </div>
+  </div>`;
+}
+function updateMetaHotVideoOverlayCaption() {
+  const overlay = qs('mhVideoOverlay');
+  const slot = overlay ? overlay.querySelector('.mh-video-overlay-caption-slot') : null;
+  if (!slot) return;
+  slot.innerHTML = renderMetaHotVideoOverlayCaption(mhVideoOverlayState.item);
+}
+function toggleMetaHotVideoOverlayCaption(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  mhVideoOverlayState.captionExpanded = !mhVideoOverlayState.captionExpanded;
+  updateMetaHotVideoOverlayCaption();
 }
 function renderMetaHotVideoOverlayPlayer(item, options = {}) {
   const src = String((item && item.videoSrc) || '').trim();
@@ -903,12 +988,17 @@ function renderMetaHotVideoOverlayPlayer(item, options = {}) {
   }
   const postId = Number((item && item.postId) || 0);
   const safeDownloadName = String((item && item.downloadName) || 'meta-hot-post-video.mp4').trim() || 'meta-hot-post-video.mp4';
+  if (options.keepCaptionExpanded !== true) mhVideoOverlayState.captionExpanded = false;
   mhVideoOverlayState.postId = postId || null;
+  mhVideoOverlayState.item = item || null;
   overlay.dataset.currentPostId = postId ? String(postId) : '';
   overlay.innerHTML = `<div class="mh-video-overlay-panel" role="dialog" aria-modal="true" aria-label="全屏播放视频">
     <div class="mh-video-overlay-toolbar">
-      <a class="mh-video-overlay-download" href="${esc(src)}" download="${esc(safeDownloadName)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" aria-label="下载视频" title="下载视频">${metaHotVideoIcon('download')}<span>下载</span></a>
-      <button class="mh-video-overlay-close" type="button" onclick="closeMetaHotVideoOverlay(event)" aria-label="关闭全屏播放" title="关闭">${metaHotVideoIcon('close')}</button>
+      <div class="mh-video-overlay-caption-slot">${renderMetaHotVideoOverlayCaption(item)}</div>
+      <div class="mh-video-overlay-actions">
+        <a class="mh-video-overlay-download" href="${esc(src)}" download="${esc(safeDownloadName)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" aria-label="下载视频" title="下载视频">${metaHotVideoIcon('download')}<span>下载</span></a>
+        <button class="mh-video-overlay-close" type="button" onclick="closeMetaHotVideoOverlay(event)" aria-label="关闭全屏播放" title="关闭">${metaHotVideoIcon('close')}</button>
+      </div>
     </div>
     <video class="mh-video-overlay-player" controls autoplay playsinline preload="metadata" src="${esc(src)}"></video>
   </div>`;
@@ -928,11 +1018,9 @@ function openMetaHotVideoOverlay(event, postId, videoSrc, downloadName) {
   const src = String(videoSrc || '').trim();
   if (!src) return;
   pauseMetaHotVideos();
-  renderMetaHotVideoOverlayPlayer({
-    postId: Number(postId || 0),
-    videoSrc: src,
-    downloadName
-  });
+  const id = Number(postId || 0);
+  const row = mhItemsById.get(id);
+  renderMetaHotVideoOverlayPlayer(metaHotVideoOverlayItemFromRow(row, {postId: id, videoSrc: src, downloadName}));
 }
 function switchMetaHotVideoOverlay(direction) {
   const overlay = qs('mhVideoOverlay');
@@ -940,7 +1028,7 @@ function switchMetaHotVideoOverlay(direction) {
   const next = metaHotAdjacentPlayableVideo(mhVideoOverlayState.postId, Number(direction || 0));
   if (!next) return;
   pauseMetaHotVideos();
-  renderMetaHotVideoOverlayPlayer(next, {focusClose: false});
+  renderMetaHotVideoOverlayPlayer(next, {focusClose: false, keepCaptionExpanded: true});
 }
 function handleMetaHotVideoOverlayTouchStart(event) {
   const touch = event.touches && event.touches[0];
@@ -957,6 +1045,19 @@ function handleMetaHotVideoOverlayTouchEnd(event) {
   mhVideoOverlayState.touchStartY = null;
   if (Math.abs(deltaY) < 56 || Math.abs(deltaY) < Math.abs(deltaX) * 1.2) return;
   switchMetaHotVideoOverlay(deltaY < 0 ? 1 : -1);
+}
+function handleMetaHotVideoOverlayWheel(event) {
+  const overlay = qs('mhVideoOverlay');
+  if (!overlay || overlay.hidden) return;
+  if (event.target && event.target.closest && event.target.closest('.mh-video-overlay-caption')) return;
+  const deltaY = Number(event.deltaY || 0);
+  const deltaX = Number(event.deltaX || 0);
+  if (Math.abs(deltaY) < 48 || Math.abs(deltaY) < Math.abs(deltaX) * 1.2) return;
+  event.preventDefault();
+  const now = Date.now();
+  if (now - mhVideoOverlayState.lastWheelAt < 650) return;
+  mhVideoOverlayState.lastWheelAt = now;
+  switchMetaHotVideoOverlay(deltaY > 0 ? 1 : -1);
 }
 function scrollMetaHotCardIntoView(postId) {
   const id = Number(postId || 0);
@@ -984,6 +1085,9 @@ function closeMetaHotVideoOverlay(event) {
   mhVideoOverlayState.postId = null;
   mhVideoOverlayState.touchStartX = null;
   mhVideoOverlayState.touchStartY = null;
+  mhVideoOverlayState.captionExpanded = false;
+  mhVideoOverlayState.item = null;
+  mhVideoOverlayState.lastWheelAt = 0;
   document.body.classList.remove('mh-video-overlay-open');
   scrollMetaHotCardIntoView(currentPostId);
 }
