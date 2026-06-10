@@ -90,8 +90,8 @@ def _compact_item(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "candidate_key": _candidate_key(item),
         "shopify_product_id": _clean(mingkong.get("shopify_product_id") or item.get("shopify_product_id")),
-        "shopify_variant_id": _clean(mingkong.get("shopify_variant_id") or item.get("shopify_variant_id")),
-        "variant_title": _clean(mingkong.get("variant_title") or item.get("variant_title")),
+        "shopify_variant_id": _clean(item.get("shopify_variant_id")),
+        "variant_title": _clean(item.get("shopify_variant_title") or item.get("variant_title") or mingkong.get("variant_title")),
         "mingkong_sku": _clean(mingkong.get("sku") or item.get("dianxiaomi_sku")),
         "mingkong_sku_code": _clean(mingkong.get("sku_code") or item.get("dianxiaomi_sku_code")),
         "mingkong_name": _clean(mingkong.get("name") or item.get("dianxiaomi_name")),
