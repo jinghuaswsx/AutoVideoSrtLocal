@@ -14,11 +14,20 @@
 }
 
 #dpi-procurement-root .dpi-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(720px, calc(100vh - 112px));
   overflow: hidden;
   border: 1px solid rgba(17, 24, 39, 0.16);
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 16px 36px rgba(17, 24, 39, 0.18);
+}
+
+#dpi-procurement-root.dpi-modal-anchored .dpi-panel {
+  height: 100%;
+  max-height: none;
+  border-radius: 6px;
 }
 
 #dpi-procurement-root .dpi-panel.is-collapsed {
@@ -72,15 +81,56 @@
 }
 
 #dpi-procurement-root .dpi-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
   padding: 12px;
 }
 
 #dpi-procurement-root .dpi-product-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
   color: #111827;
   font-size: 13px;
   font-weight: 650;
+}
+
+#dpi-procurement-root .dpi-product-name {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-wrap: anywhere;
+}
+
+#dpi-procurement-root .dpi-product-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+#dpi-procurement-root .dpi-product-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid #bfdbfe;
+  border-radius: 5px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-product-actions a:hover {
+  border-color: #93c5fd;
+  background: #dbeafe;
 }
 
 #dpi-procurement-root .dpi-status-line {
@@ -124,35 +174,77 @@
   white-space: nowrap;
 }
 
-#dpi-procurement-root .dpi-kpis {
+#dpi-procurement-root .dpi-total-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
 
-#dpi-procurement-root .dpi-kpis div {
+#dpi-procurement-root .dpi-total-card {
   min-width: 0;
-  padding: 8px 6px;
+  padding: 10px 8px;
   border: 1px solid #e5e7eb;
   border-radius: 6px;
-  background: #ffffff;
+  background: #f8fbff;
 }
 
-#dpi-procurement-root .dpi-kpis span {
+#dpi-procurement-root .dpi-total-card span {
   display: block;
   color: #6b7280;
   font-size: 11px;
   white-space: nowrap;
 }
 
-#dpi-procurement-root .dpi-kpis strong {
+#dpi-procurement-root .dpi-total-value {
   display: block;
-  margin-top: 3px;
-  color: #111827;
-  font-size: 16px;
-  font-weight: 750;
+  margin-top: 4px;
+  color: #2563eb;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
   white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-period-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+#dpi-procurement-root .dpi-period-table th,
+#dpi-procurement-root .dpi-period-table td {
+  height: 32px;
+  padding: 6px 6px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: right;
+  white-space: nowrap;
+}
+
+#dpi-procurement-root .dpi-period-table th:first-child,
+#dpi-procurement-root .dpi-period-table td:first-child {
+  text-align: left;
+}
+
+#dpi-procurement-root .dpi-period-table thead th {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 650;
+  background: #f8fafc;
+}
+
+#dpi-procurement-root .dpi-period-table tbody th {
+  color: #111827;
+  font-weight: 650;
+}
+
+#dpi-procurement-root .dpi-period-orders {
+  color: #2563eb;
+  font-size: 16px;
+  font-weight: 800;
 }
 
 #dpi-procurement-root .dpi-markets {
@@ -225,5 +317,12 @@
     right: 10px;
     bottom: 10px;
     width: calc(100vw - 20px);
+  }
+
+  #dpi-procurement-root.dpi-modal-anchored {
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+    height: auto !important;
   }
 }

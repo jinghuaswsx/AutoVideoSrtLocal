@@ -342,6 +342,7 @@ def _realtime_store_options() -> list[dict[str, str]]:
 @bp.route("/order-analytics/realtime/trend")
 @bp.route("/order-analytics/new-product-launch")
 @bp.route("/order-analytics/dxm-orders-view")
+@bp.route("/order-analytics/dxm-orders-view/order-trend")
 @bp.route("/order-analytics/ads-view")
 @bp.route("/order-analytics/ad-accounts-view")
 @bp.route("/order-analytics/product-dashboard-view")
@@ -368,6 +369,7 @@ def page():
         "/order-analytics/realtime/product": "products",
         "/order-analytics/realtime/campaign": "campaigns",
         "/order-analytics/realtime/trend": "trend",
+        "/order-analytics/dxm-orders-view/order-trend": "orderTrend",
     }
     active_subtab = subtab_mapping.get(path, "trend")
 
@@ -379,6 +381,7 @@ def page():
         "/order-analytics/realtime/trend": "realtime",
         "/order-analytics/new-product-launch": "newProductLaunch",
         "/order-analytics/dxm-orders-view": "dxmOrders",
+        "/order-analytics/dxm-orders-view/order-trend": "dxmOrders",
         "/order-analytics/ads-view": "ads",
         "/order-analytics/ad-accounts-view": "ads",
         "/order-analytics/product-dashboard-view": "realtime",
@@ -399,6 +402,25 @@ def page():
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
+
+
+@bp.route("/order-analytics/dxm-orders-view/order-trend/<product_code>")
+@login_required
+@permission_required("data_analytics")
+def order_trend_detail_page(product_code):
+    try:
+        data = oa.get_product_order_trend_data(product_code)
+        resp = make_response(render_template(
+            "order_trend_detail.html",
+            product_code=product_code,
+            data=data,
+        ))
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return resp
+    except Exception as exc:
+        log.exception("Query product trend detail failed for %s: %s", product_code, exc)
+        return make_response(f"<h3>查询单品订单曲线失败: {exc}</h3>", 500)
+
 
 
 @bp.route("/order-analytics/realtime-unmatched-orders")
