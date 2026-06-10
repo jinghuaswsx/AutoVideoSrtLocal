@@ -168,6 +168,7 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
             return []
         assert "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql
         assert "MAX(COALESCE(d.refund_amount_usd, 0)) AS refund_amount_usd" in sql
+        assert "AS package_profit_line_count" in sql
         assert args == (target, data_until)
         return [
             {
@@ -299,6 +300,50 @@ def test_format_order_profit_rows_uses_canonical_profit_fields():
     assert detail["logistics_estimate_usd"] == 3.64
     assert detail["shopify_fee_total_usd"] == 15.89
     assert detail["order_profit_with_estimate_usd"] == 7.88
+
+
+def test_format_order_profit_rows_skips_refund_fallback_for_mixed_package_scope():
+    """A scope slice can contain the unmatched line from a package whose other
+    lines already have profit rows. In that case the package-level refund must
+    not be deducted again in the unmatched scope card.
+    """
+    row = {
+        "site_code": "newjoy",
+        "dxm_package_id": "PKG-MIXED",
+        "dxm_order_id": "DXM-MIXED",
+        "package_number": "PN-MIXED",
+        "order_state": "paid",
+        "buyer_country": "US",
+        "buyer_country_name": "United States",
+        "order_time": datetime(2026, 6, 9, 10, 30),
+        "line_count": 1,
+        "profit_line_count": 0,
+        "package_profit_line_count": 1,
+        "profit_ok_count": 0,
+        "profit_incomplete_count": 1,
+        "purchase_missing_count": 0,
+        "logistics_missing_count": 0,
+        "units": 1,
+        "product_revenue": 50.0,
+        "shipping_revenue": 0.0,
+        "total_revenue": 50.0,
+        "refund_amount_usd": 10.0,
+        "return_reserve_usd": 0.0,
+        "purchase_cost": 0.0,
+        "purchase_estimate": 0.0,
+        "logistics_cost": 0.0,
+        "logistics_estimate": 0.0,
+        "ad_cost": 0.0,
+        "stored_shopify_fee_total": 0.0,
+        "skus": "SKU-UNMATCHED",
+        "product_names": "Unmatched line",
+    }
+
+    detail = _format_realtime_order_profit_rows([row], datetime(2026, 6, 8, 16, 0))[0]
+
+    assert detail["refund_deduction_usd"] == 10.0
+    assert detail["return_reserve_usd"] == 0.0
+    assert detail["profit_deduction_usd"] == 0.0
 
 
 def test_get_realtime_order_profit_details_marks_missing_profit_lines_incomplete(monkeypatch):

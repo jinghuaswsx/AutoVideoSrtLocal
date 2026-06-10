@@ -2669,6 +2669,8 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert "params.set('include_profit_summary', '1')" in top_cards_js
     assert "document.getElementById('realtimeProfit')" in top_cards_js
     assert "profitEl.textContent" in top_cards_js
+    assert "globalData = reconcileRealtimeGlobalScopeProfit(globalData, newData, oldData, unmatchedData);" in top_cards_js
+    assert "if (realtimeState.productId) return globalData;" in top_cards_js
 
 
 def test_realtime_order_profit_table_shows_every_fee_column(authed_client_no_db):

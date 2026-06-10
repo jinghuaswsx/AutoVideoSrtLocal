@@ -57,6 +57,14 @@
 - 实施后：两个 detail-getter 都在 `_format_realtime_order_profit_rows` 之后调一遍新的 `_apply_realtime_ad_cost_adjustments`，按 package id 加上 `_load_realtime_ad_cost_adjustments().package_deltas[pkg]`，并把 `order_profit_usd` / `order_profit_with_estimate_usd` 同步下调；与 [appcore/order_analytics/order_profit_aggregation.py](../../../appcore/order_analytics/order_profit_aggregation.py) 的 `get_order_profit_list` 同款 helper 路径，保证两个口径共用同一份兜底来源。
 - 回归测试：[tests/test_order_analytics_realtime_profit_details.py](../../../tests/test_order_analytics_realtime_profit_details.py) 增加 `test_get_realtime_order_profit_details_applies_realtime_ad_cost_adjustments`；既有 18 个 case + 新增 1 case 全绿。
 
+### 四卡利润可加性（2026-06-10）
+
+- 实时大盘顶部四张 scope 卡片（全局 / 新品 / 老品 / 未匹配）必须使用同一套收入、成本、广告费和利润扣减口径；除 0.01 级舍入误差外，`全局利润 = 新品利润 + 老品利润 + 未匹配利润`。
+- 范围查询的全局卡不得再用 `get_order_profit_status_summary()` 覆盖实时大盘自己的 `order_profit_summary`。全局 / 新品 / 老品 / 未匹配都从 `_get_realtime_order_profit_details(_for_range)` 的同口径明细进入 `_build_order_profit_summary()`，避免全局卡走订单利润状态汇总、分桶卡走 realtime 明细汇总造成不可加。
+- 前端四张顶部卡片同时返回后，若当前没有单品筛选，`web/templates/order_analytics.html` 需要用 `新品 + 老品 + 未匹配` 的两位小数利润和覆盖全局卡显示利润，并同步全局利润率；这是展示层对四舍五入和四个异步请求轻微时间差的最后闭合保护。
+- 分桶时如果一个包裹同时包含已匹配产品行和未匹配产品行，包裹级退款 / 退款兜底不能在未匹配分桶里再次扣减。只要该包裹任意行已经存在 `order_profit_lines`，利润扣减以利润行上的 `return_reserve_usd` 为准；未匹配切片里没有利润行时，该切片的 `profit_deduction_usd` 为 0。只有整个包裹都没有利润行时，才允许对该 scope 使用 `dianxiaomi_order_lines.refund_amount_usd` / 退款状态作为兜底扣减。
+- 回归测试：[tests/test_order_analytics_realtime_profit_details.py](../../../tests/test_order_analytics_realtime_profit_details.py) 增加 `test_format_order_profit_rows_skips_refund_fallback_for_mixed_package_scope` 覆盖混合包裹未匹配切片；[tests/test_order_analytics_realtime_product_launch_scope.py](../../../tests/test_order_analytics_realtime_product_launch_scope.py) 增加 `test_range_global_profit_summary_uses_realtime_detail_not_status_summary` 覆盖范围全局卡不再走状态汇总覆盖；[tests/test_order_analytics_true_roas.py](../../../tests/test_order_analytics_true_roas.py) 断言顶部卡片渲染前调用 `reconcileRealtimeGlobalScopeProfit`，并继续覆盖 range scope 查询。
+
 ## Docs-anchor
 
 - 本文件

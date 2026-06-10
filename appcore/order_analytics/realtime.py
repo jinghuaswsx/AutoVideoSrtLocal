@@ -27,7 +27,6 @@ from .dianxiaomi import compute_meta_business_window_bj, get_dianxiaomi_product_
 from .meta_ads import product_code_candidates_for_ad_campaign
 from .order_profit_aggregation import (
     _load_realtime_ad_cost_adjustments,
-    get_order_profit_status_summary,
 )
 from .product_ad_launch import normalize_product_launch_scope, normalize_product_launch_window_days
 from .shopify_fee import split_shopify_fee_for_order
@@ -51,6 +50,16 @@ _LOGISTICS_MISSING_CONDITION_SQL = (
     "CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%shipping_cost%%' "
     "OR CAST(COALESCE(p.missing_fields, '[]') AS CHAR) LIKE '%%packet_cost%%' "
     "OR COALESCE(p.shipping_cost_usd, 0) = 0))"
+)
+_PACKAGE_PROFIT_LINE_COUNT_SQL = (
+    "(SELECT COUNT(*) "
+    "FROM dianxiaomi_order_lines d_pkg "
+    "JOIN order_profit_lines p_pkg ON p_pkg.dxm_order_line_id = d_pkg.id "
+    "WHERE d_pkg.meta_business_date = d.meta_business_date "
+    "AND d_pkg.site_code = d.site_code "
+    "AND (d_pkg.dxm_package_id <=> d.dxm_package_id) "
+    "AND (d_pkg.dxm_order_id <=> d.dxm_order_id) "
+    "AND (d_pkg.package_number <=> d.package_number))"
 )
 _META_PURCHASE_ROAS_CORRECTION_FACTOR = 1.5
 
@@ -582,6 +591,7 @@ def _attach_profit_details_to_order_details(
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
         "COUNT(*) AS line_count, "
         "SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) AS profit_line_count, "
+        + _PACKAGE_PROFIT_LINE_COUNT_SQL + " AS package_profit_line_count, "
         "SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS profit_ok_count, "
         "SUM(CASE WHEN p.id IS NULL OR COALESCE(p.status, '') <> 'ok' THEN 1 ELSE 0 END) AS profit_incomplete_count, "
         "SUM(COALESCE(d.quantity, 0)) AS units, "
@@ -973,6 +983,7 @@ def _get_realtime_order_profit_details(
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
         "COUNT(*) AS line_count, "
         "SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) AS profit_line_count, "
+        + _PACKAGE_PROFIT_LINE_COUNT_SQL + " AS package_profit_line_count, "
         "SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS profit_ok_count, "
         "SUM(CASE WHEN p.id IS NULL OR COALESCE(p.status, '') <> 'ok' THEN 1 ELSE 0 END) AS profit_incomplete_count, "
         "SUM(COALESCE(d.quantity, 0)) AS units, "
@@ -1205,6 +1216,7 @@ def _get_realtime_order_profit_details_for_range(
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
         "COUNT(*) AS line_count, "
         "SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) AS profit_line_count, "
+        + _PACKAGE_PROFIT_LINE_COUNT_SQL + " AS package_profit_line_count, "
         "SUM(CASE WHEN p.status='ok' THEN 1 ELSE 0 END) AS profit_ok_count, "
         "SUM(CASE WHEN p.id IS NULL OR COALESCE(p.status, '') <> 'ok' THEN 1 ELSE 0 END) AS profit_incomplete_count, "
         "SUM(COALESCE(d.quantity, 0)) AS units, "
@@ -1628,19 +1640,26 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
         order_time = row.get("order_time")
         line_count = int(row.get("line_count") or 0)
         profit_line_count = int(row.get("profit_line_count") or 0)
+        raw_package_profit_line_count = row.get("package_profit_line_count")
+        package_profit_line_count = (
+            int(raw_package_profit_line_count)
+            if raw_package_profit_line_count is not None
+            else profit_line_count
+        )
         profit_ok_count = int(row.get("profit_ok_count") or 0)
         profit_incomplete_count = int(row.get("profit_incomplete_count") or 0)
         product_revenue = _money(row.get("product_revenue"))
         shipping_revenue = _money(row.get("shipping_revenue"))
         total_revenue = _money(row.get("total_revenue"))
         has_profit_lines = profit_line_count > 0
+        has_package_profit_lines = package_profit_line_count > 0
         refund_deduction = _resolve_refund_deduction(
             total_revenue=total_revenue,
             refund_amount_usd=row.get("refund_amount_usd"),
             order_state=row.get("order_state"),
         )
         return_reserve = _money(row.get("return_reserve_usd"))
-        profit_deduction = return_reserve if has_profit_lines else refund_deduction
+        profit_deduction = return_reserve if has_package_profit_lines else refund_deduction
         purchase_cost = _money(row.get("purchase_cost"))
         purchase_estimate = _money(row.get("purchase_estimate"))
         logistics_cost = _money(row.get("logistics_cost"))
@@ -1714,6 +1733,7 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             "buyer_country_name": row.get("buyer_country_name"),
             "line_count": line_count,
             "profit_line_count": profit_line_count,
+            "package_profit_line_count": package_profit_line_count,
             "profit_ok_count": profit_ok_count,
             "profit_incomplete_count": profit_incomplete_count,
             "units": int(row.get("units") or 0),
@@ -3631,27 +3651,6 @@ def _build_realtime_overview_for_range(
         order_profit_all,
         total_ad_spend_usd=summary["ad_spend"],
     )
-    if (
-        include_profit
-        and product_id is None
-        and product_ids is None
-        and not unmatched_ads
-        and _site_codes_use_default(sites)
-    ):
-        try:
-            status_profit_summary = get_order_profit_status_summary(
-                date_from=start,
-                date_to=end,
-            )
-        except Exception:
-            status_profit_summary = None
-        profit_summary = (
-            _build_order_profit_summary_from_status(
-                status_profit_summary,
-                order_count=len(order_profit_all),
-            )
-            or profit_summary
-        )
     if used_daily_ads and used_realtime_ads:
         ad_source = "mixed"
         ad_granularity = "mixed"

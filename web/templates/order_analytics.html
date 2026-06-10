@@ -6470,6 +6470,7 @@
         var newData = results[1] || {};
         var oldData = results[2] || {};
         var unmatchedData = results[3] || {};
+        globalData = reconcileRealtimeGlobalScopeProfit(globalData, newData, oldData, unmatchedData);
         if (typeof window.renderDataQualityBar === 'function') {
           window.renderDataQualityBar(globalData && globalData.data_quality);
         }
@@ -6484,6 +6485,38 @@
         if (note) note.textContent = '加载失败：' + err.message;
         setRealtimeScopeCardsError(err.message);
       });
+  }
+
+  function realtimeScopeProfitValue(data) {
+    var summary = (data && data.order_profit_summary) || {};
+    var value = Number(summary.profit_with_estimate_usd);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function realtimeRoundMoney(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function reconcileRealtimeGlobalScopeProfit(globalData, newData, oldData, unmatchedData) {
+    if (realtimeState.productId) return globalData;
+    var parts = [
+      realtimeScopeProfitValue(newData),
+      realtimeScopeProfitValue(oldData),
+      realtimeScopeProfitValue(unmatchedData)
+    ];
+    if (parts.some(function(value) { return value === null; })) return globalData;
+    var profit = realtimeRoundMoney(parts.reduce(function(sum, value) {
+      return sum + value;
+    }, 0));
+    var next = Object.assign({}, globalData || {});
+    var profitSummary = Object.assign({}, next.order_profit_summary || {});
+    profitSummary.profit_with_estimate_usd = profit;
+    var revenue = Number(profitSummary.total_revenue_usd);
+    if (Number.isFinite(revenue) && revenue > 0) {
+      profitSummary.profit_with_estimate_margin_pct = realtimeRoundMoney(profit / revenue * 100);
+    }
+    next.order_profit_summary = profitSummary;
+    return next;
   }
 
   function fetchRealtimeScopeSummary(baseParams, scope) {
