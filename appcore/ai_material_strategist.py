@@ -456,6 +456,8 @@ def _load_products() -> list[dict]:
         SELECT
           p.id, p.user_id, p.name, p.product_code, p.source, p.ai_score,
           p.ai_evaluation_result, p.ai_evaluation_detail, p.created_at,
+          p.purchase_price, p.packet_cost_estimated, p.packet_cost_actual,
+          p.standalone_price, p.standalone_shipping_fee,
           c.delivery_status, c.ad_spend_usd AS cached_ad_spend_usd,
           c.active_7d_ad_spend_usd AS cached_active_7d_ad_spend_usd,
           c.overall_roas AS cached_overall_roas
@@ -631,6 +633,8 @@ def _empty_metrics() -> dict[str, Any]:
 
 def build_data_snapshot(now: datetime | None = None) -> dict[str, Any]:
     """读取当前素材、广告、订单和明空数据，返回一次项目运行的输入快照。"""
+    from appcore import product_roas
+
     current_day = _current_meta_business_date(now)
     date_from = current_day - timedelta(days=29)
     products = _load_products()
@@ -641,6 +645,9 @@ def build_data_snapshot(now: datetime | None = None) -> dict[str, Any]:
         _add_window_metrics(metrics_by_product[_safe_int(row.get("product_id"))], row, current_day, "order")
     local_counts = _load_local_counts()
 
+    # Get configured RMB/USD rate
+    rmb_per_usd = product_roas.get_configured_rmb_per_usd()
+
     product_rows: list[dict[str, Any]] = []
     for product in products:
         pid = _safe_int(product.get("id"))
@@ -649,6 +656,18 @@ def build_data_snapshot(now: datetime | None = None) -> dict[str, Any]:
         metrics["meta_roas_30d"] = _roas(metrics.get("purchase_value_30d"), metrics.get("spend_30d"))
         metrics["profit_margin_30d"] = _roas(metrics.get("profit_30d"), metrics.get("revenue_30d"))
         local = local_counts.get(pid) or {"item_count": 0, "langs": {}}
+
+        # Calculate breakeven ROAS
+        roas_calc = product_roas.calculate_break_even_roas(
+            purchase_price=product.get("purchase_price"),
+            estimated_packet_cost=product.get("packet_cost_estimated"),
+            actual_packet_cost=product.get("packet_cost_actual"),
+            standalone_price=product.get("standalone_price"),
+            standalone_shipping_fee=product.get("standalone_shipping_fee"),
+            rmb_per_usd=rmb_per_usd,
+        )
+        effective_breakeven_roas = roas_calc.get("effective_roas")
+
         row = {
             "product_id": pid,
             "product_name": product.get("name") or "",
@@ -663,6 +682,7 @@ def build_data_snapshot(now: datetime | None = None) -> dict[str, Any]:
             "cached_active_7d_ad_spend_usd": _safe_float(product.get("cached_active_7d_ad_spend_usd")),
             "local_material_count": _safe_int(local.get("item_count")),
             "local_material_langs": dict(local.get("langs") or {}),
+            "effective_breakeven_roas": effective_breakeven_roas,
             **metrics,
         }
         product_rows.append(row)
