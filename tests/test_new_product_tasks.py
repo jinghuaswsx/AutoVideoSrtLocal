@@ -138,6 +138,8 @@ def test_create_from_meta_hot_post_supplement_targets_existing_product(monkeypat
         "translator_id": 9,
         "actor_user_id": 1,
         "target_product_id": 88,
+        "product_name_override": None,
+        "product_link_override": None,
     }
     assert captured_task["product_id"] == 88
     assert captured_task["item_id"] == 101
@@ -181,6 +183,8 @@ def test_create_from_tabcut_video_creates_new_product_task(monkeypatch):
         "owner_id": 9,
         "actor_user_id": 1,
         "target_product_id": None,
+        "product_name_override": None,
+        "product_link_override": None,
     }
     assert captured_task["product_id"] == 12
     assert captured_task["item_id"] == 34
@@ -222,6 +226,8 @@ def test_create_from_tabcut_video_supplement_targets_existing_product(monkeypatc
         "owner_id": 9,
         "actor_user_id": 1,
         "target_product_id": 88,
+        "product_name_override": None,
+        "product_link_override": None,
     }
     assert captured_task["product_id"] == 88
     assert captured_task["item_id"] == 89

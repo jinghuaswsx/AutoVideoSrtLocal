@@ -733,6 +733,8 @@ def api_create_new_product_task():
                 "created_by": int(current_user.id),
                 "is_urgent": payload.get("is_urgent") is True,
                 "force": bool(payload.get("force")),
+                "product_name": str(payload.get("product_name") or "").strip() or None,
+                "product_link": str(payload.get("product_link") or "").strip() or None,
             }
             if source == "meta_hot_post":
                 result = new_product_tasks.create_from_meta_hot_post(

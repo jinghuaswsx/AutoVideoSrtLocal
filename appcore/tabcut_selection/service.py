@@ -383,12 +383,32 @@ def get_video_candidate_detail(video_id: str) -> dict[str, Any] | None:
     return items[0] if items else None
 
 
+def _product_code_from_url(value: str | None) -> str:
+    if not value:
+        return ""
+    from urllib.parse import urlparse
+    from pathlib import Path
+    try:
+        parsed = urlparse(str(value).strip())
+        parts = [part for part in parsed.path.split("/") if part]
+        if "products" not in parts:
+            return ""
+        idx = parts.index("products")
+        if idx + 1 >= len(parts):
+            return ""
+        return Path(parts[idx + 1].strip().lower()).name
+    except Exception:
+        return ""
+
+
 def import_tabcut_video(
     video_id: str,
     owner_id: int,
     actor_user_id: int,
     *,
     target_product_id: int | None = None,
+    product_name_override: str | None = None,
+    product_link_override: str | None = None,
 ) -> dict[str, Any]:
     from appcore import local_media_storage, medias, object_keys
     from appcore.db import query_one
@@ -405,10 +425,12 @@ def import_tabcut_video(
         raise ValueError(f"TABCUT video not found: {normalized_video_id}")
 
     target_pid = int(target_product_id or 0)
-    product_code = _tabcut_product_code(normalized_video_id)
+    product_code_extracted = _product_code_from_url(product_link_override) if product_link_override else ""
+    product_code = product_code_extracted or _tabcut_product_code(normalized_video_id)
+    
     local_product_id = row.get("local_product_id")
     local_media_item_id = row.get("local_media_item_id")
-    if target_pid <= 0 and local_product_id and local_media_item_id:
+    if target_pid <= 0 and not product_link_override and not product_name_override and local_product_id and local_media_item_id:
         mapped_product = query_one(
             "SELECT id, product_code FROM media_products WHERE id=%s AND deleted_at IS NULL LIMIT 1",
             (int(local_product_id),),
@@ -448,8 +470,8 @@ def import_tabcut_video(
         is_new = False
     else:
         product = medias.get_product_by_code(product_code)
-        product_name = _tabcut_product_name(row, normalized_video_id)
-        product_link = _tabcut_product_url(row)
+        product_name = product_name_override or _tabcut_product_name(row, normalized_video_id)
+        product_link = product_link_override or _tabcut_product_url(row)
         main_image = _tabcut_product_image(row)
         if product:
             product_id = int(product["id"])
@@ -572,13 +594,22 @@ def _tabcut_product_image(row: Mapping[str, Any]) -> str:
 
 def _sync_tabcut_product_fields(product_id: int, *, product_link: str = "", main_image: str = "") -> None:
     from appcore.db import execute
+    from appcore import medias
+    from appcore.new_product_tasks import _loads_dict
+
+    link = str(product_link or "").strip()
+    if link:
+        row = medias.get_product(int(product_id)) or {}
+        links = _loads_dict(row.get("localized_links_json"))
+        links["en"] = link
+        medias.update_product(int(product_id), localized_links_json=links)
 
     execute(
         "UPDATE media_products SET "
         "product_link=COALESCE(NULLIF(%s, ''), product_link), "
         "main_image=COALESCE(NULLIF(%s, ''), main_image) "
         "WHERE id=%s",
-        (str(product_link or "").strip(), str(main_image or "").strip(), int(product_id)),
+        (link, str(main_image or "").strip(), int(product_id)),
     )
 
 

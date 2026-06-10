@@ -1153,6 +1153,8 @@ def test_import_hot_post_uses_space_free_media_display_name(monkeypatch, tmp_pat
 
     monkeypatch.setattr("appcore.db.query_one", fake_query_one)
     monkeypatch.setattr("appcore.db.execute", fake_execute)
+    monkeypatch.setattr("appcore.medias.update_product", lambda *a, **kw: 1)
+    monkeypatch.setattr("appcore.medias.get_product", lambda *a, **kw: None)
     monkeypatch.setattr(service.video_localization, "resolve_local_video_path", lambda path: video)
     monkeypatch.setattr("appcore.local_media_storage.write_stream", fake_write_stream)
     monkeypatch.setattr("appcore.medias.create_item", fake_create_item)
@@ -1212,6 +1214,8 @@ def test_import_hot_post_saves_thumbnail(monkeypatch, tmp_path):
 
     monkeypatch.setattr("appcore.db.query_one", fake_query_one)
     monkeypatch.setattr("appcore.db.execute", fake_execute)
+    monkeypatch.setattr("appcore.medias.update_product", lambda *a, **kw: 1)
+    monkeypatch.setattr("appcore.medias.get_product", lambda *a, **kw: None)
 
     monkeypatch.setattr(service.video_localization, "resolve_local_video_path", lambda path: video_file)
     monkeypatch.setattr(service.video_localization, "resolve_output_relative_file_path", lambda path: cover_file)

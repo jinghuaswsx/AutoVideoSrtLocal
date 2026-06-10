@@ -129,6 +129,8 @@ def create_from_meta_hot_post(
     created_by: int,
     is_urgent: bool = False,
     force: bool = False,
+    product_name: str | None = None,
+    product_link: str | None = None,
 ) -> dict[str, Any]:
     if int(post_id or 0) <= 0:
         raise NewProductTaskError("post_id required")
@@ -149,6 +151,8 @@ def create_from_meta_hot_post(
         translator_id=int(owner_id),
         actor_user_id=int(created_by),
         target_product_id=int(target_product_id or 0) if kind == TASK_KIND_SUPPLEMENT else None,
+        product_name_override=product_name,
+        product_link_override=product_link,
     )
     product_id = int(imported.get("media_product_id") or 0)
     item_id = int(imported.get("media_item_id") or 0)
@@ -157,9 +161,10 @@ def create_from_meta_hot_post(
 
     meta_context = _meta_hot_post_context(int(post_id))
     if kind != TASK_KIND_SUPPLEMENT:
+        link_to_sync = product_link or str(meta_context.get("product_url") or "")
         _sync_product_link_fields(
             product_id,
-            product_link=str(meta_context.get("product_url") or ""),
+            product_link=link_to_sync,
             product_main_image_url=str(
                 meta_context.get("product_main_image_url")
                 or meta_context.get("image_url")
@@ -167,6 +172,7 @@ def create_from_meta_hot_post(
             ),
         )
 
+    link_to_task = product_link or str(meta_context.get("product_url") or "")
     return _create_task_for_item(
         product_id=product_id,
         item_id=item_id,
@@ -179,7 +185,7 @@ def create_from_meta_hot_post(
         is_new_product=bool(imported.get("is_new_product")),
         source="meta_hot_post",
         task_kind=kind,
-        product_link=str(meta_context.get("product_url") or ""),
+        product_link=link_to_task,
         meta_hot_post_id=int(post_id),
     )
 
@@ -196,6 +202,8 @@ def create_from_tabcut_video(
     created_by: int,
     is_urgent: bool = False,
     force: bool = False,
+    product_name: str | None = None,
+    product_link: str | None = None,
 ) -> dict[str, Any]:
     normalized_video_id = str(video_id or "").strip()
     if not normalized_video_id:
@@ -217,12 +225,15 @@ def create_from_tabcut_video(
         owner_id=int(owner_id),
         actor_user_id=int(created_by),
         target_product_id=int(target_product_id or 0) if kind == TASK_KIND_SUPPLEMENT else None,
+        product_name_override=product_name,
+        product_link_override=product_link,
     )
     product_id = int(imported.get("media_product_id") or 0)
     item_id = int(imported.get("media_item_id") or 0)
     if product_id <= 0 or item_id <= 0:
         raise NewProductTaskError("tabcut video import did not return media ids")
 
+    link_to_task = product_link or str(imported.get("product_link") or "")
     return _create_task_for_item(
         product_id=product_id,
         item_id=item_id,
@@ -235,7 +246,7 @@ def create_from_tabcut_video(
         is_new_product=bool(imported.get("is_new_product")),
         source="tabcut_video",
         task_kind=kind,
-        product_link=str(imported.get("product_link") or ""),
+        product_link=link_to_task,
         tabcut_video_id=normalized_video_id,
     )
 

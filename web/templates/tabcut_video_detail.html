@@ -1127,6 +1127,18 @@
         <label class="mki-xiao-option"><input type="radio" name="mkiXiaoTaskKind" value="supplement"> 补充素材</label>
       </div>
     </div>
+    <div id="mkiXiaoProductNameWrap" class="mki-xiao-field">
+      <label class="mki-xiao-label" for="mkiXiaoProductName">产品中文名 <span style="color:red">*</span></label>
+      <input id="mkiXiaoProductName" class="mh-select" type="text" placeholder="请输入产品中文名" style="width:100%; height:36px; box-sizing:border-box; padding:0 8px;">
+    </div>
+    <div id="mkiXiaoProductLinkWrap" class="mki-xiao-field">
+      <label class="mki-xiao-label" for="mkiXiaoProductLink">Shopify 商品链接 <span style="color:red">*</span></label>
+      <div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px;">
+        <input id="mkiXiaoProductLink" class="mh-select" type="url" placeholder="https://newjoyloo.com/products/example" style="height:36px; box-sizing:border-box; padding:0 8px;">
+        <button id="mkiXiaoLinkCheckBtn" class="mh-btn secondary" type="button" onclick="mkiXiaoHandleLinkCheck(this)">检查链接</button>
+      </div>
+      <div id="mkiXiaoLinkCheckStatus" style="font-size:12px; margin-top:4px;" hidden></div>
+    </div>
     <div id="mkiXiaoProductSearchWrap" class="mki-xiao-field" hidden>
       <label class="mki-xiao-label" for="mkiXiaoProductSearch">选择目标产品：</label>
       <div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px;">
@@ -1559,10 +1571,85 @@
     else mkiXiaoRenderProductResults(items);
   }
 
+  let mkiXiaoLinkOk = false;
+
+  function mkiXiaoUpdateConfirmButtonState() {
+    const confirmBtn = document.getElementById('mkiXiaoConfirm');
+    if (!confirmBtn) return;
+    const isNewProductTask = mkiXiaoEnableTaskKind && mkiXiaoCurrentTaskKind() === 'new_product';
+    if (isNewProductTask) {
+      const nameVal = document.getElementById('mkiXiaoProductName').value.trim();
+      const linkVal = document.getElementById('mkiXiaoProductLink').value.trim();
+      if (!nameVal || !linkVal || !mkiXiaoLinkOk) {
+        confirmBtn.disabled = true;
+        confirmBtn.title = "请输入产品中文名并验证 Shopify 链接可用";
+        return;
+      }
+    }
+    confirmBtn.disabled = false;
+    confirmBtn.title = "";
+  }
+
+  async function mkiXiaoHandleLinkCheck(btn) {
+    const linkInput = document.getElementById('mkiXiaoProductLink');
+    const statusEl = document.getElementById('mkiXiaoLinkCheckStatus');
+    if (!linkInput || !statusEl) return;
+    const url = linkInput.value.trim();
+    if (!url) {
+      alert("请输入 Shopify 商品链接");
+      return;
+    }
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      alert("请输入以 http:// 或 https:// 开头的有效链接");
+      return;
+    }
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.textContent = "检查中...";
+    statusEl.hidden = false;
+    statusEl.style.color = "#64748b";
+    statusEl.innerHTML = "正在向服务器测试该链接的连通性...";
+    try {
+      const resp = await fetch("/medias/api/products/probe-link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        body: JSON.stringify({ url: url })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.ok) {
+        mkiXiaoLinkOk = true;
+        statusEl.style.color = "#16a34a";
+        statusEl.innerHTML = "✓ 链接可用且有效";
+      } else {
+        mkiXiaoLinkOk = false;
+        statusEl.style.color = "#dc2626";
+        statusEl.innerHTML = "✗ 链接不可用: " + (data.error || "请求失败或非有效 Shopify 商品");
+      }
+    } catch (e) {
+      mkiXiaoLinkOk = false;
+      statusEl.style.color = "#dc2626";
+      statusEl.innerHTML = "✗ 网络请求失败：" + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+      mkiXiaoUpdateConfirmButtonState();
+    }
+  }
+
   function mkiXiaoSyncTaskKindUI() {
     var wrap = document.getElementById('mkiXiaoProductSearchWrap');
-    if (!wrap) return;
-    wrap.hidden = !mkiXiaoEnableTaskKind || mkiXiaoCurrentTaskKind() !== 'supplement';
+    if (wrap) {
+      wrap.hidden = !mkiXiaoEnableTaskKind || mkiXiaoCurrentTaskKind() !== 'supplement';
+    }
+    var nameWrap = document.getElementById('mkiXiaoProductNameWrap');
+    var linkWrap = document.getElementById('mkiXiaoProductLinkWrap');
+    const isNewProductTask = mkiXiaoEnableTaskKind && mkiXiaoCurrentTaskKind() === 'new_product';
+    if (nameWrap) nameWrap.style.display = isNewProductTask ? 'block' : 'none';
+    if (linkWrap) linkWrap.style.display = isNewProductTask ? 'block' : 'none';
+    mkiXiaoUpdateConfirmButtonState();
   }
 
   async function mkiXiaoOpenModal(options = {}) {
@@ -1603,6 +1690,37 @@
         }
       };
     }
+
+    // 重置新增字段
+    const nameInput = document.getElementById('mkiXiaoProductName');
+    const linkInput = document.getElementById('mkiXiaoProductLink');
+    const statusEl = document.getElementById('mkiXiaoLinkCheckStatus');
+    if (nameInput) nameInput.value = '';
+    if (linkInput) linkInput.value = '';
+    if (statusEl) {
+      statusEl.hidden = true;
+      statusEl.innerHTML = '';
+    }
+    mkiXiaoLinkOk = false;
+
+    // 绑定事件监听
+    if (nameInput && !nameInput.dataset.listened) {
+      nameInput.dataset.listened = "1";
+      nameInput.addEventListener('input', mkiXiaoUpdateConfirmButtonState);
+    }
+    if (linkInput && !linkInput.dataset.listened) {
+      linkInput.dataset.listened = "1";
+      linkInput.addEventListener('input', function() {
+        mkiXiaoLinkOk = false;
+        const statusEl = document.getElementById('mkiXiaoLinkCheckStatus');
+        if (statusEl) {
+          statusEl.hidden = true;
+          statusEl.innerHTML = '';
+        }
+        mkiXiaoUpdateConfirmButtonState();
+      });
+    }
+
     mkiXiaoSyncTaskKindUI();
     if (mkiXiaoEnableTaskKind && options.targetProductId) {
       document.querySelectorAll('input[name="mkiXiaoTaskKind"]').forEach(function(radio) {
@@ -1713,6 +1831,7 @@
 
     mkiXiaoHideStatus();
     mkiXiaoSetBusy(false);
+    mkiXiaoUpdateConfirmButtonState();
     document.getElementById('mkiXiaoModal').style.display = 'flex';
     return new Promise(function(resolve) { mkiXiaoResolve = resolve; });
   }
@@ -1733,6 +1852,18 @@
     var languageAssignments = {};
     if (!translatorId) { alert('请选择小语种翻译负责人'); return; }
     if (!rawProcessorId) { alert('请选择原视频处理人'); return; }
+    
+    // 获取新增字段
+    var productName = "";
+    var productLink = "";
+    if (mkiXiaoEnableTaskKind && currentTaskKind === 'new_product') {
+      productName = document.getElementById('mkiXiaoProductName').value.trim();
+      productLink = document.getElementById('mkiXiaoProductLink').value.trim();
+      if (!productName) { alert('请输入产品中文名'); return; }
+      if (!productLink) { alert('请输入 Shopify 商品链接'); return; }
+      if (!mkiXiaoLinkOk) { alert('请先点击 检查链接 按钮确认链接可用'); return; }
+    }
+
     if (mkiXiaoEnableTaskKind && currentTaskKind === 'supplement' && (!mkiXiaoSelectedProduct || !mkiXiaoSelectedProduct.id)) {
       alert('请先搜索并选择要补充素材的目标产品');
       return;
@@ -1756,7 +1887,9 @@
         force: mkiXiaoIsForce(),
         isUrgent: !!(urgentEl && urgentEl.checked),
         taskKind: currentTaskKind,
-        targetProductId: mkiXiaoSelectedProduct && mkiXiaoSelectedProduct.id ? Number(mkiXiaoSelectedProduct.id) : null
+        targetProductId: mkiXiaoSelectedProduct && mkiXiaoSelectedProduct.id ? Number(mkiXiaoSelectedProduct.id) : null,
+        productName: productName,
+        productLink: productLink
       });
       mkiXiaoResolve = null;
     }
@@ -1821,7 +1954,9 @@
           countries: selection.countries,
           language_assignments: selection.languageAssignments,
           is_urgent: !!selection.isUrgent,
-          force: !!selection.force
+          force: !!selection.force,
+          product_name: selection.productName || null,
+          product_link: selection.productLink || null
         })
       });
       const data = await rsp.json().catch(() => ({}));

@@ -1502,17 +1502,38 @@ def resolve_local_video_cover_response(post_id: int) -> LocalVideoResponse:
     return LocalVideoResponse(path, 200, None)
 
 
+def _product_code_from_url(value: str | None) -> str:
+    if not value:
+        return ""
+    from urllib.parse import urlparse
+    from pathlib import Path
+    try:
+        parsed = urlparse(str(value).strip())
+        parts = [part for part in parsed.path.split("/") if part]
+        if "products" not in parts:
+            return ""
+        idx = parts.index("products")
+        if idx + 1 >= len(parts):
+            return ""
+        return Path(parts[idx + 1].strip().lower()).name
+    except Exception:
+        return ""
+
+
 def import_hot_post(
     post_id: int,
     translator_id: int,
     actor_user_id: int,
     *,
     target_product_id: int | None = None,
+    product_name_override: str | None = None,
+    product_link_override: str | None = None,
 ) -> dict[str, Any]:
     from appcore.db import execute, query_one
-    from appcore import object_keys, local_media_storage
+    from appcore import object_keys, local_media_storage, medias
     from appcore.medias import create_item
     from appcore.meta_hot_posts import video_localization
+    from appcore.new_product_tasks import _loads_dict
     import os
 
     # 1. Fetch hot post and check existing import
@@ -1527,9 +1548,12 @@ def import_hot_post(
         raise ValueError(f"Meta hot post not found: {post_id}")
 
     target_pid = int(target_product_id or 0)
+    product_code_extracted = _product_code_from_url(product_link_override) if product_link_override else ""
+    product_code = product_code_extracted or f"meta-hot-{post_id}"
+
     local_product_id = row.get("local_product_id")
     local_media_item_id = row.get("local_media_item_id")
-    if target_pid <= 0 and local_product_id and local_media_item_id:
+    if target_pid <= 0 and not product_link_override and not product_name_override and local_product_id and local_media_item_id:
         return {
             "media_product_id": int(local_product_id),
             "media_item_id": int(local_media_item_id),
@@ -1553,7 +1577,6 @@ def import_hot_post(
 
     # 3. Create or reuse media product. Supplement mode always targets the
     # selected product and creates a fresh English item for this hot-post video.
-    product_code = f"meta-hot-{post_id}"
     if target_pid > 0:
         existing_product = query_one(
             "SELECT id, user_id FROM media_products WHERE id = %s AND deleted_at IS NULL LIMIT 1",
@@ -1569,8 +1592,8 @@ def import_hot_post(
 
     is_new = existing_product is None
     if is_new:
-        product_title = row.get("product_title") or f"Meta热帖产品 {post_id}"
-        product_link = row.get("product_url") or ""
+        product_title = product_name_override or row.get("product_title") or f"Meta热帖产品 {post_id}"
+        product_link = product_link_override or row.get("product_url") or ""
         main_image = row.get("product_main_image_url") or row.get("image_url") or ""
         product_id = execute(
             "INSERT INTO media_products (user_id, name, product_code, product_link, main_image) "
@@ -1584,9 +1607,27 @@ def import_hot_post(
             )
         )
         owner_uid = int(translator_id)
+        if product_link:
+            medias.update_product(product_id, localized_links_json={"en": product_link})
     else:
         product_id = int(existing_product["id"])
         owner_uid = int(existing_product["user_id"])
+        # Sync overrides if product already exists
+        link_to_sync = product_link_override or ""
+        if link_to_sync:
+            prod_row = medias.get_product(product_id) or {}
+            links = _loads_dict(prod_row.get("localized_links_json"))
+            links["en"] = link_to_sync
+            medias.update_product(product_id, localized_links_json=links)
+            execute(
+                "UPDATE media_products SET product_link = %s WHERE id = %s",
+                (link_to_sync, product_id)
+            )
+        if product_name_override:
+            execute(
+                "UPDATE media_products SET name = %s WHERE id = %s",
+                (str(product_name_override)[:255], product_id)
+            )
 
     # 4. Copy video to local media store
     filename = _next_meta_hot_material_filename(product_id, f"meta_hot_{post_id}.mp4")

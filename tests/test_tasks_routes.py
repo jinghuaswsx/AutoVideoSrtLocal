@@ -1386,6 +1386,8 @@ def test_create_new_product_task_from_meta_hot_post_calls_service(authed_client_
         "created_by": 1,
         "is_urgent": True,
         "force": True,
+        "product_name": None,
+        "product_link": None,
     }
     assert audit_calls[0][2]["meta_hot_post_id"] == 77
     assert audit_calls[0][2]["task_kind"] == "new_product"
@@ -1497,6 +1499,8 @@ def test_create_new_product_task_from_tabcut_video_calls_service(authed_client_n
         "created_by": 1,
         "is_urgent": True,
         "force": True,
+        "product_name": None,
+        "product_link": None,
     }
     assert audit_calls[0][2]["tabcut_video_id"] == "v1"
     assert audit_calls[0][2]["task_kind"] == "new_product"
