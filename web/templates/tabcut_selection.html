@@ -1332,11 +1332,20 @@ function renderVideoCover(row) {
   return `<div class="tabcut-video-cover-link" style="cursor: pointer;">${frame}</div>`;
 }
 
+function isTabcutMobileViewport() {
+  return window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+}
+
 function playTabcutVideo(el) {
   const videoId = el.getAttribute("data-video-id");
   const authorName = el.getAttribute("data-author-name");
   const localVideoPath = el.getAttribute("data-local-video-path");
   const localVideoStatus = el.getAttribute("data-local-video-status");
+  const row = tabcutItemsByVideoId.get(String(videoId || ""));
+  if (isTabcutMobileViewport() && tabcutHasReadyLocalVideo(row)) {
+    openTabcutVideoOverlay(null, videoId);
+    return;
+  }
   openTiktokBrowserModal(videoId, authorName, localVideoPath, localVideoStatus);
 }
 function renderProductMini(row) {

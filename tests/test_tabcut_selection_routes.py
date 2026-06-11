@@ -78,6 +78,9 @@ def test_tabcut_template_contains_immersive_video_overlay_controls():
     assert "function handleTabcutVideoOverlayTouchEnd(event)" in template
     assert "function renderTabcutVideoOverlayInfo(item)" in template
     assert "function toggleTabcutVideoOverlayInfo(event)" in template
+    assert "function isTabcutMobileViewport()" in template
+    assert "isTabcutMobileViewport() && tabcutHasReadyLocalVideo(row)" in template
+    assert "openTabcutVideoOverlay(null, videoId)" in template
     assert "tabcut-video-overlay-download" in template
     assert "tabcutVideoOverlayState.infoExpanded" in template
     assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in template
