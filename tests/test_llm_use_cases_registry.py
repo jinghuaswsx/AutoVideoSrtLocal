@@ -155,7 +155,7 @@ def test_ad_material_ai_analysis_use_cases_use_googlewj_gemini_35_flash():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 74
+    assert len(USE_CASES) == 75
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES

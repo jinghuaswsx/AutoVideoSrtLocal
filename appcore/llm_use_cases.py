@@ -754,6 +754,16 @@ USE_CASES: dict[str, UseCase] = {
         "google_wj",
         "tokens",
     ),
+    "medias.ad_material_ai_analysis_country_review": _uc(
+        "medias.ad_material_ai_analysis_country_review",
+        "material",
+        "投放素材AI分析多国独立评估",
+        "使用 GoogleWJ Gemini 3.5 Flash 对单个产品在单个目标国家的投放素材补充价值进行独立评估",
+        "google_wj",
+        "gemini-3.5-flash",
+        "google_wj",
+        "tokens",
+    ),
     "mingkong_pairing.match_candidate": _uc(
         "mingkong_pairing.match_candidate",
         "material",
