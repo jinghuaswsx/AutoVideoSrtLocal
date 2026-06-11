@@ -580,9 +580,9 @@ def _new_subtitle_task_id(parent_task_id: int) -> str:
 
 
 def _default_start_runner(task_id: str, user_id: int | None = None) -> bool:
-    from web.services import subtitle_removal_runner
+    from appcore.subtitle_removal_runtime import start_subtitle_removal_task
 
-    return bool(subtitle_removal_runner.start(task_id, user_id=user_id))
+    return bool(start_subtitle_removal_task(task_id, user_id=user_id))
 
 
 def _start_watcher_thread(**kwargs) -> None:

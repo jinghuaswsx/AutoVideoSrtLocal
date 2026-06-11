@@ -24,7 +24,7 @@ from appcore import (
 )
 from appcore.db import execute, get_conn, query, query_one
 from appcore.mingkong_material_preselections import enrich_items_with_preselection
-from web.services.media_mk_selection import normalize_mk_media_path
+from appcore.mk_media_helpers import normalize_mk_media_path
 
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)

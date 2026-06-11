@@ -14,7 +14,7 @@ import requests
 from appcore import mingkong_request_monitor, pushes
 from appcore.db import execute, query, query_one
 from appcore.order_analytics import current_meta_business_date
-from web.services.media_mk_selection import normalize_mk_media_path
+from appcore.mk_media_helpers import normalize_mk_media_path
 
 
 AD_PLAN_ALL = "all"
