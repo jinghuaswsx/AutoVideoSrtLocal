@@ -31,6 +31,7 @@ _MAX_AI_CANDIDATES = 60
 _PROJECT_TOP_N = 20
 
 TARGET_COUNTRIES: tuple[dict[str, str], ...] = (
+    {"country_code": "EN", "country_name": "英语", "lang": "en", "lang_name": "英语", "tier": "source"},
     {"country_code": "DE", "country_name": "德国", "lang": "de", "lang_name": "德语", "tier": "tier_1"},
     {"country_code": "FR", "country_name": "法国", "lang": "fr", "lang_name": "法语", "tier": "tier_1"},
     {"country_code": "IT", "country_name": "意大利", "lang": "it", "lang_name": "意大利语", "tier": "tier_2"},
@@ -1088,7 +1089,15 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 timeout_seconds=180,
             )
             parsed = _llm_json(result)
-            batch_results.append({"input": payload, "output": parsed})
+            batch_results.append({
+                "input": payload,
+                "output": parsed,
+                "usage_log_id": result.get("usage_log_id"),
+                "prompt": _ranking_prompt(payload),
+                "response_text": result.get("text"),
+                "provider": PROVIDER_CODE,
+                "model": MODEL_ID,
+            })
             ids = {_safe_int(item.get("product_id")) for item in parsed.get("ranked_products") or []}
             by_id = {_safe_int(item.get("product_id")): item for item in batch}
             merged_candidates.extend(by_id[pid] for pid in ids if pid in by_id)
@@ -1128,6 +1137,11 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 "batch_results": batch_results,
                 "final_input": final_payload,
                 "final_output": parsed_final,
+                "final_usage_log_id": final.get("usage_log_id"),
+                "final_prompt": _ranking_prompt(final_payload),
+                "final_response_text": final.get("text"),
+                "provider": PROVIDER_CODE,
+                "model": MODEL_ID,
             },
             "prompt_debug": {
                 "provider": PROVIDER_CODE,
@@ -1619,6 +1633,15 @@ def _run_product_analysis(
             fallback["ai_error"] = "empty model response"
             return fallback
         parsed.setdefault("mode", "ai")
+        parsed.setdefault("prompt_debug", {
+            "provider": PROVIDER_CODE,
+            "model": MODEL_ID,
+            "use_case": PRODUCT_ANALYSIS_USE_CASE,
+            "mode": "ai",
+            "usage_log_id": result.get("usage_log_id"),
+            "prompt": _product_prompt(payload),
+            "response_text": result.get("text"),
+        })
         return parsed
     except Exception as exc:
         log.exception("AI material strategist product analysis failed product_id=%s", product.get("product_id"))
@@ -1754,6 +1777,8 @@ def _build_action_items(
         if not lang and code_for_action:
             lang = _lang_for_country_code(code_for_action)
         if not lang:
+            continue
+        if lang == "en" or code_for_action == "EN":
             continue
         if code_for_action in seen_create_countries:
             continue

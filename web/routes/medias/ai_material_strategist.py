@@ -5,6 +5,7 @@ docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md
 """
 from __future__ import annotations
 
+import json
 import re
 
 from flask import abort, current_app, jsonify, render_template, request, url_for
@@ -349,6 +350,40 @@ def api_ai_material_strategist_public_project(share_token: str):
     if not project:
         abort(404)
     return _json({"success": True, "project": _public_project_payload(project, share_token)})
+
+
+@bp.route("/api/ai-material-strategist/llm-payload/<int:log_id>", methods=["GET"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_ai_material_strategist_llm_payload(log_id: int):
+    from appcore import usage_log
+
+    payload = usage_log.get_user_usage_payload(log_id, user_id=_current_user_id())
+    if not payload:
+        return _json({"success": False, "message": "未找到大模型调用报文记录"}, 404)
+
+    req_data = None
+    if payload.get("request_data"):
+        try:
+            req_data = json.loads(payload["request_data"])
+        except Exception:
+            req_data = payload["request_data"]
+
+    resp_data = None
+    if payload.get("response_data"):
+        try:
+            resp_data = json.loads(payload["response_data"])
+        except Exception:
+            resp_data = payload["response_data"]
+
+    return _json({
+        "success": True,
+        "payload": {
+            "request_data": req_data,
+            "response_data": resp_data,
+        },
+    })
 
 
 @bp.route("/api/ai-material-strategist/preview", methods=["GET"])

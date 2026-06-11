@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from appcore import ai_material_strategist as svc
 
@@ -87,6 +88,37 @@ def test_mk_search_codes_include_stripped_code_first():
     mapping = svc._mk_search_codes(["demo-product-rjc"])
 
     assert mapping["demo-product-rjc"] == ["demo-product", "demo-product-rjc"]
+
+
+def test_target_countries_include_english_source_language():
+    assert svc.TARGET_COUNTRIES[0]["country_code"] == "EN"
+    assert svc.TARGET_COUNTRIES[0]["lang"] == "en"
+    assert svc._normalize_country_code("en") == "EN"
+    assert svc._lang_for_country_code("EN") == "en"
+
+
+def test_country_summaries_include_english_before_small_languages(monkeypatch):
+    def fake_query(sql, params=()):
+        return [
+            {
+                "product_id": 10,
+                "lang": "en",
+                "item_count": 2,
+                "pushed_video_count": 1,
+                "ad_spend_usd": 500.0,
+                "purchase_value_usd": 1500.0,
+                "ad_roas": 3.0,
+                "active_7d_ad_spend_usd": 100.0,
+            }
+        ]
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+
+    summaries = svc._load_country_summaries([10])
+
+    assert [item["country_code"] for item in summaries[10]][:3] == ["EN", "DE", "FR"]
+    assert summaries[10][0]["lang"] == "en"
+    assert summaries[10][0]["delivery_status"] == "active"
 
 
 def test_progress_payload_marks_current_step_and_keeps_logs():
@@ -622,6 +654,55 @@ def test_cancelled_task_keeps_link_and_allows_new_translation_action():
     ]
     assert create_actions
     assert create_actions[0]["target_lang"] == "ja"
+
+
+def test_english_action_does_not_create_small_language_translation_task():
+    product = _row(product_id=10, product_code="demo-rjc", user_id=7)
+    countries = [{
+        "country_code": "EN",
+        "lang": "en",
+        "blocking_task": None,
+        "cancelled_task": None,
+        "tasks": [],
+    }]
+    ai_result = {
+        "primary_action": "same_country_new_material",
+        "country_actions": [{
+            "country_code": "EN",
+            "lang": "en",
+            "action": "same_country_new_material",
+            "reason": "EN源语言继续补素材",
+        }],
+        "material_actions": [],
+    }
+
+    decorated = svc._decorate_ai_result_with_tasks(ai_result, countries, [])
+    actions = svc._build_action_items(product, decorated, [], countries)
+
+    assert not [item for item in actions if item["type"] == "create_translation_task"]
+
+
+def test_ai_material_strategist_frontend_restores_split_lost_controls():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "ai_material_strategist.js").read_text(encoding="utf-8")
+    template = (root / "web" / "templates" / "medias_ai_material_strategist.html").read_text(encoding="utf-8")
+
+    assert "DEFAULT_COUNTRY_CODES = ['EN', 'DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT']" in script
+    assert "function getSpendGreenLevelClass" in script
+    assert "green-level-6" in script
+    assert "function renderTaskCountLink" in script
+    assert "function showTasksModal" in script
+    assert "function showLlmModal" in script
+    assert "data-show-project-llm" in script
+    assert "data-show-product-llm" in script
+    assert "function countryCodesForMatrix" in script
+    assert "function renderRecommendationBadge" in script
+    assert "aimsTaskModal" in template
+    assert "aimsLlmModal" in template
+    assert ".aims-country-cell.green-level-6" in template
+    assert ".aims-task-count-btn" in template
+    assert ".aims-rec-badge.expand_country" in template
+    assert "ai_material_strategist.js', v=" in template
 
 
 def test_import_mk_video_action_payload_contains_required_download_fields():

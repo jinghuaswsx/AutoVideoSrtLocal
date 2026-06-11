@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from appcore.ai_material_strategist import ProjectAlreadyRunningError
 
 
@@ -139,6 +141,32 @@ def test_ai_material_strategist_public_share_api_rejects_invalid_token(authed_cl
     response = raw_client.get("/medias/api/ai-material-strategist/share/bad.token")
 
     assert response.status_code == 404
+
+
+def test_ai_material_strategist_llm_payload_api_returns_usage_payload(
+    authed_client_no_db,
+    monkeypatch,
+):
+    def fake_get_user_usage_payload(log_id, user_id=None):
+        assert log_id == 77
+        assert user_id == 1
+        return {
+            "request_data": json.dumps({"prompt": "hello"}),
+            "response_data": json.dumps({"text": "world"}),
+        }
+
+    monkeypatch.setattr(
+        "appcore.usage_log.get_user_usage_payload",
+        fake_get_user_usage_payload,
+    )
+
+    response = authed_client_no_db.get("/medias/api/ai-material-strategist/llm-payload/77")
+
+    assert response.status_code == 200
+    assert response.get_json()["payload"] == {
+        "request_data": {"prompt": "hello"},
+        "response_data": {"text": "world"},
+    }
 
 
 def test_ai_material_strategist_share_project_api_returns_public_url(authed_client_no_db, monkeypatch):

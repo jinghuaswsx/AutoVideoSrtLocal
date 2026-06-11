@@ -21,7 +21,22 @@
     windowText: document.getElementById('aimsWindowText'),
     qualityText: document.getElementById('aimsQualityText'),
     toast: document.getElementById('aimsToast'),
+    taskModal: document.getElementById('aimsTaskModal'),
+    taskModalTitle: document.getElementById('aimsTaskModalTitle'),
+    taskModalBody: document.getElementById('aimsTaskModalBody'),
+    taskModalClose: document.getElementById('aimsTaskModalClose'),
+    taskModalBackdrop: document.getElementById('aimsTaskModalBackdrop'),
+    llmModal: document.getElementById('aimsLlmModal'),
+    llmModalTitle: document.getElementById('aimsLlmModalTitle'),
+    llmModalBody: document.getElementById('aimsLlmModalBody'),
+    llmModalClose: document.getElementById('aimsLlmModalClose'),
+    llmModalBackdrop: document.getElementById('aimsLlmModalBackdrop'),
+    llmTabVisual: document.getElementById('aimsLlmTabVisual'),
+    llmTabPrompt: document.getElementById('aimsLlmTabPrompt'),
+    llmTabPayload: document.getElementById('aimsLlmTabPayload'),
+    llmTabButtons: document.querySelectorAll('[data-llm-tab]'),
   };
+  const DEFAULT_COUNTRY_CODES = ['EN', 'DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT'];
 
   function fmtNumber(value, digits) {
     const n = Number(value || 0);
@@ -174,6 +189,88 @@
     }
   }
 
+  function getRoasStatus(roasVal, breakevenRoas) {
+    if (roasVal === null || roasVal === undefined || roasVal === '' || roasVal === 0) return 'zero';
+    const r = Number(roasVal);
+    if (!Number.isFinite(r) || r <= 0) return 'zero';
+    const be = Number(breakevenRoas || 0);
+    if (be > 0) {
+      if (r >= be) return 'green';
+      if (r >= be * 0.8 || r >= 1.2) return 'orange';
+      return 'red';
+    }
+    if (r >= 1.5) return 'green';
+    if (r >= 1.2) return 'orange';
+    return 'red';
+  }
+
+  function getSpendGreenLevelClass(spendVal, roasStatus) {
+    if (roasStatus !== 'green') return '';
+    const val = Number(spendVal || 0);
+    if (val < 100) return 'green-level-1';
+    if (val < 500) return 'green-level-2';
+    if (val < 1000) return 'green-level-3';
+    if (val < 3000) return 'green-level-4';
+    if (val < 10000) return 'green-level-5';
+    return 'green-level-6';
+  }
+
+  function getSpendStyle(spendVal) {
+    const val = Number(spendVal || 0);
+    if (val > 1000) {
+      return 'color: #15803d; font-size: 22px; font-weight: 800; line-height: 1.1;';
+    } else if (val >= 300) {
+      return 'color: #22c55e; font-size: 16px; font-weight: 700; line-height: 1.2;';
+    }
+    return 'color: #000000; font-size: 11px; font-weight: normal;';
+  }
+
+  function renderRecommendationBadge(act) {
+    if (!act) return '';
+    const label = act.duplicate_suppressed ? '已有任务' : actionLabel(act.action);
+    const cls = esc(act.action || '');
+    return `<span class="aims-rec-badge ${cls}">${esc(label)}</span>`;
+  }
+
+  function renderTaskCountLink(item, productIndex) {
+    const tasks = collectProductTasks(item);
+    if (!tasks.length) {
+      return '<span class="aims-muted" style="font-size: 11px;">无任务</span>';
+    }
+    return `<button type="button" class="aims-task-count-btn" data-show-tasks="${productIndex}">${tasks.length} 个任务</button>`;
+  }
+
+  function collectCountryTasks(country, act) {
+    const seen = new Set();
+    const tasks = [];
+    function add(task) {
+      const id = Number(task && (task.task_id || task.id) || 0);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      tasks.push(task);
+    }
+    if (country) {
+      (country.tasks || []).forEach(add);
+      add(country.blocking_task);
+      add(country.cancelled_task);
+    }
+    if (act) {
+      add(act.existing_task);
+      add(act.cancelled_task);
+    }
+    return tasks.sort((a, b) => {
+      const rank = taskRank(a) - taskRank(b);
+      if (rank !== 0) return rank;
+      return Number(b.task_id || b.id || 0) - Number(a.task_id || a.id || 0);
+    });
+  }
+
+  function renderCountryTaskCountLink(country, act, productIndex, countryCode) {
+    const tasks = collectCountryTasks(country, act);
+    if (!tasks.length) return '—';
+    return `<button type="button" class="aims-task-count-btn" data-show-country-tasks="${productIndex}:${countryCode}">${tasks.length} 个任务</button>`;
+  }
+
   function renderTaskLink(task, compact) {
     const id = Number(task && (task.task_id || task.id) || 0);
     if (!id) return '';
@@ -202,6 +299,207 @@
     showToast._timer = setTimeout(() => {
       els.toast.hidden = true;
     }, 2800);
+  }
+
+  function renderModalTaskRows(tasks) {
+    if (!tasks.length) return '<div class="aims-empty">暂无任务</div>';
+    return tasks.map((task) => {
+      const id = Number(task.task_id || task.id || 0);
+      const url = task.task_url || task.url || ('/tasks/detail/' + id);
+      const label = taskStatusLabel(task);
+      const taskType = task.type_label || task.task_type || '翻译/处理任务';
+      const statusGroup = task.status_group || '';
+      const linkHtml = state.publicMode
+        ? `<span class="aims-task-link ${esc(statusGroup)}">任务 #${id}</span>`
+        : `<a class="aims-task-link ${esc(statusGroup)}" href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="font-weight:800;font-size:13px;">任务 #${id}</a>`;
+      return `
+        <div class="aims-modal-task-item">
+          <div class="aims-modal-task-info">
+            <div class="aims-modal-task-title">${esc(taskType)}</div>
+            <div class="aims-modal-task-meta">状态: <span class="aims-status-text ${esc(statusGroup)}">${esc(label)}</span></div>
+          </div>
+          <div>${linkHtml}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function showTasksModal(productIndex) {
+    const item = (state.activeProject?.products || [])[productIndex];
+    if (!item) return;
+    if (els.taskModalTitle) {
+      els.taskModalTitle.textContent = `#${item.rank_no} ${item.product_code || item.product_name} 任务清单`;
+    }
+    if (els.taskModalBody) {
+      els.taskModalBody.innerHTML = renderModalTaskRows(collectProductTasks(item));
+    }
+    if (els.taskModal) {
+      els.taskModal.hidden = false;
+    }
+  }
+
+  function showCountryTasksModal(productIndex, countryCode) {
+    const item = (state.activeProject?.products || [])[productIndex];
+    if (!item) return;
+    const code = String(countryCode || '').toUpperCase();
+    const country = (item.country_summary || []).find((row) => {
+      return String(row.country_code || row.lang || '').toUpperCase().trim() === code;
+    }) || null;
+    const action = ((item.ai_result || {}).country_actions || []).find((row) => {
+      return String(row.country_code || row.lang || '').toUpperCase().trim() === code;
+    }) || null;
+    if (els.taskModalTitle) {
+      els.taskModalTitle.textContent = `#${item.rank_no} ${item.product_code || item.product_name} - ${code} 任务清单`;
+    }
+    if (els.taskModalBody) {
+      els.taskModalBody.innerHTML = renderModalTaskRows(collectCountryTasks(country, action));
+    }
+    if (els.taskModal) {
+      els.taskModal.hidden = false;
+    }
+  }
+
+  function hideTasksModal() {
+    if (els.taskModal) {
+      els.taskModal.hidden = true;
+    }
+  }
+
+  function hideLlmModal() {
+    if (els.llmModal) {
+      els.llmModal.hidden = true;
+    }
+  }
+
+  function renderProjLlmVisual(rankingResult) {
+    const ranking = rankingResult || {};
+    const batches = ranking.batch_results || [];
+    const batchCards = batches.map((batch, idx) => {
+      const inputProducts = (batch.input && batch.input.products) || [];
+      const outputProducts = (batch.output && batch.output.ranked_products) || [];
+      const logBtn = batch.usage_log_id ? `<button type="button" class="aims-btn" data-llm-log-id="${batch.usage_log_id}" style="height:20px;line-height:1;padding:0 6px;font-size:10px;">查看该批次报文</button>` : '';
+      return `
+        <div class="aims-llm-visual-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h4>第 ${idx + 1} 批 AI 复评 (输入 ${inputProducts.length} 个，输出 ${outputProducts.length} 个)</h4>
+            ${logBtn}
+          </div>
+          <div class="aims-llm-grid">
+            <div class="aims-llm-param-section">
+              <div class="aims-llm-param-title">输入候选产品</div>
+              <div class="aims-llm-param-body">${inputProducts.map((p) => `<div>${esc(p.product_code)} · ${fmtUsd(p.spend_30d)} · ${fmtNumber(p.score, 1)}</div>`).join('') || '—'}</div>
+            </div>
+            <div class="aims-llm-param-section">
+              <div class="aims-llm-param-title">AI 选择产品</div>
+              <div class="aims-llm-param-body">${outputProducts.map((p) => `<div>#${esc(p.rank)} ${esc(p.product_code)} · ${esc(p.why_selected || '')}</div>`).join('') || '—'}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    const finalLogBtn = ranking.final_usage_log_id ? `<button type="button" class="aims-btn" data-llm-log-id="${ranking.final_usage_log_id}" style="height:20px;line-height:1;padding:0 6px;font-size:10px;">查看决赛报文</button>` : '';
+    const finalProducts = ((ranking.final_output || {}).ranked_products || []);
+    const finalCard = ranking.final_input ? `
+      <div class="aims-llm-visual-card" style="border-color:#bfdbfe;background:#eff6ff;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <h4 style="color:#1e3a8a;">最终决赛 Top 20 AI 复评</h4>
+          ${finalLogBtn}
+        </div>
+        <div class="aims-llm-param-body">${finalProducts.map((p) => `<div>#${esc(p.rank)} ${esc(p.product_code)} · ${esc(p.why_selected || '')}</div>`).join('') || '—'}</div>
+      </div>
+    ` : '';
+    return `<div style="display:flex;flex-direction:column;gap:16px;">${batchCards}${finalCard || '<div class="aims-empty">暂无可视化内容</div>'}</div>`;
+  }
+
+  function renderProductLlmVisual(item) {
+    const ai = item.ai_result || {};
+    const countries = ai.country_actions || [];
+    const materials = ai.material_actions || [];
+    return `
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="aims-llm-visual-card">
+          <h4>分析研判总结</h4>
+          <p style="font-size:13px;line-height:1.6;color:#1e293b;margin:6px 0 0;">${esc(ai.overall_judgement || '暂无研判结论')}</p>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <span class="aims-chip ${String(ai.priority || '').toLowerCase()}">${esc(ai.priority || 'P3')}</span>
+            <span class="aims-chip">${esc(actionLabel(ai.primary_action))}</span>
+          </div>
+        </div>
+        <div class="aims-llm-grid">
+          <div class="aims-llm-param-section">
+            <div class="aims-llm-param-title">AI 国家建议</div>
+            <div class="aims-llm-param-body">
+              ${countries.map((country) => `<div style="margin-bottom:8px;"><strong>${esc(country.country_code || country.lang)}</strong> ${renderRecommendationBadge(country)}<br><span style="color:#64748b;">${esc(country.reason || '')}</span></div>`).join('') || '—'}
+            </div>
+          </div>
+          <div class="aims-llm-param-section">
+            <div class="aims-llm-param-title">AI 明空素材建议</div>
+            <div class="aims-llm-param-body">
+              ${materials.map((material) => `<div style="margin-bottom:8px;"><strong>${esc(material.material_key || material.video_name || '素材')}</strong><br><span style="color:#64748b;">${esc(material.reason || '')}</span></div>`).join('') || '—'}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadLlmPayload(logId) {
+    if (!els.llmTabPayload) return;
+    if (state.publicMode) {
+      els.llmTabPayload.innerHTML = '<div class="aims-llm-badge">公开分享模式下无法查看原始报文</div>';
+      return;
+    }
+    els.llmTabPayload.innerHTML = '<div class="aims-loading">正在从服务器读取原始 JSON 报文...</div>';
+    try {
+      const res = await fetchJson('/medias/api/ai-material-strategist/llm-payload/' + logId);
+      const reqJson = JSON.stringify((res.payload || {}).request_data || {}, null, 2);
+      const respJson = JSON.stringify((res.payload || {}).response_data || {}, null, 2);
+      els.llmTabPayload.innerHTML = `
+        <div class="aims-llm-badge">已拉取 usage log #${esc(logId)} 的原始报文</div>
+        <div class="aims-llm-grid">
+          <div><h4>Request</h4><pre class="aims-llm-code-block">${esc(reqJson)}</pre></div>
+          <div><h4>Response</h4><pre class="aims-llm-code-block">${esc(respJson)}</pre></div>
+        </div>
+      `;
+    } catch (err) {
+      els.llmTabPayload.innerHTML = `<div class="aims-llm-badge" style="background:#fee2e2;color:#dc2626;border-color:#fecaca;">读取原始报文失败: ${esc(err.message)}</div>`;
+    }
+  }
+
+  async function showLlmModal(title, provider, model, usageLogId, debugInfo) {
+    if (els.llmModalTitle) els.llmModalTitle.textContent = title;
+    if (els.llmTabVisual) {
+      els.llmTabVisual.innerHTML = debugInfo && debugInfo.type === 'ranking'
+        ? renderProjLlmVisual(debugInfo.rankingResult || {})
+        : renderProductLlmVisual((debugInfo && debugInfo.productItem) || {});
+    }
+    if (els.llmTabPrompt) {
+      els.llmTabPrompt.innerHTML = `
+        <div class="aims-llm-badge">供应商: ${esc(provider)} | 模型: ${esc(model)}</div>
+        <pre class="aims-llm-code-block">${esc((debugInfo && debugInfo.prompt) || '暂无本地保存的完整提示词')}</pre>
+      `;
+    }
+    if (els.llmTabPayload) {
+      els.llmTabPayload.innerHTML = `
+        <div class="aims-llm-badge">本地保存的响应摘要</div>
+        <pre class="aims-llm-code-block">${esc((debugInfo && debugInfo.response_text) || '暂无本地保存的响应文本')}</pre>
+      `;
+    }
+    switchLlmTab('visual');
+    if (els.llmModal) els.llmModal.hidden = false;
+    if (usageLogId) await loadLlmPayload(usageLogId);
+  }
+
+  function switchLlmTab(tabName) {
+    const contents = [els.llmTabVisual, els.llmTabPrompt, els.llmTabPayload];
+    (els.llmTabButtons || []).forEach((btn) => {
+      btn.classList.toggle('active', btn.getAttribute('data-llm-tab') === tabName);
+    });
+    contents.forEach((content) => {
+      if (!content) return;
+      const expected = content.id.replace('aimsLlmTab', '').toLowerCase();
+      content.classList.toggle('active', expected === tabName);
+    });
   }
 
   function csrfHeaders(extra) {
@@ -610,6 +908,10 @@
     const summary = project.summary || {};
     const p0 = (summary.priority_counts || {}).P0 || 0;
     const p1 = (summary.priority_counts || {}).P1 || 0;
+    const ranking = project.ranking_result || {};
+    const llmBtn = (!state.publicMode && project.status === 'success' && (ranking.mode === 'ai' || (ranking.batch_results || []).length))
+      ? '<button type="button" class="aims-btn" id="aimsProjLlmBtn" data-show-project-llm>提示词 & 报文</button>'
+      : '';
     return `
       <div class="aims-title-row">
         <div>
@@ -626,6 +928,7 @@
           <span class="aims-chip p0">P0 ${esc(p0)}</span>
           <span class="aims-chip p1">P1 ${esc(p1)}</span>
           <span class="aims-chip">Top ${esc(products.length)}</span>
+          ${llmBtn}
         </div>
       </div>
     `;
@@ -691,31 +994,58 @@
   }
 
   function renderCountryMatrix(products) {
-    const countries = ['DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT'];
+    const countries = countryCodesForMatrix(products);
     const head = ['产品'].concat(countries).map((label) => `<div class="aims-country-cell head">${esc(label)}</div>`).join('');
     const rows = products.slice(0, 20).map((item) => {
       const byCode = {};
-      (item.country_summary || []).forEach((country) => { byCode[country.country_code] = country; });
+      (item.country_summary || []).forEach((country) => {
+        const code = String(country.country_code || country.lang || '').trim().toUpperCase();
+        if (code) byCode[code] = country;
+      });
       const cells = countries.map((code) => {
         const country = byCode[code] || {};
+        const spend = Number(country.ad_spend_usd || 0);
+        const roas = Number(country.ad_roas || 0);
         const cls = country.delivery_status || 'never';
+        const isZero = spend === 0;
+        const roasStatus = getRoasStatus(country.ad_roas, item.effective_breakeven_roas);
+        const spendLevelClass = getSpendGreenLevelClass(spend, roasStatus);
+        const cellCls = `${cls} ${isZero ? 'is-zero' : ''} ${spendLevelClass}`;
+        const spendClass = isZero ? 'aims-cell-spend zero' : 'aims-cell-spend';
+        const roasClass = `aims-cell-roas roas-${roasStatus}`;
         const task = country.blocking_task || country.cancelled_task;
         const taskTitle = task ? ` · 任务 #${task.task_id} ${taskStatusLabel(task)}` : '';
         return `
-          <div class="aims-country-cell ${esc(cls)}" title="${esc(code)} ${fmtUsd(country.ad_spend_usd)} ROAS ${fmtRoas(country.ad_roas)}${esc(taskTitle)}">
-            <strong>${fmtUsd(country.ad_spend_usd)}</strong><br>
-            <span class="${esc(getRoasColorClass(country.ad_roas, item.effective_breakeven_roas))}">R ${fmtRoas(country.ad_roas)}</span>
-            ${task ? `<br>${renderTaskLink(task, true)}` : ''}
+          <div class="aims-country-cell ${esc(cellCls)}" title="${esc(code)} ${fmtUsd(spend)} ROAS ${fmtRoas(country.ad_roas)}${esc(taskTitle)}">
+            <span class="${spendClass}">${fmtUsd(spend)}</span>
+            <span class="${roasClass}">${roas > 0 ? `R ${fmtRoas(country.ad_roas)}` : '—'}</span>
+            ${task ? renderTaskLink(task, true) : ''}
           </div>
         `;
       }).join('');
       return `<div class="aims-country-cell head">#${esc(item.rank_no)} ${esc(item.product_code)}</div>${cells}`;
     }).join('');
-    return `<div class="aims-country-grid">${head}${rows}</div>`;
+    return `<div class="aims-country-grid" style="grid-template-columns:120px repeat(${countries.length}, minmax(74px, 1fr));">${head}${rows}</div>`;
+  }
+
+  function countryCodesForMatrix(products) {
+    const seen = new Set();
+    const codes = [];
+    function add(codeValue) {
+      const code = String(codeValue || '').trim().toUpperCase();
+      if (!code || seen.has(code)) return;
+      seen.add(code);
+      codes.push(code);
+    }
+    DEFAULT_COUNTRY_CODES.forEach(add);
+    (products || []).forEach((item) => {
+      (item.country_summary || []).forEach((country) => add(country.country_code || country.lang));
+    });
+    return codes;
   }
 
   function renderProductsTable(products) {
-    const rows = products.map((item) => {
+    const rows = products.map((item, index) => {
       const m = item.metrics || {};
       const ai = item.ai_result || {};
       const mk = (item.mingkong_materials || [])[0] || {};
@@ -730,14 +1060,14 @@
             ${productNode}
             <div>${esc(item.product_code)}</div>
           </td>
-          <td>${fmtUsd(m.spend_30d)}</td>
+          <td class="aims-table-spend">${fmtUsd(m.spend_30d)}</td>
           <td>${fmtNumber(m.orders_30d)}</td>
-          <td class="${esc(getRoasColorClass(m.true_roas_30d, item.effective_breakeven_roas))}">${fmtRoas(m.true_roas_30d)}</td>
-          <td>${fmtUsd(m.spend_yesterday)}</td>
+          <td class="aims-table-roas ${esc(getRoasColorClass(m.true_roas_30d, item.effective_breakeven_roas))}">${fmtRoas(m.true_roas_30d)}</td>
+          <td class="aims-table-spend">${fmtUsd(m.spend_yesterday)}</td>
           <td><span class="aims-chip ${String(ai.priority || '').toLowerCase()}">${esc(ai.priority || 'P3')}</span></td>
           <td>${esc(actionLabel(ai.primary_action))}</td>
           <td>${mk.video_name ? `${esc(mk.video_name)}<br><span>${fmtUsd(mk.cumulative_90_spend)} · 广告 ${fmtNumber(mk.video_ads_count)}</span>` : '—'}</td>
-          <td>${renderTaskBadges(item, 3)}</td>
+          <td>${renderTaskCountLink(item, index)}</td>
           ${state.publicMode ? '' : `<td><div class="aims-actions">${renderInlineActions(item)}</div></td>`}
         </tr>
       `;
@@ -785,6 +1115,15 @@
     const ai = item.ai_result || {};
     const m = item.metrics || {};
     const materials = (item.mingkong_materials || []).slice(0, 3);
+    const debug = ai._prompt_debug || ai.prompt_debug || {};
+    const provider = debug.provider || 'openrouter';
+    const model = debug.model || 'google/gemini-3.5-flash';
+    const debugBadge = (!state.publicMode && ai.mode === 'ai') ? `
+      <div style="display:flex; align-items:center; gap:8px; margin: 6px 0 8px;">
+        <span class="aims-llm-badge" style="margin:0; font-size:10px;">AI评估: ${esc(provider)} / ${esc(model)}</span>
+        <button type="button" class="aims-btn" data-show-product-llm="${productIndex}" style="height:20px; line-height:1; padding:0 6px; font-size:10px; font-weight:normal;">提示词 & 报文</button>
+      </div>
+    ` : '';
     return `
       <section class="aims-product-section">
         <div class="aims-product-head">
@@ -802,13 +1141,13 @@
         <div class="aims-product-body">
           <div>
             <p class="aims-rec">${esc(ai.overall_judgement || '')}</p>
-            ${renderCountryActions(ai)}
-            <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskBadges(item, 5)}</div>
+            ${debugBadge}
+            <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskCountLink(item, productIndex)}</div>
             <div class="aims-material-grid">${materials.map((material, materialIndex) => renderMaterial(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:48px;">暂无明空候选</div>'}</div>
           </div>
           <div class="aims-band">
             <div class="aims-band-title">国家反馈</div>
-            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas)}</div>
+            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas, ai, productIndex)}</div>
           </div>
         </div>
       </section>
@@ -859,18 +1198,26 @@
     `;
   }
 
-  function renderCountryBars(countries, breakevenRoas) {
-    const maxSpend = Math.max(1, ...countries.map((country) => Number(country.ad_spend_usd || 0)));
+  function renderCountryBars(countries, breakevenRoas, aiResult, productIndex) {
+    const actions = (aiResult && aiResult.country_actions) || [];
+    const actionLookup = {};
+    actions.forEach((act) => {
+      const code = String(act.country_code || act.lang || '').toUpperCase().trim();
+      if (code) actionLookup[code] = act;
+    });
     return countries.map((country) => {
-      const width = Math.max(3, Math.round((Number(country.ad_spend_usd || 0) / maxSpend) * 100));
+      const code = String(country.country_code || country.lang || '').toUpperCase().trim();
+      const act = actionLookup[code] || null;
+      const spendStyle = getSpendStyle(country.ad_spend_usd);
+      const taskHtml = renderCountryTaskCountLink(country, act, productIndex, code);
       return `
-        <div class="aims-bar-row" style="grid-template-columns:32px minmax(64px, auto) minmax(60px, 1fr) minmax(50px, auto) 44px minmax(80px, auto); align-items: center; gap: 8px;">
+        <div class="aims-bar-row" style="grid-template-columns:32px 70px 85px 44px minmax(80px, auto) minmax(80px, auto); align-items: center; gap: 8px;">
           <span>${esc(country.country_code || country.lang)}</span>
           <span>${renderDeliveryStatusBadge(country.delivery_status)}</span>
-          <span class="aims-bar-track"><span class="aims-bar-fill" style="width:${width}%"></span></span>
-          <strong style="color: var(--aims-muted); font-size: 11px;">${fmtUsd(country.ad_spend_usd)}</strong>
+          <strong class="aims-bar-spend-val" style="${spendStyle}">${fmtUsd(country.ad_spend_usd)}</strong>
           <span class="${esc(getRoasColorClass(country.ad_roas, breakevenRoas))}">${fmtRoas(country.ad_roas)}</span>
-          <span>${country.blocking_task ? renderTaskLink(country.blocking_task, true) : (country.cancelled_task ? renderTaskLink(country.cancelled_task, true) : '')}</span>
+          <span>${act ? renderRecommendationBadge(act) : '—'}</span>
+          <span>${taskHtml}</span>
         </div>
       `;
     }).join('');
@@ -926,9 +1273,78 @@
         resumeFromStep(resumeButton.getAttribute('data-resume-step'));
         return;
       }
-      const button = event.target.closest('[data-import-action]');
-      if (!button) return;
-      importMaterial(button);
+      const importButton = event.target.closest('[data-import-action]');
+      if (importButton) {
+        importMaterial(importButton);
+        return;
+      }
+      const showTasksButton = event.target.closest('[data-show-tasks]');
+      if (showTasksButton) {
+        showTasksModal(Number(showTasksButton.getAttribute('data-show-tasks')));
+        return;
+      }
+      const showCountryTasksButton = event.target.closest('[data-show-country-tasks]');
+      if (showCountryTasksButton) {
+        const parts = String(showCountryTasksButton.getAttribute('data-show-country-tasks') || '').split(':');
+        showCountryTasksModal(Number(parts[0]), parts[1]);
+        return;
+      }
+      const projectLlmButton = event.target.closest('[data-show-project-llm], #aimsProjLlmBtn');
+      if (projectLlmButton && state.activeProject) {
+        const ranking = state.activeProject.ranking_result || {};
+        showLlmModal(
+          `项目 #${state.activeProject.id} AI复评决策详情`,
+          ranking.provider || state.activeProject.provider_code || 'openrouter',
+          ranking.model || state.activeProject.model_id || 'google/gemini-3.5-flash',
+          ranking.final_usage_log_id,
+          {
+            type: 'ranking',
+            rankingResult: ranking,
+            prompt: ranking.final_prompt,
+            response_text: ranking.final_response_text,
+          },
+        ).catch((err) => showToast(err.message || '打开报文失败'));
+        return;
+      }
+      const productLlmButton = event.target.closest('[data-show-product-llm]');
+      if (productLlmButton) {
+        const productIndex = Number(productLlmButton.getAttribute('data-show-product-llm'));
+        const product = (state.activeProject && state.activeProject.products || [])[productIndex];
+        if (!product) return;
+        const ai = product.ai_result || {};
+        const debug = ai._prompt_debug || ai.prompt_debug || {};
+        showLlmModal(
+          `#${product.rank_no} ${product.product_code || product.product_name} AI评估研判详情`,
+          debug.provider || 'openrouter',
+          debug.model || 'google/gemini-3.5-flash',
+          debug.usage_log_id,
+          {
+            type: 'product',
+            productItem: product,
+            prompt: debug.prompt,
+            response_text: debug.response_text,
+          },
+        ).catch((err) => showToast(err.message || '打开报文失败'));
+      }
+    });
+  }
+  if (els.taskModalClose) els.taskModalClose.addEventListener('click', hideTasksModal);
+  if (els.taskModalBackdrop) els.taskModalBackdrop.addEventListener('click', hideTasksModal);
+  if (els.llmModalClose) els.llmModalClose.addEventListener('click', hideLlmModal);
+  if (els.llmModalBackdrop) els.llmModalBackdrop.addEventListener('click', hideLlmModal);
+  if (els.llmTabButtons) {
+    els.llmTabButtons.forEach((button) => {
+      button.addEventListener('click', (event) => {
+        switchLlmTab(event.currentTarget.getAttribute('data-llm-tab'));
+      });
+    });
+  }
+  if (els.llmModalBody) {
+    els.llmModalBody.addEventListener('click', (event) => {
+      const logButton = event.target.closest('[data-llm-log-id]');
+      if (!logButton) return;
+      loadLlmPayload(Number(logButton.getAttribute('data-llm-log-id'))).catch((err) => showToast(err.message || '读取报文失败'));
+      switchLlmTab('payload');
     });
   }
   if (els.create) els.create.addEventListener('click', createProject);

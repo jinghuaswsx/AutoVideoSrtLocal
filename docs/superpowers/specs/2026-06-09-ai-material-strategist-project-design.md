@@ -12,6 +12,17 @@
 - 已经误写进 `ai_material_strategist_projects` 且 `project_name LIKE '投放素材AI分析%'` 或 `provider_code='google_wj'` 的投放分析项目，迁移到 `ad_material_ai_analysis_*` 后从旧 AI素材军师列表移除，避免污染旧功能历史项目。
 - `AI素材军师` 项目列表必须支持删除已完成或失败项目；运行中项目不能删除，避免后台执行器仍写入同一项目。删除接口为 `DELETE /medias/api/ai-material-strategist/projects/<id>`，必须登录、管理员和 `medias` 权限，并依赖外键级联清理 `ai_material_strategist_product_results`。
 
+## 2026-06-11 AI素材军师拆分回归恢复
+
+拆分提交 `d84ab0ea` 把若干已上线的 `AI素材军师` 能力随 `投放素材AI分析` 前端和服务拆出时误删。恢复时只找回 AI素材军师原能力，不把 `投放素材AI分析` 的 GoogleWJ `material_review` 四段评审契约搬回旧功能。
+
+- 国家表现矩阵必须恢复正 ROAS 国家格子的 6 档绿色热力背景，档位按该国家 `ad_spend_usd` 分段：`<100`、`<500`、`<1000`、`<3000`、`<10000`、`>=10000`。
+- 国家表现矩阵必须恢复动态国家列，优先展示 `EN, DE, FR, IT, ES, JP, SE, NL, PT`，并追加项目结果里存在的其他国家码；`EN` 是英语源语言/英语投放分析，不触发小语种翻译任务创建。
+- 产品表和国家反馈必须恢复任务数量按钮与任务清单弹窗，避免多个任务链接把矩阵和详情卡撑乱。
+- 国家反馈必须恢复 AI 建议徽标，用于展示 `expand_country`、`same_country_new_material`、`weak_country_retest`、`investigate`、`hold` 等动作。
+- 后台详情页必须恢复 LLM 提示词和报文查看入口：项目级展示排名批次/决赛输入输出，产品级展示单品提示词摘要；存在 `usage_log_id` 时可通过 `/medias/api/ai-material-strategist/llm-payload/<log_id>` 拉取原始 request/response。公开分享页不允许读取原始报文。
+- 模板加载 `web/static/ai_material_strategist.js` 必须带版本参数，避免旧浏览器缓存继续使用拆分时的简化脚本。
+
 ## 背景
 
 运营每天需要把 `素材管理` 产品列表过一轮，从当前产品中找出“有量且 ROAS 好”的头部机会品，再结合广告、订单、国家投放、素材翻译反馈和明空选品中心素材，决定下一步补素材动作。
