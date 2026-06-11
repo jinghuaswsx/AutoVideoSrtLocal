@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from pathlib import Path
 import re
 from contextlib import contextmanager
@@ -10,6 +11,8 @@ from appcore.bulk_translate_associations import mark_auto_translated
 from appcore.db import execute, get_conn, query_one
 from appcore.image_translate_runtime import apply_translated_detail_images_from_task
 from appcore.material_filename_rules import build_translated_material_filename
+
+log = logging.getLogger(__name__)
 
 
 _MATERIAL_DATE_PREFIX_RE = re.compile(r"^\d{4}\.\d{2}\.\d{2}-")
@@ -324,14 +327,14 @@ def sync_video_result(
             try:
                 local_media_storage.download_to(video_object_key, local_path)
             except Exception:
-                pass
+                log.warning("Failed to download video object key %s during result sync", video_object_key, exc_info=True)
         if local_path.is_file():
             real_file_size = local_path.stat().st_size
             info = probe_media_info(str(local_path))
             if info and info.get("duration"):
                 real_duration = info["duration"]
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("Failed to probe video file size and duration: %s", exc)
 
     duration_val = real_duration if real_duration is not None else raw_source.get("duration_seconds")
     file_size_val = real_file_size if real_file_size is not None else raw_source.get("file_size")

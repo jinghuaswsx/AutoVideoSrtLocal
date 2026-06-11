@@ -374,8 +374,8 @@ def _with_project_lock(timeout_seconds: int = 5):
         log.exception("AI material strategist lock acquire failed")
     try:
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("Close connection failed during lock acquisition cleanup: %s", exc, exc_info=True)
     return None
 
 
