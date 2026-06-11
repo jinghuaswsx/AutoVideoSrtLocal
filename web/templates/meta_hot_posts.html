@@ -26,6 +26,17 @@
 .mh-actions { display:flex; gap:8px; }
 .mh-btn { height:34px; padding:0 13px; border:1px solid var(--mh-accent); border-radius:6px; background:var(--mh-accent); color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
 .mh-btn.secondary { border-color:var(--mh-strong); background:#fff; color:#334155; }
+.op-range-presets { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.op-seg {
+  height: 34px; padding: 0 12px; background: transparent;
+  border: 1px solid transparent; border-radius: 9999px;
+  color: var(--mh-muted); cursor: pointer; font-size: 13px;
+  font-weight: 600; white-space: nowrap;
+  transition: background-color 120ms, border-color 120ms, color 120ms;
+}
+.op-seg:hover { background: #fff; border-color: var(--mh-line); color: var(--mh-text); }
+.op-seg.is-active { background: var(--mh-accent); border-color: var(--mh-accent); color: #fff; }
+.op-seg:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(15,118,110,.22); }
 .mh-sticky-controls { position:sticky; top:68px; z-index:35; display:grid; gap:8px; margin:0 0 14px; padding:10px 12px; border:1px solid var(--mh-line); border-radius:var(--mh-radius); background:#f8fafc; }
 .mh-sticky-controls .mh-status { margin-bottom:0; }
 .mh-sticky-controls .mh-pager { margin:0; }
@@ -635,13 +646,26 @@ button.mh-link-btn { cursor:pointer; }
       <label for="mhMinComments">评论数</label>
       <input class="mh-input" id="mhMinComments" type="number" min="0" placeholder="最低" value="{{ mh_query.get('min_comments', '') }}">
     </div>
-    <div class="mh-field">
-      <label for="mhCreatedFrom">创建起</label>
-      <input class="mh-input" id="mhCreatedFrom" type="date" value="{{ mh_query.get('created_from', '') }}">
-    </div>
-    <div class="mh-field">
-      <label for="mhCreatedTo">创建止</label>
-      <input class="mh-input" id="mhCreatedTo" type="date" value="{{ mh_query.get('created_to', '') }}">
+    <div class="mh-field" style="grid-column: span 2;">
+      <label>创建日期</label>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-height: 34px;">
+        <div class="op-range-presets" role="group" aria-label="日期快捷">
+          <button type="button" class="op-seg" data-op-range="today">今天</button>
+          <button type="button" class="op-seg" data-op-range="yesterday">昨天</button>
+          <button type="button" class="op-seg" data-op-range="thisWeek">本周</button>
+          <button type="button" class="op-seg" data-op-range="lastWeek">上周</button>
+          <button type="button" class="op-seg" data-op-range="thisMonth">本月</button>
+          <button type="button" class="op-seg" data-op-range="lastMonth">上月</button>
+        </div>
+        <div class="analytics-range-picker op-date-range-field" data-analytics-date-range data-range-label="创建日期" data-range-start-id="mhCreatedFrom" data-range-end-id="mhCreatedTo" style="min-width: 260px;">
+          <button type="button" class="analytics-range-trigger" data-range-trigger aria-haspopup="dialog" aria-expanded="false" title="创建日期" style="height: 34px;">
+            <span class="analytics-range-trigger-text" data-range-label-text>创建日期：请选择日期范围</span>
+            <span class="analytics-range-trigger-caret" aria-hidden="true">▼</span>
+          </button>
+          <input type="hidden" id="mhCreatedFrom" data-range-start value="{{ mh_query.get('created_from', '') }}">
+          <input type="hidden" id="mhCreatedTo" data-range-end value="{{ mh_query.get('created_to', '') }}">
+        </div>
+      </div>
     </div>
     <div class="mh-actions">
       <button class="mh-btn" type="button" onclick="loadMetaHotPosts(1)">筛选</button>
@@ -804,6 +828,7 @@ button.mh-link-btn { cursor:pointer; }
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='analytics_date_range_picker.js') }}"></script>
 <script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <script>
 function safeMetaHotPage(value) {
@@ -2182,6 +2207,7 @@ async function loadMetaHotProductPosts(productHash, page = 1) {
 }
 function resetMetaHotPosts() {
   ['mhSearchQuery','mhCategory','mhMarkStatus','mhPushStatus','mhMinPrice','mhMaxPrice','mhMinInteractions','mhMinComments','mhCreatedFrom','mhCreatedTo'].forEach(id => qs(id).value = '');
+  if (typeof syncOpRangeButtons === 'function') syncOpRangeButtons();
   loadMetaHotPosts(1);
 }
 async function refreshMetaHotPosts() {
@@ -3731,6 +3757,88 @@ async function mkiFineAiEvaluateFromMetaHot(btn, postId) {
 }
 
 // ==================== END INTEGRATION ====================
+
+// ==================== 日期快捷按钮及日历同步逻辑 ====================
+const META_TZ = 'Asia/Shanghai';
+const META_CUTOVER_HOUR = 16;
+
+function fmtIsoDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function startOfWeek(d) { const x = new Date(d); const day = x.getDay() || 7; x.setDate(x.getDate()-day+1); return x; }
+function endOfWeek(d) { return addDays(startOfWeek(d), 6); }
+
+// 当前 Meta 业务日（北京时间 16:00 切日）
+function metaBusinessToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: META_TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', hourCycle:'h23'
+  }).formatToParts(new Date()).reduce((a,p)=>{ if(p.type!=='literal') a[p.type]=p.value; return a; }, {});
+  const d = new Date(Number(parts.year), Number(parts.month)-1, Number(parts.day));
+  if (Number(parts.hour) < META_CUTOVER_HOUR) d.setDate(d.getDate()-1);
+  return d;
+}
+
+function resolveOpRange(range) {
+  const today = metaBusinessToday();
+  if (range === 'today') return {start: today, end: today};
+  if (range === 'yesterday') { const y = addDays(today,-1); return {start:y, end:y}; }
+  if (range === 'thisWeek') return {start: startOfWeek(today), end: endOfWeek(today)};
+  if (range === 'lastWeek') return {start: addDays(startOfWeek(today),-7), end: addDays(endOfWeek(today),-7)};
+  if (range === 'thisMonth') {
+    return {start: new Date(today.getFullYear(), today.getMonth(), 1),
+            end: new Date(today.getFullYear(), today.getMonth()+1, 0)};
+  }
+  if (range === 'lastMonth') {
+    return {start: new Date(today.getFullYear(), today.getMonth()-1, 1),
+            end: new Date(today.getFullYear(), today.getMonth(), 0)};
+  }
+  return {start: today, end: today};
+}
+
+function setOpRange(range) {
+  const b = resolveOpRange(range);
+  qs('mhCreatedFrom').value = fmtIsoDate(b.start);
+  qs('mhCreatedTo').value = fmtIsoDate(b.end);
+  syncOpRangeButtons();
+}
+
+function syncOpRangeButtons() {
+  const f = qs('mhCreatedFrom').value;
+  const t = qs('mhCreatedTo').value;
+  if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
+  let matched = '';
+  if (f && t) {
+    ['today','yesterday','thisWeek','lastWeek','thisMonth','lastMonth'].forEach(r => {
+      const b = resolveOpRange(r);
+      if (fmtIsoDate(b.start) === f && fmtIsoDate(b.end) === t) matched = r;
+    });
+  }
+  document.querySelectorAll('[data-op-range]').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.opRange === matched);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.initAll();
+
+  // 绑定快捷按钮点击事件
+  document.querySelectorAll('[data-op-range]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setOpRange(btn.dataset.opRange);
+      loadMetaHotPosts(1);
+    });
+  });
+
+  // 监听手动日期变化
+  const createdFrom = qs('mhCreatedFrom');
+  const createdTo = qs('mhCreatedTo');
+  if (createdFrom) createdFrom.addEventListener('change', syncOpRangeButtons);
+  if (createdTo) createdTo.addEventListener('change', syncOpRangeButtons);
+
+  // 首次加载同步状态
+  syncOpRangeButtons();
+});
 
 initMetaHotSubtabFromHash();
 </script>
