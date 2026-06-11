@@ -6,6 +6,10 @@ def test_tabcut_selection_page_renders_tabs(authed_client_no_db):
     assert "TABCUT" in body
     assert "/xuanpin/api/tabcut/videos" in body
     assert "/xuanpin/api/tabcut/goods" in body
+    assert "今日新增" in body
+    assert "/xuanpin/api/tabcut/today-new" in body
+    assert 'tabcutView === "today_new"' in body
+    assert "今日暂无新抓到的视频" in body
     assert "tabcut-video-grid" in body
     assert "sourceRank" in body
     assert '<select class="tabcut-select" id="categoryL1">' in body

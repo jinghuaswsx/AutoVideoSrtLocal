@@ -1034,8 +1034,11 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "tabcut-tabs" not in body
     assert "tabcut-tab-link" not in body
     assert "/xuanpin/api/tabcut/videos" in body
+    assert "/xuanpin/api/tabcut/today-new" in body
     assert "/xuanpin/api/tabcut/goods" in body
     assert "/xuanpin/api/tabcut/categories" in body
+    assert "今日新增" in body
+    assert 'tabcutView === "today_new"' in body
     assert '<select class="tabcut-select" id="categoryL1">' in body
     assert '<input class="tabcut-input" id="minPrice" type="number"' in body
     assert '<input class="tabcut-input" id="maxPrice" type="number"' in body

@@ -637,13 +637,15 @@
   <div class="tabcut-view-tabs">
     <div class="tabcut-view-tabs-left">
       {% if share_mode %}
-        <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_videos_page') }}">视频榜</a>
-        <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_goods_page') }}">商品榜</a>
-        <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_share_recommended_page') }}">推荐产品20个</a>
+        <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" data-view="videos" href="{{ url_for('xuanpin.tabcut_share_videos_page') }}">视频榜</a>
+        <a class="tabcut-view-tab" data-view="today_new" href="#today-new" onclick="setTabcutView('today_new'); return false;">今日新增</a>
+        <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" data-view="goods" href="{{ url_for('xuanpin.tabcut_share_goods_page') }}">商品榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" data-view="recommended" href="{{ url_for('xuanpin.tabcut_share_recommended_page') }}">推荐产品20个</a>
       {% else %}
-        <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_videos_page') }}">视频榜</a>
-        <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_goods_page') }}">商品榜</a>
-        <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" href="{{ url_for('xuanpin.tabcut_recommended_page') }}">推荐产品20个</a>
+        <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" data-view="videos" href="{{ url_for('xuanpin.tabcut_videos_page') }}">视频榜</a>
+        <a class="tabcut-view-tab" data-view="today_new" href="#today-new" onclick="setTabcutView('today_new'); return false;">今日新增</a>
+        <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" data-view="goods" href="{{ url_for('xuanpin.tabcut_goods_page') }}">商品榜</a>
+        <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" data-view="recommended" href="{{ url_for('xuanpin.tabcut_recommended_page') }}">推荐产品20个</a>
       {% endif %}
     </div>
     <button class="tabcut-view-tab" id="zoomToggleBtn" type="button" onclick="toggleCardZoom()" style="border-color:#cbd5e1; color:#475569;">2x 放大</button>
@@ -782,8 +784,12 @@
 
 <script>
 let tabcutView = "{{ initial_view or 'videos' }}";
+if (window.location.hash === "#today-new") {
+  tabcutView = "today_new";
+}
 let tabcutPage = 1;
 const tabcutItemsByVideoId = new Map();
+const TABCUT_VIDEO_VIEWS = new Set(["videos", "today_new"]);
 let tabcutTaskState = {
   videoId: "",
   button: null,
@@ -791,6 +797,10 @@ let tabcutTaskState = {
   languages: [],
   selectedProduct: null,
 };
+
+function isTabcutVideoView(view = tabcutView) {
+  return TABCUT_VIDEO_VIEWS.has(view);
+}
 
 const recommendedProducts = [
   {
@@ -1428,6 +1438,9 @@ function renderVideoCard(row) {
 
 function setTabcutView(view) {
   tabcutView = view;
+  if (tabcutView === "today_new" && window.location.hash !== "#today-new") {
+    history.replaceState(null, "", "#today-new");
+  }
   document.querySelectorAll(".tabcut-view-tab").forEach(btn => {
     if (btn.dataset.view) {
       btn.classList.toggle("active", btn.dataset.view === view);
@@ -1435,7 +1448,7 @@ function setTabcutView(view) {
   });
   const zoomBtn = qs("zoomToggleBtn");
   if (zoomBtn) {
-    zoomBtn.style.display = view === "videos" ? "inline-block" : "none";
+    zoomBtn.style.display = isTabcutVideoView(view) ? "inline-block" : "none";
   }
   updateDateFilterState();
   loadTabcut(1);
@@ -1458,7 +1471,7 @@ function setGoodsRankPeriod(period) {
 }
 
 function updateDateFilterState() {
-  const disabled = tabcutView !== "videos";
+  const disabled = !isTabcutVideoView();
   ["publishDateFrom", "publishDateTo", "sourceRank"].forEach(id => {
     const el = qs(id);
     if (el) el.disabled = disabled;
@@ -1479,34 +1492,70 @@ function paramsFor(page) {
   }
   const params = new URLSearchParams({ page, page_size: val("pageSize"), sort: sortValue });
   if (val("categoryL1").trim()) params.set("category_l1", val("categoryL1").trim());
-  if (tabcutView === "videos" && val("sourceRank")) params.set("source_rank", val("sourceRank"));
+  if (isTabcutVideoView() && val("sourceRank")) params.set("source_rank", val("sourceRank"));
   if (tabcutView === "goods") {
     params.set("goods_rank_kind", val("goodsRankKind") || "hot");
     params.set("goods_rank_period", val("goodsRankPeriod") || "30d");
     if (val("sourceCategory")) params.set("source_category", val("sourceCategory"));
     if (val("goodsBizDate")) params.set("biz_date", val("goodsBizDate"));
   }
-  if (tabcutView === "videos" && val("publishDateFrom")) params.set("publish_date_from", val("publishDateFrom"));
-  if (tabcutView === "videos" && val("publishDateTo")) params.set("publish_date_to", val("publishDateTo"));
+  if (isTabcutVideoView() && val("publishDateFrom")) params.set("publish_date_from", val("publishDateFrom"));
+  if (isTabcutVideoView() && val("publishDateTo")) params.set("publish_date_to", val("publishDateTo"));
   if (val("minVideoSales")) params.set("min_video_sales", val("minVideoSales"));
   if (val("minGoodsSales")) {
-    params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", val("minGoodsSales"));
+    if (tabcutView === "today_new") {
+      params.set("min_goods_sales_7d", val("minGoodsSales"));
+    } else {
+      params.set(tabcutView === "videos" ? "min_goods_sales_7d" : "min_sales_7d", val("minGoodsSales"));
+    }
     if (tabcutView === "goods" && val("goodsRankPeriod") !== "7d") {
       params.set(`min_sales_${val("goodsRankPeriod")}`, val("minGoodsSales"));
     }
   }
-  if (val("maxGoodsSales")) params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", val("maxGoodsSales"));
+  if (val("maxGoodsSales")) {
+    if (tabcutView === "today_new") {
+      params.set("max_goods_sales_7d", val("maxGoodsSales"));
+    } else {
+      params.set(tabcutView === "videos" ? "max_goods_sales_7d" : "max_sales_7d", val("maxGoodsSales"));
+    }
+  }
   if (val("minGmv")) {
-    params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", val("minGmv"));
+    if (tabcutView === "today_new") {
+      params.set("min_goods_gmv_7d", val("minGmv"));
+    } else {
+      params.set(tabcutView === "videos" ? "min_goods_gmv_7d" : "min_gmv_7d", val("minGmv"));
+    }
     if (tabcutView === "goods" && val("goodsRankPeriod") !== "7d") {
       params.set(`min_gmv_${val("goodsRankPeriod")}`, val("minGmv"));
     }
   }
-  if (val("minPrice")) params.set(tabcutView === "videos" ? "min_item_price" : "min_price", val("minPrice"));
-  if (val("maxPrice")) params.set(tabcutView === "videos" ? "max_item_price" : "max_price", val("maxPrice"));
+  if (val("minPrice")) {
+    if (tabcutView === "today_new") {
+      params.set("min_item_price", val("minPrice"));
+    } else {
+      params.set(tabcutView === "videos" ? "min_item_price" : "min_price", val("minPrice"));
+    }
+  }
+  if (val("maxPrice")) {
+    if (tabcutView === "today_new") {
+      params.set("max_item_price", val("maxPrice"));
+    } else {
+      params.set(tabcutView === "videos" ? "max_item_price" : "max_price", val("maxPrice"));
+    }
+  }
   if (val("markStatus")) params.set("mark_status", val("markStatus"));
   if (val("tabcutSearch").trim()) params.set("q", val("tabcutSearch").trim());
   return params;
+}
+
+function tabcutApiEndpoint() {
+  if (tabcutView === "today_new") {
+    return "{% if share_mode %}/xuanpin/api/tabcut/share/videos{% else %}/xuanpin/api/tabcut/today-new{% endif %}";
+  }
+  if (tabcutView === "videos") {
+    return "{% if share_mode %}/xuanpin/api/tabcut/share/videos{% else %}/xuanpin/api/tabcut/videos{% endif %}";
+  }
+  return "{% if share_mode %}/xuanpin/api/tabcut/share/goods{% else %}/xuanpin/api/tabcut/goods{% endif %}";
 }
 
 async function loadTabcut(page) {
@@ -1516,9 +1565,7 @@ async function loadTabcut(page) {
   }
   tabcutPage = page;
   qs("tabcutStatus").textContent = "Loading...";
-  const endpoint = tabcutView === "videos" 
-    ? "{% if share_mode %}/xuanpin/api/tabcut/share/videos{% else %}/xuanpin/api/tabcut/videos{% endif %}"
-    : "{% if share_mode %}/xuanpin/api/tabcut/share/goods{% else %}/xuanpin/api/tabcut/goods{% endif %}";
+  const endpoint = tabcutApiEndpoint();
   const resp = await fetch(`${endpoint}?${paramsFor(page).toString()}`);
   const data = await resp.json();
   if (!resp.ok) {
@@ -1533,16 +1580,16 @@ async function loadTabcut(page) {
 
 function renderTabcut(data) {
   const rows = data.items || [];
-  if (tabcutView === "videos") {
+  if (isTabcutVideoView()) {
     rows.forEach(row => {
       if (row.video_id) tabcutItemsByVideoId.set(String(row.video_id), row);
     });
   }
-  qs("tabcutStatus").textContent = `${fmtInt(data.total)} rows`;
-  if (tabcutView === "videos") {
+  qs("tabcutStatus").textContent = tabcutView === "today_new" ? `今日新增 · ${fmtInt(data.total)} rows` : `${fmtInt(data.total)} rows`;
+  if (isTabcutVideoView()) {
     qs("tabcutTableWrap").hidden = true;
     qs("tabcutVideoGrid").hidden = false;
-    qs("tabcutVideoGrid").innerHTML = rows.length ? rows.map(renderVideoCard).join("") : "<div class='tabcut-empty'>No data</div>";
+    qs("tabcutVideoGrid").innerHTML = rows.length ? rows.map(renderVideoCard).join("") : `<div class='tabcut-empty'>${tabcutView === "today_new" ? "今日暂无新抓到的视频" : "No data"}</div>`;
   } else {
     qs("tabcutVideoGrid").hidden = true;
     qs("tabcutTableWrap").hidden = false;
@@ -2666,7 +2713,8 @@ function resetTabcut() {
 
 async function copyShareUrl() {
   const shareBase = window.location.origin + "/xuanpin/tabcut/share/";
-  const shareUrl = shareBase + tabcutView;
+  const shareView = tabcutView === "today_new" ? "videos" : tabcutView;
+  const shareUrl = shareBase + shareView + (tabcutView === "today_new" ? "#today-new" : "");
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(shareUrl);
