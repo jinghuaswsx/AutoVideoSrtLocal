@@ -3567,73 +3567,101 @@
 </section>
 
 <style>
-  .country-compare-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 16px;
-    margin: 15px 0 25px 0;
-  }
-  .country-compare-card {
+  .country-compare-container {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 14px 16px;
+    border-radius: var(--radius-lg);
+    padding: 18px;
     box-shadow: var(--shadow-sm);
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    margin: 15px 0 25px 0;
   }
-  .country-compare-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  .country-compare-two-cols {
+    display: flex;
+    gap: 24px;
+  }
+  .country-compare-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .country-compare-row {
+    display: grid;
+    grid-template-columns: 1.4fr 2.4fr 1.4fr 1.4fr 1.4fr; /* 5 columns per row! */
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+  }
+  .country-compare-row:not(.header):hover {
+    background: var(--bg-hover);
     border-color: var(--accent);
   }
-  .country-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
+  .country-compare-row.header {
+    font-weight: 700;
+    color: var(--fg-muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-bottom: 2px;
+    background: transparent;
+    font-size: 12px;
   }
-  .country-card-name {
-    font-size: 14px;
+  .col-country {
+    font-size: 13px;
     font-weight: 600;
     color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .country-card-value {
-    font-size: 14px;
+  .col-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bar-value {
+    min-width: 50px;
+    font-size: 12px;
     font-weight: 700;
     color: var(--accent);
+    text-align: right;
   }
-  .country-bar-container {
-    height: 8px;
+  .bar-container {
+    flex-grow: 1;
+    height: 6px;
     background: var(--border);
-    border-radius: 4px;
+    border-radius: 3px;
     overflow: hidden;
-    margin-bottom: 12px;
   }
-  .country-bar-fill {
+  .bar-fill {
     height: 100%;
     background: linear-gradient(90deg, var(--accent) 0%, oklch(60% 0.18 300) 100%);
-    border-radius: 4px;
+    border-radius: 3px;
     transition: width 0.6s ease;
   }
-  .country-card-metrics {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px 12px;
+  .col-sales, .col-spend {
     font-size: 12px;
-    color: var(--fg-muted);
-  }
-  .country-metric-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .country-metric-label {
-    color: var(--fg-subtle);
-  }
-  .country-metric-value {
+    font-family: var(--font-mono);
     font-weight: 600;
     color: var(--fg);
-    font-family: var(--font-mono);
+  }
+  .col-roas {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .roas-real {
+    color: var(--accent);
+  }
+  .roas-sep {
+    color: var(--fg-subtle);
+  }
+  .roas-meta {
+    color: var(--fg);
   }
   .oa-selected-product-badge {
     margin: 15px 0;
@@ -5655,7 +5683,7 @@
         var top9 = sortedForCharts.slice(0, 9);
         var maxOrders = Math.max.apply(null, top9.map(function(r) { return r.order_count || 0; })) || 1;
         
-        var cardsHtml = top9.map(function(row) {
+        var makeRowHtml = function(row) {
           var name = row.display_name || row.buyer_country_name || row.buyer_country || '未知';
           var orderCount = row.order_count || 0;
           var pct = (orderCount / maxOrders) * 100;
@@ -5664,25 +5692,45 @@
           var rRoas = row.roas !== undefined && row.roas !== null ? row.roas.toFixed(2) : '-';
           var rMetaRoas = row.meta_roas !== undefined && row.meta_roas !== null ? row.meta_roas.toFixed(2) : '-';
           
-          return '<div class="country-compare-card">' +
-            '<div class="country-card-header">' +
-              '<span class="country-card-name">' + escapeHtml(name) + '</span>' +
-              '<span class="country-card-value">' + fmtInt(orderCount) + ' 单</span>' +
+          return '<div class="country-compare-row">' +
+            '<div class="col-country">' + escapeHtml(name) + '</div>' +
+            '<div class="col-bar">' +
+              '<span class="bar-value">' + fmtInt(orderCount) + ' 单</span>' +
+              '<div class="bar-container"><div class="bar-fill" style="width: ' + pct.toFixed(1) + '%;"></div></div>' +
             '</div>' +
-            '<div class="country-bar-container">' +
-              '<div class="country-bar-fill" style="width: ' + pct.toFixed(1) + '%;"></div>' +
-            '</div>' +
-            '<div class="country-card-metrics">' +
-              '<div class="country-metric-item"><span class="country-metric-label">销售额</span><span class="country-metric-value">' + fmtMoney(row.total_sales) + '</span></div>' +
-              '<div class="country-metric-item"><span class="country-metric-label">广告消耗</span><span class="country-metric-value">' + fmtMoney(rSpend) + '</span></div>' +
-              '<div class="country-metric-item"><span class="country-metric-label">真实 ROAS</span><span class="country-metric-value">' + rRoas + '</span></div>' +
-              '<div class="country-metric-item"><span class="country-metric-label">Meta ROAS</span><span class="country-metric-value">' + rMetaRoas + '</span></div>' +
+            '<div class="col-sales">' + fmtMoney(row.total_sales) + '</div>' +
+            '<div class="col-spend">' + fmtMoney(rSpend) + '</div>' +
+            '<div class="col-roas">' +
+              '<span class="roas-real" title="真实 ROAS">' + rRoas + '</span>' +
+              '<span class="roas-sep">/</span>' +
+              '<span class="roas-meta" title="Meta ROAS">' + rMetaRoas + '</span>' +
             '</div>' +
           '</div>';
-        }).join('');
-        
+        };
+
+        var makeHeaderHtml = function() {
+          return '<div class="country-compare-row header">' +
+            '<div class="col-country">国家</div>' +
+            '<div class="col-bar" style="justify-content: center;">订单量占比</div>' +
+            '<div class="col-sales">总销售额</div>' +
+            '<div class="col-spend">广告消耗</div>' +
+            '<div class="col-roas">真实/Meta ROAS</div>' +
+          '</div>';
+        };
+
+        var leftGroup = top9.slice(0, 5);
+        var rightGroup = top9.slice(5, 9);
+
+        var leftHtml = makeHeaderHtml() + leftGroup.map(makeRowHtml).join('');
+        var rightHtml = makeHeaderHtml() + (rightGroup.length ? rightGroup.map(makeRowHtml).join('') : '<div style="padding: 10px; text-align: center; color: var(--fg-subtle); font-size: 12px;">暂无数据</div>');
+
         chartsEl.innerHTML = '<div style="font-size: 16px; font-weight: 700; color: var(--fg); margin: 20px 0 10px;">国家数据对比 (TOP 9)</div>' +
-          '<div class="country-compare-grid">' + cardsHtml + '</div>';
+          '<div class="country-compare-container">' +
+            '<div class="country-compare-two-cols">' +
+              '<div class="country-compare-col">' + leftHtml + '</div>' +
+              '<div class="country-compare-col">' + rightHtml + '</div>' +
+            '</div>' +
+          '</div>';
       }
     }
 
