@@ -1964,6 +1964,7 @@ class ShopifyImageLocalizerApp:
         """批量运行多个语言的替换任务"""
         results = []
         success_count = 0
+        skipped_count = 0
         failed_count = 0
         first_workspace = None
         first_download_dir = None
@@ -2059,6 +2060,26 @@ class ShopifyImageLocalizerApp:
                     if idx < len(language_labels):
                         time.sleep(5.0)
 
+                except controller.run_product_cdp.BootstrapNotReadySkip as exc:
+                    results.append({
+                        "language": lang_label,
+                        "error": str(exc),
+                        "success": False,
+                        "skipped": True,
+                        "skip_reason": exc.reason,
+                    })
+                    skipped_count += 1
+                    detail = f"{lang_label} 素材未就绪，跳过当前语言: {exc}"
+                    self._ui_after(0, lambda d=detail: self._append_log(d))
+                    self._ui_after(0, lambda lang=lang_label, reason=exc.reason: self._add_summary(f"{lang} 状态", f"跳过：{reason}"))
+                    try:
+                        ws = storage.create_workspace(product_code, lang_code)
+                        storage.append_log(ws.log_path, detail)
+                    except Exception:
+                        pass
+                    if idx < len(language_labels):
+                        time.sleep(5.0)
+
                 except Exception as exc:
                     results.append({"language": lang_label, "error": str(exc), "success": False})
                     failed_count += 1
@@ -2105,18 +2126,20 @@ class ShopifyImageLocalizerApp:
                     self._download_dir = first_download_dir
                     self.open_download_button.configure(state="normal")
 
-                self._add_summary("批量任务状态", f"完成: 成功 {success_count}, 失败 {failed_count}")
+                self._add_summary("批量任务状态", f"完成: 成功 {success_count}, 跳过 {skipped_count}, 失败 {failed_count}")
                 self._add_summary("成功语言", ", ".join([r["language"] for r in results if r["success"]]))
+                if skipped_count > 0:
+                    self._add_summary("跳过语言", ", ".join([r["language"] for r in results if r.get("skipped")]))
                 if failed_count > 0:
-                    self._add_summary("失败语言", ", ".join([r["language"] for r in results if not r["success"]]))
+                    self._add_summary("失败语言", ", ".join([r["language"] for r in results if not r["success"] and not r.get("skipped")]))
 
                 self.status_var.set("批量任务完成")
                 self._append_log("================ 批量任务结束 ================")
-                self._append_log(f"总计: {len(language_labels)} 个语言, 成功 {success_count}, 失败 {failed_count}")
+                self._append_log(f"总计: {len(language_labels)} 个语言, 成功 {success_count}, 跳过 {skipped_count}, 失败 {failed_count}")
                 self._progress_finish("批量任务完成")
                 messagebox.showinfo(
                     "批量任务结束",
-                    f"执行完成:\n成功: {success_count}\n失败: {failed_count}",
+                    f"执行完成:\n成功: {success_count}\n跳过: {skipped_count}\n失败: {failed_count}",
                     parent=self.root,
                 )
 

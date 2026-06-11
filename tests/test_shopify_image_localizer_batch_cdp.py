@@ -339,6 +339,31 @@ def test_pair_carousel_images_routes_duplicate_token_without_slot_match_to_visua
     assert pairs == []
 
 
+def test_pair_carousel_images_leaves_ambiguous_name_candidates_for_visual_fallback():
+    product_images = [
+        {
+            "src": (
+                "https://cdn.shopify.com/files/"
+                "O1CN017UipLd11MjwvsbeOw_1116044805-0-cib.jpg?v=1"
+            )
+        }
+    ]
+    localized_images = [
+        _localized(
+            "20260610_579e0851_20260610_5c285f9e_from_url_en_04_"
+            "O1CN017UipLd11MjwvsbeOw_1116044805-0-cib.png"
+        ),
+        _localized(
+            "20260610_223071a9_20260610_9b1e3ec6_from_url_en_13_"
+            "O1CN017UipLd11MjwvsbeOw_1116044805-0-cib.jpg"
+        ),
+    ]
+
+    pairs = run_product_cdp.pair_carousel_images(localized_images, product_images)
+
+    assert pairs == []
+
+
 def test_pair_carousel_images_keeps_pet_bath_brush_order_when_source_list_has_duplicate_detail_rows():
     token = "b0d7cac6bbce4313a7ff2883a7818803d"
     product_images = [
@@ -1232,6 +1257,37 @@ def test_run_fails_when_detail_images_exist_but_no_expected_urls(monkeypatch, tm
 
     with pytest.raises(RuntimeError, match="expected=0/0"):
         run_product_cdp.run(args, visual_pair_confirm_cb=lambda _pairs: True)
+
+
+def test_detail_contract_tolerates_unmatched_legacy_non_shopify_leftovers():
+    detail_result = {
+        "image_count": 9,
+        "replacement_count": 7,
+        "skipped_missing_count": 2,
+    }
+    storefront_result = {
+        "expected_total": 7,
+        "expected_present": 7,
+        "old_non_shopify_count": 1,
+    }
+
+    run_product_cdp.assert_detail_replacement_contract(detail_result, storefront_result)
+
+
+def test_detail_contract_fails_when_old_leftovers_exceed_missing_candidates():
+    detail_result = {
+        "image_count": 9,
+        "replacement_count": 7,
+        "skipped_missing_count": 1,
+    }
+    storefront_result = {
+        "expected_total": 7,
+        "expected_present": 7,
+        "old_non_shopify_count": 2,
+    }
+
+    with pytest.raises(RuntimeError, match="persisted non-Shopify"):
+        run_product_cdp.assert_detail_replacement_contract(detail_result, storefront_result)
 
 
 def test_run_fails_when_material_product_link_keeps_old_detail_images(monkeypatch, tmp_path):
@@ -2921,6 +2977,102 @@ def test_fetch_bootstrap_ready_passes_shopify_product_id_override(monkeypatch):
 
     assert payload["localized_images"] == [{"id": 1}]
     assert calls[0]["shopify_product_id"] == "8559391932589"
+
+
+def test_fetch_bootstrap_ready_skips_localized_images_not_ready_without_polling(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        run_product_cdp.settings,
+        "load_runtime_config",
+        lambda root=None: {"base_url": "https://autovideosrt.example.test", "api_key": "demo-key", "shopify_domain_store_slugs": {}},
+    )
+
+    def fake_fetch_bootstrap(base_url, api_key, product_code, lang, **kwargs):
+        calls.append((product_code, lang))
+        raise api_client.ApiError(409, {"error": "localized images not ready"})
+
+    monkeypatch.setattr(run_product_cdp.api_client, "fetch_bootstrap", fake_fetch_bootstrap)
+    monkeypatch.setattr(
+        run_product_cdp.cancellation,
+        "cancellable_sleep",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("not-ready skip must not poll")),
+    )
+
+    with pytest.raises(run_product_cdp.BootstrapNotReadySkip) as excinfo:
+        run_product_cdp.fetch_bootstrap_ready(
+            product_code="handle-v-3987406-rjc",
+            lang="de",
+            timeout_s=600,
+            shopify_product_id="8606980374701",
+        )
+
+    assert calls == [("handle-v-3987406-rjc", "de")]
+    assert excinfo.value.reason == "localized_images_not_ready"
+
+
+def test_fetch_bootstrap_ready_skips_empty_localized_images_without_polling(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        run_product_cdp.settings,
+        "load_runtime_config",
+        lambda root=None: {"base_url": "https://autovideosrt.example.test", "api_key": "demo-key", "shopify_domain_store_slugs": {}},
+    )
+
+    def fake_fetch_bootstrap(base_url, api_key, product_code, lang, **kwargs):
+        calls.append((product_code, lang))
+        return {"localized_images": []}
+
+    monkeypatch.setattr(run_product_cdp.api_client, "fetch_bootstrap", fake_fetch_bootstrap)
+    monkeypatch.setattr(
+        run_product_cdp.cancellation,
+        "cancellable_sleep",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("empty localized images must not poll")),
+    )
+
+    with pytest.raises(run_product_cdp.BootstrapNotReadySkip) as excinfo:
+        run_product_cdp.fetch_bootstrap_ready(
+            product_code="handle-v-3987406-rjc",
+            lang="pt",
+            timeout_s=600,
+            shopify_product_id="8606980374701",
+        )
+
+    assert calls == [("handle-v-3987406-rjc", "pt")]
+    assert excinfo.value.reason == "localized_images_not_ready"
+
+
+def test_fetch_bootstrap_ready_raises_hard_api_errors_without_polling(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(
+        run_product_cdp.settings,
+        "load_runtime_config",
+        lambda root=None: {"base_url": "https://autovideosrt.example.test", "api_key": "demo-key", "shopify_domain_store_slugs": {}},
+    )
+
+    def fake_fetch_bootstrap(base_url, api_key, product_code, lang, **kwargs):
+        calls.append((product_code, lang))
+        raise api_client.ApiError(404, {"error": "product not found"})
+
+    monkeypatch.setattr(run_product_cdp.api_client, "fetch_bootstrap", fake_fetch_bootstrap)
+    monkeypatch.setattr(
+        run_product_cdp.cancellation,
+        "cancellable_sleep",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("hard API errors must not poll")),
+    )
+
+    with pytest.raises(api_client.ApiError) as excinfo:
+        run_product_cdp.fetch_bootstrap_ready(
+            product_code="missing-product-rjc",
+            lang="de",
+            timeout_s=600,
+            shopify_product_id="8606980374701",
+        )
+
+    assert calls == [("missing-product-rjc", "de")]
+    assert excinfo.value.status_code == 404
 
 
 def test_fetch_bootstrap_ready_honors_pre_cancelled_token(monkeypatch):
