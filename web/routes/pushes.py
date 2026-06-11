@@ -551,22 +551,62 @@ def api_list():
         r for r in rows if not status_cache_by_item_id.get(int(r.get("id") or 0))
     ]
     context = pushes.build_push_list_context(missing_cache_rows) if missing_cache_rows else None
-    items = [
+
+    # 第一阶段：在内存中只做轻量的状态过滤，避免对全量数据触发昂贵推导（如 N+1 rework_task_id 查询）
+    filtered_rows_with_status = []
+    valid_status_filters = [s for s in status_filter if s in _VALID_STATUS_FILTERS]
+
+    for r in rows:
+        item_id = int(r.get("id") or 0)
+        cache_entry = status_cache_by_item_id.get(item_id)
+        if cache_entry and cache_entry.get("status"):
+            status = str(cache_entry["status"])
+        else:
+            # 缺失缓存时轻量级提取状态，绝不触发全量 rework_task_id 计算
+            item_shape = dict(r)
+            product_shape = {
+                "id": r.get("product_id"),
+                "name": r.get("product_name"),
+                "product_code": r.get("product_code"),
+                "localized_links_json": r.get("localized_links_json"),
+                "ad_supported_langs": r.get("ad_supported_langs"),
+                "shopify_image_status_json": r.get("shopify_image_status_json"),
+                "selling_points": r.get("selling_points"),
+                "importance": r.get("importance"),
+                "remark": r.get("remark"),
+                "ai_score": r.get("ai_score"),
+                "ai_evaluation_result": r.get("ai_evaluation_result"),
+                "ai_evaluation_detail": r.get("ai_evaluation_detail"),
+                "listing_status": r.get("listing_status"),
+            }
+            readiness = _compute_readiness_for_list(item_shape, product_shape, context)
+            status = pushes.compute_status_from_readiness(
+                item_shape,
+                product_shape,
+                readiness,
+                context=context,
+            )
+
+        if not valid_status_filters or status in valid_status_filters:
+            filtered_rows_with_status.append((r, status))
+
+    # 第二阶段：对过滤后的行进行分页切片
+    total = len(filtered_rows_with_status)
+    start = (page - 1) * limit
+    page_rows_with_status = filtered_rows_with_status[start:start + limit]
+
+    # 第三阶段：懒加载——仅对当前页的 20 条数据进行完整的昂贵字段序列化与返修任务 ID 数据库推导
+    page_rows = [item[0] for item in page_rows_with_status]
+    page_context = pushes.build_push_list_context(page_rows) if page_rows else None
+
+    page_items = [
         _serialize_row(
             r,
-            context=context,
+            context=page_context,
             status_cache=status_cache_by_item_id.get(int(r.get("id") or 0)),
         )
-        for r in rows
+        for r, status in page_rows_with_status
     ]
-    if status_filter:
-        valid = [s for s in status_filter if s in _VALID_STATUS_FILTERS]
-        if valid:
-            items = [it for it in items if it["status"] in valid]
-
-    total = len(items)
-    start = (page - 1) * limit
-    page_items = items[start:start + limit]
 
     return _json_response({
         "items": page_items,
