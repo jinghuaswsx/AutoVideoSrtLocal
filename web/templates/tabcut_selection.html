@@ -598,6 +598,78 @@ body.tabcut-video-overlay-open { overflow:hidden; }
   .op-seg:hover { background: #fff; border-color: var(--mh-line); color: var(--mh-text); }
   .op-seg.is-active { background: var(--mh-accent); border-color: var(--mh-accent); color: #fff; }
   .op-seg:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(15,118,110,.22); }
+
+  /* Secondary screen adaptations (portrait 9:16 layout) */
+  @media (min-width: 769px) and (orientation: portrait) {
+    /* Product card Chinese title: double size, bold, blue */
+    .tabcut-product-mini .tabcut-product-title {
+      font-size: 22px !important;
+      color: #2563eb !important;
+      font-weight: 800 !important;
+      -webkit-line-clamp: unset !important;
+    }
+    
+    /* Hover state for product link */
+    .tabcut-product-mini .tabcut-product-link:hover .tabcut-product-title {
+      color: #2563eb !important;
+      text-decoration: underline !important;
+    }
+    
+    /* Product card Chinese category: double size */
+    .tabcut-product-mini .tabcut-product-category {
+      font-size: 20px !important;
+    }
+    
+    /* Product card image: double size */
+    .tabcut-product-mini {
+      grid-template-columns: 96px minmax(0, 1fr) !important;
+      gap: 16px !important;
+    }
+    .tabcut-product-mini img, 
+    .tabcut-product-mini .tabcut-product-img-empty {
+      width: 96px !important;
+      height: 96px !important;
+      border-radius: 8px !important;
+    }
+    
+    /* Video overlay details top main title: double size, bold, blue */
+    .tabcut-video-overlay-info .tabcut-video-overlay-title {
+      font-size: 26px !important;
+      color: #2563eb !important;
+      font-weight: 800 !important;
+      white-space: normal !important;
+    }
+    
+    /* Video overlay detail item Chinese title: double size, bold, blue */
+    .tabcut-video-overlay-detail.tabcut-detail-title-zh {
+      font-size: 24px !important;
+      line-height: 1.4 !important;
+    }
+    .tabcut-video-overlay-detail.tabcut-detail-title-zh b {
+      color: #2563eb !important;
+    }
+    .tabcut-video-overlay-detail.tabcut-detail-title-zh span {
+      color: #2563eb !important;
+      font-weight: 800 !important;
+      white-space: normal !important;
+    }
+    
+    /* Video overlay detail item Chinese category: double size */
+    .tabcut-video-overlay-detail.tabcut-detail-category-zh {
+      font-size: 20px !important;
+      line-height: 1.4 !important;
+    }
+    .tabcut-video-overlay-detail.tabcut-detail-category-zh span {
+      white-space: normal !important;
+    }
+    
+    /* Video overlay product image: double size */
+    .tabcut-video-overlay-product-image {
+      width: 200px !important;
+      height: 200px !important;
+      border-radius: 12px !important;
+    }
+  }
 {% endblock %}
 
 {% block content %}
@@ -1486,7 +1558,43 @@ async function translateTabcutGoodsInfo(event, itemId) {
   } catch (err) {
     qs("tabcutStatus").textContent = "商品中文信息翻译失败";
     setTabcutGoodsTranslateDisabled(id, false);
+}
+
+let autoTranslateQueue = [];
+let isAutoTranslating = false;
+
+async function triggerAutoTranslation(rows) {
+  if (!TABCUT_CAN_TRANSLATE_GOODS) return;
+  autoTranslateQueue = []; // Reset queue for new page / query
+  
+  for (const row of rows) {
+    const itemId = tabcutGoodsId(row);
+    if (!itemId) continue;
+    if (!tabcutIsGoodsTranslated(row) && String(row.zh_translation_status || "").trim() !== "running") {
+      autoTranslateQueue.push(itemId);
+    }
   }
+  
+  if (autoTranslateQueue.length > 0 && !isAutoTranslating) {
+    processAutoTranslateQueue();
+  }
+}
+
+async function processAutoTranslateQueue() {
+  if (autoTranslateQueue.length === 0) {
+    isAutoTranslating = false;
+    return;
+  }
+  isAutoTranslating = true;
+  const itemId = autoTranslateQueue.shift();
+  
+  try {
+    await translateTabcutGoodsInfo(null, itemId);
+  } catch (err) {
+    console.error("Auto translation failed for item:", itemId, err);
+  }
+  
+  setTimeout(processAutoTranslateQueue, 1000);
 }
 function isTabcutMarked(row) {
   return row.is_marked === true || row.is_marked === 1 || row.is_marked === "1";
@@ -1681,9 +1789,10 @@ function tabcutAdjacentPlayableVideo(videoId, direction) {
   return items[nextIndex];
 }
 
-function tabcutOverlayDetail(label, value) {
+function tabcutOverlayDetail(label, value, key) {
   const text = String(value || "").trim();
-  return text ? `<div class="tabcut-video-overlay-detail"><b>${esc(label)}</b><span>${esc(text)}</span></div>` : "";
+  const extraClass = key ? ` tabcut-detail-${key}` : "";
+  return text ? `<div class="tabcut-video-overlay-detail${extraClass}"><b>${esc(label)}</b><span>${esc(text)}</span></div>` : "";
 }
 
 function renderTabcutVideoOverlayInfo(item) {
@@ -1701,7 +1810,7 @@ function renderTabcutVideoOverlayInfo(item) {
   const sourceTitle = tabcutProductSourceTitle(row);
   const score = Number(row.score);
   const details = [
-    tabcutOverlayDetail("中文标题", titleZh),
+    tabcutOverlayDetail("中文标题", titleZh, "title-zh"),
     tabcutOverlayDetail("英文标题", sourceTitle),
     tabcutOverlayDetail("商品ID", productId),
     tabcutOverlayDetail("价格", price),
@@ -1710,7 +1819,7 @@ function renderTabcutVideoOverlayInfo(item) {
     tabcutOverlayDetail("点赞", row.like_count ? fmtCompact(row.like_count) : ""),
     tabcutOverlayDetail("分享", row.share_count ? fmtCompact(row.share_count) : ""),
     tabcutOverlayDetail("评论", row.comment_count ? fmtCompact(row.comment_count) : ""),
-    tabcutOverlayDetail("中文类目", categoryZh),
+    tabcutOverlayDetail("中文类目", categoryZh, "category-zh"),
     tabcutOverlayDetail("类目", category),
     tabcutOverlayDetail("发布时间", formatDateTime(row.create_time)),
     tabcutOverlayDetail("首次发现", formatDateTime(row.first_seen_at || row.first_seen_time)),
@@ -2192,6 +2301,9 @@ function renderTabcut(data) {
       </tr>`).join("") : "<tr><td class='tabcut-empty' colspan='11'>No data</td></tr>";
   }
   renderPager(data);
+  if (tabcutView === "today_new") {
+    triggerAutoTranslation(rows);
+  }
 }
 
 function normalizeTabcutGotoPage(raw, totalPages) {
