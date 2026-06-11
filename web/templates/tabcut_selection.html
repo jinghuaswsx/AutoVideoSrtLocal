@@ -638,7 +638,6 @@
     <div class="tabcut-view-tabs-left">
       {% if share_mode %}
         <a class="tabcut-view-tab {% if initial_view == 'videos' %}active{% endif %}" data-view="videos" href="{{ url_for('xuanpin.tabcut_share_videos_page') }}">视频榜</a>
-        <a class="tabcut-view-tab" data-view="today_new" href="#today-new" onclick="setTabcutView('today_new'); return false;">今日新增</a>
         <a class="tabcut-view-tab {% if initial_view == 'goods' %}active{% endif %}" data-view="goods" href="{{ url_for('xuanpin.tabcut_share_goods_page') }}">商品榜</a>
         <a class="tabcut-view-tab {% if initial_view == 'recommended' %}active{% endif %}" data-view="recommended" href="{{ url_for('xuanpin.tabcut_share_recommended_page') }}">推荐产品20个</a>
       {% else %}
@@ -784,12 +783,15 @@
 
 <script>
 let tabcutView = "{{ initial_view or 'videos' }}";
+{% if not share_mode %}
 if (window.location.hash === "#today-new") {
   tabcutView = "today_new";
 }
+{% endif %}
 let tabcutPage = 1;
 const tabcutItemsByVideoId = new Map();
-const TABCUT_VIDEO_VIEWS = new Set(["videos", "today_new"]);
+const TABCUT_VIDEO_VIEWS = new Set(["videos"{% if not share_mode %}, "today_new"{% endif %}]);
+const TABCUT_VALID_VIEWS = new Set(["videos", "goods", "recommended"{% if not share_mode %}, "today_new"{% endif %}]);
 let tabcutTaskState = {
   videoId: "",
   button: null,
@@ -800,6 +802,10 @@ let tabcutTaskState = {
 
 function isTabcutVideoView(view = tabcutView) {
   return TABCUT_VIDEO_VIEWS.has(view);
+}
+
+function normalizeTabcutView(view) {
+  return TABCUT_VALID_VIEWS.has(view) ? view : "videos";
 }
 
 const recommendedProducts = [
@@ -1437,18 +1443,20 @@ function renderVideoCard(row) {
 }
 
 function setTabcutView(view) {
-  tabcutView = view;
+  tabcutView = normalizeTabcutView(view);
+  {% if not share_mode %}
   if (tabcutView === "today_new" && window.location.hash !== "#today-new") {
     history.replaceState(null, "", "#today-new");
   }
+  {% endif %}
   document.querySelectorAll(".tabcut-view-tab").forEach(btn => {
     if (btn.dataset.view) {
-      btn.classList.toggle("active", btn.dataset.view === view);
+      btn.classList.toggle("active", btn.dataset.view === tabcutView);
     }
   });
   const zoomBtn = qs("zoomToggleBtn");
   if (zoomBtn) {
-    zoomBtn.style.display = isTabcutVideoView(view) ? "inline-block" : "none";
+    zoomBtn.style.display = isTabcutVideoView() ? "inline-block" : "none";
   }
   updateDateFilterState();
   loadTabcut(1);
@@ -1549,16 +1557,20 @@ function paramsFor(page) {
 }
 
 function tabcutApiEndpoint() {
-  if (tabcutView === "today_new") {
-    return "{% if share_mode %}/xuanpin/api/tabcut/share/videos{% else %}/xuanpin/api/tabcut/today-new{% endif %}";
+  const view = normalizeTabcutView(tabcutView);
+  {% if not share_mode %}
+  if (view === "today_new") {
+    return "/xuanpin/api/tabcut/today-new";
   }
-  if (tabcutView === "videos") {
+  {% endif %}
+  if (view === "videos") {
     return "{% if share_mode %}/xuanpin/api/tabcut/share/videos{% else %}/xuanpin/api/tabcut/videos{% endif %}";
   }
   return "{% if share_mode %}/xuanpin/api/tabcut/share/goods{% else %}/xuanpin/api/tabcut/goods{% endif %}";
 }
 
 async function loadTabcut(page) {
+  tabcutView = normalizeTabcutView(tabcutView);
   if (tabcutView === "recommended") {
     renderRecommendedProducts();
     return;
@@ -1585,11 +1597,20 @@ function renderTabcut(data) {
       if (row.video_id) tabcutItemsByVideoId.set(String(row.video_id), row);
     });
   }
+  {% if not share_mode %}
   qs("tabcutStatus").textContent = tabcutView === "today_new" ? `今日新增 · ${fmtInt(data.total)} rows` : `${fmtInt(data.total)} rows`;
+  {% else %}
+  qs("tabcutStatus").textContent = `${fmtInt(data.total)} rows`;
+  {% endif %}
   if (isTabcutVideoView()) {
     qs("tabcutTableWrap").hidden = true;
     qs("tabcutVideoGrid").hidden = false;
-    qs("tabcutVideoGrid").innerHTML = rows.length ? rows.map(renderVideoCard).join("") : `<div class='tabcut-empty'>${tabcutView === "today_new" ? "今日暂无新抓到的视频" : "No data"}</div>`;
+    {% if not share_mode %}
+    const emptyMessage = tabcutView === "today_new" ? "今日暂无新抓到的视频" : "No data";
+    {% else %}
+    const emptyMessage = "No data";
+    {% endif %}
+    qs("tabcutVideoGrid").innerHTML = rows.length ? rows.map(renderVideoCard).join("") : `<div class='tabcut-empty'>${emptyMessage}</div>`;
   } else {
     qs("tabcutVideoGrid").hidden = true;
     qs("tabcutTableWrap").hidden = false;
@@ -2713,8 +2734,12 @@ function resetTabcut() {
 
 async function copyShareUrl() {
   const shareBase = window.location.origin + "/xuanpin/tabcut/share/";
+  {% if not share_mode %}
   const shareView = tabcutView === "today_new" ? "videos" : tabcutView;
-  const shareUrl = shareBase + shareView + (tabcutView === "today_new" ? "#today-new" : "");
+  {% else %}
+  const shareView = normalizeTabcutView(tabcutView);
+  {% endif %}
+  const shareUrl = shareBase + shareView;
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       await navigator.clipboard.writeText(shareUrl);

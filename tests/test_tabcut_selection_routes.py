@@ -205,6 +205,9 @@ def test_tabcut_share_routes_render_without_login_no_db(monkeypatch):
     body = resp.get_data(as_text=True)
     assert "TABCUT" in body
     assert "recommended" in body
+    assert "今日新增" not in body
+    assert 'data-view="today_new"' not in body
+    assert "#today-new" not in body
 
     resp_goods = client.get("/xuanpin/tabcut/share/goods")
     assert resp_goods.status_code == 200
