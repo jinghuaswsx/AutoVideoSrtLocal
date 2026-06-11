@@ -320,6 +320,87 @@ def test_build_product_video_workbench_matches_legacy_library_item_by_exact_file
     assert card["bound_item"]["match_source"] == "media_items_legacy_product_scope"
 
 
+def test_build_product_video_workbench_matches_legacy_item_ignoring_separator_spaces(monkeypatch):
+    from web.routes.medias import material_supplement as route
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials._enrich_material_yesterday_delta",
+        lambda rows, **kwargs: None,
+    )
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            return [{"id": 412, "name": "马鞍式牵引遛狗绳", "product_code": "reflective-dog-harness-set-rjc"}]
+        if "FROM mingkong_material_daily_snapshots s" in sql:
+            return [
+                {
+                    "material_key": "mk-separator-space",
+                    "video_path": "uploads2/202510/1761128175.mp4",
+                    "video_name": "2025.09.16- 马鞍式牵引遛狗绳-原素材-苏齐齐.mp4",
+                    "video_image_path": "/cover/dog.jpg",
+                    "cumulative_90_spend": "82600.00",
+                    "video_ads_count": 11,
+                    "video_author": "陈绍坤",
+                    "video_upload_time": "2025-10-22",
+                    "yesterday_spend_delta": "0.00",
+                    "snapshot_date": "2026-06-11",
+                    "snapshot_at": datetime(2026, 6, 11, 5, 0, 6),
+                    "mk_product_id": 2306,
+                    "mk_product_name": "Reflective Dog Harness Set",
+                    "mk_product_link": "https://lettucepets.com/products/reflective-dog-harness-set",
+                    "main_image": "",
+                }
+            ]
+        if "FROM media_items" in sql and "WHERE product_id = %s" in sql:
+            return [
+                {
+                    "id": 325,
+                    "lang": "en",
+                    "filename": "2025.09.16-马鞍式牵引遛狗绳-原素材-苏齐齐.mp4",
+                    "display_name": "2025.09.16-马鞍式牵引遛狗绳-原素材-苏齐齐.mp4",
+                    "object_key": "77/medias/412/20260420_265e98b8_2025.09.16- 马鞍式牵引遛狗绳-原素材-苏齐齐.mp4",
+                    "task_id": None,
+                    "source_raw_id": 47,
+                    "source_ref_id": None,
+                    "auto_translated": 0,
+                    "created_at": datetime(2026, 4, 20, 14, 38, 54),
+                },
+                {
+                    "id": 1676,
+                    "lang": "de",
+                    "filename": "2026.06.01-马鞍式牵引遛狗绳-原素材-小语种翻译素材(德语)-20250916苏齐齐-蔡靖华.mp4",
+                    "display_name": "2026.06.01-马鞍式牵引遛狗绳-原素材-小语种翻译素材(德语)-20250916苏齐齐-蔡靖华.mp4",
+                    "object_key": "238/medias/412/de_2025.09.16-马鞍式牵引遛狗绳-原素材-苏齐齐.mp4",
+                    "task_id": 304,
+                    "source_raw_id": 47,
+                    "source_ref_id": 47,
+                    "auto_translated": 1,
+                    "created_at": datetime(2026, 6, 1, 13, 18, 59),
+                },
+            ]
+        if "FROM media_item_mk_bindings" in sql:
+            return []
+        if "FROM tasks t" in sql:
+            return []
+        if "FROM media_product_lang_ad_summary_cache" in sql:
+            return [{"lang": "de", "ad_spend_usd": "5711.88", "active_7d_ad_spend_usd": "122.46", "purchase_value_usd": "7868.89", "ad_roas": "1.3776", "pushed_video_count": 2, "item_count": 1}]
+        if "FROM media_product_ad_summary_cache" in sql:
+            return [{"ad_spend_usd": "7990.00", "active_7d_ad_spend_usd": "183.65", "overall_roas": "1.57", "delivery_status": "active"}]
+        raise AssertionError(sql)
+
+    payload = route.build_product_video_workbench(412, query_fn=fake_query)
+
+    card = payload["cards"][0]
+    assert card["in_library"] is True
+    assert card["media_item_id"] == 325
+    assert card["library_match_source"] == "media_items_legacy_product_scope"
+    assert card["library_match_reason"] == "video_name:filename"
+    assert card["translation_summary"]["translated_country_codes"] == ["DE"]
+    de_target = next(row for row in card["target_country_versions"] if row["country_code"] == "DE")
+    assert de_target["status"] == "translated"
+    assert de_target["version"]["media_item_id"] == 1676
+
+
 def test_build_product_video_workbench_includes_local_english_cjh_source(monkeypatch):
     from web.routes.medias import material_supplement as route
 

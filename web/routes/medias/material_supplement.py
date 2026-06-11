@@ -287,6 +287,13 @@ def _term_no_ext(value: str) -> str:
     return normalized
 
 
+def _legacy_exact_match_key(value: str | None) -> str:
+    normalized = _normalize_material_name(value)
+    if not normalized:
+        return ""
+    return re.sub(r"\s*([-_])\s*", r"\1", normalized)
+
+
 def _is_local_en_cjh_source_item(item: Mapping[str, Any]) -> bool:
     if str(item.get("lang") or "").strip().lower() != "en":
         return False
@@ -461,10 +468,10 @@ def _legacy_match_values_for_item(item: dict) -> list[tuple[str, str]]:
     for field in ("filename", "display_name"):
         raw = str(item.get(field) or "").strip()
         if raw:
-            values.append((_normalize_material_name(raw), field))
+            values.append((_legacy_exact_match_key(raw), field))
     object_key = str(item.get("object_key") or "").strip()
     if object_key:
-        values.append((_normalize_material_name(object_key), "object_key_basename"))
+        values.append((_legacy_exact_match_key(object_key), "object_key_basename"))
     return [(value, source) for value, source in values if len(value) >= 4]
 
 
@@ -489,10 +496,10 @@ def _find_legacy_library_match(mk_row: dict, legacy_index: dict[str, dict]) -> t
     candidates: list[tuple[str, str]] = []
     video_name = str(mk_row.get("video_name") or "").strip()
     if video_name:
-        candidates.append((_normalize_material_name(video_name), "video_name"))
+        candidates.append((_legacy_exact_match_key(video_name), "video_name"))
     video_path = str(mk_row.get("video_path") or "").strip()
     if video_path:
-        candidates.append((_normalize_material_name(video_path), "video_path_basename"))
+        candidates.append((_legacy_exact_match_key(video_path), "video_path_basename"))
     for value, source in candidates:
         match = legacy_index.get(value)
         if match:
