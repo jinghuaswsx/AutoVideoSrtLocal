@@ -373,7 +373,13 @@ def _delivery_label(status: str) -> str:
     return _STATUS_LABELS.get(normalized, "未知")
 
 
-def _market_delivery_status(row: dict[str, Any]) -> str:
+def _market_delivery_status(row: dict[str, Any], lang_summary: dict[str, Any] | None = None) -> str:
+    if lang_summary:
+        cached_status = media_product_ad_status_cache.normalize_delivery_status_filter(
+            lang_summary.get("delivery_status")
+        )
+        if cached_status != media_product_ad_status_cache.STATUS_ALL:
+            return cached_status
     if _float_value(row.get("total_spend")) <= 0:
         return media_product_ad_status_cache.STATUS_NEVER
     if _float_value(row.get("today_spend")) > 0:
@@ -395,21 +401,29 @@ def _build_periods(ad_total: dict[str, Any], order_counts: dict[str, Any]) -> di
     return periods
 
 
-def _build_markets(ad_report: dict[str, Any]) -> list[dict[str, Any]]:
+def _build_markets(ad_report: dict[str, Any], lang_ad_summary: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     by_lang = {
         _normalize_lang(lang): row
         for lang, row in (ad_report.get("by_lang") or {}).items()
         if _normalize_lang(lang)
     }
+    lang_status_by_lang = {
+        _normalize_lang(lang): row
+        for lang, row in (lang_ad_summary or {}).items()
+        if _normalize_lang(lang) and isinstance(row, dict)
+    }
     ordered_langs = [lang for lang, _countries, _label in _MARKET_GROUPS]
     for lang in by_lang:
+        if lang not in ordered_langs:
+            ordered_langs.append(lang)
+    for lang in lang_status_by_lang:
         if lang not in ordered_langs:
             ordered_langs.append(lang)
 
     markets: list[dict[str, Any]] = []
     for lang in ordered_langs:
         row = by_lang.get(lang) or {}
-        status = _market_delivery_status(row)
+        status = _market_delivery_status(row, lang_status_by_lang.get(lang))
         markets.append({
             "lang": lang,
             "label": _MARKET_LABELS.get(lang, lang.upper()),
@@ -499,6 +513,7 @@ def build_insights_response(raw_clues: dict[str, Any]) -> dict[str, Any]:
     product = _product_payload(match["row"], match)
     product_id = int(product["id"])
     ad_summary = media_product_ad_status_cache.get_product_ad_summary_cache([product_id]).get(product_id, {})
+    lang_ad_summary = media_product_ad_status_cache.get_product_lang_ad_summary_cache([product_id]).get(product_id, {})
     order_stats = media_product_order_stats.get_product_order_stats([product_id], today=today).get(product_id, {})
     ad_report = media_product_ad_orders_report.get_product_ad_orders_report(product_id, today=today)
 
@@ -541,7 +556,7 @@ def build_insights_response(raw_clues: dict[str, Any]) -> dict[str, Any]:
         "query": clues,
         "product": product,
         "summary": summary,
-        "markets": _build_markets(ad_report if isinstance(ad_report, dict) else {}),
+        "markets": _build_markets(ad_report if isinstance(ad_report, dict) else {}, lang_ad_summary),
         "ad_orders_report": {
             "computed_at": (ad_report or {}).get("computed_at") if isinstance(ad_report, dict) else None,
         },

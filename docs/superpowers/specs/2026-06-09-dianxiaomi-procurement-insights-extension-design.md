@@ -128,6 +128,7 @@ GET /dianxiaomi-procurement-insights/api/health
 - 订单窗口：读取 `appcore.media_product_order_stats.get_product_order_stats`。
 - 总订单量与今天 / 昨天 / 7 天 / 30 天的订单、消耗、ROAS：读取 `appcore.media_product_ad_orders_report.get_product_ad_orders_report` 的 `total` 行；如果订单窗口服务已有更新但广告订单报告缺少对应订单字段，可用 `media_product_order_stats` 订单数补齐。
 - 市场/语种明细：读取 `appcore.media_product_ad_orders_report.get_product_ad_orders_report`，首版按语种市场组展示，不承诺等价于 Meta 精确 geo breakdown。
+- 市场/语种明细中的投放状态必须与素材管理页同源，优先读取 `appcore.media_product_ad_status_cache.get_product_lang_ad_summary_cache` 的 `delivery_status`；订单、消耗、ROAS 仍读取广告订单报告。这样 `today_spend=0` 但近 7 天仍有活跃消耗的市场不会被误判为已停投。
 - `data_quality`：无匹配、缓存缺失、低置信度匹配均返回 warning。
 
 ## 验证

@@ -92,6 +92,7 @@ def test_build_insights_response_matches_media_product_sku(monkeypatch):
             }
         },
     )
+    monkeypatch.setattr(mod.media_product_ad_status_cache, "get_product_lang_ad_summary_cache", lambda pids: {})
 
     payload = mod.build_insights_response({"sku": "SKU-A", "page_url": "https://www.dianxiaomi.com/"})
 
@@ -118,6 +119,83 @@ def test_build_insights_response_matches_media_product_sku(monkeypatch):
     assert payload["data_quality"]["status"] == "ok"
 
 
+def test_market_delivery_status_prefers_lang_ad_summary_cache(monkeypatch):
+    def fake_query_one(sql, params=()):
+        if "LOWER(product_code)=LOWER" in sql:
+            return {
+                "id": 600,
+                "name": "煮蛋器",
+                "product_code": "rapid-7-egg-electric-boiler-rjc",
+                "shopifyid": "8591139963053",
+                "shopify_title": "Rapid 7-Egg Electric Boiler",
+            }
+        return None
+
+    monkeypatch.setattr(mod, "query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(mod, "query_one", fake_query_one)
+    monkeypatch.setattr(mod, "current_meta_business_date", lambda: date(2026, 6, 11))
+    monkeypatch.setattr(
+        mod.media_product_ad_status_cache,
+        "get_product_ad_summary_cache",
+        lambda pids: {
+            600: {
+                "delivery_status": "active",
+                "overall_roas": 2.01,
+                "ad_spend_usd": 1533.85,
+                "active_7d_ad_spend_usd": 242.12,
+                "computed_at": "2026-06-11T10:22:35",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        mod.media_product_ad_status_cache,
+        "get_product_lang_ad_summary_cache",
+        lambda pids: {
+            600: {
+                "de": {
+                    "delivery_status": "active",
+                    "active_7d_ad_spend_usd": 14.31,
+                    "ad_spend_usd": 93.89,
+                    "ad_roas": 1.0976,
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        mod.media_product_order_stats,
+        "get_product_order_stats",
+        lambda pids, today=None: {600: {"total": {"today": 0, "yesterday": 12, "last_7d": 67, "last_30d": 82}}},
+    )
+    monkeypatch.setattr(
+        mod.media_product_ad_orders_report,
+        "get_product_ad_orders_report",
+        lambda product_id, today=None: {
+            "total": {"total_orders": 82, "total_spend": 1296.69, "total_roas": 1.93},
+            "by_lang": {
+                "de": {
+                    "today_orders": 0,
+                    "yesterday_orders": 0,
+                    "last_7d_orders": 2,
+                    "last_30d_orders": 2,
+                    "today_spend": 0,
+                    "last_7d_spend": 79.83,
+                    "total_spend": 79.83,
+                    "last_7d_roas": 1.29,
+                    "total_roas": 1.29,
+                }
+            },
+        },
+    )
+
+    payload = mod.build_insights_response({"product_code": "rapid-7-egg-electric-boiler-rjc"})
+
+    de = next(item for item in payload["markets"] if item["lang"] == "de")
+    assert de["delivery_status"] == "active"
+    assert de["delivery_label"] == "投放中"
+    assert de["orders"]["last_7d"] == 2
+    assert de["last_7d_spend_usd"] == 79.83
+
+
 def test_build_insights_response_uses_product_code_fallback(monkeypatch):
     def fake_query_one(sql, params=()):
         if "LOWER(product_code)=LOWER" in sql:
@@ -134,6 +212,7 @@ def test_build_insights_response_uses_product_code_fallback(monkeypatch):
     monkeypatch.setattr(mod, "query_one", fake_query_one)
     monkeypatch.setattr(mod, "current_meta_business_date", lambda: date(2026, 6, 9))
     monkeypatch.setattr(mod.media_product_ad_status_cache, "get_product_ad_summary_cache", lambda pids: {})
+    monkeypatch.setattr(mod.media_product_ad_status_cache, "get_product_lang_ad_summary_cache", lambda pids: {})
     monkeypatch.setattr(
         mod.media_product_order_stats,
         "get_product_order_stats",
