@@ -6,7 +6,7 @@
 
 `AI素材军师` 和 `投放素材AI分析` 是两个独立功能，不能再共用入口、路由、项目表、运行锁、前端脚本或 LLM use case。2026-06-10 之前的文档段落曾把“素材管理内 AI素材军师 子 Tab”和“左侧投放素材AI分析”写成同一工具入口；该写法作废，以本节为后续代码锚点。
 
-- `AI素材军师` 保留原稳定入口：素材管理页子 Tab 文案为 `AI素材军师`，路由继续使用 `GET /medias/ai-material-strategist`、`GET /medias/ai-material-strategist/projects/<id>` 和 `/medias/api/ai-material-strategist/*`，后端继续使用 `appcore.ai_material_strategist`、`ai_material_strategist_projects`、`ai_material_strategist_product_results`、运行锁 `ai_material_strategist_single_running_project`。默认 LLM 绑定恢复为 OpenRouter `google/gemini-3.5-flash`。
+- `AI素材军师` 保留原稳定入口：素材管理页子 Tab 文案为 `AI素材军师`，路由继续使用 `GET /medias/ai-material-strategist`、`GET /medias/ai-material-strategist/projects/<id>` 和 `/medias/api/ai-material-strategist/*`，后端继续使用 `appcore.ai_material_strategist`、`ai_material_strategist_projects`、`ai_material_strategist_product_results`、运行锁 `ai_material_strategist_single_running_project`。默认 LLM 绑定使用 GoogleWJ `gemini-3.5-flash`。
 - `投放素材AI分析` 是左侧菜单的独立入口：路由使用 `GET /medias/ad-material-ai-analysis`、`GET /medias/ad-material-ai-analysis/projects/<id>` 和 `/medias/api/ad-material-ai-analysis/*`，后端使用 `appcore.ad_material_ai_analysis`、`ad_material_ai_analysis_projects`、`ad_material_ai_analysis_product_results`、运行锁 `ad_material_ai_analysis_single_running_project`。默认 LLM 绑定为 GoogleWJ `gemini-3.5-flash`。
 - 两个功能的项目列表、运行中互斥、分享 token、公开报告、前端脚本和 API 请求都必须各查各的命名空间。左侧菜单只进入 `投放素材AI分析`；素材管理子 Tab 只进入 `AI素材军师`。
 - 已经误写进 `ai_material_strategist_projects` 且 `project_name LIKE '投放素材AI分析%'` 或 `provider_code='google_wj'` 的投放分析项目，迁移到 `ad_material_ai_analysis_*` 后从旧 AI素材军师列表移除，避免污染旧功能历史项目。
@@ -42,6 +42,14 @@
 - 国家反馈模块在产品详情区左列展示；素材候选卡片紧跟在右侧或移动端下方，避免国家反馈被挤到右侧末尾。
 - 本地素材库中 `lang='en'`，且 `filename` 或 `display_name` 去掉扩展名后以 `-蔡靖华` 结尾的素材，视为“自制 EN 可迁移素材”。这类素材可以和明空素材一起出现在报告的素材候选卡片里，也可以进入单品 AI 输入，作为美国站已验证素材搬运到欧洲国家的补素材源头。
 - 自制 EN 可迁移素材已在本地素材库中，不能走明空 `加入素材库` 入库动作；卡片显示为已入库 / 自制 EN，并引导从素材工作台创建小语种翻译任务或查看素材反馈。
+
+## 2026-06-11 AI素材军师 GOOGLEWJ 调用节奏
+
+用户要求 AI素材军师后续未跑的 AI 分析切换到 `GOOGLEWJ` 通道的 `gemini-3.5-flash`，已经跑完的产品不返工，正在跑的单次调用跑完后再继续。
+
+- 项目默认 AI provider/model 使用 `google_wj` / `gemini-3.5-flash`，不再写死 OpenRouter；项目运行和断点恢复必须读取项目行上的 `provider_code` / `model_id`，这样可对未完成项目切换后续调用通道。
+- 逐产品 AI 分析之间必须有最小间隔节奏，默认控制在 10 秒，可通过 `AI_MATERIAL_STRATEGIST_LLM_SPACING_SECONDS` 调整；断点恢复时已存在结果直接跳过，不重复消耗。
+- 429 或 provider 抖动由底层 Gemini adapter 做重试；AI素材军师层负责减少连续调用峰值，避免 30 个产品连续打爆同一通道。
 
 ## 背景
 
@@ -568,7 +576,7 @@ LLM 节点提供 `提示词` 按钮，展示：
 - Top 30 规则打分不会让低量高 ROAS 产品进榜。
 - `meta_ad_realtime_daily_ad_metrics` 按 `(business_date, ad_account_id)` 取最新快照。
 - 本地产品 code 去掉 `-rjc` 后能匹配明空素材快照。
-- `投放素材AI分析` 两个 AI use case 当前默认 provider 都是 `google_wj`，model 都是 `gemini-3.5-flash`；`AI素材军师` 原 use case 保持 OpenRouter。
+- `投放素材AI分析` 与 `AI素材军师` 的素材分析类 use case 默认 provider 都是 `google_wj`，model 都是 `gemini-3.5-flash`。
 - 单产品 prompt 包含 EN + 8 小语种阶梯、明空素材候选、本地素材和翻译反馈。
 - AI 返回的操作入口能序列化到项目详情。
 - 已有待处理 / 进行中 / 已完成任务时，服务端不会生成重复 `create_translation_task`，而是输出任务链接。
