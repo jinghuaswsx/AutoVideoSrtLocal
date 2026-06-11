@@ -4311,19 +4311,25 @@
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
       <div class="oad-range-presets" role="group" aria-label="订单分析时间范围">
-        <button type="button" class="oad-seg" data-dxm-range="today" aria-pressed="false">今天</button>
+        <button type="button" class="oad-seg is-active" data-dxm-range="today" aria-pressed="true">今天</button>
         <button type="button" class="oad-seg" data-dxm-range="yesterday" aria-pressed="false">昨天</button>
         <button type="button" class="oad-seg" data-dxm-range="thisWeek" aria-pressed="false">本周</button>
         <button type="button" class="oad-seg" data-dxm-range="lastWeek" aria-pressed="false">上周</button>
-        <button type="button" class="oad-seg is-active" data-dxm-range="thisMonth" aria-pressed="true">本月</button>
+        <button type="button" class="oad-seg" data-dxm-range="thisMonth" aria-pressed="false">本月</button>
         <button type="button" class="oad-seg" data-dxm-range="lastMonth" aria-pressed="false">上月</button>
         <button type="button" class="oad-seg" data-dxm-range="thisYear" aria-pressed="false">今年</button>
         <button type="button" class="oad-seg" data-dxm-range="lastYear" aria-pressed="false">去年</button>
       </div>
-      {{ analytics_date_range('订单分析', 'dxmStartDate', 'dxmEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
-      <button type="button" class="oad-btn-primary" id="dxmOrderRefresh">查询</button>
+      <div style="display: flex; gap: var(--space-2); align-items: center;">
+        {{ analytics_date_range('订单分析', 'dxmStartDate', 'dxmEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
+        <button type="button" class="oad-btn-primary" id="dxmOrderRefresh">查询</button>
+      </div>
     </div>
     <div class="oad-toolbar-row">
+      <div class="oa-search-box" style="position: relative; min-width: 280px; margin-right: var(--space-2);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--fg-subtle); pointer-events: none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="dxmOrdersSearchInput" placeholder="搜索商品中文名、产品 code..." style="padding-left: 30px; height: 32px; border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: var(--text-sm); width: 100%;">
+      </div>
       <div class="oa-filter-field dxm-store-filter">
         <label for="dxmStoreFilter">店铺：</label>
         <select id="dxmStoreFilter">
@@ -4348,11 +4354,17 @@
         <thead>
           <tr>
             <th>商品</th>
+            <th>产品主图</th>
             <th>订单数</th>
             <th>销售件数</th>
+            <th>总销售额</th>
+            <th>广告费消耗</th>
+            <th>ROAS</th>
+            <th>MetaROAS</th>
+            <th>产品利润率</th>
             <th>商品净销售额</th>
             <th>运费</th>
-            <th>总销售额</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody id="dxmProductStatsBody"></tbody>
@@ -5219,6 +5231,26 @@
       });
       attachInfiniteScroll('dxmOrderScroll', loadMoreDxmOrders);
 
+      // 快捷搜索框绑定
+      var searchInput = document.getElementById('dxmOrdersSearchInput');
+      if (searchInput) {
+        var searchTimer = null;
+        searchInput.addEventListener('input', function() {
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(function() {
+            loadDxmOrders(1);
+          }, 300);
+        });
+      }
+
+      // 店铺过滤框变动绑定
+      var storeFilter = document.getElementById('dxmStoreFilter');
+      if (storeFilter) {
+        storeFilter.addEventListener('change', function() {
+          loadDxmOrders(1);
+        });
+      }
+
       // 单品订单曲线大搜索框绑定
       var trendInput = document.getElementById('dxmProductSearchInput');
       var trendResults = document.getElementById('dxmProductSearchResults');
@@ -5274,7 +5306,7 @@
         });
       }
 
-      setDxmRange('thisMonth');
+      setDxmRange('today');
     } else {
       loadDxmOrders(1);
     }
@@ -5409,8 +5441,8 @@
   }
 
   function setDxmRange(range, skipLoad) {
-    var bounds = window.orderAnalyticsMetaCalendar.resolveRange(range || 'thisMonth');
-    dxmOrderState.range = range || 'thisMonth';
+    var bounds = window.orderAnalyticsMetaCalendar.resolveRange(range || 'today');
+    dxmOrderState.range = range || 'today';
     setInputValue('dxmStartDate', formatDateInput(bounds.start));
     setInputValue('dxmEndDate', formatDateInput(bounds.end));
     syncDxmRangeSelection();
@@ -5452,7 +5484,7 @@
     var pageInfo = document.getElementById('dxmOrderPageInfo');
     if (summaryEl) summaryEl.innerHTML = '';
     if (bodyEl) bodyEl.innerHTML = '<tr><td colspan="13" class="oad-loading">加载中...</td></tr>';
-    if (productBodyEl) productBodyEl.innerHTML = '<tr><td colspan="6" class="oad-loading">加载中...</td></tr>';
+    if (productBodyEl) productBodyEl.innerHTML = '<tr><td colspan="12" class="oad-loading">加载中...</td></tr>';
     if (pageInfo) pageInfo.textContent = '加载中...';
     loadMoreDxmOrders();
   }
@@ -5462,6 +5494,9 @@
     var start = document.getElementById('dxmStartDate').value;
     var end = document.getElementById('dxmEndDate').value;
     var store = document.getElementById('dxmStoreFilter').value;
+    var searchInput = document.getElementById('dxmOrdersSearchInput');
+    var search = searchInput ? searchInput.value.trim() : '';
+    
     var bodyEl = document.getElementById('dxmOrderBody');
     var productBodyEl = document.getElementById('dxmProductStatsBody');
     var pageInfo = document.getElementById('dxmOrderPageInfo');
@@ -5482,6 +5517,9 @@
     if (store) {
       params.set('store', store);
     }
+    if (search) {
+      params.set('search', search);
+    }
     var url = "/order-analytics/dianxiaomi-orders?" + params.toString();
     fetch(url)
       .then(function(r) {
@@ -5500,7 +5538,7 @@
             escapeHtml(err.message || String(err)) + '</td></tr>';
         }
         if (productBodyEl && dxmOrderState.loaded <= 0) {
-          productBodyEl.innerHTML = '<tr><td colspan="6" class="oad-error">加载失败：' +
+          productBodyEl.innerHTML = '<tr><td colspan="12" class="oad-error">加载失败：' +
             escapeHtml(err.message || String(err)) + '</td></tr>';
         }
         if (pageInfo) pageInfo.textContent = '加载失败：' + (err.message || String(err));
@@ -5575,28 +5613,68 @@
     if (!bodyEl) return;
     var rows = Array.isArray(productStats) ? productStats : [];
     if (!rows.length) {
-      bodyEl.innerHTML = '<tr><td colspan="6" class="oad-empty">暂无商品销量数据</td></tr>';
+      bodyEl.innerHTML = '<tr><td colspan="12" class="oad-empty">暂无商品销量数据</td></tr>';
       return;
     }
-    var activeSubtab = '{{ active_subtab }}';
     bodyEl.innerHTML = rows.map(function(row) {
       var product = (row.product_name || '未知商品') +
         (row.product_code ? ' · ' + row.product_code : '');
       
-      var tdStyle = '';
-      var trAttrs = '';
-      if (activeSubtab === 'orderTrend' && row.product_code) {
-        tdStyle = ' style="color: var(--accent); font-weight: 600; cursor: pointer; text-decoration: underline;"';
-        trAttrs = ' class="oa-row-clickable" style="cursor:pointer;" onclick="window.location.href=\'/order-analytics/dxm-orders-view/order-trend/' + encodeURIComponent(row.product_code) + '\'"';
+      var imgHtml = '-';
+      if (row.product_id) {
+        var pids = String(row.product_id).split('/').map(function(s) { return s.trim(); }).filter(Boolean);
+        if (pids.length) {
+          var imgs = pids.map(function(pid) {
+            var imgTag = '<img src="/medias/cover/' + pid + '?lang=en" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid var(--border-main);" alt="主图" onerror="this.style.display=\'none\';">';
+            if (row.product_link) {
+              return '<a href="' + escapeHtml(row.product_link) + '" target="_blank" rel="noopener noreferrer" title="跳转原站商品链接">' + imgTag + '</a>';
+            } else {
+              return imgTag;
+            }
+          }).join('');
+          imgHtml = '<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;">' + imgs + '</div>';
+        }
       }
 
-      return '<tr' + trAttrs + '>' +
-        '<td' + tdStyle + '>' + escapeHtml(product) + '</td>' +
+      var roasText = '-';
+      if (row.roas !== null && row.roas !== undefined) {
+        roasText = Number(row.roas).toFixed(2);
+      }
+      var metaRoasText = '-';
+      if (row.meta_roas !== null && row.meta_roas !== undefined) {
+        metaRoasText = Number(row.meta_roas).toFixed(2);
+      }
+
+      var marginText = '-';
+      var marginStyle = '';
+      if (row.profit_margin !== null && row.profit_margin !== undefined) {
+        var marginVal = Number(row.profit_margin);
+        marginText = marginVal.toFixed(2) + '%';
+        if (marginVal < 0) {
+          marginStyle = ' style="color:var(--danger);font-weight:600;"';
+        } else {
+          marginStyle = ' style="color:var(--success);font-weight:600;"';
+        }
+      }
+
+      var detailBtn = '-';
+      if (row.product_code) {
+        detailBtn = '<a class="btn btn-default btn-xs" href="/order-analytics/dxm-orders-view/order-trend/' + encodeURIComponent(row.product_code) + '">产品详情</a>';
+      }
+
+      return '<tr>' +
+        '<td>' + escapeHtml(product) + '</td>' +
+        '<td>' + imgHtml + '</td>' +
         '<td>' + fmtInt(row.order_count) + '</td>' +
         '<td>' + fmtInt(row.units) + '</td>' +
+        '<td>' + fmtMoney(row.total_sales) + '</td>' +
+        '<td>' + fmtMoney(row.ad_cost_usd) + '</td>' +
+        '<td>' + roasText + '</td>' +
+        '<td>' + metaRoasText + '</td>' +
+        '<td' + marginStyle + '>' + marginText + '</td>' +
         '<td>' + fmtMoney(row.product_net_sales) + '</td>' +
         '<td>' + fmtMoney(row.shipping) + '</td>' +
-        '<td>' + fmtMoney(row.total_sales) + '</td>' +
+        '<td>' + detailBtn + '</td>' +
         '</tr>';
     }).join('');
   }

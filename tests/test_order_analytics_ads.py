@@ -1135,7 +1135,7 @@ def test_order_analytics_range_presets_use_shared_meta_calendar(authed_client_no
     assert "timeZone: 'Asia/Shanghai'" in body
     assert "function resolveDashboardRange(range) {\n    return window.orderAnalyticsMetaCalendar.resolveRange(range);\n  }" in body
     assert "function resolveCountryRange(range) {\n    return window.orderAnalyticsMetaCalendar.resolveRange(range);\n  }" in body
-    assert "function setDxmRange(range, skipLoad) {\n    var bounds = window.orderAnalyticsMetaCalendar.resolveRange(range || 'thisMonth');" in body
+    assert "function setDxmRange(range, skipLoad) {\n    var bounds = window.orderAnalyticsMetaCalendar.resolveRange(range || 'today');" in body
     assert "var lastMon = addDays(startOfWeek(window.orderAnalyticsMetaCalendar.today()), -7);" in body
     assert "var base = input.value ? new Date(input.value + 'T00:00:00') : window.orderAnalyticsMetaCalendar.today();" in body
     assert "var now = window.orderAnalyticsMetaCalendar.today();" in body

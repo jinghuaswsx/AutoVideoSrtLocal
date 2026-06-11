@@ -22,6 +22,8 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
         return {}
 
     def fake_query(sql, args=()):
+        if "meta_ad_daily_campaign_metrics" in sql or "meta_ad_daily_ad_metrics" in sql or "order_profit_lines" in sql:
+            return []
         calls.append(("many", sql, args))
         if "GROUP BY product_id" in sql:
             assert "meta_business_date >= %s" in sql
@@ -100,11 +102,16 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
             "product_id": 42,
             "product_name": "Product B",
             "product_code": "product-b-rjc",
+            "product_link": "",
             "order_count": 2,
             "units": 5,
             "product_net_sales": 100.0,
             "shipping": 12.5,
             "total_sales": 112.5,
+            "ad_cost_usd": 0.0,
+            "roas": None,
+            "meta_roas": None,
+            "profit_margin": None,
         }
     ]
     assert result["pagination"] == {
@@ -135,6 +142,8 @@ def test_get_dianxiaomi_order_analysis_filters_by_store(monkeypatch):
         return {}
 
     def fake_query(sql, args=()):
+        if "meta_ad_daily_campaign_metrics" in sql or "meta_ad_daily_ad_metrics" in sql or "order_profit_lines" in sql:
+            return []
         calls.append(("many", sql, args))
         if "GROUP BY product_id" in sql:
             assert "site_code = %s" in sql
@@ -521,7 +530,7 @@ def test_data_analysis_page_fetches_dianxiaomi_and_country_apis(authed_client_no
     assert "fmtInt(row.order_count)" in body
     assert "fmtInt(row.units)" in body
     assert "function loadCountryDashboard()" in body
-    assert "setDxmRange('thisMonth')" in body
+    assert "setDxmRange('today')" in body
     assert "renderCountryDashboard(data)" in body
     assert "sort_by: 'orders'" in body
     assert 'data-country-range="today"' in body
@@ -556,7 +565,7 @@ def test_data_analysis_page_dianxiaomi_uses_compact_country_style_toolbar(authed
     for preset in ("today", "yesterday", "thisWeek", "lastWeek", "thisMonth", "lastMonth"):
         assert f'data-dxm-range="{preset}"' in panel, f"缺时间预设 {preset}"
     # 默认"本月"高亮
-    assert 'class="oad-seg is-active" data-dxm-range="thisMonth"' in panel
+    assert 'class="oad-seg is-active" data-dxm-range="today"' in panel
     # 统一 range picker：一个触发器 + 原 id 隐藏字段
     assert 'data-analytics-date-range' in panel
     assert 'data-range-start-id="dxmStartDate"' in panel

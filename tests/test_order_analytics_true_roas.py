@@ -126,6 +126,8 @@ def test_get_realtime_roas_overview_summarizes_orders_and_meta_spend(monkeypatch
 
 def test_get_realtime_roas_overview_includes_today_product_sales_stats(monkeypatch):
     def fake_query(sql, args=()):
+        if "meta_ad_daily_campaign_metrics" in sql or "meta_ad_daily_ad_metrics" in sql or "order_profit_lines" in sql:
+            return []
         if "GROUP BY product_id" in sql:
             assert "meta_business_date=%s" in sql
             assert args[0] == oa._parse_meta_date("2026-04-29")
