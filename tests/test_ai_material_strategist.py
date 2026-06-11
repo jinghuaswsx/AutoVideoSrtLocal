@@ -1043,6 +1043,7 @@ def test_ai_material_strategist_frontend_restores_split_lost_controls():
     assert ".aims-task-count-btn" in template
     assert ".aims-rec-badge.expand_country" in template
     assert "ai_material_strategist.js', v=" in template
+    assert "20260611-status-icons" in template
     assert "function renderSourceMaterialCard" in script
     assert "source_type === 'local_en_cjh'" in script
     assert "project.provider_code || 'google_wj'" in script
