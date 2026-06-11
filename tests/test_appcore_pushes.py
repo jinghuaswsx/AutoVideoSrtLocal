@@ -900,10 +900,40 @@ def test_push_state_writes_refresh_status_cache_for_item(monkeypatch):
     executed = []
     refreshed = []
 
+    class MockCursor:
+        def __init__(self):
+            self.lastrowid = 123
+            self.rowcount = 1
+
+        def execute(self, sql, args=()):
+            executed.append((sql, args))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    class MockConnection:
+        def begin(self):
+            pass
+        def commit(self):
+            pass
+        def rollback(self):
+            pass
+        def close(self):
+            pass
+        def cursor(self):
+            return MockCursor()
+
+    def fake_get_conn():
+        return MockConnection()
+
     def fake_execute(sql, args=()):
         executed.append((sql, args))
         return 123 if sql.startswith("INSERT INTO media_push_logs") else 1
 
+    monkeypatch.setattr(pushes, "get_conn", fake_get_conn)
     monkeypatch.setattr(pushes, "execute", fake_execute)
     monkeypatch.setattr(
         pushes,
@@ -931,6 +961,7 @@ def test_push_state_writes_refresh_status_cache_for_item(monkeypatch):
     assert log_id == 123
     assert refreshed == [77, 78, 79, 80, 81]
     assert len(executed) == 7
+
 
 
 def test_mark_new_product_push_once_locks_product_and_skips_existing_new_marker(monkeypatch):
@@ -2060,3 +2091,111 @@ def test_compute_status_not_ready_without_push_texts(product_with_item):
     item = medias.get_item(item_id)
     product = medias.get_product(pid)
     assert pushes.compute_status(item, product) == pushes.STATUS_NOT_READY
+
+
+def test_record_push_success_rollback_on_error(monkeypatch):
+    rollback_called = False
+    commit_called = False
+    close_called = False
+    executed_sqls = []
+
+    class MockCursor:
+        def __init__(self):
+            self.lastrowid = 123
+            self.rowcount = 1
+
+        def execute(self, sql, args=()):
+            executed_sqls.append(sql)
+            if "UPDATE media_items" in sql:
+                raise ValueError("update failed")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    class MockConnection:
+        def begin(self):
+            pass
+        def commit(self):
+            nonlocal commit_called
+            commit_called = True
+        def rollback(self):
+            nonlocal rollback_called
+            rollback_called = True
+        def close(self):
+            nonlocal close_called
+            close_called = True
+        def cursor(self):
+            return MockCursor()
+
+    monkeypatch.setattr(pushes, "get_conn", lambda: MockConnection())
+
+    with pytest.raises(ValueError, match="update failed"):
+        pushes.record_push_success(
+            item_id=77,
+            operator_user_id=1,
+            payload={"ok": True},
+            response_body="ok",
+        )
+
+    assert len(executed_sqls) == 2
+    assert rollback_called is True
+    assert commit_called is False
+    assert close_called is True
+
+
+def test_record_push_failure_rollback_on_error(monkeypatch):
+    rollback_called = False
+    commit_called = False
+    close_called = False
+    executed_sqls = []
+
+    class MockCursor:
+        def __init__(self):
+            self.lastrowid = 123
+            self.rowcount = 1
+
+        def execute(self, sql, args=()):
+            executed_sqls.append(sql)
+            if "UPDATE media_items" in sql:
+                raise ValueError("update failed")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    class MockConnection:
+        def begin(self):
+            pass
+        def commit(self):
+            nonlocal commit_called
+            commit_called = True
+        def rollback(self):
+            nonlocal rollback_called
+            rollback_called = True
+        def close(self):
+            nonlocal close_called
+            close_called = True
+        def cursor(self):
+            return MockCursor()
+
+    monkeypatch.setattr(pushes, "get_conn", lambda: MockConnection())
+
+    with pytest.raises(ValueError, match="update failed"):
+        pushes.record_push_failure(
+            item_id=77,
+            operator_user_id=1,
+            payload={"ok": True},
+            error_message="some error",
+            response_body=None,
+        )
+
+    assert len(executed_sqls) == 2
+    assert rollback_called is True
+    assert commit_called is False
+    assert close_called is True
+

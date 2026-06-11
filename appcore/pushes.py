@@ -2106,18 +2106,30 @@ def build_item_payload(item: dict, product: dict) -> dict:
 
 def record_push_success(item_id: int, operator_user_id: int,
                         payload: dict, response_body: str | None) -> int:
-    log_id = execute(
-        "INSERT INTO media_push_logs "
-        "(item_id, operator_user_id, status, request_payload, response_body) "
-        "VALUES (%s, %s, 'success', %s, %s)",
-        (item_id, operator_user_id, json.dumps(payload, ensure_ascii=False), response_body),
-    )
-    execute(
-        "UPDATE media_items SET pushed_at=NOW(), latest_push_id=%s WHERE id=%s",
-        (log_id, item_id),
-    )
-    _refresh_push_status_cache_for_item_safely(item_id)
-    return log_id
+    conn = get_conn()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO media_push_logs "
+                "(item_id, operator_user_id, status, request_payload, response_body) "
+                "VALUES (%s, %s, 'success', %s, %s)",
+                (item_id, operator_user_id, json.dumps(payload, ensure_ascii=False), response_body),
+            )
+            log_id = cur.lastrowid
+            cur.execute(
+                "UPDATE media_items SET pushed_at=NOW(), latest_push_id=%s WHERE id=%s",
+                (log_id, item_id),
+            )
+        conn.commit()
+        _refresh_push_status_cache_for_item_safely(item_id)
+        return log_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
 
 
 def mark_new_product_push_once(log_id: int, product_id: int) -> bool:
@@ -2255,19 +2267,31 @@ def normalize_new_product_push_flags(*, dry_run: bool = True) -> dict[str, Any]:
 def record_push_failure(item_id: int, operator_user_id: int,
                         payload: dict, error_message: str | None,
                         response_body: str | None) -> int:
-    log_id = execute(
-        "INSERT INTO media_push_logs "
-        "(item_id, operator_user_id, status, request_payload, response_body, error_message) "
-        "VALUES (%s, %s, 'failed', %s, %s, %s)",
-        (item_id, operator_user_id,
-         json.dumps(payload, ensure_ascii=False), response_body, error_message),
-    )
-    execute(
-        "UPDATE media_items SET latest_push_id=%s WHERE id=%s",
-        (log_id, item_id),
-    )
-    _refresh_push_status_cache_for_item_safely(item_id)
-    return log_id
+    conn = get_conn()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO media_push_logs "
+                "(item_id, operator_user_id, status, request_payload, response_body, error_message) "
+                "VALUES (%s, %s, 'failed', %s, %s, %s)",
+                (item_id, operator_user_id,
+                 json.dumps(payload, ensure_ascii=False), response_body, error_message),
+            )
+            log_id = cur.lastrowid
+            cur.execute(
+                "UPDATE media_items SET latest_push_id=%s WHERE id=%s",
+                (log_id, item_id),
+            )
+        conn.commit()
+        _refresh_push_status_cache_for_item_safely(item_id)
+        return log_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
 
 
 def reset_push_state(item_id: int) -> None:
