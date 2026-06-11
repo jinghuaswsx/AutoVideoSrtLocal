@@ -456,8 +456,8 @@ def _auto_resume_after_recovery(task_id: str, project_type: str, recovered: dict
         except (TypeError, ValueError):
             user_id = None
         try:
-            from web.services import subtitle_removal_runner
-            started = subtitle_removal_runner.start(task_id, user_id=user_id)
+            from appcore.subtitle_removal_runtime import start_subtitle_removal_task
+            started = start_subtitle_removal_task(task_id, user_id=user_id)
             log.warning(
                 "[task_recovery] auto-resumed subtitle_removal task %s (started=%s)",
                 task_id, started,

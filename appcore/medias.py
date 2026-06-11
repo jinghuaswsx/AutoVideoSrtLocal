@@ -2296,3 +2296,69 @@ def find_product_ids_by_shopifyid(shopify_product_ids: list[str]) -> dict[str, i
         if product_id:
             out.setdefault(shopify_product_id, product_id)
     return out
+
+
+def download_media_object(object_key: str, destination: str | os.PathLike[str]) -> str:
+    import os
+    from appcore import local_media_storage
+    try:
+        if local_media_storage.exists(object_key):
+            return local_media_storage.download_to(object_key, destination)
+    except ValueError as exc:
+        raise FileNotFoundError(f"invalid local media object: {object_key}") from exc
+    raise FileNotFoundError(f"local media object not found: {object_key}")
+
+
+def _client_filename_basename(value) -> str:
+    import os
+    return os.path.basename(str(value or "").replace("\\", "/"))
+
+
+def build_item_thumbnail(
+    item_id: int,
+    product_id: int,
+    filename: str,
+    object_key: str,
+    *,
+    download_media_object_fn: Callable[[str, str], object] | None = None,
+    thumb_dir: str | Path | None = None,
+    output_dir: str | Path | None = None,
+    get_media_duration_fn: Callable[[str], float | int | None] | None = None,
+    extract_thumbnail_fn: Callable[..., str | None] | None = None,
+    update_item_thumbnail_metadata_fn: Callable[[int, str, float | int | None], object] | None = None,
+) -> None:
+    import os
+    from pathlib import Path
+    from collections.abc import Callable
+    from config import OUTPUT_DIR
+    from pipeline.ffutil import extract_thumbnail, get_media_duration
+
+    final_output_dir = OUTPUT_DIR if output_dir is None else output_dir
+    default_thumb_dir = Path(final_output_dir) / "media_thumbs"
+    thumb_root = Path(default_thumb_dir if thumb_dir is None else thumb_dir)
+    thumb_root.mkdir(parents=True, exist_ok=True)
+    product_dir = thumb_root / str(product_id)
+    product_dir.mkdir(parents=True, exist_ok=True)
+    tmp_video = product_dir / f"tmp_{item_id}_{_client_filename_basename(filename)}"
+
+    dl_fn = download_media_object_fn or download_media_object
+    dl_fn(object_key, str(tmp_video))
+
+    dur_fn = get_media_duration_fn or get_media_duration
+    duration = dur_fn(str(tmp_video))
+
+    ext_fn = extract_thumbnail_fn or extract_thumbnail
+    thumb = ext_fn(str(tmp_video), str(product_dir), scale="360:-1")
+    if thumb:
+        final = product_dir / f"{item_id}.jpg"
+        os.replace(str(thumb), str(final))
+        update_metadata = update_item_thumbnail_metadata_fn or update_item_thumbnail_metadata
+        update_metadata(
+            item_id,
+            str(final.relative_to(Path(final_output_dir))).replace("\\", "/"),
+            duration or None,
+        )
+    try:
+        tmp_video.unlink()
+    except Exception:
+        pass

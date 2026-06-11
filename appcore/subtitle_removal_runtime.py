@@ -341,3 +341,72 @@ class SubtitleRemovalRuntime:
             result_url=result_url,
             provider_emsg=progress.get("emsg") or "",
         )
+
+
+import threading
+from typing import Callable
+from appcore.runner_lifecycle import start_tracked_thread
+
+_running_tasks: set[str] = set()
+_running_tasks_lock = threading.Lock()
+
+
+def is_subtitle_removal_task_running(task_id: str) -> bool:
+    with _running_tasks_lock:
+        return task_id in _running_tasks
+
+
+def start_subtitle_removal_task(
+    task_id: str,
+    user_id: int | None = None,
+    *,
+    on_event: Callable[[Any], None] | None = None,
+) -> bool:
+    from appcore.subtitle_removal_runtime_local_vsr import SubtitleRemovalLocalVsrRuntime
+    from appcore.subtitle_removal_runtime_vod import SubtitleRemovalVodRuntime
+
+    with _running_tasks_lock:
+        if task_id in _running_tasks:
+            return False
+        _running_tasks.add(task_id)
+
+    bus = EventBus()
+    if on_event:
+        bus.subscribe(on_event)
+
+    task = task_state.get(task_id) or {}
+    subtitle_backend = str(task.get("subtitle_backend") or "volc").strip().lower()
+    provider = (getattr(config, "SUBTITLE_REMOVAL_PROVIDER", "goodline") or "goodline").strip().lower()
+
+    if subtitle_backend == "local_vsr":
+        runtime = SubtitleRemovalLocalVsrRuntime(bus=bus, user_id=user_id)
+    elif subtitle_backend == "niuma":
+        runtime = SubtitleRemovalRuntime(bus=bus, user_id=user_id)
+    elif provider == "vod":
+        runtime = SubtitleRemovalVodRuntime(bus=bus, user_id=user_id)
+    else:
+        runtime = SubtitleRemovalRuntime(bus=bus, user_id=user_id)
+
+    def run():
+        try:
+            runtime.start(task_id)
+        finally:
+            with _running_tasks_lock:
+                _running_tasks.discard(task_id)
+
+    try:
+        started = start_tracked_thread(
+            project_type="subtitle_removal",
+            task_id=task_id,
+            target=run,
+            daemon=True,
+        )
+    except BaseException:
+        with _running_tasks_lock:
+            _running_tasks.discard(task_id)
+        raise
+    if not started:
+        with _running_tasks_lock:
+            _running_tasks.discard(task_id)
+    return started
+

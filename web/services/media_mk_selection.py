@@ -22,8 +22,12 @@ _DEFAULT_MK_SELECTION_SNAPSHOT = "2026-04-23"
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.I)
 
 
-class MkCredentialsMissingError(RuntimeError):
-    pass
+from appcore.mk_media_helpers import (
+    MkCredentialsMissingError,
+    normalize_mk_media_path,
+    build_mk_video_cache_object_key,
+    cache_mk_video,
+)
 
 
 @dataclass(frozen=True)
@@ -74,26 +78,10 @@ def build_mk_selection_refresh_response() -> MkSelectionResponse:
     )
 
 
-def normalize_mk_media_path(raw_path: str) -> str:
-    path = (raw_path or "").strip().replace("\\", "/")
-    if path.startswith(("http://", "https://")):
-        return ""
-    while path.startswith("./"):
-        path = path[2:]
-    path = path.lstrip("/")
-    if path.startswith("medias/"):
-        path = path[len("medias/"):]
-    if not path or ".." in path.split("/"):
-        return ""
-    return path
+# normalize_mk_media_path is imported from appcore.mk_media_helpers
 
 
-def build_mk_video_cache_object_key(media_path: str, *, cache_prefix: str) -> str:
-    digest = hashlib.sha256(media_path.encode("utf-8")).hexdigest()
-    ext = Path(media_path).suffix.lower()
-    if ext not in {".mp4", ".mov", ".m4v", ".webm"}:
-        ext = ".mp4"
-    return f"{cache_prefix}/{digest}{ext}"
+# build_mk_video_cache_object_key is imported from appcore.mk_media_helpers
 
 
 def guess_mk_video_type(
@@ -1233,65 +1221,7 @@ def build_mk_media_proxy_flask_response(result: MkMediaProxyResponse):
     return proxied
 
 
-def cache_mk_video(
-    media_path: str,
-    *,
-    cache_object_key_fn: Callable[[str], str],
-    storage_exists_fn: Callable[[str], bool],
-    build_headers_fn: Callable[[], dict],
-    get_base_url_fn: Callable[[], str],
-    safe_local_path_for_fn: Callable[[str], object],
-    max_bytes: int = _DEFAULT_MAX_MK_VIDEO_BYTES,
-    http_get_fn=requests.get,
-) -> str:
-    object_key = cache_object_key_fn(media_path)
-    if storage_exists_fn(object_key):
-        return object_key
-
-    headers = build_headers_fn()
-    if "Authorization" not in headers and "Cookie" not in headers:
-        raise MkCredentialsMissingError()
-    headers.pop("Content-Type", None)
-    headers["Accept"] = "video/*,*/*;q=0.8"
-    url = f"{get_base_url_fn()}/medias/{quote(media_path, safe='/')}"
-    resp = http_get_fn(url, headers=headers, timeout=60, stream=True)
-    try:
-        if resp.status_code >= 400:
-            http_error = requests.HTTPError(f"mk video HTTP {resp.status_code}")
-            http_error.response = resp
-            raise http_error
-        content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-        if content_type and not content_type.startswith("video/"):
-            raise ValueError(f"明空返回的不是视频文件: {content_type}")
-        declared_size = int(resp.headers.get("content-length") or 0)
-        if declared_size > max_bytes:
-            raise ValueError("明空视频过大，超过 2GB")
-
-        destination = safe_local_path_for_fn(object_key)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(prefix="mk_video_", dir=str(destination.parent))
-        total = 0
-        try:
-            with os.fdopen(fd, "wb") as handle:
-                for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                    if not chunk:
-                        continue
-                    total += len(chunk)
-                    if total > max_bytes:
-                        raise ValueError("明空视频过大，超过 2GB")
-                    handle.write(chunk)
-            os.replace(temp_name, destination)
-        finally:
-            if os.path.exists(temp_name):
-                try:
-                    os.unlink(temp_name)
-                except OSError:
-                    pass
-    finally:
-        close = getattr(resp, "close", None)
-        if callable(close):
-            close()
-    return object_key
+# cache_mk_video is imported from appcore.mk_media_helpers
 
 
 def build_mk_video_proxy_response(

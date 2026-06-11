@@ -1,18 +1,10 @@
 from __future__ import annotations
 
-import threading
-
-import config
-from appcore import task_state
-from appcore.events import EventBus
-from appcore.runner_lifecycle import start_tracked_thread
-from appcore.subtitle_removal_runtime import SubtitleRemovalRuntime
-from appcore.subtitle_removal_runtime_local_vsr import SubtitleRemovalLocalVsrRuntime
-from appcore.subtitle_removal_runtime_vod import SubtitleRemovalVodRuntime
+from appcore.subtitle_removal_runtime import (
+    start_subtitle_removal_task,
+    is_subtitle_removal_task_running,
+)
 from web.extensions import socketio
-
-_running_tasks: set[str] = set()
-_running_tasks_lock = threading.Lock()
 
 
 def _make_socketio_handler(task_id: str):
@@ -23,48 +15,13 @@ def _make_socketio_handler(task_id: str):
 
 
 def is_running(task_id: str) -> bool:
-    with _running_tasks_lock:
-        return task_id in _running_tasks
+    return is_subtitle_removal_task_running(task_id)
 
 
 def start(task_id: str, user_id: int | None = None) -> bool:
-    with _running_tasks_lock:
-        if task_id in _running_tasks:
-            return False
-        _running_tasks.add(task_id)
+    return start_subtitle_removal_task(
+        task_id,
+        user_id,
+        on_event=_make_socketio_handler(task_id),
+    )
 
-    bus = EventBus()
-    bus.subscribe(_make_socketio_handler(task_id))
-    task = task_state.get(task_id) or {}
-    subtitle_backend = str(task.get("subtitle_backend") or "volc").strip().lower()
-    provider = (getattr(config, "SUBTITLE_REMOVAL_PROVIDER", "goodline") or "goodline").strip().lower()
-    if subtitle_backend == "local_vsr":
-        runtime = SubtitleRemovalLocalVsrRuntime(bus=bus, user_id=user_id)
-    elif subtitle_backend == "niuma":
-        runtime = SubtitleRemovalRuntime(bus=bus, user_id=user_id)
-    elif provider == "vod":
-        runtime = SubtitleRemovalVodRuntime(bus=bus, user_id=user_id)
-    else:
-        runtime = SubtitleRemovalRuntime(bus=bus, user_id=user_id)
-    def run():
-        try:
-            runtime.start(task_id)
-        finally:
-            with _running_tasks_lock:
-                _running_tasks.discard(task_id)
-
-    try:
-        started = start_tracked_thread(
-            project_type="subtitle_removal",
-            task_id=task_id,
-            target=run,
-            daemon=True,
-        )
-    except BaseException:
-        with _running_tasks_lock:
-            _running_tasks.discard(task_id)
-        raise
-    if not started:
-        with _running_tasks_lock:
-            _running_tasks.discard(task_id)
-    return started

@@ -158,7 +158,7 @@ def _candidate_product_links(row: dict[str, Any]) -> list[str]:
 
 
 def _resolve_product_link(product_link: str, *, candidate_links: list[str] | None = None) -> dict[str, Any]:
-    from web.services.fine_ai_product_link_check import resolve_product_link
+    from appcore.product_link_resolver import resolve_product_link
 
     return resolve_product_link(
         current_link=product_link,
@@ -344,21 +344,29 @@ def _claim_candidate_batch(limit: int) -> dict[str, Any]:
 
 
 def _cache_card_video(video_path: str) -> str:
-    from web.routes import medias as media_routes
-    from web.routes.medias import mk_selection
+    from appcore.mk_media_helpers import (
+        normalize_mk_media_path,
+        build_mk_video_cache_object_key,
+        cache_mk_video,
+        build_mk_request_headers,
+        get_mk_api_base_url,
+        mk_http_get,
+        _DEFAULT_MAX_MK_VIDEO_BYTES,
+        _MK_VIDEO_CACHE_PREFIX,
+    )
 
-    normalized = media_routes._normalize_mk_media_path(video_path)
+    normalized = normalize_mk_media_path(video_path)
     if not normalized:
         raise ValueError("invalid Mingkong video path")
-    return mk_selection._cache_mk_video_impl(
+    return cache_mk_video(
         normalized,
-        cache_object_key_fn=mk_selection._mk_video_cache_object_key,
+        cache_object_key_fn=lambda path: build_mk_video_cache_object_key(path, cache_prefix=_MK_VIDEO_CACHE_PREFIX),
         storage_exists_fn=lambda object_key: local_media_storage.safe_local_path_for(object_key).is_file(),
-        build_headers_fn=mk_selection._build_mk_request_headers,
-        get_base_url_fn=mk_selection._get_mk_api_base_url,
+        build_headers_fn=build_mk_request_headers,
+        get_base_url_fn=get_mk_api_base_url,
         safe_local_path_for_fn=local_media_storage.safe_local_path_for,
-        max_bytes=mk_selection._MAX_MK_VIDEO_BYTES,
-        http_get_fn=mk_selection._mk_http_get,
+        max_bytes=_DEFAULT_MAX_MK_VIDEO_BYTES,
+        http_get_fn=mk_http_get,
     )
 
 

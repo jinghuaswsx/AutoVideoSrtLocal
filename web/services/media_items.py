@@ -227,27 +227,19 @@ def build_item_thumbnail(
     extract_thumbnail_fn: Callable[..., str | None] = extract_thumbnail,
     update_item_thumbnail_metadata_fn: Callable[[int, str, float | int | None], object] | None = None,
 ) -> None:
-    thumb_root = _thumb_root(thumb_dir)
-    thumb_root.mkdir(parents=True, exist_ok=True)
-    product_dir = thumb_root / str(product_id)
-    product_dir.mkdir(parents=True, exist_ok=True)
-    tmp_video = product_dir / f"tmp_{item_id}_{_client_filename_basename(filename)}"
-    download_media_object_fn(object_key, str(tmp_video))
-    duration = get_media_duration_fn(str(tmp_video))
-    thumb = extract_thumbnail_fn(str(tmp_video), str(product_dir), scale="360:-1")
-    if thumb:
-        final = product_dir / f"{item_id}.jpg"
-        os.replace(str(thumb), str(final))
-        update_metadata = update_item_thumbnail_metadata_fn or medias.update_item_thumbnail_metadata
-        update_metadata(
-            item_id,
-            str(final.relative_to(Path(output_dir))).replace("\\", "/"),
-            duration or None,
-        )
-    try:
-        tmp_video.unlink()
-    except Exception:
-        pass
+    from appcore.medias import build_item_thumbnail as _impl
+    _impl(
+        item_id,
+        product_id,
+        filename,
+        object_key,
+        download_media_object_fn=download_media_object_fn,
+        thumb_dir=thumb_dir,
+        output_dir=output_dir,
+        get_media_duration_fn=get_media_duration_fn,
+        extract_thumbnail_fn=extract_thumbnail_fn,
+        update_item_thumbnail_metadata_fn=update_item_thumbnail_metadata_fn,
+    )
 
 
 def build_item_update_response(
