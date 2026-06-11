@@ -178,7 +178,7 @@ def test_safe_task_relative_file_response_sends_task_relative_path(monkeypatch, 
         )
 
     assert result == "sent"
-    assert called[0][0][0].endswith("tts_segments/seg_0001.mp3")
+    assert called[0][0][0].replace("\\", "/").endswith("tts_segments/seg_0001.mp3")
     assert called[0][1]["mimetype"] == "audio/mpeg"
 
 

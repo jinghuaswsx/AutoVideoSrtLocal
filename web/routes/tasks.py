@@ -338,6 +338,7 @@ def new_product_page():
 def get_item_thumbnail(item_id: int):
     from appcore.db import query_one
     from config import OUTPUT_DIR
+    from web.services.artifact_download import safe_task_file_response
     row = query_one("SELECT thumbnail_path FROM media_items WHERE id=%s", (item_id,))
     if row and row.get("thumbnail_path"):
         thumb_path = row["thumbnail_path"]
@@ -345,9 +346,14 @@ def get_item_thumbnail(item_id: int):
             full_path = os.path.join(OUTPUT_DIR, thumb_path)
         else:
             full_path = thumb_path
-        if os.path.exists(full_path):
-            return send_file(full_path)
+        return safe_task_file_response(
+            {},
+            full_path,
+            not_found_message="thumbnail not found",
+            mimetype="image/jpeg",
+        )
     abort(404)
+
 
 
 
