@@ -66,7 +66,7 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
         "SELECT meta_business_date AS d, "
         "       SUM(COALESCE(quantity, 0)) AS units, "
         "       COUNT(DISTINCT dxm_package_id) AS order_count, "
-        "       SUM(COALESCE(line_amount, 0)) AS sales "
+        "       SUM(COALESCE(line_amount, 0)) + SUM(COALESCE(ship_amount, 0)) AS sales "
         "FROM dianxiaomi_order_lines "
         "WHERE product_code = %s AND meta_business_date BETWEEN %s AND %s "
         "GROUP BY meta_business_date",
