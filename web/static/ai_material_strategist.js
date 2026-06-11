@@ -37,6 +37,7 @@
     llmTabButtons: document.querySelectorAll('[data-llm-tab]'),
   };
   const DEFAULT_COUNTRY_CODES = ['EN', 'DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT'];
+  const PROJECT_TOP_N = 30;
 
   function fmtNumber(value, digits) {
     const n = Number(value || 0);
@@ -402,7 +403,7 @@
     const finalCard = ranking.final_input ? `
       <div class="aims-llm-visual-card" style="border-color:#bfdbfe;background:#eff6ff;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <h4 style="color:#1e3a8a;">最终决赛 Top 20 AI 复评</h4>
+          <h4 style="color:#1e3a8a;">最终决赛 Top ${PROJECT_TOP_N} AI 复评</h4>
           ${finalLogBtn}
         </div>
         <div class="aims-llm-param-body">${finalProducts.map((p) => `<div>#${esc(p.rank)} ${esc(p.product_code)} · ${esc(p.why_selected || '')}</div>`).join('') || '—'}</div>

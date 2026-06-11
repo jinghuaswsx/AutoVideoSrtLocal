@@ -28,7 +28,9 @@ MODEL_ID = "google/gemini-3.5-flash"
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
 _MAX_AI_CANDIDATES = 60
-_PROJECT_TOP_N = 20
+_PROJECT_TOP_N = 30
+_AI_RANKING_BATCH_SIZE = 20
+_AI_RANKING_BATCH_TOP_N = 10
 
 TARGET_COUNTRIES: tuple[dict[str, str], ...] = (
     {"country_code": "EN", "country_name": "英语", "lang": "en", "lang_name": "英语", "tier": "source"},
@@ -60,7 +62,7 @@ _PROGRESS_LOG_LIMIT = 12
 PROGRESS_STEPS: tuple[dict[str, str], ...] = (
     {"key": "snapshot", "label": "读取数据窗口", "description": "读取产品、广告、订单、明空素材新鲜度。"},
     {"key": "candidate_score", "label": "规则预筛打分", "description": "按消耗、订单、ROAS、广告数筛选候选品。"},
-    {"key": "ai_ranking", "label": "Top 20 AI 复评", "description": "分批调用 OpenRouter Gemini 复评候选产品。"},
+    {"key": "ai_ranking", "label": f"Top {_PROJECT_TOP_N} AI 复评", "description": "分批调用 OpenRouter Gemini 复评候选产品。"},
     {"key": "material_context", "label": "补齐素材上下文", "description": "读取国家反馈、本地素材、明空素材和任务中心排程。"},
     {"key": "product_analysis", "label": "逐产品分析", "description": "逐个产品分析国家、素材、任务去重和补素材建议。"},
     {"key": "persist", "label": "保存结果", "description": "写入 Top 产品、AI 建议和操作入口。"},
@@ -1069,10 +1071,10 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
     try:
         batch_results: list[dict[str, Any]] = []
         merged_candidates: list[dict[str, Any]] = []
-        for batch_index, batch in enumerate(_chunked(candidates, 20), start=1):
+        for batch_index, batch in enumerate(_chunked(candidates, _AI_RANKING_BATCH_SIZE), start=1):
             payload = {
                 "batch_index": batch_index,
-                "rule": "本批最多输出 Top10，剔除高ROAS低量产品。",
+                "rule": f"本批最多输出 Top{_AI_RANKING_BATCH_TOP_N}，剔除高ROAS低量产品。",
                 "products": [_rank_input(row) for row in batch],
             }
             result = llm_client.invoke_generate(
@@ -1106,7 +1108,7 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
             return _fallback_ranking(candidates, "AI batch ranking returned empty")
         merged_candidates = score_product_rows(merged_candidates, limit=len(merged_candidates))
         final_payload = {
-            "rule": "从所有批次候选里输出最终 Top20，仍然坚持有量 + 效率。",
+            "rule": f"从所有批次候选里输出最终 Top {_PROJECT_TOP_N}，仍然坚持有量 + 效率。",
             "products": [_rank_input(row) for row in merged_candidates],
         }
         final = llm_client.invoke_generate(
@@ -2475,10 +2477,10 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 "ai_ranking",
                 "done",
                 max(_safe_float(progress.get("percent")), 42),
-                "复用已保存 Top 20 排名结果，不重复调用排名模型。",
+                f"复用已保存 Top {_PROJECT_TOP_N} 排名结果，不重复调用排名模型。",
             )
         else:
-            checkpoint("ai_ranking", "running", 32, "调用 OpenRouter Gemini 分批复评 Top 20。")
+            checkpoint("ai_ranking", "running", 32, f"调用 OpenRouter Gemini 分批复评 Top {_PROJECT_TOP_N}。")
             ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
             _save_project_ranking(project_id, ranking)
         selected = _select_products(candidates, ranking)
@@ -2569,7 +2571,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 product_progress=product_progress,
             )
 
-        checkpoint("persist", "running", 88, "整理已落库结果，清理不在本轮 Top 20 内的旧结果。")
+        checkpoint("persist", "running", 88, f"整理已落库结果，清理不在本轮 Top {_PROJECT_TOP_N} 内的旧结果。")
         _delete_unselected_product_results(project_id, product_ids)
         results.sort(key=lambda item: _safe_int(item.get("rank_no")))
 

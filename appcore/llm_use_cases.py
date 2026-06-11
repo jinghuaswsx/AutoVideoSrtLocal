@@ -717,8 +717,8 @@ USE_CASES: dict[str, UseCase] = {
     "medias.ai_material_strategist_rank_products": _uc(
         "medias.ai_material_strategist_rank_products",
         "material",
-        "AI素材军师 Top20 排名",
-        "使用 OpenRouter Gemini 3.5 Flash 复评素材管理产品表现，筛出有量且 ROAS 不差的 Top20",
+        "AI素材军师 Top30 排名",
+        "使用 OpenRouter Gemini 3.5 Flash 复评素材管理产品表现，筛出有量且 ROAS 不差的 Top30",
         "openrouter",
         "google/gemini-3.5-flash",
         "openrouter",
@@ -840,4 +840,3 @@ MODULE_LABELS: dict[str, str] = {
     "xuanpin": "选品中心",
     "system": "系统服务",
 }
-

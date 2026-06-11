@@ -148,7 +148,7 @@ def test_normalize_progress_preserves_existing_checkpoint():
         "runner_heartbeat_at": "2026-06-10 19:00:00",
         "recovery": {"reason": "service_restart", "status": "running"},
         "steps": [{"key": "snapshot", "status": "done", "message": "done"}],
-        "product_progress": {"current_index": 7, "total": 20},
+        "product_progress": {"current_index": 7, "total": 30},
         "logs": [{"time": "now", "level": "info", "message": "existing"}],
     }
 
@@ -170,8 +170,8 @@ def test_mark_startup_interrupted_project_for_recovery_writes_recovery_checkpoin
         step_key="product_analysis",
         step_status="running",
         percent=63,
-        message="分析第 7/20 个产品",
-        product_progress={"current_index": 7, "total": 20},
+        message="分析第 7/30 个产品",
+        product_progress={"current_index": 7, "total": 30},
     )
     row = {
         "id": 9,
@@ -391,7 +391,7 @@ def test_mark_project_interrupted_writes_terminal_interrupted_status(monkeypatch
         step_key="product_analysis",
         step_status="running",
         percent=63,
-        message="分析第 7/20 个产品",
+        message="分析第 7/30 个产品",
     )
     row = {
         "id": 9,
@@ -546,6 +546,89 @@ def test_select_products_fills_from_rule_candidates_when_ai_returns_short_list()
     selected = svc._select_products(candidates, {"selected_product_ids": [2]})
 
     assert [item["product_id"] for item in selected] == [2, 1, 3]
+
+
+def test_select_products_fills_to_30_from_rule_candidates_when_ai_returns_short_list():
+    candidates = [
+        _row(
+            product_id=index,
+            product_code=f"product-{index}-rjc",
+            spend_30d=1000 - index,
+            orders_30d=80 - index,
+        )
+        for index in range(1, 36)
+    ]
+
+    selected = svc._select_products(candidates, {"selected_product_ids": [2, 4]})
+
+    assert len(selected) == 30
+    assert [item["product_id"] for item in selected[:4]] == [2, 4, 1, 3]
+    assert selected[-1]["product_id"] == 30
+
+
+def test_fallback_ranking_outputs_30_products_when_candidates_available():
+    candidates = [
+        _row(
+            product_id=index,
+            product_code=f"product-{index}-rjc",
+            spend_30d=1000 - index,
+            orders_30d=80 - index,
+            profit_30d=100,
+        )
+        for index in range(1, 36)
+    ]
+
+    ranking = svc._fallback_ranking(candidates)
+
+    assert ranking["selected_product_ids"] == list(range(1, 31))
+    assert len(ranking["ranking_result"]["ranked_products"]) == 30
+
+
+def test_run_ai_ranking_final_prompt_requests_top_30(monkeypatch):
+    candidates = [
+        _row(
+            product_id=index,
+            product_code=f"product-{index}-rjc",
+            spend_30d=1000 - index,
+            orders_30d=80 - index,
+            profit_30d=100,
+        )
+        for index in range(1, 61)
+    ]
+    calls = []
+
+    def fake_invoke_generate(*args, **kwargs):
+        prompt = kwargs["prompt"]
+        calls.append({"prompt": prompt, "billing_extra": kwargs["billing_extra"]})
+        if kwargs["billing_extra"]["stage"] == "batch_rank":
+            batch_index = kwargs["billing_extra"]["batch_index"]
+            start = (batch_index - 1) * 20 + 1
+            product_ids = range(start, start + 10)
+        else:
+            product_ids = range(1, 31)
+        return {
+            "json": {
+                "ranked_products": [
+                    {
+                        "product_id": product_id,
+                        "rank": rank,
+                        "score": 100 - rank,
+                        "why_selected": "有量且效率达标",
+                    }
+                    for rank, product_id in enumerate(product_ids, start=1)
+                ]
+            },
+            "text": "",
+            "usage_log_id": f"log-{len(calls)}",
+        }
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke_generate)
+
+    ranking = svc._run_ai_ranking(candidates, project_id=9, user_id=1, run_ai=True)
+
+    assert len(ranking["selected_product_ids"]) == 30
+    assert "最终 Top 30" in calls[-1]["prompt"]
+    assert ranking["ranking_result"]["final_input"]["rule"].startswith("从所有批次候选里输出最终 Top 30")
 
 
 def test_runtime_result_from_stored_project_product_result():
