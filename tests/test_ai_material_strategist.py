@@ -216,6 +216,78 @@ def test_source_material_candidates_include_self_made_english_cjh_materials():
     assert cjh["cover_url"] == "/medias/object?object_key=10%2Fmedias%2F31%2Fcjh.jpg"
     assert cjh["video_author"] == "蔡靖华"
     assert cjh["source_label"] == "自制EN"
+    assert cjh["media_product_id"] == 10
+    assert cjh["has_local_product_in_library"] is True
+    assert cjh["has_local_material_in_library"] is True
+
+
+def test_report_material_status_icons_use_local_library_flags():
+    repo_root = Path(__file__).resolve().parents[1]
+    script = (repo_root / "web" / "static" / "ai_material_strategist.js").read_text(encoding="utf-8")
+    service = (repo_root / "appcore" / "ai_material_strategist.py").read_text(encoding="utf-8")
+
+    assert "has_local_product_in_library" in script
+    assert "has_local_material_in_library" in script
+    assert "productImported" in script
+    assert "videoImported" in script
+    assert "mk-status-half--left" in script
+    assert "mk-status-half--right" in script
+    assert "产品已入库" in script
+    assert "视频已入库" in script
+    assert "📦" in script
+    assert "_enrich_cached_ad_statuses" in service
+    assert "\"has_local_product_in_library\"" in service
+    assert "\"has_local_material_in_library\"" in service
+
+
+def test_serialize_product_result_refreshes_stored_material_statuses(monkeypatch):
+    from appcore import mingkong_materials
+
+    def fake_enrich(items):
+        items[0]["product_ad_status"] = {"has_local_match": True, "media_product_id": 10}
+        items[0]["material_ad_status"] = {"has_local_match": True, "media_product_id": 10, "media_item_id": 31}
+        items[0]["has_local_product_in_library"] = True
+        items[0]["has_local_material_in_library"] = True
+        items[1]["product_ad_status"] = {"has_local_match": True, "media_product_id": 10}
+        items[1]["material_ad_status"] = {"has_local_match": False, "media_product_id": 0, "media_item_id": 0}
+        items[1]["has_local_product_in_library"] = True
+        items[1]["has_local_material_in_library"] = False
+        return items
+
+    monkeypatch.setattr(mingkong_materials, "_enrich_cached_ad_statuses", fake_enrich)
+    row = {
+        "id": 1,
+        "project_id": 6,
+        "rank_no": 1,
+        "product_id": 10,
+        "product_code": "emergency-choking-relief-kit-rjc",
+        "product_name": "防噎仪",
+        "score": 1,
+        "metrics_json": "{}",
+        "country_summary_json": "[]",
+        "local_materials_json": "[]",
+        "mingkong_materials_json": json.dumps(
+            [
+                {"source_type": "mingkong", "material_key": "mk1", "product_code": "emergency-choking-relief-kit", "video_path": "imported.mp4"},
+                {"source_type": "mingkong", "material_key": "mk2", "product_code": "emergency-choking-relief-kit", "video_path": "raw-only.mp4"},
+            ],
+            ensure_ascii=False,
+        ),
+        "ai_result_json": "{}",
+        "action_items_json": "[]",
+    }
+
+    result = svc._serialize_product_result(row)
+    imported, raw_only = result["mingkong_materials"]
+
+    assert imported["has_local_product_in_library"] is True
+    assert imported["has_local_material_in_library"] is True
+    assert imported["media_product_id"] == 10
+    assert imported["media_item_id"] == 31
+    assert raw_only["has_local_product_in_library"] is True
+    assert raw_only["has_local_material_in_library"] is False
+    assert raw_only["media_product_id"] == 10
+    assert raw_only["media_item_id"] == 0
 
 
 def test_target_countries_include_english_source_language():

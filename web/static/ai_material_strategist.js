@@ -101,7 +101,7 @@
     if (type === 'video') {
       return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m10 9 5 3-5 3Z"></path></svg>';
     }
-    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 8-9-5-9 5 9 5 9-5Z"></path><path d="M3 8v8l9 5 9-5V8"></path><path d="M12 13v8"></path></svg>';
+    return '<span class="mk-status-icon-emoji" aria-hidden="true">📦</span>';
   }
 
   function mkSearchIconSvg() {
@@ -137,6 +137,14 @@
       skipped: '已跳过',
     };
     return map[status] || status || '等待中';
+  }
+
+  function boolish(value) {
+    if (value === true) return true;
+    if (value === false || value == null) return false;
+    if (typeof value === 'number') return value > 0;
+    const text = String(value).trim().toLowerCase();
+    return ['1', 'true', 'yes', 'y', 'on'].includes(text);
   }
 
   function runningProject() {
@@ -1240,7 +1248,15 @@
     const author = material.video_author || (isLocalCjh ? '蔡靖华' : '--');
     const spendText = isLocalCjh ? '美国站已入库' : fmtMaterialSpend(material.cumulative_90_spend);
     const yesterdayText = isLocalCjh ? '-' : fmtMaterialSpend(material.yesterday_spend_delta);
-    const mediaSearchUrl = productCode ? `/medias/?q=${encodeURIComponent(productCode)}${isLocalCjh && material.media_item_id ? `&item=${encodeURIComponent(material.media_item_id)}` : ''}` : '/medias';
+    const productStatus = (material.product_ad_status && typeof material.product_ad_status === 'object') ? material.product_ad_status : {};
+    const materialStatus = (material.material_ad_status && typeof material.material_ad_status === 'object') ? material.material_ad_status : {};
+    const mediaProductId = Number(material.media_product_id || productStatus.media_product_id || materialStatus.media_product_id || item.product_id || 0);
+    const mediaItemId = Number(material.media_item_id || materialStatus.media_item_id || 0);
+    const productImported = Boolean(isLocalCjh || boolish(material.has_local_product_in_library) || boolish(productStatus.has_local_match) || mediaProductId > 0);
+    const videoImported = Boolean(isLocalCjh || boolish(material.has_local_material_in_library) || boolish(materialStatus.has_local_match) || mediaItemId > 0 || boolish(material.is_imported));
+    const mediaSearchUrl = productCode ? `/medias/?q=${encodeURIComponent(productCode)}${mediaItemId ? `&item=${encodeURIComponent(mediaItemId)}` : ''}` : '/medias';
+    const productIconInner = productImported ? `${state.publicMode ? '<span' : `<a href="${esc(mediaSearchUrl)}" target="_blank" rel="noopener noreferrer"`} class="mk-status-icon mk-status-icon--product" title="产品已入库" aria-label="产品已入库">${mkStatusIconSvg('product')}${state.publicMode ? '</span>' : '</a>'}` : '';
+    const videoIconInner = videoImported ? `${state.publicMode ? '<span' : `<a href="${esc(mediaSearchUrl)}" target="_blank" rel="noopener noreferrer"`} class="mk-status-icon mk-status-icon--video" title="视频已入库" aria-label="视频已入库">${mkStatusIconSvg('video')}${state.publicMode ? '</span>' : '</a>'}` : '';
     const detailHref = !state.publicMode && material.material_key && !isLocalCjh ? `/xuanpin/mk/materials/${encodeURIComponent(material.material_key)}` : '';
     const copyProductButton = productCode ? `<button type="button" class="mk-icon-copy-btn" data-copy-text="${esc(productCode)}" title="复制产品code" aria-label="复制产品code">${mkCopyIconSvg()}</button>` : '';
     const searchButton = !state.publicMode ? `<a class="mk-media-search-link" href="${esc(mediaSearchUrl)}" target="_blank" rel="noopener noreferrer" title="素材库搜索" aria-label="素材库搜索">${mkSearchIconSvg()}</a>` : '';
@@ -1272,8 +1288,8 @@
     return `
       <article class="mk-video-card" data-source-type="${esc(source_type)}">
         <div class="mk-status-header-row">
-          <div class="mk-status-half"><span class="mk-status-icon" title="${esc(isLocalCjh ? '自制EN已入库' : '明空素材')}">${mkStatusIconSvg('product')}</span></div>
-          <div class="mk-status-half"><span class="mk-status-icon mk-status-icon--video" title="视频素材">${mkStatusIconSvg('video')}</span></div>
+          <div class="mk-status-half mk-status-half--left">${productIconInner}</div>
+          <div class="mk-status-half mk-status-half--right">${videoIconInner}</div>
         </div>
         <div class="mk-video-product-line">
           <div class="mk-video-product-cn-row">

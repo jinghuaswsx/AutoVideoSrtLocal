@@ -444,6 +444,15 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
+def _safe_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float, Decimal)):
+        return value > 0
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "y", "on"}
+
+
 def _project_provider_code(project_row: Mapping[str, Any] | None) -> str:
     return str((project_row or {}).get("provider_code") or PROVIDER_CODE).strip() or PROVIDER_CODE
 
@@ -1522,6 +1531,7 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
         for term in values:
             reverse[term] = local_code
     grouped: dict[str, list[dict]] = defaultdict(list)
+    flat_materials: list[dict] = []
     for row in rows:
         local_code = reverse.get(str(row.get("product_code") or "").strip().lower())
         if not local_code or len(grouped[local_code]) >= per_product_limit:
@@ -1550,7 +1560,66 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
             "mk_video_metadata": _mk_import_metadata(row),
         }
         grouped[local_code].append(material)
+        flat_materials.append(material)
+    _refresh_source_material_library_statuses(flat_materials, product_id=0, enrich_mingkong=True)
     return dict(grouped)
+
+
+def _refresh_source_material_library_statuses(
+    materials: list[Any],
+    *,
+    product_id: int = 0,
+    enrich_mingkong: bool = True,
+) -> list[dict]:
+    normalized: list[dict] = []
+    for material in materials or []:
+        if isinstance(material, dict):
+            normalized.append(material)
+        elif isinstance(material, Mapping):
+            normalized.append(dict(material))
+    if not normalized:
+        return []
+
+    mingkong_materials = [
+        material
+        for material in normalized
+        if str(material.get("source_type") or "mingkong").strip() != "local_en_cjh"
+    ]
+    if enrich_mingkong and mingkong_materials:
+        try:
+            from appcore.mingkong_materials import _enrich_cached_ad_statuses
+
+            _enrich_cached_ad_statuses(mingkong_materials)
+        except Exception as exc:
+            log.warning("AI素材军师明空素材入库状态 enrich 失败: %s", exc)
+
+    fallback_product_id = _safe_int(product_id)
+    for material in normalized:
+        source_type = str(material.get("source_type") or "mingkong").strip()
+        product_status = material.get("product_ad_status") if isinstance(material.get("product_ad_status"), dict) else {}
+        material_status = material.get("material_ad_status") if isinstance(material.get("material_ad_status"), dict) else {}
+        media_product_id = _safe_int(
+            material.get("media_product_id")
+            or product_status.get("media_product_id")
+            or material_status.get("media_product_id")
+            or fallback_product_id
+        )
+        media_item_id = _safe_int(material.get("media_item_id") or material_status.get("media_item_id"))
+        material["media_product_id"] = media_product_id
+        material["media_item_id"] = media_item_id
+        material["has_local_product_in_library"] = bool(
+            _safe_bool(material.get("has_local_product_in_library"))
+            or _safe_bool(product_status.get("has_local_match"))
+            or media_product_id > 0
+        )
+        material["has_local_material_in_library"] = bool(
+            source_type == "local_en_cjh"
+            or _safe_bool(material.get("has_local_material_in_library"))
+            or _safe_bool(material_status.get("has_local_match"))
+            or media_item_id > 0
+            or _safe_bool(material.get("is_imported"))
+        )
+    return normalized
 
 
 def _material_name_without_suffix(value: str) -> str:
@@ -1575,11 +1644,13 @@ def _local_en_cjh_source_material(product: Mapping[str, Any], material: Mapping[
     cover_object_key = str(material.get("cover_object_key") or "").strip()
     filename = str(material.get("filename") or material.get("display_name") or "").strip()
     media_item_id = _safe_int(material.get("id"))
+    media_product_id = _safe_int(product.get("product_id")) or _safe_int(material.get("product_id"))
     product_code = str(product.get("product_code") or "").strip()
     return {
         "source_type": "local_en_cjh",
         "source_label": "自制EN",
         "material_key": f"local:{media_item_id}" if media_item_id else "",
+        "media_product_id": media_product_id,
         "media_item_id": media_item_id,
         "product_code": product_code,
         "product_name": product.get("product_name") or "",
@@ -1598,6 +1669,8 @@ def _local_en_cjh_source_material(product: Mapping[str, Any], material: Mapping[
         "yesterday_spend_delta": 0.0,
         "is_local_material": True,
         "is_imported": True,
+        "has_local_product_in_library": media_product_id > 0,
+        "has_local_material_in_library": media_item_id > 0,
     }
 
 
@@ -1623,10 +1696,17 @@ def _build_source_material_candidates(
     )
     local_sources = local_sources[:2]
     mk_limit = max(limit - len(local_sources), 0)
-    mk_sources = [
-        dict(item, source_type=item.get("source_type") or "mingkong", source_label=item.get("source_label") or "明空")
-        for item in mingkong_materials[:mk_limit]
-    ]
+    local_product_id = _safe_int(product.get("product_id"))
+    mk_sources = []
+    for item in mingkong_materials[:mk_limit]:
+        source = dict(item, source_type=item.get("source_type") or "mingkong", source_label=item.get("source_label") or "明空")
+        media_product_id = _safe_int(source.get("media_product_id")) or local_product_id
+        source["media_product_id"] = media_product_id
+        source["has_local_product_in_library"] = bool(_safe_bool(source.get("has_local_product_in_library")) or media_product_id > 0)
+        source["has_local_material_in_library"] = bool(
+            _safe_bool(source.get("has_local_material_in_library")) or _safe_int(source.get("media_item_id")) > 0
+        )
+        mk_sources.append(source)
     return (mk_sources + local_sources)[:limit]
 
 
@@ -3056,7 +3136,16 @@ def _upgrade_import_action_payload(action: dict, material: Mapping[str, Any] | N
 
 
 def _serialize_product_result(row: Mapping[str, Any]) -> dict:
+    product_id = _safe_int(row.get("product_id"))
     mingkong_materials = _json_loads(row.get("mingkong_materials_json"), []) or []
+    if isinstance(mingkong_materials, list):
+        mingkong_materials = _refresh_source_material_library_statuses(
+            mingkong_materials,
+            product_id=product_id,
+            enrich_mingkong=True,
+        )
+    else:
+        mingkong_materials = []
     material_by_key = {
         str(material.get("material_key") or ""): material
         for material in mingkong_materials
@@ -3087,7 +3176,7 @@ def _serialize_product_result(row: Mapping[str, Any]) -> dict:
         "id": _safe_int(row.get("id")),
         "project_id": _safe_int(row.get("project_id")),
         "rank_no": _safe_int(row.get("rank_no")),
-        "product_id": _safe_int(row.get("product_id")),
+        "product_id": product_id,
         "product_code": row.get("product_code") or "",
         "product_name": row.get("product_name") or "",
         "score": _safe_float(row.get("score")),
