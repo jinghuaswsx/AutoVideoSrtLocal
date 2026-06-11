@@ -17,7 +17,7 @@ from web.services.order_analytics_responses import (
     build_order_analytics_payload_response,
     order_analytics_flask_response,
 )
-from web.upload_util import client_filename_basename
+from web.upload_util import client_filename_basename, validate_spreadsheet_extension
 
 from appcore import order_analytics as oa
 from appcore import exchange_rates
@@ -489,6 +489,8 @@ def unsettled_payout_project_create():
     filename = client_filename_basename(file_storage.filename)
     if not filename:
         return _json_response(error="missing_file", detail="文件名无效"), 400
+    if not validate_spreadsheet_extension(filename):
+        return _json_response(error="invalid_file_type"), 400
     project_name = (request.form.get("project_name") or "").strip()
     content = file_storage.read()
     if not content:
@@ -746,6 +748,14 @@ def upload():
         return _json_response(error="请选择文件"), 400
 
     filename = client_filename_basename(f.filename)
+    if not validate_spreadsheet_extension(filename):
+        _audit_order_analytics_action(
+            "order_analytics_shopify_orders_uploaded",
+            target_type="order_import",
+            status="failure",
+            detail={"filename": filename, "error": "invalid_file_type"},
+        )
+        return _json_response(error="invalid_file_type"), 400
 
     try:
         rows = oa.parse_shopify_file(f.stream, filename)
@@ -822,6 +832,14 @@ def ad_upload():
     frequency = (request.form.get("frequency") or "custom").strip().lower()
     file_bytes = f.stream.read()
     filename = client_filename_basename(f.filename)
+    if not validate_spreadsheet_extension(filename):
+        _audit_order_analytics_action(
+            "order_analytics_meta_ads_uploaded",
+            target_type="meta_ad_import",
+            status="failure",
+            detail={"filename": filename, "error": "invalid_file_type"},
+        )
+        return _json_response(error="invalid_file_type"), 400
 
     try:
         rows = oa.parse_meta_ad_file(io.BytesIO(file_bytes), filename)

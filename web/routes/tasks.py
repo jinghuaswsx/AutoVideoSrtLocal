@@ -27,7 +27,7 @@ from web.services.tasks_responses import (
 from web.services.material_evaluation_trigger import (
     trigger_material_evaluation,
 )
-from web.upload_util import client_filename_basename
+from web.upload_util import client_filename_basename, validate_video_extension, validate_image_extension
 
 log = logging.getLogger(__name__)
 bp = Blueprint("tasks", __name__, url_prefix="/tasks")
@@ -80,6 +80,8 @@ def _manual_output_uploaded_files(tid: int, step_key: str) -> list[dict]:
             continue
         seen.add(id(storage))
         filename = _manual_upload_filename(storage.filename)
+        if not (validate_video_extension(filename) or validate_image_extension(filename)):
+            raise ValueError("invalid_file_type")
         object_key = object_keys.build_media_object_key(
             int(current_user.id),
             f"task-{int(tid)}",

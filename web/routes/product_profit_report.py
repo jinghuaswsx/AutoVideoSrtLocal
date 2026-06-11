@@ -31,7 +31,7 @@ from web.services.product_profit_report import (
     build_product_profit_report_payload_response,
     product_profit_report_flask_response,
 )
-from web.upload_util import client_filename_basename
+from web.upload_util import client_filename_basename, validate_spreadsheet_extension
 
 log = logging.getLogger(__name__)
 
@@ -285,6 +285,11 @@ def api_import_payments_csv():
         return product_profit_report_flask_response(
             build_product_profit_report_error_response("missing file", 400)
         )
+    filename = client_filename_basename(f.filename)
+    if not validate_spreadsheet_extension(filename):
+        return product_profit_report_flask_response(
+            build_product_profit_report_error_response("invalid_file_type", 400)
+        )
 
     store_code = (request.form.get("store_code") or "").strip()
     if not _STORE_CODE_RE.match(store_code):
@@ -306,8 +311,6 @@ def api_import_payments_csv():
             return product_profit_report_flask_response(
                 build_product_profit_report_error_response("csv encoding not utf-8 or gbk", 400)
             )
-
-    filename = client_filename_basename(f.filename)
     source_label = f"{store_code}__{filename}"
     try:
         stats = import_payments_csv(io.StringIO(content), source_csv=source_label)
