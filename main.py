@@ -45,4 +45,5 @@ _scheduler = start_scheduler_if_enabled()
 if __name__ == "__main__":
     print("AutoVideoSrt 启动中...")
     print("访问 http://localhost:5000")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True, allow_unsafe_werkzeug=True)
+

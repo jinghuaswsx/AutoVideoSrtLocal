@@ -1383,6 +1383,7 @@ def dianxiaomi_orders():
     start_date = (request.args.get("start_date") or "").strip()
     end_date = (request.args.get("end_date") or "").strip()
     store = (request.args.get("store") or "").strip() or None
+    search = (request.args.get("search") or "").strip() or None
     if not start_date or not end_date:
         return _json_response(error="missing_date", detail="start_date and end_date are required"), 400
     try:
@@ -1394,6 +1395,8 @@ def dianxiaomi_orders():
         query_kwargs = {"page": page, "page_size": page_size}
         if store:
             query_kwargs["store"] = store
+        if search:
+            query_kwargs["search"] = search
         return _json_response(_json_safe(oa.get_dianxiaomi_order_analysis(
             start_date,
             end_date,

@@ -51,6 +51,27 @@ PRODUCT_LINK_ACCEPT_LANGUAGE_BY_LOCALE = {
     "pt": "pt-PT,pt;q=0.9,en;q=0.8",
 }
 VisualPairConfirmCallback = Callable[[list[dict[str, Any]]], bool]
+BOOTSTRAP_NOT_READY_ERRORS = {
+    "localized_images_not_ready",
+    "localized images not ready",
+    "english_references_not_ready",
+    "english references not ready",
+}
+
+
+class BootstrapNotReadySkip(RuntimeError):
+    def __init__(self, *, product_code: str, lang: str, reason: str, message: str = "") -> None:
+        normalized_reason = str(reason or "localized_images_not_ready").strip().lower().replace(" ", "_")
+        self.product_code = str(product_code or "").strip().lower()
+        self.lang = str(lang or "").strip().lower()
+        self.reason = normalized_reason
+        self.message = str(message or "").strip() or _bootstrap_not_ready_message(self.product_code, self.lang, normalized_reason)
+        super().__init__(self.message)
+
+
+def _bootstrap_not_ready_message(product_code: str, lang: str, reason: str) -> str:
+    label = "英文参考图" if reason == "english_references_not_ready" else "本地化图片"
+    return f"{product_code}/{lang} {label}未就绪，跳过当前语言。"
 
 
 def _normalize_src(src: str) -> str:
@@ -234,8 +255,7 @@ def _choose_carousel_name_candidate(
     source_indices = {row.get("source_index") for row in candidates}
     if len(source_indices) == 1:
         return _latest_carousel_candidate(candidates)
-    options = [f"{row.get('source_index')}:{row.get('filename')}" for row in candidates]
-    raise ValueError(f"ambiguous carousel filename source for slot {slot_idx} key {src_key}: {options}")
+    return None
 
 
 def _choose_carousel_candidate(
@@ -827,13 +847,26 @@ def fetch_bootstrap_ready(
             if localized_count > 0:
                 print(f"bootstrap 已就绪（第 {attempt} 次尝试，本地化记录 {localized_count} 条）")
                 return payload
-            last_error = RuntimeError("bootstrap returned no localized images")
+            raise BootstrapNotReadySkip(
+                product_code=product_code,
+                lang=lang,
+                reason="localized_images_not_ready",
+                message=f"{product_code}/{lang} 本地化图片未就绪，跳过当前语言。",
+            )
         except api_client.ApiError as exc:
             last_error = exc
             error_code = str(exc.payload.get("error") or "")
             print(f"bootstrap 接口异常 {exc.status_code} {error_code}：{exc}")
-            if error_code == "shopify_product_id_missing":
-                raise
+            if exc.status_code == 409 and error_code.strip().lower() in BOOTSTRAP_NOT_READY_ERRORS:
+                raise BootstrapNotReadySkip(
+                    product_code=product_code,
+                    lang=lang,
+                    reason=error_code,
+                    message=str(exc.payload.get("message") or exc),
+                ) from exc
+            raise
+        except BootstrapNotReadySkip:
+            raise
         except Exception as exc:
             last_error = exc
             print(f"bootstrap 第 {attempt} 次尝试失败：{exc}")
@@ -1182,6 +1215,15 @@ def assert_detail_replacement_contract(detail_result: dict[str, Any], storefront
             f"storefront detail verification failed: expected {expected_present}/{expected_total}"
         )
     if replacement_count > 0 and old_non_shopify_count > 0:
+        tolerated_legacy_leftovers = (
+            expected_total > 0
+            and expected_present >= expected_total
+            and missing_count > 0
+            and old_non_shopify_count <= missing_count
+        )
+        if tolerated_legacy_leftovers:
+            storefront_result["tolerated_old_non_shopify_count"] = old_non_shopify_count
+            return
         raise RuntimeError(
             "storefront detail verification failed: "
             f"{old_non_shopify_count} persisted non-Shopify detail image(s) remain"

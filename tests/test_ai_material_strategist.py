@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from appcore import ai_material_strategist as svc
 
@@ -89,6 +90,37 @@ def test_mk_search_codes_include_stripped_code_first():
     assert mapping["demo-product-rjc"] == ["demo-product", "demo-product-rjc"]
 
 
+def test_target_countries_include_english_source_language():
+    assert svc.TARGET_COUNTRIES[0]["country_code"] == "EN"
+    assert svc.TARGET_COUNTRIES[0]["lang"] == "en"
+    assert svc._normalize_country_code("en") == "EN"
+    assert svc._lang_for_country_code("EN") == "en"
+
+
+def test_country_summaries_include_english_before_small_languages(monkeypatch):
+    def fake_query(sql, params=()):
+        return [
+            {
+                "product_id": 10,
+                "lang": "en",
+                "item_count": 2,
+                "pushed_video_count": 1,
+                "ad_spend_usd": 500.0,
+                "purchase_value_usd": 1500.0,
+                "ad_roas": 3.0,
+                "active_7d_ad_spend_usd": 100.0,
+            }
+        ]
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+
+    summaries = svc._load_country_summaries([10])
+
+    assert [item["country_code"] for item in summaries[10]][:3] == ["EN", "DE", "FR"]
+    assert summaries[10][0]["lang"] == "en"
+    assert summaries[10][0]["delivery_status"] == "active"
+
+
 def test_progress_payload_marks_current_step_and_keeps_logs():
     progress = svc._initial_progress(message="queued")
 
@@ -116,7 +148,7 @@ def test_normalize_progress_preserves_existing_checkpoint():
         "runner_heartbeat_at": "2026-06-10 19:00:00",
         "recovery": {"reason": "service_restart", "status": "running"},
         "steps": [{"key": "snapshot", "status": "done", "message": "done"}],
-        "product_progress": {"current_index": 7, "total": 20},
+        "product_progress": {"current_index": 7, "total": 30},
         "logs": [{"time": "now", "level": "info", "message": "existing"}],
     }
 
@@ -138,8 +170,8 @@ def test_mark_startup_interrupted_project_for_recovery_writes_recovery_checkpoin
         step_key="product_analysis",
         step_status="running",
         percent=63,
-        message="分析第 7/20 个产品",
-        product_progress={"current_index": 7, "total": 20},
+        message="分析第 7/30 个产品",
+        product_progress={"current_index": 7, "total": 30},
     )
     row = {
         "id": 9,
@@ -359,7 +391,7 @@ def test_mark_project_interrupted_writes_terminal_interrupted_status(monkeypatch
         step_key="product_analysis",
         step_status="running",
         percent=63,
-        message="分析第 7/20 个产品",
+        message="分析第 7/30 个产品",
     )
     row = {
         "id": 9,
@@ -516,6 +548,146 @@ def test_select_products_fills_from_rule_candidates_when_ai_returns_short_list()
     assert [item["product_id"] for item in selected] == [2, 1, 3]
 
 
+def test_select_products_fills_to_30_from_rule_candidates_when_ai_returns_short_list():
+    candidates = [
+        _row(
+            product_id=index,
+            product_code=f"product-{index}-rjc",
+            spend_30d=1000 - index,
+            orders_30d=80 - index,
+        )
+        for index in range(1, 36)
+    ]
+
+    selected = svc._select_products(candidates, {"selected_product_ids": [2, 4]})
+
+    assert len(selected) == 30
+    assert [item["product_id"] for item in selected[:4]] == [2, 4, 1, 3]
+    assert selected[-1]["product_id"] == 30
+
+
+def test_fallback_ranking_outputs_30_products_when_candidates_available():
+    candidates = [
+        _row(
+            product_id=index,
+            product_code=f"product-{index}-rjc",
+            spend_30d=1000 - index,
+            orders_30d=80 - index,
+            profit_30d=100,
+        )
+        for index in range(1, 36)
+    ]
+
+    ranking = svc._fallback_ranking(candidates)
+
+    assert ranking["selected_product_ids"] == list(range(1, 31))
+    assert len(ranking["ranking_result"]["ranked_products"]) == 30
+
+
+def test_run_ai_ranking_final_prompt_requests_top_30(monkeypatch):
+    candidates = [
+        _row(
+            product_id=index,
+            product_code=f"product-{index}-rjc",
+            spend_30d=1000 - index,
+            orders_30d=80 - index,
+            profit_30d=100,
+        )
+        for index in range(1, 61)
+    ]
+    calls = []
+
+    def fake_invoke_generate(*args, **kwargs):
+        prompt = kwargs["prompt"]
+        calls.append({"prompt": prompt, "billing_extra": kwargs["billing_extra"]})
+        if kwargs["billing_extra"]["stage"] == "batch_rank":
+            batch_index = kwargs["billing_extra"]["batch_index"]
+            start = (batch_index - 1) * 20 + 1
+            product_ids = range(start, start + 10)
+        else:
+            product_ids = range(1, 31)
+        return {
+            "json": {
+                "ranked_products": [
+                    {
+                        "product_id": product_id,
+                        "rank": rank,
+                        "score": 100 - rank,
+                        "why_selected": "有量且效率达标",
+                    }
+                    for rank, product_id in enumerate(product_ids, start=1)
+                ]
+            },
+            "text": "",
+            "usage_log_id": f"log-{len(calls)}",
+        }
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke_generate)
+
+    ranking = svc._run_ai_ranking(candidates, project_id=9, user_id=1, run_ai=True)
+
+    assert len(ranking["selected_product_ids"]) == 30
+    assert "最终 Top 30" in calls[-1]["prompt"]
+    assert ranking["ranking_result"]["final_input"]["rule"].startswith("从所有批次候选里输出最终 Top 30")
+
+
+def test_product_analysis_fills_missing_structured_fields_from_fallback(monkeypatch):
+    product = _row(
+        product_id=7,
+        product_code="structured-fill-rjc",
+        product_name="Structured Fill",
+        spend_30d=900,
+        orders_30d=80,
+        revenue_30d=1800,
+        purchase_value_30d=1700,
+        profit_30d=300,
+    )
+    countries = [
+        {
+            "country_code": "DE",
+            "lang": "de",
+            "ad_spend_usd": 500,
+            "ad_roas": 1.8,
+        }
+    ]
+
+    def fake_invoke_generate(*args, **kwargs):
+        return {
+            "json": {
+                "product_id": 7,
+                "product_code": "structured-fill-rjc",
+                "overall_judgement": "AI 给出了可读补素材建议，但漏掉结构化动作字段。",
+            },
+            "text": "",
+            "usage_log_id": 123,
+        }
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke_generate)
+
+    result = svc._run_product_analysis(
+        product,
+        countries,
+        [],
+        [],
+        project_id=9,
+        user_id=33,
+        run_ai=True,
+    )
+
+    assert result["mode"] == "ai"
+    assert result["overall_judgement"] == "AI 给出了可读补素材建议，但漏掉结构化动作字段。"
+    assert result["priority"] in {"P0", "P1", "P2", "P3"}
+    assert result["primary_action"] in {
+        "expand_country",
+        "same_country_new_material",
+        "weak_country_retest",
+        "hold",
+        "investigate",
+    }
+    assert result["next_check"]
+    assert {"priority", "primary_action", "next_check"} <= set(result["fallback_filled_fields"])
+
+
 def test_runtime_result_from_stored_project_product_result():
     stored = {
         "rank_no": 4,
@@ -622,6 +794,55 @@ def test_cancelled_task_keeps_link_and_allows_new_translation_action():
     ]
     assert create_actions
     assert create_actions[0]["target_lang"] == "ja"
+
+
+def test_english_action_does_not_create_small_language_translation_task():
+    product = _row(product_id=10, product_code="demo-rjc", user_id=7)
+    countries = [{
+        "country_code": "EN",
+        "lang": "en",
+        "blocking_task": None,
+        "cancelled_task": None,
+        "tasks": [],
+    }]
+    ai_result = {
+        "primary_action": "same_country_new_material",
+        "country_actions": [{
+            "country_code": "EN",
+            "lang": "en",
+            "action": "same_country_new_material",
+            "reason": "EN源语言继续补素材",
+        }],
+        "material_actions": [],
+    }
+
+    decorated = svc._decorate_ai_result_with_tasks(ai_result, countries, [])
+    actions = svc._build_action_items(product, decorated, [], countries)
+
+    assert not [item for item in actions if item["type"] == "create_translation_task"]
+
+
+def test_ai_material_strategist_frontend_restores_split_lost_controls():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "web" / "static" / "ai_material_strategist.js").read_text(encoding="utf-8")
+    template = (root / "web" / "templates" / "medias_ai_material_strategist.html").read_text(encoding="utf-8")
+
+    assert "DEFAULT_COUNTRY_CODES = ['EN', 'DE', 'FR', 'IT', 'ES', 'JP', 'SE', 'NL', 'PT']" in script
+    assert "function getSpendGreenLevelClass" in script
+    assert "green-level-6" in script
+    assert "function renderTaskCountLink" in script
+    assert "function showTasksModal" in script
+    assert "function showLlmModal" in script
+    assert "data-show-project-llm" in script
+    assert "data-show-product-llm" in script
+    assert "function countryCodesForMatrix" in script
+    assert "function renderRecommendationBadge" in script
+    assert "aimsTaskModal" in template
+    assert "aimsLlmModal" in template
+    assert ".aims-country-cell.green-level-6" in template
+    assert ".aims-task-count-btn" in template
+    assert ".aims-rec-badge.expand_country" in template
+    assert "ai_material_strategist.js', v=" in template
 
 
 def test_import_mk_video_action_payload_contains_required_download_fields():

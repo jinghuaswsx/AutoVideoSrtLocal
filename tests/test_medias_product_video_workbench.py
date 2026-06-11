@@ -633,6 +633,75 @@ def test_build_video_workbench_ad_detail_falls_back_to_country_when_name_terms_d
     assert payload["rows"][0]["match_reason"] == "product_lang_country_fallback"
 
 
+def test_video_workbench_ad_detail_country_fallback_uses_realtime_country_code(monkeypatch):
+    from web.routes.medias import material_supplement as route
+    import appcore.media_product_ad_orders_report as orders_report
+
+    monkeypatch.setattr(
+        orders_report,
+        "get_product_ad_orders_report_for_range",
+        lambda *args, **kwargs: {"spend": 0.0, "purchase_value": 0.0, "roas": None, "orders": 0},
+    )
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            return [{"id": 620, "name": "Bowl Clip", "product_code": "multi-purpose-anti-scald-bowl-holder-clip-for-kitchen-rjc"}]
+        if "SELECT id, filename, display_name, source_raw_id, source_ref_id FROM media_items" in sql:
+            return [{
+                "id": 1456,
+                "filename": "2026.05.25-多功能厨房防烫碗架夹-原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4",
+                "display_name": "2026.05.25-多功能厨房防烫碗架夹-原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4",
+                "source_raw_id": 205,
+                "source_ref_id": 205,
+            }]
+        if "SELECT id, filename, display_name" in sql and "FROM media_items" in sql:
+            return [{
+                "id": 1456,
+                "filename": "2026.05.25-多功能厨房防烫碗架夹-原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4",
+                "display_name": "2026.05.25-多功能厨房防烫碗架夹-原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4",
+            }]
+        if "FROM media_product_lang_ad_summary_cache" in sql:
+            return [{"lang": "fr"}]
+        if "SHOW TABLES LIKE 'meta_ad_realtime_daily_ad_metrics'" in sql:
+            return [{"Tables_in_auto_video (meta_ad_realtime_daily_ad_metrics)": "meta_ad_realtime_daily_ad_metrics"}]
+        if "FROM meta_ad_daily_ad_metrics m" in sql:
+            return []
+        if "FROM meta_ad_realtime_daily_ad_metrics" in sql:
+            assert "m.market_country" not in sql
+            if "UPPER(COALESCE(m.country_code" not in sql or " IN (" not in sql:
+                return []
+            return [{
+                "id": 7001,
+                "ad_account_id": "act_1",
+                "ad_account_name": "Meta",
+                "activity_date": date(2026, 6, 10),
+                "report_date": date(2026, 6, 10),
+                "campaign_name": "multi-purpose-anti-scald-bowl-holder-clip-for-kitchen-rjc",
+                "normalized_ad_code": "multi-purpose-anti-scald-bowl-(2026.05.25-english-原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4)法国",
+                "ad_name": "multi-purpose-anti-scald-bowl-(2026.05.25-English-原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4)法国",
+                "market_country": "FR",
+                "spend_usd": "104.32",
+                "purchase_value_usd": "264.95",
+                "result_count": 14,
+            }]
+        raise AssertionError(sql)
+
+    payload = route.build_video_workbench_ad_detail(
+        620,
+        {
+            "media_item_id": "1456",
+            "country": "FR",
+            "date_from": "2026-06-10",
+            "date_to": "2026-06-10",
+        },
+        query_fn=fake_query,
+    )
+
+    assert payload["summary"]["spend_usd"] == 104.32
+    assert payload["summary"]["matched_ad_count"] == 1
+    assert payload["rows"][0]["match_reason"] == "product_lang_country_fallback"
+
+
 def test_video_workbench_ad_detail_rejects_too_wide_date_range():
     from web.routes.medias import material_supplement as route
 

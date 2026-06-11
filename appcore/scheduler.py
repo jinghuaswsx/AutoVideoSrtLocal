@@ -58,6 +58,8 @@ def get_scheduler() -> BackgroundScheduler:
         tos_file_management.register(_scheduler)
         from appcore.tabcut_selection import scheduler as tabcut_selection_scheduler
         tabcut_selection_scheduler.register(_scheduler)
+        from appcore import server_health
+        server_health.register(_scheduler)
         scheduled_tasks.apply_scheduler_controls(_scheduler)
     return _scheduler
 

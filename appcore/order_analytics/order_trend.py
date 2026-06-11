@@ -87,6 +87,32 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
                 "sales": float(r.get("sales") or 0.0)
             }
 
+    # 2.5 Query daily country sales breakdown for 9 countries
+    country_sales_rows = query(
+        "SELECT meta_business_date AS d, "
+        "       buyer_country AS country, "
+        "       SUM(COALESCE(quantity, 0)) AS units "
+        "FROM dianxiaomi_order_lines "
+        "WHERE product_code = %s AND meta_business_date BETWEEN %s AND %s "
+        "GROUP BY meta_business_date, buyer_country",
+        (product_code, start_of_12_months_ago, today)
+    )
+
+    country_sales_by_date: dict[date, dict[str, int]] = {}
+    for r in country_sales_rows:
+        d_val = r.get("d")
+        if isinstance(d_val, str):
+            d_val = date.fromisoformat(d_val[:10])
+        elif isinstance(d_val, datetime):
+            d_val = d_val.date()
+        if d_val:
+            country = str(r.get("country") or "").upper().strip()
+            units = int(r.get("units") or 0)
+            if d_val not in country_sales_by_date:
+                country_sales_by_date[d_val] = {}
+            if country:
+                country_sales_by_date[d_val][country] = country_sales_by_date[d_val].get(country, 0) + units
+
     # 3. Query ad metrics for the last 30 days if product_id exists
     ad_by_date: dict[date, dict[str, Decimal]] = {}
     if product_id is not None:
@@ -128,6 +154,19 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
         if spend > 0:
             meta_roas = round(purchase_value / spend, 2)
             real_roas = round(sales / spend, 2)
+
+        day_countries = country_sales_by_date.get(d_val, {})
+        country_data = {
+            "US": day_countries.get("US", 0),
+            "DE": day_countries.get("DE", 0),
+            "FR": day_countries.get("FR", 0),
+            "ES": day_countries.get("ES", 0),
+            "IT": day_countries.get("IT", 0),
+            "JP": day_countries.get("JP", 0),
+            "PT": day_countries.get("PT", 0),
+            "SE": day_countries.get("SE", 0),
+            "NL": day_countries.get("NL", 0),
+        }
             
         daily_trend.append({
             "date": d_val.isoformat(),
@@ -137,7 +176,8 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
             "spend": spend,
             "purchase_value": purchase_value,
             "meta_roas": meta_roas,
-            "real_roas": real_roas
+            "real_roas": real_roas,
+            "countries": country_data
         })
 
     # 5. Generate weekly trend (Last 12 Weeks)
@@ -151,6 +191,7 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
         w_units = 0
         w_orders = 0
         w_sales = 0.0
+        w_countries = {c: 0 for c in ("US", "DE", "FR", "ES", "IT", "JP", "PT", "SE", "NL")}
         
         # Aggregate daily sales in this week
         curr_d = w_start
@@ -160,6 +201,11 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
                 w_units += s_data["units"]
                 w_orders += s_data["orders"]
                 w_sales += s_data["sales"]
+            
+            c_data = country_sales_by_date.get(curr_d, {})
+            for c in w_countries:
+                w_countries[c] += c_data.get(c, 0)
+                
             curr_d += timedelta(days=1)
             
         label = f"W{w_start.isocalendar()[1]} ({w_start.strftime('%m-%d')} ~ {w_end.strftime('%m-%d')})"
@@ -169,7 +215,8 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
             "orders": w_orders,
             "sales": w_sales,
             "start_date": w_start.isoformat(),
-            "end_date": w_end.isoformat()
+            "end_date": w_end.isoformat(),
+            "countries": w_countries
         })
 
     # 6. Generate monthly trend (Last 12 Months)
@@ -191,6 +238,7 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
         m_units = 0
         m_orders = 0
         m_sales = 0.0
+        m_countries = {c: 0 for c in ("US", "DE", "FR", "ES", "IT", "JP", "PT", "SE", "NL")}
         # Calculate start and end date of that month
         # For simplicity, aggregate daily sales where date has matching y and m
         for d_val, s_data in sales_by_date.items():
@@ -199,11 +247,16 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
                 m_orders += s_data["orders"]
                 m_sales += s_data["sales"]
                 
+                c_data = country_sales_by_date.get(d_val, {})
+                for c in m_countries:
+                    m_countries[c] += c_data.get(c, 0)
+                
         monthly_trend.append({
             "label": f"{y}-{m:02d}",
             "units": m_units,
             "orders": m_orders,
-            "sales": m_sales
+            "sales": m_sales,
+            "countries": m_countries
         })
 
     return {

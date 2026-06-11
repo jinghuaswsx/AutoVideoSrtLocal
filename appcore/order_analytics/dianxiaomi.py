@@ -636,6 +636,7 @@ def get_dianxiaomi_product_sales_stats(
     site_codes: list[str] | None = None,
     product_ids: list[int] | set[int] | tuple[int, ...] | None = None,
     data_until: datetime | None = None,
+    search: str | None = None,
 ) -> list[dict[str, Any]]:
     start = _coerce_product_sales_date(start_date, "start_date")
     end = _coerce_product_sales_date(end_date, "end_date")
@@ -687,11 +688,19 @@ def get_dianxiaomi_product_sales_stats(
             where_clauses.append(f"site_code IN ({placeholders})")
             where_args.extend(normalized_site_codes)
 
+    if search:
+        like = f"%{search}%"
+        where_clauses.append(
+            "(dianxiaomi_order_lines.product_name LIKE %s OR dianxiaomi_order_lines.product_code LIKE %s)"
+        )
+        where_args.extend([like, like])
+
     where_clauses.append("product_id IS NOT NULL")
     rows = query(
         "SELECT product_id, "
         "MAX(COALESCE(mp.name, dianxiaomi_order_lines.product_name, '')) AS product_name, "
         "MAX(COALESCE(mp.product_code, dianxiaomi_order_lines.product_code, '')) AS product_code, "
+        "MAX(mp.product_link) AS product_link, "
         "COUNT(DISTINCT dxm_package_id) AS order_count, "
         "SUM(COALESCE(quantity, 0)) AS units, "
         "SUM(COALESCE(line_amount, 0)) AS product_net_sales, "
@@ -705,18 +714,80 @@ def get_dianxiaomi_product_sales_stats(
     )
 
     out: list[dict[str, Any]] = []
+    pids = [int(r.get("product_id")) for r in rows if r.get("product_id") is not None]
+    
+    cost_map = {}
+    if pids:
+        cost_sql = (
+            "SELECT opl.product_id, "
+            "SUM(COALESCE(opl.revenue_usd, 0)) AS revenue_for_margin, "
+            "SUM(COALESCE(opl.shopify_fee_usd, 0) + "
+            "    COALESCE(opl.purchase_usd, 0) + "
+            "    COALESCE(opl.shipping_cost_usd, 0) + "
+            "    COALESCE(opl.return_reserve_usd, 0)) AS other_costs "
+            "FROM order_profit_lines opl "
+            "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
+            "WHERE dol.meta_business_date BETWEEN %s AND %s "
+            "AND opl.product_id IS NOT NULL "
+        )
+        cost_args = [start, end]
+        if store_code:
+            cost_sql += "AND dol.site_code = %s "
+            cost_args.append(store_code)
+        cost_sql += "GROUP BY opl.product_id"
+        cost_rows = query(cost_sql, tuple(cost_args))
+        for cr in cost_rows or []:
+            cost_map[int(cr["product_id"])] = {
+                "revenue": float(cr.get("revenue_for_margin") or 0),
+                "other_costs": float(cr.get("other_costs") or 0),
+            }
+
+    from appcore.order_analytics.product_profit_list import _load_ad_spend_and_value
+    ad_metrics = _load_ad_spend_and_value(start, end)
+
     for row in rows:
         product_net_sales = _money(row.get("product_net_sales"))
         shipping = _money(row.get("shipping"))
+        total_sales = _revenue_with_shipping(product_net_sales, shipping)
+        
+        pid = row.get("product_id")
+        ad_spend = 0.0
+        ad_value = 0.0
+        if pid is not None:
+            pid_int = int(pid)
+            ad_data = ad_metrics.get(pid_int, {"spend": Decimal(0), "purchase_value": Decimal(0)})
+            ad_spend = float(ad_data["spend"])
+            ad_value = float(ad_data["purchase_value"])
+
+        roas = float(total_sales / ad_spend) if ad_spend > 0 else None
+        meta_roas = float(ad_value / ad_spend) if ad_spend > 0 else None
+
+        profit_margin = None
+        profit_val = -ad_spend
+        if pid is not None:
+            cdata = cost_map.get(int(pid))
+            if cdata:
+                rev = cdata["revenue"]
+                other = cdata["other_costs"]
+                profit = rev - other - ad_spend
+                profit_margin = float(profit / rev * 100) if rev > 0 else None
+                profit_val = profit
+
         out.append({
-            "product_id": row.get("product_id"),
+            "product_id": pid,
             "product_name": row.get("product_name") or "",
             "product_code": row.get("product_code") or "",
+            "product_link": row.get("product_link") or "",
             "order_count": int(row.get("order_count") or 0),
             "units": int(row.get("units") or 0),
             "product_net_sales": product_net_sales,
             "shipping": shipping,
-            "total_sales": _revenue_with_shipping(product_net_sales, shipping),
+            "total_sales": total_sales,
+            "ad_cost_usd": ad_spend,
+            "roas": roas,
+            "meta_roas": meta_roas,
+            "profit_margin": profit_margin,
+            "profit": profit_val,
         })
     return out
 
@@ -732,6 +803,7 @@ def get_dianxiaomi_order_analysis(
     page: int = 1,
     page_size: int = 50,
     store: str | None = None,
+    search: str | None = None,
 ) -> dict:
     start = _parse_iso_date_param(start_date, "start_date")
     end = _parse_iso_date_param(end_date, "end_date")
@@ -754,6 +826,14 @@ def get_dianxiaomi_order_analysis(
     if store_code:
         where_clauses.append("site_code = %s")
         where_args.append(store_code)
+        
+    if search:
+        like = f"%{search}%"
+        where_clauses.append(
+            "(product_name LIKE %s OR product_code LIKE %s OR product_sku LIKE %s)"
+        )
+        where_args.extend([like, like, like])
+
     where_sql = "FROM dianxiaomi_order_lines WHERE " + " AND ".join(where_clauses)
     where_args_tuple = tuple(where_args)
     summary_row = query_one(
@@ -788,6 +868,7 @@ def get_dianxiaomi_order_analysis(
         start,
         end,
         store=store_code,
+        search=search,
     )
     return {
         "period": {

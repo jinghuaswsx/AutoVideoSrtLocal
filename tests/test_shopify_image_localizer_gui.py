@@ -776,6 +776,77 @@ def test_gui_batch_restarts_browser_once_after_language_failure(monkeypatch: pyt
         app.root.destroy()
 
 
+def test_gui_batch_skips_not_ready_language_without_restart_and_continues(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _make_app(monkeypatch)
+    try:
+        calls: list[str] = []
+        killed_profiles: list[str] = []
+        summaries: list[tuple[str, str]] = []
+        logs: list[str] = []
+
+        monkeypatch.setattr(app, "_ui_after", lambda _delay, callback, *args: callback(*args))
+        monkeypatch.setattr(app, "_add_summary", lambda item, value: summaries.append((item, str(value))))
+        monkeypatch.setattr(app, "_append_log", lambda message: logs.append(str(message)))
+        monkeypatch.setattr(gui.session, "kill_chrome_for_profile", lambda profile: killed_profiles.append(profile))
+        monkeypatch.setattr(gui.time, "sleep", lambda _seconds: None)
+        monkeypatch.setattr(
+            gui.storage,
+            "create_workspace",
+            lambda product_code, lang: SimpleNamespace(
+                root=rf"C:\work\{product_code}\{lang}",
+                source_localized_dir=rf"C:\work\{product_code}\{lang}\source\localized",
+                log_path=rf"C:\work\{product_code}\{lang}\run.log",
+            ),
+        )
+        monkeypatch.setattr(gui.storage, "append_log", lambda *_args, **_kwargs: None)
+
+        def fake_run_shopify_localizer(**kwargs):
+            calls.append(kwargs["lang"])
+            if kwargs["lang"] == "de":
+                raise gui.controller.run_product_cdp.BootstrapNotReadySkip(
+                    product_code=kwargs["product_code"],
+                    lang=kwargs["lang"],
+                    reason="localized_images_not_ready",
+                    message="德语素材未 ready",
+                )
+            return {
+                "product_code": kwargs["product_code"],
+                "lang": kwargs["lang"],
+                "shopify_domain": kwargs["shopify_domain"],
+                "shopify_product_id": kwargs["shopify_product_id"],
+                "workspace_root": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}",
+                "download_dir": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\source\localized",
+                "manifest_path": rf"C:\work\{kwargs['product_code']}\{kwargs['lang']}\shopify_batch_result.json",
+            }
+
+        monkeypatch.setattr(gui.controller, "run_shopify_localizer", fake_run_shopify_localizer)
+        app._set_language_items(
+            [
+                {"code": "de", "label": "German", "shop_locale": "de", "shopify_language_name": "German"},
+                {"code": "fr", "label": "French", "shop_locale": "fr", "shopify_language_name": "French"},
+            ]
+        )
+
+        app._run_batch(
+            base_url="https://autovideosrt.example.test",
+            api_key="demo-key",
+            browser_dir=r"C:\chrome-shopify-image",
+            product_code="handle-v-3987406-rjc",
+            language_labels=["German (de)", "French (fr)"],
+            shopify_product_id="8606980374701",
+            shopify_domain="newjoyloo.com",
+            cancel_token=cancellation.CancellationToken(),
+        )
+
+        assert calls == ["de", "fr"]
+        assert killed_profiles == []
+        assert ("批量任务状态", "完成: 成功 1, 跳过 1, 失败 0") in summaries
+        assert ("跳过语言", "German (de)") in summaries
+        assert any("素材未就绪，跳过当前语言" in message for message in logs)
+    finally:
+        app.root.destroy()
+
+
 def test_controller_opens_admin_root_for_login_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
     saved_configs: list[dict] = []
     managed_urls: list[tuple[str, str]] = []

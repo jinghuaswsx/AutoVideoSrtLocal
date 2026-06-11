@@ -317,6 +317,60 @@ def test_material_ad_performance_counts_each_metric_once(monkeypatch):
     assert perf["countries"][0]["matched_ad_count"] == 1
 
 
+def test_material_ad_performance_matches_translated_tail_when_product_name_differs(monkeypatch):
+    def fake_query_one(sql, args=()):
+        if "information_schema.TABLES" in sql:
+            return None
+        return {"c": 1}
+
+    def fake_query(sql, args=()):
+        if "FROM meta_ad_daily_ad_metrics m" in sql:
+            return [
+                {
+                    "product_id": 7,
+                    "normalized_ad_code": (
+                        "multi-purpose-anti-scald-bowl-"
+                        "(2026.05.25-multi-purposeanti-scaldbowlholderclipforkitchen-"
+                        "原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4)"
+                        "法国(05.27)-ap-aa"
+                    ),
+                    "ad_name": (
+                        "multi-purpose-anti-scald-bowl-"
+                        "(2026.05.25-Multi-PurposeAnti-ScaldBowlHolderClipforKitchen-"
+                        "原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4)"
+                        "法国(05.27)-AP-AA"
+                    ),
+                    "activity_date": date(2026, 6, 9),
+                    "spend_usd": 149.31,
+                    "purchase_value_usd": 185.23,
+                    "result_count": 9,
+                    "market_country": "FR",
+                    "id": 100,
+                },
+            ]
+        return [
+            _video_row(
+                lang="fr",
+                filename="2026.05.25-多功能厨房防烫碗架夹-原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4",
+                display_name="2026.05.25-多功能厨房防烫碗架夹-原素材-小语种翻译素材(法语)-20260525苏齐齐-蔡靖华.mp4",
+            )
+        ]
+
+    monkeypatch.setattr(mvm, "query_one", fake_query_one)
+    monkeypatch.setattr(mvm, "query", fake_query)
+    monkeypatch.setattr(mvm, "current_meta_business_date", lambda: date(2026, 6, 10), raising=False)
+
+    payload = mvm.list_video_materials()
+
+    perf = payload["items"][0]["ad_performance"]
+    assert perf["total_spend_usd"] == 149.31
+    assert perf["yesterday_spend_usd"] == 149.31
+    assert perf["purchase_value_usd"] == 185.23
+    assert perf["yesterday_roas"] == 1.2406
+    assert perf["matched_ad_count"] == 1
+    assert perf["countries"][0]["country"] == "FR"
+
+
 def test_list_video_materials_merges_latest_realtime_ad_metrics_when_table_exists(monkeypatch):
     calls = []
 

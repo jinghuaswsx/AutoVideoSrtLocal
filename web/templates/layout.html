@@ -758,7 +758,8 @@
   <!-- Sidebar -->
   <aside class="sidebar" id="appSidebar">
     {% set lab_active =
-      request.path.startswith('/voice-library')
+      request.path.startswith('/server-health')
+      or request.path.startswith('/voice-library')
       or request.path.startswith('/prompt-library')
       or request.path.startswith('/copywriting')
       or request.path.startswith('/video-creation')
@@ -1084,7 +1085,7 @@
       </details>
       {% endif %}
       {% set has_lab_menu = has_permission('lab') or has_permission('ai_listing') or current_user.is_admin %}
-      {% set lab_default_href = "/voice-library" if has_permission('lab') else "/ai-listing" %}
+      {% set lab_default_href = "/server-health" if has_permission('lab') or current_user.is_admin else "/ai-listing" %}
       {% if has_lab_menu %}
       <details class="sidebar-group sidebar-lab-group" {% if lab_active %}open{% endif %}>
         <summary data-sidebar-group-summary data-default-href="{{ lab_default_href }}" {% if lab_active %}class="active"{% endif %}>
@@ -1093,6 +1094,11 @@
           <span class="sidebar-group-caret">⌄</span>
         </summary>
         <div class="sidebar-subnav">
+          {% if has_permission('lab') or current_user.is_admin %}
+          <a href="/server-health" {% if request.path.startswith('/server-health') %}class="active"{% endif %}>
+            <span class="nav-icon">❤️</span> 服务器健康
+          </a>
+          {% endif %}
           {% if current_user.is_admin and has_permission('lab') %}
           <a href="/ai-product-research" {% if request.path.startswith('/ai-product-research') %}class="active"{% endif %}>
             <span class="nav-icon">📖</span> AI产品调研
@@ -1462,6 +1468,9 @@
           setBadge(cachedCount);
           return;
         }
+
+        // Preemptively lock to block subsequent tab triggers during active fetch asynchronous window
+        localStorage.setItem(STORAGE_KEY_LAST_FETCH, String(now));
 
         try {
           var rsp = await fetch('/notifications/api/summary', {credentials: 'same-origin'});

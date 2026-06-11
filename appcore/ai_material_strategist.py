@@ -28,9 +28,12 @@ MODEL_ID = "google/gemini-3.5-flash"
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
 _MAX_AI_CANDIDATES = 60
-_PROJECT_TOP_N = 20
+_PROJECT_TOP_N = 30
+_AI_RANKING_BATCH_SIZE = 20
+_AI_RANKING_BATCH_TOP_N = 10
 
 TARGET_COUNTRIES: tuple[dict[str, str], ...] = (
+    {"country_code": "EN", "country_name": "英语", "lang": "en", "lang_name": "英语", "tier": "source"},
     {"country_code": "DE", "country_name": "德国", "lang": "de", "lang_name": "德语", "tier": "tier_1"},
     {"country_code": "FR", "country_name": "法国", "lang": "fr", "lang_name": "法语", "tier": "tier_1"},
     {"country_code": "IT", "country_name": "意大利", "lang": "it", "lang_name": "意大利语", "tier": "tier_2"},
@@ -59,7 +62,7 @@ _PROGRESS_LOG_LIMIT = 12
 PROGRESS_STEPS: tuple[dict[str, str], ...] = (
     {"key": "snapshot", "label": "读取数据窗口", "description": "读取产品、广告、订单、明空素材新鲜度。"},
     {"key": "candidate_score", "label": "规则预筛打分", "description": "按消耗、订单、ROAS、广告数筛选候选品。"},
-    {"key": "ai_ranking", "label": "Top 20 AI 复评", "description": "分批调用 OpenRouter Gemini 复评候选产品。"},
+    {"key": "ai_ranking", "label": f"Top {_PROJECT_TOP_N} AI 复评", "description": "分批调用 OpenRouter Gemini 复评候选产品。"},
     {"key": "material_context", "label": "补齐素材上下文", "description": "读取国家反馈、本地素材、明空素材和任务中心排程。"},
     {"key": "product_analysis", "label": "逐产品分析", "description": "逐个产品分析国家、素材、任务去重和补素材建议。"},
     {"key": "persist", "label": "保存结果", "description": "写入 Top 产品、AI 建议和操作入口。"},
@@ -1068,10 +1071,10 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
     try:
         batch_results: list[dict[str, Any]] = []
         merged_candidates: list[dict[str, Any]] = []
-        for batch_index, batch in enumerate(_chunked(candidates, 20), start=1):
+        for batch_index, batch in enumerate(_chunked(candidates, _AI_RANKING_BATCH_SIZE), start=1):
             payload = {
                 "batch_index": batch_index,
-                "rule": "本批最多输出 Top10，剔除高ROAS低量产品。",
+                "rule": f"本批最多输出 Top{_AI_RANKING_BATCH_TOP_N}，剔除高ROAS低量产品。",
                 "products": [_rank_input(row) for row in batch],
             }
             result = llm_client.invoke_generate(
@@ -1088,7 +1091,15 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 timeout_seconds=180,
             )
             parsed = _llm_json(result)
-            batch_results.append({"input": payload, "output": parsed})
+            batch_results.append({
+                "input": payload,
+                "output": parsed,
+                "usage_log_id": result.get("usage_log_id"),
+                "prompt": _ranking_prompt(payload),
+                "response_text": result.get("text"),
+                "provider": PROVIDER_CODE,
+                "model": MODEL_ID,
+            })
             ids = {_safe_int(item.get("product_id")) for item in parsed.get("ranked_products") or []}
             by_id = {_safe_int(item.get("product_id")): item for item in batch}
             merged_candidates.extend(by_id[pid] for pid in ids if pid in by_id)
@@ -1097,7 +1108,7 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
             return _fallback_ranking(candidates, "AI batch ranking returned empty")
         merged_candidates = score_product_rows(merged_candidates, limit=len(merged_candidates))
         final_payload = {
-            "rule": "从所有批次候选里输出最终 Top20，仍然坚持有量 + 效率。",
+            "rule": f"从所有批次候选里输出最终 Top {_PROJECT_TOP_N}，仍然坚持有量 + 效率。",
             "products": [_rank_input(row) for row in merged_candidates],
         }
         final = llm_client.invoke_generate(
@@ -1128,6 +1139,11 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 "batch_results": batch_results,
                 "final_input": final_payload,
                 "final_output": parsed_final,
+                "final_usage_log_id": final.get("usage_log_id"),
+                "final_prompt": _ranking_prompt(final_payload),
+                "final_response_text": final.get("text"),
+                "provider": PROVIDER_CODE,
+                "model": MODEL_ID,
             },
             "prompt_debug": {
                 "provider": PROVIDER_CODE,
@@ -1566,6 +1582,33 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
     }
 
 
+def _fill_missing_product_analysis_fields(parsed: Mapping[str, Any], fallback: Mapping[str, Any]) -> dict:
+    result = dict(parsed or {})
+    filled: list[str] = []
+    for key in (
+        "product_id",
+        "product_code",
+        "overall_judgement",
+        "priority",
+        "primary_action",
+        "country_actions",
+        "material_actions",
+        "risks",
+        "next_check",
+    ):
+        value = result.get(key)
+        if value not in (None, "", []):
+            continue
+        fallback_value = fallback.get(key)
+        if fallback_value in (None, "", []):
+            continue
+        result[key] = fallback_value
+        filled.append(key)
+    if filled:
+        result["fallback_filled_fields"] = filled
+    return result
+
+
 def _run_product_analysis(
     product: dict,
     countries: list[dict],
@@ -1618,7 +1661,17 @@ def _run_product_analysis(
         if not parsed:
             fallback["ai_error"] = "empty model response"
             return fallback
+        parsed = _fill_missing_product_analysis_fields(parsed, fallback)
         parsed.setdefault("mode", "ai")
+        parsed.setdefault("prompt_debug", {
+            "provider": PROVIDER_CODE,
+            "model": MODEL_ID,
+            "use_case": PRODUCT_ANALYSIS_USE_CASE,
+            "mode": "ai",
+            "usage_log_id": result.get("usage_log_id"),
+            "prompt": _product_prompt(payload),
+            "response_text": result.get("text"),
+        })
         return parsed
     except Exception as exc:
         log.exception("AI material strategist product analysis failed product_id=%s", product.get("product_id"))
@@ -1754,6 +1807,8 @@ def _build_action_items(
         if not lang and code_for_action:
             lang = _lang_for_country_code(code_for_action)
         if not lang:
+            continue
+        if lang == "en" or code_for_action == "EN":
             continue
         if code_for_action in seen_create_countries:
             continue
@@ -2450,10 +2505,10 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 "ai_ranking",
                 "done",
                 max(_safe_float(progress.get("percent")), 42),
-                "复用已保存 Top 20 排名结果，不重复调用排名模型。",
+                f"复用已保存 Top {_PROJECT_TOP_N} 排名结果，不重复调用排名模型。",
             )
         else:
-            checkpoint("ai_ranking", "running", 32, "调用 OpenRouter Gemini 分批复评 Top 20。")
+            checkpoint("ai_ranking", "running", 32, f"调用 OpenRouter Gemini 分批复评 Top {_PROJECT_TOP_N}。")
             ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
             _save_project_ranking(project_id, ranking)
         selected = _select_products(candidates, ranking)
@@ -2544,7 +2599,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 product_progress=product_progress,
             )
 
-        checkpoint("persist", "running", 88, "整理已落库结果，清理不在本轮 Top 20 内的旧结果。")
+        checkpoint("persist", "running", 88, f"整理已落库结果，清理不在本轮 Top {_PROJECT_TOP_N} 内的旧结果。")
         _delete_unselected_product_results(project_id, product_ids)
         results.sort(key=lambda item: _safe_int(item.get("rank_no")))
 

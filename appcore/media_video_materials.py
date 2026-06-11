@@ -59,6 +59,33 @@ def normalize_material_name(value: str | None) -> str:
     return _SPACE_RE.sub(" ", name)
 
 
+def _material_tail_terms(value: str | None) -> list[str]:
+    name = normalize_material_name(value)
+    if not name:
+        return []
+    markers = (
+        "原素材-小语种翻译素材",
+        "原素材_小语种翻译素材",
+        "小语种翻译素材",
+    )
+    terms: list[str] = []
+    seen: set[str] = set()
+    for marker in markers:
+        idx = name.find(marker)
+        if idx < 0:
+            continue
+        tail = name[idx:].strip(" -_")
+        candidates = [tail]
+        if "." in tail:
+            candidates.append(tail.rsplit(".", 1)[0])
+        for candidate in candidates:
+            if len(candidate) < 12 or candidate in seen:
+                continue
+            seen.add(candidate)
+            terms.append(candidate)
+    return terms
+
+
 def _int_value(value: Any, default: int = 0) -> int:
     try:
         return int(value)
@@ -290,6 +317,8 @@ def _attach_ad_plan_details(rows: list[dict[str, Any]]) -> None:
 
         filename_no_ext = filename_norm.rsplit(".", 1)[0] if "." in filename_norm else filename_norm
         display_name_no_ext = display_name_norm.rsplit(".", 1)[0] if "." in display_name_norm else display_name_norm
+        filename_tail_terms = _material_tail_terms(filename_norm)
+        display_name_tail_terms = _material_tail_terms(display_name_norm)
 
         candidates = ads_by_product[product_id]
         matched_ads: list[dict[str, Any]] = []
@@ -303,6 +332,8 @@ def _attach_ad_plan_details(rows: list[dict[str, Any]]) -> None:
                 display_name_norm=display_name_norm,
                 filename_no_ext=filename_no_ext,
                 display_name_no_ext=display_name_no_ext,
+                filename_tail_terms=filename_tail_terms,
+                display_name_tail_terms=display_name_tail_terms,
             ):
                 continue
             metric_key = _candidate_metric_key(candidate)
@@ -330,6 +361,8 @@ def _candidate_matches_material(
     display_name_norm: str,
     filename_no_ext: str,
     display_name_no_ext: str,
+    filename_tail_terms: list[str],
+    display_name_tail_terms: list[str],
 ) -> bool:
     ad_name_lower = str(candidate.get("ad_name") or "").strip().lower()
     ad_code_lower = str(candidate.get("normalized_ad_code") or "").strip().lower()
@@ -345,6 +378,9 @@ def _candidate_matches_material(
         return True
     if display_name_no_ext and len(display_name_no_ext) > 5 and (display_name_no_ext in ad_name_lower or display_name_no_ext in ad_code_lower):
         return True
+    for term in [*filename_tail_terms, *display_name_tail_terms]:
+        if term and (term in ad_name_lower or term in ad_code_lower):
+            return True
     return False
 
 
