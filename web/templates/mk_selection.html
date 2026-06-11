@@ -1370,6 +1370,7 @@ async function openMkCardDataModal(btn) {
 }
 
 function mkCardDataCountryStatusText(row) {
+  if (row && row.task && row.task.id && row.status === 'missing') return '正在翻译中';
   if (!row || row.status === 'missing') return '未翻译';
   const version = row.version || {};
   if (version.delivery_status === 'active') return '投放中';
@@ -1416,7 +1417,10 @@ function mkCardDataTaskBadge(task) {
   if (statusLabel) titleParts.push(statusLabel);
   if (task.archived) titleParts.push('已归档');
   const href = '/tasks/?task_id=' + encodeURIComponent(id);
-  return `<a class="mk-card-data-task-badge mk-card-data-task-badge--linked" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(titleParts.join(' · '))}">任务#${escapeHtml(id)}</a>`;
+  const row = arguments[1];
+  const isTranslating = row && row.status === 'missing';
+  const style = isTranslating ? ' style="font-size: 13px; padding: 2px 8px; border-color: #ffedd5; background: #fff7ed; color: #ea580c; font-weight: bold;"' : '';
+  return `<a class="mk-card-data-task-badge mk-card-data-task-badge--linked" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(titleParts.join(' · '))}"${style}>任务#${escapeHtml(id)}</a>`;
 }
 
 function mkCardDataRenderTranslationPanel(card) {
@@ -1433,8 +1437,13 @@ function mkCardDataRenderTranslationPanel(card) {
           <button type="button" class="mk-card-data-mini-btn" data-mk-card-data-country-code="${escapeHtml(row.country_code || '')}" onclick="mkCardDataOpenAdDetail(this)">广告</button>
         </div>`
       : '';
+    const isTranslating = row.task && row.task.id && row.status === 'missing';
+    const statusText = mkCardDataCountryStatusText(row);
+    const statusHtml = isTranslating
+      ? `<span style="color: #ea580c; font-weight: bold;">${escapeHtml(statusText)}</span>`
+      : escapeHtml(statusText);
     return `<div class="mk-card-data-country ${cls}">
-      <div class="mk-card-data-country-title"><span class="mk-card-data-country-main"><span>${escapeHtml(row.country_code || '')}</span>${mkCardDataTaskBadge(row.task)}</span><span>${escapeHtml(mkCardDataCountryStatusText(row))}</span></div>
+      <div class="mk-card-data-country-title"><span class="mk-card-data-country-main"><span>${escapeHtml(row.country_code || '')}</span>${mkCardDataTaskBadge(row.task, row)}</span><span>${statusHtml}</span></div>
       <div class="mk-card-data-country-sub" title="${escapeHtml((row.lang_name || row.lang || '') + ' · ' + sub)}">${escapeHtml(row.lang_name || row.lang || '')} · ${escapeHtml(sub)}</div>
       ${roasHtml}
     </div>`;
