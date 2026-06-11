@@ -1068,6 +1068,10 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "function openTabcutVideoOverlay(event, videoId)" in body
     assert "tabcut-video-overlay-download" in body
     assert "tabcutVideoOverlayState.infoExpanded" in body
+    assert "primary_item_display_name" in body
+    assert "tabcut-product-translate-btn" in body
+    assert "translateTabcutGoodsInfo(event" in body
+    assert "defaultTabcutOverlayInfoExpanded()" in body
 
 
 def test_xuanpin_new_products_page_uses_xuanpin_tabs_and_api(
@@ -1383,6 +1387,27 @@ def test_xuanpin_tabcut_today_new_api_alias_delegates(authed_client_no_db, monke
     assert resp.status_code == 200
     assert resp.get_json()["items"] == [{"video_id": "v2"}]
     assert captured.get("source_rank") == "7d"
+
+
+def test_xuanpin_tabcut_goods_translate_api_alias_delegates(authed_client_no_db, monkeypatch):
+    from appcore.tabcut_selection.service import TabcutResponse
+
+    captured = {}
+
+    def fake_build(item_id, *, user_id=None):
+        captured.update({"item_id": item_id, "user_id": user_id})
+        return TabcutResponse({"ok": True, "item": {"item_id": item_id, "item_name_zh_short": "智能门锁"}})
+
+    monkeypatch.setattr(
+        "appcore.tabcut_selection.service.build_goods_translation_response",
+        fake_build,
+    )
+
+    resp = authed_client_no_db.post("/xuanpin/api/tabcut/goods/i1/translate")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["item"]["item_name_zh_short"] == "智能门锁"
+    assert captured["item_id"] == "i1"
 
 
 def test_xuanpin_tabcut_categories_api_alias_delegates(authed_client_no_db, monkeypatch):

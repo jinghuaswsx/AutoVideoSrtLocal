@@ -54,9 +54,44 @@ def _dispatch_autofill_input_events(page: Any) -> None:
         pass
 
 
-def click_saved_login(page: Any, *, wait_ms: int = 5000) -> bool:
+def click_saved_login(
+    page: Any,
+    *,
+    wait_ms: int = 5000,
+    username: str | None = None,
+    password: str | None = None,
+) -> bool:
     """Wait for Chrome password autofill, then click the visible Mingkong login control."""
     page.wait_for_timeout(wait_ms)
+    
+    # 注入用户名与密码
+    target_user = username or os.environ.get("MINGKONG_USER", "蔡靖华")
+    target_pass = password or os.environ.get("MINGKONG_PASS", "nopass.cjh")
+    try:
+        page.evaluate(
+            """
+            (args) => {
+              const uInput = document.querySelector('input[placeholder="用户名"]');
+              const pInput = document.querySelector('input[placeholder="密码"]');
+              if (uInput && args.username) {
+                uInput.value = args.username;
+                uInput.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+              if (pInput && args.password) {
+                pInput.value = args.password;
+                pInput.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+              const rememberCheckbox = document.querySelector('.n-checkbox');
+              if (rememberCheckbox && rememberCheckbox.getAttribute('aria-checked') !== 'true') {
+                rememberCheckbox.click();
+              }
+            }
+            """,
+            {"username": target_user, "password": target_pass}
+        )
+    except Exception:
+        pass
+
     _dispatch_autofill_input_events(page)
     selectors = (
         'button:has-text("登录")',
@@ -64,6 +99,7 @@ def click_saved_login(page: Any, *, wait_ms: int = 5000) -> bool:
         'input[type="submit"]',
         'button[type="submit"]',
         ".login button",
+        "button.n-button",
     )
     for selector in selectors:
         try:
@@ -200,9 +236,11 @@ def _refresh_on_page(
     base_url: str,
     verify_product_code: str,
     timeout_seconds: int,
+    username: str | None = None,
+    password: str | None = None,
 ) -> dict[str, Any]:
     page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
-    clicked = click_saved_login(page, wait_ms=5000)
+    clicked = click_saved_login(page, wait_ms=5000, username=username, password=password)
     try:
         page.wait_for_load_state("networkidle", timeout=15000)
     except Exception:
@@ -249,6 +287,8 @@ def refresh_wedev_credentials_via_cdp(
     timeout_seconds: int = 20,
     page_factory: Any | None = None,
     close_page: bool = True,
+    username: str | None = None,
+    password: str | None = None,
 ) -> dict[str, Any]:
     """Refresh saved wedev credentials using the server-visible Mingkong browser."""
     if page_factory is not None:
@@ -261,6 +301,8 @@ def refresh_wedev_credentials_via_cdp(
             base_url=base_url,
             verify_product_code=verify_product_code,
             timeout_seconds=timeout_seconds,
+            username=username,
+            password=password,
         )
 
     from playwright.sync_api import sync_playwright
@@ -286,6 +328,8 @@ def refresh_wedev_credentials_via_cdp(
                         base_url=base_url,
                         verify_product_code=verify_product_code,
                         timeout_seconds=timeout_seconds,
+                        username=username,
+                        password=password,
                     )
                 finally:
                     if close_page:
@@ -295,3 +339,63 @@ def refresh_wedev_credentials_via_cdp(
                             pass
     except BrowserAutomationLockTimeout as exc:
         return {"status": "lock_timeout", "error": str(exc)}
+
+
+def ensure_cdp_login_active(
+    *,
+    cdp_url: str,
+    login_url: str = "https://os.wedev.vip/login?redirect=/spy/hot-posts",
+    username: str | None = None,
+    password: str | None = None,
+) -> dict[str, Any]:
+    """Check if the CDP browser is logged in. If it is on the login page, perform autologin."""
+    from playwright.sync_api import sync_playwright
+
+    target_user = username or os.environ.get("MINGKONG_USER", "蔡靖华")
+    target_pass = password or os.environ.get("MINGKONG_PASS", "nopass.cjh")
+    chosen_cdp = cdp_url.strip()
+
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.connect_over_cdp(chosen_cdp)
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            
+            # Find an existing page on the same domain, or open a new page
+            page = None
+            for p in context.pages:
+                if "os.wedev.vip" in p.url:
+                    page = p
+                    break
+            
+            if not page:
+                page = context.new_page()
+                page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+            
+            current_url = page.url
+            if "login" in current_url:
+                clicked = click_saved_login(page, wait_ms=3000, username=target_user, password=target_pass)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception:
+                    page.wait_for_timeout(3000)
+                
+                credentials = extract_wedev_credentials(context, page, base_url="https://os.wedev.vip")
+                return {
+                    "status": "success",
+                    "action": "logged_in",
+                    "clicked": clicked,
+                    "final_url": page.url,
+                    "has_cookie": bool(credentials.get("cookie")),
+                }
+            else:
+                return {
+                    "status": "success",
+                    "action": "already_logged_in",
+                    "final_url": current_url,
+                }
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "error": str(exc),
+        }
+

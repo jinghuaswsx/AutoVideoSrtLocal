@@ -88,6 +88,11 @@ def test_tabcut_template_contains_immersive_video_overlay_controls():
     assert 'document.querySelectorAll(".tabcut-page video, #tabcutVideoOverlay video, #tiktokLocalVideo")' in template
     assert "tabcut-video-overlay-download" in template
     assert "tabcutVideoOverlayState.infoExpanded" in template
+    assert "defaultTabcutOverlayInfoExpanded()" in template
+    assert "primary_item_display_name" in template
+    assert "tabcut-product-translate-btn" in template
+    assert "translateTabcutGoodsInfo(event" in template
+    assert "primary_item_category_zh" in template
     assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in template
 
 
@@ -209,6 +214,27 @@ def test_tabcut_goods_mark_api_delegates(monkeypatch, authed_client_no_db):
     assert resp.status_code == 200
     assert resp.get_json()["mark_status"] == "bad"
     assert captured == {"entity_type": "goods", "entity_id": "i1"}
+
+
+def test_tabcut_goods_translate_api_delegates(monkeypatch, authed_client_no_db):
+    from appcore.tabcut_selection.service import TabcutResponse
+
+    captured = {}
+
+    def fake_build(item_id, *, user_id=None):
+        captured.update({"item_id": item_id, "user_id": user_id})
+        return TabcutResponse({"ok": True, "item": {"item_id": item_id, "item_name_zh_short": "紫色牙贴"}})
+
+    monkeypatch.setattr(
+        "web.routes.medias.tabcut_selection.service.build_goods_translation_response",
+        fake_build,
+    )
+
+    resp = authed_client_no_db.post("/medias/api/tabcut-selection/goods/i1/translate")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["item"]["item_name_zh_short"] == "紫色牙贴"
+    assert captured["item_id"] == "i1"
 
 
 def test_tabcut_share_routes_render_without_login_no_db(monkeypatch):

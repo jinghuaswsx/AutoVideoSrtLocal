@@ -304,15 +304,20 @@ def test_get_country_dashboard_accepts_full_positional_args_and_unknown_country(
 
 
 def test_get_country_dashboard_with_product_code_and_ad_spend(monkeypatch):
-    # Mock query_one for product resolution
+    # Mock completed_meta_business_date to test hybrid historical + realtime
+    monkeypatch.setattr("tools.meta_daily_final_sync.completed_meta_business_date", lambda: date(2026, 4, 15))
+
+    # Mock query_one for product resolution and table existence check
     query_one_calls = []
     def fake_query_one(sql, args=()):
         query_one_calls.append((sql, args))
         if "media_products" in sql:
             return {"id": 101, "name": "Test Product"}
+        if "information_schema" in sql:
+            return {"ok": 1}
         return None
 
-    # Mock query for order lines and ad metrics
+    # Mock query for order lines and ad metrics (historical + realtime)
     query_calls = []
     def fake_query(sql, args=()):
         query_calls.append((sql, args))
@@ -326,15 +331,34 @@ def test_get_country_dashboard_with_product_code_and_ad_spend(monkeypatch):
                     "units": 15,
                     "product_net_sales": 200.0,
                     "shipping": 20.0,
+                },
+                {
+                    "buyer_country": "DE",
+                    "buyer_country_name": "Germany",
+                    "order_count": 5,
+                    "units": 8,
+                    "product_net_sales": 120.0,
+                    "shipping": 10.0,
                 }
             ]
-        elif "meta_ad_daily_ad_metrics" in sql:
+        elif "meta_ad_daily_campaign_metrics" in sql:
             assert "product_id = %s" in sql
             return [
                 {
+                    "campaign_name": "PROD123_US",
                     "market_country": "US",
                     "spend": 50.0,
                     "purchase_value": 150.0,
+                }
+            ]
+        elif "meta_ad_realtime_daily_ad_metrics" in sql:
+            return [
+                {
+                    "normalized_campaign_code": "PROD123_DE",
+                    "campaign_name": "PROD123_DE",
+                    "country_code": "DE",
+                    "spend": 30.0,
+                    "purchase_value": 90.0,
                 }
             ]
         return []
@@ -355,29 +379,37 @@ def test_get_country_dashboard_with_product_code_and_ad_spend(monkeypatch):
     
     # Assert query parameters and filtering
     assert any("product_code = %s" in sql for sql, _ in query_calls)
-    assert any("product_id = %s" in sql for sql, _ in query_calls)
+    assert any("meta_ad_daily_campaign_metrics" in sql for sql, _ in query_calls)
+    assert any("meta_ad_realtime_daily_ad_metrics" in sql for sql, _ in query_calls)
 
     # Check mapping & calculation
     assert result["product_code"] == "PROD123"
     assert result["product_name"] == "Test Product"
-    assert len(result["countries"]) == 1
+    assert len(result["countries"]) == 2
     
-    country_data = result["countries"][0]
-    assert country_data["buyer_country"] == "US"
-    assert country_data["total_sales"] == 220.0  # 200.0 + 20.0
-    assert country_data["spend"] == 50.0
-    assert country_data["roas"] == 4.4  # 220.0 / 50.0
-    assert country_data["meta_roas"] == 3.0  # 150.0 / 50.0
+    # Check US (Historical)
+    us_data = [c for c in result["countries"] if c["buyer_country"] == "US"][0]
+    assert us_data["total_sales"] == 220.0
+    assert us_data["spend"] == 50.0
+    assert us_data["roas"] == 4.4
+    assert us_data["meta_roas"] == 3.0
+
+    # Check DE (Realtime)
+    de_data = [c for c in result["countries"] if c["buyer_country"] == "DE"][0]
+    assert de_data["total_sales"] == 130.0
+    assert de_data["spend"] == 30.0
+    assert de_data["roas"] == 4.33
+    assert de_data["meta_roas"] == 3.0
 
     assert result["summary"] == {
-        "country_count": 1,
-        "total_orders": 10,
-        "total_units": 15,
-        "total_sales": 220.0,
-        "shipping": 20.0,
-        "product_net_sales": 200.0,
-        "total_spend": 50.0,
-        "overall_roas": 4.4,
+        "country_count": 2,
+        "total_orders": 15,
+        "total_units": 23,
+        "total_sales": 350.0,
+        "shipping": 30.0,
+        "product_net_sales": 320.0,
+        "total_spend": 80.0,
+        "overall_roas": 4.38,
         "overall_meta_roas": 3.0,
     }
 

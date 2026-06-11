@@ -95,6 +95,19 @@ def api_tabcut_selection_goods_mark(item_id: str):
     )
 
 
+@bp.route("/api/tabcut-selection/goods/<path:item_id>/translate", methods=["POST"])
+@login_required
+def api_tabcut_selection_goods_translate(item_id: str):
+    if not _routes_module()._is_admin():
+        return _json_response(service.build_admin_required_response())
+    return _json_response(
+        service.build_goods_translation_response(
+            item_id,
+            user_id=getattr(current_user, "id", None),
+        )
+    )
+
+
 def _start_refresh(*, biz_date: str | None, target_date: str | None, days: int = 30) -> dict:
     start_background_task(
         collect_recent7,

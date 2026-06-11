@@ -27,8 +27,16 @@ def test_click_saved_login_waits_for_autofill_and_clicks_login_button():
         def locator(self, selector):
             return FakeLocator(selector)
 
-    assert login.click_saved_login(FakePage(), wait_ms=5000) is True
+        def evaluate(self, script, args=None):
+            events.append(("evaluate", script, args))
+            return None
+
+    assert login.click_saved_login(FakePage(), wait_ms=5000, username="testuser", password="testpass") is True
     assert events[0] == ("wait", 5000)
+    # Check that evaluate was called with our username and password
+    eval_events = [e for e in events if e[0] == "evaluate" and isinstance(e[2], dict) and e[2].get("username") == "testuser"]
+    assert len(eval_events) == 1
+    assert eval_events[0][2] == {"username": "testuser", "password": "testpass"}
     assert ("click", 'button:has-text("登录")', 5000) in events
 
 
@@ -68,7 +76,7 @@ def test_refresh_wedev_credentials_via_cdp_saves_verified_credentials(monkeypatc
 
     fake_page = FakePage()
 
-    monkeypatch.setattr(login, "click_saved_login", lambda page, wait_ms=5000: True)
+    monkeypatch.setattr(login, "click_saved_login", lambda page, wait_ms=5000, **kwargs: True)
     monkeypatch.setattr(
         login,
         "extract_wedev_credentials",

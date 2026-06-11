@@ -756,6 +756,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "tabcut_goods_translation_tick": {
+        "code": "tabcut_goods_translation_tick",
+        "name": "Tabcut 商品中文信息补全",
+        "description": (
+            "每 10 分钟批量处理未翻译的 Tabcut 商品，调用 Gemini 3.1 Flash Lite "
+            "生成中文标题、中文短名和中文类目信息，写回 tabcut_goods 的 zh 字段；"
+            "列表页和沉浸式浮层优先展示中文信息。Docs-anchor: "
+            "docs/superpowers/specs/2026-06-11-tabcut-product-chinese-info-design.md"
+        ),
+        "schedule": "每 10 分钟",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "tabcut_goods_translation_tick",
+        "runner": "appcore.tabcut_selection.scheduler.goods_translation_tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "active_task_pre_restart_check": {
         "code": "active_task_pre_restart_check",
         "name": "Active task pre-restart check",

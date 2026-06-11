@@ -76,6 +76,26 @@ def test_tabcut_local_import_binding_migration_adds_video_mapping_columns():
     assert "idx_tabcut_videos_local_media_item_id" in sql
 
 
+def test_tabcut_goods_chinese_info_migration_adds_translation_fields_and_binding():
+    sql = (
+        ROOT / "db" / "migrations" / "2026_06_11_tabcut_goods_chinese_info.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "ALTER TABLE tabcut_goods" in sql
+    assert "item_name_zh TEXT NULL" in sql
+    assert "item_name_zh_short VARCHAR(255) NULL" in sql
+    assert "category_name_zh VARCHAR(255) NULL" in sql
+    assert "category_l1_name_zh VARCHAR(255) NULL" in sql
+    assert "category_l2_name_zh VARCHAR(255) NULL" in sql
+    assert "category_l3_name_zh VARCHAR(255) NULL" in sql
+    assert "zh_translation_status VARCHAR(16) NOT NULL DEFAULT ''pending''" in sql
+    assert "zh_translation_attempts INT UNSIGNED NOT NULL DEFAULT 0" in sql
+    assert "idx_tabcut_goods_zh_translation_status" in sql
+    assert "'tabcut.translate_goods_info'" in sql
+    assert "'openrouter'" in sql
+    assert "'google/gemini-3.1-flash-lite'" in sql
+
+
 def test_tabcut_daily_selection_registered():
     from appcore import scheduled_tasks
 

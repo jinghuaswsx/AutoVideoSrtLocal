@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .categories import goods_category_for_source
-from . import store
+from . import goods_translation, store
 
 
 MARK_STATUS_OK = "ok"
@@ -44,6 +44,34 @@ def build_goods_response(args: Mapping[str, Any]) -> TabcutResponse:
 
 def build_category_options_response(args: Mapping[str, Any]) -> TabcutResponse:
     return TabcutResponse({"items": store.list_category_options(args)})
+
+
+def build_goods_translation_response(item_id: str, *, user_id: Any = None) -> TabcutResponse:
+    normalized_id = str(item_id or "").strip()
+    if not normalized_id:
+        return TabcutResponse({"ok": False, "error": "missing_item_id"}, 400)
+    row = store.get_goods(normalized_id)
+    if not row:
+        return TabcutResponse({"ok": False, "error": "goods_not_found"}, 404)
+
+    store.mark_goods_translation_running(normalized_id)
+    try:
+        payload = goods_translation.translate_goods_info(row, user_id=_int_user_id(user_id))
+    except Exception as exc:
+        store.finish_goods_translation(
+            normalized_id,
+            payload=None,
+            error_message=str(exc)[:1000],
+        )
+        return TabcutResponse({"ok": False, "error": "translation_failed", "message": str(exc)[:500]}, 502)
+
+    store.finish_goods_translation(normalized_id, payload=payload, error_message=None)
+    item = dict(row)
+    item.update(payload)
+    item["zh_translation_status"] = "done"
+    item["zh_translation_error"] = None
+    _hydrate_goods_chinese_fields(item)
+    return TabcutResponse({"ok": True, "item": item})
 
 
 def _bool_payload(value: Any) -> bool:
@@ -118,6 +146,7 @@ def _hydrate_video_items(payload: dict[str, Any]) -> dict[str, Any]:
             _fill_missing(item, "price_currency", raw_item.get("priceCurrency"))
             _fill_missing(item, "primary_item_url", _raw_item_url(raw_item))
         _fill_missing(item, "primary_item_url", _tiktok_product_url(item.get("primary_item_id")))
+        _hydrate_video_chinese_fields(item)
         items.append(item)
     _tabcut_attach_fine_ai_evaluation(items)
     hydrated["items"] = items
@@ -256,6 +285,7 @@ def _hydrate_goods_items(payload: dict[str, Any]) -> dict[str, Any]:
         rank_info = _goods_rank_info(item.get("source"))
         if rank_info:
             item.update(rank_info)
+        _hydrate_goods_chinese_fields(item)
         items.append(item)
     hydrated["items"] = items
     return hydrated
@@ -279,6 +309,63 @@ def _goods_rank_info(source: Any) -> dict[str, str] | None:
 def _fill_missing(row: dict[str, Any], key: str, value: Any) -> None:
     if row.get(key) in (None, "") and value not in (None, ""):
         row[key] = value
+
+
+def _int_user_id(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _first_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _join_text_parts(*values: Any) -> str:
+    return " / ".join(str(value).strip() for value in values if str(value or "").strip())
+
+
+def _hydrate_video_chinese_fields(item: dict[str, Any]) -> None:
+    zh_title = _first_text(item.get("primary_item_name_zh"), item.get("item_name_zh"))
+    zh_short = _first_text(item.get("primary_item_name_zh_short"), item.get("item_name_zh_short"))
+    english_title = _first_text(item.get("primary_item_name"), item.get("item_name"), item.get("video_desc"))
+    category_zh = _first_text(
+        item.get("category_name_zh"),
+        _join_text_parts(
+            item.get("category_l1_name_zh"),
+            item.get("category_l2_name_zh"),
+            item.get("category_l3_name_zh"),
+        ),
+    )
+    item["primary_item_display_name"] = _first_text(zh_short, zh_title, english_title, item.get("primary_item_id"))
+    item["primary_item_display_title"] = _first_text(zh_title, english_title, item.get("primary_item_id"))
+    item["primary_item_category_zh"] = category_zh
+    item["primary_item_is_translated"] = bool(zh_short or zh_title)
+
+
+def _hydrate_goods_chinese_fields(item: dict[str, Any]) -> None:
+    zh_title = _first_text(item.get("item_name_zh"))
+    zh_short = _first_text(item.get("item_name_zh_short"))
+    english_title = _first_text(item.get("item_name"))
+    category_zh = _first_text(
+        item.get("category_name_zh"),
+        _join_text_parts(
+            item.get("category_l1_name_zh"),
+            item.get("category_l2_name_zh"),
+            item.get("category_l3_name_zh"),
+        ),
+    )
+    item["item_display_name"] = _first_text(zh_short, zh_title, english_title, item.get("item_id"))
+    item["item_display_title"] = _first_text(zh_title, english_title, item.get("item_id"))
+    item["item_category_zh"] = category_zh
+    item["item_is_translated"] = bool(zh_short or zh_title)
 
 
 def _json_dict(value: Any) -> dict[str, Any]:

@@ -154,30 +154,154 @@ def get_country_dashboard(
     order_sql += " GROUP BY buyer_country, buyer_country_name"
     rows = query(order_sql, tuple(order_params))
 
-    # Query ad spend and purchase value by country
-    ad_sql = (
-        "SELECT market_country, "
-        "       SUM(COALESCE(spend_usd, 0)) AS spend, "
-        "       SUM(COALESCE(purchase_value_usd, 0)) AS purchase_value "
-        "FROM meta_ad_daily_ad_metrics "
-        "WHERE COALESCE(meta_business_date, report_date) >= %s AND COALESCE(meta_business_date, report_date) <= %s "
-    )
-    ad_params = [start, end]
-    if product_code:
-        ad_sql += " AND product_id = %s "
-        ad_params.append(product_id if product_id is not None else -1)
+    # Query ad spend and purchase value by country (supporting both closed and open dates)
+    from tools.meta_daily_final_sync import completed_meta_business_date
+    closed_through = completed_meta_business_date()
 
-    ad_sql += " GROUP BY market_country"
-    ad_rows = query(ad_sql, tuple(ad_params))
+    closed_start = start
+    closed_end = min(end, closed_through)
 
     ad_by_country = {}
-    for r in ad_rows:
-        mc = (r.get("market_country") or "").strip().upper()
-        if mc:
-            ad_by_country[mc] = {
-                "spend": Decimal(str(r.get("spend") or 0)),
-                "purchase_value": Decimal(str(r.get("purchase_value") or 0)),
-            }
+
+    if closed_start <= closed_end:
+        if product_code:
+            hist_sql = (
+                "SELECT campaign_name, market_country, "
+                "       SUM(COALESCE(spend_usd, 0)) AS spend, "
+                "       SUM(COALESCE(purchase_value_usd, 0)) AS purchase_value "
+                "FROM meta_ad_daily_campaign_metrics "
+                "WHERE COALESCE(meta_business_date, report_date) >= %s AND COALESCE(meta_business_date, report_date) <= %s "
+                "  AND (product_id = %s OR matched_product_code = %s OR product_code = %s OR LOWER(campaign_name) LIKE %s) "
+                "GROUP BY campaign_name, market_country"
+            )
+            hist_params = [
+                closed_start,
+                closed_end,
+                product_id if product_id is not None else -1,
+                product_code,
+                product_code,
+                f"%{product_code.lower()}%"
+            ]
+            hist_rows = query(hist_sql, tuple(hist_params))
+
+            from appcore.order_analytics.meta_ads import resolve_ad_product_match
+            from appcore.order_analytics.ad_market_country import extract_market_country
+
+            match_cache = {}
+            for r in hist_rows:
+                spend = Decimal(str(r.get("spend") or 0))
+                purchase_value = Decimal(str(r.get("purchase_value") or 0))
+                if spend <= 0 and purchase_value <= 0:
+                    continue
+
+                campaign_name = (r.get("campaign_name") or "").strip()
+                if not campaign_name:
+                    continue
+
+                lookup = campaign_name.lower()
+                if lookup not in match_cache:
+                    match = resolve_ad_product_match(lookup)
+                    match_cache[lookup] = int(match["id"]) if match and match.get("id") is not None else None
+                matched_pid = match_cache[lookup]
+
+                if matched_pid != product_id:
+                    continue
+
+                cc = (r.get("market_country") or "").strip().upper()
+                if not cc:
+                    cc = extract_market_country(campaign_name) or ""
+                cc = cc.strip().upper()
+
+                if cc:
+                    ad_by_country.setdefault(cc, {"spend": Decimal("0"), "purchase_value": Decimal("0")})
+                    ad_by_country[cc]["spend"] += spend
+                    ad_by_country[cc]["purchase_value"] += purchase_value
+        else:
+            hist_sql = (
+                "SELECT market_country, "
+                "       SUM(COALESCE(spend_usd, 0)) AS spend, "
+                "       SUM(COALESCE(purchase_value_usd, 0)) AS purchase_value "
+                "FROM meta_ad_daily_ad_metrics "
+                "WHERE COALESCE(meta_business_date, report_date) >= %s AND COALESCE(meta_business_date, report_date) <= %s "
+                "GROUP BY market_country"
+            )
+            hist_rows = query(hist_sql, (closed_start, closed_end))
+            for r in hist_rows:
+                mc = (r.get("market_country") or "").strip().upper()
+                if mc:
+                    ad_by_country[mc] = {
+                        "spend": Decimal(str(r.get("spend") or 0)),
+                        "purchase_value": Decimal(str(r.get("purchase_value") or 0)),
+                    }
+
+    from datetime import timedelta
+    open_start = max(start, closed_through + timedelta(days=1))
+    open_end = end
+
+    if open_start <= open_end:
+        has_realtime = False
+        try:
+            test_row = query_one(
+                "SELECT 1 AS ok FROM information_schema.TABLES "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s LIMIT 1",
+                ("meta_ad_realtime_daily_ad_metrics",),
+            )
+            has_realtime = bool(test_row and test_row.get("ok"))
+        except Exception:
+            has_realtime = False
+
+        if has_realtime:
+            rt_sql = """
+                SELECT m.normalized_campaign_code, m.campaign_name, m.country_code,
+                       SUM(m.spend_usd) AS spend, SUM(m.purchase_value_usd) AS purchase_value
+                FROM meta_ad_realtime_daily_ad_metrics m
+                INNER JOIN (
+                    SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snap
+                    FROM meta_ad_realtime_daily_ad_metrics
+                    WHERE business_date BETWEEN %s AND %s AND data_completeness = 'realtime_partial'
+                    GROUP BY business_date, ad_account_id
+                ) latest
+                ON m.business_date = latest.business_date
+                AND m.ad_account_id = latest.ad_account_id
+                AND m.snapshot_at = latest.max_snap
+                WHERE m.business_date BETWEEN %s AND %s AND m.data_completeness = 'realtime_partial'
+                GROUP BY m.normalized_campaign_code, m.campaign_name, m.country_code
+            """
+            rt_rows = query(rt_sql, (open_start, open_end, open_start, open_end))
+
+            from appcore.order_analytics.meta_ads import resolve_ad_product_match
+            from appcore.order_analytics.ad_market_country import extract_market_country
+
+            match_cache = {}
+            for r in rt_rows:
+                spend = Decimal(str(r.get("spend") or 0))
+                pvalue = Decimal(str(r.get("purchase_value") or 0))
+                if spend <= 0 and pvalue <= 0:
+                    continue
+
+                code = str(r.get("normalized_campaign_code") or r.get("campaign_name") or "").strip()
+                if not code:
+                    continue
+
+                # Match product
+                if product_code:
+                    lookup = code.lower()
+                    if lookup not in match_cache:
+                        match = resolve_ad_product_match(lookup)
+                        match_cache[lookup] = int(match["id"]) if match and match.get("id") is not None else None
+                    matched_pid = match_cache[lookup]
+                    if matched_pid != product_id:
+                        continue
+
+                # Match country
+                cc = (r.get("country_code") or "").strip().upper()
+                if not cc:
+                    cc = extract_market_country(code) or ""
+
+                if cc:
+                    ad_by_country.setdefault(cc, {"spend": Decimal("0"), "purchase_value": Decimal("0")})
+                    ad_by_country[cc]["spend"] += spend
+                    ad_by_country[cc]["purchase_value"] += pvalue
 
     unknown_display_name = "未知"
     countries = []
