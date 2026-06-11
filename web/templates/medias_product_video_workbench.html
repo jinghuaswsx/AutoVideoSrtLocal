@@ -243,7 +243,43 @@
 .vw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--vw-border); background: #f8fafc; }
 .vw-section-title { font-weight: 800; font-size: 14px; }
 .vw-section-body { padding: 12px; }
-.vw-country-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.vw-country-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.vw-spend-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  margin-left: 6px;
+}
+.vw-spend-badge.spend-high {
+  background-color: #15803d;
+  color: #ffffff;
+}
+.vw-spend-badge.spend-low {
+  background-color: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+.vw-task-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+  border-radius: 4px;
+  padding: 2px;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+  margin-left: 4px;
+  animation: pulse-glow-badge 2s infinite ease-in-out;
+  cursor: pointer;
+  vertical-align: middle;
+}
+@keyframes pulse-glow-badge {
+  0%, 100% { box-shadow: 0 0 4px rgba(34, 197, 94, 0.4); }
+  50% { box-shadow: 0 0 10px rgba(34, 197, 94, 0.8); }
+}
 .vw-country-chip { min-width: 0; border: 1px solid var(--vw-border); border-radius: 8px; padding: 8px; background: #fff; display: flex; flex-direction: column; gap: 4px; }
 .vw-country-chip.state-active { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
 .vw-country-chip.state-stopped { border-color: #fecaca; background: #fef2f2; color: #dc2626; }
@@ -1133,8 +1169,27 @@
         `;
       }
       const hasMaterial = row.status === 'translated' && version && (version.filename || version.display_name);
+      
+      const totalSpend = Number(row.order_stats ? row.order_stats.total_spend : 0) || 0;
+      const spendVal = Math.round(totalSpend);
+      const spendClass = spendVal >= 1000 ? 'spend-high' : 'spend-low';
+      const spendHtml = `<span class="vw-spend-badge ${spendClass}">$${spendVal}</span>`;
+
+      const hasTaskHtml = row.task && row.task.id
+        ? `<a href="${taskHref(row.task.id)}" target="_blank" rel="noopener noreferrer" class="vw-task-badge" title="查看关联任务: ${esc(row.task.assignee_name || '未指派')} (${esc(row.task.status)})">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+              <path d="m9 14 2 2 4-4"></path>
+            </svg>
+           </a>`
+        : '';
+
       return `<div class="vw-country-chip ${cls}">
-        <div class="vw-chip-main"><span>${esc(row.country_code || '')}</span><span>${countryStatusText(row)}</span></div>
+        <div class="vw-chip-main">
+          <span>${esc(row.country_code || '')} ${spendHtml}</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px;">${countryStatusText(row)}${hasTaskHtml}</span>
+        </div>
         <div class="vw-chip-sub-row">
           <div class="vw-chip-sub" title="${esc(row.lang_name || row.lang || '')} · ${esc(sub)}">
             ${esc(row.lang_name || row.lang || '')} · ${esc(sub)}
