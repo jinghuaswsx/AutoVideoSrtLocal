@@ -34,6 +34,10 @@ def build_videos_response(args: Mapping[str, Any]) -> TabcutResponse:
     return TabcutResponse(_hydrate_video_items(store.list_video_candidates(args)))
 
 
+def build_today_new_videos_response(args: Mapping[str, Any]) -> TabcutResponse:
+    return TabcutResponse(_hydrate_video_items(store.list_today_new_video_candidates(args)))
+
+
 def build_goods_response(args: Mapping[str, Any]) -> TabcutResponse:
     return TabcutResponse(_hydrate_goods_items(store.list_goods(args)))
 

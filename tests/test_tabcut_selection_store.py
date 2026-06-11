@@ -216,6 +216,68 @@ def test_list_video_candidates_rejects_unknown_source_rank():
     assert "DROP TABLE" not in calls[-1][0]
 
 
+def test_list_today_new_video_candidates_filters_by_first_seen_and_orders_latest_first():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    payload = store.list_today_new_video_candidates(
+        {"source_rank": "7d", "page": "2", "page_size": "20"},
+        query_fn=fake_query,
+    )
+
+    count_sql, count_params = calls[0]
+    data_sql, data_params = calls[-1]
+    assert payload["page"] == 2
+    assert payload["page_size"] == 20
+    assert "v.first_seen_at >= CURDATE()" in count_sql
+    assert "v.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)" in count_sql
+    assert "v.first_seen_at >= CURDATE()" in data_sql
+    assert "v.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)" in data_sql
+    assert "v.first_seen_at" in data_sql
+    assert (
+        "ORDER BY v.first_seen_at DESC, "
+        "COALESCE(vs.play_count, c.play_count, 0) DESC, "
+        "c.score DESC, c.video_id ASC"
+    ) in " ".join(data_sql.split())
+    assert count_params[:3] == ["US", "video_7d_play", "video_7d_sales"]
+    assert data_params[:5] == ["US", "video_7d_play", "video_7d_sales", 20, 20]
+
+
+def test_build_today_new_videos_response_uses_today_new_store_payload(monkeypatch):
+    seen = {}
+
+    def fake_list(args):
+        seen.update(args)
+        return {
+            "items": [
+                {
+                    "video_id": "v1",
+                    "primary_item_id": "i1",
+                    "primary_item_name": "Demo product",
+                    "video_raw_json": "{}",
+                    "first_seen_at": "2026-06-11 08:00:00",
+                }
+            ],
+            "total": 1,
+            "page": 1,
+            "page_size": 50,
+        }
+
+    monkeypatch.setattr(store, "list_today_new_video_candidates", fake_list)
+    monkeypatch.setattr(service, "_tabcut_attach_fine_ai_evaluation", lambda items: None)
+
+    result = service.build_today_new_videos_response({"q": "demo"})
+
+    assert result.status_code == 200
+    assert seen == {"q": "demo"}
+    assert result.payload["total"] == 1
+    assert result.payload["items"][0]["video_id"] == "v1"
+    assert result.payload["items"][0]["first_seen_at"] == "2026-06-11 08:00:00"
+
+
 def test_list_category_options_returns_distinct_l1_names():
     calls = []
 

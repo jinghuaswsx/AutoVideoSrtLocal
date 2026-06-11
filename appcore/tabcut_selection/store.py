@@ -129,7 +129,12 @@ def _append_mark_status_filter(
         params.append(mark_status)
 
 
-def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
+def list_video_candidates(
+    args: Mapping[str, Any],
+    *,
+    query_fn: QueryFn = query,
+    today_new: bool = False,
+) -> dict[str, Any]:
     page = _int_arg(args, "page", 1, 1, 10000)
     page_size = _int_arg(args, "page_size", 50, 10, 200)
     offset = (page - 1) * page_size
@@ -145,6 +150,10 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
         """,
     ]
     params: list[Any] = [str(args.get("region") or "US")]
+
+    if today_new:
+        where.append("v.first_seen_at >= CURDATE()")
+        where.append("v.first_seen_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)")
 
     for arg_name, column in [
         ("category_l1", "c.category_l1_name"),
@@ -253,6 +262,11 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
         """,
         list(params),
     )
+    order_sql = (
+        "v.first_seen_at DESC, COALESCE(vs.play_count, c.play_count, 0) DESC, c.score DESC, c.video_id ASC"
+        if today_new
+        else f"{sort_column} DESC, c.video_id ASC"
+    )
     rows = query_fn(
         f"""
         SELECT c.id, c.biz_date, c.region, c.video_id, c.primary_item_id,
@@ -268,6 +282,7 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
                c.candidate_json, c.crawled_at,
                v.video_cover_url, v.tk_video_url, v.video_desc, v.author_name,
                v.author_avatar_url, v.video_duration_ms, v.create_time,
+               v.first_seen_at,
                v.is_marked, v.mark_status, v.marked_at, v.marked_by,
                v.local_video_path, v.local_video_cover_path, v.local_video_status,
                v.local_video_duration_seconds,
@@ -308,7 +323,7 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
               AND gs.region = c.region
               AND gs.item_id = c.primary_item_id
         WHERE {where_sql}
-        ORDER BY {sort_column} DESC, c.video_id ASC
+        ORDER BY {order_sql}
         LIMIT %s OFFSET %s
         """,
         list(params) + [page_size, offset],
@@ -319,6 +334,10 @@ def list_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query)
         "page": page,
         "page_size": page_size,
     }
+
+
+def list_today_new_video_candidates(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[str, Any]:
+    return list_video_candidates(args, query_fn=query_fn, today_new=True)
 
 
 def get_video_candidate(video_id: str, *, query_fn: QueryFn = query) -> dict[str, Any] | None:
