@@ -47,7 +47,10 @@ def test_order_trend_detail_route_authenticated_200(authed_client_no_db):
                 "spend": 50.0,
                 "purchase_value": 100.0,
                 "meta_roas": 2.0,
-                "real_roas": 4.0
+                "real_roas": 4.0,
+                "countries": {
+                    "US": 5, "DE": 3, "FR": 2, "ES": 0, "IT": 0, "JP": 0, "PT": 0, "SE": 0, "NL": 0
+                }
             }
         ],
         "weekly": [
@@ -57,7 +60,10 @@ def test_order_trend_detail_route_authenticated_200(authed_client_no_db):
                 "orders": 8,
                 "sales": 200.0,
                 "start_date": "2026-06-01",
-                "end_date": "2026-06-07"
+                "end_date": "2026-06-07",
+                "countries": {
+                    "US": 5, "DE": 3, "FR": 2, "ES": 0, "IT": 0, "JP": 0, "PT": 0, "SE": 0, "NL": 0
+                }
             }
         ],
         "monthly": [
@@ -65,7 +71,10 @@ def test_order_trend_detail_route_authenticated_200(authed_client_no_db):
                 "label": "2026-06",
                 "units": 10,
                 "orders": 8,
-                "sales": 200.0
+                "sales": 200.0,
+                "countries": {
+                    "US": 5, "DE": 3, "FR": 2, "ES": 0, "IT": 0, "JP": 0, "PT": 0, "SE": 0, "NL": 0
+                }
             }
         ]
     }
@@ -77,3 +86,15 @@ def test_order_trend_detail_route_authenticated_200(authed_client_no_db):
         assert "test-product-code" in html
         assert "2026-06-01" in html
         assert "W22" in html
+        assert "trend-top-layout" in html
+        assert "trend-bottom-layout" in html
+        assert "美国" in html
+        assert "德国" in html
+        assert "法国" in html
+        assert "西班牙" in html
+        assert "意大利" in html
+        assert "日本" in html
+        assert "葡萄牙" in html
+        assert "瑞典" in html
+        assert "荷兰" in html
+        assert "makeCountryCells" in html
