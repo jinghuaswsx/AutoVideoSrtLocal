@@ -1,6 +1,9 @@
 (function () {
   'use strict';
 
+  const API_BASE = (window.AIMS_API_BASE || '/medias/api/ad-material-ai-analysis').replace(/\/+$/, '');
+  const PAGE_BASE = (window.AIMS_PAGE_BASE || '/medias/ad-material-ai-analysis').replace(/\/+$/, '');
+
   const state = {
     projects: [],
     activeProjectId: window.AIMS_INITIAL_PROJECT_ID || null,
@@ -605,7 +608,7 @@
     }
     els.llmTabPayload.innerHTML = '<div class="aims-loading">正在从服务器读取原始 JSON 报文...</div>';
     try {
-      const res = await fetchJson('/medias/api/ad-material-ai-analysis/llm-payload/' + logId);
+      const res = await fetchJson(API_BASE + '/llm-payload/' + logId);
       const reqJson = JSON.stringify(res.payload.request_data, null, 2);
       const respJson = JSON.stringify(res.payload.response_data, null, 2);
       els.llmTabPayload.innerHTML = `
@@ -697,7 +700,7 @@
       await loadSharedProject();
       return;
     }
-    const data = await fetchJson('/medias/api/ad-material-ai-analysis/projects');
+    const data = await fetchJson(API_BASE + '/projects');
     state.projects = data.projects || [];
     if (els.count) els.count.textContent = String(state.projects.length);
     if (!state.activeProjectId && state.projects.length) {
@@ -717,7 +720,7 @@
       renderEmpty();
       return;
     }
-    const data = await fetchJson('/medias/api/ad-material-ai-analysis/share/' + encodeURIComponent(state.shareToken));
+    const data = await fetchJson(API_BASE + '/share/' + encodeURIComponent(state.shareToken));
     state.activeProject = data.project;
     state.activeProjectId = data.project && data.project.id;
     state.projects = data.project ? [data.project] : [];
@@ -732,12 +735,12 @@
       return;
     }
     state.activeProjectId = Number(projectId);
-    const data = await fetchJson('/medias/api/ad-material-ai-analysis/projects/' + encodeURIComponent(projectId));
+    const data = await fetchJson(API_BASE + '/projects/' + encodeURIComponent(projectId));
     state.activeProject = data.project;
     renderProjects();
     renderProject(data.project);
     syncPolling(data.project);
-    const targetPath = '/medias/ad-material-ai-analysis/projects/' + data.project.id;
+    const targetPath = PAGE_BASE + '/projects/' + data.project.id;
     if (window.location.pathname !== targetPath) {
       history.replaceState(null, '', targetPath);
     }
@@ -765,7 +768,7 @@
     setBusy(true);
     try {
       const name = '投放素材AI分析 ' + new Date().toLocaleString('zh-CN', { hour12: false });
-      const data = await fetchJson('/medias/api/ad-material-ai-analysis/projects', {
+      const data = await fetchJson(API_BASE + '/projects', {
         method: 'POST',
         headers: csrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ project_name: name, run_ai: true }),
@@ -790,7 +793,7 @@
     if (state.publicMode || !state.activeProjectId) return;
     setBusy(true);
     try {
-      const data = await fetchJson('/medias/api/ad-material-ai-analysis/projects/' + encodeURIComponent(state.activeProjectId) + '/share', {
+      const data = await fetchJson(API_BASE + '/projects/' + encodeURIComponent(state.activeProjectId) + '/share', {
         method: 'POST',
         headers: csrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({}),
