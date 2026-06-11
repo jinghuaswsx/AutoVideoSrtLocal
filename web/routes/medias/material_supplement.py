@@ -1172,7 +1172,7 @@ def build_product_video_workbench(
                 "missing_country_codes": [item["country_code"] for item in WORKBENCH_AI_COUNTRIES],
             },
             "target_country_versions": target_country_versions if in_library else [
-                {**country, "status": "missing", "version": None, "order_stats": _order_row_for_lang(order_report, country["lang"])}
+                {**country, "status": "missing", "version": None, "order_stats": _empty_order_stats_row()}
                 for country in WORKBENCH_AI_COUNTRIES
             ],
             "snapshot_date": str(mk_row.get("snapshot_date") or ""),

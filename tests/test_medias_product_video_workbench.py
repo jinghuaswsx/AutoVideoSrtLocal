@@ -179,6 +179,72 @@ def test_build_product_video_workbench_dedupes_language_ad_rows(monkeypatch):
     assert de_row["item_count"] == 2
 
 
+def test_build_product_video_workbench_unimported_card_does_not_inherit_lang_order_stats(monkeypatch):
+    from web.routes.medias import material_supplement as route
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials._enrich_material_yesterday_delta",
+        lambda rows, **kwargs: None,
+    )
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            return [{"id": 321, "name": "Demo", "product_code": "demo-rjc"}]
+        if "FROM mingkong_material_daily_snapshots s" in sql:
+            return [
+                {
+                    "material_key": "mk-unimported",
+                    "video_path": "/video/unimported.mp4",
+                    "video_name": "unimported.mp4",
+                    "video_image_path": "/cover/unimported.jpg",
+                    "cumulative_90_spend": "120.00",
+                    "video_ads_count": 3,
+                    "video_author": "maker",
+                    "video_upload_time": "2026-06-01",
+                    "yesterday_spend_delta": "12.00",
+                    "snapshot_date": "2026-06-06",
+                    "snapshot_at": datetime(2026, 6, 6, 10, 0, 0),
+                    "mk_product_id": 7,
+                    "mk_product_name": "Demo CN",
+                    "mk_product_link": "https://example.test/products/demo",
+                    "main_image": "",
+                }
+            ]
+        if "FROM media_items" in sql and "WHERE product_id = %s" in sql:
+            return []
+        if "FROM media_product_lang_ad_summary_cache" in sql:
+            return [{"lang": "de", "ad_spend_usd": "705.00", "active_7d_ad_spend_usd": "0.00"}]
+        if "FROM media_product_ad_summary_cache" in sql:
+            return [{"ad_spend_usd": "705.00", "active_7d_ad_spend_usd": "0.00", "overall_roas": "1.2", "delivery_status": "stopped"}]
+        raise AssertionError(sql)
+
+    empty = route._empty_order_stats_row()
+
+    def order_report(product_id):
+        return {
+            "product_id": product_id,
+            "total": {**empty, "total_spend": 705.0, "last_30d_spend": 705.0},
+            "by_lang": {
+                "de": {**empty, "total_spend": 705.0, "last_30d_spend": 705.0, "total_roas": 1.2},
+            },
+        }
+
+    payload = route.build_product_video_workbench(
+        321,
+        query_fn=fake_query,
+        order_report_fn=order_report,
+    )
+
+    card = payload["cards"][0]
+    assert card["in_library"] is False
+    assert card["translated_versions"] == []
+    assert card["lang_ad_summary"] == []
+    assert all(
+        row["order_stats"] == empty
+        for row in card["target_country_versions"]
+    )
+
+
 def test_build_product_video_workbench_matches_legacy_library_item_by_exact_filename(monkeypatch):
     from web.routes.medias import material_supplement as route
 
