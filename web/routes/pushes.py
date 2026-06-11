@@ -1849,12 +1849,14 @@ def api_history():
         "SELECT l.id AS log_id, l.item_id, l.operator_user_id, l.status, l.request_payload, l.response_body, l.created_at AS pushed_at, "
         "       i.lang, i.display_name, i.filename, i.duration_seconds, i.file_size, i.product_id, i.task_id, "
         "       l.is_new_product_push, "
-        f"       p.name AS product_name, p.product_code, u.username AS operator_username, {owner_name_expr} AS product_owner_name "
+        f"       p.name AS product_name, p.product_code, u.username AS operator_username, {owner_name_expr} AS product_owner_name, "
+        "       rs.display_name AS source_video_filename "
         "FROM media_push_logs l "
         "JOIN media_items i ON i.id = l.item_id "
         "JOIN media_products p ON p.id = i.product_id "
         "LEFT JOIN users u ON u.id = l.operator_user_id "
         "LEFT JOIN users owner_u ON owner_u.id = p.user_id "
+        "LEFT JOIN media_raw_sources rs ON rs.id = i.source_raw_id AND rs.deleted_at IS NULL "
         f"WHERE {where_sql} "
         "ORDER BY l.created_at DESC, l.id DESC",
         tuple(args)
@@ -1924,6 +1926,7 @@ def api_history():
             "is_new_product_push": bool(r.get("is_new_product_push")),
             "request_payload": payload,
             "task_id": r.get("task_id"),
+            "source_video_filename": r.get("source_video_filename") or "",
         }
         history_items.append(history_item)
 

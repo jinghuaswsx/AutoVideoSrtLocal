@@ -100,7 +100,7 @@
 <style>
   :root {
     --hist-col-snapshot: 80px;
-    --hist-col-filename: 180px;
+    --hist-col-filename: 260px;
     --hist-col-product-name: 120px;
     --hist-col-product-code: 160px;
     --hist-col-main-image: 130px;
@@ -126,6 +126,7 @@
   .push-table td {
     padding: 12px 10px;
     vertical-align: top;
+    text-align: center;
   }
   .col-snapshot { width: var(--hist-col-snapshot); }
   .col-filename { min-width: var(--hist-col-filename); }
@@ -133,14 +134,14 @@
   .col-product-code { min-width: var(--hist-col-product-code); }
   .col-main-image { width: var(--hist-col-main-image); }
   .col-lang { width: var(--hist-col-lang); white-space: nowrap; }
-  .col-texts { width: var(--hist-col-texts); max-width: var(--hist-col-texts); overflow: hidden; }
-  .col-links { min-width: var(--hist-col-links); }
+  .col-texts { width: var(--hist-col-texts); max-width: var(--hist-col-texts); overflow: hidden; text-align: left; }
+  .col-links { min-width: var(--hist-col-links); text-align: left; }
   .col-time { width: var(--hist-col-time); white-space: nowrap; }
   .col-owner { width: var(--hist-col-owner); white-space: nowrap; }
   .col-operator { width: var(--hist-col-operator); white-space: nowrap; }
   .col-status { width: var(--hist-col-status); white-space: nowrap; vertical-align: middle !important; }
-  .col-spend { width: var(--hist-col-spend); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: middle !important; }
-  .col-roas { width: var(--hist-col-roas); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: middle !important; }
+  .col-spend { width: var(--hist-col-spend); text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: middle !important; }
+  .col-roas { width: var(--hist-col-roas); text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: middle !important; }
   .col-actions { width: var(--hist-col-actions); text-align: center; white-space: nowrap; vertical-align: middle !important; }
 
   /* New Product Badge Styling */
@@ -1226,21 +1227,22 @@
             <td class="col-snapshot">
               ${thumb}
             </td>
-            <td class="col-filename">
+            <td class="col-filename" style="text-align:left;">
               <div style="font-size:13px; color:var(--oc-fg, #111827); word-break:break-all; line-height:1.45; font-weight:500; display:flex; align-items:flex-start; gap:6px;">
                 <span style="flex:1;">${escapeHtml(it.filename)}</span>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.filename)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; margin-top: 2px; flex-shrink:0;" title="复制视频文件名">
                   <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
               </div>
+              ${it.source_video_filename ? `<div style="font-size:10px; color:var(--oc-fg-subtle, #9ca3af); margin-top:3px; word-break:break-all; line-height:1.35;">来源: ${escapeHtml(it.source_video_filename)}</div>` : ''}
               <div style="font-size:11px; color:var(--oc-fg-subtle, #4b5563); margin-top:4px;">
                 ${(it.file_size / (1024 * 1024)).toFixed(1)} M
               </div>
             </td>
-            <td class="col-product-name">
+            <td class="col-product-name" style="text-align:left;">
               <div style="font-weight:600; font-size:13px; color:var(--oc-fg, #111827); line-height:1.4;">${escapeHtml(it.product_name)}</div>
             </td>
-            <td class="col-product-code">
+            <td class="col-product-code" style="text-align:left;">
               <div style="font-size:12px; color:var(--oc-fg, #111827); display:flex; align-items:center; gap:6px; flex-wrap: wrap;">
                 <code style="background: var(--oc-bg-subtle, #f3f4f6); padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: 500; word-break: break-all;">${escapeHtml(it.product_code)}</code>
                 <button class="btn-copy-action" data-text="${escapeHtml(it.product_code)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; flex-shrink:0;" title="复制商品Code">
