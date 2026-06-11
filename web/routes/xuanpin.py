@@ -686,6 +686,12 @@ def api_tabcut_videos():
     return _tabcut_routes().api_tabcut_selection_videos()
 
 
+@bp.route("/api/tabcut/today-new", methods=["GET"])
+@login_required
+def api_tabcut_today_new():
+    return _tabcut_routes().api_tabcut_selection_today_new()
+
+
 @bp.route("/api/tabcut/goods", methods=["GET"])
 @login_required
 def api_tabcut_goods():

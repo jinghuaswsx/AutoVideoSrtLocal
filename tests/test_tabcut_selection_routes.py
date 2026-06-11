@@ -77,6 +77,27 @@ def test_tabcut_selection_videos_api_delegates(monkeypatch, authed_client_no_db)
     assert resp.get_json()["items"] == [{"video_id": "v1"}]
 
 
+def test_tabcut_selection_today_new_api_delegates(monkeypatch, authed_client_no_db):
+    from appcore.tabcut_selection.service import TabcutResponse
+
+    captured = {}
+
+    def fake_build(args):
+        captured.update(args)
+        return TabcutResponse({"items": [{"video_id": "v1"}], "total": 1})
+
+    monkeypatch.setattr(
+        "web.routes.medias.tabcut_selection.service.build_today_new_videos_response",
+        fake_build,
+    )
+
+    resp = authed_client_no_db.get("/medias/api/tabcut-selection/today-new?q=demo")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_id": "v1"}]
+    assert captured.get("q") == "demo"
+
+
 def test_tabcut_selection_goods_api_delegates(monkeypatch, authed_client_no_db):
     from appcore.tabcut_selection.service import TabcutResponse
 

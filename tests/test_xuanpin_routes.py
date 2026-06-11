@@ -1358,6 +1358,27 @@ def test_xuanpin_tabcut_api_alias_delegates(authed_client_no_db, monkeypatch):
     assert resp.get_json()["items"] == [{"video_id": "v1"}]
 
 
+def test_xuanpin_tabcut_today_new_api_alias_delegates(authed_client_no_db, monkeypatch):
+    from appcore.tabcut_selection.service import TabcutResponse
+
+    captured = {}
+
+    def fake_build(args):
+        captured.update(args)
+        return TabcutResponse({"items": [{"video_id": "v2"}], "total": 1})
+
+    monkeypatch.setattr(
+        "appcore.tabcut_selection.service.build_today_new_videos_response",
+        fake_build,
+    )
+
+    resp = authed_client_no_db.get("/xuanpin/api/tabcut/today-new?source_rank=7d")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["items"] == [{"video_id": "v2"}]
+    assert captured.get("source_rank") == "7d"
+
+
 def test_xuanpin_tabcut_categories_api_alias_delegates(authed_client_no_db, monkeypatch):
     from appcore.tabcut_selection.service import TabcutResponse
 

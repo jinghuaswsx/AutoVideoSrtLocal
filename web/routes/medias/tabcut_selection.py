@@ -30,6 +30,14 @@ def api_tabcut_selection_videos():
     return _json_response(service.build_videos_response(request.args))
 
 
+@bp.route("/api/tabcut-selection/today-new", methods=["GET"])
+@login_required
+def api_tabcut_selection_today_new():
+    if not _routes_module()._is_admin():
+        return _json_response(service.build_admin_required_response())
+    return _json_response(service.build_today_new_videos_response(request.args))
+
+
 @bp.route("/api/tabcut-selection/goods", methods=["GET"])
 @login_required
 def api_tabcut_selection_goods():
