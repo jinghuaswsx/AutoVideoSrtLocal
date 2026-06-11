@@ -1221,15 +1221,76 @@ def realtime_overview():
         if not order_page_size or order_page_size <= 0:
             return _json_response(error="invalid_param", detail="order_page_size must be a positive integer"), 400
         kwargs["order_page_size"] = min(order_page_size, 100)
+
+    # ── 缓存层：数据 ~20 分钟更新一次，未更新期间直接返回缓存 ──
+    from appcore.order_analytics import realtime_cache
+
+    cache_params = {
+        "date": date_text,
+        "start_date": start_date,
+        "end_date": end_date,
+        "include_details": include_details,
+        "include_profit_summary": include_profit_summary,
+        "product_id": kwargs.get("product_id"),
+        "site_code": site_code_text,
+        "product_launch_scope": product_launch_scope,
+        "product_launch_window_days": kwargs.get("product_launch_window_days"),
+        "page": kwargs.get("page"),
+        "page_size": kwargs.get("page_size"),
+        "order_page": kwargs.get("order_page"),
+        "order_page_size": kwargs.get("order_page_size"),
+    }
+    cache_key = realtime_cache.make_cache_key(cache_params)
+    freshness_marker = realtime_cache.get_freshness_marker()
+    cached = realtime_cache.get(cache_key, freshness_marker)
+    if cached is not None:
+        resp = _json_response(cached)
+        resp.headers["X-Realtime-Cache"] = "HIT"
+        return resp
+
     try:
         result = oa.get_realtime_roas_overview(date_text, **kwargs)
         result = _attach_realtime_data_quality(result)
-        return _json_response(_json_safe(result))
+        safe_result = _json_safe(result)
+        realtime_cache.put(cache_key, safe_result, freshness_marker)
+        resp = _json_response(safe_result)
+        resp.headers["X-Realtime-Cache"] = "MISS"
+        return resp
     except ValueError as exc:
         return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
         log.exception("realtime roas overview query failed: %s", exc)
         return _json_response(error="internal_error", detail=str(exc)), 500
+
+
+@bp.route("/order-analytics/realtime-cache", methods=["GET"])
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def realtime_cache_stats():
+    """返回实时大盘缓存状态（仅管理员）。"""
+    from appcore.order_analytics import realtime_cache
+    return _json_response({
+        "ok": True,
+        "cache": realtime_cache.stats(),
+        "freshness_marker": realtime_cache.get_freshness_marker(),
+    })
+
+
+@bp.route("/order-analytics/realtime-cache/invalidate", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def realtime_cache_invalidate():
+    """手动清除实时大盘全部缓存（仅管理员）。"""
+    from appcore.order_analytics import realtime_cache
+    realtime_cache.invalidate_all()
+    _audit_order_analytics_action(
+        "order_analytics_realtime_cache_invalidated",
+        target_type="realtime_cache",
+        detail={"action": "invalidate_all"},
+    )
+    return _json_response({"ok": True, "message": "realtime cache cleared"})
 
 
 @bp.route("/order-analytics/true-roas")
