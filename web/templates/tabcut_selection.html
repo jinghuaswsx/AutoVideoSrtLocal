@@ -768,6 +768,7 @@ body.tabcut-video-overlay-open { overflow:hidden; }
       <label>发布日期</label>
       <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-height: 34px;">
         <div class="op-range-presets" role="group" aria-label="日期快捷">
+          <button type="button" class="op-seg" data-op-range="all">不限</button>
           <button type="button" class="op-seg" data-op-range="today">今天</button>
           <button type="button" class="op-seg" data-op-range="yesterday">昨天</button>
           <button type="button" class="op-seg" data-op-range="thisWeek">本周</button>
@@ -1558,6 +1559,7 @@ async function translateTabcutGoodsInfo(event, itemId) {
   } catch (err) {
     qs("tabcutStatus").textContent = "商品中文信息翻译失败";
     setTabcutGoodsTranslateDisabled(id, false);
+  }
 }
 
 let autoTranslateQueue = [];
@@ -4000,5 +4002,89 @@ async function mkiFineAiEvaluateFromCard(btn) {
 applyCardZoom();
 setTabcutView(tabcutView);
 loadCategoryOptions();
+
+// ==================== 日期快捷按钮及日历同步逻辑 ====================
+const META_TZ = 'Asia/Shanghai';
+const META_CUTOVER_HOUR = 16;
+
+function fmtIsoDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function startOfWeek(d) { const x = new Date(d); const day = x.getDay() || 7; x.setDate(x.getDate()-day+1); return x; }
+function endOfWeek(d) { return addDays(startOfWeek(d), 6); }
+
+// 当前 Meta 业务日（北京时间 16:00 切日）
+function metaBusinessToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: META_TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', hourCycle:'h23'
+  }).formatToParts(new Date()).reduce((a,p)=>{ if(p.type!=='literal') a[p.type]=p.value; return a; }, {});
+  const d = new Date(Number(parts.year), Number(parts.month)-1, Number(parts.day));
+  if (Number(parts.hour) < META_CUTOVER_HOUR) d.setDate(d.getDate()-1);
+  return d;
+}
+
+function resolveOpRange(range) {
+  const today = metaBusinessToday();
+  if (range === 'today') return {start: today, end: today};
+  if (range === 'yesterday') { const y = addDays(today,-1); return {start:y, end:y}; }
+  if (range === 'thisWeek') return {start: startOfWeek(today), end: endOfWeek(today)};
+  if (range === 'lastWeek') return {start: addDays(startOfWeek(today),-7), end: addDays(endOfWeek(today),-7)};
+  if (range === 'thisMonth') {
+    return {start: new Date(today.getFullYear(), today.getMonth(), 1),
+            end: new Date(today.getFullYear(), today.getMonth()+1, 0)};
+  }
+  if (range === 'lastMonth') {
+    return {start: new Date(today.getFullYear(), today.getMonth()-1, 1),
+            end: new Date(today.getFullYear(), today.getMonth(), 0)};
+  }
+  return null;
+}
+
+function setOpRange(range) {
+  const b = resolveOpRange(range);
+  if (b) {
+    qs('publishDateFrom').value = fmtIsoDate(b.start);
+    qs('publishDateTo').value = fmtIsoDate(b.end);
+  } else {
+    qs('publishDateFrom').value = '';
+    qs('publishDateTo').value = '';
+  }
+  syncOpRangeButtons();
+}
+
+function syncOpRangeButtons() {
+  const f = qs('publishDateFrom').value;
+  const t = qs('publishDateTo').value;
+  if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
+  let matched = 'all';
+  if (f && t) {
+    matched = '';
+    ['today','yesterday','thisWeek','lastWeek','thisMonth','lastMonth'].forEach(r => {
+      const b = resolveOpRange(r);
+      if (b && fmtIsoDate(b.start) === f && fmtIsoDate(b.end) === t) matched = r;
+    });
+  }
+  document.querySelectorAll('[data-op-range]').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.opRange === matched);
+  });
+}
+
+// 绑定快捷按钮点击事件
+document.querySelectorAll('[data-op-range]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    setOpRange(btn.dataset.opRange);
+    loadTabcut(1);
+  });
+});
+
+// 监听手动日期变化
+const publishDateFrom = qs('publishDateFrom');
+const publishDateTo = qs('publishDateTo');
+if (publishDateFrom) publishDateFrom.addEventListener('change', syncOpRangeButtons);
+if (publishDateTo) publishDateTo.addEventListener('change', syncOpRangeButtons);
+
+// 首次加载同步状态
+syncOpRangeButtons();
 </script>
 {% endblock %}
