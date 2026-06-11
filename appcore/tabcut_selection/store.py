@@ -1180,3 +1180,76 @@ def set_video_local_import_binding(
         """,
         [int(product_id), int(media_item_id), str(video_id)],
     )
+
+
+def create_goods_from_candidate(
+    item_id: str,
+    *,
+    execute_fn: ExecuteFn = execute,
+    query_fn: QueryFn = query,
+) -> bool:
+    sql_candidate = """
+        SELECT c.region, c.category_l1_name, c.category_l2_name, c.category_l3_name,
+               v.primary_item_name, v.video_cover_url, v.raw_json AS video_raw_json
+        FROM tabcut_video_candidates c
+        LEFT JOIN tabcut_videos v ON v.video_id = c.video_id
+        WHERE c.primary_item_id = %s
+        ORDER BY c.biz_date DESC, c.id DESC
+        LIMIT 1
+    """
+    rows = query_fn(sql_candidate, [str(item_id)])
+    if not rows:
+        return False
+    row = rows[0]
+
+    region = row.get("region") or "US"
+    item_name = row.get("primary_item_name")
+    item_pic_url = None
+
+    video_raw_json = row.get("video_raw_json")
+    if video_raw_json:
+        try:
+            raw = json.loads(video_raw_json) if isinstance(video_raw_json, str) else video_raw_json
+            if isinstance(raw, dict):
+                items = raw.get("itemList")
+                if isinstance(items, list) and items:
+                    raw_item = items[0]
+                    if isinstance(raw_item, dict):
+                        if raw_item.get("itemName"):
+                            item_name = raw_item.get("itemName")
+                        if raw_item.get("itemCoverUrl"):
+                            item_pic_url = raw_item.get("itemCoverUrl")
+        except Exception:
+            pass
+
+    if not item_name:
+        item_name = f"TABCUT商品 {item_id}"
+
+    category_l1 = row.get("category_l1_name")
+    category_l2 = row.get("category_l2_name")
+    category_l3 = row.get("category_l3_name")
+
+    sql_insert = """
+        INSERT INTO tabcut_goods (
+            item_id, region, item_name, item_pic_url,
+            category_l1_name, category_l2_name, category_l3_name,
+            zh_translation_status
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
+        ON DUPLICATE KEY UPDATE
+            item_name = COALESCE(item_name, VALUES(item_name)),
+            item_pic_url = COALESCE(item_pic_url, VALUES(item_pic_url))
+    """
+    execute_fn(
+        sql_insert,
+        [
+            str(item_id),
+            region,
+            item_name,
+            item_pic_url,
+            category_l1,
+            category_l2,
+            category_l3,
+        ],
+    )
+    return True
+
