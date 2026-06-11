@@ -646,7 +646,7 @@ button.mh-link-btn { cursor:pointer; }
       <label for="mhMinComments">评论数</label>
       <input class="mh-input" id="mhMinComments" type="number" min="0" placeholder="最低" value="{{ mh_query.get('min_comments', '') }}">
     </div>
-    <div class="mh-field" style="grid-column: span 2;">
+    <div class="mh-field" style="grid-column: 1 / -1; margin-top: 5px;">
       <label>创建日期</label>
       <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-height: 34px;">
         <div class="op-range-presets" role="group" aria-label="日期快捷">
