@@ -1349,6 +1349,21 @@
   }
   function renderOrderPanel(card) {
     const versions = card.translated_versions || [];
+    const hasAnyOrders = versions.some(v => {
+      const o = v.order_stats || {};
+      return Number(o.today_orders || 0) > 0 || Number(o.yesterday_orders || 0) > 0
+        || Number(o.last_7d_orders || 0) > 0 || Number(o.last_30d_orders || 0) > 0;
+    });
+    if (!hasAnyOrders) {
+      return `<section class="vw-section">
+        <div class="vw-section-head">
+          <div class="vw-section-title">订单量情况</div>
+        </div>
+        <div class="vw-section-body">
+          <div class="vw-sub" style="padding: 12px 0; color: #94a3b8;">订单数据为产品级，无法归因到单个视频素材，请查看页面顶部汇总</div>
+        </div>
+      </section>`;
+    }
     const rows = versions.map(v => {
       const order = v.order_stats || {};
       const label = v.is_summary ? '汇总' : `${String(v.country_code || v.lang || '').toUpperCase()} ${v.lang_name || ''}`;

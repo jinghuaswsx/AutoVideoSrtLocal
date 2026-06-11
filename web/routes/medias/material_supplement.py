@@ -773,7 +773,7 @@ def _build_translated_versions(
             "ad_spend": _safe_float(perf.get("total_spend_usd")),
             "roas": perf.get("roas"),
             "ad_performance": perf,
-            "order_stats": _order_row_for_lang(order_report, lang),
+            "order_stats": _empty_order_stats_row(),
         })
 
     versions.sort(key=lambda row: (row["lang"] == "en", row["lang"], int(row.get("media_item_id") or 0)))
@@ -791,7 +791,7 @@ def _build_translated_versions(
             **country,
             "status": "translated" if version else "missing",
             "version": version,
-            "order_stats": _order_row_for_lang(order_report, country["lang"]),
+            "order_stats": _empty_order_stats_row(),
         })
 
     if versions:
@@ -810,7 +810,7 @@ def _build_translated_versions(
             "ad_spend": _safe_float(aggregate.get("total_spend_usd")),
             "roas": aggregate.get("roas"),
             "ad_performance": aggregate,
-            "order_stats": {**_empty_order_stats_row(), **(order_report.get("total") or {})},
+            "order_stats": _empty_order_stats_row(),
         })
 
     return versions, {

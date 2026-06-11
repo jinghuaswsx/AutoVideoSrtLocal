@@ -655,7 +655,7 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
     assert card["translated_versions"][0]["task"]["id"] == 9001
     de_version = next(row for row in card["translated_versions"] if row["lang"] == "de")
     assert de_version["country_code"] == "DE"
-    assert de_version["order_stats"]["today_orders"] == 2
+    assert de_version["order_stats"]["today_orders"] == 0
     assert de_version["task"]["id"] == 9002
     pt_target = next(row for row in card["target_country_versions"] if row["country_code"] == "PT")
     assert pt_target["status"] == "translated"
