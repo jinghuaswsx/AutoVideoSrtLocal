@@ -3566,6 +3566,115 @@
 </script>
 </section>
 
+<style>
+  .country-compare-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px;
+    box-shadow: var(--shadow-sm);
+    margin: 15px 0 25px 0;
+  }
+  .country-compare-two-cols {
+    display: flex;
+    gap: 24px;
+  }
+  .country-compare-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .country-compare-row {
+    display: grid;
+    grid-template-columns: 1.4fr 2.4fr 1.4fr 1.4fr 1.4fr; /* 5 columns per row! */
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+  }
+  .country-compare-row:not(.header):hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+  }
+  .country-compare-row.header {
+    font-weight: 700;
+    color: var(--fg-muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-bottom: 2px;
+    background: transparent;
+    font-size: 12px;
+  }
+  .col-country {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .col-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bar-value {
+    min-width: 50px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    text-align: right;
+  }
+  .bar-container {
+    flex-grow: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent) 0%, oklch(60% 0.18 300) 100%);
+    border-radius: 3px;
+    transition: width 0.6s ease;
+  }
+  .col-sales, .col-spend {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .col-roas {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .roas-real {
+    color: var(--accent);
+  }
+  .roas-sep {
+    color: var(--fg-subtle);
+  }
+  .roas-meta {
+    color: var(--fg);
+  }
+  .oa-selected-product-badge {
+    margin: 15px 0;
+    padding: 10px 16px;
+    background: var(--accent-subtle);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+</style>
+
 <section class="oa-panel {% if active_tab == 'countryDashboard' %}active{% endif %}" id="panelCountryDashboard">
   <div class="oad-toolbar">
     <div class="oad-toolbar-row">
@@ -3581,9 +3690,26 @@
       </div>
       {{ analytics_date_range('国家看板', 'countryStartDate', 'countryEndDate', 'aria-label="开始日期"', 'aria-label="结束日期"') }}
       <button type="button" class="oad-btn-primary" id="countryRefresh">刷新</button>
+
+      <!-- Product Search Box -->
+      <div class="oa-search-box ads-level-search" style="margin-left: var(--space-3); min-width: 250px;">
+        <input type="text" id="countryProductSearchInput" placeholder="搜索单品国家数据..." style="height:32px;">
+        <div id="countryProductSearchResults" class="oa-search-results"></div>
+      </div>
     </div>
   </div>
+
+  <!-- Selected Product Badge -->
+  <div id="countryProductBadge" class="oa-selected-product-badge" style="display: none;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="font-size: 14px; font-weight: 700; color: var(--accent);">正在查看单品国家数据：</span>
+      <span id="countryBadgeText" style="font-size: 14px; font-weight: 600; color: var(--fg);"></span>
+    </div>
+    <button type="button" class="oad-btn-secondary" id="clearCountryProduct" style="height: 26px; padding: 0 10px; font-size: 12px; cursor: pointer;">清除单品 (查看全局)</button>
+  </div>
+
   <div id="countrySummary"></div>
+  <div id="countryCharts"></div>
   <div id="countryTable"></div>
 </section>
 
@@ -5069,6 +5195,9 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='analytics_date_range_picker.js') }}"></script>
 <script>
+  window.countryDashboardProductCode = {{ product_code | tojson if product_code else 'null' }};
+</script>
+<script>
 (function() {
   var currentProductId = null;
   var currentProductName = null;
@@ -5172,6 +5301,71 @@
         }
         loadCountryDashboard();
       });
+
+      // Initialize single product search for country dashboard
+      var countryInput = document.getElementById('countryProductSearchInput');
+      if (countryInput && window.countryDashboardProductCode) {
+        countryInput.value = window.countryDashboardProductCode;
+      }
+      var countryResults = document.getElementById('countryProductSearchResults');
+      if (countryInput && countryResults) {
+        var countryTimer = null;
+        var escapeHtmlAttr = function(s) { return String(s || '').replace(/"/g, '&quot;'); };
+        countryInput.addEventListener('input', function() {
+          clearTimeout(countryTimer);
+          var q = countryInput.value.trim();
+          if (!q) {
+            countryResults.style.display = 'none';
+            countryResults.innerHTML = '';
+            return;
+          }
+          countryTimer = setTimeout(function() {
+            fetch('/order-analytics/search?q=' + encodeURIComponent(q))
+              .then(function(r) { return r.json(); })
+              .then(function(items) {
+                if (!items || !items.length) {
+                  countryResults.innerHTML = '<div style="padding:10px 14px;color:var(--fg-subtle);font-size:13px;">无匹配产品</div>';
+                  countryResults.style.display = 'block';
+                  return;
+                }
+                countryResults.innerHTML = items.map(function(item) {
+                  var code = item.product_code || '';
+                  var displayName = item.display_name || item.name || '';
+                  return '<div class="oa-search-results-item" data-code="' + escapeHtmlAttr(code) + '" style="padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border);">' +
+                    '<div style="font-size: 13px; font-weight: 600; color: var(--fg);">' + escapeHtml(displayName) + '</div>' +
+                    '<div style="font-size: 11px; color: var(--fg-subtle);">' + escapeHtml(code) + '</div>' +
+                    '</div>';
+                }).join('');
+                countryResults.style.display = 'block';
+
+                countryResults.querySelectorAll('.oa-search-results-item').forEach(function(el) {
+                  el.addEventListener('click', function() {
+                    var code = el.dataset.code;
+                    if (code) {
+                      window.location.href = '/order-analytics/country-dashboard-view/' + encodeURIComponent(code);
+                    }
+                  });
+                });
+              })
+              .catch(function(err) {
+                console.error('Search error:', err);
+              });
+          }, 250);
+        });
+
+        document.addEventListener('click', function(e) {
+          if (!countryInput.contains(e.target) && !countryResults.contains(e.target)) {
+            countryResults.style.display = 'none';
+          }
+        });
+      }
+
+      var clearBtn = document.getElementById('clearCountryProduct');
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+          window.location.href = '/order-analytics/country-dashboard-view';
+        });
+      }
     }
     loadCountryDashboard();
   }
@@ -5403,6 +5597,9 @@
       start_date: start,
       end_date: end
     });
+    if (window.countryDashboardProductCode) {
+      params.set('product_code', window.countryDashboardProductCode);
+    }
     return "/order-analytics/country-dashboard?" + params.toString();
   }
 
@@ -5438,24 +5635,116 @@
   function renderCountryDashboard(data) {
     var summaryEl = document.getElementById('countrySummary');
     var tableEl = document.getElementById('countryTable');
+    var chartsEl = document.getElementById('countryCharts');
+    var badgeEl = document.getElementById('countryProductBadge');
+    var badgeTextEl = document.getElementById('countryBadgeText');
+    
+    // Update Badge
+    if (data.product_code) {
+      if (badgeEl) badgeEl.style.display = 'flex';
+      if (badgeTextEl) {
+        badgeTextEl.textContent = data.product_name ? (data.product_name + ' (' + data.product_code + ')') : data.product_code;
+      }
+    } else {
+      if (badgeEl) badgeEl.style.display = 'none';
+    }
+
     var summary = data.summary || {};
+    var spendVal = summary.total_spend !== undefined ? summary.total_spend : 0;
+    var roasVal = summary.overall_roas !== undefined && summary.overall_roas !== null ? summary.overall_roas : '-';
+    var metaRoasVal = summary.overall_meta_roas !== undefined && summary.overall_meta_roas !== null ? summary.overall_meta_roas : '-';
+
     summaryEl.innerHTML =
       '<div class="oa-stats">' +
         statCard('国家数', fmtInt(summary.country_count)) +
         statCard('订单总量', fmtInt(summary.total_orders)) +
         statCard('销售件数', fmtInt(summary.total_units)) +
         statCard('总销售额', fmtMoney(summary.total_sales)) +
-        statCard('运费', fmtMoney(summary.shipping)) +
-        statCard('商品净销售额', fmtMoney(summary.product_net_sales)) +
+        statCard('广告消耗', fmtMoney(spendVal)) +
+        statCard('真实 ROAS', roasVal) +
+        statCard('Meta ROAS', metaRoasVal) +
       '</div>';
 
     var rows = Array.isArray(data.countries) ? data.countries : [];
+    
+    // Top 9 visual comparison charts
+    if (chartsEl) {
+      if (!rows.length) {
+        chartsEl.innerHTML = '';
+      } else {
+        // Sort by order_count desc, then total_sales desc
+        var sortedForCharts = rows.slice().sort(function(a, b) {
+          if (b.order_count !== a.order_count) {
+            return b.order_count - a.order_count;
+          }
+          return (b.total_sales || 0) - (a.total_sales || 0);
+        });
+        
+        var top9 = sortedForCharts.slice(0, 9);
+        var maxOrders = Math.max.apply(null, top9.map(function(r) { return r.order_count || 0; })) || 1;
+        
+        var makeRowHtml = function(row) {
+          var name = row.display_name || row.buyer_country_name || row.buyer_country || '未知';
+          var orderCount = row.order_count || 0;
+          var pct = (orderCount / maxOrders) * 100;
+          
+          var rSpend = row.spend !== undefined ? row.spend : 0;
+          var rRoas = row.roas !== undefined && row.roas !== null ? row.roas.toFixed(2) : '-';
+          var rMetaRoas = row.meta_roas !== undefined && row.meta_roas !== null ? row.meta_roas.toFixed(2) : '-';
+          
+          return '<div class="country-compare-row">' +
+            '<div class="col-country">' + escapeHtml(name) + '</div>' +
+            '<div class="col-bar">' +
+              '<span class="bar-value">' + fmtInt(orderCount) + ' 单</span>' +
+              '<div class="bar-container"><div class="bar-fill" style="width: ' + pct.toFixed(1) + '%;"></div></div>' +
+            '</div>' +
+            '<div class="col-sales">' + fmtMoney(row.total_sales) + '</div>' +
+            '<div class="col-spend">' + fmtMoney(rSpend) + '</div>' +
+            '<div class="col-roas">' +
+              '<span class="roas-real" title="真实 ROAS">' + rRoas + '</span>' +
+              '<span class="roas-sep">/</span>' +
+              '<span class="roas-meta" title="Meta ROAS">' + rMetaRoas + '</span>' +
+            '</div>' +
+          '</div>';
+        };
+
+        var makeHeaderHtml = function() {
+          return '<div class="country-compare-row header">' +
+            '<div class="col-country">国家</div>' +
+            '<div class="col-bar" style="justify-content: center;">订单量占比</div>' +
+            '<div class="col-sales">总销售额</div>' +
+            '<div class="col-spend">广告消耗</div>' +
+            '<div class="col-roas">真实/Meta ROAS</div>' +
+          '</div>';
+        };
+
+        var leftGroup = top9.slice(0, 5);
+        var rightGroup = top9.slice(5, 9);
+
+        var leftHtml = makeHeaderHtml() + leftGroup.map(makeRowHtml).join('');
+        var rightHtml = makeHeaderHtml() + (rightGroup.length ? rightGroup.map(makeRowHtml).join('') : '<div style="padding: 10px; text-align: center; color: var(--fg-subtle); font-size: 12px;">暂无数据</div>');
+
+        chartsEl.innerHTML = '<div style="font-size: 16px; font-weight: 700; color: var(--fg); margin: 20px 0 10px;">国家数据对比 (TOP 9)</div>' +
+          '<div class="country-compare-container">' +
+            '<div class="country-compare-two-cols">' +
+              '<div class="country-compare-col">' + leftHtml + '</div>' +
+              '<div class="country-compare-col">' + rightHtml + '</div>' +
+            '</div>' +
+          '</div>';
+      }
+    }
+
     if (!rows.length) {
       tableEl.innerHTML = '<div class="oad-empty">暂无国家订单数据</div>';
       return;
     }
+    
     var body = rows.map(function(row) {
       var name = row.display_name || row.buyer_country_name || row.buyer_country || '未知';
+      var rSpend = row.spend !== undefined ? row.spend : 0;
+      var rRoas = row.roas !== undefined && row.roas !== null ? row.roas.toFixed(2) : '-';
+      var rMetaRoas = row.meta_roas !== undefined && row.meta_roas !== null ? row.meta_roas.toFixed(2) : '-';
+      
       return '<tr>' +
         '<td>' + escapeHtml(name) + '</td>' +
         '<td>' + fmtInt(row.order_count) + '</td>' +
@@ -5463,12 +5752,17 @@
         '<td>' + fmtMoney(row.product_net_sales) + '</td>' +
         '<td>' + fmtMoney(row.shipping) + '</td>' +
         '<td>' + fmtMoney(row.total_sales) + '</td>' +
+        '<td>' + fmtMoney(rSpend) + '</td>' +
+        '<td>' + rRoas + '</td>' +
+        '<td>' + rMetaRoas + '</td>' +
       '</tr>';
     }).join('');
+    
     tableEl.innerHTML =
       '<div class="oa-table-wrap"><div class="oa-table-scroll">' +
       '<table class="oa-table oar-compact-table"><thead><tr>' +
       '<th>国家</th><th>订单量</th><th>销售件数</th><th>商品净销售额</th><th>运费</th><th>总销售额</th>' +
+      '<th>广告消耗</th><th>真实 ROAS</th><th>Meta ROAS</th>' +
       '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
   }
 
