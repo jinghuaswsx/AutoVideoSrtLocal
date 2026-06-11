@@ -126,9 +126,16 @@ def upload_asset():
     file = request.files["file"]
     if not file.filename:
         return _err("NO_FILE", "No file selected", 400)
+
+    from web.upload_util import client_filename_basename, validate_spreadsheet_extension, validate_image_extension, validate_video_extension
+    filename = client_filename_basename(file.filename)
+    ext = os.path.splitext(filename)[1].lower()
+    if not (validate_spreadsheet_extension(filename) or ext == ".json" or validate_image_extension(filename) or validate_video_extension(filename)):
+        return jsonify({"error": "invalid_file_type"}), 400
+
     asset_type = request.form.get("asset_type", "image")
-    if asset_type not in ("image", "video"):
-        return _err("INVALID_ASSET_TYPE", "asset_type must be image or video", 400)
+    if asset_type not in ("image", "video", "spreadsheet", "json"):
+        return _err("INVALID_ASSET_TYPE", "asset_type must be image, video, spreadsheet or json", 400)
 
     from config import UPLOAD_DIR
     import uuid

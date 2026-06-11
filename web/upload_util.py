@@ -11,6 +11,7 @@ from appcore import tos_backup_storage
 
 ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+ALLOWED_SPREADSHEET_EXTS = {".xlsx", ".xls", ".csv"}
 log = logging.getLogger(__name__)
 
 
@@ -28,6 +29,14 @@ def validate_image_extension(filename: str) -> bool:
         return False
     ext = os.path.splitext(filename)[1].lower()
     return ext in ALLOWED_IMAGE_EXTS
+
+
+def validate_spreadsheet_extension(filename: str) -> bool:
+    """校验文件扩展名是否为允许的电子表格格式。"""
+    if not filename:
+        return False
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in ALLOWED_SPREADSHEET_EXTS
 
 
 def client_filename_basename(filename) -> str:

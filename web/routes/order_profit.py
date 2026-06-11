@@ -47,7 +47,7 @@ from web.services.order_profit import (
     build_order_profit_payload_response,
     order_profit_flask_response,
 )
-from web.upload_util import client_filename_basename
+from web.upload_util import client_filename_basename, validate_spreadsheet_extension
 
 log = logging.getLogger(__name__)
 
@@ -238,9 +238,14 @@ def api_loss_alerts():
 def api_import_payments_csv():
     """上传 Shopify Payments CSV → 解析 + 反推 + 写入 shopify_payments_transactions。"""
     f = request.files.get("file")
-    if not f:
+    if not f or not f.filename:
         return order_profit_flask_response(
             build_order_profit_error_response("缺少 file 字段", 400)
+        )
+    filename = client_filename_basename(f.filename)
+    if not validate_spreadsheet_extension(filename):
+        return order_profit_flask_response(
+            build_order_profit_error_response("invalid_file_type", 400)
         )
     try:
         content = f.read().decode("utf-8-sig")  # Shopify CSV 含 BOM
