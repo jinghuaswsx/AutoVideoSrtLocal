@@ -130,17 +130,50 @@ function uniqueLimited(values, limit = 16) {
 }
 
 function looksLikeSku(token) {
-  if (!token || token.length < 3 || token.length > 80) return false;
-  if (/^\d{1,4}$/.test(token)) return false;
-  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(token)) return false;
-  if (/^(http|https|www|com|cn|json|html)$/i.test(token)) return false;
-  return /[A-Za-z]/.test(token) && /[0-9_-]/.test(token);
+  const value = String(token || "").trim();
+  if (!value || value.length < 3 || value.length > 80) return false;
+  if (/^\d{1,4}$/.test(value)) return false;
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(value)) return false;
+  if (/^\d+(?:\.\d+)?(?:cm|mm|m|kg|g|ml|l|xl|xs|pcs?|pack)$/i.test(value)) return false;
+  if (/^(http|https|www|com|cn|json|html)$/i.test(value)) return false;
+  return /[A-Za-z]/.test(value) && /[0-9_-]/.test(value);
 }
 
-function looksLikeNumericHyphenSku(token) {
-  if (!token || token.length < 7 || token.length > 80) return false;
-  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(token)) return false;
-  return /^\d{2,8}-\d{4,30}(?:-\d{2,30})*$/.test(token);
+function looksLikePlainNumericSku(token) {
+  return /^\d{8,}$/.test(String(token || "").trim());
+}
+
+function looksLikeNumericDelimitedSku(token) {
+  const value = String(token || "").trim();
+  if (!value || value.length < 5 || value.length > 80) return false;
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(value)) return false;
+  if (/^\d{1,3}-\d{1,3}$/.test(value)) return false;
+  return /^\d{2,20}(?:-\d{1,30})+$/.test(value);
+}
+
+function extractSkuTokenCandidates(text) {
+  return String(text || "").match(/[A-Za-z0-9][A-Za-z0-9._-]{2,80}(?=$|[\s\u4e00-\u9fff,;，；、)）\]])/g) || [];
+}
+
+function extractLineStartSkuTokens(text) {
+  return String(text || "")
+    .split(/\n+/)
+    .map((line) => {
+      const match = line.trim().match(/^[A-Za-z0-9][A-Za-z0-9._-]{2,80}/);
+      return match ? match[0] : "";
+    })
+    .filter(Boolean);
+}
+
+function isLikelyDianxiaomiSkuToken(token) {
+  return looksLikeSku(token) || looksLikeNumericDelimitedSku(token) || looksLikePlainNumericSku(token);
+}
+
+function getDianxiaomiSkuCandidateTokens(text) {
+  const tokens = extractSkuTokenCandidates(text);
+  const lineStartSkuCandidates = extractLineStartSkuTokens(text).filter(isLikelyDianxiaomiSkuToken);
+  const tokenSkuCandidates = tokens.filter(isLikelyDianxiaomiSkuToken);
+  return uniqueLimited([...lineStartSkuCandidates, ...tokenSkuCandidates], 16);
 }
 
 function extractProductCode(text) {
@@ -163,8 +196,11 @@ function extractProductName(text) {
 
 function collectClues() {
   const root = getScanRoot();
-  const rootText = compactText(root ? root.innerText : "", MAX_TEXT_SCAN);
-  const bodyText = rootText || compactText(document.body ? document.body.innerText : "", MAX_TEXT_SCAN);
+  const rawRootText = root ? root.innerText : "";
+  const rawBodyText = document.body ? document.body.innerText : "";
+  const rootText = compactText(rawRootText, MAX_TEXT_SCAN);
+  const bodyText = rootText || compactText(rawBodyText, MAX_TEXT_SCAN);
+  const scanText = String(rawRootText || rawBodyText || bodyText).slice(0, MAX_TEXT_SCAN);
   const skuLabels = ["货品SKU", "商品SKU", "SKU", "sku", "平台SKU", "平台sku"];
   const productSkuLabels = ["商品编码", "商品SKU", "商家编码", "商品货号", "货号"];
   const skuCodeLabels = ["SKU编码", "SKU 编码", "商品编码", "编码"];
@@ -172,14 +208,12 @@ function collectClues() {
   const labelledSkus = extractLabelValues(bodyText, skuLabels);
   const labelledProductSkus = extractLabelValues(bodyText, productSkuLabels);
   const labelledSkuCodes = extractLabelValues(bodyText, skuCodeLabels);
-  const tokens = bodyText.match(/\b[A-Za-z0-9][A-Za-z0-9._-]{2,80}\b/g) || [];
-  const skuCandidates = tokens.filter(looksLikeSku);
-  const numericHyphenSkuCandidates = tokens.filter(looksLikeNumericHyphenSku);
-  const numericSkuCandidates = tokens.filter((token) => /^\d{8,}$/.test(token));
+  const skuCandidates = getDianxiaomiSkuCandidateTokens(scanText);
+  const numericSkuCandidates = extractSkuTokenCandidates(scanText).filter(looksLikePlainNumericSku);
   const shopifyProductIds = uniqueLimited(numericSkuCandidates, 6);
 
   return {
-    skus: uniqueLimited([...labelledSkus, ...skuCandidates, ...numericHyphenSkuCandidates, ...numericSkuCandidates], 16),
+    skus: uniqueLimited([...labelledSkus, ...skuCandidates], 16),
     productSkus: uniqueLimited(labelledProductSkus, 10),
     skuCodes: uniqueLimited(labelledSkuCodes, 10),
     shopifyProductIds,

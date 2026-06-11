@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -245,8 +246,9 @@ def test_chrome_extension_manifest_and_assets():
     assert "/dianxiaomi-procurement-insights/api/insights" in background
     assert 'credentials: "include"' in background
     assert "collectClues" in content
-    assert "looksLikeNumericHyphenSku" in content
-    assert "numericHyphenSkuCandidates" in content
+    assert "getDianxiaomiSkuCandidateTokens" in content
+    assert "looksLikeNumericDelimitedSku" in content
+    assert "lineStartSkuCandidates" in content
     assert "findPurchaseModal" in content
     assert "syncPanelPlacement" in content
     assert "setInterval(schedulePanelPlacement" in content
@@ -262,3 +264,73 @@ def test_chrome_extension_manifest_and_assets():
     assert ".dpi-product-actions" in styles
     assert ".dpi-total-value" in styles
     assert ".dpi-period-table" in styles
+
+
+def test_chrome_extension_sku_candidates_cover_dianxiaomi_shapes():
+    content_path = ROOT / "tools" / "dianxiaomi_procurement_insights" / "chrome_ext" / "content.js"
+    script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const contentPath = {json.dumps(str(content_path))};
+const code = fs.readFileSync(contentPath, "utf8");
+class FakeElement {{}}
+const context = {{
+  console,
+  Element: FakeElement,
+  MutationObserver: function MutationObserver() {{ this.observe = () => undefined; }},
+  chrome: {{ runtime: {{ lastError: null, sendMessage: (_message, callback) => callback({{ ok: true }}) }} }},
+  window: {{
+    innerWidth: 1600,
+    innerHeight: 900,
+    getComputedStyle: () => ({{ display: "block", visibility: "visible", opacity: "1" }}),
+    addEventListener: () => undefined,
+    setInterval: () => undefined,
+    setTimeout: () => undefined,
+    requestAnimationFrame: () => 1,
+  }},
+  document: {{
+    readyState: "loading",
+    addEventListener: () => undefined,
+    body: {{ innerText: "" }},
+    documentElement: {{ appendChild: () => undefined }},
+    activeElement: null,
+    getElementById: () => null,
+    querySelectorAll: () => [],
+    createElement: () => ({{ addEventListener: () => undefined, classList: {{ add: () => undefined, remove: () => undefined }}, style: {{}} }}),
+  }},
+}};
+context.globalThis = context;
+vm.runInNewContext(code, context, {{ filename: contentPath }});
+const sampleText = [
+  "0427-16411412",
+  "0514-16428715-2",
+  "45807908847785-1",
+  "159464308921378826-99",
+  "2305171755-04251136",
+  "PM1999041-RED-L",
+  "DG250315033-heiSkoda-1",
+  "YI21513591334",
+  "GQ2223686-",
+  "3XL",
+  "100cm",
+  "2026-06-11",
+  "$10.50",
+].join("\\n");
+console.log(JSON.stringify(context.getDianxiaomiSkuCandidateTokens(sampleText)));
+"""
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0, result.stderr
+    candidates = json.loads(result.stdout)
+    assert "0427-16411412" in candidates
+    assert "0514-16428715-2" in candidates
+    assert "45807908847785-1" in candidates
+    assert "159464308921378826-99" in candidates
+    assert "2305171755-04251136" in candidates
+    assert "PM1999041-RED-L" in candidates
+    assert "DG250315033-heiSkoda-1" in candidates
+    assert "YI21513591334" in candidates
+    assert "GQ2223686-" in candidates
+    assert "3XL" not in candidates
+    assert "100cm" not in candidates
+    assert "2026-06-11" not in candidates
