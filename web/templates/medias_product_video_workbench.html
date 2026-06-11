@@ -1,5 +1,6 @@
 {# Docs-anchor: docs/superpowers/specs/2026-06-08-medias-workbench-mk-card-flow-alignment.md #}
 {# Docs-anchor: docs/superpowers/specs/2026-06-08-video-card-data-modal-dual-entry.md #}
+{# Docs-anchor: docs/superpowers/specs/2026-06-06-medias-product-video-workbench-design.md#data #}
 {% extends "layout.html" %}
 {% block title %}视频素材决策台 - {{ product.name }} - AutoVideoSrt{% endblock %}
 {% block page_title %}
@@ -895,7 +896,9 @@
     const coverUrl = mk.local_cover_object_key
       ? `/medias/object?object_key=${encodeURIComponent(mk.local_cover_object_key)}`
       : (mk.image_path ? `/xuanpin/api/mk-media?path=${encodeURIComponent(mk.image_path)}` : '');
-    const videoUrl = mk.path ? `/xuanpin/api/mk-video?path=${encodeURIComponent(mk.path)}` : '';
+    const videoUrl = mk.local_video_object_key
+      ? `/medias/object?object_key=${encodeURIComponent(mk.local_video_object_key)}`
+      : (mk.path ? `/xuanpin/api/mk-video?path=${encodeURIComponent(mk.path)}` : '');
     return {coverUrl, videoUrl};
   }
   function cardContext(card) {
@@ -1054,7 +1057,13 @@
       <div class="vw-kpi"><span>整体 ROAS</span><strong>${roas(ad.overall_roas)}</strong></div>
       <div class="vw-kpi"><span>投放情况</span><strong>${statusText(ad.delivery_status)}</strong></div>
     `;
-    if (summaryNote) summaryNote.textContent = `共 ${s.total_mk_videos || 0} 条明空视频素材`;
+    const totalMk = Number(s.total_mk_videos || 0);
+    const cardCount = Array.isArray(data.cards) ? data.cards.length : totalMk;
+    if (summaryNote) {
+      summaryNote.textContent = cardCount > totalMk
+        ? `共 ${totalMk} 条明空视频素材，${cardCount} 张可操作卡片`
+        : `共 ${totalMk} 条明空视频素材`;
+    }
   }
   function renderLangStrip(data) {
     const langCoverage = data.lang_coverage || {};
@@ -1074,7 +1083,7 @@
     const d = data || currentData || {};
     const cards = d.cards || [];
     if (!cards.length) {
-      grid.innerHTML = '<div class="vw-empty">该产品还没有同步到明空视频素材</div>';
+      grid.innerHTML = '<div class="vw-empty">该产品还没有可用的明空视频素材或自营 EN 原素材</div>';
       const pager = document.getElementById('vwPager');
       if (pager) pager.hidden = true;
       return;
@@ -1426,13 +1435,18 @@
     const coverUrl = urls.coverUrl || '';
     const videoUrl = urls.videoUrl || '';
     const bound = card.bound_item || {};
+    const isLocalCjh = card.source_type === 'local_en_cjh';
     const matchSource = card.library_match_source || bound.match_source || '';
     const isLegacyMatch = matchSource === 'media_items_legacy_product_scope';
-    const tagText = inLib ? (isLegacyMatch ? '历史入库' : '已入库') : '未入库';
+    const tagText = isLocalCjh ? '自营素材' : (inLib ? (isLegacyMatch ? '历史入库' : '已入库') : '未入库');
+    const itemId = bound.id || card.media_item_id || '';
+    let localDetailUrl = `/medias/?q=${encodeURIComponent(productCode)}&product=${productId}&lang=en&action=video`;
+    if (itemId) {
+      localDetailUrl += `&item=${itemId}`;
+    }
 
     let stateHtml = '';
     if (inLib) {
-      const itemId = bound.id || card.media_item_id || '';
       let locateUrl = `/medias/?q=${encodeURIComponent(productCode)}&product=${productId}&lang=en&action=video`;
       if (itemId) {
         locateUrl += `&item=${itemId}`;
@@ -1442,8 +1456,8 @@
       }
       stateHtml = `
         <div class="vw-local-state-row">
-          <span class="vw-sub" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-right: 6px;" title="${isLegacyMatch ? '历史匹配本地素材' : '已绑定本地素材'} #${itemId}${bound.filename ? ' / ' + esc(bound.filename) : ''}">
-            ${isLegacyMatch ? '历史匹配' : '已绑定'} #${itemId}${bound.filename ? ' / ' + esc(bound.filename) : ''}
+          <span class="vw-sub" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-right: 6px;" title="${isLocalCjh ? '自营 EN 原素材' : (isLegacyMatch ? '历史匹配本地素材' : '已绑定本地素材')} #${itemId}${bound.filename ? ' / ' + esc(bound.filename) : ''}">
+            ${isLocalCjh ? '自营EN' : (isLegacyMatch ? '历史匹配' : '已绑定')} #${itemId}${bound.filename ? ' / ' + esc(bound.filename) : ''}
           </span>
           <a class="vw-mini-btn vw-locate-btn" href="${locateUrl}" target="_blank" rel="noopener noreferrer">定位</a>
         </div>
@@ -1459,10 +1473,16 @@
     const enName = englishNameFromFilename(mk.name);
     const productCodeClean = productCode.replace(/-rjc$/i, '');
     const posterAttr = coverUrl ? ` poster="${esc(coverUrl)}"` : '';
+    const detailHref = (!isLocalCjh && mk.material_key)
+      ? '/xuanpin/mk/videos/' + encodeURIComponent(mk.material_key)
+      : localDetailUrl;
+    const mkAction = isLocalCjh
+      ? ''
+      : `<button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>`;
     const actions = inLib
       ? `<button type="button" class="vw-btn vw-btn-primary" data-action="task" data-card-id="${esc(card.card_id)}">创建小语种任务</button>
-         <a class="vw-btn" href="${mk.material_key ? '/xuanpin/mk/videos/' + encodeURIComponent(mk.material_key) : '/medias/video?keyword=' + encodeURIComponent(bound.filename || mk.name || '')}" target="_blank" rel="noopener noreferrer">素材详情</a>
-         <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>
+         <a class="vw-btn" href="${detailHref}" target="_blank" rel="noopener noreferrer">素材详情</a>
+         ${mkAction}
          <button type="button" class="vw-btn" data-action="card-data" data-card-id="${esc(card.card_id)}">广告数据</button>`
       : `<button type="button" class="vw-btn vw-btn-primary" data-action="import" data-card-id="${esc(card.card_id)}">加入素材库</button>
          <button type="button" class="vw-btn" disabled title="先加入素材库后才能创建小语种任务">创建小语种任务</button>
@@ -1471,7 +1491,7 @@
     return `
       <div class="vw-card ${inLib ? 'is-in' : ''}" data-card-id="${esc(card.card_id)}" id="card-${esc(card.card_id)}">
         <div class="vw-left-card">
-          <div class="vw-tag" title="${esc(isLegacyMatch ? '产品内文件名/路径精确匹配，未写入绑定表' : '')}">${tagText}</div>
+          <div class="vw-tag" title="${esc(isLocalCjh ? '本地 EN 自营素材，可直接创建小语种任务' : (isLegacyMatch ? '产品内文件名/路径精确匹配，未写入绑定表' : ''))}">${tagText}</div>
           <div class="vw-product-line">
             ${rawLink ? `<a class="vw-product-name" href="${esc(rawLink)}" target="_blank" rel="noopener noreferrer" title="${esc(cnName)}">${esc(cnName)}</a>` : `<div class="vw-product-name" title="${esc(cnName)}">${esc(cnName)}</div>`}
             <div class="vw-product-en" title="${esc(enName)}">${esc(enName)}</div>

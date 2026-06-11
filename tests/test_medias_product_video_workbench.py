@@ -55,6 +55,9 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "广告明细" in html
     assert "vw-kpi-compare" in html
     assert "vw-kpi-compare-row" in html
+    assert "local_video_object_key" in html
+    assert "card.source_type === 'local_en_cjh'" in html
+    assert "自营素材" in html
 
 
 def test_video_workbench_import_flow_matches_mk_progress_contract():
@@ -315,6 +318,111 @@ def test_build_product_video_workbench_matches_legacy_library_item_by_exact_file
     assert card["library_match_source"] == "media_items_legacy_product_scope"
     assert card["library_match_reason"] == "video_name:filename"
     assert card["bound_item"]["match_source"] == "media_items_legacy_product_scope"
+
+
+def test_build_product_video_workbench_includes_local_english_cjh_source(monkeypatch):
+    from web.routes.medias import material_supplement as route
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials._enrich_material_yesterday_delta",
+        lambda rows, **kwargs: None,
+    )
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            return [{"id": 624, "name": "药片活页收纳包", "product_code": "pill-organizer-rjc"}]
+        if "FROM mingkong_material_daily_snapshots s" in sql:
+            return []
+        if "FROM media_items" in sql and "WHERE product_id = %s" in sql:
+            return [
+                {
+                    "id": 701,
+                    "product_id": 624,
+                    "lang": "en",
+                    "filename": "2026.06.10-药片活页收纳包-原素材-蔡靖华.mp4",
+                    "display_name": "2026.06.10-药片活页收纳包-原素材-蔡靖华.mp4",
+                    "object_key": "media/624/701.mp4",
+                    "cover_object_key": "media/624/701.jpg",
+                    "task_id": None,
+                    "source_raw_id": 701,
+                    "source_ref_id": None,
+                    "auto_translated": 0,
+                    "created_at": datetime(2026, 6, 10, 9, 30, 0),
+                },
+                {
+                    "id": 702,
+                    "product_id": 624,
+                    "lang": "en",
+                    "filename": "2026.06.10-药片活页收纳包-原素材-张晴.mp4",
+                    "display_name": "2026.06.10-药片活页收纳包-原素材-张晴.mp4",
+                    "object_key": "media/624/702.mp4",
+                    "cover_object_key": "",
+                    "task_id": None,
+                    "source_raw_id": 702,
+                    "source_ref_id": None,
+                    "auto_translated": 0,
+                    "created_at": datetime(2026, 6, 10, 9, 40, 0),
+                },
+                {
+                    "id": 703,
+                    "product_id": 624,
+                    "lang": "de",
+                    "filename": "2026.06.10-药片活页收纳包-原素材-补充素材(德语)-指派-蔡靖华.mp4",
+                    "display_name": "2026.06.10-药片活页收纳包-原素材-补充素材(德语)-指派-蔡靖华.mp4",
+                    "object_key": "media/624/703.mp4",
+                    "cover_object_key": "",
+                    "task_id": None,
+                    "source_raw_id": 701,
+                    "source_ref_id": 701,
+                    "auto_translated": 1,
+                    "created_at": datetime(2026, 6, 10, 10, 0, 0),
+                },
+            ]
+        if "FROM tasks t" in sql:
+            return []
+        if "FROM media_item_mk_bindings" in sql:
+            return []
+        if "FROM media_product_lang_ad_summary_cache" in sql:
+            return []
+        if "FROM media_product_ad_summary_cache" in sql:
+            return [{"ad_spend_usd": "4652.00", "active_7d_ad_spend_usd": "10.00", "overall_roas": "1.66", "delivery_status": "active"}]
+        raise AssertionError(sql)
+
+    def attach(rows):
+        for row in rows:
+            perf = route._empty_ad_performance()
+            if int(row["id"]) == 701:
+                perf.update({"total_spend_usd": 4652.0, "matched_ad_count": 2, "yesterday_spend_usd": 88.0})
+            row["ad_performance"] = perf
+
+    payload = route.build_product_video_workbench(
+        624,
+        query_fn=fake_query,
+        attach_ad_plan_details_fn=attach,
+    )
+
+    assert payload["summary"]["total_mk_videos"] == 0
+    assert payload["summary"]["in_library"] == 1
+    assert payload["summary"]["not_in_library"] == 0
+    assert payload["summary"]["local_material_count"] == 3
+    assert len(payload["cards"]) == 1
+    card = payload["cards"][0]
+    assert card["source_type"] == "local_en_cjh"
+    assert card["in_library"] is True
+    assert card["media_item_id"] == 701
+    assert card["library_match_source"] == "local_en_cjh"
+    assert card["library_match_reason"] == "english_cjh_filename_suffix"
+    assert card["bound_item"]["id"] == 701
+    assert card["mk_video"]["name"] == "2026.06.10-药片活页收纳包-原素材-蔡靖华.mp4"
+    assert card["mk_video"]["path"] == ""
+    assert card["mk_video"]["local_video_object_key"] == "media/624/701.mp4"
+    assert card["mk_video"]["local_cover_object_key"] == "media/624/701.jpg"
+    assert card["mk_video"]["spends"] == 4652.0
+    assert card["mk_video"]["ads_count"] == 2
+    assert card["translation_summary"]["translated_country_codes"] == ["DE"]
+    de_target = next(row for row in card["target_country_versions"] if row["country_code"] == "DE")
+    assert de_target["status"] == "translated"
+    assert de_target["version"]["media_item_id"] == 703
 
 
 def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(monkeypatch):

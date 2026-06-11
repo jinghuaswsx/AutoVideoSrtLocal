@@ -81,6 +81,8 @@ _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
 _SPACE_RE = re.compile(r"\s+")
 _MAX_AD_DETAIL_DAYS = 180
 _AD_DETAIL_COUNTRY_FALLBACK_REASON = "product_lang_country_fallback"
+_LOCAL_EN_CJH_SOURCE_TYPE = "local_en_cjh"
+_LOCAL_EN_CJH_MATCH_REASON = "english_cjh_filename_suffix"
 
 
 def _json(payload: dict, status: int = 200):
@@ -285,6 +287,28 @@ def _term_no_ext(value: str) -> str:
     return normalized
 
 
+def _is_local_en_cjh_source_item(item: Mapping[str, Any]) -> bool:
+    if str(item.get("lang") or "").strip().lower() != "en":
+        return False
+    names = [
+        _term_no_ext(str(item.get("display_name") or "")),
+        _term_no_ext(str(item.get("filename") or "")),
+    ]
+    return any(name.endswith("-蔡靖华") for name in names if name)
+
+
+def _bound_item_payload(item: dict, *, match_source: str | None, match_reason: str | None) -> dict:
+    return {
+        "id": int(item["id"]),
+        "lang": item.get("lang") or "en",
+        "filename": item.get("filename") or "",
+        "display_name": item.get("display_name") or "",
+        "task_id": item.get("task_id"),
+        "match_source": match_source,
+        "match_reason": match_reason,
+    }
+
+
 def _row_matches_term(row: dict, term: str) -> bool:
     needle = str(term or "").strip().lower()
     if not needle:
@@ -399,7 +423,7 @@ def _load_mk_videos(product_code: str, query_fn=db_query) -> list[dict]:
 
 def _load_library_items(product_id: int, query_fn=db_query) -> list[dict]:
     rows = query_fn(
-        "SELECT id, product_id, lang, filename, display_name, object_key, task_id, "
+        "SELECT id, product_id, lang, filename, display_name, object_key, cover_object_key, task_id, "
         "       source_raw_id, source_ref_id, auto_translated, created_at "
         "FROM media_items "
         "WHERE product_id = %s AND deleted_at IS NULL "
@@ -1132,20 +1156,17 @@ def build_product_video_workbench(
         )
         spends = _safe_float(mk_row.get("cumulative_90_spend"))
         cards.append({
+            "source_type": "mingkong",
             "card_id": _card_id(video_path, bound_item_id),
             "in_library": in_library,
             "media_item_id": bound_item_id,
             "library_match_source": library_match_source,
             "library_match_reason": library_match_reason,
-            "bound_item": {
-                "id": int(bound_item["id"]),
-                "lang": bound_item.get("lang") or "en",
-                "filename": bound_item.get("filename") or "",
-                "display_name": bound_item.get("display_name") or "",
-                "task_id": bound_item.get("task_id"),
-                "match_source": library_match_source,
-                "match_reason": library_match_reason,
-            } if bound_item else None,
+            "bound_item": _bound_item_payload(
+                bound_item,
+                match_source=library_match_source,
+                match_reason=library_match_reason,
+            ) if bound_item else None,
             "mk_video": {
                 "name": mk_row.get("video_name") or "",
                 "path": video_path,
@@ -1155,6 +1176,7 @@ def build_product_video_workbench(
                 "author": mk_row.get("video_author") or "",
                 "upload_time": _iso(mk_row.get("video_upload_time")) or "",
                 "local_cover_object_key": mk_row.get("local_cover_object_key") or "",
+                "local_video_object_key": "",
                 "yesterday_spend_delta": _safe_float(mk_row.get("yesterday_spend_delta")),
                 "material_key": mk_row.get("material_key") or "",
             },
@@ -1179,6 +1201,71 @@ def build_product_video_workbench(
             "snapshot_at": _iso(mk_row.get("snapshot_at")) or "",
         })
 
+    used_media_item_ids = {
+        int(card.get("media_item_id") or 0)
+        for card in cards
+        if int(card.get("media_item_id") or 0) > 0
+    }
+    for item in library_items:
+        media_item_id = int(item.get("id") or 0)
+        if media_item_id <= 0 or media_item_id in used_media_item_ids:
+            continue
+        if not _is_local_en_cjh_source_item(item):
+            continue
+        object_key = str(item.get("object_key") or "").strip()
+        local_card_key = f"local:{media_item_id}:{object_key}"
+        translated_versions, translation_summary, target_country_versions = _build_translated_versions(
+            bound_item=item,
+            library_items=library_items,
+            order_report=order_report,
+        )
+        task_summary = task_summaries.get(media_item_id) or _empty_task_summary()
+        _attach_task_summary_to_versions(
+            translated_versions,
+            target_country_versions,
+            task_summary,
+        )
+        perf = item.get("ad_performance") or _empty_ad_performance()
+        filename = str(item.get("filename") or item.get("display_name") or "").strip()
+        cards.append({
+            "source_type": _LOCAL_EN_CJH_SOURCE_TYPE,
+            "card_id": _card_id(local_card_key, media_item_id),
+            "in_library": True,
+            "media_item_id": media_item_id,
+            "library_match_source": _LOCAL_EN_CJH_SOURCE_TYPE,
+            "library_match_reason": _LOCAL_EN_CJH_MATCH_REASON,
+            "bound_item": _bound_item_payload(
+                item,
+                match_source=_LOCAL_EN_CJH_SOURCE_TYPE,
+                match_reason=_LOCAL_EN_CJH_MATCH_REASON,
+            ),
+            "mk_video": {
+                "name": filename,
+                "path": "",
+                "image_path": "",
+                "spends": _safe_float(perf.get("total_spend_usd")),
+                "ads_count": int(perf.get("matched_ad_count") or 0),
+                "author": "蔡靖华",
+                "upload_time": _iso(item.get("created_at")) or "",
+                "local_cover_object_key": item.get("cover_object_key") or "",
+                "local_video_object_key": object_key,
+                "yesterday_spend_delta": _safe_float(perf.get("yesterday_spend_usd")),
+                "material_key": f"local:{media_item_id}",
+            },
+            "mk_product_id": None,
+            "mk_product_name": product.get("name") or "",
+            "mk_product_link": "",
+            "main_image": "",
+            "lang_ad_summary": deduped_lang_ad_rows,
+            "translated_versions": translated_versions,
+            "task_summary": task_summary,
+            "translation_summary": translation_summary,
+            "target_country_versions": target_country_versions,
+            "snapshot_date": "",
+            "snapshot_at": "",
+        })
+        used_media_item_ids.add(media_item_id)
+
     if sort_by == "spend_yesterday":
         cards.sort(key=lambda c: (not c["in_library"], -_safe_float(c["mk_video"].get("yesterday_spend_delta") or 0.0), -int(c["mk_video"].get("ads_count") or 0)))
     elif sort_by == "ads_count":
@@ -1186,7 +1273,7 @@ def build_product_video_workbench(
     else:
         cards.sort(key=lambda c: (not c["in_library"], -_safe_float(c["mk_video"].get("spends") or 0.0), -int(c["mk_video"].get("ads_count") or 0)))
 
-    total_mk = len(cards)
+    total_mk = sum(1 for card in cards if card.get("source_type") != _LOCAL_EN_CJH_SOURCE_TYPE)
     in_lib_count = sum(1 for card in cards if card["in_library"])
     return {
         "product": {
@@ -1198,7 +1285,11 @@ def build_product_video_workbench(
         "summary": {
             "total_mk_videos": total_mk,
             "in_library": in_lib_count,
-            "not_in_library": total_mk - in_lib_count,
+            "not_in_library": sum(
+                1
+                for card in cards
+                if card.get("source_type") != _LOCAL_EN_CJH_SOURCE_TYPE and not card["in_library"]
+            ),
             "local_material_count": len(library_items),
         },
         "ad_summary": product_ad_summary,
