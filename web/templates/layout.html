@@ -1463,6 +1463,9 @@
           return;
         }
 
+        // Preemptively lock to block subsequent tab triggers during active fetch asynchronous window
+        localStorage.setItem(STORAGE_KEY_LAST_FETCH, String(now));
+
         try {
           var rsp = await fetch('/notifications/api/summary', {credentials: 'same-origin'});
           if (!rsp.ok) throw new Error(rsp.statusText || 'summary failed');
