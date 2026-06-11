@@ -186,6 +186,8 @@ def test_get_country_dashboard_groups_by_country_and_sorts_by_orders(monkeypatch
     captured = {}
 
     def fake_query(sql, args=()):
+        if "meta_ad_daily_ad_metrics" in sql:
+            return []
         captured["sql"] = sql
         captured["args"] = args
         assert "meta_business_date >= %s" in sql
@@ -231,6 +233,9 @@ def test_get_country_dashboard_groups_by_country_and_sorts_by_orders(monkeypatch
         "total_sales": 155.0,
         "shipping": 15.0,
         "product_net_sales": 140.0,
+        "total_spend": 0.0,
+        "overall_roas": None,
+        "overall_meta_roas": None,
     }
 
 
@@ -282,7 +287,7 @@ def test_get_country_dashboard_accepts_full_positional_args_and_unknown_country(
                 "product_net_sales": 20.0,
                 "shipping": 3.0,
             },
-        ],
+        ] if "dianxiaomi_order_lines" in sql else [],
     )
 
     result = oa.get_country_dashboard(
@@ -296,6 +301,85 @@ def test_get_country_dashboard_accepts_full_positional_args_and_unknown_country(
 
     assert result["period"]["type"] == "month"
     assert result["countries"][0]["display_name"] == "未知"
+
+
+def test_get_country_dashboard_with_product_code_and_ad_spend(monkeypatch):
+    # Mock query_one for product resolution
+    query_one_calls = []
+    def fake_query_one(sql, args=()):
+        query_one_calls.append((sql, args))
+        if "media_products" in sql:
+            return {"id": 101, "name": "Test Product"}
+        return None
+
+    # Mock query for order lines and ad metrics
+    query_calls = []
+    def fake_query(sql, args=()):
+        query_calls.append((sql, args))
+        if "dianxiaomi_order_lines" in sql:
+            assert "product_code = %s" in sql
+            return [
+                {
+                    "buyer_country": "US",
+                    "buyer_country_name": "United States",
+                    "order_count": 10,
+                    "units": 15,
+                    "product_net_sales": 200.0,
+                    "shipping": 20.0,
+                }
+            ]
+        elif "meta_ad_daily_ad_metrics" in sql:
+            assert "product_id = %s" in sql
+            return [
+                {
+                    "market_country": "US",
+                    "spend": 50.0,
+                    "purchase_value": 150.0,
+                }
+            ]
+        return []
+
+    monkeypatch.setattr(oa, "query_one", fake_query_one)
+    monkeypatch.setattr(oa, "query", fake_query)
+
+    result = oa.get_country_dashboard(
+        "month",
+        year=2026,
+        month=4,
+        today=oa._parse_meta_date("2026-04-29"),
+        product_code="PROD123",
+    )
+
+    # Assert product resolution queries
+    assert any("media_products" in sql for sql, _ in query_one_calls)
+    
+    # Assert query parameters and filtering
+    assert any("product_code = %s" in sql for sql, _ in query_calls)
+    assert any("product_id = %s" in sql for sql, _ in query_calls)
+
+    # Check mapping & calculation
+    assert result["product_code"] == "PROD123"
+    assert result["product_name"] == "Test Product"
+    assert len(result["countries"]) == 1
+    
+    country_data = result["countries"][0]
+    assert country_data["buyer_country"] == "US"
+    assert country_data["total_sales"] == 220.0  # 200.0 + 20.0
+    assert country_data["spend"] == 50.0
+    assert country_data["roas"] == 4.4  # 220.0 / 50.0
+    assert country_data["meta_roas"] == 3.0  # 150.0 / 50.0
+
+    assert result["summary"] == {
+        "country_count": 1,
+        "total_orders": 10,
+        "total_units": 15,
+        "total_sales": 220.0,
+        "shipping": 20.0,
+        "product_net_sales": 200.0,
+        "total_spend": 50.0,
+        "overall_roas": 4.4,
+        "overall_meta_roas": 3.0,
+    }
 
 
 def test_dianxiaomi_orders_endpoint_returns_json(authed_client_no_db, monkeypatch):
@@ -420,6 +504,31 @@ def test_country_dashboard_endpoint_accepts_date_range(authed_client_no_db, monk
     assert captured["end_date"] == "2026-04-18"
     assert "year" not in captured
     assert response.get_json()["period"]["type"] == "range"
+
+
+def test_country_dashboard_view_route_accepts_product_code(authed_client_no_db):
+    response = authed_client_no_db.get("/order-analytics/country-dashboard-view/PROD123")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'window.countryDashboardProductCode = "PROD123";' in body
+
+
+def test_country_dashboard_endpoint_accepts_product_code(authed_client_no_db, monkeypatch):
+    captured = {}
+    def fake_country_dashboard(**kwargs):
+        captured.update(kwargs)
+        return {
+            "period": {"type": "month", "start": "2026-04-01", "end": "2026-04-30"},
+            "summary": {"total_orders": 0},
+            "countries": [],
+        }
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_country_dashboard", fake_country_dashboard)
+
+    response = authed_client_no_db.get(
+        "/order-analytics/country-dashboard?period=month&product_code=PROD123"
+    )
+    assert response.status_code == 200
+    assert captured["product_code"] == "PROD123"
 
 
 def test_dianxiaomi_orders_endpoint_returns_400_for_non_integer_page(authed_client_no_db, monkeypatch):
