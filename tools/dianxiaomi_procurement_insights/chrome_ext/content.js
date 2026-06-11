@@ -137,6 +137,12 @@ function looksLikeSku(token) {
   return /[A-Za-z]/.test(token) && /[0-9_-]/.test(token);
 }
 
+function looksLikeNumericHyphenSku(token) {
+  if (!token || token.length < 7 || token.length > 80) return false;
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(token)) return false;
+  return /^\d{2,8}-\d{4,30}(?:-\d{2,30})*$/.test(token);
+}
+
 function extractProductCode(text) {
   const urlMatch = String(location.href || "").match(/\/products\/([a-z0-9][a-z0-9-]{5,120})/i);
   if (urlMatch) return urlMatch[1];
@@ -168,11 +174,12 @@ function collectClues() {
   const labelledSkuCodes = extractLabelValues(bodyText, skuCodeLabels);
   const tokens = bodyText.match(/\b[A-Za-z0-9][A-Za-z0-9._-]{2,80}\b/g) || [];
   const skuCandidates = tokens.filter(looksLikeSku);
+  const numericHyphenSkuCandidates = tokens.filter(looksLikeNumericHyphenSku);
   const numericSkuCandidates = tokens.filter((token) => /^\d{8,}$/.test(token));
   const shopifyProductIds = uniqueLimited(numericSkuCandidates, 6);
 
   return {
-    skus: uniqueLimited([...labelledSkus, ...skuCandidates, ...numericSkuCandidates], 16),
+    skus: uniqueLimited([...labelledSkus, ...skuCandidates, ...numericHyphenSkuCandidates, ...numericSkuCandidates], 16),
     productSkus: uniqueLimited(labelledProductSkus, 10),
     skuCodes: uniqueLimited(labelledSkuCodes, 10),
     shopifyProductIds,

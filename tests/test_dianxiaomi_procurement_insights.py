@@ -245,6 +245,8 @@ def test_chrome_extension_manifest_and_assets():
     assert "/dianxiaomi-procurement-insights/api/insights" in background
     assert 'credentials: "include"' in background
     assert "collectClues" in content
+    assert "looksLikeNumericHyphenSku" in content
+    assert "numericHyphenSkuCandidates" in content
     assert "findPurchaseModal" in content
     assert "syncPanelPlacement" in content
     assert "setInterval(schedulePanelPlacement" in content

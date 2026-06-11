@@ -162,3 +162,8 @@ pytest tests/test_dianxiaomi_procurement_insights.py tests/test_media_product_ad
 - 用户点击“生成采购单 / 一键生成采购订单”后，插件必须在弹窗出现后自动进入右侧锚定模式；不能依赖用户手动刷新插件面板。
 - 内容脚本保留 MutationObserver / resize / scroll 触发，同时增加低频定位心跳，确保店小秘弹窗动画、遮罩层切换或异步渲染完成后，面板仍会贴到弹窗右侧并保持同高。
 - 已匹配产品且存在 `product_code` 时，产品标题行右侧显示两个跳转按钮：`产品中心` 打开 `http://172.16.254.106/medias/?q=<product_code>`，`订单中心` 打开 `http://172.16.254.106/order-analytics/dxm-orders-view/order-trend/<product_code>`。
+
+## 2026-06-11 V1.2 数字短横线 SKU 修订
+
+- 店小秘云仓弹窗中 `0427-16411412`、`0427-16415934` 这类纯数字加短横线的商品 SKU，必须作为 `skus` 线索传给后端；不能因为没有英文字母而被前端过滤。
+- 验收样例：弹窗商品“免打孔壁挂拖把架”应通过上述 SKU 匹配到素材库产品 `drill-free-wall-mop-holder-rjc`，展示其真实消耗、ROAS 和订单数据。
