@@ -87,6 +87,26 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
                 "sales": float(r.get("sales") or 0.0)
             }
 
+    # Fetch realtime data for today to fill or overwrite today's slot in sales_by_date
+    rt_summary = {}
+    if product_id is not None:
+        try:
+            from appcore.order_analytics.realtime import get_realtime_roas_overview
+            rt_res = get_realtime_roas_overview(
+                date_text=today.isoformat(),
+                product_id=product_id,
+            )
+            rt_summary = rt_res.get("summary") or {}
+        except Exception as rt_exc:
+            log.warning("Fetch realtime data for today failed: %s", rt_exc)
+
+    if rt_summary:
+        sales_by_date[today] = {
+            "units": int(rt_summary.get("units") or 0),
+            "orders": int(rt_summary.get("order_count") or 0),
+            "sales": float(rt_summary.get("revenue_with_shipping") or 0.0)
+        }
+
     # 2.5 Query daily country sales breakdown for 9 countries
     country_sales_rows = query(
         "SELECT meta_business_date AS d, "
@@ -137,6 +157,12 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
                     "spend": Decimal(str(r.get("spend_usd") or 0)),
                     "purchase_value": Decimal(str(r.get("purchase_value_usd") or 0))
                 }
+
+    if rt_summary:
+        ad_by_date[today] = {
+            "spend": Decimal(str(rt_summary.get("ad_spend") or 0)),
+            "purchase_value": Decimal(str(rt_summary.get("meta_purchase_value") or 0))
+        }
 
     # 4. Generate daily trend (Last 30 Days)
     daily_trend = []
