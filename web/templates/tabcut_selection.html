@@ -587,9 +587,21 @@ body.tabcut-video-overlay-open { overflow:hidden; }
     box-shadow: none !important;
     transform: none !important;
   }
+  .op-range-presets { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .op-seg {
+    height: 34px; padding: 0 12px; background: transparent;
+    border: 1px solid transparent; border-radius: 9999px;
+    color: var(--mh-muted); cursor: pointer; font-size: 13px;
+    font-weight: 600; white-space: nowrap;
+    transition: background-color 120ms, border-color 120ms, color 120ms;
+  }
+  .op-seg:hover { background: #fff; border-color: var(--mh-line); color: var(--mh-text); }
+  .op-seg.is-active { background: var(--mh-accent); border-color: var(--mh-accent); color: #fff; }
+  .op-seg:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(15,118,110,.22); }
 {% endblock %}
 
 {% block content %}
+<script src="{{ url_for('static', filename='analytics_date_range_picker.js') }}"></script>
 <script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <div class="tabcut-page">
   {% set active = "tabcut" %}
@@ -627,14 +639,6 @@ body.tabcut-video-overlay-open { overflow:hidden; }
     <div class="tabcut-field">
       <label for="goodsBizDate">商品榜日期</label>
       <input class="tabcut-input" id="goodsBizDate" type="date">
-    </div>
-    <div class="tabcut-field">
-      <label for="publishDateFrom">发布日期起</label>
-      <input class="tabcut-input" id="publishDateFrom" type="date">
-    </div>
-    <div class="tabcut-field">
-      <label for="publishDateTo">发布日期止</label>
-      <input class="tabcut-input" id="publishDateTo" type="date">
     </div>
     <div class="tabcut-field">
       <label for="sourceRank">数据来源</label>
@@ -687,6 +691,27 @@ body.tabcut-video-overlay-open { overflow:hidden; }
         <option>100</option>
         <option>200</option>
       </select>
+    </div>
+    <div class="tabcut-field" style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 5px; margin-top: 5px;">
+      <label>发布日期</label>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-height: 34px;">
+        <div class="op-range-presets" role="group" aria-label="日期快捷">
+          <button type="button" class="op-seg" data-op-range="today">今天</button>
+          <button type="button" class="op-seg" data-op-range="yesterday">昨天</button>
+          <button type="button" class="op-seg" data-op-range="thisWeek">本周</button>
+          <button type="button" class="op-seg" data-op-range="lastWeek">上周</button>
+          <button type="button" class="op-seg" data-op-range="thisMonth">本月</button>
+          <button type="button" class="op-seg" data-op-range="lastMonth">上月</button>
+        </div>
+        <div class="analytics-range-picker op-date-range-field" data-analytics-date-range data-range-label="发布日期" data-range-start-id="publishDateFrom" data-range-end-id="publishDateTo" style="min-width: 260px;">
+          <button type="button" class="analytics-range-trigger" data-range-trigger aria-haspopup="dialog" aria-expanded="false" title="发布日期" style="height: 34px;">
+            <span class="analytics-range-trigger-text" data-range-label-text>发布日期：请选择日期范围</span>
+            <span class="analytics-range-trigger-caret" aria-hidden="true">▼</span>
+          </button>
+          <input type="hidden" id="publishDateFrom" data-range-start value="">
+          <input type="hidden" id="publishDateTo" data-range-end value="">
+        </div>
+      </div>
     </div>
     <div class="tabcut-actions">
       <button class="tabcut-btn" type="button" onclick="loadTabcut(1)">筛选</button>
@@ -3257,6 +3282,7 @@ async function mkiCreateSmallLangTaskFromTabcut(btn, videoId) {
 function resetTabcut() {
   ["tabcutSearch", "categoryL1", "sourceCategory", "markStatus", "goodsBizDate", "publishDateFrom", "publishDateTo", "sourceRank", "minVideoSales", "minGoodsSales", "maxGoodsSales", "minGmv", "minPrice", "maxPrice"].forEach(id => qs(id).value = "");
   qs("sortBy").value = "play_count";
+  if (typeof syncOpRangeButtons === "function") syncOpRangeButtons();
   loadTabcut(1);
 }
 
