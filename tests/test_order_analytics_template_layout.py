@@ -242,6 +242,90 @@ def test_new_product_launch_roas_prefers_scoped_roas_points():
     assert "var rows = data.hourly || [];" not in render_block
 
 
+def test_new_product_launch_subtabs_align_with_realtime_display_contract():
+    """Docs-anchor: docs/superpowers/specs/2026-06-11-new-product-launch-subtabs-realtime-alignment.md"""
+    template = _template_source()
+    panel = _new_product_launch_panel_source()
+
+    assert "2026-06-11-new-product-launch-subtabs-realtime-alignment.md" in template
+    assert 'id="nplCampaignFilterBar"' in panel
+    assert 'id="nplCampaignFilterClear"' in panel
+    assert 'class="oa-table oar-compact-table"' in panel
+    assert 'class="oa-table oar-compact-table oar-campaign-table"' in panel
+    assert 'id="nplProfitSummary"' in panel
+    assert 'id="nplProfitReconcile"' in panel
+
+    orders_block = template[
+        template.index("function renderNewProductLaunchOrders"):
+        template.index("function renderNewProductLaunchOrderProfitDetails")
+    ]
+    assert "addRealtimeProductNameCell(tr, row.product_names, row.product_cn_names, row.skus);" in orders_block
+
+    sales_block = template[
+        template.index("function renderNewProductLaunchProductSales"):
+        template.index("function renderNewProductLaunchCampaigns")
+    ]
+    assert "addRealtimeProductSalesCell(tr, row);" in sales_block
+    assert "product_name || '未知商品') + (row.product_code ? ' · ' + row.product_code : '')" not in sales_block
+
+    roas_block = template[
+        template.index("function renderNewProductLaunchRoas"):
+        template.index("// ── 入口：同步刷新顶部卡片 + 子 tab", template.index("function renderNewProductLaunchRoas"))
+    ]
+    assert "hourTd.className = 'oar-hour-cell';" in roas_block
+    assert "formatRealtimeHourCell(row)" in roas_block
+
+
+def test_new_product_launch_subtabs_use_realtime_scope_pagination_contract():
+    """Docs-anchor: docs/superpowers/specs/2026-06-11-new-product-launch-subtabs-realtime-alignment.md"""
+    template = _template_source()
+
+    state_block = template[
+        template.index("var newProductLaunchState = {"):
+        template.index("};", template.index("var newProductLaunchState = {"))
+    ]
+    for snippet in (
+        "orderPage: 1",
+        "orderPageSize: 30",
+        "orderLoaded: 0",
+        "profitPage: 1",
+        "profitPageSize: 30",
+        "profitLoaded: 0",
+        "campaignFilter: ''",
+    ):
+        assert snippet in state_block
+
+    load_block = template[
+        template.index("function loadNewProductLaunchOverview"):
+        template.index("function renderNewProductLaunchDataQualityBar")
+    ]
+    for snippet in (
+        "params.set('product_launch_scope', newProductLaunchState.scope || 'new');",
+        "params.set('product_launch_window_days', newProductLaunchState.launchWindowDays || '7');",
+        "params.set('order_page', newProductLaunchState.orderPage || 1);",
+        "params.set('order_page_size', newProductLaunchState.orderPageSize || 30);",
+        "params.set('page', newProductLaunchState.profitPage || 1);",
+        "params.set('page_size', newProductLaunchState.profitPageSize || 30);",
+    ):
+        assert snippet in load_block
+
+    render_block = template[
+        template.index("function renderNewProductLaunchOverview"):
+        template.index("function renderNewProductLaunchOrders")
+    ]
+    assert "renderNewProductLaunchOrderPagination(data.order_details_page || {}, (data.order_details || []).length);" in render_block
+    assert "renderNewProductLaunchOrderProfitPagination(data.order_profit_details_page || {}, (data.order_profit_details || []).length);" in render_block
+
+    assert "function resetNewProductLaunchPages()" in template
+    assert "function newProductLaunchDetailsParams()" in template
+    assert "function loadMoreNewProductLaunchOrders()" in template
+    assert "function loadMoreNewProductLaunchOrderProfitDetails()" in template
+    assert "attachInfiniteScroll('nplOrderScroll', loadMoreNewProductLaunchOrders);" in template
+    assert "attachInfiniteScroll('nplProfitScroll', loadMoreNewProductLaunchOrderProfitDetails);" in template
+    assert "function renderNewProductLaunchCampaignFilterBar(totalRows, visibleRows)" in template
+    assert "newProductLaunchLastCampaignRows" in template
+
+
 def test_realtime_bj_hint_is_inserted_after_query_button():
     """北京时间提示不能插入到日期范围和查询按钮之间。"""
     template = _template_source()

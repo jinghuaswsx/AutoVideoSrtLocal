@@ -2690,6 +2690,7 @@
 </section>
 
 <section class="oa-panel {% if active_tab == 'newProductLaunch' %}active{% endif %}" id="panelNewProductLaunch">
+  <!-- Docs-anchor: docs/superpowers/specs/2026-06-11-new-product-launch-subtabs-realtime-alignment.md -->
   <div class="oad-toolbar">
     <div class="oad-toolbar-row oar-realtime-toolbar-row">
       <div class="oad-segmented">
@@ -2781,33 +2782,202 @@
 
   <div class="oar-subpanel is-active" id="nplSubOrders">
     <div class="oa-table-wrap">
-      <div class="oa-table-header"><div class="oa-table-title">订单明细 <span class="oar-page-info" id="nplOrderPageInfo">加载中...</span></div></div>
-      <div class="oa-table-scroll" id="nplOrderScroll"><table class="oa-table"><thead><tr><th>下单时间</th><th>业务小时</th><th>店铺</th><th>店小秘订单</th><th>国家</th><th>主图</th><th>产品</th><th>数量</th><th>商品销售额</th><th>运费</th><th>总销售额</th><th>订单盈亏</th></tr></thead><tbody id="nplOrderBody"></tbody></table></div>
+      <div class="oa-table-header">
+        <div class="oa-table-title">订单明细 <span class="oar-page-info" id="nplOrderPageInfo">加载中...</span></div>
+        <div class="oar-note">按订单时间倒序，从最新订单一直回看到广告系统日 0 点</div>
+      </div>
+      <div class="oa-table-scroll" id="nplOrderScroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>订单时间</th>
+              <th>广告日小时</th>
+              <th>店铺</th>
+              <th>订单号</th>
+              <th>国家</th>
+              <th>主图</th>
+              <th>商品</th>
+              <th>件数</th>
+              <th>商品销售额</th>
+              <th>运费</th>
+              <th>总销售额</th>
+              <th>订单盈亏</th>
+            </tr>
+          </thead>
+          <tbody id="nplOrderBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubProfitDetails">
     <div class="oa-table-wrap">
-      <div class="oa-table-header"><div class="oa-table-title">订单盈亏明细 <span class="oar-page-info" id="nplProfitPageInfo">加载中...</span></div></div>
-      <div class="oa-table-scroll" id="nplProfitScroll"><table class="oa-table"><thead><tr><th>下单时间</th><th>业务小时</th><th>店铺</th><th>店小秘订单</th><th>国家</th><th>产品</th><th>数量</th><th>总销售额</th><th>退款</th><th>采购</th><th>物流</th><th>Shopify 固定费</th><th>国际卡费</th><th>汇兑费</th><th>手续费合计</th><th>广告费</th><th>订单利润</th><th>状态</th></tr></thead><tbody id="nplOrderProfitBody"></tbody></table></div>
+      <div class="oa-table-header oa-table-header-stack">
+        <div class="oar-profit-header-line">
+          <div class="oa-table-title">订单盈亏明细</div>
+          <div class="oar-note">逐单展示退款、采购、物流、Shopify 手续费与广告分摊后的订单利润</div>
+        </div>
+        <div class="oar-profit-summary" id="nplProfitSummary" aria-label="新品投放分析订单盈亏汇总">
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总销售额</div>
+            <div class="oar-profit-summary-value" id="nplProfitTotalRevenue">$0.00</div>
+            <div class="oar-profit-summary-note" id="nplProfitTotalRevenueNote">订单 0 单</div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总采购成本</div>
+            <div class="oar-profit-summary-value" id="nplProfitPurchase">$0.00</div>
+            <div class="oar-profit-summary-note" id="nplProfitPurchaseNote"></div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总物流成本</div>
+            <div class="oar-profit-summary-value" id="nplProfitLogistics">$0.00</div>
+            <div class="oar-profit-summary-note" id="nplProfitLogisticsNote"></div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总合计手续费</div>
+            <div class="oar-profit-summary-value" id="nplProfitFee">$0.00</div>
+            <div class="oar-profit-summary-note">Shopify 平台合计</div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">已分摊广告费</div>
+            <div class="oar-profit-summary-value" id="nplProfitAd">$0.00</div>
+            <div class="oar-profit-summary-note">按订单分摊</div>
+          </div>
+          <div
+            class="oar-profit-summary-item is-clickable"
+            id="nplProfitUnallocatedAdCard"
+            data-npl-campaign-filter="unallocated"
+            role="button"
+            tabindex="0"
+            aria-disabled="true"
+            aria-label="查看当前范围未分摊广告费对应广告计划">
+            <div class="oar-profit-summary-label">未分摊广告费</div>
+            <div class="oar-profit-summary-value" id="nplProfitUnallocatedAd">$0.00</div>
+            <div class="oar-profit-summary-note" id="nplProfitUnallocatedAdNote">未匹配 product 或当天无可分摊订单</div>
+          </div>
+          <div class="oar-profit-summary-item">
+            <div class="oar-profit-summary-label">总利润额</div>
+            <div class="oar-profit-summary-value" id="nplProfitTotal">$0.00</div>
+            <div class="oar-profit-summary-note" id="nplProfitTotalMargin">利润率 -</div>
+            <div class="oar-profit-summary-note">含缺失成本估算 + 未分摊广告费</div>
+          </div>
+        </div>
+      </div>
+      <div class="oa-table-scroll" id="nplProfitScroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>订单时间</th>
+              <th>广告日小时</th>
+              <th>店铺</th>
+              <th>订单号</th>
+              <th>国家</th>
+              <th>商品</th>
+              <th>件数</th>
+              <th>总销售额</th>
+              <th>退款扣减</th>
+              <th>采购成本</th>
+              <th>物流成本</th>
+              <th>Shopify平台手续费</th>
+              <th>国际信用卡费</th>
+              <th>货币转换费</th>
+              <th>合计手续费</th>
+              <th>广告费分摊</th>
+              <th>订单利润</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="nplOrderProfitBody"></tbody>
+        </table>
+      </div>
+      <div class="oar-profit-reconcile" id="nplProfitReconcile" aria-live="polite"></div>
+      <div class="oar-pagination" aria-label="新品投放分析订单盈亏明细加载状态">
+        <span class="oar-page-info" id="nplProfitPageInfo">第 1 / 1 页 · 共 0 条</span>
+      </div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubProducts">
     <div class="oa-table-wrap">
-      <div class="oa-table-header"><div class="oa-table-title">产品销量统计</div></div>
-      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>产品</th><th>产品主图</th><th>订单数</th><th>销量</th><th>总销售额</th><th>ROAS</th><th>META ROAS</th><th>商品销售额</th><th>运费</th></tr></thead><tbody id="nplProductSalesBody"></tbody></table></div>
+      <div class="oa-table-header">
+        <div class="oa-table-title">产品销量统计</div>
+        <div class="oar-note">按当前新品投放范围汇总店小秘订单商品金额</div>
+      </div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>产品</th>
+              <th>产品主图</th>
+              <th>订单数</th>
+              <th>销售件数</th>
+              <th>总销售额</th>
+              <th>ROAS</th>
+              <th>META ROAS</th>
+              <th>商品净销售额</th>
+              <th>运费</th>
+            </tr>
+          </thead>
+          <tbody id="nplProductSalesBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubCampaigns">
     <div class="oa-table-wrap">
-      <div class="oa-table-header"><div class="oa-table-title">广告计划数据</div></div>
-      <div class="oa-table-scroll"><table class="oa-table oar-compact-table oar-campaign-table"><thead><tr><th>Campaign</th><th>对应产品</th><th>商品主图</th><th>广告账户</th><th>花费</th><th>结果</th><th>购买金额</th><th>Meta ROAS</th><th>展示</th><th>点击</th><th>分摊状态</th><th>Campaign ID</th></tr></thead><tbody id="nplCampaignBody"></tbody></table></div>
+      <div class="oa-table-header">
+        <div class="oa-table-title">广告计划实时数据</div>
+        <div class="oar-campaign-filter" id="nplCampaignFilterBar" hidden>
+          <span class="oar-campaign-filter-text" id="nplCampaignFilterText">仅显示未分摊广告费计划</span>
+          <button type="button" class="btn btn-default btn-sm" id="nplCampaignFilterClear">显示全部</button>
+        </div>
+      </div>
+      <div class="oar-note" style="padding: 0 20px 12px;">按当前新品投放范围展示 Meta 广告计划，字段与实时大盘一致</div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table oar-campaign-table">
+          <thead>
+            <tr>
+              <th>广告计划</th>
+              <th>对应产品</th>
+              <th>商品主图</th>
+              <th>账户</th>
+              <th>消耗</th>
+              <th>结果数</th>
+              <th>平台购买价值</th>
+              <th>平台 ROAS</th>
+              <th>展示</th>
+              <th>点击</th>
+              <th>分摊状态</th>
+              <th>计划 ID</th>
+            </tr>
+          </thead>
+          <tbody id="nplCampaignBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
   <div class="oar-subpanel" id="nplSubTrend">
     <div class="oa-table-wrap">
-      <div class="oa-table-header"><div class="oa-table-title">ROAS 走势</div></div>
+      <div class="oa-table-header">
+        <div class="oa-table-title">ROAS 走势</div>
+        <div class="oar-note">每 20 分钟同步，走势图按广告系统日小时节点展示；每个点是当前新品投放范围累计 ROAS</div>
+      </div>
       <div id="nplRoasChart" style="padding: var(--space-5); min-height: 260px;"></div>
-      <div class="oa-table-scroll"><table class="oa-table"><thead><tr><th>小时</th><th>订单数</th><th>商品销售额</th><th>销量</th><th>运费</th><th>总销售额</th><th>广告费</th><th>ROAS</th></tr></thead><tbody id="nplHourlyBody"></tbody></table></div>
+      <div class="oa-table-scroll">
+        <table class="oa-table oar-compact-table">
+          <thead>
+            <tr>
+              <th>广告日小时<br><span class="oar-th-sub">北京时间 / 德国柏林时间</span></th>
+              <th>订单数</th>
+              <th>商品销售额</th>
+              <th>商品件数</th>
+              <th>运费</th>
+              <th>总销售额</th>
+              <th>广告费</th>
+              <th>ROAS</th>
+            </tr>
+          </thead>
+          <tbody id="nplHourlyBody"></tbody>
+        </table>
+      </div>
       <div class="oar-note" id="nplGranularity">按新品投放范围展示同口径 ROAS 节点</div>
     </div>
   </div>
@@ -5584,8 +5754,23 @@
     range: 'today',
     scope: 'new',
     siteCode: '',
-    launchWindowDays: '7'
+    launchWindowDays: '7',
+    orderPage: 1,
+    orderPageSize: 30,
+    orderTotal: 0,
+    orderLoaded: 0,
+    orderLoading: false,
+    orderHasMore: true,
+    profitPage: 1,
+    profitPageSize: 30,
+    profitTotal: 0,
+    profitLoaded: 0,
+    profitLoading: false,
+    profitHasMore: true,
+    campaignFilter: '',
+    unallocatedAd: 0
   };
+  var newProductLaunchLastCampaignRows = [];
 
   function normalizeLaunchWindowDays(value) {
     var allowed = ['3', '7', '15', '30', '60'];
@@ -5720,6 +5905,7 @@
       if (newProductLaunchState.range && newProductLaunchState.range !== 'custom') {
         setNewProductLaunchRange(newProductLaunchState.range, true);
       }
+      resetNewProductLaunchPages();
       loadNewProductLaunchOverview();
     });
   }
@@ -5732,6 +5918,7 @@
     var el = document.getElementById(id);
     if (el) el.addEventListener('change', function() {
       syncNewProductLaunchRangeSelection();
+      resetNewProductLaunchPages();
       loadNewProductLaunchOverview();
     });
   });
@@ -5739,6 +5926,7 @@
   if (nplSiteFilter) {
     nplSiteFilter.addEventListener('change', function() {
       newProductLaunchState.siteCode = nplSiteFilter.value || '';
+      resetNewProductLaunchPages();
       loadNewProductLaunchOverview();
     });
   }
@@ -5746,12 +5934,15 @@
   if (nplLaunchWindowDays) {
     nplLaunchWindowDays.addEventListener('change', function() {
       setLaunchWindowDays(nplLaunchWindowDays.value || '7');
+      resetNewProductLaunchPages();
       loadNewProductLaunchOverview();
     });
   }
   document.querySelectorAll('[data-new-product-scope]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       setNewProductLaunchScope(btn.dataset.newProductScope);
+      newProductLaunchState.campaignFilter = '';
+      resetNewProductLaunchPages();
       loadNewProductLaunchOverview();
     });
   });
@@ -5760,6 +5951,22 @@
       setNewProductLaunchSubtab(btn.dataset.nplSubtab);
     });
   });
+  attachInfiniteScroll('nplOrderScroll', loadMoreNewProductLaunchOrders);
+  attachInfiniteScroll('nplProfitScroll', loadMoreNewProductLaunchOrderProfitDetails);
+  var nplUnallocatedAdCard = document.getElementById('nplProfitUnallocatedAdCard');
+  if (nplUnallocatedAdCard) {
+    nplUnallocatedAdCard.addEventListener('click', showNewProductLaunchUnallocatedCampaigns);
+    nplUnallocatedAdCard.addEventListener('keydown', function(evt) {
+      if (evt.key === 'Enter' || evt.key === ' ') {
+        evt.preventDefault();
+        showNewProductLaunchUnallocatedCampaigns();
+      }
+    });
+  }
+  var nplCampaignFilterClear = document.getElementById('nplCampaignFilterClear');
+  if (nplCampaignFilterClear) {
+    nplCampaignFilterClear.addEventListener('click', clearNewProductLaunchCampaignFilter);
+  }
   var initialTab = "{{ active_tab }}";
   function initActiveOrderAnalyticsTab() {
     setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
@@ -5858,6 +6065,19 @@
     realtimeState.profitLoaded = 0;
     realtimeState.profitLoading = false;
     realtimeState.profitHasMore = true;
+  }
+
+  function resetNewProductLaunchPages() {
+    newProductLaunchState.orderPage = 1;
+    newProductLaunchState.orderTotal = 0;
+    newProductLaunchState.orderLoaded = 0;
+    newProductLaunchState.orderLoading = false;
+    newProductLaunchState.orderHasMore = true;
+    newProductLaunchState.profitPage = 1;
+    newProductLaunchState.profitTotal = 0;
+    newProductLaunchState.profitLoaded = 0;
+    newProductLaunchState.profitLoading = false;
+    newProductLaunchState.profitHasMore = true;
   }
 
   function updateRealtimeUrlState() {
@@ -6056,6 +6276,7 @@
       syncNewProductLaunchRangeSelection();
       newProductLaunchInited = true;
     }
+    resetNewProductLaunchPages();
     loadNewProductLaunchOverview();
   }
 
@@ -6073,7 +6294,10 @@
     setInputValue('nplStartDate', formatDateInput(bounds.start));
     setInputValue('nplEndDate', formatDateInput(bounds.end));
     syncNewProductLaunchRangeSelection();
-    if (!skipLoad) loadNewProductLaunchOverview();
+    if (!skipLoad) {
+      resetNewProductLaunchPages();
+      loadNewProductLaunchOverview();
+    }
   }
 
   function syncNewProductLaunchRangeSelection() {
@@ -6133,8 +6357,14 @@
     params.set('include_profit_summary', '1');
     params.set('product_launch_scope', newProductLaunchState.scope || 'new');
     params.set('product_launch_window_days', newProductLaunchState.launchWindowDays || '7');
+    params.set('order_page', newProductLaunchState.orderPage || 1);
+    params.set('order_page_size', newProductLaunchState.orderPageSize || 30);
+    params.set('page', newProductLaunchState.profitPage || 1);
+    params.set('page_size', newProductLaunchState.profitPageSize || 30);
     if (newProductLaunchState.siteCode) params.set('site_code', newProductLaunchState.siteCode);
     setNewProductLaunchLoading();
+    newProductLaunchState.orderLoading = true;
+    newProductLaunchState.profitLoading = true;
     fetch('/order-analytics/realtime-overview?' + params.toString())
       .then(function(r) {
         if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
@@ -6145,23 +6375,31 @@
       })
       .catch(function(err) {
         setNewProductLaunchError(err.message);
+      })
+      .finally(function() {
+        newProductLaunchState.orderLoading = false;
+        newProductLaunchState.profitLoading = false;
       });
   }
 
   function setNewProductLaunchLoading() {
-    setNewProductLaunchTable('nplOrderBody', 11, '加载中...');
+    setNewProductLaunchTable('nplOrderBody', 12, '加载中...');
     setNewProductLaunchTable('nplOrderProfitBody', 18, '加载中...');
     setNewProductLaunchTable('nplProductSalesBody', 9, '加载中...');
-    setNewProductLaunchTable('nplCampaignBody', 10, '加载中...');
+    setNewProductLaunchTable('nplCampaignBody', 12, '加载中...');
     setNewProductLaunchTable('nplHourlyBody', 8, '加载中...');
+    renderNewProductLaunchOrderPagination(null, 0);
+    renderNewProductLaunchOrderProfitPagination(null, 0);
   }
 
   function setNewProductLaunchError(message) {
-    setNewProductLaunchTable('nplOrderBody', 11, message);
+    setNewProductLaunchTable('nplOrderBody', 12, message);
     setNewProductLaunchTable('nplOrderProfitBody', 18, message);
     setNewProductLaunchTable('nplProductSalesBody', 9, message);
-    setNewProductLaunchTable('nplCampaignBody', 10, message);
+    setNewProductLaunchTable('nplCampaignBody', 12, message);
     setNewProductLaunchTable('nplHourlyBody', 8, message);
+    renderNewProductLaunchOrderPagination(null, 0);
+    renderNewProductLaunchOrderProfitPagination(null, 0);
     var note = document.getElementById('nplRangeNote');
     if (note) note.textContent = '加载失败：' + message;
   }
@@ -6169,6 +6407,89 @@
   function setNewProductLaunchTable(id, colspan, text) {
     var body = document.getElementById(id);
     if (body) body.innerHTML = '<tr><td colspan="' + colspan + '">' + escapeHtml(text || '暂无数据') + '</td></tr>';
+  }
+
+  function newProductLaunchDetailsParams() {
+    var range = getNewProductLaunchDateRange();
+    if (!range) throw new Error('请选择日期范围');
+    var params = new URLSearchParams();
+    params.set('start_date', range.start);
+    params.set('end_date', range.end);
+    params.set('include_details', '1');
+    params.set('product_launch_scope', newProductLaunchState.scope || 'new');
+    params.set('product_launch_window_days', newProductLaunchState.launchWindowDays || '7');
+    if (newProductLaunchState.siteCode) params.set('site_code', newProductLaunchState.siteCode);
+    return params;
+  }
+
+  function loadMoreNewProductLaunchOrders() {
+    if (newProductLaunchState.orderLoading || !newProductLaunchState.orderHasMore) return;
+    newProductLaunchState.orderLoading = true;
+    var params;
+    try {
+      params = newProductLaunchDetailsParams();
+    } catch (err) {
+      newProductLaunchState.orderLoading = false;
+      return;
+    }
+    params.set('order_page', newProductLaunchState.orderPage || 1);
+    params.set('order_page_size', newProductLaunchState.orderPageSize || 30);
+    params.set('page', '1');
+    params.set('page_size', '1');
+    fetch('/order-analytics/realtime-overview?' + params.toString())
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        appendNewProductLaunchOrders(data.order_details || []);
+        renderNewProductLaunchOrderPagination(
+          data.order_details_page || {},
+          (data.order_details || []).length
+        );
+      })
+      .catch(function(err) {
+        var label = document.getElementById('nplOrderPageInfo');
+        if (label) label.textContent = '加载失败：' + err.message;
+      })
+      .finally(function() {
+        newProductLaunchState.orderLoading = false;
+      });
+  }
+
+  function loadMoreNewProductLaunchOrderProfitDetails() {
+    if (newProductLaunchState.profitLoading || !newProductLaunchState.profitHasMore) return;
+    newProductLaunchState.profitLoading = true;
+    var params;
+    try {
+      params = newProductLaunchDetailsParams();
+    } catch (err) {
+      newProductLaunchState.profitLoading = false;
+      return;
+    }
+    params.set('order_page', '1');
+    params.set('order_page_size', '1');
+    params.set('page', newProductLaunchState.profitPage || 1);
+    params.set('page_size', newProductLaunchState.profitPageSize || 30);
+    fetch('/order-analytics/realtime-overview?' + params.toString())
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
+        return r.json();
+      })
+      .then(function(data) {
+        appendNewProductLaunchOrderProfitDetails(data.order_profit_details || []);
+        renderNewProductLaunchOrderProfitPagination(
+          data.order_profit_details_page || {},
+          (data.order_profit_details || []).length
+        );
+      })
+      .catch(function(err) {
+        var label = document.getElementById('nplProfitPageInfo');
+        if (label) label.textContent = '加载失败：' + err.message;
+      })
+      .finally(function() {
+        newProductLaunchState.profitLoading = false;
+      });
   }
 
   function renderNewProductLaunchDataQualityBar(payload) {
@@ -6262,17 +6583,100 @@
     setRealtimeProfitText('nplWindow', '截止 ' + formatShortDateTime((data.period || {}).data_until_at));
     var note = document.getElementById('nplRangeNote');
     if (note) note.textContent = '新品投放分析 · 当前范围：' + newProductLaunchState.scope;
+    renderNewProductLaunchOrderProfitSummary(data.order_profit_summary || {});
     renderNewProductLaunchOrders(data.order_details || []);
+    renderNewProductLaunchOrderPagination(data.order_details_page || {}, (data.order_details || []).length);
     renderNewProductLaunchOrderProfitDetails(data.order_profit_details || []);
+    renderNewProductLaunchOrderProfitPagination(data.order_profit_details_page || {}, (data.order_profit_details || []).length);
     renderNewProductLaunchProductSales(data.product_sales_stats || [], data.campaigns || []);
-    renderNewProductLaunchCampaigns(data.campaigns || []);
+    newProductLaunchLastCampaignRows = data.campaigns || [];
+    renderNewProductLaunchCampaigns(newProductLaunchLastCampaignRows);
     renderNewProductLaunchRoas(data);
+  }
+
+  function renderNewProductLaunchOrderProfitSummary(summary) {
+    var s = summary || {};
+    var orderCount = parseInt(s.order_count, 10) || 0;
+    var purchaseCost = s.purchase_cost_with_estimate_usd;
+    if (purchaseCost === null || purchaseCost === undefined) purchaseCost = s.purchase_cost_usd;
+    var logisticsCost = s.logistics_cost_with_estimate_usd;
+    if (logisticsCost === null || logisticsCost === undefined) logisticsCost = s.logistics_cost_usd;
+    var profit = Number(s.profit_with_estimate_usd || 0);
+    var unallocatedAd = Number(s.unallocated_ad_spend_usd || 0);
+    var totalAdSpend = Number(s.total_ad_spend_usd || 0);
+    newProductLaunchState.unallocatedAd = Number.isFinite(unallocatedAd) ? unallocatedAd : 0;
+
+    setRealtimeProfitText('nplProfitTotalRevenue', fmtMoney(s.total_revenue_usd));
+    setRealtimeProfitText('nplProfitPurchase', fmtMoney(purchaseCost));
+    setRealtimeProfitText('nplProfitLogistics', fmtMoney(logisticsCost));
+    setRealtimeProfitText('nplProfitFee', fmtMoney(s.shopify_fee_total_usd));
+    setRealtimeProfitText('nplProfitAd', fmtMoney(s.ad_cost_usd));
+    setRealtimeProfitText('nplProfitUnallocatedAd', fmtMoney(unallocatedAd));
+    setRealtimeProfitText('nplProfitTotal', fmtMoney(profit));
+    setRealtimeProfitText('nplProfitTotalRevenueNote', '订单 ' + fmtInt(orderCount) + ' 单');
+    setRealtimeProfitNote(
+      'nplProfitPurchaseNote',
+      formatRealtimeMissingNote(s.purchase_missing_order_count, s.purchase_missing_order_ratio, s.purchase_estimate_usd),
+      (parseInt(s.purchase_missing_order_count, 10) || 0) > 0
+    );
+    setRealtimeProfitNote(
+      'nplProfitLogisticsNote',
+      formatRealtimeMissingNote(s.logistics_missing_order_count, s.logistics_missing_order_ratio, s.logistics_estimate_usd),
+      (parseInt(s.logistics_missing_order_count, 10) || 0) > 0
+    );
+    setRealtimeProfitNote(
+      'nplProfitUnallocatedAdNote',
+      totalAdSpend > 0
+        ? '总广告 ' + fmtMoney(totalAdSpend) + '，未匹配 product 或当天无可分摊订单'
+        : '未匹配 product 或当天无可分摊订单',
+      unallocatedAd > 0
+    );
+    var unallocatedCard = document.getElementById('nplProfitUnallocatedAdCard');
+    if (unallocatedCard) {
+      var canOpenCampaigns = unallocatedAd > 0;
+      unallocatedCard.setAttribute('aria-disabled', canOpenCampaigns ? 'false' : 'true');
+      unallocatedCard.classList.toggle('is-active', canOpenCampaigns && newProductLaunchState.campaignFilter === 'unallocated');
+    }
+    var profitEl = document.getElementById('nplProfitTotal');
+    if (profitEl) {
+      profitEl.classList.toggle('oar-profit-loss', profit < 0);
+      profitEl.classList.toggle('oar-profit-ok', profit >= 0);
+    }
+    var marginPct = s.profit_with_estimate_margin_pct;
+    var marginIsNumber = (typeof marginPct === 'number') && isFinite(marginPct);
+    setRealtimeProfitText(
+      'nplProfitTotalMargin',
+      marginIsNumber ? '利润率 ' + Number(marginPct).toFixed(2) + '%' : '利润率 -'
+    );
+
+    var reconcileEl = document.getElementById('nplProfitReconcile');
+    if (reconcileEl) {
+      if (orderCount <= 0) {
+        reconcileEl.textContent = '';
+        reconcileEl.classList.remove('is-warning');
+      } else if (unallocatedAd > 0) {
+        reconcileEl.textContent =
+          '逐行「订单利润」只扣已分摊广告费 ' + fmtMoney(s.ad_cost_usd || 0) +
+          '；未分摊广告费 ' + fmtMoney(unallocatedAd) +
+          ' 已额外计入上方汇总「总利润额」' + fmtMoney(profit) + '。';
+        reconcileEl.classList.add('is-warning');
+      } else {
+        reconcileEl.textContent = '逐行「订单利润」与上方「总利润额」口径一致：当前范围不存在未分摊广告费。';
+        reconcileEl.classList.remove('is-warning');
+      }
+    }
   }
 
   function renderNewProductLaunchOrders(rows) {
     var body = document.getElementById('nplOrderBody');
     if (!body) return;
     body.innerHTML = '';
+    appendNewProductLaunchOrders(rows);
+  }
+
+  function appendNewProductLaunchOrders(rows) {
+    var body = document.getElementById('nplOrderBody');
+    if (!body) return;
     (rows || []).forEach(function(row) {
       var tr = document.createElement('tr');
       addTextCell(tr, formatShortDateTime(row.order_time));
@@ -6281,7 +6685,7 @@
       addTextCell(tr, row.dxm_order_id || row.dxm_package_id || '-', 'oar-id-cell');
       addTextCell(tr, (row.buyer_country_name || row.buyer_country || '-') + (row.buyer_country ? ' / ' + row.buyer_country : ''));
       addCoverImageCell(tr, row.product_ids);
-      addTextCell(tr, row.product_names || row.skus || '-', 'oar-product-cell');
+      addRealtimeProductNameCell(tr, row.product_names, row.product_cn_names, row.skus);
       addTextCell(tr, fmtInt(row.units || 0));
       addTextCell(tr, fmtMoney(row.product_revenue));
       addTextCell(tr, fmtMoney(row.shipping_revenue));
@@ -6310,13 +6714,42 @@
       body.appendChild(tr);
     });
     if (!body.children.length) setNewProductLaunchTable('nplOrderBody', 12, '暂无订单数据');
-    setRealtimeProfitText('nplOrderPageInfo', '共 ' + fmtInt((rows || []).length) + ' 条');
+  }
+
+  function renderNewProductLaunchOrderPagination(pageInfo, rowCount) {
+    if (!pageInfo) {
+      var emptyLabel = document.getElementById('nplOrderPageInfo');
+      if (emptyLabel) emptyLabel.textContent = '加载中...';
+      return;
+    }
+    var info = pageInfo || {};
+    var page = parseInt(info.page, 10) || newProductLaunchState.orderPage || 1;
+    var pageSize = parseInt(info.page_size, 10) || newProductLaunchState.orderPageSize || 30;
+    var total = parseInt(info.total, 10) || 0;
+    var pages = parseInt(info.pages, 10) || 0;
+    if (pages <= 0) pages = total > 0 ? 1 : 0;
+    newProductLaunchState.orderTotal = total;
+    newProductLaunchState.orderLoaded += parseInt(rowCount, 10) || 0;
+    newProductLaunchState.orderPage = page + 1;
+    newProductLaunchState.orderHasMore = total > 0 && newProductLaunchState.orderLoaded < total && page < pages;
+    var label = document.getElementById('nplOrderPageInfo');
+    if (label) {
+      label.textContent = total > 0
+        ? '已加载 ' + fmtInt(newProductLaunchState.orderLoaded) + ' / 共 ' + fmtInt(total) + ' 条'
+        : '共 0 条';
+    }
   }
 
   function renderNewProductLaunchOrderProfitDetails(rows) {
     var body = document.getElementById('nplOrderProfitBody');
     if (!body) return;
     body.innerHTML = '';
+    appendNewProductLaunchOrderProfitDetails(rows);
+  }
+
+  function appendNewProductLaunchOrderProfitDetails(rows) {
+    var body = document.getElementById('nplOrderProfitBody');
+    if (!body) return;
     (rows || []).forEach(function(row) {
       var tr = document.createElement('tr');
       var profit = Number(row.order_profit_usd || 0);
@@ -6341,7 +6774,31 @@
       body.appendChild(tr);
     });
     if (!body.children.length) setNewProductLaunchTable('nplOrderProfitBody', 18, '暂无订单盈亏数据');
-    setRealtimeProfitText('nplProfitPageInfo', '共 ' + fmtInt((rows || []).length) + ' 条');
+  }
+
+  function renderNewProductLaunchOrderProfitPagination(pageInfo, rowCount) {
+    if (!pageInfo) {
+      var emptyLabel = document.getElementById('nplProfitPageInfo');
+      if (emptyLabel) emptyLabel.textContent = '加载中...';
+      return;
+    }
+    var info = pageInfo || {};
+    var page = parseInt(info.page, 10) || newProductLaunchState.profitPage || 1;
+    var pageSize = parseInt(info.page_size, 10) || newProductLaunchState.profitPageSize || 30;
+    var total = parseInt(info.total, 10) || 0;
+    var pages = parseInt(info.pages, 10) || 0;
+    if (pages <= 0) pages = total > 0 ? 1 : 0;
+    newProductLaunchState.profitTotal = total;
+    newProductLaunchState.profitLoaded += parseInt(rowCount, 10) || 0;
+    newProductLaunchState.profitPage = page + 1;
+    newProductLaunchState.profitHasMore = total > 0 && newProductLaunchState.profitLoaded < total && page < pages;
+
+    var label = document.getElementById('nplProfitPageInfo');
+    if (label) {
+      label.textContent = total > 0
+        ? '已加载 ' + fmtInt(newProductLaunchState.profitLoaded) + ' / 共 ' + fmtInt(total) + ' 条 · 每批 ' + fmtInt(pageSize) + ' 条'
+        : '共 0 条';
+    }
   }
 
   function renderNewProductLaunchProductSales(rows, campaigns) {
@@ -6358,7 +6815,7 @@
     });
     (rows || []).forEach(function(row) {
       var tr = document.createElement('tr');
-      addTextCell(tr, (row.product_name || '未知商品') + (row.product_code ? ' · ' + row.product_code : ''), 'oar-product-cell');
+      addRealtimeProductSalesCell(tr, row);
       
       addCoverImageCell(tr, row.product_id);
 
@@ -6380,11 +6837,50 @@
     if (!body.children.length) setNewProductLaunchTable('nplProductSalesBody', 9, '暂无产品销量数据');
   }
 
+  function renderNewProductLaunchCampaignFilterBar(totalRows, visibleRows) {
+    var bar = document.getElementById('nplCampaignFilterBar');
+    var text = document.getElementById('nplCampaignFilterText');
+    if (!bar) return;
+    var isFiltering = newProductLaunchState.campaignFilter === 'unallocated';
+    bar.hidden = !isFiltering;
+    if (text && isFiltering) {
+      var spend = (newProductLaunchLastCampaignRows || []).reduce(function(total, row) {
+        if (!row || row.allocation_status !== 'unallocated') return total;
+        return total + Number(row.unallocated_spend_usd || row.spend_usd || 0);
+      }, 0);
+      text.textContent = '未分摊广告费计划 ' + fmtInt(visibleRows) + ' / ' + fmtInt(totalRows) + ' · ' + fmtMoney(spend);
+    }
+  }
+
+  function showNewProductLaunchUnallocatedCampaigns() {
+    var card = document.getElementById('nplProfitUnallocatedAdCard');
+    if (card && card.getAttribute('aria-disabled') === 'true') return;
+    newProductLaunchState.campaignFilter = 'unallocated';
+    if (card) card.classList.add('is-active');
+    setNewProductLaunchSubtab('campaigns');
+    renderNewProductLaunchCampaigns(newProductLaunchLastCampaignRows);
+  }
+
+  function clearNewProductLaunchCampaignFilter() {
+    newProductLaunchState.campaignFilter = '';
+    var card = document.getElementById('nplProfitUnallocatedAdCard');
+    if (card) card.classList.remove('is-active');
+    renderNewProductLaunchCampaigns(newProductLaunchLastCampaignRows);
+  }
+
   function renderNewProductLaunchCampaigns(rows) {
     var body = document.getElementById('nplCampaignBody');
     if (!body) return;
+    rows = rows || [];
+    var visibleRows = rows;
+    if (newProductLaunchState.campaignFilter === 'unallocated') {
+      visibleRows = rows.filter(function(row) {
+        return row && row.allocation_status === 'unallocated';
+      });
+    }
+    renderNewProductLaunchCampaignFilterBar(rows.length, visibleRows.length);
     body.innerHTML = '';
-    (rows || []).forEach(function(row) {
+    visibleRows.forEach(function(row) {
       var tr = document.createElement('tr');
       addTextCell(tr, row.campaign_name || row.normalized_campaign_code || '-', 'oar-product-cell');
       
@@ -6402,7 +6898,13 @@
       addTextCell(tr, row.campaign_id || '-', 'oar-id-cell');
       body.appendChild(tr);
     });
-    if (!body.children.length) setNewProductLaunchTable('nplCampaignBody', 12, '暂无广告计划数据');
+    if (!body.children.length) {
+      setNewProductLaunchTable(
+        'nplCampaignBody',
+        12,
+        newProductLaunchState.campaignFilter === 'unallocated' ? '暂无未分摊广告费计划' : '暂无广告计划数据'
+      );
+    }
   }
 
   function renderNewProductLaunchRoas(data) {
@@ -6418,7 +6920,13 @@
     body.innerHTML = '';
     rows.forEach(function(row) {
       var tr = document.createElement('tr');
-      addTextCell(tr, typeof row.hour === 'number' ? String(row.hour).padStart(2, '0') + ':00' : row.hour);
+      var hourTd = document.createElement('td');
+      hourTd.className = 'oar-hour-cell';
+      if (isCurrentHourWindow(row)) {
+        hourTd.className += ' is-current';
+      }
+      hourTd.innerHTML = formatRealtimeHourCell(row);
+      tr.appendChild(hourTd);
       addTextCell(tr, row.order_count || 0);
       addTextCell(tr, fmtMoney(row.order_revenue));
       addTextCell(tr, row.units || 0);
