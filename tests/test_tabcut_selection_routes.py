@@ -81,6 +81,11 @@ def test_tabcut_template_contains_immersive_video_overlay_controls():
     assert "function isTabcutMobileViewport()" in template
     assert "isTabcutMobileViewport() && tabcutHasReadyLocalVideo(row)" in template
     assert "openTabcutVideoOverlay(null, videoId)" in template
+    assert "touchStartedInInfo" in template
+    assert 'closest(".tabcut-video-overlay-info")' in template
+    assert 'qs("tabcutVideoGrid")' in template
+    assert 'grid.querySelectorAll(".tabcut-video-card")' in template
+    assert 'document.querySelectorAll(".tabcut-page video, #tabcutVideoOverlay video, #tiktokLocalVideo")' in template
     assert "tabcut-video-overlay-download" in template
     assert "tabcutVideoOverlayState.infoExpanded" in template
     assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in template

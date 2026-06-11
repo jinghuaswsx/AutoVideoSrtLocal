@@ -846,7 +846,7 @@ if (window.location.hash === "#today-new") {
 {% endif %}
 let tabcutPage = 1;
 const tabcutItemsByVideoId = new Map();
-let tabcutVideoOverlayState = {videoId: "", touchStartX: null, touchStartY: null, infoExpanded: false, item: null, lastWheelAt: 0};
+let tabcutVideoOverlayState = {videoId: "", touchStartX: null, touchStartY: null, touchStartedInInfo: false, infoExpanded: false, item: null, lastWheelAt: 0};
 const TABCUT_VIDEO_VIEWS = new Set(["videos"{% if not share_mode %}, "today_new"{% endif %}]);
 const TABCUT_VALID_VIEWS = new Set(["videos", "goods", "recommended"{% if not share_mode %}, "today_new"{% endif %}]);
 let tabcutTaskState = {
@@ -1506,7 +1506,9 @@ function ensureTabcutVideoOverlay() {
 }
 
 function tabcutPlayableOverlayItems() {
-  return Array.from(document.querySelectorAll(".tabcut-video-card"))
+  const grid = qs("tabcutVideoGrid");
+  if (!grid || grid.hidden) return [];
+  return Array.from(grid.querySelectorAll(".tabcut-video-card"))
     .map(card => tabcutItemsByVideoId.get(String(card.dataset.videoId || "")))
     .map(row => tabcutVideoOverlayItemFromRow(row))
     .filter(item => item.videoId && item.videoSrc);
@@ -1584,7 +1586,7 @@ function toggleTabcutVideoOverlayInfo(event) {
 }
 
 function pauseTabcutVideos() {
-  document.querySelectorAll("video").forEach(video => {
+  document.querySelectorAll(".tabcut-page video, #tabcutVideoOverlay video, #tiktokLocalVideo").forEach(video => {
     try { video.pause(); } catch (_) {}
   });
 }
@@ -1651,6 +1653,12 @@ function switchTabcutVideoOverlay(direction) {
 }
 
 function handleTabcutVideoOverlayTouchStart(event) {
+  tabcutVideoOverlayState.touchStartedInInfo = Boolean(event.target && event.target.closest && event.target.closest(".tabcut-video-overlay-info"));
+  if (tabcutVideoOverlayState.touchStartedInInfo) {
+    tabcutVideoOverlayState.touchStartX = null;
+    tabcutVideoOverlayState.touchStartY = null;
+    return;
+  }
   const touch = event.touches && event.touches[0];
   if (!touch) return;
   tabcutVideoOverlayState.touchStartX = touch.clientX;
@@ -1658,12 +1666,19 @@ function handleTabcutVideoOverlayTouchStart(event) {
 }
 
 function handleTabcutVideoOverlayTouchEnd(event) {
+  if (tabcutVideoOverlayState.touchStartedInInfo) {
+    tabcutVideoOverlayState.touchStartX = null;
+    tabcutVideoOverlayState.touchStartY = null;
+    tabcutVideoOverlayState.touchStartedInInfo = false;
+    return;
+  }
   const touch = event.changedTouches && event.changedTouches[0];
   if (!touch || tabcutVideoOverlayState.touchStartY === null) return;
   const deltaX = touch.clientX - tabcutVideoOverlayState.touchStartX;
   const deltaY = touch.clientY - tabcutVideoOverlayState.touchStartY;
   tabcutVideoOverlayState.touchStartX = null;
   tabcutVideoOverlayState.touchStartY = null;
+  tabcutVideoOverlayState.touchStartedInInfo = false;
   if (Math.abs(deltaY) < 56 || Math.abs(deltaY) < Math.abs(deltaX) * 1.2) return;
   switchTabcutVideoOverlay(deltaY < 0 ? 1 : -1);
 }
@@ -1709,6 +1724,7 @@ function closeTabcutVideoOverlay(event) {
   tabcutVideoOverlayState.videoId = "";
   tabcutVideoOverlayState.touchStartX = null;
   tabcutVideoOverlayState.touchStartY = null;
+  tabcutVideoOverlayState.touchStartedInInfo = false;
   tabcutVideoOverlayState.infoExpanded = false;
   tabcutVideoOverlayState.item = null;
   tabcutVideoOverlayState.lastWheelAt = 0;
