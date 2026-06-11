@@ -341,10 +341,11 @@ def test_get_country_dashboard_with_product_code_and_ad_spend(monkeypatch):
                     "shipping": 10.0,
                 }
             ]
-        elif "meta_ad_daily_ad_metrics" in sql:
+        elif "meta_ad_daily_campaign_metrics" in sql:
             assert "product_id = %s" in sql
             return [
                 {
+                    "campaign_name": "PROD123_US",
                     "market_country": "US",
                     "spend": 50.0,
                     "purchase_value": 150.0,
@@ -378,7 +379,7 @@ def test_get_country_dashboard_with_product_code_and_ad_spend(monkeypatch):
     
     # Assert query parameters and filtering
     assert any("product_code = %s" in sql for sql, _ in query_calls)
-    assert any("meta_ad_daily_ad_metrics" in sql for sql, _ in query_calls)
+    assert any("meta_ad_daily_campaign_metrics" in sql for sql, _ in query_calls)
     assert any("meta_ad_realtime_daily_ad_metrics" in sql for sql, _ in query_calls)
 
     # Check mapping & calculation

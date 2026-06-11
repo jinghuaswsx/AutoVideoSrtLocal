@@ -164,27 +164,75 @@ def get_country_dashboard(
     ad_by_country = {}
 
     if closed_start <= closed_end:
-        hist_sql = (
-            "SELECT market_country, "
-            "       SUM(COALESCE(spend_usd, 0)) AS spend, "
-            "       SUM(COALESCE(purchase_value_usd, 0)) AS purchase_value "
-            "FROM meta_ad_daily_ad_metrics "
-            "WHERE COALESCE(meta_business_date, report_date) >= %s AND COALESCE(meta_business_date, report_date) <= %s "
-        )
-        hist_params = [closed_start, closed_end]
         if product_code:
-            hist_sql += " AND product_id = %s "
-            hist_params.append(product_id if product_id is not None else -1)
+            hist_sql = (
+                "SELECT campaign_name, market_country, "
+                "       SUM(COALESCE(spend_usd, 0)) AS spend, "
+                "       SUM(COALESCE(purchase_value_usd, 0)) AS purchase_value "
+                "FROM meta_ad_daily_campaign_metrics "
+                "WHERE COALESCE(meta_business_date, report_date) >= %s AND COALESCE(meta_business_date, report_date) <= %s "
+                "  AND (product_id = %s OR matched_product_code = %s OR product_code = %s OR LOWER(campaign_name) LIKE %s) "
+                "GROUP BY campaign_name, market_country"
+            )
+            hist_params = [
+                closed_start,
+                closed_end,
+                product_id if product_id is not None else -1,
+                product_code,
+                product_code,
+                f"%{product_code.lower()}%"
+            ]
+            hist_rows = query(hist_sql, tuple(hist_params))
 
-        hist_sql += " GROUP BY market_country"
-        hist_rows = query(hist_sql, tuple(hist_params))
-        for r in hist_rows:
-            mc = (r.get("market_country") or "").strip().upper()
-            if mc:
-                ad_by_country[mc] = {
-                    "spend": Decimal(str(r.get("spend") or 0)),
-                    "purchase_value": Decimal(str(r.get("purchase_value") or 0)),
-                }
+            from appcore.order_analytics.meta_ads import resolve_ad_product_match
+            from appcore.order_analytics.ad_market_country import extract_market_country
+
+            match_cache = {}
+            for r in hist_rows:
+                spend = Decimal(str(r.get("spend") or 0))
+                purchase_value = Decimal(str(r.get("purchase_value") or 0))
+                if spend <= 0 and purchase_value <= 0:
+                    continue
+
+                campaign_name = (r.get("campaign_name") or "").strip()
+                if not campaign_name:
+                    continue
+
+                lookup = campaign_name.lower()
+                if lookup not in match_cache:
+                    match = resolve_ad_product_match(lookup)
+                    match_cache[lookup] = int(match["id"]) if match and match.get("id") is not None else None
+                matched_pid = match_cache[lookup]
+
+                if matched_pid != product_id:
+                    continue
+
+                cc = (r.get("market_country") or "").strip().upper()
+                if not cc:
+                    cc = extract_market_country(campaign_name) or ""
+                cc = cc.strip().upper()
+
+                if cc:
+                    ad_by_country.setdefault(cc, {"spend": Decimal("0"), "purchase_value": Decimal("0")})
+                    ad_by_country[cc]["spend"] += spend
+                    ad_by_country[cc]["purchase_value"] += purchase_value
+        else:
+            hist_sql = (
+                "SELECT market_country, "
+                "       SUM(COALESCE(spend_usd, 0)) AS spend, "
+                "       SUM(COALESCE(purchase_value_usd, 0)) AS purchase_value "
+                "FROM meta_ad_daily_ad_metrics "
+                "WHERE COALESCE(meta_business_date, report_date) >= %s AND COALESCE(meta_business_date, report_date) <= %s "
+                "GROUP BY market_country"
+            )
+            hist_rows = query(hist_sql, (closed_start, closed_end))
+            for r in hist_rows:
+                mc = (r.get("market_country") or "").strip().upper()
+                if mc:
+                    ad_by_country[mc] = {
+                        "spend": Decimal(str(r.get("spend") or 0)),
+                        "purchase_value": Decimal(str(r.get("purchase_value") or 0)),
+                    }
 
     from datetime import timedelta
     open_start = max(start, closed_through + timedelta(days=1))
