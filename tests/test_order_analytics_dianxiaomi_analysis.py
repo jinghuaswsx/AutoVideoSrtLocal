@@ -112,6 +112,7 @@ def test_get_dianxiaomi_order_analysis_summarizes_and_paginates(monkeypatch):
             "roas": None,
             "meta_roas": None,
             "profit_margin": None,
+            "profit": -0.0,
         }
     ]
     assert result["pagination"] == {

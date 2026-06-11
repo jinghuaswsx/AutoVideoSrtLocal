@@ -2235,6 +2235,21 @@
   color: var(--fg);
   text-align: right;
 }
+
+/* 商品销量统计表格及数据分析模块全部表格居中对齐，且保护商品展示列靠左 */
+.oa-table th,
+.oa-table td,
+.oam-table th,
+.oam-table td,
+.oam-detail-table th,
+.oam-detail-table td {
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+.oa-table td.oar-product-cell,
+.oa-table th.oar-product-cell {
+  text-align: left !important;
+}
 {% endblock %}
 
 {% block content %}
@@ -2600,10 +2615,10 @@
         <div class="oar-note">按当前广告系统日汇总店小秘订单商品金额</div>
       </div>
       <div class="oa-table-scroll">
-        <table class="oa-table oar-compact-table">
+        <table class="oa-table oar-compact-table" id="realtimeProductStatsTable">
           <thead>
             <tr>
-              <th>产品</th>
+              <th class="oar-product-cell">产品</th>
               <th>产品主图</th>
               <th>订单数</th>
               <th>销售件数</th>
@@ -4350,10 +4365,10 @@
       <div class="oar-note">按当前日期范围和店铺筛选汇总</div>
     </div>
     <div class="oa-table-scroll">
-      <table class="oa-table oar-compact-table">
+      <table class="oa-table oar-compact-table" id="dxmProductStatsTable">
         <thead>
           <tr>
-            <th>商品</th>
+            <th class="oar-product-cell">商品</th>
             <th>产品主图</th>
             <th>订单数</th>
             <th>销售件数</th>
@@ -4362,6 +4377,7 @@
             <th>ROAS</th>
             <th>MetaROAS</th>
             <th>产品利润率</th>
+            <th>利润</th>
             <th>商品净销售额</th>
             <th>运费</th>
             <th>操作</th>
@@ -5211,6 +5227,22 @@
   function initDxmOrders() {
     if (!dxmOrdersInited) {
       dxmOrdersInited = true;
+      
+      var panel = document.getElementById('panelDxmOrders');
+      if (panel && panel.dataset.dxmCopyBound !== '1') {
+        panel.dataset.dxmCopyBound = '1';
+        panel.addEventListener('click', function(ev) {
+          var btn = ev.target.closest ? ev.target.closest('[data-weekly-ai-copy-text]') : null;
+          if (!btn || !panel.contains(btn)) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          var text = btn.getAttribute('data-weekly-ai-copy-text') || '';
+          copyTextToClipboard(text)
+            .then(function() { setRealtimeProductCopyState(btn, '已复制', 'is-copied'); })
+            .catch(function() { setRealtimeProductCopyState(btn, '复制失败', ''); });
+        });
+      }
+
       document.querySelectorAll('[data-dxm-range]').forEach(function(btn) {
         btn.addEventListener('click', function() {
           setDxmRange(btn.dataset.dxmRange);
@@ -5608,17 +5640,44 @@
     }).join(''));
   }
 
+  function dxmProductCopyButton(text, title) {
+    var value = String(text || '').trim();
+    if (!value) return '';
+    return '<button type="button" class="oar-product-line-action" title="' + escapeHtml(title || '复制') + '" ' +
+      'aria-label="' + escapeHtml(title || '复制') + '" data-weekly-ai-copy-text="' + escapeHtml(value) + '">' +
+      realtimeProductCopyIconSvg() +
+      '</button>';
+  }
+
+  function dxmProductLine(text, textClassName, copyTitle, withSearch) {
+    var value = String(text || '').trim();
+    var display = value || '-';
+    var html = '<div class="oar-product-copy-row">' +
+      '<span class="' + escapeHtml(textClassName || 'oar-product-line-text') + '">' + escapeHtml(display) + '</span>';
+    if (value) html += dxmProductCopyButton(value, copyTitle);
+    if (withSearch && value) {
+      html += '<a class="oar-product-line-action oar-product-search-action" href="/medias/?q=' +
+        encodeURIComponent(value) + '" target="_blank" rel="noopener noreferrer" title="在素材管理中搜索" ' +
+        'aria-label="在素材管理中搜索 product code">' + realtimeProductSearchIconSvg() + '</a>';
+    }
+    return html + '</div>';
+  }
+
   function renderDxmProductStats(productStats) {
     var bodyEl = document.getElementById('dxmProductStatsBody');
     if (!bodyEl) return;
     var rows = Array.isArray(productStats) ? productStats : [];
     if (!rows.length) {
-      bodyEl.innerHTML = '<tr><td colspan="12" class="oad-empty">暂无商品销量数据</td></tr>';
+      bodyEl.innerHTML = '<tr><td colspan="13" class="oad-empty">暂无商品销量数据</td></tr>';
       return;
     }
     bodyEl.innerHTML = rows.map(function(row) {
-      var product = (row.product_name || '未知商品') +
-        (row.product_code ? ' · ' + row.product_code : '');
+      var nameText = String(row.product_name || '未知商品').trim();
+      var codeText = String(row.product_code || '').trim();
+      var productHtml = '<div class="oar-product-sales-stack">' +
+        dxmProductLine(nameText || '未知商品', 'oar-product-line-text', '复制中文产品名', false) +
+        dxmProductLine(codeText, 'oar-product-line-text oar-product-code-text', '复制 product code', true) +
+        '</div>';
       
       var imgHtml = '-';
       if (row.product_id) {
@@ -5657,13 +5716,25 @@
         }
       }
 
+      var profitText = '-';
+      var profitStyle = '';
+      if (row.profit !== null && row.profit !== undefined) {
+        var profitVal = Number(row.profit);
+        profitText = fmtMoney(profitVal);
+        if (profitVal < 0) {
+          profitStyle = ' style="color:var(--danger);font-weight:600;"';
+        } else {
+          profitStyle = ' style="color:var(--success);font-weight:600;"';
+        }
+      }
+
       var detailBtn = '-';
       if (row.product_code) {
         detailBtn = '<a class="btn btn-default btn-xs" href="/order-analytics/dxm-orders-view/order-trend/' + encodeURIComponent(row.product_code) + '">产品详情</a>';
       }
 
       return '<tr>' +
-        '<td>' + escapeHtml(product) + '</td>' +
+        '<td class="oar-product-cell" style="max-width: 200px; word-break: break-word;">' + productHtml + '</td>' +
         '<td>' + imgHtml + '</td>' +
         '<td>' + fmtInt(row.order_count) + '</td>' +
         '<td>' + fmtInt(row.units) + '</td>' +
@@ -5672,6 +5743,7 @@
         '<td>' + roasText + '</td>' +
         '<td>' + metaRoasText + '</td>' +
         '<td' + marginStyle + '>' + marginText + '</td>' +
+        '<td' + profitStyle + '>' + profitText + '</td>' +
         '<td>' + fmtMoney(row.product_net_sales) + '</td>' +
         '<td>' + fmtMoney(row.shipping) + '</td>' +
         '<td>' + detailBtn + '</td>' +

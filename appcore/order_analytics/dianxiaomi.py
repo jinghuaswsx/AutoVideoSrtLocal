@@ -763,6 +763,7 @@ def get_dianxiaomi_product_sales_stats(
         meta_roas = float(ad_value / ad_spend) if ad_spend > 0 else None
 
         profit_margin = None
+        profit_val = -ad_spend
         if pid is not None:
             cdata = cost_map.get(int(pid))
             if cdata:
@@ -770,6 +771,7 @@ def get_dianxiaomi_product_sales_stats(
                 other = cdata["other_costs"]
                 profit = rev - other - ad_spend
                 profit_margin = float(profit / rev * 100) if rev > 0 else None
+                profit_val = profit
 
         out.append({
             "product_id": pid,
@@ -785,6 +787,7 @@ def get_dianxiaomi_product_sales_stats(
             "roas": roas,
             "meta_roas": meta_roas,
             "profit_margin": profit_margin,
+            "profit": profit_val,
         })
     return out
 
