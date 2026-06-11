@@ -1234,7 +1234,7 @@
                   <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
               </div>
-              ${it.source_video_filename ? `<div style="font-size:10px; color:var(--oc-fg-subtle, #9ca3af); margin-top:3px; word-break:break-all; line-height:1.35;">来源: ${escapeHtml(it.source_video_filename)}</div>` : ''}
+              ${it.source_video_filename ? `<div style="font-size:10px; color:var(--oc-fg-subtle, #9ca3af); margin-top:3px; word-break:break-all; line-height:1.35; display:flex; align-items:flex-start; gap:4px;"><span style="flex:1;">来源: ${escapeHtml(it.source_video_filename)}</span><button class="btn-copy-action" data-text="${escapeHtml(it.source_video_filename)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; margin-top:1px; flex-shrink:0;" title="复制来源视频文件名"><svg viewBox="0 0 24 24" width="10" height="10" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></div>` : ''}
               <div style="font-size:11px; color:var(--oc-fg-subtle, #4b5563); margin-top:4px;">
                 ${(it.file_size / (1024 * 1024)).toFixed(1)} M
               </div>
