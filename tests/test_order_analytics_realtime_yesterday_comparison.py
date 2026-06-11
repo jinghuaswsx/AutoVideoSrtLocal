@@ -256,11 +256,11 @@ def test_load_realtime_ad_cost_adjustments_until_caps_snapshot_and_units(monkeyp
             ]
         if "COALESCE(SUM(d.quantity), 0) AS units" in sql:
             assert "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at) <= %s" in sql
-            assert args == (target, snapshot_until)
+            assert args[-2:] == (target, snapshot_until)
             return [{"business_date": target, "product_id": 42, "units": 3}]
         if "SELECT d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
             assert "COALESCE(d.order_paid_at, d.attribution_time_at, d.order_created_at) <= %s" in sql
-            assert args == (target, snapshot_until)
+            assert args[-2:] == (target, snapshot_until)
             return [
                 {
                     "dxm_package_id": "PKG-1",
@@ -338,13 +338,15 @@ def test_load_realtime_ad_cost_adjustments_until_filters_order_units_by_site(mon
             ]
         if "COALESCE(SUM(d.quantity), 0) AS units" in sql:
             order_sqls.append(sql)
-            assert "d.site_code IN ('newjoy')" in sql
-            assert args == (target, snapshot_until)
+            assert "d.site_code IN (%s)" in sql
+            assert args[0] == "newjoy"
+            assert args[-2:] == (target, snapshot_until)
             return [{"business_date": target, "product_id": 42, "units": 3}]
         if "SELECT d.dxm_package_id" in sql and "p.ad_cost_usd" in sql:
             order_sqls.append(sql)
-            assert "d.site_code IN ('newjoy')" in sql
-            assert args == (target, snapshot_until)
+            assert "d.site_code IN (%s)" in sql
+            assert args[0] == "newjoy"
+            assert args[-2:] == (target, snapshot_until)
             return [
                 {
                     "dxm_package_id": "PKG-1",
@@ -496,7 +498,7 @@ def test_get_realtime_roas_overview_attaches_current_day_global_comparison(monke
                 }
             ]
         if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql:
-            if args and args[0] == date(2026, 6, 4):
+            if args and date(2026, 6, 4) in args:
                 return [
                     {
                         "order_count": 50,
@@ -646,7 +648,7 @@ def test_get_realtime_roas_overview_fallback_attaches_current_day_global_compari
         if "FROM meta_ad_daily_campaign_metrics" in sql:
             return [{"ad_spend": 300.0, "meta_purchase_value": 400.0, "meta_purchases": 5}]
         if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql:
-            if args and args[0] == date(2026, 6, 4):
+            if args and date(2026, 6, 4) in args:
                 return [
                     {
                         "order_count": 50,

@@ -30,6 +30,8 @@ from .order_profit_aggregation import (
 )
 from .product_ad_launch import normalize_product_launch_scope, normalize_product_launch_window_days
 from .shopify_fee import split_shopify_fee_for_order
+from .profit_calculation import _to_decimal
+
 
 ORDER_DETAIL_PAGE_SIZE = 30
 ORDER_DETAIL_MAX_PAGE_SIZE = 100
@@ -102,13 +104,9 @@ def _normalize_site_codes(site_codes: Any) -> tuple[str, ...]:
 
 
 def _site_codes_in_sql(site_codes: tuple[str, ...], column: str = "site_code") -> str:
-    """渲染 ``<column> IN ('newjoy', 'omurio', 'cozywint')`` 片段。
-
-    ``site_codes`` 必须先经 ``_normalize_site_codes`` 校验，因此字面量拼接是安全的；
-    保留与历史 SQL 字符串一致（默认值场景下生成的 SQL 与改造前完全相同）。
-    """
-    quoted = ", ".join("'" + code + "'" for code in site_codes)
-    return f"{column} IN ({quoted}) "
+    """渲染 ``<column> IN (%s, %s, %s)`` 片段。"""
+    placeholders = ", ".join(["%s"] * len(site_codes))
+    return f"{column} IN ({placeholders}) "
 
 
 def _site_codes_use_default(site_codes: tuple[str, ...]) -> bool:
@@ -324,35 +322,35 @@ def _attach_order_profit_estimate_ratios(summary: dict[str, Any]) -> None:
 def _empty_order_profit_summary() -> dict[str, Any]:
     return {
         "order_count": 0,
-        "total_revenue_usd": 0.0,
-        "refund_deduction_usd": 0.0,
-        "return_reserve_usd": 0.0,
-        "profit_deduction_usd": 0.0,
-        "purchase_cost_usd": 0.0,
-        "purchase_estimate_usd": 0.0,
-        "purchase_cost_with_estimate_usd": 0.0,
+        "total_revenue_usd": Decimal("0"),
+        "refund_deduction_usd": Decimal("0"),
+        "return_reserve_usd": Decimal("0"),
+        "profit_deduction_usd": Decimal("0"),
+        "purchase_cost_usd": Decimal("0"),
+        "purchase_estimate_usd": Decimal("0"),
+        "purchase_cost_with_estimate_usd": Decimal("0"),
         "purchase_missing_order_count": 0,
         "purchase_missing_order_ratio": 0.0,
-        "logistics_cost_usd": 0.0,
-        "logistics_estimate_usd": 0.0,
-        "logistics_cost_with_estimate_usd": 0.0,
+        "logistics_cost_usd": Decimal("0"),
+        "logistics_estimate_usd": Decimal("0"),
+        "logistics_cost_with_estimate_usd": Decimal("0"),
         "logistics_missing_order_count": 0,
         "logistics_missing_order_ratio": 0.0,
-        "shopify_fee_total_usd": 0.0,
-        "ad_cost_usd": 0.0,
-        "unallocated_ad_spend_usd": 0.0,
-        "total_ad_spend_usd": 0.0,
+        "shopify_fee_total_usd": Decimal("0"),
+        "ad_cost_usd": Decimal("0"),
+        "unallocated_ad_spend_usd": Decimal("0"),
+        "total_ad_spend_usd": Decimal("0"),
         "total_ad_spend_ratio_pct": None,
         "purchase_cost_ratio_pct": None,
         "logistics_cost_ratio_pct": None,
         "shopify_fee_ratio_pct": None,
         "purchase_estimate_ratio_pct": None,
         "logistics_estimate_ratio_pct": None,
-        "cost_estimate_total_usd": 0.0,
-        "cost_with_estimate_total_usd": 0.0,
+        "cost_estimate_total_usd": Decimal("0"),
+        "cost_with_estimate_total_usd": Decimal("0"),
         "cost_estimate_ratio_pct": None,
         "has_estimated_costs": False,
-        "profit_with_estimate_usd": 0.0,
+        "profit_with_estimate_usd": Decimal("0"),
         "profit_with_estimate_margin_pct": None,
         "global_break_even_roas": None,
     }
@@ -368,16 +366,16 @@ def _build_order_profit_summary(
     summary["order_count"] = order_count
 
     for row in rows or []:
-        total_revenue = _money(row.get("total_revenue"))
-        refund = _money(row.get("refund_deduction_usd"))
-        return_reserve = _money(row.get("return_reserve_usd"))
-        profit_deduction = _money(row.get("profit_deduction_usd", refund))
-        purchase_cost = _money(row.get("purchase_cost_usd"))
-        purchase_estimate = _money(row.get("purchase_estimate_usd"))
-        logistics_cost = _money(row.get("logistics_cost_usd"))
-        logistics_estimate = _money(row.get("logistics_estimate_usd"))
-        shopify_fee = _money(row.get("shopify_fee_total_usd"))
-        ad_cost = _money(row.get("ad_cost_usd"))
+        total_revenue = _to_decimal(row.get("total_revenue"))
+        refund = _to_decimal(row.get("refund_deduction_usd"))
+        return_reserve = _to_decimal(row.get("return_reserve_usd"))
+        profit_deduction = _to_decimal(row.get("profit_deduction_usd", refund))
+        purchase_cost = _to_decimal(row.get("purchase_cost_usd"))
+        purchase_estimate = _to_decimal(row.get("purchase_estimate_usd"))
+        logistics_cost = _to_decimal(row.get("logistics_cost_usd"))
+        logistics_estimate = _to_decimal(row.get("logistics_estimate_usd"))
+        shopify_fee = _to_decimal(row.get("shopify_fee_total_usd"))
+        ad_cost = _to_decimal(row.get("ad_cost_usd"))
 
         summary["total_revenue_usd"] += total_revenue
         summary["refund_deduction_usd"] += refund
@@ -415,10 +413,10 @@ def _build_order_profit_summary(
     #   2) 已匹配 product 但当天没有可分摊订单 units。
     # 锚点：docs/superpowers/specs/2026-05-08-analytics-business-date-alignment-fix.md 第 12 条。
     if total_ad_spend_usd is not None:
-        total_spend = max(0.0, float(total_ad_spend_usd))
+        total_spend = _to_decimal(total_ad_spend_usd)
         summary["total_ad_spend_usd"] = total_spend
         summary["unallocated_ad_spend_usd"] = max(
-            0.0, total_spend - summary["ad_cost_usd"]
+            Decimal("0"), total_spend - summary["ad_cost_usd"]
         )
     else:
         summary["total_ad_spend_usd"] = summary["ad_cost_usd"]
@@ -431,6 +429,16 @@ def _build_order_profit_summary(
         - summary["shopify_fee_total_usd"]
         - (summary["ad_cost_usd"] + summary["unallocated_ad_spend_usd"])
     )
+
+    total_revenue = summary["total_revenue_usd"]
+    if total_revenue > 0:
+        summary["profit_with_estimate_margin_pct"] = summary["profit_with_estimate_usd"] / total_revenue * Decimal("100")
+    else:
+        summary["profit_with_estimate_margin_pct"] = None
+
+    _attach_order_profit_cost_ratios(summary)
+    _attach_order_profit_estimate_ratios(summary)
+
     for key, value in list(summary.items()):
         if value is None:
             continue
@@ -442,16 +450,7 @@ def _build_order_profit_summary(
             summary[key] = round(float(value), 4)
         else:
             summary[key] = round(float(value), 2)
-    total_revenue = summary["total_revenue_usd"]
-    if total_revenue > 0:
-        summary["profit_with_estimate_margin_pct"] = round(
-            summary["profit_with_estimate_usd"] / total_revenue * 100,
-            2,
-        )
-    else:
-        summary["profit_with_estimate_margin_pct"] = None
-    _attach_order_profit_cost_ratios(summary)
-    _attach_order_profit_estimate_ratios(summary)
+
     summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
@@ -471,26 +470,26 @@ def _build_order_profit_summary_from_status(
     ok = buckets.get("ok") or {}
     incomplete = buckets.get("incomplete") or {}
 
-    def total(key: str) -> float:
-        return float(ok.get(key) or 0) + float(incomplete.get(key) or 0)
+    def total(key: str) -> Decimal:
+        return _to_decimal(ok.get(key)) + _to_decimal(incomplete.get(key))
 
     summary = _empty_order_profit_summary()
     summary.update({
         "order_count": int(order_count),
-        "total_revenue_usd": float(status_summary.get("total_revenue_usd") or 0),
-        "refund_deduction_usd": 0.0,
+        "total_revenue_usd": _to_decimal(status_summary.get("total_revenue_usd")),
+        "refund_deduction_usd": Decimal("0"),
         "return_reserve_usd": total("return_reserve"),
         "profit_deduction_usd": total("return_reserve"),
         "purchase_cost_usd": total("purchase_actual"),
         "purchase_estimate_usd": total("purchase_estimate"),
-        "purchase_cost_with_estimate_usd": float(status_summary.get("purchase_cost_with_estimate_usd") or 0),
+        "purchase_cost_with_estimate_usd": _to_decimal(status_summary.get("purchase_cost_with_estimate_usd")),
         "logistics_cost_usd": total("shipping_cost_actual"),
         "logistics_estimate_usd": total("shipping_cost_estimate"),
-        "logistics_cost_with_estimate_usd": float(status_summary.get("shipping_cost_with_estimate_usd") or 0),
+        "logistics_cost_with_estimate_usd": _to_decimal(status_summary.get("shipping_cost_with_estimate_usd")),
         "shopify_fee_total_usd": total("shopify_fee"),
         "ad_cost_usd": total("ad_cost"),
-        "unallocated_ad_spend_usd": float(status_summary.get("unallocated_ad_spend_usd") or 0),
-        "profit_with_estimate_usd": float(overview.get("total_profit_usd") or 0),
+        "unallocated_ad_spend_usd": _to_decimal(status_summary.get("unallocated_ad_spend_usd")),
+        "profit_with_estimate_usd": _to_decimal(overview.get("total_profit_usd")),
     })
     summary["total_ad_spend_usd"] = summary["ad_cost_usd"] + summary["unallocated_ad_spend_usd"]
     estimate = status_summary.get("estimated") or {}
@@ -499,6 +498,16 @@ def _build_order_profit_summary_from_status(
     if order_count > 0:
         summary["purchase_missing_order_ratio"] = round(summary["purchase_missing_order_count"] / order_count, 4)
         summary["logistics_missing_order_ratio"] = round(summary["logistics_missing_order_count"] / order_count, 4)
+
+    total_revenue = summary["total_revenue_usd"]
+    if total_revenue > 0:
+        summary["profit_with_estimate_margin_pct"] = summary["profit_with_estimate_usd"] / total_revenue * Decimal("100")
+    else:
+        summary["profit_with_estimate_margin_pct"] = None
+
+    _attach_order_profit_cost_ratios(summary)
+    _attach_order_profit_estimate_ratios(summary)
+
     for key, value in list(summary.items()):
         if value is None:
             continue
@@ -510,16 +519,7 @@ def _build_order_profit_summary_from_status(
             summary[key] = round(float(value), 4)
         else:
             summary[key] = round(float(value), 2)
-    total_revenue = summary["total_revenue_usd"]
-    if total_revenue > 0:
-        summary["profit_with_estimate_margin_pct"] = round(
-            summary["profit_with_estimate_usd"] / total_revenue * 100,
-            2,
-        )
-    else:
-        summary["profit_with_estimate_margin_pct"] = None
-    _attach_order_profit_cost_ratios(summary)
-    _attach_order_profit_estimate_ratios(summary)
+
     summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
@@ -703,7 +703,7 @@ def _get_realtime_order_details(
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         "ORDER BY order_time DESC, d.dxm_package_id DESC"
         + limit_sql,
-        tuple([target, data_until] + product_args + limit_args),
+        tuple(list(sites) + [target, data_until] + product_args + limit_args),
     )
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -759,7 +759,7 @@ def _count_realtime_order_details(
         "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         ") AS realtime_order_detail_groups",
-        tuple([target, data_until] + product_args),
+        tuple(list(sites) + [target, data_until] + product_args),
     )
     return int((rows[0] or {}).get("total") or 0) if rows else 0
 
@@ -815,7 +815,7 @@ def _get_realtime_order_details_for_range(
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         "ORDER BY order_time DESC, d.dxm_package_id DESC"
         + limit_sql,
-        tuple([start, end] + product_args + limit_args),
+        tuple(list(sites) + [start, end] + product_args + limit_args),
     )
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -873,7 +873,7 @@ def _count_realtime_order_details_for_range(
         "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         ") AS realtime_order_detail_groups",
-        tuple([start, end] + product_args),
+        tuple(list(sites) + [start, end] + product_args),
     )
     return int((rows[0] or {}).get("total") or 0) if rows else 0
 
@@ -1015,7 +1015,7 @@ def _get_realtime_order_profit_details(
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         "ORDER BY order_time DESC, d.dxm_package_id DESC"
         + limit_sql,
-        tuple([target, data_until] + product_args + limit_args),
+        tuple(list(sites) + [target, data_until] + product_args + limit_args),
     )
     details = _format_realtime_order_profit_rows(rows, day_start)
     if product_ids is None and not unmatched_ads:
@@ -1247,7 +1247,7 @@ def _get_realtime_order_profit_details_for_range(
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         "ORDER BY order_time DESC, d.dxm_package_id DESC"
         + limit_sql,
-        tuple([start, end] + product_args + limit_args),
+        tuple(list(sites) + [start, end] + product_args + limit_args),
     )
     details: list[dict[str, Any]] = []
     for row in rows:
@@ -1296,7 +1296,7 @@ def _count_realtime_order_profit_details(
         "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         ") AS realtime_order_profit_groups",
-        tuple([target, data_until] + product_args),
+        tuple(list(sites) + [target, data_until] + product_args),
     )
     return int((rows[0] or {}).get("total") or 0) if rows else 0
 
@@ -1328,7 +1328,7 @@ def _count_realtime_order_profit_details_for_range(
         "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         ") AS realtime_order_profit_groups",
-        tuple([start, end] + product_args),
+        tuple(list(sites) + [start, end] + product_args),
     )
     return int((rows[0] or {}).get("total") or 0) if rows else 0
 
@@ -1498,7 +1498,7 @@ def _load_realtime_ad_cost_adjustments_until(
         "AND p.product_id IS NOT NULL "
         f"{product_filter} "
         "GROUP BY d.meta_business_date, p.product_id",
-        tuple([target, snapshot_until] + product_args),
+        tuple(list(sites) + [target, snapshot_until] + product_args),
     )
     units_by_product: dict[tuple[date, int], int] = {}
     for row in unit_rows or []:
@@ -1536,7 +1536,7 @@ def _load_realtime_ad_cost_adjustments_until(
         "AND " + order_time_expr + " <= %s "
         "AND p.product_id IS NOT NULL "
         f"{product_filter}",
-        tuple([target, snapshot_until] + product_args),
+        tuple(list(sites) + [target, snapshot_until] + product_args),
     )
 
     package_deltas: dict[str, float] = {}
@@ -1832,19 +1832,19 @@ def _build_realtime_estimate_product_rows(rows: list[dict[str, Any]]) -> list[di
                 "skus": row.get("skus"),
                 "order_count": 0,
                 "units": 0,
-                "total_revenue_usd": 0.0,
+                "total_revenue_usd": Decimal("0"),
                 "purchase_estimated_order_count": 0,
-                "purchase_estimate_usd": 0.0,
+                "purchase_estimate_usd": Decimal("0"),
                 "logistics_estimated_order_count": 0,
-                "logistics_estimate_usd": 0.0,
-                "estimated_cost_total_usd": 0.0,
+                "logistics_estimate_usd": Decimal("0"),
+                "estimated_cost_total_usd": Decimal("0"),
             },
         )
         item["order_count"] += 1
         item["units"] += int(row.get("units") or 0)
-        item["total_revenue_usd"] += _money(row.get("total_revenue"))
-        purchase_estimate = _money(row.get("purchase_estimate_usd"))
-        logistics_estimate = _money(row.get("logistics_estimate_usd"))
+        item["total_revenue_usd"] += _to_decimal(row.get("total_revenue"))
+        purchase_estimate = _to_decimal(row.get("purchase_estimate_usd"))
+        logistics_estimate = _to_decimal(row.get("logistics_estimate_usd"))
         if purchase_estimate > 0:
             item["purchase_estimated_order_count"] += 1
             item["purchase_estimate_usd"] += purchase_estimate
@@ -1861,7 +1861,7 @@ def _build_realtime_estimate_product_rows(rows: list[dict[str, Any]]) -> list[di
             "logistics_estimate_usd",
             "estimated_cost_total_usd",
         ):
-            item[key] = _money(item.get(key))
+            item[key] = float(round(item.get(key) or Decimal("0"), 2))
         result.append(item)
     result.sort(
         key=lambda row: (
@@ -2157,11 +2157,11 @@ def _summarize_daily_campaign_purchase_rows(
         if updated_at and (last_ad_updated_at is None or updated_at > last_ad_updated_at):
             last_ad_updated_at = updated_at
     return {
-        "ad_spend": round(sum(float(row.get("spend_usd") or 0) for row in rows), 2),
-        "meta_purchase_value": round(
-            sum(float(row.get("purchase_value_usd") or 0) for row in rows),
+        "ad_spend": float(round(sum(_to_decimal(row.get("spend_usd")) for row in rows), 2)),
+        "meta_purchase_value": float(round(
+            sum(_to_decimal(row.get("purchase_value_usd")) for row in rows),
             2,
-        ),
+        )),
         "meta_purchases": sum(int(row.get("result_count") or 0) for row in rows),
         "last_ad_updated_at": last_ad_updated_at,
         "purchase_fallback_stats": fallback_stats,
@@ -2195,14 +2195,14 @@ def _summarize_daily_campaign_purchase_rows_by_day(
             day,
             {
                 "meta_business_date": day,
-                "ad_spend": 0.0,
-                "meta_purchase_value": 0.0,
+                "ad_spend": Decimal("0"),
+                "meta_purchase_value": Decimal("0"),
                 "meta_purchases": 0,
                 "last_ad_updated_at": None,
             },
         )
-        group["ad_spend"] += float(row.get("spend_usd") or 0)
-        group["meta_purchase_value"] += float(row.get("purchase_value_usd") or 0)
+        group["ad_spend"] += _to_decimal(row.get("spend_usd"))
+        group["meta_purchase_value"] += _to_decimal(row.get("purchase_value_usd"))
         group["meta_purchases"] += int(row.get("result_count") or 0)
         updated_at = row.get("updated_at")
         if updated_at and (
@@ -2211,8 +2211,8 @@ def _summarize_daily_campaign_purchase_rows_by_day(
             group["last_ad_updated_at"] = updated_at
     out = []
     for row in grouped.values():
-        row["ad_spend"] = round(row["ad_spend"], 2)
-        row["meta_purchase_value"] = round(row["meta_purchase_value"], 2)
+        row["ad_spend"] = float(round(row["ad_spend"], 2))
+        row["meta_purchase_value"] = float(round(row["meta_purchase_value"], 2))
         out.append(row)
     out.sort(key=lambda row: row["meta_business_date"])
     return out, fallback_stats
@@ -2905,7 +2905,7 @@ def _load_realtime_order_hourly(
         + product_sql +
         "GROUP BY hour "
         "ORDER BY hour",
-        tuple([day_start, day_start, day_end] + product_args),
+        tuple([day_start] + list(sites) + [day_start, day_end] + product_args),
     )
     orders_by_hour = {
         int(row["hour"]): row for row in order_rows if row.get("hour") is not None
@@ -2914,9 +2914,9 @@ def _load_realtime_order_hourly(
         "order_count": 0,
         "line_count": 0,
         "units": 0,
-        "order_revenue": 0.0,
-        "line_revenue": 0.0,
-        "shipping_revenue": 0.0,
+        "order_revenue": Decimal("0"),
+        "line_revenue": Decimal("0"),
+        "shipping_revenue": Decimal("0"),
     }
     first_order_at = None
     last_order_at = None
@@ -2946,7 +2946,7 @@ def _load_realtime_order_hourly(
         for key in ("order_count", "line_count", "units"):
             summary[key] += item[key]
         for key in ("order_revenue", "line_revenue", "shipping_revenue"):
-            summary[key] = round(summary[key] + float(item[key]), 2)
+            summary[key] += _to_decimal(item[key])
         if row.get("first_order_at") and (first_order_at is None or row["first_order_at"] < first_order_at):
             first_order_at = row["first_order_at"]
         if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
@@ -2955,6 +2955,8 @@ def _load_realtime_order_hourly(
             last_order_updated_at is None or row["last_order_updated_at"] > last_order_updated_at
         ):
             last_order_updated_at = row["last_order_updated_at"]
+    for key in ("order_revenue", "line_revenue", "shipping_revenue"):
+        summary[key] = float(round(summary[key], 2))
     return {
         "hourly": hourly,
         "orders_by_hour": orders_by_hour,
@@ -2998,7 +3000,7 @@ def _get_realtime_order_summary(
         "AND d.meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
         + product_sql,
-        tuple([target, data_until] + product_args),
+        tuple(list(sites) + [target, data_until] + product_args),
     )
     row = rows[0] if rows else {}
     order_revenue = _money(row.get("order_revenue"))
@@ -3296,8 +3298,8 @@ def _get_today_realtime_meta_totals(business_date: date) -> dict[str, Any] | Non
     if not rows:
         return None
     totals = {
-        "ad_spend": 0.0,
-        "meta_purchase_value": 0.0,
+        "ad_spend": Decimal("0"),
+        "meta_purchase_value": Decimal("0"),
         "meta_purchases": 0,
     }
     latest_snapshot: datetime | None = None
@@ -3327,16 +3329,16 @@ def _get_today_realtime_meta_totals(business_date: date) -> dict[str, Any] | Non
         if not agg:
             continue
         bucket = agg[0]
-        totals["ad_spend"] += float(bucket.get("ad_spend") or 0)
-        totals["meta_purchase_value"] += float(bucket.get("meta_purchase_value") or 0)
+        totals["ad_spend"] += _to_decimal(bucket.get("ad_spend"))
+        totals["meta_purchase_value"] += _to_decimal(bucket.get("meta_purchase_value"))
         totals["meta_purchases"] += int(bucket.get("meta_purchases") or 0)
         if latest_snapshot is None or snapshot_at > latest_snapshot:
             latest_snapshot = snapshot_at
     if latest_snapshot is None:
         return None
     return {
-        "ad_spend": _money(totals["ad_spend"]),
-        "meta_purchase_value": _money(totals["meta_purchase_value"]),
+        "ad_spend": float(round(totals["ad_spend"], 2)),
+        "meta_purchase_value": float(round(totals["meta_purchase_value"], 2)),
         "meta_purchases": int(totals["meta_purchases"]),
         "snapshot_at": latest_snapshot,
     }
@@ -3402,7 +3404,7 @@ def _get_realtime_order_updated_at(
         "FROM dianxiaomi_order_lines "
         "WHERE " + _site_codes_in_sql(sites) +
         "AND meta_business_date=%s AND " + order_time_expr + " <= %s",
-        (target, snapshot_at),
+        tuple(list(sites) + [target, snapshot_at]),
     )
     if not row:
         return None
@@ -3455,7 +3457,7 @@ def _build_realtime_overview_for_range(
         "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
         + product_sql +
         "GROUP BY d.meta_business_date",
-        tuple([start, end] + product_args),
+        tuple(list(sites) + [start, end] + product_args),
     )
     ad_product_sql, ad_product_args = _product_filter_sql(
         "product_id",
@@ -3513,11 +3515,11 @@ def _build_realtime_overview_for_range(
         "order_count": 0,
         "line_count": 0,
         "units": 0,
-        "order_revenue": 0.0,
-        "line_revenue": 0.0,
-        "shipping_revenue": 0.0,
-        "ad_spend": 0.0,
-        "meta_purchase_value": 0.0,
+        "order_revenue": Decimal("0"),
+        "line_revenue": Decimal("0"),
+        "shipping_revenue": Decimal("0"),
+        "ad_spend": Decimal("0"),
+        "meta_purchase_value": Decimal("0"),
         "meta_purchases": 0,
     }
     last_order_at: datetime | None = None
@@ -3536,9 +3538,9 @@ def _build_realtime_overview_for_range(
         summary["order_count"] += int(row.get("order_count") or 0)
         summary["line_count"] += int(row.get("line_count") or 0)
         summary["units"] += int(row.get("units") or 0)
-        summary["order_revenue"] += float(row.get("order_revenue") or 0)
-        summary["line_revenue"] += float(row.get("line_revenue") or 0)
-        summary["shipping_revenue"] += float(row.get("shipping_revenue") or 0)
+        summary["order_revenue"] += _to_decimal(row.get("order_revenue"))
+        summary["line_revenue"] += _to_decimal(row.get("line_revenue"))
+        summary["shipping_revenue"] += _to_decimal(row.get("shipping_revenue"))
         if row.get("last_order_at") and (last_order_at is None or row["last_order_at"] > last_order_at):
             last_order_at = row["last_order_at"]
         if row.get("last_order_updated_at") and (
@@ -3577,8 +3579,8 @@ def _build_realtime_overview_for_range(
             used_realtime_ads = True
         else:
             used_daily_ads = True
-        summary["ad_spend"] += float(row.get("ad_spend") or 0)
-        summary["meta_purchase_value"] += float(row.get("meta_purchase_value") or 0)
+        summary["ad_spend"] += _to_decimal(row.get("ad_spend"))
+        summary["meta_purchase_value"] += _to_decimal(row.get("meta_purchase_value"))
         summary["meta_purchases"] += int(row.get("meta_purchases") or 0)
         if row.get("last_ad_updated_at") and (
             last_ad_updated_at is None or row["last_ad_updated_at"] > last_ad_updated_at
@@ -3586,7 +3588,7 @@ def _build_realtime_overview_for_range(
             last_ad_updated_at = row["last_ad_updated_at"]
 
     for key in ("order_revenue", "line_revenue", "shipping_revenue", "ad_spend", "meta_purchase_value"):
-        summary[key] = round(summary[key], 2)
+        summary[key] = float(round(summary[key], 2))
 
     summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
