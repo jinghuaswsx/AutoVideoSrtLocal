@@ -69,6 +69,13 @@ def _public_project_payload(project: dict, share_token: str) -> dict:
             if "mingkong_materials" in p and "mingkong_materials" in orig_p:
                 for m_idx, m in enumerate(p["mingkong_materials"]):
                     orig_m = orig_p["mingkong_materials"][m_idx]
+                    if orig_m.get("source_type") == "local_en_cjh" and orig_m.get("object_key"):
+                        m["video_url"] = f"/medias/obj/{orig_m['object_key']}"
+                        if orig_m.get("cover_object_key"):
+                            m["cover_url"] = f"/medias/obj/{orig_m['cover_object_key']}"
+                        else:
+                            m.pop("cover_url", None)
+                        continue
                     orig_video_url = orig_m.get("video_url")
                     if orig_video_url:
                         if "?" in orig_video_url:

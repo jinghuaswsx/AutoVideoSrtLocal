@@ -1008,6 +1008,8 @@ PRODUCT_ANALYSIS_RESPONSE_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "properties": {
                     "action": {"type": "string"},
+                    "source_type": {"type": "string"},
+                    "media_item_id": {"type": "integer"},
                     "material_key": {"type": "string"},
                     "video_path": {"type": "string"},
                     "target_langs": {"type": "array", "items": {"type": "string"}},
@@ -1035,7 +1037,8 @@ def _ranking_prompt(payload: dict) -> str:
 def _product_prompt(payload: dict) -> str:
     return (
         "你是跨境电商 AI素材军师。只分析当前一个产品，不编造输入中没有的数据。\n"
-        "请先判断产品阶段，再给补素材操作建议。建议必须落到国家、语言、素材或明空 video_path；"
+        "请先判断产品阶段，再给补素材操作建议。建议必须落到国家、语言、素材或 source_material_candidates 中的素材；"
+        "source_type=local_en_cjh 表示美国站已入库的自制 EN 素材，可作为搬运欧洲小语种的源素材，不能建议重复加入明空素材库；"
         "必须读取 task_assignments：已有待处理/进行中/已完成任务的国家或素材只标注任务，不要重复建议创建翻译任务；"
         "已取消任务可以建议重排，但要写明曾取消的任务ID；"
         "如果数据不足，明确缺什么。输出严格 JSON，字段符合 response_schema。\n"
@@ -1221,7 +1224,7 @@ def _load_local_materials(product_ids: list[int]) -> dict[int, list[dict]]:
         SELECT
           i.id, i.product_id, LOWER(COALESCE(i.lang, 'en')) AS lang,
           i.filename, i.display_name, i.object_key, i.task_id,
-          i.duration_seconds, i.created_at,
+          i.cover_object_key, i.duration_seconds, i.created_at,
           b.mk_video_path,
           COUNT(DISTINCT CASE WHEN l.status = 'success' THEN l.id END) AS push_count
         FROM media_items i
@@ -1230,7 +1233,7 @@ def _load_local_materials(product_ids: list[int]) -> dict[int, list[dict]]:
         WHERE i.deleted_at IS NULL
           AND i.product_id IN ({placeholders})
         GROUP BY i.id, i.product_id, i.lang, i.filename, i.display_name,
-                 i.object_key, i.task_id, i.duration_seconds, i.created_at, b.mk_video_path
+                 i.object_key, i.task_id, i.cover_object_key, i.duration_seconds, i.created_at, b.mk_video_path
         ORDER BY i.product_id, i.created_at DESC, i.id DESC
         """,
         tuple(product_ids),
@@ -1238,6 +1241,7 @@ def _load_local_materials(product_ids: list[int]) -> dict[int, list[dict]]:
     out: dict[int, list[dict]] = defaultdict(list)
     for row in rows:
         object_key = str(row.get("object_key") or "").strip()
+        cover_object_key = str(row.get("cover_object_key") or "").strip()
         item = {
             "id": _safe_int(row.get("id")),
             "product_id": _safe_int(row.get("product_id")),
@@ -1245,12 +1249,14 @@ def _load_local_materials(product_ids: list[int]) -> dict[int, list[dict]]:
             "filename": row.get("filename") or "",
             "display_name": row.get("display_name") or row.get("filename") or "",
             "object_key": object_key,
+            "cover_object_key": cover_object_key,
             "task_id": row.get("task_id") or "",
             "duration_seconds": _safe_float(row.get("duration_seconds")),
             "created_at": _iso(row.get("created_at")),
             "mk_video_path": row.get("mk_video_path") or "",
             "push_count": _safe_int(row.get("push_count")),
             "video_url": _local_video_url(object_key) if object_key else "",
+            "cover_url": _local_video_url(cover_object_key) if cover_object_key else "",
         }
         out[item["product_id"]].append(item)
     return dict(out)
@@ -1476,6 +1482,8 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
             continue
         video_path = str(row.get("video_path") or "").strip()
         material = {
+            "source_type": "mingkong",
+            "source_label": "明空",
             "material_key": row.get("material_key") or "",
             "product_code": row.get("product_code") or "",
             "product_name": row.get("product_name") or "",
@@ -1497,6 +1505,83 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
         }
         grouped[local_code].append(material)
     return dict(grouped)
+
+
+def _material_name_without_suffix(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return Path(text).stem.strip()
+
+
+def _is_self_made_english_cjh_material(material: Mapping[str, Any]) -> bool:
+    if str(material.get("lang") or "").strip().lower() != "en":
+        return False
+    names = [
+        _material_name_without_suffix(str(material.get("display_name") or "")),
+        _material_name_without_suffix(str(material.get("filename") or "")),
+    ]
+    return any(name.endswith("-蔡靖华") for name in names if name)
+
+
+def _local_en_cjh_source_material(product: Mapping[str, Any], material: Mapping[str, Any]) -> dict:
+    object_key = str(material.get("object_key") or "").strip()
+    cover_object_key = str(material.get("cover_object_key") or "").strip()
+    filename = str(material.get("filename") or material.get("display_name") or "").strip()
+    media_item_id = _safe_int(material.get("id"))
+    product_code = str(product.get("product_code") or "").strip()
+    return {
+        "source_type": "local_en_cjh",
+        "source_label": "自制EN",
+        "material_key": f"local:{media_item_id}" if media_item_id else "",
+        "media_item_id": media_item_id,
+        "product_code": product_code,
+        "product_name": product.get("product_name") or "",
+        "video_name": filename or str(material.get("display_name") or "自制EN素材").strip(),
+        "video_path": object_key,
+        "object_key": object_key,
+        "cover_object_key": cover_object_key,
+        "video_image_path": cover_object_key,
+        "video_url": material.get("video_url") or (_local_video_url(object_key) if object_key else ""),
+        "cover_url": material.get("cover_url") or (_local_video_url(cover_object_key) if cover_object_key else ""),
+        "cumulative_90_spend": 0.0,
+        "video_ads_count": _safe_int(material.get("push_count")),
+        "video_author": "蔡靖华",
+        "video_upload_time": material.get("created_at") or "",
+        "video_duration_seconds": _safe_float(material.get("duration_seconds")),
+        "yesterday_spend_delta": 0.0,
+        "is_local_material": True,
+        "is_imported": True,
+    }
+
+
+def _build_source_material_candidates(
+    product: Mapping[str, Any],
+    local_materials: list[dict],
+    mingkong_materials: list[dict],
+    *,
+    limit: int = 6,
+) -> list[dict]:
+    local_sources = [
+        _local_en_cjh_source_material(product, item)
+        for item in local_materials
+        if _is_self_made_english_cjh_material(item)
+    ]
+    local_sources.sort(
+        key=lambda item: (
+            _safe_int(item.get("video_ads_count")),
+            str(item.get("video_upload_time") or ""),
+            _safe_int(item.get("media_item_id")),
+        ),
+        reverse=True,
+    )
+    local_sources = local_sources[:2]
+    mk_limit = max(limit - len(local_sources), 0)
+    mk_sources = [
+        dict(item, source_type=item.get("source_type") or "mingkong", source_label=item.get("source_label") or "明空")
+        for item in mingkong_materials[:mk_limit]
+    ]
+    return (mk_sources + local_sources)[:limit]
 
 
 def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict], mk_materials: list[dict]) -> dict:
@@ -1560,13 +1645,14 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
         country_actions.append(action)
     material_actions = []
     if picked_material:
+        source_label = picked_material.get("source_label") or "素材"
         target_langs = [item.get("lang") for item in country_actions if item.get("lang")]
         material_actions.append({
             "action": "import_or_translate",
             "material_key": picked_material.get("material_key", ""),
             "video_path": picked_material.get("video_path", ""),
             "target_langs": target_langs,
-            "reason": "明空素材90天消耗/广告数靠前，适合作为补素材候选。",
+            "reason": f"{source_label}素材表现或相关性靠前，适合作为补素材候选。",
         })
     return {
         "product_id": product.get("product_id"),
@@ -1631,7 +1717,10 @@ def _run_product_analysis(
         "performance_windows": _rank_input(product),
         "country_summary": countries,
         "local_materials": local_materials[:20],
-        "mingkong_material_candidates": mk_materials,
+        "mingkong_material_candidates": [
+            material for material in mk_materials if material.get("source_type", "mingkong") == "mingkong"
+        ],
+        "source_material_candidates": mk_materials,
         "task_assignments": [
             task
             for country in countries
@@ -1774,14 +1863,18 @@ def _build_action_items(
         },
     ]
     for material in mk_materials[:3]:
+        source_type = str(material.get("source_type") or "mingkong")
         video_path = str(material.get("video_path") or "").strip()
-        if video_path:
+        video_url = material.get("video_url") or (_mk_video_url(video_path) if source_type == "mingkong" and video_path else "")
+        if video_url:
             actions.append({
-                "type": "view_mk_video",
-                "label": "看明空视频",
-                "url": material.get("video_url") or _mk_video_url(video_path),
+                "type": "view_source_video",
+                "label": "看视频" if source_type == "local_en_cjh" else "看明空视频",
+                "url": video_url,
                 "material_key": material.get("material_key"),
             })
+        if source_type == "local_en_cjh":
+            continue
         actions.append({
             "type": "import_mk_video",
             "label": "加入素材库",
@@ -2568,7 +2661,11 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 task_assignments,
             )
             local_materials = local_by_product.get(product_id) or []
-            mk_materials = mk_by_code.get(code_key) or []
+            mk_materials = _build_source_material_candidates(
+                product,
+                local_materials,
+                mk_by_code.get(code_key) or [],
+            )
             ai_result = _run_product_analysis(
                 product,
                 countries,

@@ -97,7 +97,9 @@ def cache_mk_video(
             raise
         return object_key
     finally:
-        resp.close()
+        close_response = getattr(resp, "close", None)
+        if callable(close_response):
+            close_response()
 
 
 _MK_TOKEN_FILE = Path("C:/店小秘/mk_token.txt")

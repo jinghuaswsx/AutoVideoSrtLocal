@@ -228,6 +228,7 @@ def build_item_thumbnail(
     update_item_thumbnail_metadata_fn: Callable[[int, str, float | int | None], object] | None = None,
 ) -> None:
     from appcore.medias import build_item_thumbnail as _impl
+    filename = _client_filename_basename(filename)
     _impl(
         item_id,
         product_id,
