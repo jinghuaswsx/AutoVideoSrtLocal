@@ -795,6 +795,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "server_health.audit": _uc(
+        "server_health.audit",
+        "system",
+        "服务器健康监控巡查",
+        "使用 Gemini 3.5 Flash 对服务器硬件异常给出排查和优化建议，生成可执行的 Codex 指令",
+        "openrouter",
+        "google/gemini-3.5-flash",
+        "openrouter",
+        "tokens",
+    ),
 }
 
 def get_use_case(code: str) -> UseCase:
@@ -828,4 +838,6 @@ MODULE_LABELS: dict[str, str] = {
     "translation_quality": "翻译质量评估",
     "video_ai_review": "AI 视频分析",
     "xuanpin": "选品中心",
+    "system": "系统服务",
 }
+
