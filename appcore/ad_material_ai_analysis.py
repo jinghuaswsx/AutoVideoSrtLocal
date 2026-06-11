@@ -990,7 +990,7 @@ def _product_review_facts(product_id: int) -> dict[str, Any]:
     return db.query_one(
         """
         SELECT
-          p.id, p.name, p.product_code, p.description, p.selling_points,
+          p.id, p.name, p.product_code, p.selling_points,
           p.purchase_price, p.packet_cost_estimated, p.packet_cost_actual,
           p.standalone_price, p.standalone_shipping_fee,
           c.order_revenue_usd, c.shipping_revenue_usd, c.total_revenue_usd,
@@ -1241,13 +1241,7 @@ def _build_product_brief(product: Mapping[str, Any], local_materials: list[dict]
     effective_count = _effective_media_count(medias, base_roas)
     active_count = _active_media_count(medias, review_date)
     cold_count = max(0, total_medias - effective_count)
-    product_desc = "；".join(
-        part for part in (
-            str(facts.get("description") or "").strip(),
-            str(facts.get("selling_points") or "").strip(),
-        )
-        if part
-    )
+    product_desc = str(facts.get("selling_points") or "").strip()
     recent_7d_sales = (
         _safe_float(product.get("revenue_7d"))
         if product.get("revenue_7d") is not None
