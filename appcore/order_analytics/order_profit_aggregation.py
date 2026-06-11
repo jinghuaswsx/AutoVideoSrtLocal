@@ -166,11 +166,12 @@ def _load_realtime_ad_snapshot_fallback(
     try:
         target_product_id = int(product_id) if product_id else None
         spend_by_product: dict[tuple[date, int], float] = defaultdict(float)
+        purchase_value_by_product: dict[tuple[date, int], float] = defaultdict(float)
         unallocated_spend = 0.0
 
         daily_rows = query(
             "SELECT COALESCE(meta_business_date, report_date) AS business_date, "
-            "product_id, COALESCE(SUM(spend_usd), 0) AS spend "
+            "product_id, COALESCE(SUM(spend_usd), 0) AS spend, COALESCE(SUM(purchase_value_usd), 0) AS purchase_value "
             "FROM meta_ad_daily_campaign_metrics "
             "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
             "GROUP BY COALESCE(meta_business_date, report_date), product_id",
@@ -192,8 +193,10 @@ def _load_realtime_ad_snapshot_fallback(
             if target_product_id and product_match_id != target_product_id:
                 continue
             spend = float(row.get("spend") or 0)
-            if spend > 0:
+            purchase_val = float(row.get("purchase_value") or 0)
+            if spend > 0 or purchase_val > 0:
                 spend_by_product[(business_date, product_match_id)] += spend
+                purchase_value_by_product[(business_date, product_match_id)] += purchase_val
 
         fallback_dates = [
             d for d in _business_dates(date_from, date_to) if d not in finalized_dates
@@ -222,7 +225,7 @@ def _load_realtime_ad_snapshot_fallback(
             for business_date, ad_account_id, snapshot_at in snapshots:
                 if ad_account_id is None:
                     campaign_rows = query(
-                        "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+                        "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd, purchase_value_usd "
                         "FROM meta_ad_realtime_daily_campaign_metrics "
                         "WHERE business_date=%s AND ad_account_id IS NULL AND snapshot_at=%s "
                         "AND data_completeness='realtime_partial'",
@@ -230,7 +233,7 @@ def _load_realtime_ad_snapshot_fallback(
                     )
                 else:
                     campaign_rows = query(
-                        "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd "
+                        "SELECT business_date, campaign_name, normalized_campaign_code, spend_usd, purchase_value_usd "
                         "FROM meta_ad_realtime_daily_campaign_metrics "
                         "WHERE business_date=%s AND ad_account_id=%s AND snapshot_at=%s "
                         "AND data_completeness='realtime_partial'",
@@ -238,7 +241,8 @@ def _load_realtime_ad_snapshot_fallback(
                     )
                 for row in campaign_rows or []:
                     spend = float(row.get("spend_usd") or 0)
-                    if spend <= 0:
+                    purchase_val = float(row.get("purchase_value_usd") or 0)
+                    if spend <= 0 and purchase_val <= 0:
                         continue
                     code = str(
                         row.get("normalized_campaign_code")
@@ -262,6 +266,7 @@ def _load_realtime_ad_snapshot_fallback(
                     if target_product_id and product_match_id != target_product_id:
                         continue
                     spend_by_product[(business_date, product_match_id)] += spend
+                    purchase_value_by_product[(business_date, product_match_id)] += purchase_val
 
         if not spend_by_product:
             return {
@@ -305,8 +310,14 @@ def _load_realtime_ad_snapshot_fallback(
             for key, spend in spend_by_product.items()
             if int(units_by_product.get(key) or 0) > 0
         }
+        allocated_purchase_value_by_product = {
+            key: val
+            for key, val in purchase_value_by_product.items()
+            if int(units_by_product.get(key) or 0) > 0
+        }
         return {
             "spend_by_product": allocated_spend_by_product,
+            "purchase_value_by_product": allocated_purchase_value_by_product,
             "units_by_product": units_by_product,
             "unallocated_spend": unallocated_spend + no_unit_spend,
         }
@@ -314,6 +325,7 @@ def _load_realtime_ad_snapshot_fallback(
         logger.warning("order_profit realtime ad fallback skipped: %s", exc)
         return {
             "spend_by_product": {},
+            "purchase_value_by_product": {},
             "units_by_product": {},
             "unallocated_spend": 0.0,
         }
