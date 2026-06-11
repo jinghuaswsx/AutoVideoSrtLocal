@@ -1582,6 +1582,33 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
     }
 
 
+def _fill_missing_product_analysis_fields(parsed: Mapping[str, Any], fallback: Mapping[str, Any]) -> dict:
+    result = dict(parsed or {})
+    filled: list[str] = []
+    for key in (
+        "product_id",
+        "product_code",
+        "overall_judgement",
+        "priority",
+        "primary_action",
+        "country_actions",
+        "material_actions",
+        "risks",
+        "next_check",
+    ):
+        value = result.get(key)
+        if value not in (None, "", []):
+            continue
+        fallback_value = fallback.get(key)
+        if fallback_value in (None, "", []):
+            continue
+        result[key] = fallback_value
+        filled.append(key)
+    if filled:
+        result["fallback_filled_fields"] = filled
+    return result
+
+
 def _run_product_analysis(
     product: dict,
     countries: list[dict],
@@ -1634,6 +1661,7 @@ def _run_product_analysis(
         if not parsed:
             fallback["ai_error"] = "empty model response"
             return fallback
+        parsed = _fill_missing_product_analysis_fields(parsed, fallback)
         parsed.setdefault("mode", "ai")
         parsed.setdefault("prompt_debug", {
             "provider": PROVIDER_CODE,

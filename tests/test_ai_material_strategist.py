@@ -631,6 +631,63 @@ def test_run_ai_ranking_final_prompt_requests_top_30(monkeypatch):
     assert ranking["ranking_result"]["final_input"]["rule"].startswith("从所有批次候选里输出最终 Top 30")
 
 
+def test_product_analysis_fills_missing_structured_fields_from_fallback(monkeypatch):
+    product = _row(
+        product_id=7,
+        product_code="structured-fill-rjc",
+        product_name="Structured Fill",
+        spend_30d=900,
+        orders_30d=80,
+        revenue_30d=1800,
+        purchase_value_30d=1700,
+        profit_30d=300,
+    )
+    countries = [
+        {
+            "country_code": "DE",
+            "lang": "de",
+            "ad_spend_usd": 500,
+            "ad_roas": 1.8,
+        }
+    ]
+
+    def fake_invoke_generate(*args, **kwargs):
+        return {
+            "json": {
+                "product_id": 7,
+                "product_code": "structured-fill-rjc",
+                "overall_judgement": "AI 给出了可读补素材建议，但漏掉结构化动作字段。",
+            },
+            "text": "",
+            "usage_log_id": 123,
+        }
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke_generate)
+
+    result = svc._run_product_analysis(
+        product,
+        countries,
+        [],
+        [],
+        project_id=9,
+        user_id=33,
+        run_ai=True,
+    )
+
+    assert result["mode"] == "ai"
+    assert result["overall_judgement"] == "AI 给出了可读补素材建议，但漏掉结构化动作字段。"
+    assert result["priority"] in {"P0", "P1", "P2", "P3"}
+    assert result["primary_action"] in {
+        "expand_country",
+        "same_country_new_material",
+        "weak_country_retest",
+        "hold",
+        "investigate",
+    }
+    assert result["next_check"]
+    assert {"priority", "primary_action", "next_check"} <= set(result["fallback_filled_fields"])
+
+
 def test_runtime_result_from_stored_project_product_result():
     stored = {
         "rank_no": 4,
