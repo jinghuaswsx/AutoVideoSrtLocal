@@ -692,7 +692,10 @@ def test_recover_all_interrupted_tasks_picks_up_interrupted_subtitle_removal_row
         lambda task_id, recovered, status: persisted.append((task_id, recovered, status)),
     )
 
-    with patch("web.services.subtitle_removal_runner.start", return_value=True) as m_start:
+    with patch(
+        "appcore.subtitle_removal_runtime.start_subtitle_removal_task",
+        return_value=True,
+    ) as m_start:
         recovered = task_recovery.recover_all_interrupted_tasks()
 
     assert recovered == 1
