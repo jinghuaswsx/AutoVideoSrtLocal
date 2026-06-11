@@ -70,6 +70,13 @@ ENVIRONMENTS: tuple[CdpEnvironment, ...] = (
         cdp_url="http://127.0.0.1:9227/json/version",
         novnc_url="http://127.0.0.1:6097/vnc.html",
     ),
+    CdpEnvironment(
+        code="XJ01-Mingkong",
+        label="XJ01-Mingkong",
+        service="metahot-xj01-vnc.service",
+        cdp_url="http://127.0.0.1:9228/json/version",
+        novnc_url="http://127.0.0.1:6098/vnc.html",
+    ),
 )
 
 
@@ -296,6 +303,18 @@ def run_watchdog(
             initial = check_environment(env, timeout_seconds=timeout_seconds)
             item: dict[str, Any] = {"initial": initial}
             if initial["ok"]:
+                # 明空环境登录态校验与自动登录恢复
+                if env.code in ("DXM02-MK", "XJ01-Mingkong"):
+                    try:
+                        from appcore import mingkong_login_autofill
+                        cdp_base = env.cdp_url.rsplit("/json/version", 1)[0]
+                        login_res = mingkong_login_autofill.ensure_cdp_login_active(cdp_url=cdp_base)
+                        item["login_recovery"] = login_res
+                        if env.code == "DXM02-MK" and login_res.get("action") == "logged_in":
+                            mingkong_login_autofill.refresh_wedev_credentials_via_cdp(cdp_url=cdp_base)
+                    except Exception as exc:
+                        item["login_recovery"] = {"status": "failed", "error": str(exc)}
+                
                 item["final"] = initial
                 item["restarted"] = False
                 summary["environments"].append(item)
@@ -313,6 +332,19 @@ def run_watchdog(
                     delay_seconds=delay_seconds,
                     timeout_seconds=timeout_seconds,
                 )
+            
+            # 若重启后 final 环境 ok，也做一次登录校验与恢复
+            if final["ok"] and env.code in ("DXM02-MK", "XJ01-Mingkong"):
+                try:
+                    from appcore import mingkong_login_autofill
+                    cdp_base = env.cdp_url.rsplit("/json/version", 1)[0]
+                    login_res = mingkong_login_autofill.ensure_cdp_login_active(cdp_url=cdp_base)
+                    item["login_recovery"] = login_res
+                    if env.code == "DXM02-MK" and login_res.get("action") == "logged_in":
+                        mingkong_login_autofill.refresh_wedev_credentials_via_cdp(cdp_url=cdp_base)
+                except Exception as exc:
+                    item["login_recovery"] = {"status": "failed", "error": str(exc)}
+
             item["restarted"] = not dry_run
             item["restart_result"] = restart_result
             item["final"] = final
