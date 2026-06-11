@@ -597,6 +597,13 @@
   border-color: var(--vw-blue);
   outline: none;
 }
+@keyframes card-focus-glow {
+  0%, 100% { box-shadow: 0 0 0 0px rgba(11, 131, 183, 0); border-color: var(--vw-border); }
+  50% { box-shadow: 0 0 0 6px rgba(11, 131, 183, 0.6); border-color: var(--vw-blue); }
+}
+.vw-card-focus-highlight {
+  animation: card-focus-glow 2s ease-in-out 2;
+}
 </style>
 
 {% endblock %}
@@ -1002,7 +1009,35 @@
       currentData = data;
       renderSummary(data);
       renderLangStrip(data);
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const targetCardId = urlParams.get('card_id');
+      let realCardId = targetCardId;
+      if (targetCardId && data && data.cards) {
+        const idx = data.cards.findIndex(c => 
+          (c.mk_video && String(c.mk_video.material_key) === String(targetCardId)) || 
+          String(c.card_id) === String(targetCardId)
+        );
+        if (idx >= 0) {
+          pagerState.page = Math.floor(idx / pagerState.pageSize) + 1;
+          realCardId = data.cards[idx].card_id;
+        }
+      }
+
       renderCards(data);
+
+      if (realCardId) {
+        setTimeout(() => {
+          const cardEl = document.getElementById('card-' + realCardId) || document.querySelector(`[data-card-id="${realCardId}"]`);
+          if (cardEl) {
+            cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            cardEl.classList.add('vw-card-focus-highlight');
+            setTimeout(() => {
+              cardEl.classList.remove('vw-card-focus-highlight');
+            }, 5000);
+          }
+        }, 200);
+      }
     } catch (err) {
       grid.innerHTML = `<div class="vw-error">加载失败：${esc(err.message)}</div>`;
       if (summaryNote) summaryNote.textContent = '加载失败';
@@ -1434,7 +1469,7 @@
          <button type="button" class="vw-btn" data-action="card-data" data-card-id="${esc(card.card_id)}">广告数据</button>
          <button type="button" class="vw-btn" data-action="mk" data-search="${encodeURIComponent(productCodeClean)}">明空查看</button>`;
     return `
-      <div class="vw-card ${inLib ? 'is-in' : ''}" data-card-id="${esc(card.card_id)}">
+      <div class="vw-card ${inLib ? 'is-in' : ''}" data-card-id="${esc(card.card_id)}" id="card-${esc(card.card_id)}">
         <div class="vw-left-card">
           <div class="vw-tag" title="${esc(isLegacyMatch ? '产品内文件名/路径精确匹配，未写入绑定表' : '')}">${tagText}</div>
           <div class="vw-product-line">

@@ -1273,17 +1273,8 @@
       ? '<button type="button" class="mk-video-play-btn" data-aims-video-play aria-label="播放视频" title="播放视频"></button>'
       : '';
     const posterAttr = coverUrl ? ` poster="${esc(coverUrl)}"` : '';
-    const importButton = !state.publicMode && !isLocalCjh && actionIndex >= 0
-      ? `<button type="button" class="mki-btn mki-btn--add" data-import-action data-product-index="${productIndex}" data-action-index="${actionIndex}">加入素材库</button>`
-      : `<button type="button" class="mki-btn mki-btn--add mki-btn--disabled" disabled>${isLocalCjh ? '已入库' : '仅预览'}</button>`;
     const workbenchButton = !state.publicMode
-      ? `<a class="mki-btn mki-btn--xiao" href="/medias/product/video_workbench/${encodeURIComponent(item.product_id || '')}" target="_blank" rel="noopener noreferrer">${isLocalCjh ? '创建小语种翻译任务' : '素材工作台'}</a>`
-      : '';
-    const aiButton = !state.publicMode
-      ? `<a class="mki-btn mki-ai-btn" href="/medias/${encodeURIComponent(productCode)}" target="_blank" rel="noopener noreferrer">AI评估结果</a>`
-      : '';
-    const fineAiButton = !state.publicMode
-      ? `<button type="button" class="mki-btn mki-fine-ai-btn" disabled>AI精细评估结果</button>`
+      ? `<a class="mki-btn mki-btn--xiao" href="/medias/product/video_workbench/${encodeURIComponent(item.product_id || '')}?card_id=${encodeURIComponent(material.material_key || '')}" target="_blank" rel="noopener noreferrer">${isLocalCjh ? '创建小语种翻译任务' : '素材工作台'}</a>`
       : '';
     return `
       <article class="mk-video-card" data-source-type="${esc(source_type)}">
@@ -1329,10 +1320,7 @@
           <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${esc(author)}</span></div>
           <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${esc(uploadDate)}</span></div>
         </div>
-        ${importButton}
         ${workbenchButton}
-        ${aiButton}
-        ${fineAiButton}
       </article>
     `;
   }
