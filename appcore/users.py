@@ -122,17 +122,29 @@ def list_translators() -> list[dict]:
 
 
 def list_translation_work_users() -> list[dict]:
+    """列出翻译工作范围内的用户及其任务统计。
+
+    统计口径与 ``appcore.tasks.get_user_workload_stats`` 对齐：
+    - todo_count: 进行中（不含待推送、不含已归档）
+    - urgent_count: 同 todo_count + is_urgent
+    - completed_today_count: 今日已完成（含待推送状态、含已归档）
+    """
     import datetime
     today_str = datetime.date.today().strftime("%Y-%m-%d")
-    counts_map = {}
+    today_start = f"{today_str} 00:00:00"
+    counts_map: dict[int, dict] = {}
     try:
         from appcore.tasks import get_active_pending_push_task_ids
         pending_push_ids = get_active_pending_push_task_ids()
         exclude_clause = ""
+        pending_push_include_clause = ""
         if pending_push_ids:
             ids_str = ",".join(str(i) for i in pending_push_ids)
             exclude_clause = f"AND id NOT IN ({ids_str}) "
+            pending_push_include_clause = f"OR id IN ({ids_str}) "
 
+        # todo_count / urgent_count: 进行中、未归档、排除待推送（和任务中心卡片 in_progress 一致）
+        # completed_today_count: 今日已完成，不排除归档，包含待推送状态
         counts_rows = query(
             "SELECT assignee_id, "
             "  SUM(CASE WHEN ("
@@ -143,10 +155,14 @@ def list_translation_work_users() -> list[dict]:
             "    (parent_task_id IS NULL AND status IN ('pending', 'raw_in_progress', 'raw_review')) OR "
             "    (parent_task_id IS NOT NULL AND status IN ('blocked', 'assigned', 'review'))"
             f"  ) AND archived_at IS NULL AND is_urgent = 1 {exclude_clause} THEN 1 ELSE 0 END) AS urgent_count, "
-            "  SUM(CASE WHEN ( "
-            "    (parent_task_id IS NULL AND status IN ('raw_done', 'all_done')) OR "
-            "    (parent_task_id IS NOT NULL AND status = 'done') "
-            "  ) AND DATE(completed_at) = %s THEN 1 ELSE 0 END) AS completed_today_count "
+            "  SUM(CASE WHEN ("
+            "    ("
+            "      (parent_task_id IS NULL AND status IN ('raw_done', 'all_done')) OR "
+            "      (parent_task_id IS NOT NULL AND (status = 'done' "
+            f"        {pending_push_include_clause}"
+            "      ))"
+            "    ) AND DATE(completed_at) = %s"
+            "  ) THEN 1 ELSE 0 END) AS completed_today_count "
             "FROM tasks "
             "WHERE assignee_id IS NOT NULL "
             "GROUP BY assignee_id",
@@ -159,6 +175,43 @@ def list_translation_work_users() -> list[dict]:
                     "urgent_count": int(row.get("urgent_count") or 0),
                     "completed_today_count": int(row.get("completed_today_count") or 0),
                 }
+
+        # 补充：查 task_events 中今日有 submitted/completed 事件的待推送任务
+        # 这些任务可能 completed_at 不是今天，但今日确实提交了
+        if pending_push_ids:
+            event_rows = query(
+                "SELECT DISTINCT t.assignee_id, t.id AS task_id "
+                "FROM task_events te "
+                "JOIN tasks t ON t.id = te.task_id "
+                "WHERE te.event_type IN ('submitted', 'completed') "
+                "  AND te.created_at >= %s "
+                "  AND t.id IN (" + ",".join(str(i) for i in pending_push_ids) + ") "
+                "  AND t.assignee_id IS NOT NULL",
+                (today_start,)
+            )
+            # 收集每个 assignee 今日通过事件确认的待推送任务
+            event_task_by_user: dict[int, set[int]] = {}
+            for ev_row in event_rows:
+                uid = int(ev_row["assignee_id"])
+                tid = int(ev_row["task_id"])
+                event_task_by_user.setdefault(uid, set()).add(tid)
+
+            # 补充到 counts_map —— 对于那些 completed_at 不是今天但今日有事件的待推送任务
+            for uid, task_ids in event_task_by_user.items():
+                if uid not in counts_map:
+                    counts_map[uid] = {"todo_count": 0, "urgent_count": 0, "completed_today_count": 0}
+                # 需要查这些任务是否已经被 SQL 的 completed_today_count 计入
+                # 如果 completed_at 是今天已经计入，只补充 completed_at 不是今天的
+                already_rows = query(
+                    "SELECT id FROM tasks WHERE id IN ("
+                    + ",".join(str(i) for i in task_ids)
+                    + ") AND DATE(completed_at) = %s",
+                    (today_str,)
+                )
+                already_counted = {int(r["id"]) for r in already_rows}
+                extra = len(task_ids - already_counted)
+                if extra > 0:
+                    counts_map[uid]["completed_today_count"] += extra
     except Exception:
         pass
 
