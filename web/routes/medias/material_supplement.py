@@ -1343,6 +1343,7 @@ def _query_ad_detail_rows(
         if country:
             rt_country_clause = " AND UPPER(COALESCE(m.country_code, '')) = %s "
             rt_country_args.append(str(country).strip().upper())
+        rt_match_sql = match_sql.replace("m.market_country", "m.country_code")
 
         rt_sql = (
             "SELECT m.id, m.ad_account_id, m.ad_account_name, "
@@ -1380,7 +1381,7 @@ def _query_ad_detail_rows(
             "WHERE m.data_completeness = 'realtime_partial' "
             "  AND COALESCE(m.spend_usd, 0) > 0 "
             "  AND m.business_date BETWEEN %s AND %s "
-            f"  AND ({match_sql}) "
+            f"  AND ({rt_match_sql}) "
             f"{rt_country_clause}"
         )
         try:
