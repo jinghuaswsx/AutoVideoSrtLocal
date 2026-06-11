@@ -1241,7 +1241,10 @@
         : '暂无对应翻译素材';
       if (row.status === 'translated' && version) {
         cls = version.delivery_status === 'active' ? 'state-active' : 'state-stopped';
-        const rVal = version.roas;
+        const countryPerf = ((version.ad_performance || {}).countries || []).find(
+          c => (c.country || '').toUpperCase() === (row.country_code || '').toUpperCase()
+        );
+        const rVal = countryPerf ? countryPerf.roas : null;
         const formattedRoas = rVal == null ? '-' : Number(rVal).toFixed(2);
         roasHtml = `
           <div style="display: flex; align-items: center; justify-content: space-between; margin-top: auto; gap: 4px; width: 100%;">
@@ -1251,8 +1254,11 @@
         `;
       }
       const hasMaterial = row.status === 'translated' && version && (version.filename || version.display_name);
-      
-      const totalSpend = Number(row.order_stats ? row.order_stats.total_spend : 0) || 0;
+
+      const countryAdPerf = ((version && version.ad_performance || {}).countries || []).find(
+        c => (c.country || '').toUpperCase() === (row.country_code || '').toUpperCase()
+      );
+      const totalSpend = countryAdPerf ? Number(countryAdPerf.spend_usd || 0) : 0;
       const spendVal = Math.round(totalSpend);
       let spendClass = 'spend-zero';
       if (spendVal > 0) {
@@ -1263,7 +1269,7 @@
         else if (spendVal < 10000) spendClass = 'spend-level-5';
         else spendClass = 'spend-level-6';
       }
-      const spendHtml = `<span class="vw-spend-badge ${spendClass}">$${spendVal}</span>`;
+      const spendHtml = `<span class="vw-spend-badge ${spendClass}" title="该素材在${esc(row.country_code || '')}的广告投放消耗">$${spendVal}</span>`;
 
       const isTranslating = row.task && row.task.id && row.status === 'missing';
       const statusText = countryStatusText(row);
