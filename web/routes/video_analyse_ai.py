@@ -179,6 +179,25 @@ def api_project(project_id: int):
     return _json({"success": True, "project": project})
 
 
+@bp.route("/api/projects/<int:project_id>", methods=["DELETE"])
+@login_required
+@admin_required
+def api_delete_project(project_id: int):
+    result = service.delete_project(project_id)
+    if result.get("deleted"):
+        return _json({"success": True, "deleted": True, "project_id": project_id})
+    reason = result.get("reason", "failed")
+    if reason == "not_found":
+        abort(404)
+    if reason == "running":
+        return _json({
+            "success": False,
+            "message": "运行中的项目不能删除",
+            "reason": "running"
+        }, 409)
+    return _json({"success": False, "message": "删除失败", "reason": reason}, 500)
+
+
 @bp.route("/api/projects/<int:project_id>/share", methods=["POST"])
 @login_required
 @admin_required

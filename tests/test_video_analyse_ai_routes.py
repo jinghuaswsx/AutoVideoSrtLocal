@@ -114,3 +114,35 @@ def test_video_analyse_ai_public_share_api_returns_sanitized_project_without_log
     # 验证本地素材视频链接转换成了公开格式
     local_video = project["products"][0]["local_materials"][0]["video_url"]
     assert local_video == "/medias/obj/tasks/12/medias/test.mp4"
+
+
+def test_video_analyse_ai_delete_project(authed_client_no_db, monkeypatch):
+    deleted_calls = []
+
+    def fake_delete_project(project_id):
+        deleted_calls.append(project_id)
+        if project_id == 999:
+            return {"deleted": False, "reason": "not_found"}
+        if project_id == 888:
+            return {"deleted": False, "reason": "running"}
+        return {"deleted": True, "project_id": project_id}
+
+    monkeypatch.setattr(
+        "web.routes.video_analyse_ai.service.delete_project",
+        fake_delete_project,
+    )
+
+    # 1. 成功删除
+    response = authed_client_no_db.delete("/video-analyse-ai/api/projects/7")
+    assert response.status_code == 200
+    assert response.get_json() == {"success": True, "deleted": True, "project_id": 7}
+    assert deleted_calls == [7]
+
+    # 2. 未找到
+    response = authed_client_no_db.delete("/video-analyse-ai/api/projects/999")
+    assert response.status_code == 404
+
+    # 3. 运行中不允许删除
+    response = authed_client_no_db.delete("/video-analyse-ai/api/projects/888")
+    assert response.status_code == 409
+    assert response.get_json()["message"] == "运行中的项目不能删除"

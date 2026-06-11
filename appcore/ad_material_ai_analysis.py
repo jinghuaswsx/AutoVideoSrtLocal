@@ -3166,6 +3166,36 @@ def get_project(project_id: int) -> dict | None:
     return project
 
 
+def delete_project(project_id: int) -> dict[str, Any]:
+    project_id = _safe_int(project_id)
+    if not project_id:
+        return {"deleted": False, "reason": "not_found"}
+    row = db.query_one(
+        """
+        SELECT id, project_name, status, user_id, provider_code, model_id,
+               summary_json, progress_json, share_token, share_enabled_at,
+               error_message, started_at, finished_at, created_at, updated_at
+        FROM ad_material_ai_analysis_projects
+        WHERE id = %s
+        """,
+        (project_id,),
+    )
+    if not row:
+        return {"deleted": False, "reason": "not_found"}
+    project = _serialize_project_row(row, include_products=False)
+    if str(row.get("status") or "").lower() == "running":
+        return {"deleted": False, "reason": "running", "project": project}
+    db.execute(
+        "DELETE FROM ad_material_ai_analysis_product_results WHERE project_id = %s",
+        (project_id,),
+    )
+    db.execute(
+        "DELETE FROM ad_material_ai_analysis_projects WHERE id = %s",
+        (project_id,),
+    )
+    return {"deleted": True, "project_id": project_id, "project": project}
+
+
 def ensure_project_share(project_id: int) -> dict | None:
     project_id = _safe_int(project_id)
     if not project_id:

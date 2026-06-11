@@ -139,22 +139,51 @@
     overflow: auto;
     padding: 8px;
   }
+  .aims-project-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 30px;
+    gap: 4px;
+    align-items: start;
+    border: 1px solid transparent;
+    border-radius: 7px;
+  }
+  .aims-project-row:hover,
+  .aims-project-row.active {
+    border-color: var(--aims-border-strong);
+    background: #f8fafc;
+  }
   .aims-project-item {
     width: 100%;
     display: grid;
     gap: 5px;
     padding: 10px;
-    border: 1px solid transparent;
+    border: 0;
     border-radius: 7px;
     background: transparent;
     color: inherit;
     text-align: left;
     cursor: pointer;
   }
-  .aims-project-item:hover,
-  .aims-project-item.active {
-    border-color: var(--aims-border-strong);
-    background: #f8fafc;
+  .aims-project-delete {
+    width: 26px;
+    height: 26px;
+    margin: 8px 6px 0 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--aims-muted);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .aims-project-delete:hover {
+    border-color: #fecaca;
+    background: #fee2e2;
+    color: var(--aims-red);
+  }
+  .aims-project-delete:disabled {
+    opacity: .45;
+    cursor: not-allowed;
   }
   .aims-project-name {
     font-size: 13px;
