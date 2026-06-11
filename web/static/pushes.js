@@ -2500,7 +2500,16 @@
     }, label));
     pills.forEach(p => pillRow.appendChild(p));
     const btnClose = el('button', { type: 'button', class: 'pm-close', 'aria-label': '关闭' }, '×');
+    
+    // Add owner element to header (blue, bold, large font)
+    const productOwnerName = String(item.product_owner_name || '-').trim();
+    const ownerEl = el('span', {
+      class: 'pm-modal-owner',
+      style: 'color: var(--oc-accent, #0066cc); font-size: 16px; font-weight: bold; margin-right: 16px; margin-left: auto; white-space: nowrap;'
+    }, `负责人: ${productOwnerName}`);
+    
     header.appendChild(pillRow);
+    header.appendChild(ownerEl);
     header.appendChild(btnClose);
     modal.appendChild(header);
 
