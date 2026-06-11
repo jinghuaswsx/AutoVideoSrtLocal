@@ -118,12 +118,13 @@ def test_translate_lab_runner_start_uses_active_registry(monkeypatch):
 
 def test_subtitle_removal_runner_registers_active_task_before_thread_runs(monkeypatch):
     from appcore import runner_lifecycle, task_recovery
+    from appcore import subtitle_removal_runtime
     from web.services import subtitle_removal_runner
 
     task_id = "sr-active"
     task_recovery.unregister_active_task("subtitle_removal", task_id)
-    with subtitle_removal_runner._running_tasks_lock:
-        subtitle_removal_runner._running_tasks.discard(task_id)
+    with subtitle_removal_runtime._running_tasks_lock:
+        subtitle_removal_runtime._running_tasks.discard(task_id)
     threads = []
 
     class FakeThread:
@@ -136,9 +137,8 @@ def test_subtitle_removal_runner_registers_active_task_before_thread_runs(monkey
             threads.append(self)
 
     monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
-    monkeypatch.setattr(subtitle_removal_runner.threading, "Thread", FakeThread, raising=False)
     monkeypatch.setattr(
-        subtitle_removal_runner.SubtitleRemovalRuntime,
+        subtitle_removal_runtime.SubtitleRemovalRuntime,
         "start",
         lambda self, task_id: None,
     )
@@ -150,18 +150,20 @@ def test_subtitle_removal_runner_registers_active_task_before_thread_runs(monkey
         assert len(threads) == 1
     finally:
         task_recovery.unregister_active_task("subtitle_removal", task_id)
-        with subtitle_removal_runner._running_tasks_lock:
-            subtitle_removal_runner._running_tasks.discard(task_id)
+        with subtitle_removal_runtime._running_tasks_lock:
+            subtitle_removal_runtime._running_tasks.discard(task_id)
 
 
 def test_subtitle_removal_runner_uses_standard_runtime_for_niuma_even_when_global_provider_is_vod(monkeypatch):
     from appcore import runner_lifecycle, task_recovery, task_state
+    from appcore import subtitle_removal_runtime
+    from appcore import subtitle_removal_runtime_vod
     from web.services import subtitle_removal_runner
 
     task_id = "sr-niuma-active"
     task_recovery.unregister_active_task("subtitle_removal", task_id)
-    with subtitle_removal_runner._running_tasks_lock:
-        subtitle_removal_runner._running_tasks.discard(task_id)
+    with subtitle_removal_runtime._running_tasks_lock:
+        subtitle_removal_runtime._running_tasks.discard(task_id)
     with task_state._lock:
         task_state._tasks[task_id] = {
             "id": task_id,
@@ -191,9 +193,9 @@ def test_subtitle_removal_runner_uses_standard_runtime_for_niuma_even_when_globa
 
     monkeypatch.setattr("config.SUBTITLE_REMOVAL_PROVIDER", "vod")
     monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
-    monkeypatch.setattr(subtitle_removal_runner, "SubtitleRemovalRuntime", FakeRuntime, raising=False)
+    monkeypatch.setattr(subtitle_removal_runtime, "SubtitleRemovalRuntime", FakeRuntime)
     monkeypatch.setattr(
-        subtitle_removal_runner.SubtitleRemovalVodRuntime,
+        subtitle_removal_runtime_vod.SubtitleRemovalVodRuntime,
         "start",
         lambda self, task_id: (_ for _ in ()).throw(AssertionError("niuma must not use VOD runtime")),
     )
@@ -202,8 +204,8 @@ def test_subtitle_removal_runner_uses_standard_runtime_for_niuma_even_when_globa
         assert subtitle_removal_runner.start(task_id, user_id=1) is True
     finally:
         task_recovery.unregister_active_task("subtitle_removal", task_id)
-        with subtitle_removal_runner._running_tasks_lock:
-            subtitle_removal_runner._running_tasks.discard(task_id)
+        with subtitle_removal_runtime._running_tasks_lock:
+            subtitle_removal_runtime._running_tasks.discard(task_id)
         with task_state._lock:
             task_state._tasks.pop(task_id, None)
 

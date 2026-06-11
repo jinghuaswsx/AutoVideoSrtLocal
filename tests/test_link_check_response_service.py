@@ -33,7 +33,8 @@ def test_link_check_validation_response_shapes_are_stable():
         "error": "target_language 非法"
     }
     assert build_link_check_unsupported_reference_response("bad.exe").payload == {
-        "error": "不支持的参考图片格式: bad.exe"
+        "error": "invalid_file_type",
+        "message": "不支持的参考图片格式: bad.exe",
     }
     assert build_link_check_task_not_found_response().payload == {"error": "Task not found"}
     assert build_link_check_rename_required_response().payload == {

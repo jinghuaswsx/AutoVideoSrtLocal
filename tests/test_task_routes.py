@@ -313,6 +313,7 @@ def test_get_item_thumbnail_success(authed_client_no_db, monkeypatch):
     with open(full_path, "wb") as f:
         f.write(b"jpeg-data")
 
+    monkeypatch.setattr("web.services.artifact_download.OUTPUT_DIR", OUTPUT_DIR)
     monkeypatch.setattr(
         "appcore.db.query_one",
         lambda sql, args: {"thumbnail_path": thumb_path} if args[0] == 1 else None
@@ -344,4 +345,3 @@ def test_get_item_thumbnail_not_found(authed_client_no_db, monkeypatch):
 
     resp = authed_client_no_db.get("/tasks/api/new-product/thumbnail/3")
     assert resp.status_code == 404
-

@@ -241,6 +241,8 @@ def test_runtime_stops_without_rewriting_deleted_task(monkeypatch, tmp_path):
 
 
 def test_runner_start_is_per_task_idempotent(monkeypatch):
+    from appcore import runner_lifecycle
+    import appcore.subtitle_removal_runtime as runtime
     import web.services.subtitle_removal_runner as runner
 
     started = []
@@ -253,9 +255,9 @@ def test_runner_start_is_per_task_idempotent(monkeypatch):
         def start(self):
             started.append("thread")
 
-    monkeypatch.setattr(runner, "_running_tasks", set())
-    monkeypatch.setattr(runner.threading, "Thread", FakeThread)
-    monkeypatch.setattr("web.services.subtitle_removal_runner.SubtitleRemovalRuntime.start", lambda self, task_id: None)
+    monkeypatch.setattr(runtime, "_running_tasks", set())
+    monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
+    monkeypatch.setattr(runtime.SubtitleRemovalRuntime, "start", lambda self, task_id: None)
 
     assert runner.start("sr-gate", user_id=1) is True
     assert runner.start("sr-gate", user_id=1) is False
@@ -264,12 +266,15 @@ def test_runner_start_is_per_task_idempotent(monkeypatch):
 
 def test_runner_start_uses_local_vsr_runtime_for_local_vsr_task(monkeypatch, tmp_path):
     from appcore import runner_lifecycle, task_recovery
+    import appcore.subtitle_removal_runtime as runtime
+    import appcore.subtitle_removal_runtime_local_vsr as local_vsr_runtime
+    import appcore.subtitle_removal_runtime_vod as vod_runtime
     import web.services.subtitle_removal_runner as runner
 
     task_id = "sr-local-vsr-runner"
     task_recovery.unregister_active_task("subtitle_removal", task_id)
-    with runner._running_tasks_lock:
-        runner._running_tasks.discard(task_id)
+    with runtime._running_tasks_lock:
+        runtime._running_tasks.discard(task_id)
     task_state.create_subtitle_removal(
         task_id,
         str(tmp_path / "source.mp4"),
@@ -299,14 +304,14 @@ def test_runner_start_uses_local_vsr_runtime_for_local_vsr_task(monkeypatch, tmp
             called.append((task_id, self.user_id))
 
     monkeypatch.setattr(runner_lifecycle.threading, "Thread", FakeThread)
-    monkeypatch.setattr(runner, "SubtitleRemovalLocalVsrRuntime", FakeLocalVsrRuntime, raising=False)
+    monkeypatch.setattr(local_vsr_runtime, "SubtitleRemovalLocalVsrRuntime", FakeLocalVsrRuntime)
     monkeypatch.setattr(
-        runner.SubtitleRemovalRuntime,
+        runtime.SubtitleRemovalRuntime,
         "start",
         lambda self, task_id: (_ for _ in ()).throw(AssertionError("volc runtime should not start")),
     )
     monkeypatch.setattr(
-        runner.SubtitleRemovalVodRuntime,
+        vod_runtime.SubtitleRemovalVodRuntime,
         "start",
         lambda self, task_id: (_ for _ in ()).throw(AssertionError("vod runtime should not start")),
     )
@@ -315,8 +320,8 @@ def test_runner_start_uses_local_vsr_runtime_for_local_vsr_task(monkeypatch, tmp
         assert runner.start(task_id, user_id=1) is True
     finally:
         task_recovery.unregister_active_task("subtitle_removal", task_id)
-        with runner._running_tasks_lock:
-            runner._running_tasks.discard(task_id)
+        with runtime._running_tasks_lock:
+            runtime._running_tasks.discard(task_id)
 
     assert len(threads) == 1
     assert called == [(task_id, 1)]

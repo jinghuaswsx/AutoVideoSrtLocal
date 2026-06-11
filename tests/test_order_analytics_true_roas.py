@@ -5,6 +5,12 @@ from datetime import date, datetime
 from appcore import order_analytics as oa
 from appcore.order_analytics import realtime as realtime_oa
 
+DEFAULT_SITE_ARGS = ("newjoy", "omurio", "cozywint")
+
+
+def _assert_default_site_prefix(args):
+    assert tuple(args[: len(DEFAULT_SITE_ARGS)]) == DEFAULT_SITE_ARGS
+
 
 def test_get_true_roas_summary_uses_total_revenue_over_ad_spend(monkeypatch):
     calls = []
@@ -121,7 +127,11 @@ def test_get_realtime_roas_overview_summarizes_orders_and_meta_spend(monkeypatch
     assert result["hourly"][13]["order_count"] == 2
     assert result["scope"]["stores"] == ["newjoy", "omurio", "cozywint"]
     assert result["scope"]["hourly_ad_ready"] is False
-    assert any("site_code IN ('newjoy', 'omurio', 'cozywint')" in sql for sql, _args in calls)
+    assert any(
+        "d.site_code IN (%s, %s, %s)" in sql
+        and tuple(_args[:3]) == DEFAULT_SITE_ARGS
+        for sql, _args in calls
+    )
 
 
 def test_get_realtime_roas_overview_includes_today_product_sales_stats(monkeypatch):
@@ -661,7 +671,8 @@ def test_realtime_range_summary_uses_canonical_profit_revenue(monkeypatch):
         if "FROM dianxiaomi_order_lines d" in sql and "LEFT JOIN order_profit_lines p" in sql and "GROUP BY d.meta_business_date" in sql:
             assert "COALESCE(p.line_amount_usd, d.line_amount, 0)" in sql
             assert "COALESCE(p.shipping_allocated_usd, d.ship_amount, 0)" in sql
-            assert args == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+            _assert_default_site_prefix(args)
+            assert args[3:] == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
             return [
                 {
                     "meta_business_date": oa._parse_meta_date("2026-04-30"),
@@ -877,7 +888,8 @@ def test_get_realtime_roas_overview_range_includes_order_details(monkeypatch):
             and "GROUP BY d.meta_business_date, d.site_code" in sql
             and "profit_line_count" not in sql
         ):
-            assert args[:2] == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+            _assert_default_site_prefix(args)
+            assert args[3:5] == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
             return [
                 {
                     "meta_business_date": oa._parse_meta_date("2026-04-30"),
@@ -991,9 +1003,10 @@ def test_get_realtime_roas_overview_range_includes_order_profit_details(monkeypa
             return []
         if "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql and "profit_line_count" in sql:
             assert "d.meta_business_date >= %s AND d.meta_business_date <= %s" in sql
-            assert args[:2] == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
-            if len(args) == 4:
-                assert args[2:] == (100, 0)
+            _assert_default_site_prefix(args)
+            assert args[3:5] == (oa._parse_meta_date("2026-04-01"), oa._parse_meta_date("2026-04-30"))
+            if len(args) == 7:
+                assert args[5:] == (100, 0)
             profit_query_args.append(args)
             return [
                 {
@@ -1328,8 +1341,9 @@ def test_realtime_snapshot_branch_groups_hourly_orders_by_business_day_hour(monk
             assert "TIMESTAMPDIFF(HOUR" in sql
             assert "GROUP BY hour" in sql
             assert args[0] == day_start
-            assert args[1] == day_start
-            assert args[2] == snapshot_at
+            assert tuple(args[1:4]) == DEFAULT_SITE_ARGS
+            assert args[4] == day_start
+            assert args[5] == snapshot_at
             return [
                 {
                     "hour": 0,
@@ -1506,9 +1520,10 @@ def test_realtime_current_business_day_product_filter_uses_realtime_campaign_sna
             return []
         if "SUM(COALESCE(p.line_amount_usd, d.line_amount, 0)) AS order_revenue" in sql and "FROM dianxiaomi_order_lines d" in sql:
             assert "d.meta_business_date=%s" in sql
-            assert args[0] == target
-            assert args[1] == snapshot_at
-            assert args[2] == 42
+            _assert_default_site_prefix(args)
+            assert args[3] == target
+            assert args[4] == snapshot_at
+            assert args[5] == 42
             return [
                 {
                     "order_count": 1,
@@ -1666,8 +1681,9 @@ def test_realtime_recent_closed_business_day_daily_branch_fills_hourly_from_roas
             return []
         if "FROM dianxiaomi_order_lines d" in sql and "GROUP BY hour" in sql:
             assert args[0] == day_start
-            assert args[1] == day_start
-            assert args[2] == day_end
+            assert tuple(args[1:4]) == DEFAULT_SITE_ARGS
+            assert args[4] == day_start
+            assert args[5] == day_end
             return [
                 {
                     "hour": 0,
@@ -1964,8 +1980,11 @@ def test_realtime_overview_endpoint_accepts_start_end_params(authed_client_no_db
 
 def test_realtime_overview_endpoint_attaches_data_quality(authed_client_no_db, monkeypatch):
     """Docs-anchor: docs/analytics-data-quality-guardrails.md"""
+    from appcore.order_analytics import realtime_cache
 
-    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
+    realtime_cache.invalidate_all()
+
+    def fake_overview(date_text=None, **kwargs):
         return {
             "period": {"date": "2026-04-29"},
             "scope": {"ad_source": "meta_ad_realtime_daily_campaign_metrics"},

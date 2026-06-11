@@ -250,8 +250,9 @@ def create_task():
             continue
         upload_filename = client_filename_basename(storage.filename)
         if not validate_image_extension(upload_filename):
-            from flask import jsonify
-            return jsonify({"error": "invalid_file_type"}), 400
+            return link_check_flask_response(
+                build_link_check_unsupported_reference_response(upload_filename)
+            )
         suffix = Path(upload_filename).suffix.lower()
         local_path = task_dir / "reference" / f"ref_{index:03d}{suffix or '.jpg'}"
         local_path.parent.mkdir(parents=True, exist_ok=True)

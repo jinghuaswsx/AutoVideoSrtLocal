@@ -1457,7 +1457,6 @@ def test_realtime_ad_snapshot_fallback_handles_legacy_null_account_id(monkeypatc
 from datetime import date as _date_5
 from decimal import Decimal as _Decimal_5
 
-from appcore.db import get_conn as _get_conn_5
 from appcore.order_analytics import manual_ad_spend as _manual_ad_spend_5
 
 
@@ -1480,18 +1479,47 @@ def _seed_meta_accounts(monkeypatch):
 
 
 @pytest.fixture(autouse=False)
-def _clean_manual_ad_spend():
-    conn = _get_conn_5()
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM meta_ad_manual_daily_spend")
-        conn.commit()
-    yield
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM meta_ad_manual_daily_spend")
-        conn.commit()
+def _manual_ad_spend_store(monkeypatch):
+    rows: dict[tuple[_date_5, str], dict] = {}
+
+    def fake_upsert_entries(*, business_date, entries, updated_by):
+        count = 0
+        for entry in entries:
+            account_code = str(entry["account_code"]).strip()
+            rows[(business_date, account_code)] = {
+                "business_date": business_date,
+                "account_code": account_code,
+                "ad_account_id": str(entry["ad_account_id"]).strip(),
+                "spend_usd": _Decimal_5(str(entry["spend_usd"])),
+                "updated_by": updated_by,
+            }
+            count += 1
+        return count
+
+    def fake_load_supplement_map(date_from, date_to):
+        return {
+            (row["business_date"], row["ad_account_id"]): row["spend_usd"]
+            for row in rows.values()
+            if date_from <= row["business_date"] <= date_to
+        }
+
+    monkeypatch.setattr(_manual_ad_spend_5, "upsert_entries", fake_upsert_entries)
+    monkeypatch.setattr(_manual_ad_spend_5, "load_supplement_map", fake_load_supplement_map)
+    monkeypatch.setattr(oa, "query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        opa,
+        "_load_closed_daily_unallocated_ad_spend",
+        lambda *args, **kwargs: 0.0,
+    )
+    monkeypatch.setattr(
+        opa,
+        "_load_realtime_ad_cost_adjustments",
+        lambda *args, **kwargs: {"status_deltas": {}, "unallocated_spend": 0.0},
+    )
+    return rows
 
 
-def test_supplement_skipped_when_sync_has_any_spend(_seed_meta_accounts, _clean_manual_ad_spend, monkeypatch):
+def test_supplement_skipped_when_sync_has_any_spend(_seed_meta_accounts, _manual_ad_spend_store, monkeypatch):
     """sync sum > 0 时即使有 manual 行也不该叠加。"""
     monkeypatch.setattr(
         opa,
@@ -1511,7 +1539,7 @@ def test_supplement_skipped_when_sync_has_any_spend(_seed_meta_accounts, _clean_
     assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("0")
 
 
-def test_supplement_added_when_sync_sum_is_zero(_seed_meta_accounts, _clean_manual_ad_spend, monkeypatch):
+def test_supplement_added_when_sync_sum_is_zero(_seed_meta_accounts, _manual_ad_spend_store, monkeypatch):
     """该账户该天 sync 完全无数据时，manual 值进 unallocated。"""
     monkeypatch.setattr(
         opa,
@@ -1532,7 +1560,7 @@ def test_supplement_added_when_sync_sum_is_zero(_seed_meta_accounts, _clean_manu
     assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("500.0000")
 
 
-def test_supplement_per_account_only_when_that_account_sync_zero(_seed_meta_accounts, _clean_manual_ad_spend, monkeypatch):
+def test_supplement_per_account_only_when_that_account_sync_zero(_seed_meta_accounts, _manual_ad_spend_store, monkeypatch):
     """混合：一个账户 sync > 0 → 不叠加；另一个 sync = 0 → 叠加该账户 manual。"""
     monkeypatch.setattr(
         opa,
@@ -1556,7 +1584,7 @@ def test_supplement_per_account_only_when_that_account_sync_zero(_seed_meta_acco
     assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("300.0000")
 
 
-def test_supplement_filtered_by_query_range(_seed_meta_accounts, _clean_manual_ad_spend, monkeypatch):
+def test_supplement_filtered_by_query_range(_seed_meta_accounts, _manual_ad_spend_store, monkeypatch):
     """只在 [date_from, date_to] 内的 manual 行参与。"""
     monkeypatch.setattr(
         opa,

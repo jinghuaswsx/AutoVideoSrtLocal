@@ -27,7 +27,13 @@ def build_link_check_target_language_invalid_response() -> LinkCheckResponse:
 
 
 def build_link_check_unsupported_reference_response(filename: str) -> LinkCheckResponse:
-    return LinkCheckResponse({"error": f"不支持的参考图片格式: {filename}"}, 400)
+    return LinkCheckResponse(
+        {
+            "error": "invalid_file_type",
+            "message": f"不支持的参考图片格式: {filename}",
+        },
+        400,
+    )
 
 
 def build_link_check_create_success_response(

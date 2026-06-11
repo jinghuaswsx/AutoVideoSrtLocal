@@ -65,7 +65,7 @@ _PACKAGE_PROFIT_LINE_COUNT_SQL = (
 )
 _META_PURCHASE_ROAS_CORRECTION_FACTOR = 1.5
 
-# 实时大盘店铺筛选：默认双店，site_codes 取值必须命中此白名单。
+# 实时大盘店铺筛选：默认三店，site_codes 取值必须命中此白名单。
 # 详细设计：docs/superpowers/specs/2026-05-09-realtime-dashboard-store-filter.md
 _DEFAULT_SITE_CODES: tuple[str, ...] = ("newjoy", "omurio", "cozywint")
 _ALLOWED_SITE_CODES: frozenset[str] = frozenset(_DEFAULT_SITE_CODES)

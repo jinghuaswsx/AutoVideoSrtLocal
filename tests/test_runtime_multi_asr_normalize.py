@@ -222,8 +222,8 @@ def test_step_alignment_uses_utterances_en_when_present(mock_compile, mock_get):
          patch("appcore.runtime.task_state.update"), \
          patch("appcore.runtime.task_state.set_artifact"), \
          patch("appcore.runtime.task_state.set_current_review_step"), \
-         patch("appcore.runtime._save_json"), \
-         patch("appcore.runtime.build_alignment_artifact", return_value={}):
+         patch("appcore.runtime._pipeline_runner._save_json"), \
+         patch("appcore.runtime._pipeline_runner.build_alignment_artifact", return_value={}):
         mock_vl.return_value.recommend_voice.return_value = None
         runner = _make_runner()
         runner._step_alignment("t-aln", "/tmp/v.mp4", "/tmp")
@@ -251,8 +251,8 @@ def test_step_alignment_falls_back_to_utterances_when_en_missing(mock_compile, m
          patch("appcore.runtime.task_state.update"), \
          patch("appcore.runtime.task_state.set_artifact"), \
          patch("appcore.runtime.task_state.set_current_review_step"), \
-         patch("appcore.runtime._save_json"), \
-         patch("appcore.runtime.build_alignment_artifact", return_value={}):
+         patch("appcore.runtime._pipeline_runner._save_json"), \
+         patch("appcore.runtime._pipeline_runner.build_alignment_artifact", return_value={}):
         mock_vl.return_value.recommend_voice.return_value = None
         runner = _make_runner()
         runner._step_alignment("t-zh", "/tmp/v.mp4", "/tmp")

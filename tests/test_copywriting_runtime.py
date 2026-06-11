@@ -1,8 +1,20 @@
 from decimal import Decimal
 
+import pytest
+
 from appcore import task_state
 from appcore.copywriting_runtime import CopywritingRunner
 from appcore.events import EventBus
+
+
+@pytest.fixture(autouse=True)
+def no_task_state_db_sync(monkeypatch):
+    monkeypatch.setattr(task_state, "_sync_task_to_db", lambda *args, **kwargs: None)
+    with task_state._lock:
+        task_state._tasks.clear()
+    yield
+    with task_state._lock:
+        task_state._tasks.clear()
 
 
 def test_copywriting_runner_logs_ai_billing(monkeypatch, tmp_path):
