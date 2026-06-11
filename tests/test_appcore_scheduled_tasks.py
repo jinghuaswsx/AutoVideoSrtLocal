@@ -768,6 +768,20 @@ def test_task_definitions_include_meta_hot_posts_tasks():
     assert "meta_hot_posts_europe_fit_tick" not in definitions
 
 
+def test_task_definitions_include_tabcut_goods_translation_task():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["tabcut_goods_translation_tick"]
+    assert task["schedule"] == "每 10 分钟"
+    assert task["source_type"] == "apscheduler"
+    assert task["runner"] == "appcore.tabcut_selection.scheduler.goods_translation_tick_once"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "Gemini 3.1 Flash Lite" in task["description"]
+    assert "2026-06-11-tabcut-product-chinese-info-design.md" in task["description"]
+
+
 def test_task_definitions_include_server_and_app_timers():
     from appcore import scheduled_tasks
 

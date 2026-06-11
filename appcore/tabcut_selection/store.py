@@ -297,6 +297,16 @@ def list_video_candidates(
                ) AS new_product_parent_task_id,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
+               g.item_name_zh AS primary_item_name_zh,
+               g.item_name_zh_short AS primary_item_name_zh_short,
+               g.category_name_zh AS category_name_zh,
+               g.category_l1_name_zh AS category_l1_name_zh,
+               g.category_l2_name_zh AS category_l2_name_zh,
+               g.category_l3_name_zh AS category_l3_name_zh,
+               g.zh_translation_status AS zh_translation_status,
+               g.zh_translation_attempts AS zh_translation_attempts,
+               g.zh_translation_error AS zh_translation_error,
+               g.zh_translated_at AS zh_translated_at,
                gs.primary_item_sold_count AS primary_item_sold_count
         FROM tabcut_video_candidates c
         LEFT JOIN (
@@ -370,6 +380,16 @@ def get_video_candidate(video_id: str, *, query_fn: QueryFn = query) -> dict[str
                ) AS new_product_parent_task_id,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
+               g.item_name_zh AS primary_item_name_zh,
+               g.item_name_zh_short AS primary_item_name_zh_short,
+               g.category_name_zh AS category_name_zh,
+               g.category_l1_name_zh AS category_l1_name_zh,
+               g.category_l2_name_zh AS category_l2_name_zh,
+               g.category_l3_name_zh AS category_l3_name_zh,
+               g.zh_translation_status AS zh_translation_status,
+               g.zh_translation_attempts AS zh_translation_attempts,
+               g.zh_translation_error AS zh_translation_error,
+               g.zh_translated_at AS zh_translated_at,
                gs.primary_item_sold_count AS primary_item_sold_count
         FROM tabcut_video_candidates c
         LEFT JOIN (
@@ -517,7 +537,11 @@ def list_goods(args: Mapping[str, Any], *, query_fn: QueryFn = query) -> dict[st
         f"""
         SELECT s.*, g.item_name, g.item_pic_url, g.is_marked, g.mark_status, g.marked_at,
                g.marked_by, g.category_l1_name, g.category_l2_name,
-               g.category_l3_name, g.seller_name, g.seller_type
+               g.category_l3_name, g.seller_name, g.seller_type,
+               g.item_name_zh, g.item_name_zh_short, g.category_name_zh,
+               g.category_l1_name_zh, g.category_l2_name_zh, g.category_l3_name_zh,
+               g.zh_translation_status, g.zh_translation_attempts,
+               g.zh_translation_error, g.zh_translated_at
         FROM tabcut_goods_snapshots s
         JOIN tabcut_goods g ON g.item_id = s.item_id
         WHERE {where_sql}
@@ -581,6 +605,136 @@ def list_category_options(
         for row in rows
         if row.get("value")
     ]
+
+
+def get_goods(item_id: str, *, query_fn: QueryFn = query) -> dict[str, Any] | None:
+    rows = query_fn(
+        """
+        SELECT item_id, region, item_name, item_pic_url, category_id, category_name,
+               category_l1_id, category_l1_name, category_l2_id, category_l2_name,
+               category_l3_id, category_l3_name, seller_id, seller_name, seller_type,
+               item_name_zh, item_name_zh_short, category_name_zh,
+               category_l1_name_zh, category_l2_name_zh, category_l3_name_zh,
+               zh_translation_status, zh_translation_attempts,
+               zh_translation_error, zh_translated_at
+        FROM tabcut_goods
+        WHERE item_id = %s
+        LIMIT 1
+        """,
+        [str(item_id)],
+    )
+    return rows[0] if rows else None
+
+
+def next_pending_goods_translations(
+    *,
+    limit: int = 30,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(100, int(limit)))
+    safe_attempts = max(1, int(max_attempts))
+    return query_fn(
+        """
+        SELECT item_id, region, item_name, category_name,
+               category_l1_name, category_l2_name, category_l3_name,
+               item_name_zh, item_name_zh_short, category_name_zh,
+               category_l1_name_zh, category_l2_name_zh, category_l3_name_zh,
+               zh_translation_status, zh_translation_attempts
+        FROM tabcut_goods
+        WHERE item_name IS NOT NULL
+          AND TRIM(item_name) <> ''
+          AND zh_translation_status IN ('pending', 'failed')
+          AND zh_translation_attempts < %s
+        ORDER BY last_seen_at ASC, item_id ASC
+        LIMIT %s
+        """,
+        [safe_attempts, safe_limit],
+    )
+
+
+def mark_goods_translation_running(
+    item_id: str,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_goods
+        SET zh_translation_status='running',
+            zh_translation_attempts=zh_translation_attempts + 1,
+            zh_translation_error=NULL
+        WHERE item_id=%s
+        """,
+        [str(item_id)],
+    )
+
+
+def finish_goods_translation(
+    item_id: str,
+    *,
+    payload: Mapping[str, Any] | None,
+    error_message: str | None,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    if error_message:
+        return execute_fn(
+            """
+            UPDATE tabcut_goods
+            SET zh_translation_status='failed',
+                zh_translation_error=%s
+            WHERE item_id=%s
+            """,
+            [str(error_message)[:1000], str(item_id)],
+        )
+    data = payload or {}
+    params = [
+        _text_or_empty(data.get("item_name_zh")),
+        _text_or_empty(data.get("item_name_zh_short")),
+        _text_or_empty(data.get("category_name_zh")),
+        _text_or_empty(data.get("category_l1_name_zh")),
+        _text_or_empty(data.get("category_l2_name_zh")),
+        _text_or_empty(data.get("category_l3_name_zh")),
+        str(item_id),
+    ]
+    return execute_fn(
+        """
+        UPDATE tabcut_goods
+        SET item_name_zh=%s,
+            item_name_zh_short=%s,
+            category_name_zh=%s,
+            category_l1_name_zh=%s,
+            category_l2_name_zh=%s,
+            category_l3_name_zh=%s,
+            zh_translation_status='done',
+            zh_translation_error=NULL,
+            zh_translated_at=NOW()
+        WHERE item_id=%s
+        """,
+        params,
+    )
+
+
+def reset_stale_running_goods_translations(
+    *,
+    older_than_seconds: int = 3600,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_goods
+        SET zh_translation_status='failed',
+            zh_translation_error='running translation exceeded stale timeout; reset by scheduler'
+        WHERE zh_translation_status='running'
+          AND zh_translated_at IS NULL
+          AND TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) >= %s
+        """,
+        [max(1, int(older_than_seconds))],
+    )
+
+
+def _text_or_empty(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def upsert_video(video: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -> Any:

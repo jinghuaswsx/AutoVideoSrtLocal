@@ -119,7 +119,11 @@ body.tabcut-video-overlay-open { overflow:hidden; }
 .tabcut-product-mini:hover .tabcut-product-title, .tabcut-product-link:hover { color:#0f766e; text-decoration:underline; }
 .tabcut-product-mini img, .tabcut-product-img-empty { width:48px; height:48px; border-radius:4px; object-fit:cover; background:#f1f5f9; border:1px solid #e2e8f0; }
 .tabcut-product-title { min-width:0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; color:#334155; font-size:11px; line-height:1.25; }
+.tabcut-product-title-source { margin-top:2px; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#64748b; font-size:10px; line-height:1.25; }
+.tabcut-product-category { margin-top:3px; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#0f766e; font-size:10px; font-weight:800; line-height:1.25; }
 .tabcut-product-meta { display:flex; flex-wrap:wrap; justify-content:space-between; gap:3px 8px; margin-top:3px; color:#475569; font-size:10px; font-weight:700; }
+.tabcut-product-translate-btn { margin-top:5px; min-height:24px; padding:0 8px; border:1px solid #0f766e; border-radius:6px; background:#ecfdf5; color:#0f766e; font-size:11px; font-weight:800; cursor:pointer; }
+.tabcut-product-translate-btn:disabled { opacity:.62; cursor:wait; }
 .tabcut-mark-options { display:flex; align-items:center; gap:10px; min-height:26px; }
 .tabcut-mark-option { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0; border:0; background:transparent; color:#334155; font-size:12px; font-weight:800; cursor:pointer; }
 .tabcut-mark-option.bad { color:#dc2626; }
@@ -849,6 +853,7 @@ const tabcutItemsByVideoId = new Map();
 let tabcutVideoOverlayState = {videoId: "", touchStartX: null, touchStartY: null, touchStartedInInfo: false, infoExpanded: false, item: null, lastWheelAt: 0};
 const TABCUT_VIDEO_VIEWS = new Set(["videos"{% if not share_mode %}, "today_new"{% endif %}]);
 const TABCUT_VALID_VIEWS = new Set(["videos", "goods", "recommended"{% if not share_mode %}, "today_new"{% endif %}]);
+const TABCUT_CAN_TRANSLATE_GOODS = {% if share_mode %}false{% else %}true{% endif %};
 let tabcutTaskState = {
   videoId: "",
   button: null,
@@ -1349,21 +1354,114 @@ function playTabcutVideo(el) {
   openTiktokBrowserModal(videoId, authorName, localVideoPath, localVideoStatus);
 }
 function renderProductMini(row) {
-  const image = row.primary_item_pic_url ? `<img src="${esc(row.primary_item_pic_url)}" loading="lazy" alt="">` : `<span class="tabcut-product-img-empty"></span>`;
-  const title = row.primary_item_name || row.primary_item_id || "";
+  const href = productHref(row);
+  const image = row.primary_item_pic_url
+    ? (href
+        ? `<a class="tabcut-product-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer" tabindex="-1"><img src="${esc(row.primary_item_pic_url)}" loading="lazy" alt=""></a>`
+        : `<img src="${esc(row.primary_item_pic_url)}" loading="lazy" alt="">`)
+    : `<span class="tabcut-product-img-empty"></span>`;
+  const title = tabcutProductDisplayName(row);
+  const displayTitle = tabcutProductDisplayTitle(row);
+  const sourceTitle = tabcutProductSourceTitle(row);
+  const categoryZh = tabcutCategoryZhText(row);
   const symbol = row.currency_symbol || "$";
   const price = Number(row.primary_item_price_min || row.primary_item_price_max || 0);
   const sold = row.primary_item_sold_count || row.goods_sold_count_7d || row.item_sold_count;
-  const href = productHref(row);
   const inner = `
       ${image}
       <div>
-        <div class="tabcut-product-title">${esc(title)}</div>
+        ${href ? `<a class="tabcut-product-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer"><div class="tabcut-product-title">${esc(title)}</div></a>` : `<div class="tabcut-product-title">${esc(title)}</div>`}
+        ${displayTitle && displayTitle !== title ? `<div class="tabcut-product-title-source">${esc(displayTitle)}</div>` : ""}
+        ${sourceTitle && sourceTitle !== displayTitle && sourceTitle !== title ? `<div class="tabcut-product-title-source">${esc(sourceTitle)}</div>` : ""}
+        ${categoryZh ? `<div class="tabcut-product-category">${esc(categoryZh)}</div>` : ""}
         <div class="tabcut-product-meta"><span>${price ? `${esc(symbol)} ${price.toLocaleString(undefined, {maximumFractionDigits: 2})}` : ""}</span><span>销量:${fmtCompact(sold)}</span></div>
+        ${renderTabcutGoodsTranslateButton(row, "card")}
       </div>`;
-  return href
-    ? `<a class="tabcut-product-mini" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="Open TikTok product">${inner}</a>`
-    : `<div class="tabcut-product-mini">${inner}</div>`;
+  return `<div class="tabcut-product-mini" data-tabcut-item-id="${esc(tabcutGoodsId(row))}">${inner}</div>`;
+}
+
+function renderTabcutGoodsTranslateButton(row, context) {
+  if (!TABCUT_CAN_TRANSLATE_GOODS) return "";
+  const itemId = tabcutGoodsId(row);
+  if (!itemId || tabcutIsGoodsTranslated(row)) return "";
+  const status = String(row && row.zh_translation_status || "").trim();
+  const label = status === "failed" ? "重试翻译" : (status === "running" ? "翻译中" : "翻译");
+  const disabled = status === "running" ? " disabled" : "";
+  return `<button class="tabcut-product-translate-btn" type="button" data-tabcut-item-id="${esc(itemId)}" data-context="${esc(context || "")}" onclick="translateTabcutGoodsInfo(event, this.dataset.tabcutItemId)"${disabled}>${label}</button>`;
+}
+
+function setTabcutGoodsTranslateDisabled(itemId, disabled) {
+  const safeItemId = window.CSS && CSS.escape ? CSS.escape(String(itemId || "")) : String(itemId || "").replace(/["\\]/g, "\\$&");
+  document.querySelectorAll(`.tabcut-product-translate-btn[data-tabcut-item-id="${safeItemId}"]`).forEach(button => {
+    button.disabled = Boolean(disabled);
+    if (disabled) button.textContent = "翻译中";
+  });
+}
+
+function mergeTabcutGoodsTranslation(row, item) {
+  if (!row || !item) return;
+  row.primary_item_name_zh = item.item_name_zh || item.primary_item_name_zh || row.primary_item_name_zh || "";
+  row.primary_item_name_zh_short = item.item_name_zh_short || item.primary_item_name_zh_short || row.primary_item_name_zh_short || "";
+  row.item_name_zh = item.item_name_zh || row.item_name_zh || "";
+  row.item_name_zh_short = item.item_name_zh_short || row.item_name_zh_short || "";
+  ["category_name_zh", "category_l1_name_zh", "category_l2_name_zh", "category_l3_name_zh"].forEach(key => {
+    row[key] = item[key] || row[key] || "";
+  });
+  row.zh_translation_status = item.zh_translation_status || "done";
+  row.zh_translation_error = item.zh_translation_error || "";
+  row.primary_item_display_name = item.item_display_name || item.item_name_zh_short || item.item_name_zh || row.primary_item_display_name || row.primary_item_name;
+  row.primary_item_display_title = item.item_display_title || item.item_name_zh || row.primary_item_display_title || row.primary_item_name;
+  row.primary_item_category_zh = item.item_category_zh || item.category_name_zh || [item.category_l1_name_zh, item.category_l2_name_zh, item.category_l3_name_zh].filter(Boolean).join(" / ");
+  row.primary_item_is_translated = true;
+}
+
+function refreshTabcutProductMini(videoId) {
+  const row = tabcutItemsByVideoId.get(String(videoId || ""));
+  if (!row) return;
+  const card = Array.from(document.querySelectorAll(".tabcut-video-card")).find(node => node.dataset.videoId === String(videoId || ""));
+  const mini = card ? card.querySelector(".tabcut-product-mini") : null;
+  if (mini) mini.outerHTML = renderProductMini(row);
+}
+
+function applyTabcutGoodsTranslation(itemId, item) {
+  let overlayRow = null;
+  tabcutItemsByVideoId.forEach((row, videoId) => {
+    if (tabcutGoodsId(row) !== String(itemId || "")) return;
+    mergeTabcutGoodsTranslation(row, item);
+    refreshTabcutProductMini(videoId);
+    if (String(tabcutVideoOverlayState.videoId || "") === String(videoId || "")) {
+      overlayRow = row;
+    }
+  });
+  if (overlayRow && tabcutVideoOverlayState.item) {
+    tabcutVideoOverlayState.item = tabcutVideoOverlayItemFromRow(overlayRow);
+    updateTabcutVideoOverlayInfo();
+  }
+}
+
+async function translateTabcutGoodsInfo(event, itemId) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const id = String(itemId || "").trim();
+  if (!id || !TABCUT_CAN_TRANSLATE_GOODS) return;
+  setTabcutGoodsTranslateDisabled(id, true);
+  qs("tabcutStatus").textContent = "商品中文信息翻译中...";
+  try {
+    const res = await fetch(`/xuanpin/api/tabcut/goods/${encodeURIComponent(id)}/translate`, {
+      method: "POST",
+      headers: tabcutJsonHeaders(),
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.message || data.error || "translation_failed");
+    applyTabcutGoodsTranslation(id, data.item || {});
+    qs("tabcutStatus").textContent = "商品中文信息已更新";
+  } catch (err) {
+    qs("tabcutStatus").textContent = "商品中文信息翻译失败";
+    setTabcutGoodsTranslateDisabled(id, false);
+  }
 }
 function isTabcutMarked(row) {
   return row.is_marked === true || row.is_marked === 1 || row.is_marked === "1";
@@ -1464,12 +1562,42 @@ function tabcutCategoryText(row) {
   return [row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / ");
 }
 
+function tabcutCategoryZhText(row) {
+  row = row || {};
+  return row.primary_item_category_zh || row.item_category_zh || row.category_name_zh || [row.category_l1_name_zh, row.category_l2_name_zh, row.category_l3_name_zh].filter(Boolean).join(" / ");
+}
+
+function tabcutProductDisplayName(row) {
+  row = row || {};
+  return row.primary_item_display_name || row.item_display_name || row.primary_item_name_zh_short || row.item_name_zh_short || row.primary_item_name_zh || row.item_name_zh || row.primary_item_name || row.item_name || row.primary_item_id || row.item_id || "";
+}
+
+function tabcutProductDisplayTitle(row) {
+  row = row || {};
+  return row.primary_item_display_title || row.item_display_title || row.primary_item_name_zh || row.item_name_zh || row.primary_item_name || row.item_name || row.primary_item_id || row.item_id || "";
+}
+
+function tabcutProductSourceTitle(row) {
+  row = row || {};
+  return row.primary_item_name || row.item_name || "";
+}
+
+function tabcutGoodsId(row) {
+  row = row || {};
+  return String(row.primary_item_id || row.item_id || "").trim();
+}
+
+function tabcutIsGoodsTranslated(row) {
+  row = row || {};
+  return Boolean(row.primary_item_is_translated || row.item_is_translated || row.primary_item_name_zh || row.item_name_zh || row.primary_item_name_zh_short || row.item_name_zh_short);
+}
+
 function tabcutOverlaySummary(row) {
   row = row || {};
   const parts = [];
   const price = tabcutPriceText(row);
   const sold = row.primary_item_sold_count || row.goods_sold_count_7d || row.item_sold_count;
-  const category = tabcutCategoryText(row);
+  const category = tabcutCategoryZhText(row) || tabcutCategoryText(row);
   const score = Number(row.score);
   if (price) parts.push(price);
   if (sold) parts.push(`销量 ${fmtCompact(sold)}`);
@@ -1485,9 +1613,13 @@ function tabcutVideoOverlayItemFromRow(row) {
     row: row || {},
     videoSrc: tabcutLocalVideoUrl(row),
     downloadName: tabcutVideoDownloadName(row || {video_id: videoId}),
-    title: String((row && (row.primary_item_name || row.item_name || row.video_desc || row.video_id)) || "").trim(),
+    title: String((row && (tabcutProductDisplayName(row) || row.video_desc || row.video_id)) || "").trim(),
     productImageUrl: String((row && (row.primary_item_pic_url || row.item_pic_url || row.video_cover_url)) || "").trim(),
   };
+}
+
+function defaultTabcutOverlayInfoExpanded() {
+  return !isTabcutMobileViewport();
 }
 
 function ensureTabcutVideoOverlay() {
@@ -1532,15 +1664,20 @@ function tabcutOverlayDetail(label, value) {
 function renderTabcutVideoOverlayInfo(item) {
   const row = item && item.row ? item.row : {};
   const expanded = Boolean(tabcutVideoOverlayState.infoExpanded);
-  const title = String((item && item.title) || row.primary_item_name || row.item_name || row.video_id || "Video").trim();
+  const title = String((item && item.title) || tabcutProductDisplayName(row) || row.video_id || "Video").trim();
   const summary = tabcutOverlaySummary(row);
   const productImageUrl = String((item && item.productImageUrl) || "").trim();
   const productId = row.primary_item_id || row.item_id;
   const price = tabcutPriceText(row);
   const sold = row.primary_item_sold_count || row.goods_sold_count_7d || row.item_sold_count;
   const category = tabcutCategoryText(row);
+  const categoryZh = tabcutCategoryZhText(row);
+  const titleZh = row.primary_item_name_zh || row.item_name_zh || "";
+  const sourceTitle = tabcutProductSourceTitle(row);
   const score = Number(row.score);
   const details = [
+    tabcutOverlayDetail("中文标题", titleZh),
+    tabcutOverlayDetail("英文标题", sourceTitle),
     tabcutOverlayDetail("商品ID", productId),
     tabcutOverlayDetail("价格", price),
     tabcutOverlayDetail("商品销量", sold ? fmtCompact(sold) : ""),
@@ -1548,6 +1685,7 @@ function renderTabcutVideoOverlayInfo(item) {
     tabcutOverlayDetail("点赞", row.like_count ? fmtCompact(row.like_count) : ""),
     tabcutOverlayDetail("分享", row.share_count ? fmtCompact(row.share_count) : ""),
     tabcutOverlayDetail("评论", row.comment_count ? fmtCompact(row.comment_count) : ""),
+    tabcutOverlayDetail("中文类目", categoryZh),
     tabcutOverlayDetail("类目", category),
     tabcutOverlayDetail("发布时间", formatDateTime(row.create_time)),
     tabcutOverlayDetail("首次发现", formatDateTime(row.first_seen_at || row.first_seen_time)),
@@ -1563,6 +1701,7 @@ function renderTabcutVideoOverlayInfo(item) {
         <div class="tabcut-video-overlay-title">${esc(title)}</div>
         ${summary ? `<div class="tabcut-video-overlay-summary">${esc(summary)}</div>` : ""}
         <div class="tabcut-video-overlay-details">${details}</div>
+        ${renderTabcutGoodsTranslateButton(row, "overlay")}
         <button class="tabcut-video-overlay-toggle" type="button" onclick="toggleTabcutVideoOverlayInfo(event)" aria-expanded="${expanded ? "true" : "false"}">${expanded ? "收起" : "展开"}</button>
       </div>
     </div>
@@ -1603,7 +1742,7 @@ function renderTabcutVideoOverlayPlayer(item, options = {}) {
   }
   const videoId = String(item && item.videoId || "").trim();
   const safeDownloadName = String(item && item.downloadName || tabcutVideoDownloadName(item && item.row || {})).trim() || "tabcut-video.mp4";
-  if (options.keepInfoExpanded !== true) tabcutVideoOverlayState.infoExpanded = false;
+  if (options.keepInfoExpanded !== true) tabcutVideoOverlayState.infoExpanded = defaultTabcutOverlayInfoExpanded();
   tabcutVideoOverlayState.videoId = videoId;
   tabcutVideoOverlayState.item = item || null;
   overlay.dataset.currentVideoId = videoId;

@@ -35,6 +35,9 @@ def test_list_video_candidates_applies_filters_and_sort_whitelist():
     assert "FROM tabcut_goods_snapshots" in data_sql
     assert "v.local_product_id" in data_sql
     assert "new_product_parent_task_id" in data_sql
+    assert "g.item_name_zh AS primary_item_name_zh" in data_sql
+    assert "g.item_name_zh_short AS primary_item_name_zh_short" in data_sql
+    assert "g.category_l1_name_zh AS category_l1_name_zh" in data_sql
     assert "ORDER BY c.goods_gmv_7d DESC" in data_sql
     assert data_params[:4] == ["US", "Food", 10, 99.5]
 
@@ -424,8 +427,82 @@ def test_list_goods_filters_by_mark_status_and_selects_mark_fields():
     assert "g.mark_status = %s" in data_sql
     assert "g.is_marked" in data_sql
     assert "g.mark_status" in data_sql
+    assert "g.item_name_zh" in data_sql
+    assert "g.item_name_zh_short" in data_sql
+    assert "g.category_l1_name_zh" in data_sql
     assert count_params[:2] == ["US", "bad"]
     assert data_params[:2] == ["US", "bad"]
+
+
+def test_next_pending_goods_translations_selects_untranslated_rows():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"item_id": "i1", "item_name": "English title"}]
+
+    rows = store.next_pending_goods_translations(limit=12, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["item_id"] == "i1"
+    assert "FROM tabcut_goods" in sql
+    assert "zh_translation_status IN ('pending', 'failed')" in sql
+    assert "zh_translation_attempts < %s" in sql
+    assert params == [3, 12]
+
+
+def test_finish_goods_translation_updates_chinese_fields():
+    calls = []
+
+    store.finish_goods_translation(
+        "i1",
+        payload={
+            "item_name_zh": "紫色牙贴套装",
+            "item_name_zh_short": "紫色牙贴",
+            "category_l1_name_zh": "美妆个护",
+        },
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE tabcut_goods" in sql
+    assert "item_name_zh=%s" in sql
+    assert "zh_translation_status='done'" in sql
+    assert params[0:3] == ["紫色牙贴套装", "紫色牙贴", ""]
+    assert params[-1] == "i1"
+
+
+def test_build_videos_response_hydrates_chinese_product_display_fields(monkeypatch):
+    monkeypatch.setattr(
+        store,
+        "list_video_candidates",
+        lambda args: {
+            "items": [
+                {
+                    "video_id": "v1",
+                    "primary_item_id": "i1",
+                    "primary_item_name": "Purple Teeth Whitening Strips",
+                    "primary_item_name_zh": "紫色牙齿美白贴套装",
+                    "primary_item_name_zh_short": "紫色美白牙贴",
+                    "category_l1_name": "Beauty & Personal Care",
+                    "category_l1_name_zh": "美妆个护",
+                    "zh_translation_status": "done",
+                    "video_raw_json": "{}",
+                }
+            ],
+            "total": 1,
+        },
+    )
+    monkeypatch.setattr(service, "_tabcut_attach_fine_ai_evaluation", lambda items: None)
+
+    result = service.build_videos_response({})
+    item = result.payload["items"][0]
+
+    assert item["primary_item_display_name"] == "紫色美白牙贴"
+    assert item["primary_item_display_title"] == "紫色牙齿美白贴套装"
+    assert item["primary_item_category_zh"] == "美妆个护"
+    assert item["primary_item_is_translated"] is True
 
 
 def test_build_goods_response_hydrates_source_category_label(monkeypatch):
