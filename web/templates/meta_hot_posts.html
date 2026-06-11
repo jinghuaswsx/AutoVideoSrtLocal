@@ -140,11 +140,19 @@ body.mh-video-overlay-open { overflow:hidden; }
 .mh-video-overlay-caption-toggle { height:24px; justify-self:start; padding:0 8px; border:1px solid rgba(226,232,240,.45); border-radius:5px; background:rgba(15,23,42,.24); color:#fff; font-size:12px; font-weight:800; cursor:pointer; }
 .mh-video-overlay-caption-toggle:hover { background:rgba(15,23,42,.5); }
 .mh-video-overlay-product-image { display:none; width:100px; height:100px; border-radius:6px; object-fit:cover; background:rgba(226,232,240,.24); }
-.mh-video-overlay-caption.is-expanded { flex-basis:min(640px, calc(100% - 104px)); max-height:min(42vh, 360px); overflow:auto; }
+.mh-video-overlay-caption.is-expanded { flex-basis:min(640px, calc(100% - 104px)); max-height:min(46vh, 380px); overflow:auto; }
 .mh-video-overlay-caption.is-expanded.has-product-image .mh-video-overlay-caption-body { grid-template-columns:auto minmax(0, 1fr); }
 .mh-video-overlay-caption.is-expanded .mh-video-overlay-caption-text { white-space:normal; overflow:visible; text-overflow:clip; font-weight:650; }
 .mh-video-overlay-caption.is-expanded .mh-video-overlay-caption-text p { display:block; margin:0 0 6px; }
 .mh-video-overlay-caption.is-expanded .mh-video-overlay-product-image { display:block; }
+.mh-video-overlay-details { display:none; gap:5px 10px; color:rgba(255,255,255,.9); font-size:12px; line-height:1.35; margin-top:6px; }
+.mh-video-overlay-caption.is-expanded .mh-video-overlay-details { display:grid; }
+.mh-video-overlay-detail { display:grid; grid-template-columns:84px minmax(0, 1fr); gap:8px; min-width:0; }
+.mh-video-overlay-detail b { color:rgba(255,255,255,.62); font-weight:800; }
+.mh-video-overlay-detail span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mh-video-overlay-caption.is-expanded .mh-video-overlay-detail span { white-space:normal; overflow:visible; text-overflow:clip; }
+.mh-product-translate-btn { min-height:24px; padding:0 8px; border:1px solid #0f766e; border-radius:6px; background:#ecfdf5; color:#0f766e; font-size:11px; font-weight:800; cursor:pointer; }
+.mh-product-translate-btn:disabled { opacity:.62; cursor:wait; }
 .mh-video-overlay-actions { flex:0 0 auto; display:flex; align-items:center; gap:8px; pointer-events:auto; }
 .mh-video-overlay-download,
 .mh-video-overlay-close { display:inline-flex; align-items:center; justify-content:center; min-width:40px; height:40px; padding:0 12px; border:1px solid rgba(226,232,240,.45); border-radius:6px; background:rgba(15,23,42,.36); color:#fff; text-decoration:none; cursor:pointer; box-shadow:0 2px 12px rgba(15,23,42,.2); }
@@ -967,7 +975,8 @@ function metaHotVideoOverlayItemFromRow(row, fallback = {}) {
     downloadName: String(fallback.downloadName || metaHotVideoDownloadName(row || fallback) || '').trim(),
     messageHtml,
     messageText: metaHotPlainTextFromHtml(messageHtml),
-    productImageUrl: String((row && row.product_main_image_url) || fallback.productImageUrl || '').trim()
+    productImageUrl: String((row && row.product_main_image_url) || fallback.productImageUrl || '').trim(),
+    row: row || {}
   };
 }
 function metaHotVideoDownloadName(row) {
@@ -1061,27 +1070,138 @@ function metaHotAdjacentPlayableVideo(postId, direction) {
   if (nextIndex < 0 || nextIndex >= items.length) return null;
   return items[nextIndex];
 }
+function isMetaHotMobileViewport() {
+  return window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+}
+function defaultMetaHotOverlayCaptionExpanded() {
+  return !isMetaHotMobileViewport();
+}
+function metaHotOverlayDetail(label, value) {
+  const text = String(value || '').trim();
+  return text ? `<div class="mh-video-overlay-detail"><b>${esc(label)}</b><span>${esc(text)}</span></div>` : '';
+}
+function renderMetaHotGoodsTranslateButton(row) {
+  const postId = Number(row.id || 0);
+  const hasChinese = Boolean(String(row.product_title_zh || '').trim());
+  if (!postId || hasChinese) return '';
+  return `<button class="mh-product-translate-btn" type="button" data-post-id="${postId}" onclick="translateMetaHotGoodsInfoFromOverlay(event, ${postId})">翻译</button>`;
+}
+async function translateMetaHotGoodsInfoFromOverlay(event, postId) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const id = Number(postId || 0);
+  if (!id) return;
+  const button = event.currentTarget;
+  const originalText = button ? button.textContent : '翻译';
+  if (button) {
+    button.disabled = true;
+    button.textContent = '翻译中...';
+  }
+  qs('mhStatus').textContent = '商品中文信息翻译中...';
+  try {
+    const res = await fetch(`/xuanpin/api/meta-hot-posts/${id}/product-title/translate-zh`, {
+      method: 'POST',
+      headers: metaHotJsonHeaders()
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'translate_failed');
+    if (data.item) {
+      updateMetaHotCard(data.item);
+    }
+    qs('mhStatus').textContent = data.cached ? '已有商品标题中文缓存' : '商品标题翻译完成';
+  } catch (err) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+    qs('mhStatus').textContent = '商品标题翻译失败';
+  }
+}
 function renderMetaHotVideoOverlayCaption(item) {
-  const messageHtml = String((item && item.messageHtml) || '').trim();
-  const messageText = String((item && item.messageText) || '').trim();
-  const productImageUrl = String((item && item.productImageUrl) || '').trim();
-  if (!messageHtml && !messageText && !productImageUrl) return '';
+  const row = item && item.row ? item.row : {};
+  const postId = Number(row.id || 0);
+  if (!postId) return '';
+
   const expanded = Boolean(mhVideoOverlayState.captionExpanded);
+  
+  // 1. 商品标题（优先中文，没中文显示英文）
+  const englishTitle = String(row.product_title || '').trim();
+  const chineseTitle = String(row.product_title_zh || '').trim();
+  const title = chineseTitle || englishTitle || '待分析商品';
+  
+  // 2. Summary (价格 · 类目 · SKU)
+  const parts = [];
+  const price = (row.price_min || row.price_max) ? fmtMoney(row.price_min, row.price_max, row.currency) : '';
+  const category = String(row.category_l1_zh || row.category_l1 || '').trim();
+  const sku = Number(row.sku_count || 0);
+  if (price) parts.push(price);
+  if (category) parts.push(category);
+  if (sku) parts.push(`SKU ${sku}`);
+  const summary = parts.join(" · ");
+  
+  // 3. 商品图片
+  const productImageUrl = String(item.productImageUrl || '').trim();
   const imageHtml = expanded && productImageUrl
     ? `<img class="mh-video-overlay-product-image" src="${esc(productImageUrl)}" alt="" loading="lazy">`
     : '';
-  const textHtml = expanded
-    ? (messageHtml || esc(messageText))
-    : esc(messageText || '无文案');
-  const toggleHtml = (messageHtml || messageText)
-    ? `<button class="mh-video-overlay-caption-toggle" type="button" onclick="toggleMetaHotVideoOverlayCaption(event)" aria-expanded="${expanded ? 'true' : 'false'}">${expanded ? '收起' : '展开'}</button>`
-    : '';
-  return `<div class="mh-video-overlay-caption${expanded ? ' is-expanded' : ''}${productImageUrl ? ' has-product-image' : ''}">
+
+  // 4. 发帖文案展示
+  const originalMessage = String(row.message || row.message_html || '').trim();
+  const translatedMessage = String(row.message_zh || '').trim();
+  let messageToShow = translatedMessage || originalMessage || '无文案';
+  const messageIsHtml = messageToShow.includes('<') && messageToShow.includes('>');
+  const messageContentHtml = messageIsHtml ? messageToShow : esc(messageToShow);
+  
+  // 文案翻译按钮
+  let messageActionHtml = '';
+  if (originalMessage && !translatedMessage) {
+    messageActionHtml = `<button class="mh-product-translate-btn" style="margin-left: 8px;" type="button" onclick="translateMetaHotPostMessageToChinese(event, ${postId})">翻译文案</` + `button>`;
+  }
+
+  // 5. Details 详细网格列表
+  const details = [
+    metaHotOverlayDetail("中文标题", chineseTitle),
+    metaHotOverlayDetail("商品标题", englishTitle),
+    metaHotOverlayDetail("商品价格", price),
+    metaHotOverlayDetail("类目", category),
+    metaHotOverlayDetail("SKU 数量", sku),
+    metaHotOverlayDetail("分析状态", row.analysis_status),
+    metaHotOverlayDetail("帖子 ID", row.post_id || row.id),
+    metaHotOverlayDetail("交互数", row.likes),
+    metaHotOverlayDetail("评论数", row.comments),
+    metaHotOverlayDetail("分享数", row.shares),
+    metaHotOverlayDetail("最新交互", row.latest_likes),
+    metaHotOverlayDetail("最新评论", row.latest_comments),
+    metaHotOverlayDetail("最新分享", row.latest_shares),
+    metaHotOverlayDetail("创建时间", row.creation_time),
+    metaHotOverlayDetail("首次发现", row.first_seen_at),
+    metaHotOverlayDetail("更新时间", row.last_synced_at),
+  ].filter(Boolean).join("");
+
+  // 6. 翻译商品信息按钮
+  const goodsTranslateBtn = renderMetaHotGoodsTranslateButton(row);
+
+  return `<div class="mh-video-overlay-caption${expanded ? " is-expanded" : ""}${productImageUrl ? " has-product-image" : ""}">
     <div class="mh-video-overlay-caption-body">
       ${imageHtml}
-      <div class="mh-video-overlay-caption-content">
-        <div class="mh-video-overlay-caption-text">${textHtml}</div>
-        ${toggleHtml}
+      <div>
+        <div class="mh-video-overlay-title" style="font-size:13px; font-weight:800; color:#fff; line-height:1.35; overflow:hidden; text-overflow:ellipsis; white-space:${expanded ? 'normal' : 'nowrap'};">${esc(title)}</div>
+        ${summary ? `<div class="mh-video-overlay-summary" style="margin-top:3px; font-size:12px; font-weight:700; color:rgba(255,255,255,.78); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(summary)}</div>` : ""}
+        
+        <div class="mh-video-overlay-message" style="margin-top:6px; font-size:12px; color:rgba(255,255,255,0.9); line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:${expanded ? 'normal' : 'nowrap'};">
+          <b>文案: </b><span>${messageContentHtml}</span>
+          ${!expanded && originalMessage && !translatedMessage ? messageActionHtml : ''}
+        </div>
+        
+        <div class="mh-video-overlay-details">${details}</div>
+        
+        <div style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+          ${goodsTranslateBtn}
+          ${expanded && originalMessage && !translatedMessage ? messageActionHtml : ''}
+          <button class="mh-video-overlay-caption-toggle" type="button" onclick="toggleMetaHotVideoOverlayCaption(event)" aria-expanded="${expanded ? "true" : "false"}">${expanded ? "收起" : "展开"}</button>
+        </div>
       </div>
     </div>
   </div>`;
@@ -1112,7 +1232,7 @@ function renderMetaHotVideoOverlayPlayer(item, options = {}) {
   }
   const postId = Number((item && item.postId) || 0);
   const safeDownloadName = String((item && item.downloadName) || 'meta-hot-post-video.mp4').trim() || 'meta-hot-post-video.mp4';
-  if (options.keepCaptionExpanded !== true) mhVideoOverlayState.captionExpanded = false;
+  if (options.keepCaptionExpanded !== true) mhVideoOverlayState.captionExpanded = defaultMetaHotOverlayCaptionExpanded();
   mhVideoOverlayState.postId = postId || null;
   mhVideoOverlayState.item = item || null;
   overlay.dataset.currentPostId = postId ? String(postId) : '';
@@ -1848,12 +1968,18 @@ function rerenderMetaHotCards() {
 }
 function updateMetaHotCard(item) {
   if (!item || !item.id) return;
-  mhItemsById.set(Number(item.id), item);
-  const card = document.querySelector(`.mh-card[data-post-id="${Number(item.id)}"]`);
+  const id = Number(item.id);
+  mhItemsById.set(id, item);
+  const card = document.querySelector(`.mh-card[data-post-id="${id}"]`);
   if (card) {
     const video = card.querySelector('video');
     if (video && !video.paused && !video.ended) video.pause();
     card.outerHTML = renderCard(item);
+  }
+  // 如果当前沉浸式观看的正是这个被更新的帖子，则无缝更新全屏 Overlay 详情
+  if (mhVideoOverlayState.postId === id) {
+    mhVideoOverlayState.item = metaHotVideoOverlayItemFromRow(item);
+    updateMetaHotVideoOverlayCaption();
   }
 }
 function quickCreateAiListingTask(event, productUrl) {

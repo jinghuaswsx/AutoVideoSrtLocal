@@ -432,7 +432,7 @@ def test_meta_hot_posts_page_renders_tabs_and_api(authed_client_no_db, monkeypat
     assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in body
     assert "document.body.classList.add('mh-video-overlay-open')" in body
     assert "document.body.classList.remove('mh-video-overlay-open')" in body
-    assert "event.key !== 'Escape'" in body
+    assert "event.key === 'Escape'" in body
     assert "event.target.closest('.mh-video-action')" in body
     assert "data-video-html" in body
     assert "local_video_cover_url" in body
