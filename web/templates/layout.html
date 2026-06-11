@@ -1001,10 +1001,10 @@
         </div>
       </details>
       {% endif %}
-      {% if current_user.is_admin %}\r
-      <a href="/video-analyse-ai/" {% if request.path.startswith('/video-analyse-ai') %}class="active"{% endif %}>\r
-        <span class="nav-icon">🧠</span> 投放素材AI分析\r
-      </a>\r
+      {% if current_user.is_admin %}
+      <a href="/video-analyse-ai/" {% if request.path.startswith('/video-analyse-ai') %}class="active"{% endif %}>
+        <span class="nav-icon">🧠</span> 投放素材AI分析
+      </a>
       {% endif %}
       {% if has_permission('user_management') %}
       <a href="{{ url_for('admin.users') }}" {% if request.endpoint == 'admin.users' %}class="active"{% endif %}>
