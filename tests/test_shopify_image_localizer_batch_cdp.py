@@ -2679,6 +2679,53 @@ def test_taa_upload_image_rejects_unmatched_previous_cdn_url(tmp_path, monkeypat
         taa.upload_image(str(image_path), timeout_s=0.01)
 
 
+def test_taa_upload_image_recovers_single_new_modal_cdn_url_without_token(tmp_path, monkeypatch):
+    image_path = tmp_path / "20260611_2e8bc151_20260611_b7a82361_from_url_en_11_1_945b8773-c9d0.png"
+    image_path.write_bytes(b"image")
+    old_url = "https://cdn.shopify.com/s/files/1/0000/files/previous-language-image.jpg?v=1"
+    new_url = "https://cdn.shopify.com/s/files/1/0000/files/files-uploads-uuid-image.png?v=2"
+
+    class FakeWs:
+        def __init__(self):
+            self.events = [
+                json.dumps(
+                    {
+                        "method": "Network.responseReceived",
+                        "params": {
+                            "response": {
+                                "url": old_url,
+                                "status": 200,
+                            }
+                        },
+                    }
+                )
+            ]
+
+        def settimeout(self, _timeout):
+            return None
+
+        def recv(self):
+            if self.events:
+                return self.events.pop(0)
+            raise TimeoutError("quiet")
+
+    class FakeCdp:
+        _ws = FakeWs()
+
+    taa = taa_cdp.TaaSession(
+        product_id="8595641303213",
+        shop_locale="fr",
+        user_data_dir="C:/chrome-shopify-image",
+    )
+    taa.cdp = FakeCdp()
+    modal_url_snapshots = iter([[old_url], [old_url, new_url], [old_url, new_url]])
+    monkeypatch.setattr(taa, "open_insert_image_modal", lambda: None)
+    monkeypatch.setattr(taa, "_set_file_input", lambda _path: None)
+    monkeypatch.setattr(taa, "evaluate", lambda *_args, **_kwargs: next(modal_url_snapshots))
+
+    assert taa.upload_image(str(image_path), timeout_s=0.01) == new_url
+
+
 def test_replace_detail_images_uses_uploaded_target_size_when_display_size_url_misses(monkeypatch, tmp_path):
     token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     original_src = f"https://cdn.shopify.com/s/files/old_from_url_en_07_{token}_refsize_800x800.png?v=2"

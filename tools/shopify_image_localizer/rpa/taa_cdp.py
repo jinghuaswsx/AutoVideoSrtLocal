@@ -515,6 +515,7 @@ class TaaSession:
         path = Path(local_path)
         self.open_insert_image_modal()
         cancellation.throw_if_cancelled(self.cancel_token)
+        modal_cdn_urls_before = self._modal_shopify_cdn_image_urls()
         self._set_file_input(str(path))
 
         deadline = time.time() + timeout_s
@@ -551,20 +552,44 @@ class TaaSession:
         if not cdn_url:
             cdn_url = self._find_uploaded_image_url_in_modal(stem, basename, token)
         if not cdn_url:
+            cdn_url = self._find_new_uploaded_image_url_in_modal(modal_cdn_urls_before)
+        if not cdn_url:
             raise RuntimeError(f"uploaded CDN URL not found for {basename}")
         return cdn_url
 
-    def _find_uploaded_image_url_in_modal(self, stem: str, basename: str, token: str = "") -> str:
-        urls = self.evaluate(
-            r"""
+    def _modal_shopify_cdn_image_urls(self) -> list[str]:
+        try:
+            urls = self.evaluate(
+                r"""
 (() => Array.from(document.querySelectorAll('[role="dialog"] img, .Polaris-Modal-Dialog img')).map((img) => img.src))()
 """,
-            timeout_s=10,
-        ) or []
+                timeout_s=10,
+            ) or []
+        except Exception:
+            return []
+        result: list[str] = []
+        seen: set[str] = set()
         for url in urls:
+            value = str(url or "")
+            if "cdn.shopify.com/s/files/" not in value or value in seen:
+                continue
+            seen.add(value)
+            result.append(value)
+        return result
+
+    def _find_uploaded_image_url_in_modal(self, stem: str, basename: str, token: str = "") -> str:
+        for url in self._modal_shopify_cdn_image_urls():
             token_match = bool(token and (token in url or token[:32] in url))
             if "cdn.shopify.com/s/files/" in url and (stem in url or basename in url or token_match):
                 return str(url)
+        return ""
+
+    def _find_new_uploaded_image_url_in_modal(self, previous_urls: list[str]) -> str:
+        before = {str(url or "") for url in previous_urls if url}
+        after = self._modal_shopify_cdn_image_urls()
+        new_urls = [url for url in after if url not in before]
+        if len(new_urls) == 1:
+            return str(new_urls[0])
         return ""
 
 
