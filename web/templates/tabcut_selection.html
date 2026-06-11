@@ -71,6 +71,44 @@
 .tabcut-video-play-btn { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:56px; height:56px; border-radius:9999px; border:1px solid rgba(255,255,255,.8); background:rgba(0,0,0,.45); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); color:#fff; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.25); transition:background .2s, transform .2s, box-shadow .2s; z-index:2; }
 .tabcut-video-play-btn::before { content:""; display:block; margin-left:4px; border-top:10px solid transparent; border-bottom:10px solid transparent; border-left:16px solid currentColor; }
 .tabcut-video-play-btn:hover { background:rgba(0,0,0,.65); transform:translate(-50%, -50%) scale(1.08); box-shadow:0 6px 16px rgba(0,0,0,.35); }
+.tabcut-video-card-actions { position:absolute; top:8px; right:8px; z-index:4; display:flex; align-items:center; gap:6px; }
+.tabcut-video-action { display:inline-flex; align-items:center; justify-content:center; min-width:40px; width:40px; height:40px; padding:0; border:1px solid rgba(226,232,240,.58); border-radius:8px; background:rgba(15,23,42,.62); color:#fff; cursor:pointer; box-shadow:0 2px 10px rgba(15,23,42,.22); }
+.tabcut-video-action:hover { background:rgba(15,23,42,.78); }
+.tabcut-video-action:focus-visible { outline:2px solid rgba(20,184,166,.78); outline-offset:2px; }
+.tabcut-video-control-icon { width:18px; height:18px; stroke:currentColor; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+body.tabcut-video-overlay-open { overflow:hidden; }
+.tabcut-video-overlay[hidden] { display:none; }
+.tabcut-video-overlay { position:fixed; inset:0; z-index:2300; display:flex; align-items:center; justify-content:center; padding:calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); background:rgba(15,23,42,.9); touch-action:pan-y; overscroll-behavior:contain; }
+.tabcut-video-overlay-panel { position:relative; display:flex; align-items:center; justify-content:center; width:min(100%, 820px); height:100%; touch-action:pan-y; }
+.tabcut-video-overlay-player { display:block; width:100%; max-width:100%; max-height:100%; border:0; border-radius:8px; background:#020617; object-fit:contain; }
+.tabcut-video-overlay-toolbar { position:absolute; top:10px; left:10px; right:10px; z-index:2; display:flex; align-items:flex-start; justify-content:space-between; gap:8px; pointer-events:none; }
+.tabcut-video-overlay-info-slot { flex:1 1 auto; min-width:0; display:flex; justify-content:flex-start; pointer-events:auto; }
+.tabcut-video-overlay-info { flex:0 1 min(560px, calc(100% - 104px)); min-width:0; display:block; padding:9px 10px; border:1px solid rgba(226,232,240,.34); border-radius:8px; background:rgba(15,23,42,.42); color:#fff; box-shadow:0 2px 12px rgba(15,23,42,.18); }
+.tabcut-video-overlay-info-body { display:grid; grid-template-columns:minmax(0, 1fr); gap:8px; align-items:start; }
+.tabcut-video-overlay-title { min-width:0; overflow:hidden; color:#fff; font-size:13px; font-weight:800; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; word-break:break-word; }
+.tabcut-video-overlay-summary { margin-top:3px; min-width:0; overflow:hidden; color:rgba(255,255,255,.78); font-size:12px; font-weight:700; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
+.tabcut-video-overlay-toggle { height:24px; justify-self:start; padding:0 8px; border:1px solid rgba(226,232,240,.45); border-radius:6px; background:rgba(15,23,42,.24); color:#fff; font-size:12px; font-weight:800; cursor:pointer; }
+.tabcut-video-overlay-toggle:hover { background:rgba(15,23,42,.5); }
+.tabcut-video-overlay-product-image { display:none; width:100px; height:100px; border-radius:8px; object-fit:cover; background:rgba(226,232,240,.24); }
+.tabcut-video-overlay-details { display:none; gap:5px 10px; color:rgba(255,255,255,.9); font-size:12px; line-height:1.35; }
+.tabcut-video-overlay-detail { display:grid; grid-template-columns:68px minmax(0, 1fr); gap:8px; min-width:0; }
+.tabcut-video-overlay-detail b { color:rgba(255,255,255,.62); font-weight:800; }
+.tabcut-video-overlay-detail span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tabcut-video-overlay-info.is-expanded { flex-basis:min(640px, calc(100% - 104px)); max-height:min(46vh, 380px); overflow:auto; }
+.tabcut-video-overlay-info.is-expanded.has-product-image .tabcut-video-overlay-info-body { grid-template-columns:auto minmax(0, 1fr); }
+.tabcut-video-overlay-info.is-expanded .tabcut-video-overlay-title,
+.tabcut-video-overlay-info.is-expanded .tabcut-video-overlay-summary { white-space:normal; overflow:visible; text-overflow:clip; }
+.tabcut-video-overlay-info.is-expanded .tabcut-video-overlay-product-image { display:block; }
+.tabcut-video-overlay-info.is-expanded .tabcut-video-overlay-details { display:grid; }
+.tabcut-video-overlay-actions { flex:0 0 auto; display:flex; align-items:center; gap:8px; pointer-events:auto; }
+.tabcut-video-overlay-download,
+.tabcut-video-overlay-close { display:inline-flex; align-items:center; justify-content:center; min-width:40px; height:40px; padding:0 12px; border:1px solid rgba(226,232,240,.45); border-radius:8px; background:rgba(15,23,42,.4); color:#fff; text-decoration:none; cursor:pointer; box-shadow:0 2px 12px rgba(15,23,42,.2); }
+.tabcut-video-overlay-download { gap:6px; font-size:13px; font-weight:800; }
+.tabcut-video-overlay-close { width:40px; padding:0; border-radius:999px; background:rgba(15,23,42,.28); }
+.tabcut-video-overlay-download:hover,
+.tabcut-video-overlay-close:hover { background:rgba(15,23,42,.56); }
+.tabcut-video-overlay-download:focus-visible,
+.tabcut-video-overlay-close:focus-visible { outline:2px solid rgba(20,184,166,.8); outline-offset:2px; }
 .tabcut-video-main { min-width:0; display:flex; flex-direction:column; gap:8px; flex:1; }
 .tabcut-publish { color:#334155; font-size:12px; }
 .tabcut-stats { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px; margin-top:0; }
@@ -143,6 +181,24 @@
   .tabcut-toolbar { grid-template-columns:repeat(2, minmax(120px, 1fr)); }
   .tabcut-actions { grid-column:1 / -1; }
   .tabcut-video-grid { padding:16px; }
+}
+
+@media (max-width: 768px) {
+  .tabcut-video-overlay { align-items:stretch; padding:0; }
+  .tabcut-video-overlay-panel { width:100vw; height:100dvh; }
+  .tabcut-video-overlay-player { width:100vw; height:100dvh; max-height:none; border-radius:0; }
+  .tabcut-video-overlay-toolbar {
+    top:calc(env(safe-area-inset-top, 0px) + 10px);
+    left:calc(env(safe-area-inset-left, 0px) + 10px);
+    right:calc(env(safe-area-inset-right, 0px) + 10px);
+  }
+  .tabcut-video-overlay-info { flex-basis:auto; max-width:calc(100% - 104px); padding:8px; }
+  .tabcut-video-overlay-info.is-expanded { flex-basis:auto; max-height:min(48vh, 360px); }
+  .tabcut-video-overlay-title { font-size:12px; }
+  .tabcut-video-overlay-summary,
+  .tabcut-video-overlay-details { font-size:11px; }
+  .tabcut-video-overlay-toggle { height:22px; padding:0 7px; }
+  .tabcut-video-overlay-download span { display:none; }
 }
 
 .tabcut-fine-ai-btn {
@@ -790,6 +846,7 @@ if (window.location.hash === "#today-new") {
 {% endif %}
 let tabcutPage = 1;
 const tabcutItemsByVideoId = new Map();
+let tabcutVideoOverlayState = {videoId: "", touchStartX: null, touchStartY: null, infoExpanded: false, item: null, lastWheelAt: 0};
 const TABCUT_VIDEO_VIEWS = new Set(["videos"{% if not share_mode %}, "today_new"{% endif %}]);
 const TABCUT_VALID_VIEWS = new Set(["videos", "goods", "recommended"{% if not share_mode %}, "today_new"{% endif %}]);
 let tabcutTaskState = {
@@ -1253,6 +1310,9 @@ function renderVideoCover(row) {
   const localVideoStatus = String(row.local_video_status || "pending");
 
   const playBtn = `<button class="tabcut-video-play-btn" type="button" aria-label="播放视频"></button>`;
+  const immersiveBtn = tabcutHasReadyLocalVideo(row)
+    ? `<span class="tabcut-video-card-actions"><button class="tabcut-video-action" type="button" data-video-id="${esc(videoId)}" onclick="openTabcutVideoOverlay(event, this.dataset.videoId)" aria-label="全屏播放视频" title="全屏播放视频">${tabcutVideoIcon("expand")}</button></span>`
+    : "";
 
   const frame = `<span class="tabcut-cover-frame"
       data-video-id="${esc(videoId)}"
@@ -1266,6 +1326,7 @@ function renderVideoCover(row) {
         ${duration ? `<span class="tabcut-video-badge">${esc(duration)}</span>` : ""}
       </span>
       ${playBtn}
+      ${immersiveBtn}
     </span>`;
 
   return `<div class="tabcut-video-cover-link" style="cursor: pointer;">${frame}</div>`;
@@ -1356,6 +1417,309 @@ function tabcutHasReadyLocalVideo(row) {
   return Boolean(row && (status === "success" || status === "downloaded") && row.local_video_path);
 }
 
+function tabcutVideoIcon(name) {
+  const icons = {
+    expand: '<path d="M8 3H3v5"></path><path d="M3 3l6 6"></path><path d="M16 3h5v5"></path><path d="M21 3l-6 6"></path><path d="M8 21H3v-5"></path><path d="M3 21l6-6"></path><path d="M16 21h5v-5"></path><path d="M21 21l-6-6"></path>',
+    download: '<path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path>',
+    close: '<path d="M18 6L6 18"></path><path d="M6 6l12 12"></path>',
+  };
+  return `<svg class="tabcut-video-control-icon" viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.expand}</svg>`;
+}
+
+function tabcutLocalVideoUrl(row) {
+  const videoId = String(row && row.video_id || "").trim();
+  if (!videoId || !tabcutHasReadyLocalVideo(row)) return "";
+  return `/xuanpin/api/tabcut/videos/${encodeURIComponent(videoId)}/local-video`;
+}
+
+function tabcutVideoDownloadName(row) {
+  const rawId = String(row && row.video_id || "video").trim();
+  const safeId = rawId.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "video";
+  return `tabcut-${safeId}.mp4`;
+}
+
+function tabcutPriceText(row) {
+  row = row || {};
+  const symbol = row.currency_symbol || "$";
+  const min = Number(row.primary_item_price_min || row.price_min || 0);
+  const max = Number(row.primary_item_price_max || row.price_max || 0);
+  if (min && max && min !== max) {
+    return `${symbol}${min.toLocaleString(undefined, {maximumFractionDigits: 2})} - ${symbol}${max.toLocaleString(undefined, {maximumFractionDigits: 2})}`;
+  }
+  const price = min || max;
+  return price ? `${symbol}${price.toLocaleString(undefined, {maximumFractionDigits: 2})}` : "";
+}
+
+function tabcutCategoryText(row) {
+  row = row || {};
+  return [row.category_l1_name, row.category_l2_name, row.category_l3_name].filter(Boolean).join(" / ");
+}
+
+function tabcutOverlaySummary(row) {
+  row = row || {};
+  const parts = [];
+  const price = tabcutPriceText(row);
+  const sold = row.primary_item_sold_count || row.goods_sold_count_7d || row.item_sold_count;
+  const category = tabcutCategoryText(row);
+  const score = Number(row.score);
+  if (price) parts.push(price);
+  if (sold) parts.push(`销量 ${fmtCompact(sold)}`);
+  if (category) parts.push(category);
+  if (Number.isFinite(score) && score) parts.push(`评分 ${score.toLocaleString(undefined, {maximumFractionDigits: 1})}`);
+  return parts.slice(0, 3).join(" · ");
+}
+
+function tabcutVideoOverlayItemFromRow(row) {
+  const videoId = String(row && row.video_id || "").trim();
+  return {
+    videoId,
+    row: row || {},
+    videoSrc: tabcutLocalVideoUrl(row),
+    downloadName: tabcutVideoDownloadName(row || {video_id: videoId}),
+    title: String((row && (row.primary_item_name || row.item_name || row.video_desc || row.video_id)) || "").trim(),
+    productImageUrl: String((row && (row.primary_item_pic_url || row.item_pic_url || row.video_cover_url)) || "").trim(),
+  };
+}
+
+function ensureTabcutVideoOverlay() {
+  let overlay = qs("tabcutVideoOverlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "tabcutVideoOverlay";
+  overlay.className = "tabcut-video-overlay";
+  overlay.hidden = true;
+  overlay.addEventListener("click", handleTabcutVideoOverlayBackdropClick);
+  overlay.addEventListener("touchstart", handleTabcutVideoOverlayTouchStart, {passive: true});
+  overlay.addEventListener("touchend", handleTabcutVideoOverlayTouchEnd, {passive: true});
+  overlay.addEventListener("wheel", handleTabcutVideoOverlayWheel, {passive: false});
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function tabcutPlayableOverlayItems() {
+  return Array.from(document.querySelectorAll(".tabcut-video-card"))
+    .map(card => tabcutItemsByVideoId.get(String(card.dataset.videoId || "")))
+    .map(row => tabcutVideoOverlayItemFromRow(row))
+    .filter(item => item.videoId && item.videoSrc);
+}
+
+function tabcutAdjacentPlayableVideo(videoId, direction) {
+  const step = Number(direction || 0) > 0 ? 1 : -1;
+  const items = tabcutPlayableOverlayItems();
+  const currentIndex = items.findIndex(item => item.videoId === String(videoId || ""));
+  if (currentIndex < 0) return null;
+  const nextIndex = currentIndex + step;
+  if (nextIndex < 0 || nextIndex >= items.length) return null;
+  return items[nextIndex];
+}
+
+function tabcutOverlayDetail(label, value) {
+  const text = String(value || "").trim();
+  return text ? `<div class="tabcut-video-overlay-detail"><b>${esc(label)}</b><span>${esc(text)}</span></div>` : "";
+}
+
+function renderTabcutVideoOverlayInfo(item) {
+  const row = item && item.row ? item.row : {};
+  const expanded = Boolean(tabcutVideoOverlayState.infoExpanded);
+  const title = String((item && item.title) || row.primary_item_name || row.item_name || row.video_id || "Video").trim();
+  const summary = tabcutOverlaySummary(row);
+  const productImageUrl = String((item && item.productImageUrl) || "").trim();
+  const productId = row.primary_item_id || row.item_id;
+  const price = tabcutPriceText(row);
+  const sold = row.primary_item_sold_count || row.goods_sold_count_7d || row.item_sold_count;
+  const category = tabcutCategoryText(row);
+  const score = Number(row.score);
+  const details = [
+    tabcutOverlayDetail("商品ID", productId),
+    tabcutOverlayDetail("价格", price),
+    tabcutOverlayDetail("商品销量", sold ? fmtCompact(sold) : ""),
+    tabcutOverlayDetail("播放", row.play_count ? fmtCompact(row.play_count) : ""),
+    tabcutOverlayDetail("点赞", row.like_count ? fmtCompact(row.like_count) : ""),
+    tabcutOverlayDetail("分享", row.share_count ? fmtCompact(row.share_count) : ""),
+    tabcutOverlayDetail("评论", row.comment_count ? fmtCompact(row.comment_count) : ""),
+    tabcutOverlayDetail("类目", category),
+    tabcutOverlayDetail("发布时间", formatDateTime(row.create_time)),
+    tabcutOverlayDetail("首次发现", formatDateTime(row.first_seen_at || row.first_seen_time)),
+    tabcutOverlayDetail("评分", Number.isFinite(score) && score ? score.toLocaleString(undefined, {maximumFractionDigits: 1}) : ""),
+  ].filter(Boolean).join("");
+  const imageHtml = expanded && productImageUrl
+    ? `<img class="tabcut-video-overlay-product-image" src="${esc(productImageUrl)}" alt="" loading="lazy">`
+    : "";
+  return `<div class="tabcut-video-overlay-info${expanded ? " is-expanded" : ""}${productImageUrl ? " has-product-image" : ""}">
+    <div class="tabcut-video-overlay-info-body">
+      ${imageHtml}
+      <div>
+        <div class="tabcut-video-overlay-title">${esc(title)}</div>
+        ${summary ? `<div class="tabcut-video-overlay-summary">${esc(summary)}</div>` : ""}
+        <div class="tabcut-video-overlay-details">${details}</div>
+        <button class="tabcut-video-overlay-toggle" type="button" onclick="toggleTabcutVideoOverlayInfo(event)" aria-expanded="${expanded ? "true" : "false"}">${expanded ? "收起" : "展开"}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function updateTabcutVideoOverlayInfo() {
+  const overlay = qs("tabcutVideoOverlay");
+  const slot = overlay ? overlay.querySelector(".tabcut-video-overlay-info-slot") : null;
+  if (!slot) return;
+  slot.innerHTML = renderTabcutVideoOverlayInfo(tabcutVideoOverlayState.item);
+}
+
+function toggleTabcutVideoOverlayInfo(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  tabcutVideoOverlayState.infoExpanded = !tabcutVideoOverlayState.infoExpanded;
+  updateTabcutVideoOverlayInfo();
+}
+
+function pauseTabcutVideos() {
+  document.querySelectorAll("video").forEach(video => {
+    try { video.pause(); } catch (_) {}
+  });
+}
+
+function renderTabcutVideoOverlayPlayer(item, options = {}) {
+  const src = String(item && item.videoSrc || "").trim();
+  if (!src) return;
+  const overlay = ensureTabcutVideoOverlay();
+  const activeVideo = overlay.querySelector("video");
+  if (activeVideo) {
+    activeVideo.pause();
+    activeVideo.removeAttribute("src");
+    activeVideo.load();
+  }
+  const videoId = String(item && item.videoId || "").trim();
+  const safeDownloadName = String(item && item.downloadName || tabcutVideoDownloadName(item && item.row || {})).trim() || "tabcut-video.mp4";
+  if (options.keepInfoExpanded !== true) tabcutVideoOverlayState.infoExpanded = false;
+  tabcutVideoOverlayState.videoId = videoId;
+  tabcutVideoOverlayState.item = item || null;
+  overlay.dataset.currentVideoId = videoId;
+  overlay.innerHTML = `<div class="tabcut-video-overlay-panel" role="dialog" aria-modal="true" aria-label="全屏播放视频">
+    <div class="tabcut-video-overlay-toolbar">
+      <div class="tabcut-video-overlay-info-slot">${renderTabcutVideoOverlayInfo(item)}</div>
+      <div class="tabcut-video-overlay-actions">
+        <a class="tabcut-video-overlay-download" href="${esc(src)}" download="${esc(safeDownloadName)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" aria-label="下载视频" title="下载视频">${tabcutVideoIcon("download")}<span>下载</span></a>
+        <button class="tabcut-video-overlay-close" type="button" onclick="closeTabcutVideoOverlay(event)" aria-label="关闭全屏播放" title="关闭">${tabcutVideoIcon("close")}</button>
+      </div>
+    </div>
+    <video class="tabcut-video-overlay-player" controls autoplay playsinline preload="metadata" src="${esc(src)}"></video>
+  </div>`;
+  overlay.hidden = false;
+  document.body.classList.add("tabcut-video-overlay-open");
+  const video = overlay.querySelector("video");
+  if (video) video.play().catch(() => {});
+  if (options.focusClose === false) return;
+  const closeButton = overlay.querySelector(".tabcut-video-overlay-close");
+  if (closeButton && closeButton.focus) closeButton.focus({preventScroll: true});
+}
+
+function openTabcutVideoOverlay(event, videoId) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const id = String(videoId || "").trim();
+  if (!id) return;
+  const row = tabcutItemsByVideoId.get(id);
+  if (!tabcutHasReadyLocalVideo(row)) return;
+  const item = tabcutVideoOverlayItemFromRow(row);
+  if (!item.videoSrc) return;
+  closeTiktokBrowserModal();
+  pauseTabcutVideos();
+  renderTabcutVideoOverlayPlayer(item);
+}
+
+function switchTabcutVideoOverlay(direction) {
+  const overlay = qs("tabcutVideoOverlay");
+  if (!overlay || overlay.hidden) return;
+  const next = tabcutAdjacentPlayableVideo(tabcutVideoOverlayState.videoId, Number(direction || 0));
+  if (!next) return;
+  closeTiktokBrowserModal();
+  pauseTabcutVideos();
+  renderTabcutVideoOverlayPlayer(next, {focusClose: false, keepInfoExpanded: true});
+}
+
+function handleTabcutVideoOverlayTouchStart(event) {
+  const touch = event.touches && event.touches[0];
+  if (!touch) return;
+  tabcutVideoOverlayState.touchStartX = touch.clientX;
+  tabcutVideoOverlayState.touchStartY = touch.clientY;
+}
+
+function handleTabcutVideoOverlayTouchEnd(event) {
+  const touch = event.changedTouches && event.changedTouches[0];
+  if (!touch || tabcutVideoOverlayState.touchStartY === null) return;
+  const deltaX = touch.clientX - tabcutVideoOverlayState.touchStartX;
+  const deltaY = touch.clientY - tabcutVideoOverlayState.touchStartY;
+  tabcutVideoOverlayState.touchStartX = null;
+  tabcutVideoOverlayState.touchStartY = null;
+  if (Math.abs(deltaY) < 56 || Math.abs(deltaY) < Math.abs(deltaX) * 1.2) return;
+  switchTabcutVideoOverlay(deltaY < 0 ? 1 : -1);
+}
+
+function handleTabcutVideoOverlayWheel(event) {
+  const overlay = qs("tabcutVideoOverlay");
+  if (!overlay || overlay.hidden) return;
+  if (event.target && event.target.closest && event.target.closest(".tabcut-video-overlay-info")) return;
+  const deltaY = Number(event.deltaY || 0);
+  const deltaX = Number(event.deltaX || 0);
+  if (Math.abs(deltaY) < 48 || Math.abs(deltaY) < Math.abs(deltaX) * 1.2) return;
+  event.preventDefault();
+  const now = Date.now();
+  if (now - tabcutVideoOverlayState.lastWheelAt < 650) return;
+  tabcutVideoOverlayState.lastWheelAt = now;
+  switchTabcutVideoOverlay(deltaY > 0 ? 1 : -1);
+}
+
+function scrollTabcutVideoCardIntoView(videoId) {
+  const safeId = String(videoId || "");
+  if (!safeId) return;
+  const card = Array.from(document.querySelectorAll(".tabcut-video-card")).find(card => card.dataset.videoId === safeId);
+  if (card && card.scrollIntoView) card.scrollIntoView({behavior: 'smooth', block: 'center'});
+}
+
+function closeTabcutVideoOverlay(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  const overlay = qs("tabcutVideoOverlay");
+  if (!overlay) return;
+  const currentVideoId = String(overlay.dataset.currentVideoId || tabcutVideoOverlayState.videoId || "");
+  const video = overlay.querySelector("video");
+  if (video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+  overlay.hidden = true;
+  overlay.innerHTML = "";
+  overlay.dataset.currentVideoId = "";
+  tabcutVideoOverlayState.videoId = "";
+  tabcutVideoOverlayState.touchStartX = null;
+  tabcutVideoOverlayState.touchStartY = null;
+  tabcutVideoOverlayState.infoExpanded = false;
+  tabcutVideoOverlayState.item = null;
+  tabcutVideoOverlayState.lastWheelAt = 0;
+  document.body.classList.remove("tabcut-video-overlay-open");
+  scrollTabcutVideoCardIntoView(currentVideoId);
+}
+
+function handleTabcutVideoOverlayBackdropClick(event) {
+  if (event.target === event.currentTarget) closeTabcutVideoOverlay(event);
+}
+
+function handleTabcutVideoOverlayKey(event) {
+  if (event.key !== "Escape") return;
+  const overlay = qs("tabcutVideoOverlay");
+  if (!overlay || overlay.hidden) return;
+  closeTabcutVideoOverlay(event);
+}
+
+document.addEventListener("keydown", handleTabcutVideoOverlayKey);
+
 function tabcutLocalVideoWaitMessage(row) {
   const status = String(row && row.local_video_status || "").trim();
   return status ? `本地视频未就绪：${status}` : "本地视频未就绪，等待本地化完成";
@@ -1416,7 +1780,7 @@ function updateTabcutCardTaskButtons(videoId) {
 
 function renderVideoCard(row) {
   return `
-    <article class="tabcut-video-card">
+    <article class="tabcut-video-card" data-video-id="${esc(row.video_id || "")}">
       ${renderVideoCover(row)}
       <div class="tabcut-video-main">
       <div class="tabcut-video-author">

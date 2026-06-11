@@ -67,6 +67,22 @@ def test_tabcut_video_cards_enlarge_product_link_image_and_compact_stats():
     assert ".tabcut-product-mini img, .tabcut-product-img-empty { width:48px; height:48px;" in template
 
 
+def test_tabcut_template_contains_immersive_video_overlay_controls():
+    from pathlib import Path
+
+    template = Path("web/templates/tabcut_selection.html").read_text(encoding="utf-8")
+
+    assert "function openTabcutVideoOverlay(event, videoId)" in template
+    assert "function switchTabcutVideoOverlay(direction)" in template
+    assert "function handleTabcutVideoOverlayTouchStart(event)" in template
+    assert "function handleTabcutVideoOverlayTouchEnd(event)" in template
+    assert "function renderTabcutVideoOverlayInfo(item)" in template
+    assert "function toggleTabcutVideoOverlayInfo(event)" in template
+    assert "tabcut-video-overlay-download" in template
+    assert "tabcutVideoOverlayState.infoExpanded" in template
+    assert "scrollIntoView({behavior: 'smooth', block: 'center'})" in template
+
+
 def test_tabcut_selection_videos_api_delegates(monkeypatch, authed_client_no_db):
     from appcore.tabcut_selection.service import TabcutResponse
 

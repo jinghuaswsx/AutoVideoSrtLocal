@@ -1065,6 +1065,9 @@ def test_xuanpin_tabcut_page_uses_xuanpin_tabs_and_api(authed_client_no_db):
     assert "/tasks/api/new-product" in body
     assert "source: 'tabcut_video'" in body
     assert "renderTabcutTaskButton(row)" in body
+    assert "function openTabcutVideoOverlay(event, videoId)" in body
+    assert "tabcut-video-overlay-download" in body
+    assert "tabcutVideoOverlayState.infoExpanded" in body
 
 
 def test_xuanpin_new_products_page_uses_xuanpin_tabs_and_api(
