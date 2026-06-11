@@ -684,7 +684,7 @@
 
       text = escapeHtml(text);
       text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
-        return '<a href="' + href + '" target="_blank" style="color: #60a5fa; text-decoration: underline;">' + label + '</a>';
+        return '<a href="' + href + '" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: underline;">' + label + '</a>';
       });
       text = text.replace(/\*\*([^*]+)\*\*/g, "<strong style='color: #fbbf24;'>$1</strong>");
       
