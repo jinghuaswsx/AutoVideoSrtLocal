@@ -52,6 +52,9 @@ def build_goods_translation_response(item_id: str, *, user_id: Any = None) -> Ta
         return TabcutResponse({"ok": False, "error": "missing_item_id"}, 400)
     row = store.get_goods(normalized_id)
     if not row:
+        if store.create_goods_from_candidate(normalized_id):
+            row = store.get_goods(normalized_id)
+    if not row:
         return TabcutResponse({"ok": False, "error": "goods_not_found"}, 404)
 
     store.mark_goods_translation_running(normalized_id)

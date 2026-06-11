@@ -127,3 +127,102 @@ def test_scheduler_register_adds_goods_translation_job(monkeypatch):
     assert job_by_code["tabcut_goods_translation_tick"][1] == "goods_translation_tick_once"
     assert job_by_code["tabcut_goods_translation_tick"][2] == "interval"
     assert job_by_code["tabcut_goods_translation_tick"][3]["minutes"] == 10
+
+
+def test_build_goods_translation_response_creates_goods_if_missing(monkeypatch):
+    from appcore.tabcut_selection import service
+
+    created = []
+    goods = []
+
+    def fake_create_goods_from_candidate(item_id):
+        created.append(item_id)
+        goods.append({
+            "item_id": item_id,
+            "region": "US",
+            "item_name": "Spray Air Cushion Massage Comb",
+            "item_pic_url": "http://example.com/pic.jpg",
+            "category_name": "Beauty",
+            "category_l1_name": "Beauty",
+            "category_l2_name": None,
+            "category_l3_name": None,
+            "item_name_zh": None,
+            "item_name_zh_short": None,
+            "category_name_zh": None,
+            "category_l1_name_zh": None,
+            "category_l2_name_zh": None,
+            "category_l3_name_zh": None,
+        })
+        return True
+
+    def fake_get_goods(item_id):
+        for g in goods:
+            if g["item_id"] == item_id:
+                return g
+        return None
+
+    def fake_translate_goods_info(row, **kwargs):
+        return {
+            "item_name_zh": "气垫梳",
+            "item_name_zh_short": "气垫梳",
+            "category_name_zh": "美容个护",
+        }
+
+    monkeypatch.setattr(service.store, "get_goods", fake_get_goods)
+    monkeypatch.setattr(service.store, "create_goods_from_candidate", fake_create_goods_from_candidate)
+    monkeypatch.setattr(service.store, "mark_goods_translation_running", lambda *args, **kwargs: None)
+    monkeypatch.setattr(service.store, "finish_goods_translation", lambda *args, **kwargs: None)
+    monkeypatch.setattr(service.goods_translation, "translate_goods_info", fake_translate_goods_info)
+
+    resp = service.build_goods_translation_response("i_missing")
+    assert resp.payload["ok"] is True
+    assert resp.payload["item"]["item_name_zh_short"] == "气垫梳"
+    assert "i_missing" in created
+
+
+def test_create_goods_from_candidate_extracts_correct_fields(monkeypatch):
+    from appcore.tabcut_selection import store
+    import json
+
+    queries = []
+    executed = []
+
+    mock_candidate_json = json.dumps({
+        "itemList": [
+            {
+                "itemName": "Spray Air Cushion Massage Comb",
+                "itemCoverUrl": "http://example.com/comb.jpg"
+            }
+        ]
+    })
+
+    def fake_query(sql, params):
+        queries.append((sql, params))
+        if "FROM tabcut_video_candidates" in sql:
+            return [{
+                "region": "US",
+                "category_l1_name": "Beauty & Personal Care",
+                "category_l2_name": "Hair Care",
+                "category_l3_name": "Hair Brushes",
+                "primary_item_name": "Raw Name",
+                "video_cover_url": "http://example.com/video_cover.jpg",
+                "video_raw_json": mock_candidate_json
+            }]
+        return []
+
+    def fake_execute(sql, params):
+        executed.append((sql, params))
+
+    success = store.create_goods_from_candidate("i_test", query_fn=fake_query, execute_fn=fake_execute)
+    assert success is True
+
+    insert_sql, insert_params = executed[0]
+    assert "INSERT INTO tabcut_goods" in insert_sql
+    assert insert_params[0] == "i_test"
+    assert insert_params[1] == "US"
+    assert insert_params[2] == "Spray Air Cushion Massage Comb"
+    assert insert_params[3] == "http://example.com/comb.jpg"
+    assert insert_params[4] == "Beauty & Personal Care"
+    assert insert_params[5] == "Hair Care"
+    assert insert_params[6] == "Hair Brushes"
+

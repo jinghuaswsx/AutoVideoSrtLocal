@@ -669,6 +669,25 @@ body.tabcut-video-overlay-open { overflow:hidden; }
       height: 200px !important;
       border-radius: 12px !important;
     }
+    
+    /* Layout adjustments: put player at the very bottom, give info more space */
+    .tabcut-video-overlay-panel {
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-end !important;
+      align-items: center !important;
+    }
+    .tabcut-video-overlay-player {
+      max-height: 55vh !important;
+      width: 100% !important;
+      object-fit: contain !important;
+      margin-top: auto !important;
+      margin-bottom: 0 !important;
+    }
+    .tabcut-video-overlay-info.is-expanded {
+      max-height: 40vh !important;
+      flex-basis: min(640px, calc(100% - 104px)) !important;
+    }
   }
 {% endblock %}
 
