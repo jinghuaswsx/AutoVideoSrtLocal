@@ -1,0 +1,687 @@
+{% extends "layout.html" %}
+{% block title %}广告预警{% endblock %}
+{% block extra_style %}
+<style>
+.oc-ad-alert-page {
+  --oc-ad-alert-fg: var(--text-main, #111827);
+  --oc-ad-alert-muted: #64748b;
+  --oc-ad-alert-border: var(--border-main, #dbe4ef);
+  --oc-ad-alert-card: var(--bg-card, #fff);
+  --oc-ad-alert-subtle: #f4f8fc;
+  --oc-ad-alert-blue: #2563eb;
+  --oc-ad-alert-cyan: #0891b2;
+  --oc-ad-alert-green: #16a34a;
+  --oc-ad-alert-red: #dc2626;
+  --oc-ad-alert-orange: #ea580c;
+  --oc-ad-alert-amber: #ca8a04;
+  display: grid;
+  gap: 16px;
+  max-width: 1180px;
+}
+.oc-ad-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.oc-ad-alert-title h1 {
+  margin: 0;
+  color: var(--oc-ad-alert-fg);
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 800;
+}
+.oc-ad-alert-count {
+  color: var(--oc-ad-alert-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.oc-ad-alert-tools,
+.oc-ad-alert-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-threshold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-card);
+  color: var(--oc-ad-alert-muted);
+  font-size: 13px;
+}
+.oc-ad-alert-threshold strong {
+  color: var(--oc-ad-alert-fg);
+  font-variant-numeric: tabular-nums;
+}
+.oc-ad-alert-icon-btn,
+.oc-ad-alert-btn,
+.oc-ad-alert-filter {
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-card);
+  color: var(--oc-ad-alert-fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.oc-ad-alert-icon-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--oc-ad-alert-blue);
+}
+.oc-ad-alert-btn {
+  min-height: 34px;
+  padding: 0 12px;
+}
+.oc-ad-alert-btn-primary {
+  border-color: var(--oc-ad-alert-blue);
+  background: var(--oc-ad-alert-blue);
+  color: #fff;
+}
+.oc-ad-alert-filter-set {
+  display: inline-flex;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.oc-ad-alert-filter {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-right: 1px solid var(--oc-ad-alert-border);
+  border-radius: 0;
+  color: var(--oc-ad-alert-muted);
+}
+.oc-ad-alert-filter:last-child {
+  border-right: 0;
+}
+.oc-ad-alert-filter.oc-ad-alert-active {
+  background: var(--oc-ad-alert-blue);
+  color: #fff;
+}
+.oc-ad-alert-search {
+  width: min(360px, 100%);
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-card);
+  color: var(--oc-ad-alert-fg);
+  font: inherit;
+  font-size: 13px;
+}
+.oc-ad-alert-list {
+  display: grid;
+  gap: 10px;
+}
+.oc-ad-alert-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-card);
+  cursor: pointer;
+}
+.oc-ad-alert-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.08);
+}
+.oc-ad-alert-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.oc-ad-alert-product {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-lang {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+}
+.oc-ad-alert-name {
+  color: var(--oc-ad-alert-fg);
+  font-size: 15px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.oc-ad-alert-code,
+.oc-ad-alert-store {
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.oc-ad-alert-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.oc-ad-alert-severe {
+  background: #fef2f2;
+  color: var(--oc-ad-alert-red);
+}
+.oc-ad-alert-moderate {
+  background: #fff7ed;
+  color: var(--oc-ad-alert-orange);
+}
+.oc-ad-alert-mild {
+  background: #fffbeb;
+  color: var(--oc-ad-alert-amber);
+}
+.oc-ad-alert-metrics {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--oc-ad-alert-muted);
+  font-size: 13px;
+}
+.oc-ad-alert-metric strong {
+  color: var(--oc-ad-alert-fg);
+  font-variant-numeric: tabular-nums;
+}
+.oc-ad-alert-loss {
+  color: var(--oc-ad-alert-red);
+  font-weight: 800;
+}
+.oc-ad-alert-profit {
+  color: var(--oc-ad-alert-green);
+  font-weight: 800;
+}
+.oc-ad-alert-judgment {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--oc-ad-alert-subtle);
+  color: var(--oc-ad-alert-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.oc-ad-alert-judgment strong {
+  color: var(--oc-ad-alert-fg);
+  margin-right: 4px;
+}
+.oc-ad-alert-state {
+  padding: 44px 18px;
+  border: 1px dashed var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-card);
+  color: var(--oc-ad-alert-muted);
+  text-align: center;
+  font-size: 14px;
+}
+.oc-ad-alert-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.38);
+}
+.oc-ad-alert-modal-mask[hidden] {
+  display: none;
+}
+.oc-ad-alert-modal {
+  width: min(820px, 100%);
+  max-height: min(86vh, 760px);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  border-radius: 8px;
+  border: 1px solid var(--oc-ad-alert-border);
+  background: var(--oc-ad-alert-card);
+  box-shadow: 0 22px 70px rgba(15, 23, 42, 0.22);
+}
+.oc-ad-alert-modal-small {
+  width: min(420px, 100%);
+}
+.oc-ad-alert-modal-head,
+.oc-ad-alert-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+}
+.oc-ad-alert-modal-foot {
+  justify-content: flex-end;
+  border-top: 1px solid var(--oc-ad-alert-border);
+  border-bottom: 0;
+}
+.oc-ad-alert-modal-head h2 {
+  margin: 0;
+  color: var(--oc-ad-alert-fg);
+  font-size: 16px;
+}
+.oc-ad-alert-modal-body {
+  overflow: auto;
+  padding: 16px;
+}
+.oc-ad-alert-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.oc-ad-alert-detail-cell {
+  padding: 10px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-subtle);
+}
+.oc-ad-alert-detail-label {
+  margin-bottom: 5px;
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.oc-ad-alert-detail-value {
+  color: var(--oc-ad-alert-fg);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.oc-ad-alert-chart {
+  width: 100%;
+  overflow-x: auto;
+  margin-bottom: 14px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+.oc-ad-alert-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-card);
+  color: var(--oc-ad-alert-fg);
+  font: inherit;
+}
+@media (max-width: 760px) {
+  .oc-ad-alert-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .oc-ad-alert-card-top {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+@media (max-width: 520px) {
+  .oc-ad-alert-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .oc-ad-alert-filter-set,
+  .oc-ad-alert-search {
+    width: 100%;
+  }
+  .oc-ad-alert-filter {
+    flex: 1;
+  }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="oc-ad-alert-page" data-threshold="{{ threshold }}">
+  <div class="oc-ad-alert-head">
+    <div class="oc-ad-alert-title">
+      <h1>广告预警</h1>
+      <span class="oc-ad-alert-count" id="adAlertCount">加载中</span>
+    </div>
+    <div class="oc-ad-alert-tools">
+      <span class="oc-ad-alert-threshold">
+        ROAS 阈值 <strong id="adAlertThresholdText">{{ "%.2f"|format(threshold) }}</strong>
+        <button class="oc-ad-alert-icon-btn" type="button" id="adAlertThresholdOpen" title="修改阈值">✎</button>
+      </span>
+      <button class="oc-ad-alert-btn" type="button" id="adAlertRefresh">刷新</button>
+    </div>
+  </div>
+
+  <div class="oc-ad-alert-filters">
+    <div class="oc-ad-alert-filter-set" id="adAlertSeveritySet">
+      <button class="oc-ad-alert-filter oc-ad-alert-active" type="button" data-value="">全部</button>
+      <button class="oc-ad-alert-filter" type="button" data-value="severe">严重</button>
+      <button class="oc-ad-alert-filter" type="button" data-value="moderate">中度</button>
+      <button class="oc-ad-alert-filter" type="button" data-value="mild">轻度</button>
+    </div>
+    <input class="oc-ad-alert-search" id="adAlertSearch" type="search" placeholder="搜索商品名称或编码">
+  </div>
+
+  <div class="oc-ad-alert-list" id="adAlertList">
+    <div class="oc-ad-alert-state">加载中</div>
+  </div>
+</div>
+
+<div class="oc-ad-alert-modal-mask" id="adAlertDetailMask" hidden>
+  <div class="oc-ad-alert-modal" role="dialog" aria-modal="true" aria-labelledby="adAlertDetailTitle">
+    <div class="oc-ad-alert-modal-head">
+      <h2 id="adAlertDetailTitle">广告预警详情</h2>
+      <button class="oc-ad-alert-icon-btn" type="button" id="adAlertDetailClose" aria-label="关闭">×</button>
+    </div>
+    <div class="oc-ad-alert-modal-body" id="adAlertDetailBody">
+      <div class="oc-ad-alert-state">加载中</div>
+    </div>
+  </div>
+</div>
+
+<div class="oc-ad-alert-modal-mask" id="adAlertThresholdMask" hidden>
+  <div class="oc-ad-alert-modal oc-ad-alert-modal-small" role="dialog" aria-modal="true" aria-labelledby="adAlertThresholdTitle">
+    <div class="oc-ad-alert-modal-head">
+      <h2 id="adAlertThresholdTitle">修改 ROAS 阈值</h2>
+      <button class="oc-ad-alert-icon-btn" type="button" id="adAlertThresholdClose" aria-label="关闭">×</button>
+    </div>
+    <div class="oc-ad-alert-modal-body">
+      <input class="oc-ad-alert-input" id="adAlertThresholdInput" type="number" min="0.1" step="0.1" value="{{ "%.1f"|format(threshold) }}">
+    </div>
+    <div class="oc-ad-alert-modal-foot">
+      <button class="oc-ad-alert-btn" type="button" id="adAlertThresholdCancel">取消</button>
+      <button class="oc-ad-alert-btn oc-ad-alert-btn-primary" type="button" id="adAlertThresholdSave">保存</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var state = {
+    threshold: Number({{ threshold|tojson }}),
+    severity: '',
+    search: ''
+  };
+  var timer = null;
+  var listEl = document.getElementById('adAlertList');
+  var countEl = document.getElementById('adAlertCount');
+  var thresholdText = document.getElementById('adAlertThresholdText');
+
+  function csrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+  }
+
+  function html(value) {
+    var div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+  }
+
+  function money(value, digits) {
+    return '$' + Number(value || 0).toFixed(digits == null ? 2 : digits);
+  }
+
+  function roas(value) {
+    return value === null || value === undefined ? 'N/A' : Number(value).toFixed(2);
+  }
+
+  function loss(value) {
+    var n = Number(value || 0);
+    if (n < 0) return '<span class="oc-ad-alert-loss">-' + money(Math.abs(n), 2) + '</span>';
+    if (n > 0) return '<span class="oc-ad-alert-profit">+' + money(n, 2) + '</span>';
+    return money(0, 2);
+  }
+
+  function loadList() {
+    listEl.innerHTML = '<div class="oc-ad-alert-state">加载中</div>';
+    var params = new URLSearchParams();
+    if (state.threshold) params.set('threshold', state.threshold);
+    if (state.severity) params.set('severity', state.severity);
+    if (state.search) params.set('search', state.search);
+    fetch('/ad-alerts/api/list?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('list_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        renderList(data.items || []);
+        countEl.textContent = String(data.total || 0) + ' 条';
+      })
+      .catch(function() {
+        countEl.textContent = '加载失败';
+        listEl.innerHTML = '<div class="oc-ad-alert-state">加载失败</div>';
+      });
+  }
+
+  function renderList(items) {
+    if (!items.length) {
+      listEl.innerHTML = '<div class="oc-ad-alert-state">暂无预警</div>';
+      return;
+    }
+    listEl.innerHTML = items.map(function(item) {
+      var severity = item.severity || 'mild';
+      var trendIcon = item.trend === 'worsening' ? '↓' : (item.trend === 'improving' ? '↑' : '→');
+      var stores = (item.store_codes || []).join(' / ');
+      return ''
+        + '<button type="button" class="oc-ad-alert-card" data-product-id="' + html(item.product_id) + '" data-lang="' + html(item.lang) + '">'
+        + '  <span class="oc-ad-alert-card-top">'
+        + '    <span class="oc-ad-alert-product">'
+        + '      <span class="oc-ad-alert-lang">' + html(String(item.lang || '').toUpperCase()) + '</span>'
+        + '      <span class="oc-ad-alert-name">' + html(item.product_name || item.product_code) + '</span>'
+        + '      <span class="oc-ad-alert-code">' + html(item.product_code || '') + '</span>'
+        + '      <span class="oc-ad-alert-store">' + html(stores) + '</span>'
+        + '    </span>'
+        + '    <span class="oc-ad-alert-badge oc-ad-alert-' + html(severity) + '">' + html(item.severity_label || '') + '</span>'
+        + '  </span>'
+        + '  <span class="oc-ad-alert-metrics">'
+        + '    <span class="oc-ad-alert-metric">ROAS <strong>' + roas(item.ad_roas) + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">消耗 <strong>' + money(item.ad_spend_usd, 0) + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">活跃 <strong>' + money(item.active_7d_ad_spend_usd, 0) + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">运行 <strong>' + Number(item.active_days || 0) + ' 天</strong></span>'
+        + '    <span class="oc-ad-alert-metric">趋势 <strong>' + trendIcon + ' ' + html(item.trend_label || '') + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">预估盈亏 ' + loss(item.estimated_loss) + '</span>'
+        + '  </span>'
+        + '  <span class="oc-ad-alert-judgment"><span>⚠</span><span><strong>' + html(item.conclusion || '') + '</strong>' + html(item.reason || '') + '</span></span>'
+        + '</button>';
+    }).join('');
+  }
+
+  function openDetail(productId, lang) {
+    var mask = document.getElementById('adAlertDetailMask');
+    var body = document.getElementById('adAlertDetailBody');
+    mask.removeAttribute('hidden');
+    body.innerHTML = '<div class="oc-ad-alert-state">加载中</div>';
+    fetch('/ad-alerts/api/detail?product_id=' + encodeURIComponent(productId) + '&lang=' + encodeURIComponent(lang), {
+      headers: { 'Accept': 'application/json' }
+    })
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('detail_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        renderDetail(data.detail);
+      })
+      .catch(function() {
+        body.innerHTML = '<div class="oc-ad-alert-state">加载失败</div>';
+      });
+  }
+
+  function renderDetail(detail) {
+    var body = document.getElementById('adAlertDetailBody');
+    if (!detail) {
+      body.innerHTML = '<div class="oc-ad-alert-state">未找到数据</div>';
+      return;
+    }
+    document.getElementById('adAlertDetailTitle').textContent = (detail.lang || '').toUpperCase() + ' 广告预警详情';
+    var j = detail.judgment || {};
+    body.innerHTML = ''
+      + '<div class="oc-ad-alert-detail-grid">'
+      + detailCell('商品', detail.product_name || detail.product_code)
+      + detailCell('语言', detail.lang_label || String(detail.lang || '').toUpperCase())
+      + detailCell('ROAS', roas(detail.ad_roas))
+      + detailCell('运行天数', Number(detail.active_days || 0) + ' 天')
+      + detailCell('总消耗', money(detail.ad_spend_usd, 2))
+      + detailCell('购买价值', money(detail.purchase_value_usd, 2))
+      + detailCell('近7天活跃消耗', money(detail.active_7d_ad_spend_usd, 2))
+      + detailCell('预估盈亏', stripTags(loss(detail.estimated_loss)))
+      + '</div>'
+      + '<div class="oc-ad-alert-chart">' + renderSvg(detail.trend || []) + '</div>'
+      + '<div class="oc-ad-alert-judgment oc-ad-alert-' + html(j.severity || 'mild') + '">'
+      + '  <span>⚠</span><span><strong>' + html(j.conclusion || '') + '</strong>' + html(j.reason || '') + '</span>'
+      + '</div>';
+  }
+
+  function detailCell(label, value) {
+    return ''
+      + '<div class="oc-ad-alert-detail-cell">'
+      + '  <div class="oc-ad-alert-detail-label">' + html(label) + '</div>'
+      + '  <div class="oc-ad-alert-detail-value">' + html(value) + '</div>'
+      + '</div>';
+  }
+
+  function stripTags(value) {
+    var div = document.createElement('div');
+    div.innerHTML = value;
+    return div.textContent || div.innerText || '';
+  }
+
+  function renderSvg(points) {
+    if (!points.length) return '<div class="oc-ad-alert-state">暂无趋势数据</div>';
+    var width = Math.max(460, points.length * 34);
+    var height = 190;
+    var pad = { top: 20, right: 16, bottom: 30, left: 16 };
+    var plotW = width - pad.left - pad.right;
+    var plotH = height - pad.top - pad.bottom;
+    var max = 0;
+    points.forEach(function(p) {
+      max = Math.max(max, Number(p.spend_usd || 0), Number(p.purchase_value_usd || 0));
+    });
+    max = Math.max(max, 1);
+    function x(i) { return pad.left + (i / Math.max(points.length - 1, 1)) * plotW; }
+    function y(v) { return pad.top + plotH - (Number(v || 0) / max) * plotH; }
+    function path(key) {
+      return points.map(function(p, i) {
+        return (i ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(p[key]).toFixed(1);
+      }).join(' ');
+    }
+    var labels = points.map(function(p, i) {
+      if (i % Math.max(1, Math.ceil(points.length / 6)) !== 0 && i !== points.length - 1) return '';
+      return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + html(String(p.date || '').slice(5)) + '</text>';
+    }).join('');
+    return ''
+      + '<svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="近14天广告趋势" xmlns="http://www.w3.org/2000/svg">'
+      + '<line x1="' + pad.left + '" y1="' + (height - pad.bottom) + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '" stroke="#cbd5e1" />'
+      + '<path d="' + path('spend_usd') + '" fill="none" stroke="#2563eb" stroke-width="2.5" />'
+      + '<path d="' + path('purchase_value_usd') + '" fill="none" stroke="#16a34a" stroke-width="2.5" />'
+      + '<text x="' + (width - pad.right) + '" y="14" text-anchor="end" font-size="11" fill="#2563eb">花费</text>'
+      + '<text x="' + (width - pad.right - 42) + '" y="14" text-anchor="end" font-size="11" fill="#16a34a">购买</text>'
+      + labels
+      + '</svg>';
+  }
+
+  listEl.addEventListener('click', function(event) {
+    var card = event.target.closest('.oc-ad-alert-card');
+    if (!card) return;
+    openDetail(card.getAttribute('data-product-id'), card.getAttribute('data-lang'));
+  });
+
+  document.getElementById('adAlertSeveritySet').addEventListener('click', function(event) {
+    var btn = event.target.closest('.oc-ad-alert-filter');
+    if (!btn) return;
+    Array.prototype.forEach.call(this.querySelectorAll('.oc-ad-alert-filter'), function(item) {
+      item.classList.remove('oc-ad-alert-active');
+    });
+    btn.classList.add('oc-ad-alert-active');
+    state.severity = btn.getAttribute('data-value') || '';
+    loadList();
+  });
+
+  document.getElementById('adAlertSearch').addEventListener('input', function() {
+    var value = this.value.trim();
+    window.clearTimeout(timer);
+    timer = window.setTimeout(function() {
+      state.search = value;
+      loadList();
+    }, 260);
+  });
+
+  document.getElementById('adAlertRefresh').addEventListener('click', loadList);
+
+  function closeMask(id) {
+    document.getElementById(id).setAttribute('hidden', '');
+  }
+
+  document.getElementById('adAlertDetailClose').addEventListener('click', function() {
+    closeMask('adAlertDetailMask');
+  });
+  document.getElementById('adAlertDetailMask').addEventListener('click', function(event) {
+    if (event.target === this) closeMask('adAlertDetailMask');
+  });
+
+  document.getElementById('adAlertThresholdOpen').addEventListener('click', function() {
+    document.getElementById('adAlertThresholdInput').value = Number(state.threshold || 1.5).toFixed(1);
+    document.getElementById('adAlertThresholdMask').removeAttribute('hidden');
+  });
+  document.getElementById('adAlertThresholdClose').addEventListener('click', function() {
+    closeMask('adAlertThresholdMask');
+  });
+  document.getElementById('adAlertThresholdCancel').addEventListener('click', function() {
+    closeMask('adAlertThresholdMask');
+  });
+  document.getElementById('adAlertThresholdSave').addEventListener('click', function() {
+    var value = Number(document.getElementById('adAlertThresholdInput').value);
+    if (!value || value <= 0) return;
+    fetch('/ad-alerts/api/threshold', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRFToken': csrfToken()
+      },
+      body: JSON.stringify({ threshold: value })
+    })
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('threshold_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        state.threshold = Number(data.threshold || value);
+        thresholdText.textContent = state.threshold.toFixed(2);
+        closeMask('adAlertThresholdMask');
+        loadList();
+      });
+  });
+
+  loadList();
+})();
+</script>
+{% endblock %}
