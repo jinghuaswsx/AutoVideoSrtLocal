@@ -1355,6 +1355,7 @@
 
     const buttons = [
       `<span class="oc-vm-page-summary">第 ${page} / ${totalPages} 页 · 每页 ${state.pageSize} 条 · 共 <span style="font-size: 26px; color: #2563eb; font-weight: 700; margin: 0 4px;">${state.total}</span> 条数据</span>`,
+      `<button type="button" data-page="1"${firstDisabled}>首页</button>`,
       `<button type="button" data-page="${Math.max(1, page - 1)}"${firstDisabled}>上一页</button>`
     ];
 
@@ -1372,6 +1373,7 @@
     }
 
     buttons.push(`<button type="button" data-page="${Math.min(totalPages, page + 1)}"${lastDisabled}>下一页</button>`);
+    buttons.push(`<button type="button" data-page="${totalPages}"${lastDisabled}>末页</button>`);
     buttons.push(`
       <label class="oc-vm-page-jump">
         <span>去</span>
