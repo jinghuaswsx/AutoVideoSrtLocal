@@ -95,6 +95,10 @@
       weak_country_retest: '弱国复测',
       hold: '暂缓',
       investigate: '排查',
+      expand: '扩展投放',
+      supplement: '补充素材',
+      retest: '重新测试',
+      skip: '跳过',
     };
     return map[action] || action || '—';
   }
@@ -1180,6 +1184,8 @@
             <p class="aims-rec">${esc(ai.overall_judgement || '')}</p>
             ${debugBadge}
             <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskCountLink(item, productIndex)}</div>
+            ${renderCountryReviews(item)}
+            ${renderMarketExpansion(item)}
             <div class="aims-material-grid">${materials.map((material, materialIndex) => renderMaterial(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:48px;">暂无明空候选</div>'}</div>
           </div>
           <div class="aims-band">
@@ -1201,6 +1207,88 @@
           const label = action.duplicate_suppressed ? '已有任务' : actionLabel(action.action);
           return `<span class="aims-chip">${esc(action.country_code || action.lang)} · ${esc(label)}</span>${task ? renderTaskLink(task, false) : ''}`;
         }).join('')}
+      </div>
+    `;
+  }
+
+  function countryDecisionBadge(decision) {
+    const cls = decision === '通过' ? 'pass' : decision === '条件通过' ? 'conditional' : 'fail';
+    return `<span class="aims-country-decision ${cls}">${esc(decision)}</span>`;
+  }
+
+  function countryActionBadge(action) {
+    const clsMap = { expand: 'expand', supplement: 'supplement', retest: 'retest', hold: 'hold', skip: 'skip' };
+    const cls = clsMap[action] || '';
+    return `<span class="aims-country-action-badge ${cls}">${esc(actionLabel(action))}</span>`;
+  }
+
+  function renderCountryReviews(item) {
+    const reviews = item.country_reviews || {};
+    const codes = Object.keys(reviews);
+    if (!codes.length) return '';
+    const cards = codes.map((code) => {
+      const r = reviews[code];
+      const sb = r.score_breakdown || {};
+      const globalH = sb.global_product_history || {};
+      const countryP = sb.country_performance || {};
+      const materialO = sb.material_supplement_opportunity || {};
+      const reason = r.analysis_reason || {};
+      const recAction = (r.recommended_action || {}).action || '';
+      return `
+        <div class="aims-country-review-card">
+          <div class="aims-country-review-header">
+            <strong class="aims-country-review-code">${esc(code)}</strong>
+            ${countryDecisionBadge(r.final_decision || '—')}
+            <span class="aims-country-review-score">${fmtNumber(r.quality_score)}/100</span>
+            ${countryActionBadge(recAction)}
+          </div>
+          <div class="aims-country-review-scores">
+            <div class="aims-country-review-dim">
+              <span>全局历史</span>
+              <span class="aims-country-review-dim-score">${globalH.score ?? '—'}/${globalH.max_score || 40}</span>
+            </div>
+            <div class="aims-country-review-dim">
+              <span>该国表现</span>
+              <span class="aims-country-review-dim-score">${countryP.score ?? '—'}/${countryP.max_score || 40}</span>
+            </div>
+            <div class="aims-country-review-dim">
+              <span>素材空间</span>
+              <span class="aims-country-review-dim-score">${materialO.score ?? '—'}/${materialO.max_score || 20}</span>
+            </div>
+          </div>
+          <div class="aims-country-review-reason">${esc(reason.final_judgment_reason || '')}</div>
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="aims-country-reviews-section">
+        <div class="aims-band-title" style="margin-bottom:8px;">🌍 逐国AI评估</div>
+        <div class="aims-country-reviews-grid">${cards}</div>
+      </div>
+    `;
+  }
+
+  function renderMarketExpansion(item) {
+    const expansions = item.market_expansion || [];
+    if (!expansions.length) return '';
+    const cards = expansions.map((exp) => {
+      const source = (exp.source_countries || []).join(', ');
+      const target = (exp.target_countries || []).join(', ');
+      const prCls = String(exp.priority || '').toLowerCase();
+      return `
+        <div class="aims-expansion-card">
+          <div class="aims-expansion-header">
+            <span class="aims-chip ${prCls}">${esc(exp.priority || 'P3')}</span>
+            ${source ? `<span class="aims-expansion-flow"><strong>${esc(source)}</strong> → <strong>${esc(target || '—')}</strong></span>` : ''}
+          </div>
+          <div class="aims-expansion-reason">${esc(exp.reason || '')}</div>
+        </div>
+      `;
+    }).join('');
+    return `
+      <div class="aims-expansion-section">
+        <div class="aims-band-title" style="margin-bottom:8px;">📈 市场扩展建议</div>
+        ${cards}
       </div>
     `;
   }

@@ -2689,7 +2689,8 @@ def _load_project_product_rows(project_id: int) -> list[dict]:
         """
         SELECT id, project_id, rank_no, product_id, product_code, product_name, score,
                metrics_json, country_summary_json, local_materials_json,
-               mingkong_materials_json, ai_result_json, action_items_json,
+               mingkong_materials_json, ai_result_json, country_reviews_json,
+               market_expansion_json, action_items_json,
                created_at, updated_at
         FROM ad_material_ai_analysis_product_results
         WHERE project_id = %s
@@ -2718,8 +2719,9 @@ def _upsert_product_result(project_id: int, item: Mapping[str, Any]) -> None:
         INSERT INTO ad_material_ai_analysis_product_results
           (project_id, rank_no, product_id, product_code, product_name, score,
            metrics_json, country_summary_json, local_materials_json,
-           mingkong_materials_json, ai_result_json, action_items_json)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           mingkong_materials_json, ai_result_json, country_reviews_json,
+           market_expansion_json, action_items_json)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           rank_no = VALUES(rank_no),
           product_code = VALUES(product_code),
@@ -2730,6 +2732,8 @@ def _upsert_product_result(project_id: int, item: Mapping[str, Any]) -> None:
           local_materials_json = VALUES(local_materials_json),
           mingkong_materials_json = VALUES(mingkong_materials_json),
           ai_result_json = VALUES(ai_result_json),
+          country_reviews_json = VALUES(country_reviews_json),
+          market_expansion_json = VALUES(market_expansion_json),
           action_items_json = VALUES(action_items_json),
           updated_at = NOW()
         """,
@@ -2745,6 +2749,8 @@ def _upsert_product_result(project_id: int, item: Mapping[str, Any]) -> None:
             _json_dumps(item["local_materials"]),
             _json_dumps(item["mingkong_materials"]),
             _json_dumps(item["ai_result"]),
+            _json_dumps(item.get("country_reviews") or {}),
+            _json_dumps(item.get("market_expansion") or []),
             _json_dumps(item["action_items"]),
         ),
     )
@@ -3008,6 +3014,35 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
             )
             ai_result = _decorate_ai_result_with_tasks(ai_result, countries, task_assignments)
             action_items = _build_action_items(product, ai_result, mk_materials, countries)
+
+            # --- 逐国独立评估 ---
+            countries_by_code = {
+                _normalize_country_code(c.get("country_code"), lang=c.get("lang")): c
+                for c in countries
+            }
+            country_reviews: dict[str, dict] = {}
+            for eval_country in TARGET_EVAL_COUNTRIES:
+                cc = eval_country["country_code"]
+                country_data = countries_by_code.get(cc, {})
+                country_lang = eval_country.get("lang", "")
+                country_materials_for_lang = [
+                    m for m in local_materials
+                    if str(m.get("lang") or "").lower() == country_lang
+                ]
+                country_tasks_for_cc = [
+                    t for t in task_assignments
+                    if _normalize_country_code(t.get("country_code"), lang=t.get("lang")) == cc
+                ]
+                review = _run_country_review(
+                    product, eval_country, country_data,
+                    country_materials_for_lang, mk_materials, country_tasks_for_cc,
+                    project_id=project_id, user_id=user_id, run_ai=run_ai,
+                )
+                country_reviews[cc] = review
+            market_expansion = _build_market_expansion_recommendations(
+                product, country_reviews, countries,
+            )
+
             results.append({
                 "rank_no": rank_no,
                 "product": product,
@@ -3015,6 +3050,8 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 "local_materials": local_materials,
                 "mingkong_materials": mk_materials,
                 "ai_result": ai_result,
+                "country_reviews": country_reviews,
+                "market_expansion": market_expansion,
                 "action_items": action_items,
             })
             _upsert_product_result(project_id, results[-1])
@@ -3314,6 +3351,8 @@ def _serialize_product_result(row: Mapping[str, Any]) -> dict:
         "local_materials": _json_loads(row.get("local_materials_json"), []) or [],
         "mingkong_materials": mingkong_materials,
         "ai_result": _json_loads(row.get("ai_result_json"), {}) or {},
+        "country_reviews": _json_loads(row.get("country_reviews_json"), {}) or {},
+        "market_expansion": _json_loads(row.get("market_expansion_json"), []) or [],
         "action_items": action_items,
         "created_at": _iso(row.get("created_at")),
         "updated_at": _iso(row.get("updated_at")),
@@ -3330,3 +3369,659 @@ def build_preview() -> dict:
         "eligible_count": len(score_product_rows(snapshot["products"], limit=100000)),
         "top_candidates": [_rank_input(item) for item in candidates],
     }
+
+
+# ---------------------------------------------------------------------------
+# 多国独立评估（Country-level review）
+# ---------------------------------------------------------------------------
+
+COUNTRY_REVIEW_USE_CASE = "medias.ad_material_ai_analysis_country_review"
+
+# 5个目标评估国家（不包含 EN 源语言）
+TARGET_EVAL_COUNTRIES: tuple[dict[str, str], ...] = (
+    {"country_code": "DE", "country_name": "德国", "lang": "de", "lang_name": "德语"},
+    {"country_code": "FR", "country_name": "法国", "lang": "fr", "lang_name": "法语"},
+    {"country_code": "IT", "country_name": "意大利", "lang": "it", "lang_name": "意大利语"},
+    {"country_code": "ES", "country_name": "西班牙", "lang": "es", "lang_name": "西班牙语"},
+    {"country_code": "JP", "country_name": "日本", "lang": "ja", "lang_name": "日语"},
+)
+
+COUNTRY_REVIEW_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "country_code": {"type": "string"},
+        "final_decision": {"type": "string", "enum": ["通过", "条件通过", "不通过"]},
+        "quality_score": {"type": "integer"},
+        "score_breakdown": {
+            "type": "object",
+            "properties": {
+                "global_product_history": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": ["integer", "null"]},
+                        "max_score": {"type": "integer"},
+                        "included": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["score", "max_score", "included", "reason"],
+                },
+                "country_performance": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": ["integer", "null"]},
+                        "max_score": {"type": "integer"},
+                        "included": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                        "sub_scores": {
+                            "type": "object",
+                            "properties": {
+                                "country_spend_and_roas": {"type": ["integer", "null"]},
+                                "country_material_coverage": {"type": ["integer", "null"]},
+                            },
+                            "required": ["country_spend_and_roas", "country_material_coverage"],
+                        },
+                    },
+                    "required": ["score", "max_score", "included", "reason", "sub_scores"],
+                },
+                "material_supplement_opportunity": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": ["integer", "null"]},
+                        "max_score": {"type": "integer"},
+                        "included": {"type": "boolean"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["score", "max_score", "included", "reason"],
+                },
+            },
+            "required": ["global_product_history", "country_performance", "material_supplement_opportunity"],
+        },
+        "analysis_reason": {
+            "type": "object",
+            "properties": {
+                "global_history_analysis": {"type": "string"},
+                "country_performance_analysis": {"type": "string"},
+                "material_opportunity_analysis": {"type": "string"},
+                "final_judgment_reason": {"type": "string"},
+            },
+            "required": [
+                "global_history_analysis",
+                "country_performance_analysis",
+                "material_opportunity_analysis",
+                "final_judgment_reason",
+            ],
+        },
+        "recommended_action": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["expand", "supplement", "retest", "hold", "skip"],
+                },
+                "reason": {"type": "string"},
+            },
+            "required": ["action", "reason"],
+        },
+    },
+    "required": [
+        "country_code",
+        "final_decision",
+        "quality_score",
+        "score_breakdown",
+        "analysis_reason",
+        "recommended_action",
+    ],
+}
+
+
+def _build_country_review_input(
+    product: Mapping[str, Any],
+    country_info: Mapping[str, Any],
+    country_summary: Mapping[str, Any],
+    country_materials: list[dict],
+    mk_materials: list[dict],
+    country_tasks: list[dict],
+) -> dict[str, Any]:
+    """为单个产品×单个国家构建 LLM 评估输入。"""
+    country_code = country_info.get("country_code", "")
+    lang = country_info.get("lang", "")
+
+    # Global product history
+    product_global = {
+        "product_id": product.get("product_id"),
+        "product_code": product.get("product_code") or "",
+        "product_name": product.get("product_name") or "",
+        "effective_breakeven_roas": product.get("effective_breakeven_roas"),
+        "cached_overall_roas": product.get("cached_overall_roas"),
+        "cached_ad_spend_usd": product.get("cached_ad_spend_usd"),
+        "cached_active_7d_ad_spend_usd": product.get("cached_active_7d_ad_spend_usd"),
+        "delivery_status": product.get("delivery_status") or "never",
+        "spend_30d": product.get("spend_30d"),
+        "spend_7d": product.get("spend_7d"),
+        "spend_yesterday": product.get("spend_yesterday"),
+        "orders_30d": product.get("orders_30d"),
+        "orders_7d": product.get("orders_7d"),
+        "revenue_30d": product.get("revenue_30d"),
+        "profit_30d": product.get("profit_30d"),
+        "true_roas_30d": product.get("true_roas_30d"),
+        "meta_roas_30d": product.get("meta_roas_30d"),
+        "local_material_count": product.get("local_material_count"),
+        "local_material_langs": product.get("local_material_langs"),
+    }
+
+    # Country-specific performance
+    country_performance = {
+        "country_code": country_code,
+        "country_name": country_info.get("country_name", ""),
+        "lang": lang,
+        "lang_name": country_info.get("lang_name", ""),
+        "ad_spend_usd": _safe_float(country_summary.get("ad_spend_usd")),
+        "purchase_value_usd": _safe_float(country_summary.get("purchase_value_usd")),
+        "ad_roas": country_summary.get("ad_roas"),
+        "active_7d_ad_spend_usd": _safe_float(country_summary.get("active_7d_ad_spend_usd")),
+        "item_count": _safe_int(country_summary.get("item_count")),
+        "pushed_video_count": _safe_int(country_summary.get("pushed_video_count")),
+        "delivery_status": country_summary.get("delivery_status") or "never",
+    }
+
+    # Materials in this language
+    material_info = {
+        "local_materials_count": len(country_materials),
+        "local_materials": [
+            {
+                "id": m.get("id"),
+                "filename": m.get("filename") or m.get("display_name") or "",
+                "push_count": _safe_int(m.get("push_count")),
+                "created_at": m.get("created_at"),
+            }
+            for m in country_materials[:5]
+        ],
+        "mingkong_available_count": len(mk_materials),
+        "mingkong_top_materials": [
+            {
+                "material_key": m.get("material_key") or "",
+                "video_name": m.get("video_name") or "",
+                "cumulative_90_spend": _safe_float(m.get("cumulative_90_spend")),
+                "video_ads_count": _safe_int(m.get("video_ads_count")),
+            }
+            for m in mk_materials[:3]
+        ],
+    }
+
+    # Tasks for this country
+    task_info = {
+        "total_tasks": len(country_tasks),
+        "tasks": [
+            {
+                "task_id": t.get("task_id"),
+                "status_group": t.get("status_group"),
+                "status_label": t.get("status_label"),
+                "created_at": t.get("created_at"),
+            }
+            for t in country_tasks[:5]
+        ],
+        "has_blocking_task": any(_task_blocks_recommendation(t) for t in country_tasks),
+    }
+
+    return {
+        "current_date": date.today().isoformat(),
+        "target_country": {
+            "country_code": country_code,
+            "country_name": country_info.get("country_name", ""),
+            "lang": lang,
+            "lang_name": country_info.get("lang_name", ""),
+        },
+        "product_global": product_global,
+        "country_performance": country_performance,
+        "available_materials": material_info,
+        "existing_tasks": task_info,
+    }
+
+
+def _country_review_prompt(payload: dict, country_info: Mapping[str, Any]) -> str:
+    """生成单个国家的投放素材评估提示词。"""
+    country_name = country_info.get("country_name", "")
+    lang_name = country_info.get("lang_name", "")
+    country_code = country_info.get("country_code", "")
+
+    rules = f"""你是 Facebook 信息流广告投放的业务评审员，负责评估一个产品在 {country_name}（{lang_name}）市场的素材补充价值。
+
+评估维度和权重：
+1. 商品全局历史（40 分）— 产品整体投放验证程度
+2. 该国投放表现（40 分）— 产品在{country_name}的具体表现
+3. 素材补充空间（20 分）— {country_name}市场可执行的素材补充机会
+
+输出必须是严格 JSON，不要 Markdown，不要代码块，不要自然语言说明。
+
+---
+
+## 输入数据说明
+
+- `current_date`：评审当天日期
+- `target_country`：本次评估的目标国家信息
+- `product_global`：产品全局投放数据（所有国家汇总）
+- `country_performance`：产品在{country_name}的投放表现
+- `available_materials`：可用素材（本地已有 + 明空可用）
+- `existing_tasks`：{country_name}已有的任务排程
+
+---
+
+## 一、最终判断规则
+
+`final_decision` 只能是：通过、条件通过、不通过。
+
+### 给「通过」的情况
+- 商品全局历史强（累计消耗高、overall_roas 高于保本、active_days 长）
+- 该国已有投放且 ROAS 健康（ad_roas >= effective_breakeven_roas 或近 7 天仍有消耗）
+- 有素材补充空间（该国素材数少或明空有可用新素材）
+- 没有阻塞任务
+
+### 给「条件通过」的情况
+- 商品全局历史强，但该国尚未投放或投放很少
+- 该国有投放但 ROAS 偏低，需要新素材验证
+- 有素材补充空间但不确定性较大
+- 已有任务在进行中，建议等任务完成后再决定
+
+### 给「不通过」的情况
+- 商品全局历史弱（消耗少、ROAS 低于保本、验证不充分）
+- 该国投放历史差且没有合理改善方向
+- 已有多个阻塞任务且无新素材可补
+- 该国市场与产品类别不匹配
+
+---
+
+## 二、评分规则
+
+### 1. 商品全局历史（40 分）
+
+重点看 `product_global` 中的：
+- `cached_ad_spend_usd`：全局累计消耗
+- `cached_overall_roas`：全局整体 ROAS
+- `effective_breakeven_roas`：保本 ROAS
+- `cached_active_7d_ad_spend_usd`：近 7 天全局消耗
+- `spend_30d`、`orders_30d`、`revenue_30d`、`profit_30d`：30 天窗口数据
+- `true_roas_30d`：30 天真实 ROAS
+
+判断规则：
+- 累计消耗高、overall_roas 高于保本、近 7 天仍有消耗 → 35-40 分
+- 累计消耗中等、ROAS 健康但近期变弱 → 25-34 分
+- 累计消耗少、ROAS 一般 → 15-24 分
+- 几乎无投放验证 → 0-14 分
+
+### 2. 该国投放表现（40 分）
+
+拆分为：
+- 该国消耗和 ROAS（25 分）
+- 该国素材覆盖（15 分）
+
+看 `country_performance` 中的：
+- `ad_spend_usd`：该国累计广告消耗
+- `ad_roas`：该国 ROAS
+- `active_7d_ad_spend_usd`：该国近 7 天消耗
+- `item_count`：该国已有素材数
+- `pushed_video_count`：该国已推送视频数
+- `delivery_status`：该国投放状态（active/stopped/never）
+
+判断规则：
+- `delivery_status=active` 且 `ad_roas >= effective_breakeven_roas` → 高分
+- `delivery_status=active` 但 `ad_roas` 低于保本 → 中等分
+- `delivery_status=stopped`（曾投放但已停） → 需看历史消耗大小
+- `delivery_status=never`（从未在该国投放） → 该国消耗和 ROAS 给 0 分，但素材覆盖可加分
+
+如果 `delivery_status=never`：
+- `country_spend_and_roas` 给 0 分，`included` 设为 false，reason 写"该国尚未投放"
+- `country_material_coverage` 正常评分
+
+### 3. 素材补充空间（20 分）
+
+看 `available_materials` 和 `existing_tasks`：
+- 该国本地素材数少（item_count <= 2）且明空有可用素材 → 15-20 分
+- 该国本地素材数中等且明空有可用素材 → 10-14 分
+- 该国本地素材数充足 → 5-9 分
+- 已有阻塞任务在进行中 → 降低评分
+- 没有任何可用素材来源 → 0-4 分
+
+---
+
+## 三、recommended_action 规则
+
+- `expand`：该国从未投放，但商品全局强，建议扩展到该国
+- `supplement`：该国已在投放，素材可补充
+- `retest`：该国曾投放但已停，值得用新素材重试
+- `hold`：有阻塞任务或需等待数据
+- `skip`：商品或该国条件不足，不建议当前投入
+
+---
+
+## 四、缺失数据处理
+
+如果 `country_performance` 中 `delivery_status=never`（从未在该国投放）：
+- `country_performance.score` 正常评分（素材覆盖部分仍可评），`country_spend_and_roas` 设为 0
+- 不要把从未投放等同于表现差，它只是没有数据
+- 从未投放 + 商品全局强 = 扩展机会
+
+---
+
+## 五、输出 JSON Schema
+
+严格按下面字段输出，不要增删字段：
+
+{{
+  "country_code": "{country_code}",
+  "final_decision": "通过 | 条件通过 | 不通过",
+  "quality_score": 0,
+  "score_breakdown": {{
+    "global_product_history": {{
+      "score": 0,
+      "max_score": 40,
+      "included": true,
+      "reason": ""
+    }},
+    "country_performance": {{
+      "score": 0,
+      "max_score": 40,
+      "included": true,
+      "reason": "",
+      "sub_scores": {{
+        "country_spend_and_roas": 0,
+        "country_material_coverage": 0
+      }}
+    }},
+    "material_supplement_opportunity": {{
+      "score": 0,
+      "max_score": 20,
+      "included": true,
+      "reason": ""
+    }}
+  }},
+  "analysis_reason": {{
+    "global_history_analysis": "",
+    "country_performance_analysis": "",
+    "material_opportunity_analysis": "",
+    "final_judgment_reason": ""
+  }},
+  "recommended_action": {{
+    "action": "expand | supplement | retest | hold | skip",
+    "reason": ""
+  }}
+}}
+
+字段约束：
+- quality_score 为 0-100 整数
+- analysis_reason 中各分析字段必须用中文
+- final_judgment_reason 只解释判断原因，不要写上线、投放、测试建议""".strip()
+    return f"{rules}\n\n输入 JSON：\n{_json_dumps(payload)}"
+
+
+def _fallback_country_review(
+    product: Mapping[str, Any],
+    country_info: Mapping[str, Any],
+    country_summary: Mapping[str, Any],
+    country_tasks: list[dict],
+) -> dict[str, Any]:
+    """无 LLM 时的确定性兜底逐国评估。"""
+    country_code = country_info.get("country_code", "")
+    base_roas = _safe_float(product.get("effective_breakeven_roas"))
+    spend30 = _safe_float(product.get("spend_30d"))
+    overall_roas = _safe_float(product.get("cached_overall_roas"))
+
+    # Global product history score (out of 40)
+    if spend30 >= 300 and (base_roas <= 0 or overall_roas >= base_roas):
+        global_score = 35
+    elif spend30 >= 100:
+        global_score = 25
+    elif spend30 >= 50:
+        global_score = 18
+    else:
+        global_score = 8
+
+    # Country performance score (out of 40)
+    country_spend = _safe_float(country_summary.get("ad_spend_usd"))
+    country_roas = country_summary.get("ad_roas")
+    country_7d = _safe_float(country_summary.get("active_7d_ad_spend_usd"))
+    delivery_status = country_summary.get("delivery_status") or "never"
+    item_count = _safe_int(country_summary.get("item_count"))
+
+    if delivery_status == "active" and country_roas is not None and (base_roas <= 0 or _safe_float(country_roas) >= base_roas):
+        spend_roas_score = 22
+    elif delivery_status == "active":
+        spend_roas_score = 14
+    elif delivery_status == "stopped" and country_spend >= 50:
+        spend_roas_score = 8
+    else:
+        spend_roas_score = 0
+
+    if item_count >= 5:
+        material_coverage_score = 12
+    elif item_count >= 2:
+        material_coverage_score = 8
+    elif item_count >= 1:
+        material_coverage_score = 5
+    else:
+        material_coverage_score = 0
+
+    country_score = spend_roas_score + material_coverage_score
+
+    # Material supplement opportunity (out of 20)
+    has_blocking = any(_task_blocks_recommendation(t) for t in country_tasks)
+    if has_blocking:
+        supplement_score = 5
+    elif item_count <= 1:
+        supplement_score = 18
+    elif item_count <= 3:
+        supplement_score = 14
+    else:
+        supplement_score = 8
+
+    total = global_score + country_score + supplement_score
+    quality = int(round(total / 100 * 100))
+
+    if total >= 70:
+        decision = "通过"
+    elif total >= 45:
+        decision = "条件通过"
+    else:
+        decision = "不通过"
+
+    if delivery_status == "never" and global_score >= 25:
+        action = "expand"
+    elif delivery_status == "active":
+        action = "supplement"
+    elif delivery_status == "stopped":
+        action = "retest"
+    elif has_blocking:
+        action = "hold"
+    else:
+        action = "skip"
+
+    return {
+        "country_code": country_code,
+        "final_decision": decision,
+        "quality_score": quality,
+        "score_breakdown": {
+            "global_product_history": {
+                "score": global_score,
+                "max_score": 40,
+                "included": True,
+                "reason": f"商品全局30天消耗 {spend30:.2f}，overall ROAS {overall_roas}，保本ROAS {base_roas}。",
+            },
+            "country_performance": {
+                "score": country_score,
+                "max_score": 40,
+                "included": delivery_status != "never",
+                "reason": f"{country_info.get('country_name', '')}投放状态 {delivery_status}，累计消耗 {country_spend:.2f}，ROAS {country_roas}，素材数 {item_count}。",
+                "sub_scores": {
+                    "country_spend_and_roas": spend_roas_score,
+                    "country_material_coverage": material_coverage_score,
+                },
+            },
+            "material_supplement_opportunity": {
+                "score": supplement_score,
+                "max_score": 20,
+                "included": True,
+                "reason": f"该国素材数 {item_count}，{'有阻塞任务' if has_blocking else '无阻塞任务'}。",
+            },
+        },
+        "analysis_reason": {
+            "global_history_analysis": f"商品全局30天消耗 {spend30:.2f} USD，overall ROAS {overall_roas}。",
+            "country_performance_analysis": f"{country_info.get('country_name', '')}投放状态为 {delivery_status}，累计消耗 {country_spend:.2f} USD。",
+            "material_opportunity_analysis": f"该国本地素材 {item_count} 个。",
+            "final_judgment_reason": f"综合评估后判断为{decision}。",
+        },
+        "recommended_action": {
+            "action": action,
+            "reason": "基于确定性评估的建议操作。",
+        },
+        "mode": "deterministic_fallback",
+    }
+
+
+def _run_country_review(
+    product: Mapping[str, Any],
+    country_info: Mapping[str, Any],
+    country_summary: Mapping[str, Any],
+    country_materials: list[dict],
+    mk_materials: list[dict],
+    country_tasks: list[dict],
+    *,
+    project_id: int,
+    user_id: int | None,
+    run_ai: bool,
+) -> dict[str, Any]:
+    """对单个产品×单个国家执行 LLM 评估。"""
+    country_code = country_info.get("country_code", "")
+    fallback = _fallback_country_review(product, country_info, country_summary, country_tasks)
+
+    if not run_ai:
+        return fallback
+
+    review_input = _build_country_review_input(
+        product, country_info, country_summary, country_materials, mk_materials, country_tasks,
+    )
+
+    try:
+        result = llm_client.invoke_generate(
+            COUNTRY_REVIEW_USE_CASE,
+            prompt=_country_review_prompt(review_input, country_info),
+            user_id=user_id,
+            project_id=str(project_id),
+            response_schema=COUNTRY_REVIEW_RESPONSE_SCHEMA,
+            temperature=0.2,
+            max_output_tokens=4096,
+            provider_override=PROVIDER_CODE,
+            model_override=MODEL_ID,
+            billing_extra={
+                "stage": "country_review",
+                "product_id": product.get("product_id"),
+                "country_code": country_code,
+            },
+            timeout_seconds=120,
+        )
+        parsed = _llm_json(result)
+        if not parsed:
+            fallback["ai_error"] = "empty model response"
+            return fallback
+        parsed["mode"] = "ai"
+        parsed.setdefault("country_code", country_code)
+        return parsed
+    except Exception as exc:
+        log.exception(
+            "Country review failed product_id=%s country=%s",
+            product.get("product_id"), country_code,
+        )
+        fallback["ai_error"] = str(exc)
+        return fallback
+
+
+def _build_market_expansion_recommendations(
+    product: Mapping[str, Any],
+    country_reviews: dict[str, dict],
+    countries: list[dict],
+) -> list[dict]:
+    """基于各国评估结果，生成市场扩展建议（规则驱动，不需 LLM）。"""
+    base_roas = _safe_float(product.get("effective_breakeven_roas"))
+
+    # Classify countries by strength
+    strong_countries: list[dict] = []
+    weak_countries: list[dict] = []
+    never_countries: list[dict] = []
+
+    countries_by_code: dict[str, dict] = {
+        _normalize_country_code(c.get("country_code"), lang=c.get("lang")): c
+        for c in countries
+    }
+
+    for code, review in country_reviews.items():
+        country_data = countries_by_code.get(code, {})
+        delivery_status = country_data.get("delivery_status") or "never"
+        score = _safe_int(review.get("quality_score"))
+        decision = review.get("final_decision", "")
+
+        if delivery_status == "never":
+            never_countries.append({"code": code, "review": review, "data": country_data})
+        elif decision == "通过" or score >= 70:
+            strong_countries.append({"code": code, "review": review, "data": country_data})
+        else:
+            weak_countries.append({"code": code, "review": review, "data": country_data})
+
+    recommendations: list[dict] = []
+
+    # European cluster: DE, FR → IT, ES
+    eu_strong = [c for c in strong_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
+    eu_never = [c for c in never_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
+    eu_weak = [c for c in weak_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
+
+    if eu_strong and (eu_never or eu_weak):
+        strong_names = "、".join(
+            (_TARGET_BY_COUNTRY.get(c["code"]) or {}).get("country_name", c["code"])
+            for c in eu_strong
+        )
+        target_list = eu_never + eu_weak
+        target_names = "、".join(
+            (_TARGET_BY_COUNTRY.get(c["code"]) or {}).get("country_name", c["code"])
+            for c in target_list
+        )
+        recommendations.append({
+            "type": "eu_cluster_expansion",
+            "source_countries": [c["code"] for c in eu_strong],
+            "target_countries": [c["code"] for c in target_list],
+            "priority": "P1" if len(eu_strong) >= 2 else "P2",
+            "reason": f"{strong_names}表现强劲，建议将同素材扩展投放到{target_names}。欧洲市场用户偏好相近，跨国扩展成功率较高。",
+        })
+
+    # JP as independent market
+    jp_review = country_reviews.get("JP")
+    if jp_review:
+        jp_data = countries_by_code.get("JP", {})
+        jp_delivery = jp_data.get("delivery_status") or "never"
+        global_spend = _safe_float(product.get("spend_30d"))
+
+        if jp_delivery == "never" and global_spend >= 200 and _safe_float(product.get("true_roas_30d")) >= (base_roas or 1.0):
+            recommendations.append({
+                "type": "jp_market_entry",
+                "source_countries": [c["code"] for c in strong_countries] or ["EN"],
+                "target_countries": ["JP"],
+                "priority": "P2",
+                "reason": "产品全局表现强，日本市场尚未投放。日本市场独立性强，建议小规模测试。",
+            })
+        elif jp_delivery == "stopped" and global_spend >= 150:
+            recommendations.append({
+                "type": "jp_market_retest",
+                "source_countries": [c["code"] for c in strong_countries] or ["EN"],
+                "target_countries": ["JP"],
+                "priority": "P3",
+                "reason": "产品全局有量，日本市场曾投放已停。可用新素材重试日本市场。",
+            })
+
+    # All strong → recommend consolidation
+    if len(strong_countries) >= 3 and not never_countries:
+        recommendations.append({
+            "type": "consolidation",
+            "source_countries": [c["code"] for c in strong_countries],
+            "target_countries": [],
+            "priority": "P1",
+            "reason": "多国投放均表现强劲，建议加大素材补充频率，保持各国投放势头。",
+        })
+
+    return recommendations
+
