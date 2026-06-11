@@ -1380,25 +1380,28 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `web/templates/layout.html`
 
-- [ ] **Step 1: 在 layout.html 的数据分析分组中添加广告预警入口在 `order-analytics` 链接附近**
+- [ ] **Step 1: 在 layout.html 的数据看板集合菜单下面添加管理员可见的独立广告预警入口**
 
-在 `web/templates/layout.html` 中找到数据分析（order-analytics）的 `<details>` 分组（约第 828 行），在 order-analytics 或 product-profit 链接之后添加：
+在 `web/templates/layout.html` 中找到数据看板 `<details>` 分组结束位置，在该 `</details>` 之后添加独立入口：
 
 ```html
+          {% if current_user.is_admin %}
           <a href="/ad-alerts" {% if request.path.startswith('/ad-alerts') %}class="active"{% endif %}>
             <span class="nav-icon">🔔</span> 广告预警
           </a>
+          {% endif %}
 ```
 
-具体插入位置在 product-profit 链接之后、下一个链接之前（约第 838 行之后）：
+具体插入位置在数据看板 `</details>` 之后、素材创作分组变量声明之前：
 
 ```html
-          <a href="/order-profit" {% if request.path.startswith('/order-profit') %}class="active"{% endif %}>
-            <span class="nav-icon">📊</span> 订单利润
-          </a>
-          <a href="/ad-alerts" {% if request.path.startswith('/ad-alerts') %}class="active"{% endif %}>
-            <span class="nav-icon">🔔</span> 广告预警
-          </a>
+      </details>
+      {% endif %}
+      {% if current_user.is_admin %}
+      <a href="/ad-alerts" {% if request.path.startswith('/ad-alerts') %}class="active"{% endif %}>
+        <span class="nav-icon">🔔</span> 广告预警
+      </a>
+      {% endif %}
 ```
 
 - [ ] **Step 2: 验证侧栏渲染后 `/ad-alerts` 路由被选中时高亮**
@@ -1413,7 +1416,7 @@ grep -n 'ad-alerts' web/templates/layout.html
 
 ```bash
 git add web/templates/layout.html
-git commit -m "feat: add ad alert sidebar nav entry under data analysis group
+git commit -m "feat: add independent admin ad alert sidebar entry
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```

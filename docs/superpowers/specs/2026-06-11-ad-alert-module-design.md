@@ -169,7 +169,7 @@ web/routes/ad_alerts.py
 
 ### 侧栏入口
 
-在 `layout.html` 的"数据"分组（/order-analytics 附近）新增：
+在 `layout.html` 中新增管理员可见的独立左侧菜单入口。入口不放入"数据看板"折叠菜单内部，而是紧跟在"数据看板"集合菜单之后，避免普通数据分析权限控制影响广告预警模块的可见性。
 
 ```html
 <a href="/ad-alerts" class="...">
