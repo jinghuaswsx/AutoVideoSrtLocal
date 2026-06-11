@@ -165,11 +165,18 @@ def high_level_status(status: str) -> str:
     return "in_progress"
 
 
+_TARGET_COUNTRY_DISPLAY_ORDER: tuple[str, ...] = (
+    "DE", "FR", "IT", "ES", "JA", "NL", "PT", "SV",
+)
+
+
 def list_enabled_target_languages() -> list[dict]:
     rows = query_all(
         "SELECT code, name_zh FROM media_languages "
         "WHERE enabled=1 AND code <> 'en' ORDER BY code"
     )
+    order_map = {code: idx for idx, code in enumerate(_TARGET_COUNTRY_DISPLAY_ORDER)}
+    fallback = len(_TARGET_COUNTRY_DISPLAY_ORDER)
     languages = []
     for row in rows:
         code = str(row["code"] or "").strip().upper()
@@ -181,6 +188,7 @@ def list_enabled_target_languages() -> list[dict]:
             "name_zh": name_zh,
             "label": f"{name_zh} ({code})",
         })
+    languages.sort(key=lambda lang: (order_map.get(lang["code"], fallback), lang["code"]))
     return languages
 
 
