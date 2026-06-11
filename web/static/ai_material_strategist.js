@@ -971,8 +971,8 @@
           <h2>${esc(project.project_name || ('项目 #' + project.id))}</h2>
           <div class="aims-subline">
             <span class="aims-status ${esc(project.status)}">${statusLabel(project.status)}</span>
-            <span>Provider ${esc(project.provider_code || 'openrouter')}</span>
-            <span>Model ${esc(project.model_id || 'google/gemini-3.5-flash')}</span>
+            <span>Provider ${esc(project.provider_code || 'google_wj')}</span>
+            <span>Model ${esc(project.model_id || 'gemini-3.5-flash')}</span>
             <span>开始 ${esc((project.started_at || '').slice(0, 16))}</span>
             ${project.finished_at ? `<span>完成 ${esc(project.finished_at.slice(0, 16))}</span>` : ''}
           </div>
@@ -1169,8 +1169,8 @@
     const m = item.metrics || {};
     const materials = (item.mingkong_materials || []).slice(0, 6);
     const debug = ai._prompt_debug || ai.prompt_debug || {};
-    const provider = debug.provider || 'openrouter';
-    const model = debug.model || 'google/gemini-3.5-flash';
+    const provider = debug.provider || 'google_wj';
+    const model = debug.model || 'gemini-3.5-flash';
     const debugBadge = (!state.publicMode && ai.mode === 'ai') ? `
       <div style="display:flex; align-items:center; gap:8px; margin: 6px 0 8px;">
         <span class="aims-llm-badge" style="margin:0; font-size:10px;">AI评估: ${esc(provider)} / ${esc(model)}</span>
@@ -1457,8 +1457,8 @@
         const ranking = state.activeProject.ranking_result || {};
         showLlmModal(
           `项目 #${state.activeProject.id} AI复评决策详情`,
-          ranking.provider || state.activeProject.provider_code || 'openrouter',
-          ranking.model || state.activeProject.model_id || 'google/gemini-3.5-flash',
+          ranking.provider || state.activeProject.provider_code || 'google_wj',
+          ranking.model || state.activeProject.model_id || 'gemini-3.5-flash',
           ranking.final_usage_log_id,
           {
             type: 'ranking',
@@ -1478,8 +1478,8 @@
         const debug = ai._prompt_debug || ai.prompt_debug || {};
         showLlmModal(
           `#${product.rank_no} ${product.product_code || product.product_name} AI评估研判详情`,
-          debug.provider || 'openrouter',
-          debug.model || 'google/gemini-3.5-flash',
+          debug.provider || 'google_wj',
+          debug.model || 'gemini-3.5-flash',
           debug.usage_log_id,
           {
             type: 'product',

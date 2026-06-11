@@ -4,6 +4,79 @@ from pathlib import Path
 from appcore import ai_material_strategist as svc
 
 
+def test_ai_material_strategist_defaults_to_googlewj_gemini_flash():
+    from appcore import llm_use_cases
+
+    rank = llm_use_cases.USE_CASES[svc.RANK_USE_CASE]
+    product = llm_use_cases.USE_CASES[svc.PRODUCT_ANALYSIS_USE_CASE]
+
+    assert svc.PROVIDER_CODE == "google_wj"
+    assert svc.MODEL_ID == "gemini-3.5-flash"
+    assert rank["default_provider"] == "google_wj"
+    assert rank["default_model"] == "gemini-3.5-flash"
+    assert product["default_provider"] == "google_wj"
+    assert product["default_model"] == "gemini-3.5-flash"
+
+
+def test_project_provider_model_helpers_read_project_row():
+    row = {"provider_code": "google_wj", "model_id": "gemini-3.5-flash"}
+
+    assert svc._project_provider_code(row) == "google_wj"
+    assert svc._project_model_id(row) == "gemini-3.5-flash"
+    assert svc._project_provider_code({}) == "google_wj"
+    assert svc._project_model_id({}) == "gemini-3.5-flash"
+
+
+def test_product_analysis_uses_runtime_project_provider_and_model(monkeypatch):
+    calls = {}
+
+    def fake_invoke_generate(*args, **kwargs):
+        calls["use_case"] = args[0]
+        calls["provider_override"] = kwargs.get("provider_override")
+        calls["model_override"] = kwargs.get("model_override")
+        return {
+            "usage_log_id": 123,
+            "text": "{}",
+            "json": {
+                "product_id": 1,
+                "product_code": "demo-rjc",
+                "overall_judgement": "ok",
+                "priority": "P1",
+                "primary_action": "hold",
+                "country_actions": [],
+                "material_actions": [],
+            },
+        }
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke_generate)
+
+    result = svc._run_product_analysis(
+        _row(product_id=1, product_code="demo-rjc"),
+        [],
+        [],
+        [],
+        project_id=9,
+        user_id=1,
+        run_ai=True,
+        provider_code="google_wj",
+        model_id="gemini-3.5-flash",
+    )
+
+    assert calls == {
+        "use_case": svc.PRODUCT_ANALYSIS_USE_CASE,
+        "provider_override": "google_wj",
+        "model_override": "gemini-3.5-flash",
+    }
+    assert result["prompt_debug"]["provider"] == "google_wj"
+    assert result["prompt_debug"]["model"] == "gemini-3.5-flash"
+
+
+def test_pace_llm_call_skips_sleep_when_ai_disabled(monkeypatch):
+    monkeypatch.setattr(svc.time, "sleep", lambda *_args: (_ for _ in ()).throw(AssertionError("no sleep")))
+
+    assert svc._pace_llm_call(1.0, run_ai=False) > 0
+
+
 def _row(**overrides):
     base = {
         "product_id": 1,
@@ -900,6 +973,8 @@ def test_ai_material_strategist_frontend_restores_split_lost_controls():
     assert "ai_material_strategist.js', v=" in template
     assert "function renderSourceMaterialCard" in script
     assert "source_type === 'local_en_cjh'" in script
+    assert "project.provider_code || 'google_wj'" in script
+    assert "debug.model || 'gemini-3.5-flash'" in script
     assert "mk-video-card" in script
     assert "mk-video-product-line" in script
     assert "data-aims-video-tab" in script

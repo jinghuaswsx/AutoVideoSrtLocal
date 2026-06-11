@@ -8,8 +8,10 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import secrets
+import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -23,14 +25,15 @@ log = logging.getLogger(__name__)
 
 RANK_USE_CASE = "medias.ai_material_strategist_rank_products"
 PRODUCT_ANALYSIS_USE_CASE = "medias.ai_material_strategist_product_analysis"
-PROVIDER_CODE = "openrouter"
-MODEL_ID = "google/gemini-3.5-flash"
+PROVIDER_CODE = "google_wj"
+MODEL_ID = "gemini-3.5-flash"
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
 _MAX_AI_CANDIDATES = 60
 _PROJECT_TOP_N = 30
 _AI_RANKING_BATCH_SIZE = 20
 _AI_RANKING_BATCH_TOP_N = 10
+_DEFAULT_LLM_SPACING_SECONDS = 10.0
 
 TARGET_COUNTRIES: tuple[dict[str, str], ...] = (
     {"country_code": "EN", "country_name": "英语", "lang": "en", "lang_name": "英语", "tier": "source"},
@@ -62,7 +65,7 @@ _PROGRESS_LOG_LIMIT = 12
 PROGRESS_STEPS: tuple[dict[str, str], ...] = (
     {"key": "snapshot", "label": "读取数据窗口", "description": "读取产品、广告、订单、明空素材新鲜度。"},
     {"key": "candidate_score", "label": "规则预筛打分", "description": "按消耗、订单、ROAS、广告数筛选候选品。"},
-    {"key": "ai_ranking", "label": f"Top {_PROJECT_TOP_N} AI 复评", "description": "分批调用 OpenRouter Gemini 复评候选产品。"},
+    {"key": "ai_ranking", "label": f"Top {_PROJECT_TOP_N} AI 复评", "description": "分批调用 GoogleWJ Gemini 复评候选产品。"},
     {"key": "material_context", "label": "补齐素材上下文", "description": "读取国家反馈、本地素材、明空素材和任务中心排程。"},
     {"key": "product_analysis", "label": "逐产品分析", "description": "逐个产品分析国家、素材、任务去重和补素材建议。"},
     {"key": "persist", "label": "保存结果", "description": "写入 Top 产品、AI 建议和操作入口。"},
@@ -439,6 +442,37 @@ def _safe_int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _project_provider_code(project_row: Mapping[str, Any] | None) -> str:
+    return str((project_row or {}).get("provider_code") or PROVIDER_CODE).strip() or PROVIDER_CODE
+
+
+def _project_model_id(project_row: Mapping[str, Any] | None) -> str:
+    return str((project_row or {}).get("model_id") or MODEL_ID).strip() or MODEL_ID
+
+
+def _llm_spacing_seconds() -> float:
+    raw = os.environ.get("AI_MATERIAL_STRATEGIST_LLM_SPACING_SECONDS", "").strip()
+    if not raw:
+        return _DEFAULT_LLM_SPACING_SECONDS
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_LLM_SPACING_SECONDS
+    return max(0.0, min(value, 60.0))
+
+
+def _pace_llm_call(last_finished_at: float, *, run_ai: bool) -> float:
+    if not run_ai or last_finished_at <= 0:
+        return time.monotonic()
+    spacing = _llm_spacing_seconds()
+    if spacing <= 0:
+        return time.monotonic()
+    wait = spacing - (time.monotonic() - last_finished_at)
+    if wait > 0:
+        time.sleep(wait)
+    return time.monotonic()
 
 
 def _to_date(value: Any) -> date | None:
@@ -1068,18 +1102,28 @@ def _fallback_ranking(candidates: list[dict], error: str | None = None) -> dict[
     }
 
 
-def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | None, run_ai: bool) -> dict[str, Any]:
+def _run_ai_ranking(
+    candidates: list[dict],
+    *,
+    project_id: int,
+    user_id: int | None,
+    run_ai: bool,
+    provider_code: str = PROVIDER_CODE,
+    model_id: str = MODEL_ID,
+) -> dict[str, Any]:
     if not run_ai:
         return _fallback_ranking(candidates)
     try:
         batch_results: list[dict[str, Any]] = []
         merged_candidates: list[dict[str, Any]] = []
+        last_llm_finished_at = 0.0
         for batch_index, batch in enumerate(_chunked(candidates, _AI_RANKING_BATCH_SIZE), start=1):
             payload = {
                 "batch_index": batch_index,
                 "rule": f"本批最多输出 Top{_AI_RANKING_BATCH_TOP_N}，剔除高ROAS低量产品。",
                 "products": [_rank_input(row) for row in batch],
             }
+            _pace_llm_call(last_llm_finished_at, run_ai=run_ai)
             result = llm_client.invoke_generate(
                 RANK_USE_CASE,
                 prompt=_ranking_prompt(payload),
@@ -1088,11 +1132,12 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 response_schema=RANKING_RESPONSE_SCHEMA,
                 temperature=0.15,
                 max_output_tokens=4096,
-                provider_override=PROVIDER_CODE,
-                model_override=MODEL_ID,
+                provider_override=provider_code,
+                model_override=model_id,
                 billing_extra={"stage": "batch_rank", "batch_index": batch_index},
                 timeout_seconds=180,
             )
+            last_llm_finished_at = time.monotonic()
             parsed = _llm_json(result)
             batch_results.append({
                 "input": payload,
@@ -1100,8 +1145,8 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 "usage_log_id": result.get("usage_log_id"),
                 "prompt": _ranking_prompt(payload),
                 "response_text": result.get("text"),
-                "provider": PROVIDER_CODE,
-                "model": MODEL_ID,
+                "provider": provider_code,
+                "model": model_id,
             })
             ids = {_safe_int(item.get("product_id")) for item in parsed.get("ranked_products") or []}
             by_id = {_safe_int(item.get("product_id")): item for item in batch}
@@ -1114,6 +1159,7 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
             "rule": f"从所有批次候选里输出最终 Top {_PROJECT_TOP_N}，仍然坚持有量 + 效率。",
             "products": [_rank_input(row) for row in merged_candidates],
         }
+        _pace_llm_call(last_llm_finished_at, run_ai=run_ai)
         final = llm_client.invoke_generate(
             RANK_USE_CASE,
             prompt=_ranking_prompt(final_payload),
@@ -1122,8 +1168,8 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
             response_schema=RANKING_RESPONSE_SCHEMA,
             temperature=0.1,
             max_output_tokens=4096,
-            provider_override=PROVIDER_CODE,
-            model_override=MODEL_ID,
+            provider_override=provider_code,
+            model_override=model_id,
             billing_extra={"stage": "final_rank"},
             timeout_seconds=180,
         )
@@ -1145,12 +1191,12 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 "final_usage_log_id": final.get("usage_log_id"),
                 "final_prompt": _ranking_prompt(final_payload),
                 "final_response_text": final.get("text"),
-                "provider": PROVIDER_CODE,
-                "model": MODEL_ID,
+                "provider": provider_code,
+                "model": model_id,
             },
             "prompt_debug": {
-                "provider": PROVIDER_CODE,
-                "model": MODEL_ID,
+                "provider": provider_code,
+                "model": model_id,
                 "use_case": RANK_USE_CASE,
                 "batch_count": len(batch_results),
             },
@@ -1704,6 +1750,8 @@ def _run_product_analysis(
     project_id: int,
     user_id: int | None,
     run_ai: bool,
+    provider_code: str = PROVIDER_CODE,
+    model_id: str = MODEL_ID,
 ) -> dict:
     fallback = _fallback_product_analysis(product, countries, mk_materials)
     if not run_ai:
@@ -1741,8 +1789,8 @@ def _run_product_analysis(
             response_schema=PRODUCT_ANALYSIS_RESPONSE_SCHEMA,
             temperature=0.2,
             max_output_tokens=4096,
-            provider_override=PROVIDER_CODE,
-            model_override=MODEL_ID,
+            provider_override=provider_code,
+            model_override=model_id,
             billing_extra={"stage": "product_analysis", "product_id": product.get("product_id")},
             timeout_seconds=180,
         )
@@ -1753,8 +1801,8 @@ def _run_product_analysis(
         parsed = _fill_missing_product_analysis_fields(parsed, fallback)
         parsed.setdefault("mode", "ai")
         parsed.setdefault("prompt_debug", {
-            "provider": PROVIDER_CODE,
-            "model": MODEL_ID,
+            "provider": provider_code,
+            "model": model_id,
             "use_case": PRODUCT_ANALYSIS_USE_CASE,
             "mode": "ai",
             "usage_log_id": result.get("usage_log_id"),
@@ -2523,6 +2571,8 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
     project_row = _prepare_project_for_run(project_id)
     if project_row.get("status") == "success":
         return get_project(project_id) or {"id": project_id, "status": "success"}
+    provider_code = _project_provider_code(project_row)
+    model_id = _project_model_id(project_row)
 
     progress = _normalize_progress(
         _json_loads(project_row.get("progress_json"), {}) or {},
@@ -2601,8 +2651,15 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 f"复用已保存 Top {_PROJECT_TOP_N} 排名结果，不重复调用排名模型。",
             )
         else:
-            checkpoint("ai_ranking", "running", 32, f"调用 OpenRouter Gemini 分批复评 Top {_PROJECT_TOP_N}。")
-            ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
+            checkpoint("ai_ranking", "running", 32, f"调用 {provider_code} {model_id} 分批复评 Top {_PROJECT_TOP_N}。")
+            ranking = _run_ai_ranking(
+                candidates,
+                project_id=project_id,
+                user_id=user_id,
+                run_ai=run_ai,
+                provider_code=provider_code,
+                model_id=model_id,
+            )
             _save_project_ranking(project_id, ranking)
         selected = _select_products(candidates, ranking)
         checkpoint("ai_ranking", "done", 42, f"Top 产品选择完成，进入逐产品分析 {len(selected)} 个。")
@@ -2618,6 +2675,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
         results: list[dict] = []
         existing_results = _load_existing_product_results(project_id)
         total_products = len(selected)
+        last_product_llm_finished_at = 0.0
         for rank_no, product in enumerate(selected, start=1):
             code_key = str(product.get("product_code") or "").strip().lower()
             product_id = _safe_int(product.get("product_id"))
@@ -2666,6 +2724,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 local_materials,
                 mk_by_code.get(code_key) or [],
             )
+            _pace_llm_call(last_product_llm_finished_at, run_ai=run_ai)
             ai_result = _run_product_analysis(
                 product,
                 countries,
@@ -2674,7 +2733,11 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 project_id=project_id,
                 user_id=user_id,
                 run_ai=run_ai,
+                provider_code=provider_code,
+                model_id=model_id,
             )
+            if run_ai:
+                last_product_llm_finished_at = time.monotonic()
             ai_result = _decorate_ai_result_with_tasks(ai_result, countries, task_assignments)
             action_items = _build_action_items(product, ai_result, mk_materials, countries)
             results.append({
