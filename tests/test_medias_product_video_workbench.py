@@ -41,7 +41,7 @@ def test_video_workbench_page_route_renders_first_version(authed_client_no_db, m
     assert "翻译版本" in html
     assert "订单量情况" in html
     assert "AI 8国评估建议" in html
-    assert 'data-action="ai-start"' in html
+    assert 'data-action="ai-start"' not in html
     assert "translated_versions" in html
     assert "target_country_versions" in html
     assert 'data-action="ad-country"' in html

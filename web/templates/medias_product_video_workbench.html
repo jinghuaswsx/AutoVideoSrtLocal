@@ -1414,14 +1414,11 @@
   function renderAiPanel(card) {
     const ai = (currentData && currentData.ai_evaluation) || {};
     const countries = ai.countries || [];
-    const canEvaluate = Boolean(card.media_item_id);
     const cards = countries.map(row => {
       const score = row.score == null ? '-' : Number(row.score).toFixed(0);
-      const btnText = row.evaluated ? '重评' : '评估';
       return `<div class="vw-ai-card ${aiCountryClass(row)}">
         <div class="vw-ai-title"><span>${esc(row.country_code)} ${esc(row.country_name || '')}</span><span>${score}</span></div>
         <div class="vw-ai-summary" title="${esc(row.summary || row.reason || '')}">${esc(row.summary || row.reason || aiCountryLabel(row))}</div>
-        <button type="button" class="vw-mini-btn" data-action="ai-country" data-card-id="${esc(card.card_id)}" data-country-lang="${esc(row.rerun_lang || row.lang || '')}" ${canEvaluate ? '' : 'disabled'}>${btnText}</button>
       </div>`;
     }).join('');
     return `<section class="vw-section">
@@ -1430,7 +1427,6 @@
           <div class="vw-section-title">AI 8国评估建议</div>
           <div class="vw-sub">已评估 ${Number(ai.evaluated_count || 0)} / ${Number(ai.target_country_count || 8)} · ${esc(ai.ai_evaluation_result || '暂无结论')}</div>
         </div>
-        <button type="button" class="vw-btn vw-btn-primary" data-action="ai-start" data-card-id="${esc(card.card_id)}" ${canEvaluate ? '' : 'disabled title="先加入素材库后评估"'}>补评8国</button>
       </div>
       <div class="vw-section-body">
         <div class="vw-ai-grid">${cards || '<div class="vw-sub">暂无 AI 评估数据</div>'}</div>
