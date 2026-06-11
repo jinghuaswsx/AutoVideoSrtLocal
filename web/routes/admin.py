@@ -4,6 +4,7 @@ from web.auth import admin_required, superadmin_required
 from appcore import (
     exchange_rates,
     medias,
+    ad_alerts,
     product_link_domains,
     product_roas,
     shopifyid_sync_trigger,
@@ -475,6 +476,17 @@ def settings():
             return redirect(url_for("admin.settings"))
         set_setting(product_roas.RMB_PER_USD_SETTING_KEY, product_roas.format_decimal(roas_rate))
 
+        raw_alert_threshold = request.form.get("ad_alert_roas_threshold", "").strip()
+        if raw_alert_threshold:
+            try:
+                alert_value = float(raw_alert_threshold)
+                if alert_value <= 0:
+                    raise ValueError
+                ad_alerts.set_threshold(alert_value)
+            except (TypeError, ValueError):
+                flash("广告预警阈值必须是一个正数")
+                return redirect(url_for("admin.settings"))
+
         # TTS 全局并发上限：1 ≤ n ≤ 15（ElevenLabs Business 套餐硬上限），默认 12
         raw_tts_concurrency = request.form.get("tts_max_concurrency", "").strip()
         if raw_tts_concurrency:
@@ -544,11 +556,17 @@ def settings():
         tts_concurrency = int(tts_concurrency_raw) if tts_concurrency_raw else 12
     except (ValueError, TypeError):
         tts_concurrency = 12
+    ad_alert_threshold = (
+        ad_alerts.get_threshold()
+        if active_tab == "general"
+        else ad_alerts.DEFAULT_THRESHOLD
+    )
     return render_template(
         "admin_settings.html",
         project_types=PROJECT_TYPE_LABELS,
         current=current,
         roas_rmb_per_usd=product_roas.format_decimal(product_roas.get_configured_rmb_per_usd()),
+        ad_alert_threshold=ad_alert_threshold,
         media_languages=medias.list_languages_for_admin(),
         tts_max_concurrency=tts_concurrency,
         product_link_domains=product_link_domains.list_domains(include_disabled=True),
