@@ -682,6 +682,18 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "server_health_check": {
+        "code": "server_health_check",
+        "name": "服务器健康巡查",
+        "description": "每天凌晨自动巡查服务器各项硬件指标（CPU、内存、GPU、硬盘），如果检测到异常会记录并触发优化指令生成。",
+        "schedule": "每天凌晨 02:30",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "server_health_check",
+        "runner": "appcore.server_health.evaluate_and_save_record",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+    },
     "weekly_roas_report": {
         "code": "weekly_roas_report",
         "name": "ROAS 周报快照",

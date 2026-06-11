@@ -1,0 +1,249 @@
+{% extends "layout.html" %}
+
+{% block page_title %}服务器健康巡查历史{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+{% endblock %}
+
+{% block extra_style %}
+<style>
+  .history-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 10px 0 30px;
+  }
+  
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  
+  .btn-check-now {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+  .btn-check-now:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+  }
+
+  .history-table-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+  
+  .history-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+  }
+  
+  .history-table th {
+    text-align: left;
+    padding: 12px 16px;
+    font-weight: 600;
+    color: #94a3b8;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 0.9rem;
+  }
+  
+  .history-table td {
+    padding: 14px 16px;
+    color: #cbd5e1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 0.95rem;
+  }
+  
+  .history-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+  }
+  
+  .status-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .status-dot::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .status-dot.healthy::before { background: #10b981; box-shadow: 0 0 6px #10b981; }
+  .status-dot.warning::before { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+  .status-dot.critical::before { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+  
+  .status-dot.healthy { color: #34d399; }
+  .status-dot.warning { color: #fbbf24; }
+  .status-dot.critical { color: #f87171; }
+
+  .btn-view-detail {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: #60a5fa;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .btn-view-detail:hover {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+  }
+
+  /* 分页样式 */
+  .pagination-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 20px;
+    font-size: 0.9rem;
+    color: #94a3b8;
+  }
+  
+  .pagination-list {
+    display: flex;
+    list-style: none;
+    gap: 6px;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .pagination-item a {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  
+  .pagination-item a:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+  
+  .pagination-item.active a {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+  }
+  
+  .pagination-item.disabled a {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="history-container">
+  
+  <div class="history-header">
+    <h3 style="color: #f1f5f9; margin: 0; display:flex; align-items:center; gap:10px;">
+      <i class="fa-solid fa-clock-rotate-left" style="color:#60a5fa;"></i> 巡查历史记录
+    </h3>
+    <form action="{{ url_for('server_health.manual_check') }}" method="POST" style="margin:0;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn-check-now">
+        <i class="fa-solid fa-arrows-spin"></i> 立即巡查
+      </button>
+    </form>
+  </div>
+
+  <div class="history-table-card">
+    {% if not records %}
+      <div style="text-align:center; padding: 40px 0; color:#94a3b8;">
+        <i class="fa-solid fa-database" style="font-size: 2.5rem; margin-bottom:12px; opacity:0.5;"></i>
+        <div>暂无历史巡查记录</div>
+      </div>
+    {% else %}
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>巡查时间</th>
+            <th>健康状态</th>
+            <th>CPU负载 (1/5/15m)</th>
+            <th style="text-align: right;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in records %}
+            <tr>
+              <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+              <td>
+                <span class="status-dot {{ r.status }}">
+                  {% if r.status == 'healthy' %}
+                    健康
+                  {% elif r.status == 'warning' %}
+                    警告
+                  {% else %}
+                    危险
+                  {% endif %}
+                </span>
+              </td>
+              <td>{{ r.system_load }}</td>
+              <td style="text-align: right;">
+                <a href="{{ url_for('server_health.detail', record_id=r.id) }}" class="btn-view-detail">
+                  <i class="fa-regular fa-eye"></i> 详情
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <!-- 分页组件 -->
+      {% if total_pages > 1 %}
+        <div class="pagination-nav">
+          <div>显示第 {{ (page - 1) * 20 + 1 }} 到 {{ [page * 20, total] | min }} 条，共 {{ total }} 条记录</div>
+          <ul class="pagination-list">
+            <li class="pagination-item {% if page == 1 %}disabled{% endif %}">
+              <a href="{{ url_for('server_health.list_records', page=page-1) }}"><i class="fa-solid fa-chevron-left"></i></a>
+            </li>
+            
+            {% for p in range(1, total_pages + 1) %}
+              <li class="pagination-item {% if p == page %}active{% endif %}">
+                <a href="{{ url_for('server_health.list_records', page=p) }}">{{ p }}</a>
+              </li>
+            {% endfor %}
+            
+            <li class="pagination-item {% if page == total_pages %}disabled{% endif %}">
+              <a href="{{ url_for('server_health.list_records', page=page+1) }}"><i class="fa-solid fa-chevron-right"></i></a>
+            </li>
+          </ul>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
