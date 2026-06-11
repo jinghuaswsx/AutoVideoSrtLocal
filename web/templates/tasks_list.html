@@ -206,6 +206,7 @@
 .tc-detail-refresh { min-height:42px; height:auto; padding:9px 18px; font-size:15px; font-weight:800; box-shadow:0 8px 16px rgba(31, 127, 190, .18); }
 .tc-detail-status { margin-top:10px; font-size:13px; }
 .tc-detail-meta { margin-top:6px; font-size:13px; color:var(--tc-fg-muted); }
+.tc-detail-assignee-highlight { font-size: 3em; font-weight: bold; color: var(--tc-accent, #2563eb); display: inline-block; vertical-align: middle; margin-left: 4px; }
 .tc-detail-reason { background:var(--tc-warning-bg); color:var(--tc-warning-fg); padding:10px; border-radius:8px; margin-top:10px; font-size:13px; }
 .tc-admin-feedback-card { margin-top:14px; padding:14px; border:2px solid var(--tc-danger); border-radius:var(--tc-r-md); background:var(--tc-danger-bg); color:var(--tc-danger-fg); }
 .tc-admin-feedback-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
@@ -4037,7 +4038,7 @@ function tcRenderDetail(task, events, reviewAssets) {
             <div class="tc-detail-status">${tcReworkBadge(task)}${tcUrgentBadge(task)} ${tcTaskStatusBadge(task)}</div>
             <div class="tc-detail-meta">
               ${tcEsc(tcTaskTypeLabel(task))}${isParent ? '（去字幕原始素材）' : '（' + tcEsc(tcLanguageLabel(task.country_code)) + '）'} ·
-              负责人：${tcEsc(task.assignee_display_name || task.assignee_username || '—')}
+              负责人：<span class="tc-detail-assignee-highlight">${tcEsc(task.assignee_display_name || task.assignee_username || '—')}</span>
             </div>
             ${adminFeedback || fallbackReason}
           </div>
