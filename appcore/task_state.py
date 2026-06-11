@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 # VARIANT_LABELS import removed — single-line pipeline
 
 _tasks: dict = {}
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 IMAGE_TRANSLATE_MAX_ITEMS = 1000
 IMAGE_TRANSLATE_DEFAULT_CONCURRENCY_MODE = "sequential"
@@ -73,8 +73,12 @@ def _db_upsert(task_id: str, user_id: int, task: dict, original_filename: str | 
              task.get("task_dir", ""),
              state_json),
         )
-    except Exception:
-        log.warning("[task_state] DB upsert 失败 task_id=%s", task_id, exc_info=True)
+    except Exception as exc:
+        if task.get("status") == "expired" or task.get("_non_critical") or task.get("_cleanup"):
+            log.warning("[task_state] DB upsert 失败 (非关键路径) task_id=%s", task_id, exc_info=True)
+        else:
+            log.error("[task_state] DB upsert 失败 task_id=%s", task_id, exc_info=True)
+            raise exc
 
 
 def _db_payload_for_task(task_id: str) -> tuple[str, str, str, str] | None:
@@ -113,8 +117,13 @@ def _sync_task_to_db(task_id: str) -> None:
                 task_id,
             ),
         )
-    except Exception:
-        log.warning("[task_state] DB sync 失败 task_id=%s", task_id, exc_info=True)
+    except Exception as exc:
+        task = _tasks.get(task_id)
+        if task and (task.get("status") == "expired" or task.get("_non_critical") or task.get("_cleanup")):
+            log.warning("[task_state] DB sync 失败 (非关键路径) task_id=%s", task_id, exc_info=True)
+        else:
+            log.error("[task_state] DB sync 失败 task_id=%s", task_id, exc_info=True)
+            raise exc
 
 
 def set_expires_at(task_id: str, project_type: str) -> None:
@@ -203,8 +212,8 @@ def create(task_id: str, video_path: str, task_dir: str, original_filename: str 
         task["_user_id"] = user_id
     with _lock:
         _tasks[task_id] = task
-    if user_id is not None:
-        _db_upsert(task_id, user_id, task, original_filename)
+        if user_id is not None:
+            _db_upsert(task_id, user_id, task, original_filename)
     return task
 
 
@@ -241,8 +250,7 @@ def update(task_id: str, **kwargs):
         task = _tasks.get(task_id)
         if task:
             task.update(kwargs)
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def update_variant(task_id: str, variant: str, **kwargs):
@@ -253,8 +261,7 @@ def update_variant(task_id: str, variant: str, **kwargs):
             variant_state = dict(variants.get(variant, _empty_variant_state(variant)))
             variant_state.update(kwargs)
             variants[variant] = variant_state
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_step(task_id: str, step: str, status: str):
@@ -262,8 +269,7 @@ def set_step(task_id: str, step: str, status: str):
         task = _tasks.get(task_id)
         if task:
             task["steps"][step] = status
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_step_message(task_id: str, step: str, message: str):
@@ -271,8 +277,7 @@ def set_step_message(task_id: str, step: str, message: str):
         task = _tasks.get(task_id)
         if task:
             task.setdefault("step_messages", {})[step] = message
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_step_model_tag(task_id: str, step: str, tag: str):
@@ -280,8 +285,7 @@ def set_step_model_tag(task_id: str, step: str, tag: str):
         task = _tasks.get(task_id)
         if task:
             task.setdefault("step_model_tags", {})[step] = tag
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_step_state(
@@ -300,8 +304,7 @@ def set_step_state(
                 task.setdefault("step_messages", {})[step] = message
             if model_tag:
                 task.setdefault("step_model_tags", {})[step] = model_tag
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def add_llm_debug_ref(task_id: str, step: str, ref: dict):
@@ -331,8 +334,7 @@ def add_llm_debug_ref(task_id: str, step: str, ref: dict):
             if not replaced:
                 step_refs.append(normalized)
             all_refs[step] = step_refs
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_current_review_step(task_id: str, step: str):
@@ -340,8 +342,7 @@ def set_current_review_step(task_id: str, step: str):
         task = _tasks.get(task_id)
         if task:
             task["current_review_step"] = step
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_artifact(task_id: str, step: str, payload: dict):
@@ -349,8 +350,7 @@ def set_artifact(task_id: str, step: str, payload: dict):
         task = _tasks.get(task_id)
         if task:
             task.setdefault("artifacts", {})[step] = payload
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_preview_file(task_id: str, name: str, path: str):
@@ -358,8 +358,7 @@ def set_preview_file(task_id: str, name: str, path: str):
         task = _tasks.get(task_id)
         if task:
             task.setdefault("preview_files", {})[name] = path
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_variant_artifact(task_id: str, variant: str, step: str, payload: dict):
@@ -369,8 +368,7 @@ def set_variant_artifact(task_id: str, variant: str, step: str, payload: dict):
             variants = task.setdefault("variants", {})
             variant_state = variants.setdefault(variant, _empty_variant_state(variant))
             variant_state.setdefault("artifacts", {})[step] = payload
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_variant_preview_file(task_id: str, variant: str, name: str, path: str):
@@ -380,8 +378,7 @@ def set_variant_preview_file(task_id: str, variant: str, name: str, path: str):
             variants = task.setdefault("variants", {})
             variant_state = variants.setdefault(variant, _empty_variant_state(variant))
             variant_state.setdefault("preview_files", {})[name] = path
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def _localized_translation_from_segments(task: dict, segments: list) -> dict:
@@ -433,8 +430,7 @@ def confirm_segments(task_id: str, segments: list):
             if "normal" in variants:
                 variants["normal"]["localized_translation"] = task["localized_translation"]
             task["_segments_confirmed"] = True
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def confirm_alignment(task_id: str, break_after: list, script_segments: list):
@@ -448,8 +444,7 @@ def confirm_alignment(task_id: str, break_after: list, script_segments: list):
             task["script_segments"] = script_segments
             task["segments"] = script_segments
             task["_alignment_confirmed"] = True
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def create_copywriting(task_id: str, video_path: str, task_dir: str,
@@ -486,7 +481,7 @@ def create_copywriting(task_id: str, video_path: str, task_dir: str,
     }
     with _lock:
         _tasks[task_id] = task
-    _sync_task_to_db(task_id)
+        _sync_task_to_db(task_id)
     return task
 
 
@@ -559,7 +554,7 @@ def create_translate_lab(task_id: str, video_path: str, task_dir: str, *,
         task.update(options)
     with _lock:
         _tasks[task_id] = task
-    _db_upsert(task_id, user_id, task, original_filename)
+        _db_upsert(task_id, user_id, task, original_filename)
     return task
 
 
@@ -614,7 +609,7 @@ def create_subtitle_removal(task_id: str, video_path: str, task_dir: str,
     }
     with _lock:
         _tasks[task_id] = task
-    _db_upsert(task_id, user_id, task, original_filename)
+        _db_upsert(task_id, user_id, task, original_filename)
     return task
 
 
@@ -700,7 +695,7 @@ def create_image_translate(task_id: str, task_dir: str, *,
     }
     with _lock:
         _tasks[task_id] = task
-    _db_upsert(task_id, user_id, task, "")
+        _db_upsert(task_id, user_id, task, "")
     return task
 
 
@@ -777,7 +772,7 @@ def create_link_check(task_id: str, task_dir: str, *,
     }
     with _lock:
         _tasks[task_id] = task
-    _db_upsert(task_id, user_id, task, "")
+        _db_upsert(task_id, user_id, task, "")
     return task
 
 
@@ -787,8 +782,7 @@ def set_keyframes(task_id: str, keyframes: list[str]) -> None:
         task = _tasks.get(task_id)
         if task:
             task["keyframes"] = keyframes
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def set_copy(task_id: str, copy_data: dict) -> None:
@@ -798,8 +792,7 @@ def set_copy(task_id: str, copy_data: dict) -> None:
         if task:
             task["copy"] = copy_data
             task.setdefault("copy_history", []).append(copy_data)
-    if task:
-        _sync_task_to_db(task_id)
+            _sync_task_to_db(task_id)
 
 
 def update_copy_segment(task_id: str, index: int, segment: dict) -> None:
@@ -814,5 +807,5 @@ def update_copy_segment(task_id: str, index: int, segment: dict) -> None:
             _needs_sync = True
         else:
             _needs_sync = False
-    if _needs_sync:
-        _sync_task_to_db(task_id)
+        if _needs_sync:
+            _sync_task_to_db(task_id)
