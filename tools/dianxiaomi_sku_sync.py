@@ -39,8 +39,10 @@ from tools.shopifyid_dianxiaomi_sync import (
     build_remote_shopify_ids_table_sql,
     _connect_existing_browser_context,
     _open_browser_context,
-    _run_mysql,
-    _sql_quote,
+    execute_sql,
+    query_sql,
+    execute_many_sql,
+    execute_script,
     build_scheduled_task_runs_table_sql,
     ensure_dianxiaomi_success,
     resolve_browser_mode,
@@ -551,65 +553,103 @@ def parse_remote_products_tsv(text: str) -> list[dict[str, Any]]:
     return rows
 
 
-def build_remote_apply_sql(
+def apply_remote_sku_changes(
+    db_name: str,
     *,
     title_updates: list[tuple[int, str | None]],
     sku_replacements: list[tuple[int, list[dict[str, Any]]]],
     source: str = "auto",
-) -> str:
+) -> None:
     """对每个产品先 DELETE 旧 SKU 配对再 INSERT 新行；同时刷新 shopify_title。
 
-    所有语句包在一个事务里，便于 mysql 子进程整批跑。
+    所有语句包在一个事务里。
     """
-    lines: list[str] = ["START TRANSACTION;"]
-    for product_id, title in title_updates:
-        lines.append(
-            f"UPDATE media_products SET shopify_title={_sql_quote(title)} "
-            f"WHERE id={int(product_id)} AND deleted_at IS NULL;"
-        )
-    for product_id, pairs in sku_replacements:
-        lines.append(
-            "DELETE FROM media_product_skus "
-            f"WHERE product_id={int(product_id)} AND COALESCE(manual_override, 0)=0;"
-        )
-        for pair in pairs:
-            def num(value):
-                return "NULL" if value is None else str(value)
-            lines.append(
-                "INSERT INTO media_product_skus "
-                "(product_id, shopify_product_id, shopify_variant_id, shopify_sku, "
-                " shopify_price, shopify_compare_at_price, shopify_inventory_quantity, "
-                " shopify_weight_grams, shopify_variant_title, dianxiaomi_sku, "
-                " dianxiaomi_product_sku, dianxiaomi_sku_code, dianxiaomi_name, source) VALUES ("
-                f"{int(product_id)}, {_sql_quote(pair.get('shopify_product_id'))}, "
-                f"{_sql_quote(pair.get('shopify_variant_id'))}, "
-                f"{_sql_quote(pair.get('shopify_sku'))}, "
-                f"{num(pair.get('shopify_price'))}, "
-                f"{num(pair.get('shopify_compare_at_price'))}, "
-                f"{num(pair.get('shopify_inventory_quantity'))}, "
-                f"{num(pair.get('shopify_weight_grams'))}, "
-                f"{_sql_quote(pair.get('shopify_variant_title'))}, "
-                f"{_sql_quote(pair.get('dianxiaomi_sku'))}, "
-                f"{_sql_quote(pair.get('dianxiaomi_product_sku'))}, "
-                f"{_sql_quote(pair.get('dianxiaomi_sku_code'))}, "
-                f"{_sql_quote(pair.get('dianxiaomi_name'))}, "
-                f"{_sql_quote(source)}) "
-                "ON DUPLICATE KEY UPDATE "
-                "shopify_product_id=IF(COALESCE(manual_override, 0)=1, shopify_product_id, VALUES(shopify_product_id)), "
-                "shopify_sku=IF(COALESCE(manual_override, 0)=1, shopify_sku, VALUES(shopify_sku)), "
-                "shopify_price=IF(COALESCE(manual_override, 0)=1, shopify_price, VALUES(shopify_price)), "
-                "shopify_compare_at_price=IF(COALESCE(manual_override, 0)=1, shopify_compare_at_price, VALUES(shopify_compare_at_price)), "
-                "shopify_inventory_quantity=IF(COALESCE(manual_override, 0)=1, shopify_inventory_quantity, VALUES(shopify_inventory_quantity)), "
-                "shopify_weight_grams=IF(COALESCE(manual_override, 0)=1, shopify_weight_grams, VALUES(shopify_weight_grams)), "
-                "shopify_variant_title=IF(COALESCE(manual_override, 0)=1, shopify_variant_title, VALUES(shopify_variant_title)), "
-                "dianxiaomi_sku=IF(COALESCE(manual_override, 0)=1, dianxiaomi_sku, VALUES(dianxiaomi_sku)), "
-                "dianxiaomi_product_sku=IF(COALESCE(manual_override, 0)=1, dianxiaomi_product_sku, VALUES(dianxiaomi_product_sku)), "
-                "dianxiaomi_sku_code=IF(COALESCE(manual_override, 0)=1, dianxiaomi_sku_code, VALUES(dianxiaomi_sku_code)), "
-                "dianxiaomi_name=IF(COALESCE(manual_override, 0)=1, dianxiaomi_name, VALUES(dianxiaomi_name)), "
-                "source=IF(COALESCE(manual_override, 0)=1, source, VALUES(source));"
-            )
-    lines.append("COMMIT;")
-    return "\n".join(lines) + "\n"
+    from appcore.db import get_conn
+    conn = get_conn()
+    try:
+        conn.select_db(db_name)
+        conn.autocommit(False)
+        try:
+            with conn.cursor() as cur:
+                # 1. 更新 title
+                if title_updates:
+                    update_title_sql = (
+                        "UPDATE media_products SET shopify_title=%s "
+                        "WHERE id=%s AND deleted_at IS NULL;"
+                    )
+                    title_params = [(title, int(prod_id)) for prod_id, title in title_updates]
+                    cur.executemany(update_title_sql, title_params)
+
+                # 2. 删除并插入 sku 配对
+                for product_id, pairs in sku_replacements:
+                    # 先删除旧的
+                    delete_sql = (
+                        "DELETE FROM media_product_skus "
+                        "WHERE product_id=%s AND COALESCE(manual_override, 0)=0;"
+                    )
+                    cur.execute(delete_sql, (int(product_id),))
+
+                    # 插入新的
+                    if pairs:
+                        insert_sql = (
+                            "INSERT INTO media_product_skus "
+                            "(product_id, shopify_product_id, shopify_variant_id, shopify_sku, "
+                            " shopify_price, shopify_compare_at_price, shopify_inventory_quantity, "
+                            " shopify_weight_grams, shopify_variant_title, dianxiaomi_sku, "
+                            " dianxiaomi_product_sku, dianxiaomi_sku_code, dianxiaomi_name, source) "
+                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                            "ON DUPLICATE KEY UPDATE "
+                            "shopify_product_id=IF(COALESCE(manual_override, 0)=1, shopify_product_id, VALUES(shopify_product_id)), "
+                            "shopify_sku=IF(COALESCE(manual_override, 0)=1, shopify_sku, VALUES(shopify_sku)), "
+                            "shopify_price=IF(COALESCE(manual_override, 0)=1, shopify_price, VALUES(shopify_price)), "
+                            "shopify_compare_at_price=IF(COALESCE(manual_override, 0)=1, shopify_compare_at_price, VALUES(shopify_compare_at_price)), "
+                            "shopify_inventory_quantity=IF(COALESCE(manual_override, 0)=1, shopify_inventory_quantity, VALUES(shopify_inventory_quantity)), "
+                            "shopify_weight_grams=IF(COALESCE(manual_override, 0)=1, shopify_weight_grams, VALUES(shopify_weight_grams)), "
+                            "shopify_variant_title=IF(COALESCE(manual_override, 0)=1, shopify_variant_title, VALUES(shopify_variant_title)), "
+                            "dianxiaomi_sku=IF(COALESCE(manual_override, 0)=1, dianxiaomi_sku, VALUES(dianxiaomi_sku)), "
+                            "dianxiaomi_product_sku=IF(COALESCE(manual_override, 0)=1, dianxiaomi_product_sku, VALUES(dianxiaomi_product_sku)), "
+                            "dianxiaomi_sku_code=IF(COALESCE(manual_override, 0)=1, dianxiaomi_sku_code, VALUES(dianxiaomi_sku_code)), "
+                            "dianxiaomi_name=IF(COALESCE(manual_override, 0)=1, dianxiaomi_name, VALUES(dianxiaomi_name)), "
+                            "source=IF(COALESCE(manual_override, 0)=1, source, VALUES(source));"
+                        )
+                        insert_params = []
+                        for pair in pairs:
+                            shopify_price = pair.get('shopify_price')
+                            if shopify_price is not None:
+                                shopify_price = float(shopify_price)
+                            shopify_compare_at_price = pair.get('shopify_compare_at_price')
+                            if shopify_compare_at_price is not None:
+                                shopify_compare_at_price = float(shopify_compare_at_price)
+                            shopify_inventory_quantity = pair.get('shopify_inventory_quantity')
+                            if shopify_inventory_quantity is not None:
+                                shopify_inventory_quantity = int(shopify_inventory_quantity)
+                            shopify_weight_grams = pair.get('shopify_weight_grams')
+                            if shopify_weight_grams is not None:
+                                shopify_weight_grams = float(shopify_weight_grams)
+
+                            insert_params.append((
+                                int(product_id),
+                                pair.get('shopify_product_id'),
+                                pair.get('shopify_variant_id'),
+                                pair.get('shopify_sku'),
+                                shopify_price,
+                                shopify_compare_at_price,
+                                shopify_inventory_quantity,
+                                shopify_weight_grams,
+                                pair.get('shopify_variant_title'),
+                                pair.get('dianxiaomi_sku'),
+                                pair.get('dianxiaomi_product_sku'),
+                                pair.get('dianxiaomi_sku_code'),
+                                pair.get('dianxiaomi_name'),
+                                source
+                            ))
+                        cur.executemany(insert_sql, insert_params)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
 
 
 # ----------------------------------------------------------------------
@@ -933,48 +973,43 @@ def _now_text() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def _ensure_scheduled_runs_table(db_name: str, *, db_mode: str) -> None:
-    _run_mysql(build_scheduled_task_runs_table_sql(), db_name, db_mode=db_mode)
+def _ensure_scheduled_runs_table(db_name: str, *, db_mode: str = "auto") -> None:
+    execute_sql(db_name, build_scheduled_task_runs_table_sql())
 
 
-def _start_run(db_name: str, *, db_mode: str) -> int:
-    _ensure_scheduled_runs_table(db_name, db_mode=db_mode)
+def _start_run(db_name: str, *, db_mode: str = "auto") -> int:
+    _ensure_scheduled_runs_table(db_name)
     sql = (
         "INSERT INTO scheduled_task_runs (task_code, task_name, status, started_at) "
-        f"VALUES ({_sql_quote(TASK_CODE)}, {_sql_quote(TASK_NAME)}, 'running', NOW());\n"
-        "SELECT LAST_INSERT_ID();\n"
+        "VALUES (%s, %s, 'running', NOW());"
     )
-    output = _run_mysql(sql, db_name, db_mode=db_mode).strip()
-    for line in reversed(output.splitlines()):
-        text = line.strip()
-        if text.isdigit():
-            return int(text)
-    raise RuntimeError(f"无法读取定时任务运行记录 ID：{output!r}")
+    lastrowid = execute_sql(db_name, sql, (TASK_CODE, TASK_NAME))
+    if lastrowid:
+        return lastrowid
+    raise RuntimeError("无法读取定时任务运行记录 ID")
 
 
 def _finish_run(
     db_name: str,
     run_id: int,
     *,
-    db_mode: str,
+    db_mode: str = "auto",
     status: str,
     summary: dict[str, Any] | None = None,
     error_message: str | None = None,
     output_file: str | None = None,
 ) -> None:
-    summary_sql = (
-        _sql_quote(json.dumps(summary, ensure_ascii=False)) if summary is not None else "NULL"
-    )
+    summary_json = json.dumps(summary, ensure_ascii=False) if summary is not None else None
     sql = (
         "UPDATE scheduled_task_runs SET "
-        f"status={_sql_quote(status)}, finished_at=NOW(), "
+        "status=%s, finished_at=NOW(), "
         "duration_seconds=TIMESTAMPDIFF(SECOND, started_at, NOW()), "
-        f"summary_json={summary_sql}, "
-        f"error_message={_sql_quote(error_message)}, "
-        f"output_file={_sql_quote(output_file)} "
-        f"WHERE id={int(run_id)};\n"
+        "summary_json=%s, "
+        "error_message=%s, "
+        "output_file=%s "
+        "WHERE id=%s;"
     )
-    _run_mysql(sql, db_name, db_mode=db_mode)
+    execute_sql(db_name, sql, (status, summary_json, error_message, output_file, int(run_id)))
 
 
 # ----------------------------------------------------------------------
@@ -1009,11 +1044,10 @@ def _run_main_impl(argv: list[str] | None = None):
     db_name = str(REMOTE_ENVS[args.env]["db_name"])
     remote_label = str(REMOTE_ENVS[args.env]["label"])
     db_mode = resolve_db_mode(args.db_mode)
-
     # 确保远端表/字段已就绪（线上是先跑 SQL 迁移，但这里幂等检查一遍兜底）。
-    _run_mysql(build_remote_add_shopify_title_sql(), db_name, db_mode=db_mode)
-    _run_mysql(build_remote_shopify_ids_table_sql(), db_name, db_mode=db_mode)
-    _run_mysql(build_remote_ensure_table_sql(), db_name, db_mode=db_mode)
+    execute_script(db_name, build_remote_add_shopify_title_sql())
+    execute_script(db_name, build_remote_shopify_ids_table_sql())
+    execute_script(db_name, build_remote_ensure_table_sql())
 
     from playwright.sync_api import sync_playwright
 
@@ -1052,16 +1086,22 @@ def _run_main_impl(argv: list[str] | None = None):
                 )
 
             def fetch_local_products() -> list[dict[str, Any]]:
-                output = _run_mysql(build_remote_select_products_sql(), db_name, db_mode=db_mode)
-                return parse_remote_products_tsv(output)
+                rows = query_sql(db_name, build_remote_select_products_sql())
+                res = []
+                for row in rows:
+                    res.append({
+                        "id": int(row.get("id")),
+                        "shopifyid": str(row.get("shopifyid") or "").strip(),
+                        "shopify_title": str(row.get("shopify_title") or "").strip(),
+                    })
+                return res
 
             def apply_changes(plan: dict[str, Any]) -> None:
-                sql = build_remote_apply_sql(
+                apply_remote_sku_changes(
+                    db_name,
                     title_updates=plan["title_updates"],
                     sku_replacements=plan["sku_replacements"],
                 )
-                if sql.strip().endswith("COMMIT;"):
-                    _run_mysql(sql, db_name, db_mode=db_mode)
 
             report = run_sync(
                 fetch_shopify_page=fetch_shopify_page,
@@ -1094,6 +1134,11 @@ def _parse_task_record_args(argv: list[str] | None = None):
 
 
 def main(argv: list[str] | None = None) -> int:
+    args_list = argv if argv is not None else sys.argv[1:]
+    if "-h" in args_list or "--help" in args_list:
+        exit_code, _, _, _ = _run_main_impl(args_list)
+        return exit_code
+
     record_args = _parse_task_record_args(argv)
     db_name = str(REMOTE_ENVS[record_args.env]["db_name"])
     db_mode = resolve_db_mode(record_args.db_mode)

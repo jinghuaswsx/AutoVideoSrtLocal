@@ -20,6 +20,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from server_config import SERVER_HOST
+from appcore.db import get_conn
 
 CHROME_USER_DATA_DIR = Path(r"C:\chrome-shopifyid-diaoxiaomi")
 ONLINE_URL = "https://www.dianxiaomi.com/web/shopifyProduct/online"
@@ -284,48 +285,21 @@ def parse_remote_domains_tsv(text: str) -> list[str]:
     return domains
 
 
-def build_remote_batch_update_sql(updates: list[dict[str, object]]) -> str:
-    if not updates:
-        return ""
-
-    lines = ["START TRANSACTION;"]
-    for item in updates:
-        product_id = int(item["id"])
-        shopifyid = str(item["shopifyid"]).strip()
-        if not shopifyid.isdigit():
-            raise ValueError("shopifyid 必须是纯数字字符串")
-        lines.append(
-            f"UPDATE {REMOTE_MEDIA_TABLE} "
-            f"SET shopifyid='{shopifyid}' "
-            f"WHERE id={product_id} "
-            "AND deleted_at IS NULL "
-            "AND (shopifyid IS NULL OR shopifyid='');"
-        )
-    lines.append("COMMIT;")
-    return "\n".join(lines) + "\n"
-
-
-def build_remote_batch_upsert_shopify_ids_sql(updates: list[dict[str, object]]) -> str:
-    if not updates:
-        return ""
-    values: list[str] = []
-    for item in updates:
-        product_id = int(item["id"])
-        domain = normalize_domain(item.get("domain"))
-        shopify_product_id = str(item.get("shopify_product_id") or "").strip()
-        if not domain:
-            raise ValueError("domain 必须是有效域名")
-        if not shopify_product_id.isdigit():
-            raise ValueError("shopify_product_id 必须是纯数字字符串")
-        values.append(
-            f"({product_id}, {_sql_quote(domain)}, {_sql_quote(shopify_product_id)})"
-        )
+def build_remote_batch_update_sql() -> str:
     return (
-        "START TRANSACTION;\n"
+        f"UPDATE {REMOTE_MEDIA_TABLE} "
+        "SET shopifyid=%s "
+        "WHERE id=%s "
+        "AND deleted_at IS NULL "
+        "AND (shopifyid IS NULL OR shopifyid='');"
+    )
+
+
+def build_remote_batch_upsert_shopify_ids_sql() -> str:
+    return (
         f"INSERT INTO {REMOTE_SHOPIFY_IDS_TABLE} (product_id, domain, shopify_product_id) VALUES "
-        + ", ".join(values)
-        + " ON DUPLICATE KEY UPDATE shopify_product_id=VALUES(shopify_product_id), updated_at=NOW();\n"
-        "COMMIT;\n"
+        "(%s, %s, %s) "
+        "ON DUPLICATE KEY UPDATE shopify_product_id=VALUES(shopify_product_id), updated_at=NOW();"
     )
 
 
@@ -1062,67 +1036,58 @@ def _sync_all_shopify_products(page, *, timeout_s: int = PRODUCT_SYNC_TIMEOUT_SE
     raise RuntimeError(f"等待店小秘同步全部产品超时：{last_text or '未出现同步状态弹窗'}")
 
 
-def _run_remote_mysql(sql: str, db_name: str) -> str:
-    if not SSH_KEY_PATH.exists():
-        raise RuntimeError(f"SSH key 不存在：{SSH_KEY_PATH}")
-
-    command = [
-        "ssh",
-        "-i",
-        str(SSH_KEY_PATH),
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        f"{SSH_USER}@{SSH_HOST}",
-        f"mysql -N -B {db_name}",
-    ]
-    completed = subprocess.run(
-        command,
-        input=sql,
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if completed.returncode != 0:
-        stderr = (completed.stderr or completed.stdout).strip()
-        raise RuntimeError(f"远端 MySQL 执行失败：{stderr}")
-    return completed.stdout
+def execute_sql(db_name: str, sql: str, args: tuple = ()) -> int:
+    conn = get_conn()
+    try:
+        conn.select_db(db_name)
+        with conn.cursor() as cur:
+            cur.execute(sql, args or None)
+            return cur.lastrowid or cur.rowcount
+    finally:
+        conn.close()
 
 
-def _run_local_mysql(sql: str, db_name: str) -> str:
-    command = ["mysql", "-N", "-B", db_name]
-    completed = subprocess.run(
-        command,
-        input=sql,
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if completed.returncode != 0:
-        stderr = (completed.stderr or completed.stdout).strip()
-        raise RuntimeError(f"Local MySQL execution failed: {stderr}")
-    return completed.stdout
+def query_sql(db_name: str, sql: str, args: tuple = ()) -> list[dict]:
+    conn = get_conn()
+    try:
+        conn.select_db(db_name)
+        with conn.cursor() as cur:
+            cur.execute(sql, args or None)
+            return list(cur.fetchall())
+    finally:
+        conn.close()
 
 
-def _run_mysql(sql: str, db_name: str, *, db_mode: str) -> str:
-    resolved_mode = resolve_db_mode(db_mode)
-    if resolved_mode == "local":
-        return _run_local_mysql(sql, db_name)
-    if resolved_mode == "ssh":
-        return _run_remote_mysql(sql, db_name)
-    raise ValueError(f"Unsupported db mode: {db_mode}")
+def execute_many_sql(db_name: str, sql: str, args_list: list[tuple]) -> int:
+    conn = get_conn()
+    try:
+        conn.select_db(db_name)
+        conn.autocommit(False)
+        rowcount = 0
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(sql, args_list)
+                rowcount = cur.rowcount
+            conn.commit()
+            return rowcount
+        except Exception:
+            conn.rollback()
+            raise
+    finally:
+        conn.close()
 
 
-def _sql_quote(value: object | None) -> str:
-    if value is None:
-        return "NULL"
-    text = str(value)
-    return "'" + text.replace("\\", "\\\\").replace("'", "''") + "'"
+def execute_script(db_name: str, sql_script: str) -> None:
+    conn = get_conn()
+    try:
+        conn.select_db(db_name)
+        with conn.cursor() as cur:
+            for statement in sql_script.split(";"):
+                stmt = statement.strip()
+                if stmt:
+                    cur.execute(stmt)
+    finally:
+        conn.close()
 
 
 def build_scheduled_task_runs_table_sql() -> str:
@@ -1147,87 +1112,120 @@ def build_scheduled_task_runs_table_sql() -> str:
     )
 
 
-def _ensure_scheduled_task_runs_table(db_name: str, *, db_mode: str) -> None:
-    _run_mysql(build_scheduled_task_runs_table_sql(), db_name, db_mode=db_mode)
+def _ensure_scheduled_task_runs_table(db_name: str, *, db_mode: str = "auto") -> None:
+    execute_sql(db_name, build_scheduled_task_runs_table_sql())
 
 
-def _start_scheduled_task_run(db_name: str, *, db_mode: str) -> int:
-    _ensure_scheduled_task_runs_table(db_name, db_mode=db_mode)
+def _start_scheduled_task_run(db_name: str, *, db_mode: str = "auto") -> int:
+    _ensure_scheduled_task_runs_table(db_name)
     sql = (
         "INSERT INTO scheduled_task_runs (task_code, task_name, status, started_at) "
-        f"VALUES ({_sql_quote(TASK_CODE)}, {_sql_quote(TASK_NAME)}, 'running', NOW());\n"
-        "SELECT LAST_INSERT_ID();\n"
+        "VALUES (%s, %s, 'running', NOW());"
     )
-    output = _run_mysql(sql, db_name, db_mode=db_mode).strip()
-    for line in reversed(output.splitlines()):
-        text = line.strip()
-        if text.isdigit():
-            return int(text)
-    raise RuntimeError(f"无法读取定时任务运行记录 ID：{output!r}")
+    lastrowid = execute_sql(db_name, sql, (TASK_CODE, TASK_NAME))
+    if lastrowid:
+        return lastrowid
+    raise RuntimeError("无法读取定时任务运行记录 ID")
 
 
 def _finish_scheduled_task_run(
     db_name: str,
     run_id: int,
     *,
-    db_mode: str,
+    db_mode: str = "auto",
     status: str,
     summary: dict[str, Any] | None = None,
     error_message: str | None = None,
     output_file: str | None = None,
 ) -> None:
-    summary_sql = _sql_quote(json.dumps(summary, ensure_ascii=False)) if summary is not None else "NULL"
+    summary_json = json.dumps(summary, ensure_ascii=False) if summary is not None else None
     sql = (
         "UPDATE scheduled_task_runs SET "
-        f"status={_sql_quote(status)}, "
+        "status=%s, "
         "finished_at=NOW(), "
         "duration_seconds=TIMESTAMPDIFF(SECOND, started_at, NOW()), "
-        f"summary_json={summary_sql}, "
-        f"error_message={_sql_quote(error_message)}, "
-        f"output_file={_sql_quote(output_file)} "
-        f"WHERE id={int(run_id)};\n"
+        "summary_json=%s, "
+        "error_message=%s, "
+        "output_file=%s "
+        "WHERE id=%s;"
     )
-    _run_mysql(sql, db_name, db_mode=db_mode)
+    execute_sql(db_name, sql, (status, summary_json, error_message, output_file, int(run_id)))
 
 
 def _ensure_remote_shopifyid_column(db_name: str, *, db_mode: str = "auto") -> None:
-    count_text = _run_mysql(build_remote_column_exists_sql(db_name), db_name, db_mode=db_mode).strip()
-    exists = int(count_text or "0") > 0
-    if exists:
+    sql = (
+        "SELECT COUNT(*) "
+        "FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA=%s "
+        "AND TABLE_NAME=%s "
+        "AND COLUMN_NAME='shopifyid';"
+    )
+    rows = query_sql(db_name, sql, (db_name, REMOTE_MEDIA_TABLE))
+    count = 0
+    if rows:
+        count = list(rows[0].values())[0]
+    if count > 0:
         return
-    _run_mysql(build_remote_add_column_sql(), db_name, db_mode=db_mode)
+    execute_sql(db_name, build_remote_add_column_sql())
 
 
 def _ensure_remote_shopify_ids_table(db_name: str, *, db_mode: str = "auto") -> None:
-    _run_mysql(build_remote_shopify_ids_table_sql(), db_name, db_mode=db_mode)
+    execute_sql(db_name, build_remote_shopify_ids_table_sql())
 
 
 def _load_remote_local_products(db_name: str, *, db_mode: str = "auto") -> list[dict[str, Any]]:
-    output = _run_mysql(build_remote_select_products_sql(), db_name, db_mode=db_mode)
-    return parse_remote_products_tsv(output)
+    rows = query_sql(db_name, build_remote_select_products_sql())
+    for row in rows:
+        if row.get("shopifyid") == "":
+            row["shopifyid"] = None
+    return rows
 
 
 def _load_remote_enabled_domains(db_name: str, *, db_mode: str = "auto") -> list[str]:
     try:
-        output = _run_mysql(build_remote_select_enabled_domains_sql(), db_name, db_mode=db_mode)
+        rows = query_sql(db_name, build_remote_select_enabled_domains_sql())
     except Exception:
         return list(DEFAULT_SHOPIFY_DOMAINS)
-    domains = parse_remote_domains_tsv(output)
+    domains = []
+    seen = set()
+    for row in rows:
+        domain = normalize_domain(row.get("domain"))
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
     return domains or list(DEFAULT_SHOPIFY_DOMAINS)
 
 
 def _apply_remote_updates(db_name: str, updates: list[dict[str, object]], *, db_mode: str = "auto") -> None:
-    sql = build_remote_batch_update_sql(updates)
-    if not sql:
+    if not updates:
         return
-    _run_mysql(sql, db_name, db_mode=db_mode)
+    sql = build_remote_batch_update_sql()
+    params = []
+    for item in updates:
+        product_id = int(item["id"])
+        shopifyid = str(item["shopifyid"]).strip()
+        if not shopifyid.isdigit():
+            raise ValueError("shopifyid 必须是纯数字字符串")
+        params.append((shopifyid, product_id))
+    execute_many_sql(db_name, sql, params)
 
 
 def _apply_remote_domain_updates(db_name: str, updates: list[dict[str, object]], *, db_mode: str = "auto") -> None:
-    sql = build_remote_batch_upsert_shopify_ids_sql(updates)
-    if not sql:
+    if not updates:
         return
-    _run_mysql(sql, db_name, db_mode=db_mode)
+    sql = build_remote_batch_upsert_shopify_ids_sql()
+    params = []
+    for item in updates:
+        product_id = int(item["id"])
+        domain = normalize_domain(item.get("domain"))
+        shopify_product_id = str(item.get("shopify_product_id") or "").strip()
+        if not domain:
+            raise ValueError("domain 必须是有效域名")
+        if not shopify_product_id.isdigit():
+            raise ValueError("shopify_product_id 必须是纯数字字符串")
+        params.append((product_id, domain, shopify_product_id))
+    execute_many_sql(db_name, sql, params)
 
 
 def _now_text() -> str:
@@ -1370,6 +1368,11 @@ def _parse_task_record_args(argv: list[str] | None = None):
 
 
 def main(argv: list[str] | None = None) -> int:
+    args_list = argv if argv is not None else sys.argv[1:]
+    if "-h" in args_list or "--help" in args_list:
+        exit_code, _, _, _, _ = _run_main_impl(args_list)
+        return exit_code
+
     record_args = _parse_task_record_args(argv)
     db_name = str(REMOTE_ENVS[record_args.env]["db_name"])
     db_mode = resolve_db_mode(record_args.db_mode)
