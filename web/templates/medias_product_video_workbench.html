@@ -426,7 +426,106 @@
   color: var(--vw-fg);
   font-weight: 700;
 }
+
+/* ────────── Pager ────────── */
+.vw-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--vw-panel);
+  border: 1px solid var(--vw-border);
+  border-radius: var(--vw-r);
+  margin-top: 4px;
+}
+.vw-pager[hidden] { display: none !important; }
+.vw-pager button {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--vw-border-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--vw-fg);
+  font-size: 13px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.vw-pager button:hover:not(:disabled) {
+  border-color: var(--vw-blue);
+  color: var(--vw-blue);
+  background: #eef6fb;
+}
+.vw-pager button.active {
+  background: var(--vw-blue);
+  border-color: var(--vw-blue);
+  color: #fff;
+}
+.vw-pager button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.vw-pager-summary {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px;
+  color: var(--vw-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.vw-pager-select {
+  height: 32px;
+  border: 1px solid var(--vw-border-strong);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 24px 0 8px;
+  font: inherit;
+  font-size: 13px;
+  margin: 0 6px;
+  color: var(--vw-fg);
+  cursor: pointer;
+  outline: none;
+}
+.vw-pager-select:focus {
+  border-color: var(--vw-blue);
+}
+.vw-pager-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  margin-left: 8px;
+  color: var(--vw-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.vw-pager-jump input {
+  width: 72px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--vw-border-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--vw-fg);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.vw-pager-jump input:focus {
+  border-color: var(--vw-blue);
+  outline: none;
+}
 </style>
+
 {% endblock %}
 
 {% block content %}
@@ -448,6 +547,7 @@
   <div id="vwLangStrip" class="vw-lang-strip">
     <span class="vw-sub">语种素材加载中...</span>
   </div>
+  <div class="vw-pager" id="vwPager" hidden></div>
   <div id="vwGrid" class="vw-grid">
     <div class="vw-empty">加载视频素材...</div>
   </div>
@@ -633,6 +733,10 @@
   let importFailedStep = 'product';
   let importDomainOptions = [];
   let xiaoContext = null;
+  let pagerState = {
+    page: 1,
+    pageSize: 10
+  };
 
   function csrfHeaders(extra = {}) {
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -819,6 +923,7 @@
 
   async function loadWorkbench(sortBy) {
     grid.innerHTML = '<div class="vw-empty">加载视频素材...</div>';
+    pagerState.page = 1;
     try {
       const data = await fetchJson(`/medias/api/product/${productId}/video-workbench?sort_by=${encodeURIComponent(sortBy || 'spend_90')}`);
       currentData = data;
@@ -858,12 +963,123 @@
     langStrip.innerHTML = rows.length ? rows.join('') : '<span class="vw-sub">暂无本地语种素材</span>';
   }
   function renderCards(data) {
-    const cards = data.cards || [];
+    const d = data || currentData || {};
+    const cards = d.cards || [];
     if (!cards.length) {
       grid.innerHTML = '<div class="vw-empty">该产品还没有同步到明空视频素材</div>';
+      const pager = document.getElementById('vwPager');
+      if (pager) pager.hidden = true;
       return;
     }
-    grid.innerHTML = cards.map(renderCard).join('');
+    const total = cards.length;
+    const startIndex = (pagerState.page - 1) * pagerState.pageSize;
+    const endIndex = startIndex + pagerState.pageSize;
+    const pageCards = cards.slice(startIndex, endIndex);
+
+    grid.innerHTML = pageCards.map(renderCard).join('');
+    renderPager(total);
+  }
+  function renderPager(total) {
+    const pager = document.getElementById('vwPager');
+    if (!pager) return;
+    const pages = Math.max(1, Math.ceil(total / pagerState.pageSize));
+    const currentPage = Math.min(pages, Math.max(1, pagerState.page));
+    pagerState.page = currentPage;
+
+    if (total <= 0) {
+      pager.innerHTML = '';
+      pager.hidden = true;
+      return;
+    }
+    pager.hidden = false;
+
+    const firstDisabled = currentPage <= 1 ? ' disabled aria-disabled="true"' : '';
+    const lastDisabled = currentPage >= pages ? ' disabled aria-disabled="true"' : '';
+    const prevPage = Math.max(1, currentPage - 1);
+    const nextPage = Math.min(pages, currentPage + 1);
+
+    let selectHtml = `
+      <span class="vw-pager-summary">
+        每页显示
+        <select class="vw-pager-select" data-page-size-select aria-label="每页显示条数">
+          <option value="10" ${pagerState.pageSize === 10 ? 'selected' : ''}>10</option>
+          <option value="20" ${pagerState.pageSize === 20 ? 'selected' : ''}>20</option>
+          <option value="50" ${pagerState.pageSize === 50 ? 'selected' : ''}>50</option>
+          <option value="100" ${pagerState.pageSize === 100 ? 'selected' : ''}>100</option>
+        </select>
+        条
+      </span>
+    `;
+
+    const buttons = [
+      selectHtml,
+      `<span class="vw-pager-summary">第 ${currentPage} / ${pages} 页</span>`,
+      `<button type="button" data-page="1"${firstDisabled}>首页</button>`,
+      `<button type="button" data-page="${prevPage}"${firstDisabled}>上一页</button>`,
+    ];
+
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(pages, currentPage + 2);
+    if (pages > 5) {
+      if (start === 1) {
+        end = 5;
+      } else if (end === pages) {
+        start = pages - 4;
+      }
+    }
+    for (let p = start; p <= end; p++) {
+      buttons.push(`<button type="button" class="${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`);
+    }
+
+    buttons.push(`<button type="button" data-page="${nextPage}"${lastDisabled}>下一页</button>`);
+    buttons.push(`<button type="button" data-page="${pages}"${lastDisabled}>末页</button>`);
+    buttons.push(`
+      <label class="vw-pager-jump">
+        <span>去</span>
+        <input type="number" min="1" max="${pages}" value="${currentPage}" inputmode="numeric" pattern="[0-9]*" data-page-jump aria-label="跳转到指定页">
+        <span>页</span>
+      </label>
+    `);
+    buttons.push(`<span class="vw-pager-summary">共 ${total} 条数据</span>`);
+
+    pager.innerHTML = buttons.join('');
+
+    pager.querySelectorAll('[data-page]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        pagerState.page = Number(btn.dataset.page || 1);
+        renderCards(currentData);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+
+    const selectEl = pager.querySelector('[data-page-size-select]');
+    if (selectEl) {
+      selectEl.addEventListener('change', (e) => {
+        pagerState.pageSize = Number(e.target.value || 10);
+        pagerState.page = 1;
+        renderCards(currentData);
+      });
+    }
+
+    const jumpInput = pager.querySelector('[data-page-jump]');
+    if (jumpInput) {
+      jumpInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          const requested = Number.parseInt(jumpInput.value, 10);
+          if (!Number.isFinite(requested)) {
+            jumpInput.value = String(currentPage);
+            return;
+          }
+          const target = Math.min(pages, Math.max(1, requested));
+          jumpInput.value = String(target);
+          if (target === pagerState.page) return;
+          pagerState.page = target;
+          renderCards(currentData);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      });
+    }
   }
   function heatLevel(adsCount) {
     const n = Number(adsCount || 0);
