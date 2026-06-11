@@ -68,6 +68,13 @@ REMOTE_MEDIA_PRODUCTS_TABLE = "media_products"
 REMOTE_SKU_PAIR_TABLE = "media_product_skus"
 
 
+def _sql_quote(value: object | None) -> str:
+    if value is None:
+        return "NULL"
+    text = str(value)
+    return "'" + text.replace("\\", "\\\\").replace("'", "''") + "'"
+
+
 # Shopify 在线商品库默认查询参数，与浏览器 UI 默认一致。
 SHOPIFY_DEFAULT_PAYLOAD = {
     "sortName": 2,
@@ -551,6 +558,65 @@ def parse_remote_products_tsv(text: str) -> list[dict[str, Any]]:
             "shopify_title": shopify_title.strip() or "",
         })
     return rows
+
+
+def build_remote_apply_sql(
+    *,
+    title_updates: list[tuple[int, str | None]],
+    sku_replacements: list[tuple[int, list[dict[str, Any]]]],
+    source: str = "auto",
+) -> str:
+    """Build a deterministic SQL script for tests and legacy remote execution."""
+    lines: list[str] = ["START TRANSACTION;"]
+    for product_id, title in title_updates:
+        lines.append(
+            f"UPDATE media_products SET shopify_title={_sql_quote(title)} "
+            f"WHERE id={int(product_id)} AND deleted_at IS NULL;"
+        )
+    for product_id, pairs in sku_replacements:
+        lines.append(
+            "DELETE FROM media_product_skus "
+            f"WHERE product_id={int(product_id)} AND COALESCE(manual_override, 0)=0;"
+        )
+        for pair in pairs:
+            def num(value):
+                return "NULL" if value is None else str(value)
+
+            lines.append(
+                "INSERT INTO media_product_skus "
+                "(product_id, shopify_product_id, shopify_variant_id, shopify_sku, "
+                " shopify_price, shopify_compare_at_price, shopify_inventory_quantity, "
+                " shopify_weight_grams, shopify_variant_title, dianxiaomi_sku, "
+                " dianxiaomi_product_sku, dianxiaomi_sku_code, dianxiaomi_name, source) VALUES ("
+                f"{int(product_id)}, {_sql_quote(pair.get('shopify_product_id'))}, "
+                f"{_sql_quote(pair.get('shopify_variant_id'))}, "
+                f"{_sql_quote(pair.get('shopify_sku'))}, "
+                f"{num(pair.get('shopify_price'))}, "
+                f"{num(pair.get('shopify_compare_at_price'))}, "
+                f"{num(pair.get('shopify_inventory_quantity'))}, "
+                f"{num(pair.get('shopify_weight_grams'))}, "
+                f"{_sql_quote(pair.get('shopify_variant_title'))}, "
+                f"{_sql_quote(pair.get('dianxiaomi_sku'))}, "
+                f"{_sql_quote(pair.get('dianxiaomi_product_sku'))}, "
+                f"{_sql_quote(pair.get('dianxiaomi_sku_code'))}, "
+                f"{_sql_quote(pair.get('dianxiaomi_name'))}, "
+                f"{_sql_quote(source)}) "
+                "ON DUPLICATE KEY UPDATE "
+                "shopify_product_id=IF(COALESCE(manual_override, 0)=1, shopify_product_id, VALUES(shopify_product_id)), "
+                "shopify_sku=IF(COALESCE(manual_override, 0)=1, shopify_sku, VALUES(shopify_sku)), "
+                "shopify_price=IF(COALESCE(manual_override, 0)=1, shopify_price, VALUES(shopify_price)), "
+                "shopify_compare_at_price=IF(COALESCE(manual_override, 0)=1, shopify_compare_at_price, VALUES(shopify_compare_at_price)), "
+                "shopify_inventory_quantity=IF(COALESCE(manual_override, 0)=1, shopify_inventory_quantity, VALUES(shopify_inventory_quantity)), "
+                "shopify_weight_grams=IF(COALESCE(manual_override, 0)=1, shopify_weight_grams, VALUES(shopify_weight_grams)), "
+                "shopify_variant_title=IF(COALESCE(manual_override, 0)=1, shopify_variant_title, VALUES(shopify_variant_title)), "
+                "dianxiaomi_sku=IF(COALESCE(manual_override, 0)=1, dianxiaomi_sku, VALUES(dianxiaomi_sku)), "
+                "dianxiaomi_product_sku=IF(COALESCE(manual_override, 0)=1, dianxiaomi_product_sku, VALUES(dianxiaomi_product_sku)), "
+                "dianxiaomi_sku_code=IF(COALESCE(manual_override, 0)=1, dianxiaomi_sku_code, VALUES(dianxiaomi_sku_code)), "
+                "dianxiaomi_name=IF(COALESCE(manual_override, 0)=1, dianxiaomi_name, VALUES(dianxiaomi_name)), "
+                "source=IF(COALESCE(manual_override, 0)=1, source, VALUES(source));"
+            )
+    lines.append("COMMIT;")
+    return "\n".join(lines) + "\n"
 
 
 def apply_remote_sku_changes(
