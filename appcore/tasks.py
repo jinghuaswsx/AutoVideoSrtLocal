@@ -4585,8 +4585,7 @@ def submit_child_step_manual_output(
 
         # 异步启动后台任务以同步最新的视频状态 (提取 duration, 制作缩略图，并刷新推送状态缓存)
         import threading
-        from web.services.media_items import build_item_thumbnail
-        from web.services import media_object_storage
+        from appcore.medias import build_item_thumbnail, download_media_object
         from appcore.pushes import _refresh_push_status_cache_for_item_safely
 
         def refresh_bg():
@@ -4596,7 +4595,7 @@ def submit_child_step_manual_output(
                     product_id=product_id,
                     filename=filename,
                     object_key=object_key,
-                    download_media_object_fn=media_object_storage.download_media_object,
+                    download_media_object_fn=download_media_object,
                 )
             except Exception:
                 pass

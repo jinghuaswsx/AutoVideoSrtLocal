@@ -90,6 +90,61 @@ def test_mk_search_codes_include_stripped_code_first():
     assert mapping["demo-product-rjc"] == ["demo-product", "demo-product-rjc"]
 
 
+def test_source_material_candidates_include_self_made_english_cjh_materials():
+    product = _row(product_id=10, product_code="baseball-cap-organizer-rjc", product_name="可堆叠棒球帽收纳盒")
+    local_materials = [
+        {
+            "id": 31,
+            "product_id": 10,
+            "lang": "en",
+            "filename": "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材-B-指派-蔡靖华.mp4",
+            "display_name": "",
+            "object_key": "10/medias/31/cjh.mp4",
+            "cover_object_key": "10/medias/31/cjh.jpg",
+            "video_url": "/medias/object?object_key=10%2Fmedias%2F31%2Fcjh.mp4",
+            "created_at": "2026-03-25T10:00:00",
+            "duration_seconds": 18,
+            "push_count": 11,
+        },
+        {
+            "id": 32,
+            "product_id": 10,
+            "lang": "en",
+            "filename": "2026.03.26-可堆叠棒球帽收纳盒-原素材-张晴.mp4",
+            "object_key": "10/medias/32/zhang.mp4",
+        },
+        {
+            "id": 33,
+            "product_id": 10,
+            "lang": "de",
+            "filename": "2026.03.27-可堆叠棒球帽收纳盒-原素材-蔡靖华.mp4",
+            "object_key": "10/medias/33/de.mp4",
+        },
+    ]
+    mingkong_materials = [
+        {
+            "material_key": "mk1",
+            "product_code": "baseball-cap-organizer",
+            "video_name": "mk-demo.mp4",
+            "video_path": "mk/demo.mp4",
+            "cumulative_90_spend": 310000,
+            "video_ads_count": 18,
+        }
+    ]
+
+    candidates = svc._build_source_material_candidates(product, local_materials, mingkong_materials, limit=6)
+
+    assert [item["source_type"] for item in candidates] == ["mingkong", "local_en_cjh"]
+    cjh = candidates[1]
+    assert cjh["material_key"] == "local:31"
+    assert cjh["media_item_id"] == 31
+    assert cjh["video_name"] == "2026.03.25-可堆叠棒球帽收纳盒-原素材-补充素材-B-指派-蔡靖华.mp4"
+    assert cjh["video_url"] == "/medias/object?object_key=10%2Fmedias%2F31%2Fcjh.mp4"
+    assert cjh["cover_url"] == "/medias/object?object_key=10%2Fmedias%2F31%2Fcjh.jpg"
+    assert cjh["video_author"] == "蔡靖华"
+    assert cjh["source_label"] == "自制EN"
+
+
 def test_target_countries_include_english_source_language():
     assert svc.TARGET_COUNTRIES[0]["country_code"] == "EN"
     assert svc.TARGET_COUNTRIES[0]["lang"] == "en"
@@ -843,6 +898,14 @@ def test_ai_material_strategist_frontend_restores_split_lost_controls():
     assert ".aims-task-count-btn" in template
     assert ".aims-rec-badge.expand_country" in template
     assert "ai_material_strategist.js', v=" in template
+    assert "function renderSourceMaterialCard" in script
+    assert "source_type === 'local_en_cjh'" in script
+    assert "mk-video-card" in script
+    assert "mk-video-product-line" in script
+    assert "data-aims-video-tab" in script
+    assert "aims-product-body--source-first" in script
+    assert ".aims-country-panel" in template
+    assert ".mk-video-card" in template
 
 
 def test_import_mk_video_action_payload_contains_required_download_fields():

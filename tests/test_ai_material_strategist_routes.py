@@ -96,6 +96,14 @@ def test_ai_material_strategist_public_share_api_returns_sanitized_project_witho
                         {
                             "video_name": "demo.mp4",
                             "video_url": "/medias/api/mk-video?path=demo.mp4",
+                        },
+                        {
+                            "source_type": "local_en_cjh",
+                            "video_name": "cjh.mp4",
+                            "object_key": "tasks/99/medias/cjh.mp4",
+                            "cover_object_key": "tasks/99/medias/cjh.jpg",
+                            "video_url": "/medias/object?object_key=tasks%2F99%2Fmedias%2Fcjh.mp4",
+                            "cover_url": "/medias/object?object_key=tasks%2F99%2Fmedias%2Fcjh.jpg",
                         }
                     ],
                     "local_materials": [
@@ -129,6 +137,10 @@ def test_ai_material_strategist_public_share_api_returns_sanitized_project_witho
     # 验证视频链接已正确加回并且拼接了 share_token
     mk_video = project["products"][0]["mingkong_materials"][0]["video_url"]
     assert "share_token=share_token_1234567890" in mk_video
+
+    local_source = project["products"][0]["mingkong_materials"][1]
+    assert local_source["video_url"] == "/medias/obj/tasks/99/medias/cjh.mp4"
+    assert local_source["cover_url"] == "/medias/obj/tasks/99/medias/cjh.jpg"
     
     # 验证本地素材视频链接转换成了公开格式
     local_video = project["products"][0]["local_materials"][0]["video_url"]

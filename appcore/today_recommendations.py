@@ -18,7 +18,7 @@ from appcore import local_media_storage, mk_import, pushes, tasks
 from appcore.db import execute, get_conn, query, query_one
 from appcore.medias import create_item
 from appcore.users import ensure_translation_work_user
-from web.services.media_mk_selection import (
+from appcore.mk_media_helpers import (
     build_mk_video_cache_object_key,
     cache_mk_video,
     normalize_mk_media_path,

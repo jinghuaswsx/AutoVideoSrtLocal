@@ -51,6 +51,24 @@ def _sort_order_dashboard_rows(rows: list[dict], *, name_key: str) -> list[dict]
     )
 
 
+from decimal import Decimal
+
+_COUNTRY_NAMES = {
+    "US": "美国",
+    "DE": "德国",
+    "FR": "法国",
+    "ES": "西班牙",
+    "IT": "意大利",
+    "JP": "日本",
+    "PT": "葡萄牙",
+    "NL": "荷兰",
+    "AU": "澳大利亚",
+    "NZ": "新西兰",
+    "CA": "加拿大",
+    "GB": "英国",
+}
+
+
 def get_country_dashboard(
     period: str,
     year: int | None = None,
@@ -60,6 +78,7 @@ def get_country_dashboard(
     today: date | None = None,
     start_date: str | date | None = None,
     end_date: str | date | None = None,
+    product_code: str | None = None,
 ) -> dict:
     period = str(period or "").strip().lower()
     if start_date is not None or end_date is not None:
@@ -84,7 +103,41 @@ def get_country_dashboard(
         )
         period_type = period
 
-    rows = query(
+    # Resolve product_id and product_name if product_code is provided
+    product_id = None
+    product_name = None
+    if product_code:
+        prod_row = query_one(
+            "SELECT id, name FROM media_products WHERE product_code = %s AND deleted_at IS NULL LIMIT 1",
+            (product_code,)
+        )
+        if prod_row:
+            product_id = prod_row.get("id")
+            product_name = prod_row.get("name")
+
+        if product_id is None:
+            order_pid_row = query_one(
+                "SELECT product_id, product_name FROM dianxiaomi_order_lines "
+                "WHERE product_code = %s AND product_id IS NOT NULL ORDER BY id DESC LIMIT 1",
+                (product_code,)
+            )
+            if order_pid_row:
+                product_id = order_pid_row.get("product_id")
+                if not product_name:
+                    product_name = order_pid_row.get("product_name")
+
+        if not product_name:
+            fallback_name = query_one(
+                "SELECT product_name FROM dianxiaomi_order_lines "
+                "WHERE product_code = %s AND product_name IS NOT NULL ORDER BY id DESC LIMIT 1",
+                (product_code,)
+            )
+            if fallback_name:
+                product_name = fallback_name.get("product_name")
+            else:
+                product_name = product_code
+
+    order_sql = (
         "SELECT buyer_country, buyer_country_name, "
         "COUNT(DISTINCT dxm_package_id) AS order_count, "
         "SUM(COALESCE(quantity, 0)) AS units, "
@@ -92,41 +145,114 @@ def get_country_dashboard(
         "SUM(COALESCE(ship_amount, 0)) AS shipping "
         "FROM dianxiaomi_order_lines "
         "WHERE meta_business_date >= %s AND meta_business_date <= %s "
-        "GROUP BY buyer_country, buyer_country_name",
-        (start, end),
     )
+    order_params = [start, end]
+    if product_code:
+        order_sql += " AND product_code = %s "
+        order_params.append(product_code)
+
+    order_sql += " GROUP BY buyer_country, buyer_country_name"
+    rows = query(order_sql, tuple(order_params))
+
+    # Query ad spend and purchase value by country
+    ad_sql = (
+        "SELECT market_country, "
+        "       SUM(COALESCE(spend_usd, 0)) AS spend, "
+        "       SUM(COALESCE(purchase_value_usd, 0)) AS purchase_value "
+        "FROM meta_ad_daily_ad_metrics "
+        "WHERE COALESCE(meta_business_date, report_date) >= %s AND COALESCE(meta_business_date, report_date) <= %s "
+    )
+    ad_params = [start, end]
+    if product_code:
+        ad_sql += " AND product_id = %s "
+        ad_params.append(product_id if product_id is not None else -1)
+
+    ad_sql += " GROUP BY market_country"
+    ad_rows = query(ad_sql, tuple(ad_params))
+
+    ad_by_country = {}
+    for r in ad_rows:
+        mc = (r.get("market_country") or "").strip().upper()
+        if mc:
+            ad_by_country[mc] = {
+                "spend": Decimal(str(r.get("spend") or 0)),
+                "purchase_value": Decimal(str(r.get("purchase_value") or 0)),
+            }
 
     unknown_display_name = "未知"
     countries = []
+
+    order_by_country = {}
     for row in rows:
-        product_net_sales = _money(row.get("product_net_sales"))
-        shipping = _money(row.get("shipping"))
-        country_code = (row.get("buyer_country") or "").strip()
-        country_name = (row.get("buyer_country_name") or "").strip()
+        c_code = (row.get("buyer_country") or "").strip().upper()
+        order_by_country[c_code] = row
+
+    all_country_codes = sorted(list(order_by_country.keys() | ad_by_country.keys()))
+
+    for c_code in all_country_codes:
+        row = order_by_country.get(c_code)
+        ad_data = ad_by_country.get(c_code, {"spend": Decimal("0"), "purchase_value": Decimal("0")})
+
+        spend = float(ad_data["spend"])
+        purchase_value = float(ad_data["purchase_value"])
+
+        if row:
+            product_net_sales = _money(row.get("product_net_sales"))
+            shipping = _money(row.get("shipping"))
+            country_name = (row.get("buyer_country_name") or "").strip()
+            if not country_name:
+                country_name = _COUNTRY_NAMES.get(c_code, c_code)
+            order_count = int(row.get("order_count") or 0)
+            units = int(row.get("units") or 0)
+        else:
+            product_net_sales = 0.0
+            shipping = 0.0
+            country_name = _COUNTRY_NAMES.get(c_code, c_code)
+            order_count = 0
+            units = 0
+
+        total_sales = _revenue_with_shipping(product_net_sales, shipping)
+
+        real_roas = round(total_sales / spend, 2) if spend > 0 else None
+        meta_roas = round(purchase_value / spend, 2) if spend > 0 else None
+
         display_name = (
-            f"{country_name} / {country_code}"
-            if country_name and country_code
-            else country_name or country_code or unknown_display_name
+            f"{country_name} / {c_code}"
+            if country_name and c_code
+            else country_name or c_code or unknown_display_name
         )
+
         countries.append({
-            "buyer_country": country_code,
+            "buyer_country": c_code,
             "buyer_country_name": country_name,
             "display_name": display_name,
-            "order_count": int(row.get("order_count") or 0),
-            "units": int(row.get("units") or 0),
+            "order_count": order_count,
+            "units": units,
             "product_net_sales": product_net_sales,
             "shipping": shipping,
-            "total_sales": _revenue_with_shipping(product_net_sales, shipping),
+            "total_sales": total_sales,
+            "spend": spend,
+            "roas": real_roas,
+            "meta_roas": meta_roas,
+            "purchase_value": purchase_value,
         })
 
     countries = _sort_order_dashboard_rows(countries, name_key="display_name")
+
+    total_sales_sum = sum(row["total_sales"] for row in countries)
+    total_spend_sum = sum(row["spend"] for row in countries)
+    total_purchase_value_sum = sum(row["purchase_value"] for row in countries)
+
     summary = {
         "country_count": len(countries),
         "total_orders": sum(row["order_count"] for row in countries),
         "total_units": sum(row["units"] for row in countries),
-        "total_sales": round(sum(row["total_sales"] for row in countries), 2),
+        "total_sales": round(total_sales_sum, 2),
         "shipping": round(sum(row["shipping"] for row in countries), 2),
         "product_net_sales": round(sum(row["product_net_sales"] for row in countries), 2),
+        "total_spend": round(total_spend_sum, 2),
+        "overall_roas": round(total_sales_sum / total_spend_sum, 2) if total_spend_sum > 0 else None,
+        "overall_meta_roas": round(total_purchase_value_sum / total_spend_sum, 2) if total_spend_sum > 0 else None,
     }
     return {
         "period": {
@@ -139,6 +265,8 @@ def get_country_dashboard(
         },
         "summary": summary,
         "countries": countries,
+        "product_code": product_code,
+        "product_name": product_name,
     }
 
 

@@ -14,6 +14,14 @@ def clear_tasks():
     ts._tasks.clear()
 
 
+@pytest.fixture(autouse=True)
+def mock_db(monkeypatch):
+    """Mock database calls to prevent actual connections."""
+    monkeypatch.setattr("appcore.db.execute", lambda sql, args=None: 1)
+    monkeypatch.setattr("appcore.db.query", lambda sql, args=None: [])
+    monkeypatch.setattr("appcore.db.query_one", lambda sql, args=None: None)
+
+
 def test_create_initializes_expected_keys():
     task = ts.create("t1", "/video.mp4", "/task/t1")
     assert task["id"] == "t1"

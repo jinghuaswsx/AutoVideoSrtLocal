@@ -45,8 +45,9 @@ def test_default_site_codes_render_legacy_sql(monkeypatch):
         now=datetime(2026, 5, 9, 14, 0),
     )
 
-    # 默认仍走双店/多店字面量，向后兼容现有快照测试期望
-    assert any("site_code IN ('newjoy', 'omurio', 'cozywint')" in sql for sql, _ in calls)
+    # 默认仍走双店/多店参数化占位符
+    assert any("site_code IN (%s, %s, %s)" in sql for sql, _ in calls)
+    assert any(all(code in args for code in ("newjoy", "omurio", "cozywint")) for _, args in calls if "site_code IN" in _)
     assert result["scope"]["stores"] == ["newjoy", "omurio", "cozywint"]
 
 
@@ -67,8 +68,9 @@ def test_single_site_filter_narrows_sql_and_scope(monkeypatch):
     )
 
     # SQL 收窄为单店
-    assert any("site_code IN ('newjoy')" in sql for sql, _ in calls)
-    assert not any("site_code IN ('newjoy', 'omurio')" in sql for sql, _ in calls)
+    assert any("site_code IN (%s)" in sql for sql, _ in calls)
+    assert not any("site_code IN (%s, %s)" in sql for sql, _ in calls)
+    assert any("newjoy" in args for _, args in calls if "site_code IN" in _)
 
     # 不再触碰双店预聚合表
     assert not any("FROM roi_realtime_daily_snapshots" in sql for sql, _ in calls)
@@ -178,7 +180,8 @@ def test_invalid_site_code_falls_back_to_default(monkeypatch):
     )
 
     assert result["scope"]["stores"] == ["newjoy", "omurio", "cozywint"]
-    assert any("site_code IN ('newjoy', 'omurio', 'cozywint')" in sql for sql, _ in calls)
+    assert any("site_code IN (%s, %s, %s)" in sql for sql, _ in calls)
+    assert any(all(code in args for code in ("newjoy", "omurio", "cozywint")) for _, args in calls if "site_code IN" in _)
 
 
 # ── 路由层：site_code 白名单 ────────────────────────────────────────

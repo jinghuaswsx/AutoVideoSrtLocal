@@ -730,7 +730,7 @@
         if (currentData.length > 0) {
           var latestIdx = currentData.length - 1;
           setTimeout(function() {
-            highlightTableRow(latestIdx);
+            highlightTableRow(latestIdx, true);
             triggerChartHighlight(latestIdx);
             document.getElementById('tableScrollContainer').scrollTop = 0;
           }, 50);
@@ -744,7 +744,7 @@
     // Default focus on the latest active date on load
     if (activeDaily.length > 0) {
       var latestIdx = activeDaily.length - 1;
-      highlightTableRow(latestIdx);
+      highlightTableRow(latestIdx, true);
       triggerChartHighlight(latestIdx);
       setTimeout(function() {
         document.getElementById('tableScrollContainer').scrollTop = 0;
@@ -1323,34 +1323,36 @@
         tooltip.style.top = topPos + 'px';
       }
 
-      highlightTableRow(i);
+      highlightTableRow(i, false);
     });
 
     overlay.addEventListener('mouseleave', function() {
       if (points.length > 0) {
         var latestIdx = points.length - 1;
         triggerChartHighlight(latestIdx);
-        highlightTableRow(latestIdx);
+        highlightTableRow(latestIdx, false);
       }
     });
   }
 
-  function highlightTableRow(idx) {
+  function highlightTableRow(idx, shouldScroll) {
     clearTableRowHighlight();
     var row = document.querySelector('.trend-table-row[data-index="' + idx + '"]');
     if (row) {
       row.classList.add('is-active-row');
       
-      var container = document.getElementById('tableScrollContainer');
-      var rTop = row.offsetTop;
-      var rHeight = row.offsetHeight;
-      var cScroll = container.scrollTop;
-      var cHeight = container.clientHeight;
-      
-      if (rTop < cScroll) {
-        container.scrollTop = rTop - 10;
-      } else if (rTop + rHeight > cScroll + cHeight) {
-        container.scrollTop = rTop + rHeight - cHeight + 10;
+      if (shouldScroll) {
+        var container = document.getElementById('tableScrollContainer');
+        var rTop = row.offsetTop;
+        var rHeight = row.offsetHeight;
+        var cScroll = container.scrollTop;
+        var cHeight = container.clientHeight;
+        
+        if (rTop < cScroll) {
+          container.scrollTop = rTop - 10;
+        } else if (rTop + rHeight > cScroll + cHeight) {
+          container.scrollTop = rTop + rHeight - cHeight + 10;
+        }
       }
     }
   }
@@ -1434,7 +1436,7 @@
         if (currentData.length > 0) {
           var latestIdx = currentData.length - 1;
           triggerChartHighlight(latestIdx);
-          highlightTableRow(latestIdx);
+          highlightTableRow(latestIdx, false);
         }
       });
     });

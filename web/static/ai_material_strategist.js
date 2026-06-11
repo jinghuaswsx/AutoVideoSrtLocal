@@ -68,6 +68,58 @@
       .replace(/'/g, '&#39;');
   }
 
+  function safeHref(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('/') || raw.startsWith('http://') || raw.startsWith('https://')) {
+      return raw;
+    }
+    return '';
+  }
+
+  function fmtMaterialSpend(value) {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n) || n <= 0) return '$0';
+    if (n >= 10000) return (n / 10000).toFixed(n >= 100000 ? 1 : 2).replace(/\.0+$/, '') + '万';
+    if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 1 : 2).replace(/\.0+$/, '') + '千';
+    return fmtUsd(n);
+  }
+
+  function heatLevelFromMaterial(material) {
+    const ads = Number(material.video_ads_count || 0);
+    const spend = Number(material.cumulative_90_spend || 0);
+    if (ads >= 10 || spend >= 10000) return { cls: 'high', label: '高' };
+    if (ads >= 3 || spend >= 1000) return { cls: 'med', label: '中' };
+    return { cls: 'low', label: '低' };
+  }
+
+  function mkCopyIconSvg() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  }
+
+  function mkStatusIconSvg(type) {
+    if (type === 'video') {
+      return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m10 9 5 3-5 3Z"></path></svg>';
+    }
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 8-9-5-9 5 9 5 9-5Z"></path><path d="M3 8v8l9 5 9-5V8"></path><path d="M12 13v8"></path></svg>';
+  }
+
+  function mkSearchIconSvg() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>';
+  }
+
+  function copyText(value, button) {
+    const text = String(value || '').trim();
+    if (!text || !navigator.clipboard) return;
+    navigator.clipboard.writeText(text).then(() => {
+      const old = button && button.getAttribute('title');
+      if (button) {
+        button.setAttribute('title', '已复制');
+        window.setTimeout(() => button.setAttribute('title', old || '复制'), 900);
+      }
+    }).catch(() => {});
+  }
+
   function statusLabel(status) {
     if (status === 'success') return '完成';
     if (status === 'failed') return '失败';
@@ -1115,7 +1167,7 @@
   function renderProductSection(item, productIndex) {
     const ai = item.ai_result || {};
     const m = item.metrics || {};
-    const materials = (item.mingkong_materials || []).slice(0, 3);
+    const materials = (item.mingkong_materials || []).slice(0, 6);
     const debug = ai._prompt_debug || ai.prompt_debug || {};
     const provider = debug.provider || 'openrouter';
     const model = debug.model || 'google/gemini-3.5-flash';
@@ -1139,16 +1191,16 @@
           </div>
           ${state.publicMode ? '' : `<div class="aims-actions">${renderInlineActions(item)}</div>`}
         </div>
-        <div class="aims-product-body">
-          <div>
+        <div class="aims-product-body aims-product-body--source-first">
+          <div class="aims-band aims-country-panel">
+            <div class="aims-band-title">国家反馈</div>
+            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas, ai, productIndex)}</div>
+          </div>
+          <div class="aims-source-panel">
             <p class="aims-rec">${esc(ai.overall_judgement || '')}</p>
             ${debugBadge}
             <div class="aims-task-list" style="margin:0 0 12px;">${renderTaskCountLink(item, productIndex)}</div>
-            <div class="aims-material-grid">${materials.map((material, materialIndex) => renderMaterial(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:48px;">暂无明空候选</div>'}</div>
-          </div>
-          <div class="aims-band">
-            <div class="aims-band-title">国家反馈</div>
-            <div class="aims-bars">${renderCountryBars(item.country_summary || [], item.effective_breakeven_roas, ai, productIndex)}</div>
+            <div class="aims-material-grid">${materials.map((material, materialIndex) => renderSourceMaterialCard(item, material, productIndex, materialIndex)).join('') || '<div class="aims-empty" style="min-height:48px;">暂无素材候选</div>'}</div>
           </div>
         </div>
       </section>
@@ -1169,32 +1221,102 @@
     `;
   }
 
-  function renderMaterial(item, material, productIndex, materialIndex) {
+  function renderSourceMaterialCard(item, material, productIndex, materialIndex) {
     const actionIndex = (item.action_items || []).findIndex((action) => {
       return action.type === 'import_mk_video' && action.material_key === material.material_key;
     });
-    const importButton = !state.publicMode && actionIndex >= 0
-      ? `<button type="button" class="aims-btn teal" data-import-action data-product-index="${productIndex}" data-action-index="${actionIndex}">加入素材库</button>`
+    const source_type = String(material.source_type || 'mingkong');
+    const isLocalCjh = source_type === 'local_en_cjh';
+    const productCode = String(item.product_code || material.product_code || '').trim();
+    const productName = String(item.product_name || material.product_name || productCode || '无中文产品名').trim();
+    const englishName = String(item.product_english_title || material.product_english_title || '').trim();
+    const productUrl = safeHref(material.product_url || material.mk_product_link || '');
+    const videoUrl = safeHref(material.video_url || '');
+    const coverUrl = safeHref(material.cover_url || '');
+    const videoName = String(material.video_name || material.video_path || '素材').trim();
+    const sourceLabel = material.source_label || (isLocalCjh ? '自制EN' : '明空');
+    const heat = heatLevelFromMaterial(material);
+    const uploadDate = material.video_upload_time ? String(material.video_upload_time).split('T')[0] : '--';
+    const author = material.video_author || (isLocalCjh ? '蔡靖华' : '--');
+    const spendText = isLocalCjh ? '美国站已入库' : fmtMaterialSpend(material.cumulative_90_spend);
+    const yesterdayText = isLocalCjh ? '-' : fmtMaterialSpend(material.yesterday_spend_delta);
+    const mediaSearchUrl = productCode ? `/medias/?q=${encodeURIComponent(productCode)}${isLocalCjh && material.media_item_id ? `&item=${encodeURIComponent(material.media_item_id)}` : ''}` : '/medias';
+    const detailHref = !state.publicMode && material.material_key && !isLocalCjh ? `/xuanpin/mk/materials/${encodeURIComponent(material.material_key)}` : '';
+    const copyProductButton = productCode ? `<button type="button" class="mk-icon-copy-btn" data-copy-text="${esc(productCode)}" title="复制产品code" aria-label="复制产品code">${mkCopyIconSvg()}</button>` : '';
+    const searchButton = !state.publicMode ? `<a class="mk-media-search-link" href="${esc(mediaSearchUrl)}" target="_blank" rel="noopener noreferrer" title="素材库搜索" aria-label="素材库搜索">${mkSearchIconSvg()}</a>` : '';
+    const productCodeActionsHtml = (copyProductButton || searchButton)
+      ? `<span class="mk-video-product-actions">${copyProductButton}${searchButton}</span>`
       : '';
-    const videoNode = material.video_url
-      ? `<video controls preload="metadata" src="${esc(material.video_url)}"></video>`
+    const filenameCopyHtml = `<button type="button" class="mk-icon-copy-btn" data-copy-text="${esc(videoName)}" title="复制文件名" aria-label="复制文件名">${mkCopyIconSvg()}</button>`;
+    const detailLinkHtml = detailHref ? `<a class="mk-video-detail-link" href="${esc(detailHref)}" target="_blank" rel="noopener noreferrer">详情</a>` : '';
+    const titleActionsHtml = `<span class="mk-video-title-actions">${detailLinkHtml}${filenameCopyHtml}</span>`;
+    const productLinkHtml = productUrl
+      ? `<div class="mk-video-product-link-row"><a class="mk-video-product-link mk-line-clamp mk-line-clamp--1" href="${esc(productUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(productUrl)}">${esc(productUrl)}</a><button type="button" class="mk-icon-copy-btn" data-copy-text="${esc(productUrl)}" title="复制产品链接" aria-label="复制产品链接">${mkCopyIconSvg()}</button></div>`
       : '';
-    const videoLink = material.video_url
-      ? `<a class="aims-btn" href="${esc(material.video_url)}" target="_blank" rel="noopener noreferrer">看视频</a>`
+    const playButtonHtml = videoUrl
+      ? '<button type="button" class="mk-video-play-btn" data-aims-video-play aria-label="播放视频" title="播放视频"></button>'
+      : '';
+    const posterAttr = coverUrl ? ` poster="${esc(coverUrl)}"` : '';
+    const importButton = !state.publicMode && !isLocalCjh && actionIndex >= 0
+      ? `<button type="button" class="mki-btn mki-btn--add" data-import-action data-product-index="${productIndex}" data-action-index="${actionIndex}">加入素材库</button>`
+      : `<button type="button" class="mki-btn mki-btn--add mki-btn--disabled" disabled>${isLocalCjh ? '已入库' : '仅预览'}</button>`;
+    const workbenchButton = !state.publicMode
+      ? `<a class="mki-btn mki-btn--xiao" href="/medias/product/video_workbench/${encodeURIComponent(item.product_id || '')}" target="_blank" rel="noopener noreferrer">${isLocalCjh ? '创建小语种翻译任务' : '素材工作台'}</a>`
+      : '';
+    const aiButton = !state.publicMode
+      ? `<a class="mki-btn mki-ai-btn" href="/medias/${encodeURIComponent(productCode)}" target="_blank" rel="noopener noreferrer">AI评估结果</a>`
+      : '';
+    const fineAiButton = !state.publicMode
+      ? `<button type="button" class="mki-btn mki-fine-ai-btn" disabled>AI精细评估结果</button>`
       : '';
     return `
-      <article class="aims-material">
-        ${videoNode}
-        <div class="aims-material-title" title="${esc(material.video_name || material.video_path)}">${esc(material.video_name || material.video_path || '明空素材')}</div>
-        <div class="aims-material-meta">
-          <span>90天 ${fmtUsd(material.cumulative_90_spend)}</span>
-          <span>广告 ${fmtNumber(material.video_ads_count)}</span>
-          <span>昨日 ${fmtUsd(material.yesterday_spend_delta)}</span>
+      <article class="mk-video-card" data-source-type="${esc(source_type)}">
+        <div class="mk-status-header-row">
+          <div class="mk-status-half"><span class="mk-status-icon" title="${esc(isLocalCjh ? '自制EN已入库' : '明空素材')}">${mkStatusIconSvg('product')}</span></div>
+          <div class="mk-status-half"><span class="mk-status-icon mk-status-icon--video" title="视频素材">${mkStatusIconSvg('video')}</span></div>
         </div>
-        <div class="aims-actions">
-          ${videoLink}
-          ${importButton}
+        <div class="mk-video-product-line">
+          <div class="mk-video-product-cn-row">
+            ${productUrl ? `<a class="mk-video-product-name-link mk-video-product-cn-name" href="${esc(productUrl)}" target="_blank" rel="noopener noreferrer" title="${esc(productName)}">${esc(productName)}</a>` : `<span class="mk-video-product-cn-name" title="${esc(productName)}">${esc(productName)}</span>`}
+            <button type="button" class="mk-icon-copy-btn" data-copy-text="${esc(productName)}" title="复制中文产品名" aria-label="复制中文产品名">${mkCopyIconSvg()}</button>
+          </div>
+          <div class="mk-video-product-en-row">
+            <span class="mk-video-product-en-name" title="${esc(englishName || sourceLabel)}">${esc(englishName || sourceLabel)}</span>
+            ${englishName ? `<button type="button" class="mk-icon-copy-btn" data-copy-text="${esc(englishName)}" title="复制英文产品名" aria-label="复制英文产品名">${mkCopyIconSvg()}</button>` : ''}
+          </div>
+          <div class="mk-video-product-code-row">
+            <span class="mk-video-product-code mk-line-clamp mk-line-clamp--2" title="#${esc(item.rank_no)} · ${esc(productCode)}">#${esc(item.rank_no)} · ${esc(productCode)}</span>
+            ${productCodeActionsHtml}
+          </div>
         </div>
+        <div class="mk-video-title-row">
+          <div class="mk-video-card-title mk-line-clamp mk-line-clamp--3" title="${esc(videoName)}">${esc(videoName)}</div>
+          ${titleActionsHtml}
+        </div>
+        ${productLinkHtml}
+        <div class="mk-video-summary-row">
+          <span class="mk-video-summary-item"><span class="label">投放热度:</span><span class="value"><span class="mk-heat-badge ${heat.cls}">${heat.label}</span></span></span>
+          <span class="mk-video-summary-item"><span class="label">90天消耗:</span><span class="value">${esc(spendText)}</span></span>
+          <span class="mk-video-summary-item"><span class="label">昨日消耗:</span><span class="value">${esc(yesterdayText)}</span></span>
+          <span class="mk-video-summary-item"><span class="value">${esc(sourceLabel)}</span></span>
+        </div>
+        <div class="mk-video-tabs" role="tablist" aria-label="素材预览">
+          <button type="button" class="mk-video-tab active" data-aims-video-tab="cover">图片</button>
+          <button type="button" class="mk-video-tab" data-aims-video-tab="video" ${videoUrl ? '' : 'disabled'}>视频</button>
+        </div>
+        <div class="mk-video-frame">
+          <div class="mk-video-pane mk-video-cover-frame active" data-aims-video-pane="cover">${coverUrl ? `<img src="${esc(coverUrl)}" loading="lazy" decoding="async" alt="${esc(videoName)}">` : '<span class="mk-video-media-empty">无封面</span>'}${playButtonHtml}</div>
+          <div class="mk-video-pane" data-aims-video-pane="video">${videoUrl ? `<video class="mk-video-source" controls preload="none" playsinline data-aims-video-src="${esc(videoUrl)}"${posterAttr}></video>` : '<span class="mk-video-media-empty">无视频</span>'}</div>
+        </div>
+        <div class="mk-video-meta-list">
+          <div class="mk-video-meta-line"><span class="label">广告数:</span><span class="value">${fmtNumber(material.video_ads_count)}</span></div>
+          <div class="mk-video-meta-line"><span class="label">上传者:</span><span class="value">${esc(author)}</span></div>
+          <div class="mk-video-meta-line"><span class="label">上传时间:</span><span class="value">${esc(uploadDate)}</span></div>
+        </div>
+        ${importButton}
+        ${workbenchButton}
+        ${aiButton}
+        ${fineAiButton}
       </article>
     `;
   }
@@ -1222,6 +1344,26 @@
         </div>
       `;
     }).join('');
+  }
+
+  function activateSourceMaterialTab(card, tabName, autoplay) {
+    if (!card || !tabName) return;
+    card.querySelectorAll('[data-aims-video-tab]').forEach((button) => {
+      button.classList.toggle('active', button.getAttribute('data-aims-video-tab') === tabName);
+    });
+    card.querySelectorAll('[data-aims-video-pane]').forEach((pane) => {
+      pane.classList.toggle('active', pane.getAttribute('data-aims-video-pane') === tabName);
+    });
+    if (tabName !== 'video') return;
+    const video = card.querySelector('.mk-video-source');
+    if (!video) return;
+    const src = video.getAttribute('data-aims-video-src');
+    if (src && !video.getAttribute('src')) {
+      video.setAttribute('src', src);
+    }
+    if (autoplay && typeof video.play === 'function') {
+      video.play().catch(() => {});
+    }
   }
 
   async function importMaterial(button) {
@@ -1264,6 +1406,26 @@
   }
   if (els.detail) {
     els.detail.addEventListener('click', (event) => {
+      const copyButton = event.target.closest('[data-copy-text]');
+      if (copyButton) {
+        event.preventDefault();
+        copyText(copyButton.getAttribute('data-copy-text'), copyButton);
+        return;
+      }
+      const tabButton = event.target.closest('[data-aims-video-tab]');
+      if (tabButton) {
+        event.preventDefault();
+        if (!tabButton.disabled) {
+          activateSourceMaterialTab(tabButton.closest('.mk-video-card'), tabButton.getAttribute('data-aims-video-tab'), false);
+        }
+        return;
+      }
+      const playButton = event.target.closest('[data-aims-video-play]');
+      if (playButton) {
+        event.preventDefault();
+        activateSourceMaterialTab(playButton.closest('.mk-video-card'), 'video', true);
+        return;
+      }
       const checkpointButton = event.target.closest('[data-resume-checkpoint]');
       if (checkpointButton) {
         resumeCheckpoint();

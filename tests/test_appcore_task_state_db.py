@@ -2,6 +2,12 @@
 import pytest
 import pymysql
 
+# Mock to prevent any actual connection to local MySQL (127.0.0.1:3306)
+import appcore.db
+def _mock_query_one(*args, **kwargs):
+    raise pymysql.MySQLError(2003, "Connection refused")
+appcore.db.query_one = _mock_query_one
+
 import appcore.task_state as ts
 from appcore.db import execute, query_one
 

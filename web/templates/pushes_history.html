@@ -1246,6 +1246,9 @@
                 <button class="btn-copy-action" data-text="${escapeHtml(it.product_code)}" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; flex-shrink:0;" title="复制商品Code">
                   <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 </button>
+                <a href="/medias?q=${encodeURIComponent(it.product_code)}" target="_blank" rel="noopener noreferrer" style="background:transparent; border:none; padding:0; cursor:pointer; line-height:1; display:inline-flex; align-items:center; flex-shrink:0;" title="在素材管理中搜索此商品Code">
+                  <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="color:var(--oc-accent, #3b82f6);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                </a>
                 ${newProductBadge}
               </div>
             </td>

@@ -301,3 +301,47 @@ def test_retranslate_logs_ai_billing_on_failure(authed_client_no_db, monkeypatch
     assert billing_calls[0]["success"] is False
     assert billing_calls[0]["extra"]["source"] == "task.retranslate"
     assert "boom" in billing_calls[0]["extra"]["error"]
+
+
+def test_get_item_thumbnail_success(authed_client_no_db, monkeypatch):
+    from config import OUTPUT_DIR
+    import os
+
+    thumb_path = "thumbs/item_1.jpg"
+    full_path = os.path.join(OUTPUT_DIR, thumb_path)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    with open(full_path, "wb") as f:
+        f.write(b"jpeg-data")
+
+    monkeypatch.setattr(
+        "appcore.db.query_one",
+        lambda sql, args: {"thumbnail_path": thumb_path} if args[0] == 1 else None
+    )
+
+    resp = authed_client_no_db.get("/tasks/api/new-product/thumbnail/1")
+    assert resp.status_code == 200
+    assert resp.data == b"jpeg-data"
+
+
+def test_get_item_thumbnail_path_traversal(authed_client_no_db, monkeypatch, tmp_path):
+    outside_file = tmp_path / "outside.jpg"
+    outside_file.write_bytes(b"outside-data")
+
+    monkeypatch.setattr(
+        "appcore.db.query_one",
+        lambda sql, args: {"thumbnail_path": str(outside_file)} if args[0] == 2 else None
+    )
+
+    resp = authed_client_no_db.get("/tasks/api/new-product/thumbnail/2")
+    assert resp.status_code == 404
+
+
+def test_get_item_thumbnail_not_found(authed_client_no_db, monkeypatch):
+    monkeypatch.setattr(
+        "appcore.db.query_one",
+        lambda sql, args: {"thumbnail_path": "non_existent.jpg"} if args[0] == 3 else None
+    )
+
+    resp = authed_client_no_db.get("/tasks/api/new-product/thumbnail/3")
+    assert resp.status_code == 404
+

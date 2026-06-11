@@ -3,7 +3,7 @@
 ## Anchors
 
 - `AGENTS.md`: change verification starts with related `pytest <files> -q`.
-- `pytest.ini`: default collection is limited to `tests/` and excludes generated, e2e, manual, and build directories.
+- `pytest.ini`: default collection is limited to `tests/` and excludes local virtualenvs, generated, e2e, manual, and build directories.
 - `tests/conftest.py`: live-DB, external-service, e2e, and manual tests are gated behind explicit environment flags.
 - `docs/superpowers/specs/2026-06-07-test-suite-cleanup.md`: full default pytest was accepted as deterministic but expensive, with `7572 passed` in `576.79s`.
 
@@ -43,6 +43,8 @@ Include tests when any of these are true:
   - `appcore/db.py`, migrations, scheduled tasks, LLM provider routing, task lifecycle, storage deletion, or billing: run the owning service tests and the relevant architecture/guard tests.
 
 The selector should prefer a focused file list over `-k` expressions because file targets are easier to audit and copy into the final report.
+
+Local virtualenv directories and symlinks such as `.venv` / `venv` must stay in `pytest.ini` `norecursedirs`; focused file targets should not fail because pytest tries to inspect an unreadable environment directory in the repo root.
 
 ## Full Suite Gate
 

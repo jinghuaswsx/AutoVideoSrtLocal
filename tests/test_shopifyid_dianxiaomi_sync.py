@@ -205,29 +205,10 @@ def test_plan_domain_shopify_id_updates_resolves_same_handle_per_domain():
 def test_build_remote_batch_upsert_shopify_ids_sql_writes_product_domain_cache():
     mod = _load_module()
 
-    sql = mod.build_remote_batch_upsert_shopify_ids_sql(
-        [
-            {
-                "id": 598,
-                "domain": "newjoyloo.com",
-                "shopify_product_id": "8589437075629",
-            },
-            {
-                "id": 598,
-                "domain": "omurio.com",
-                "shopify_product_id": "9174825337044",
-            },
-        ]
-    )
+    sql = mod.build_remote_batch_upsert_shopify_ids_sql()
 
-    assert sql == (
-        "START TRANSACTION;\n"
-        "INSERT INTO media_product_shopify_ids (product_id, domain, shopify_product_id) VALUES "
-        "(598, 'newjoyloo.com', '8589437075629'), "
-        "(598, 'omurio.com', '9174825337044') "
-        "ON DUPLICATE KEY UPDATE shopify_product_id=VALUES(shopify_product_id), updated_at=NOW();\n"
-        "COMMIT;\n"
-    )
+    assert "INSERT INTO media_product_shopify_ids" in sql
+    assert "VALUES (%s, %s, %s)" in sql
 
 
 def test_parse_remote_products_tsv_normalizes_blank_shopifyid():
@@ -244,19 +225,10 @@ def test_parse_remote_products_tsv_normalizes_blank_shopifyid():
 def test_build_remote_batch_update_sql_wraps_updates_in_transaction():
     mod = _load_module()
 
-    sql = mod.build_remote_batch_update_sql(
-        [
-            {"id": 1, "product_code": "demo-a", "shopifyid": "100"},
-            {"id": 2, "product_code": "demo-b", "shopifyid": "200"},
-        ]
-    )
+    sql = mod.build_remote_batch_update_sql()
 
-    assert sql == (
-        "START TRANSACTION;\n"
-        "UPDATE media_products SET shopifyid='100' WHERE id=1 AND deleted_at IS NULL AND (shopifyid IS NULL OR shopifyid='');\n"
-        "UPDATE media_products SET shopifyid='200' WHERE id=2 AND deleted_at IS NULL AND (shopifyid IS NULL OR shopifyid='');\n"
-        "COMMIT;\n"
-    )
+    assert "UPDATE media_products" in sql
+    assert "shopifyid=%s" in sql
 
 
 def test_plan_backfill_updates_distinguishes_update_unchanged_unmatched_and_conflict():
@@ -520,11 +492,10 @@ def test_scheduled_task_table_sql_contains_run_tracking_fields():
     assert "idx_scheduled_task_runs_task_started" in sql
 
 
-def test_sql_quote_escapes_single_quotes_and_null():
+def test_sql_quote_is_removed():
     mod = _load_module()
 
-    assert mod._sql_quote(None) == "NULL"
-    assert mod._sql_quote("SmartGearX's token") == "'SmartGearX''s token'"
+    assert not hasattr(mod, "_sql_quote")
 
 
 def test_product_sync_success_allows_zero_failed_products():

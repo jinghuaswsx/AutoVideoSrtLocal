@@ -27,7 +27,7 @@ from web.services.tasks_responses import (
 from web.services.material_evaluation_trigger import (
     trigger_material_evaluation,
 )
-from web.upload_util import client_filename_basename
+from web.upload_util import client_filename_basename, validate_video_extension, validate_image_extension
 
 log = logging.getLogger(__name__)
 bp = Blueprint("tasks", __name__, url_prefix="/tasks")
@@ -80,6 +80,8 @@ def _manual_output_uploaded_files(tid: int, step_key: str) -> list[dict]:
             continue
         seen.add(id(storage))
         filename = _manual_upload_filename(storage.filename)
+        if not (validate_video_extension(filename) or validate_image_extension(filename)):
+            raise ValueError("invalid_file_type")
         object_key = object_keys.build_media_object_key(
             int(current_user.id),
             f"task-{int(tid)}",
@@ -338,6 +340,7 @@ def new_product_page():
 def get_item_thumbnail(item_id: int):
     from appcore.db import query_one
     from config import OUTPUT_DIR
+    from web.services.artifact_download import safe_task_file_response
     row = query_one("SELECT thumbnail_path FROM media_items WHERE id=%s", (item_id,))
     if row and row.get("thumbnail_path"):
         thumb_path = row["thumbnail_path"]
@@ -345,9 +348,14 @@ def get_item_thumbnail(item_id: int):
             full_path = os.path.join(OUTPUT_DIR, thumb_path)
         else:
             full_path = thumb_path
-        if os.path.exists(full_path):
-            return send_file(full_path)
+        return safe_task_file_response(
+            {},
+            full_path,
+            not_found_message="thumbnail not found",
+            mimetype="image/jpeg",
+        )
     abort(404)
+
 
 
 

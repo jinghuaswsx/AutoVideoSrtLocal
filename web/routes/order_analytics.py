@@ -17,7 +17,7 @@ from web.services.order_analytics_responses import (
     build_order_analytics_payload_response,
     order_analytics_flask_response,
 )
-from web.upload_util import client_filename_basename
+from web.upload_util import client_filename_basename, validate_spreadsheet_extension
 
 from appcore import order_analytics as oa
 from appcore import exchange_rates
@@ -350,6 +350,7 @@ def _realtime_store_options() -> list[dict[str, str]]:
 @bp.route("/order-analytics/ad-accounts-view")
 @bp.route("/order-analytics/product-dashboard-view")
 @bp.route("/order-analytics/country-dashboard-view")
+@bp.route("/order-analytics/country-dashboard-view/<product_code>")
 @bp.route("/order-analytics/true-roas-view")
 @bp.route("/order-analytics/weekly-roas-view")
 @bp.route("/order-analytics/weekly-ai-analysis-view")
@@ -357,7 +358,7 @@ def _realtime_store_options() -> list[dict[str, str]]:
 @bp.route("/order-analytics/shopify-analytics-view")
 @login_required
 @permission_required("data_analytics")
-def page():
+def page(product_code=None):
     path = request.path.rstrip('/')
     if path in ("/order-analytics", "/order-analytics/realtime"):
         query_string = request.query_string.decode("utf-8")
@@ -395,13 +396,17 @@ def page():
         "/order-analytics/import-view": "realtime",
         "/order-analytics/shopify-analytics-view": "analytics",
     }
-    active_tab = mapping.get(path, "realtime")
+    if path.startswith("/order-analytics/country-dashboard-view"):
+        active_tab = "countryDashboard"
+    else:
+        active_tab = mapping.get(path, "realtime")
 
     resp = make_response(render_template(
         "order_analytics.html",
         realtime_store_options=_realtime_store_options(),
         active_tab=active_tab,
         active_subtab=active_subtab,
+        product_code=product_code,
     ))
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
@@ -489,6 +494,8 @@ def unsettled_payout_project_create():
     filename = client_filename_basename(file_storage.filename)
     if not filename:
         return _json_response(error="missing_file", detail="文件名无效"), 400
+    if not validate_spreadsheet_extension(filename):
+        return _json_response(error="invalid_file_type"), 400
     project_name = (request.form.get("project_name") or "").strip()
     content = file_storage.read()
     if not content:
@@ -746,6 +753,14 @@ def upload():
         return _json_response(error="请选择文件"), 400
 
     filename = client_filename_basename(f.filename)
+    if not validate_spreadsheet_extension(filename):
+        _audit_order_analytics_action(
+            "order_analytics_shopify_orders_uploaded",
+            target_type="order_import",
+            status="failure",
+            detail={"filename": filename, "error": "invalid_file_type"},
+        )
+        return _json_response(error="invalid_file_type"), 400
 
     try:
         rows = oa.parse_shopify_file(f.stream, filename)
@@ -822,6 +837,14 @@ def ad_upload():
     frequency = (request.form.get("frequency") or "custom").strip().lower()
     file_bytes = f.stream.read()
     filename = client_filename_basename(f.filename)
+    if not validate_spreadsheet_extension(filename):
+        _audit_order_analytics_action(
+            "order_analytics_meta_ads_uploaded",
+            target_type="meta_ad_import",
+            status="failure",
+            detail={"filename": filename, "error": "invalid_file_type"},
+        )
+        return _json_response(error="invalid_file_type"), 400
 
     try:
         rows = oa.parse_meta_ad_file(io.BytesIO(file_bytes), filename)
@@ -1416,12 +1439,14 @@ def country_dashboard():
     period = (request.args.get("period") or "month").strip().lower()
     start_date = (request.args.get("start_date") or "").strip() or None
     end_date = (request.args.get("end_date") or "").strip() or None
+    product_code = (request.args.get("product_code") or "").strip() or None
     if start_date or end_date:
         try:
             return _json_response(_json_safe(oa.get_country_dashboard(
                 period="range",
                 start_date=start_date,
                 end_date=end_date,
+                product_code=product_code,
             )))
         except ValueError as exc:
             return _json_response(error="invalid_param", detail=str(exc)), 400
@@ -1437,6 +1462,7 @@ def country_dashboard():
             month=request.args.get("month", type=int),
             week=request.args.get("week", type=int),
             date_str=request.args.get("date") or None,
+            product_code=product_code,
         )))
     except ValueError as exc:
         return _json_response(error="invalid_param", detail=str(exc)), 400

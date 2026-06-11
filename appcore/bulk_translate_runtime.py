@@ -353,7 +353,7 @@ def resume_task(task_id: str, user_id: int) -> None:
                         item["result_synced"] = False
                         reused = True
                 except Exception:
-                    pass
+                    log.warning("Failed to load child snapshot for reuse", exc_info=True)
             if not reused:
                 _reset_item_for_retry(item)
     state["cancel_requested"] = False
@@ -386,7 +386,7 @@ def retry_failed_items(task_id: str, user_id: int) -> None:
                         item["result_synced"] = False
                         reused = True
                 except Exception:
-                    pass
+                    log.warning("Failed to load child snapshot for reuse", exc_info=True)
             if reused:
                 reset_count += 1
                 continue
@@ -428,7 +428,7 @@ def retry_item(task_id: str, idx: int, user_id: int) -> None:
                     item["result_synced"] = False
                     reused = True
             except Exception:
-                pass
+                log.warning("Failed to load child snapshot for reuse", exc_info=True)
         if not reused:
             _reset_item_for_retry(item)
     state["cancel_requested"] = False
@@ -1531,7 +1531,8 @@ def _default_image_translate_model_id(_user_id: int | None) -> str:
 
     try:
         return its.get_material_image_translate_default_model()
-    except Exception:
+    except Exception as exc:
+        log.debug("Get default image translate model from settings failed, fallback: %s", exc)
         return coerce_image_model(
             "",
             channel=its.MATERIAL_IMAGE_TRANSLATE_DEFAULT_CHANNEL,
