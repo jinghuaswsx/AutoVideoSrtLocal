@@ -132,3 +132,44 @@ def api_product_probe_link():
         }), 200
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@bp.route("/api/products/list-for-link-check", methods=["GET"])
+@login_required
+def api_list_for_link_check():
+    created_from = request.args.get("created_from", "").strip()
+    created_to = request.args.get("created_to", "").strip()
+
+    if not created_from or not created_to:
+        return jsonify({"error": "created_from and created_to are required"}), 400
+
+    from appcore.db import query
+    from appcore.product_link_domains import resolve_product_page_url_rows
+
+    sql = """
+        SELECT id, product_code, name, localized_links_json, localized_links
+        FROM media_product
+        WHERE deleted_at IS NULL AND archived = 0
+          AND created_at >= %s AND created_at <= %s
+        ORDER BY created_at DESC
+    """
+    params = (f"{created_from} 00:00:00", f"{created_to} 23:59:59")
+    try:
+        rows = query(sql, params)
+    except Exception as e:
+        return jsonify({"error": f"Database query failed: {str(e)}"}), 500
+
+    results = []
+    for r in rows:
+        product_dict = dict(r)
+        url_rows = resolve_product_page_url_rows(product_dict, "en")
+        if url_rows:
+            results.append({
+                "id": product_dict["id"],
+                "product_code": product_dict["product_code"],
+                "name": product_dict["name"],
+                "urls": url_rows
+            })
+
+    return jsonify({"products": results}), 200
+

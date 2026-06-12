@@ -4355,7 +4355,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
           </div>
         </div>
       </div>
-      <button type="button" id="checkAllDomainsBtn" class="oc-btn ghost" style="width: 100%; height: 32px; justify-content: center;">检测全部产品链接</button>
+      <button type="button" id="checkAllDomainsBtn" class="oc-btn ghost" style="width: 100%; height: 32px; justify-content: center;">链接检查</button>
     </div>
   </div>
 
@@ -4731,7 +4731,52 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
       <button type="button" id="productUnsuitablePushSubmit" class="oc-btn primary oc-product-links-submit">一键推送</button>
     </div>
   </div>
+<div id="linkCheckModalMask" class="oc-modal-mask oc" hidden>
+  <div class="oc-modal" role="dialog" aria-modal="true" aria-labelledby="linkCheckModalTitle" style="max-width: 800px; width: 90%;">
+    <div class="oc-modal-head">
+      <div>
+        <h3 id="linkCheckModalTitle">链接检查</h3>
+        <p class="oc-product-links-meta" style="margin: 4px 0 0 0; color: #888; font-size: 13px;">检查时间范围内的所有产品已启用的域名的英语链接，找出 404 页面。</p>
+      </div>
+      <button type="button" id="linkCheckModalClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
+    </div>
+    <div class="oc-modal-body" style="display: flex; flex-direction: column; gap: 16px;">
+      <!-- 时间范围选择 -->
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <label style="font-weight: 500;">创建时间范围：</label>
+        <input type="date" id="linkCheckCreatedFrom" class="oc-input" style="width: 150px; height: 32px; padding: 4px 8px; border-radius: 4px;">
+        <span>至</span>
+        <input type="date" id="linkCheckCreatedTo" class="oc-input" style="width: 150px; height: 32px; padding: 4px 8px; border-radius: 4px;">
+        <button type="button" id="linkCheckStartBtn" class="oc-btn primary" style="height: 32px; padding: 0 16px;">开始检查</button>
+        <button type="button" id="linkCheckStopBtn" class="oc-btn ghost" style="height: 32px; padding: 0 16px;" disabled>停止</button>
+      </div>
+
+      <!-- 进度与可视化日志区 -->
+      <div id="linkCheckProgressContainer" style="display: flex; flex-direction: column; gap: 8px;" hidden>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span id="linkCheckProgressLabel" style="font-weight: 500;">检查进度：0 / 0 (0%)</span>
+          <span id="linkCheckSpeedLabel" style="color: #666; font-size: 13px;">并发数: 6</span>
+        </div>
+        <!-- 简易进度条 -->
+        <div style="width: 100%; height: 8px; background: #eee; border-radius: 4px; overflow: hidden;">
+          <div id="linkCheckProgressBar" style="width: 0%; height: 100%; background: #007bff; transition: width 0.2s;"></div>
+        </div>
+        <!-- 正在检查的日志滚动区 -->
+        <div id="linkCheckLog" style="height: 150px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 12px; padding: 8px; border-radius: 4px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;">
+          <!-- 实时日志打印在这里 -->
+        </div>
+      </div>
+
+      <!-- 404 结果展示文本框区域 -->
+      <div id="linkCheckResultContainer" style="display: flex; flex-direction: column; gap: 12px;">
+        <!-- 每个域名的 404 文本框会动态渲染在这里 -->
+      </div>
+    </div>
+  </div>
 </div>
+
 <div id="roasModalMask" class="oc-modal-mask oc" hidden>
   <div class="oc-modal oc-roas-modal" role="dialog" aria-modal="true" aria-labelledby="roasModalTitle">
     <div class="oc-modal-head">

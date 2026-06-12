@@ -4038,20 +4038,266 @@
     }
   }
 
-  async function checkAllDomainLinks() {
-    const btn = document.getElementById('checkAllDomainsBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '检测中...'; }
-    const rows = document.querySelectorAll('.oc-domain-row');
-    const promises = [];
-    rows.forEach(function(rowEl) {
-      const pid = rowEl.dataset.pid;
-      const domain = rowEl.dataset.domain;
-      if (pid && domain) {
-        promises.push(checkDomainLink(parseInt(pid, 10), domain, rowEl));
-      }
+  let linkCheckRunning = false;
+  let activeControllers = [];
+
+  function openLinkCheckModal() {
+    const mask = $('linkCheckModalMask');
+    if (!mask) return;
+
+    const toDate = getPastDateString(0);
+    const fromDate = getPastDateString(6);
+
+    $('linkCheckCreatedFrom').value = fromDate;
+    $('linkCheckCreatedTo').value = toDate;
+
+    $('linkCheckProgressContainer').hidden = true;
+    $('linkCheckProgressBar').style.width = '0%';
+    $('linkCheckProgressLabel').textContent = '检查进度：0 / 0 (0%)';
+    $('linkCheckLog').innerHTML = '';
+    $('linkCheckResultContainer').innerHTML = '';
+    $('linkCheckStartBtn').disabled = false;
+    $('linkCheckStopBtn').disabled = true;
+
+    mask.hidden = false;
+  }
+
+  function closeLinkCheckModal() {
+    stopLinkCheck();
+    const mask = $('linkCheckModalMask');
+    if (mask) mask.hidden = true;
+  }
+
+  function getPastDateString(daysAgo) {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const date = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${date}`;
+  }
+
+  async function startLinkCheck() {
+    if (linkCheckRunning) return;
+    linkCheckRunning = true;
+    activeControllers = [];
+
+    const fromVal = $('linkCheckCreatedFrom').value;
+    const toVal = $('linkCheckCreatedTo').value;
+    if (!fromVal || !toVal) {
+      alert('请选择完整的时间范围');
+      linkCheckRunning = false;
+      return;
+    }
+
+    const logEl = $('linkCheckLog');
+    logEl.innerHTML = '正在获取商品列表...\n';
+    $('linkCheckProgressContainer').hidden = false;
+    $('linkCheckResultContainer').innerHTML = '';
+    $('linkCheckStartBtn').disabled = true;
+    $('linkCheckStopBtn').disabled = false;
+
+    let products = [];
+    try {
+      const res = await fetchJSON(`/medias/api/products/list-for-link-check?created_from=${fromVal}&created_to=${toVal}`);
+      products = res.products || [];
+    } catch (err) {
+      logEl.innerHTML += `获取商品列表失败: ${err.message || err}\n`;
+      linkCheckRunning = false;
+      $('linkCheckStartBtn').disabled = false;
+      $('linkCheckStopBtn').disabled = true;
+      return;
+    }
+
+    if (products.length === 0) {
+      logEl.innerHTML += '该时间范围内没有未删除、未归档的商品。\n';
+      linkCheckRunning = false;
+      $('linkCheckStartBtn').disabled = false;
+      $('linkCheckStopBtn').disabled = true;
+      return;
+    }
+
+    logEl.innerHTML += `成功获取到 ${products.length} 个商品。正在准备检测任务...\n`;
+
+    const taskQueue = [];
+    products.forEach(p => {
+      p.urls.forEach(u => {
+        taskQueue.push({
+          pid: p.id,
+          product_code: p.product_code,
+          name: p.name,
+          domain: u.domain,
+          url: u.url
+        });
+      });
     });
-    await Promise.allSettled(promises);
-    if (btn) { btn.disabled = false; btn.textContent = '检测全部产品链接'; }
+
+    if (taskQueue.length === 0) {
+      logEl.innerHTML += '没有需要检测的域名链接。\n';
+      linkCheckRunning = false;
+      $('linkCheckStartBtn').disabled = false;
+      $('linkCheckStopBtn').disabled = true;
+      return;
+    }
+
+    logEl.innerHTML += `共有 ${taskQueue.length} 个域名链接需要检测。\n`;
+
+    const total = taskQueue.length;
+    let completed = 0;
+
+    function updateProgress() {
+      const pct = Math.round((completed / total) * 100);
+      $('linkCheckProgressLabel').textContent = `检查进度：${completed} / ${total} (${pct}%)`;
+      $('linkCheckProgressBar').style.width = `${pct}%`;
+    }
+    updateProgress();
+
+    const concurrency = 6;
+    let queueIndex = 0;
+    const domain404Map = {};
+
+    async function worker() {
+      while (linkCheckRunning && queueIndex < taskQueue.length) {
+        const taskIndex = queueIndex++;
+        if (taskIndex >= taskQueue.length) break;
+        const task = taskQueue[taskIndex];
+        if (!task) break;
+
+        const lineEl = document.createElement('div');
+        lineEl.textContent = `[${task.domain}] 正在检查产品 ${task.product_code} (${task.url})...`;
+        logEl.appendChild(lineEl);
+        logEl.scrollTop = logEl.scrollHeight;
+
+        const controller = new AbortController();
+        activeControllers.push(controller);
+
+        try {
+          const res = await fetch(`/medias/api/products/${task.pid}/link-availability/en`, {
+            method: 'POST',
+            headers: csrfHeaders({
+              'Content-Type': 'application/json'
+            }),
+            body: JSON.stringify({ domain: task.domain }),
+            signal: controller.signal
+          });
+
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+
+          const data = await res.json();
+          const items = data.items || [];
+          const item = items.find(it => it.domain === task.domain) || items[0] || {};
+          const status = item.http_status;
+
+          const statusText = status !== null ? status : (item.error ? `ERR (${item.error})` : '未知');
+          const resultLine = document.createElement('div');
+          resultLine.style.paddingLeft = '12px';
+
+          if (status === 404) {
+            resultLine.textContent = `↳ 结果：${statusText} (404) ❌`;
+            resultLine.style.color = '#ff6b6b';
+
+            if (!domain404Map[task.domain]) {
+              domain404Map[task.domain] = [];
+            }
+            domain404Map[task.domain].push(task.product_code);
+          } else if (status >= 200 && status < 400) {
+            resultLine.textContent = `↳ 结果：${statusText} (OK) ✓`;
+            resultLine.style.color = '#51cf66';
+          } else {
+            resultLine.textContent = `↳ 结果：${statusText} ⚠️`;
+            resultLine.style.color = '#ffd43b';
+          }
+          logEl.appendChild(resultLine);
+          logEl.scrollTop = logEl.scrollHeight;
+
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            const resultLine = document.createElement('div');
+            resultLine.textContent = `↳ 已取消`;
+            resultLine.style.color = '#aaa';
+            logEl.appendChild(resultLine);
+            logEl.scrollTop = logEl.scrollHeight;
+          } else {
+            const resultLine = document.createElement('div');
+            resultLine.textContent = `↳ 检查失败: ${err.message || err}`;
+            resultLine.style.color = '#ff6b6b';
+            logEl.appendChild(resultLine);
+            logEl.scrollTop = logEl.scrollHeight;
+          }
+        } finally {
+          const idx = activeControllers.indexOf(controller);
+          if (idx > -1) activeControllers.splice(idx, 1);
+
+          completed++;
+          updateProgress();
+          render404Results(domain404Map);
+        }
+      }
+    }
+
+    const workers = [];
+    for (let i = 0; i < Math.min(concurrency, taskQueue.length); i++) {
+      workers.push(worker());
+    }
+
+    await Promise.all(workers);
+
+    linkCheckRunning = false;
+    $('linkCheckStartBtn').disabled = false;
+    $('linkCheckStopBtn').disabled = true;
+
+    const finishLine = document.createElement('div');
+    finishLine.style.fontWeight = 'bold';
+    finishLine.style.marginTop = '8px';
+    finishLine.textContent = completed === total ? '检查完成！' : '检查被终止。';
+    logEl.appendChild(finishLine);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function stopLinkCheck() {
+    if (!linkCheckRunning) return;
+    linkCheckRunning = false;
+    activeControllers.forEach(c => c.abort());
+    activeControllers = [];
+  }
+
+  function render404Results(domain404Map) {
+    const container = $('linkCheckResultContainer');
+    let html = '';
+    const domains = Object.keys(domain404Map).sort();
+    if (domains.length === 0) {
+      html = '<p style="color: #999; font-size: 14px;">暂未发现 404 产品链接。</p>';
+    } else {
+      domains.forEach(domain => {
+        const codes = domain404Map[domain] || [];
+        const codeStr = codes.join('\n');
+        html += `
+          <div class="link-check-domain-result" style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: bold; color: #fff;">${domain} (404 产品: ${codes.length} 个)</span>
+              <button type="button" class="oc-btn ghost btn-copy-404" data-domain="${domain}" style="height: 24px; padding: 0 8px; font-size: 12px;">一键复制</button>
+            </div>
+            <textarea class="oc-input text-404-codes" readonly rows="4" style="width: 100%; resize: vertical; font-family: monospace; padding: 8px; background: #2b2b2b; color: #f8f9fa; border-color: #444;" placeholder="无 404 产品">${codeStr}</textarea>
+          </div>
+        `;
+      });
+    }
+    container.innerHTML = html;
+
+    container.querySelectorAll('.btn-copy-404').forEach(btn => {
+      btn.onclick = function() {
+        const textarea = this.closest('.link-check-domain-result').querySelector('textarea');
+        if (textarea && textarea.value) {
+          navigator.clipboard.writeText(textarea.value).then(() => {
+            const oldText = this.textContent;
+            this.textContent = '已复制！';
+            setTimeout(() => { this.textContent = oldText; }, 1500);
+          });
+        }
+      };
+    });
   }
 
   function renderProductLinksPushList(links) {
@@ -9918,7 +10164,7 @@
 
     $('createBtn') && $('createBtn').addEventListener('click', openCreate);
     const checkAllBtn = $('checkAllDomainsBtn');
-    if (checkAllBtn) checkAllBtn.addEventListener('click', function(e) { e.stopPropagation(); checkAllDomainLinks(); });
+    if (checkAllBtn) checkAllBtn.addEventListener('click', function(e) { e.stopPropagation(); openLinkCheckModal(); });
     $('modalClose').addEventListener('click', hideModal);
     $('cancelBtn').addEventListener('click', hideModal);
     $('saveBtn').addEventListener('click', save);
@@ -9929,6 +10175,14 @@
     $('roasModalMask') && $('roasModalMask').addEventListener('click', (e) => {
       if (e.target.id === 'roasModalMask') closeRoasModal();
     });
+    // Link Check Modal bindings
+    $('linkCheckModalClose') && $('linkCheckModalClose').addEventListener('click', closeLinkCheckModal);
+    $('linkCheckModalMask') && $('linkCheckModalMask').addEventListener('click', (e) => {
+      if (e.target.id === 'linkCheckModalMask') closeLinkCheckModal();
+    });
+    $('linkCheckStartBtn') && $('linkCheckStartBtn').addEventListener('click', startLinkCheck);
+    $('linkCheckStopBtn') && $('linkCheckStopBtn').addEventListener('click', stopLinkCheck);
+
     // Note: RoasFormController.bind() also wires this same listener for the standalone page.
     // Both fire in modal context; updateRoasAverageShipping is idempotent so this is harmless.
     const roasAverageShippingInput = $('roasAverageShippingInput');
@@ -9939,6 +10193,7 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && $('roasModalMask') && !$('roasModalMask').hidden) closeRoasModal();
       if (e.key === 'Escape' && $('adOrdersReportMask') && !$('adOrdersReportMask').hidden) closeAdOrdersReportModal();
+      if (e.key === 'Escape' && $('linkCheckModalMask') && !$('linkCheckModalMask').hidden) closeLinkCheckModal();
     });
 
     $('cwAddBtn').addEventListener('click', () => {
