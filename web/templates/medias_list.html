@@ -5264,6 +5264,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
 
 <script>
   window.MEDIAS_UPLOAD_READY = true;
+  window.CURRENT_USER_ROLE = "{{ current_user.role }}";
 </script>
 <script src="{{ url_for('static', filename='eval_country_table.js') }}"></script>
 <script src="{{ url_for('static', filename='roas_form.js') }}"></script>

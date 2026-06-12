@@ -262,6 +262,7 @@ def test_medias_page_hides_subtabs_and_redirects_video_route_for_regular_user(au
     html = response.get_data(as_text=True)
     assert 'data-media-tab="products"' in html
     assert "产品管理" in html
+    assert 'window.CURRENT_USER_ROLE = "user";' in html
     
     assert 'href="/medias/video"' not in html
     assert "视频素材管理" not in html

@@ -3233,6 +3233,8 @@
       if (ec) ec.addEventListener('click', () => $('createBtn').click());
       return;
     }
+    const isUser = window.CURRENT_USER_ROLE === 'user';
+    const hideStyle = isUser ? ' style="display:none;"' : '';
     grid.innerHTML = `
       <table class="oc-table oc-table-medias" style="table-layout:fixed;">
         <colgroup>
@@ -3245,8 +3247,8 @@
         <col style="width:70px">
         <col style="width:80px">
         <col style="width:96px">
-        <col style="width:290px">
-        <col style="width:320px">
+        <col style="width:290px"${hideStyle}>
+        <col style="width:320px"${hideStyle}>
         <col style="width:92px">
         <col style="width:112px">
         <col style="width:104px">
@@ -3263,8 +3265,8 @@
           <th>上架</th>
           <th>负责人</th>
           <th>素材</th>
-          <th>语种和投放情况</th>
-          <th>单量情况</th>
+          <th${hideStyle}>语种和投放情况</th>
+          <th${hideStyle}>单量情况</th>
           <th>投放情况</th>
           <th>创建时间</th>
           <th>投放推送</th>
@@ -3862,6 +3864,8 @@
   }
 
   function rowHTML(p) {
+    const isUser = window.CURRENT_USER_ROLE === 'user';
+    const hideStyle = isUser ? ' style="display:none;"' : '';
     const count = p.items_count || 0;
     const rawCount = p.raw_sources_count || 0;
     const warnCls = !p.has_en_cover ? ' class="oc-row-warn"' : '';
@@ -3961,8 +3965,8 @@
             <button type="button" class="material-workbench-btn" data-material-workbench="${p.id}" title="素材工作台">素材工作台</button>
           </div>
         </td>
-        <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary, p.id)}</td>
-        <td>${renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)}</td>
+        <td${hideStyle}>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary, p.id)}</td>
+        <td${hideStyle}>${renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
         <td class="muted mono product-time-cell">${timeCell}</td>
         <td class="product-push-cell">
