@@ -3642,8 +3642,47 @@
     const tbody = document.getElementById('adOrdersReportRows');
     const empty = document.getElementById('adOrdersReportEmpty');
     
-    // Show loading skeleton
-    tbody.innerHTML = '<tr><td colspan="16" style="text-align: center; padding: 20px;"><div class="oc-skel" style="height: 100px; margin: 0;"></div></td></tr>';
+    // Clear and reset the top-right stat card values
+    const beRoasEl = document.getElementById('adOrdersReportBreakevenRoas');
+    const profitTodayEl = document.getElementById('adOrdersReportProfitToday');
+    const profitYesterdayEl = document.getElementById('adOrdersReportProfitYesterday');
+    const profit7dEl = document.getElementById('adOrdersReportProfit7d');
+    const profit30dEl = document.getElementById('adOrdersReportProfit30d');
+
+    if (beRoasEl) beRoasEl.textContent = '—';
+    if (profitTodayEl) { profitTodayEl.textContent = '—'; profitTodayEl.style.color = ''; }
+    if (profitYesterdayEl) { profitYesterdayEl.textContent = '—'; profitYesterdayEl.style.color = ''; }
+    if (profit7dEl) { profit7dEl.textContent = '—'; profit7dEl.style.color = ''; }
+    if (profit30dEl) { profit30dEl.textContent = '—'; profit30dEl.style.color = ''; }
+
+    function formatProfitStat(el, val) {
+      if (!el) return;
+      if (val === null || val === undefined) {
+        el.textContent = '—';
+        el.style.color = 'var(--oc-fg-muted)';
+        return;
+      }
+      const num = Number(val);
+      if (!isFinite(num)) {
+        el.textContent = '—';
+        el.style.color = 'var(--oc-fg-muted)';
+        return;
+      }
+      const absVal = Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (num > 0) {
+        el.textContent = `+$${absVal}`;
+        el.style.color = '#16a34a'; // Green
+      } else if (num < 0) {
+        el.textContent = `-$${absVal}`;
+        el.style.color = '#dc2626'; // Red
+      } else {
+        el.textContent = `$0.00`;
+        el.style.color = '';
+      }
+    }
+
+    // Show loading skeleton (colspan is now 21 for 1 country column + 5 periods * 4 columns)
+    tbody.innerHTML = '<tr><td colspan="21" style="text-align: center; padding: 20px;"><div class="oc-skel" style="height: 100px; margin: 0;"></div></td></tr>';
     empty.hidden = true;
     mask.hidden = false;
 
@@ -3652,6 +3691,18 @@
         if (Number(data.product_id) !== pid) return;
         const byLang = data.by_lang || {};
         const total = data.total || {};
+
+        // Populate the top-right stat card
+        const beRoas = data.breakeven_roas !== undefined && data.breakeven_roas !== null
+          ? data.breakeven_roas
+          : (product.roas_calculation ? product.roas_calculation.effective_roas : null);
+        if (beRoasEl) {
+          beRoasEl.textContent = beRoas !== null && beRoas !== undefined ? Number(beRoas).toFixed(2) : '—';
+        }
+        formatProfitStat(profitTodayEl, total.today_profit);
+        formatProfitStat(profitYesterdayEl, total.yesterday_profit);
+        formatProfitStat(profit7dEl, total.last_7d_profit);
+        formatProfitStat(profit30dEl, total.last_30d_profit);
 
         // Determine which codes to display
         const activeCodes = mediaProductLangOrder(product.lang_coverage, product.lang_ad_summary) || [];
@@ -3670,7 +3721,7 @@
         // Render rows
         let html = '';
 
-        function renderMetricCell(spend, orders, roas) {
+        function renderMetricCell(spend, orders, roas, profit) {
           const spendStr = spend !== null && spend !== undefined ? fmtAdSpend(spend) : '<span class="muted">—</span>';
           const ordersStr = orders !== null && orders !== undefined ? fmtOrderCount(orders) : '<span class="muted">—</span>';
           
@@ -3685,10 +3736,27 @@
               }
             }
           }
+
+          let profitStr = '<span class="muted">—</span>';
+          if (profit !== null && profit !== undefined) {
+            const profitNum = Number(profit);
+            if (isFinite(profitNum)) {
+              const absVal = Math.abs(profitNum).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              if (profitNum > 0) {
+                profitStr = `<span style="color:#16a34a; font-weight:600;">+$${absVal}</span>`;
+              } else if (profitNum < 0) {
+                profitStr = `<span style="color:#dc2626; font-weight:600;">-$${absVal}</span>`;
+              } else {
+                profitStr = `<span>$0.00</span>`;
+              }
+            }
+          }
+
           return `
             <td style="text-align: right; font-family: var(--font-mono, ui-monospace, Consolas, monospace);">${spendStr}</td>
             <td style="text-align: right; font-family: var(--font-mono, ui-monospace, Consolas, monospace);">${ordersStr}</td>
             <td style="text-align: right; font-family: var(--font-mono, ui-monospace, Consolas, monospace);">${roasStr}</td>
+            <td style="text-align: right; font-family: var(--font-mono, ui-monospace, Consolas, monospace);">${profitStr}</td>
           `;
         }
 
@@ -3696,11 +3764,11 @@
         html += `
           <tr class="oc-total-row" style="font-weight: bold; background: var(--oc-bg-subtle);">
             <td style="text-align: left;">总计</td>
-            ${renderMetricCell(total.today_spend, total.today_orders, total.today_roas)}
-            ${renderMetricCell(total.yesterday_spend, total.yesterday_orders, total.yesterday_roas)}
-            ${renderMetricCell(total.last_7d_spend, total.last_7d_orders, total.last_7d_roas)}
-            ${renderMetricCell(total.last_30d_spend, total.last_30d_orders, total.last_30d_roas)}
-            ${renderMetricCell(total.total_spend, total.total_orders, total.total_roas)}
+            ${renderMetricCell(total.today_spend, total.today_orders, total.today_roas, total.today_profit)}
+            ${renderMetricCell(total.yesterday_spend, total.yesterday_orders, total.yesterday_roas, total.yesterday_profit)}
+            ${renderMetricCell(total.last_7d_spend, total.last_7d_orders, total.last_7d_roas, total.last_7d_profit)}
+            ${renderMetricCell(total.last_30d_spend, total.last_30d_orders, total.last_30d_roas, total.last_30d_profit)}
+            ${renderMetricCell(total.total_spend, total.total_orders, total.total_roas, total.total_profit)}
           </tr>
         `;
 
@@ -3710,11 +3778,11 @@
           html += `
             <tr>
               <td style="text-align: left;">${escapeHtml(langDisplayName(code))}</td>
-              ${renderMetricCell(row.today_spend, row.today_orders, row.today_roas)}
-              ${renderMetricCell(row.yesterday_spend, row.yesterday_orders, row.yesterday_roas)}
-              ${renderMetricCell(row.last_7d_spend, row.last_7d_orders, row.last_7d_roas)}
-              ${renderMetricCell(row.last_30d_spend, row.last_30d_orders, row.last_30d_roas)}
-              ${renderMetricCell(row.total_spend, row.total_orders, row.total_roas)}
+              ${renderMetricCell(row.today_spend, row.today_orders, row.today_roas, row.today_profit)}
+              ${renderMetricCell(row.yesterday_spend, row.yesterday_orders, row.yesterday_roas, row.yesterday_profit)}
+              ${renderMetricCell(row.last_7d_spend, row.last_7d_orders, row.last_7d_roas, row.last_7d_profit)}
+              ${renderMetricCell(row.last_30d_spend, row.last_30d_orders, row.last_30d_roas, row.last_30d_profit)}
+              ${renderMetricCell(row.total_spend, row.total_orders, row.total_roas, row.total_profit)}
             </tr>
           `;
         });
@@ -3722,17 +3790,17 @@
         tbody.innerHTML = html;
       })
       .catch(err => {
-        tbody.innerHTML = `<tr><td colspan="16" style="text-align: center; padding: 20px; color: var(--oc-danger);">${escapeHtml(err.message || '加载失败，请稍后重试')}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="21" style="text-align: center; padding: 20px; color: var(--oc-danger);">${escapeHtml(err.message || '加载失败，请稍后重试')}</td></tr>`;
       });
   }
 
   function _empty_report_row() {
     return {
-      today_spend: null, today_orders: 0, today_roas: null,
-      yesterday_spend: null, yesterday_orders: 0, yesterday_roas: null,
-      last_7d_spend: null, last_7d_orders: 0, last_7d_roas: null,
-      last_30d_spend: null, last_30d_orders: 0, last_30d_roas: null,
-      total_spend: null, total_orders: 0, total_roas: null
+      today_spend: null, today_orders: 0, today_roas: null, today_profit: null,
+      yesterday_spend: null, yesterday_orders: 0, yesterday_roas: null, yesterday_profit: null,
+      last_7d_spend: null, last_7d_orders: 0, last_7d_roas: null, last_7d_profit: null,
+      last_30d_spend: null, last_30d_orders: 0, last_30d_roas: null, last_30d_profit: null,
+      total_spend: null, total_orders: 0, total_roas: null, total_profit: null
     };
   }
 

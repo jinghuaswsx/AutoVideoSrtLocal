@@ -4119,7 +4119,7 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 }
 .oc-ad-orders-report-table {
   width:100%;
-  min-width:1220px;
+  min-width:1420px;
   border-collapse:collapse;
 }
 .oc-ad-orders-report-table th {
@@ -4154,17 +4154,17 @@ div.oc-cover-square-480 { /* 继承 .oc-cover 行为；直接写成基类同名�
 .oc-ad-orders-report-table thead tr:first-child th:nth-child(5) {
   border-right: 2px solid var(--oc-border-strong) !important;
 }
-.oc-ad-orders-report-table thead tr:last-child th:nth-child(3),
-.oc-ad-orders-report-table thead tr:last-child th:nth-child(6),
-.oc-ad-orders-report-table thead tr:last-child th:nth-child(9),
-.oc-ad-orders-report-table thead tr:last-child th:nth-child(12) {
+.oc-ad-orders-report-table thead tr:last-child th:nth-child(4),
+.oc-ad-orders-report-table thead tr:last-child th:nth-child(8),
+.oc-ad-orders-report-table thead tr:last-child th:nth-child(12),
+.oc-ad-orders-report-table thead tr:last-child th:nth-child(16) {
   border-right: 2px solid var(--oc-border-strong) !important;
 }
 .oc-ad-orders-report-table tbody td:nth-child(1),
-.oc-ad-orders-report-table tbody td:nth-child(4),
-.oc-ad-orders-report-table tbody td:nth-child(7),
-.oc-ad-orders-report-table tbody td:nth-child(10),
-.oc-ad-orders-report-table tbody td:nth-child(13) {
+.oc-ad-orders-report-table tbody td:nth-child(5),
+.oc-ad-orders-report-table tbody td:nth-child(9),
+.oc-ad-orders-report-table tbody td:nth-child(13),
+.oc-ad-orders-report-table tbody td:nth-child(17) {
   border-right: 2px solid var(--oc-border-strong) !important;
 }
 @media (max-width: 1024px) {
@@ -4915,34 +4915,63 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
             <div id="adOrdersReportProductName" style="font-size:26px; font-weight:bold; color:#2563eb; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;">—</div>
           </div>
         </div>
+        <div id="adOrdersReportStatsCard" style="display:flex; flex-direction:column; gap:12px; background:var(--oc-bg-subtle); border:1px solid var(--oc-border); border-radius:8px; padding:16px; min-width:340px; box-sizing:border-box; align-self:stretch;">
+          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--oc-border); padding-bottom:8px;">
+            <span style="font-weight:600; color:var(--oc-fg); font-size:14px;">保本 ROAS</span>
+            <span id="adOrdersReportBreakevenRoas" class="mono" style="font-size:20px; font-weight:bold; color:var(--oc-fg);">—</span>
+          </div>
+          <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:8px;">
+            <div style="display:flex; flex-direction:column; align-items:center;">
+              <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:4px; white-space:nowrap;">今天盈亏</span>
+              <span id="adOrdersReportProfitToday" class="mono" style="font-size:14px; font-weight:bold;">—</span>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:center;">
+              <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:4px; white-space:nowrap;">昨天盈亏</span>
+              <span id="adOrdersReportProfitYesterday" class="mono" style="font-size:14px; font-weight:bold;">—</span>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:center;">
+              <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:4px; white-space:nowrap;">7天盈亏</span>
+              <span id="adOrdersReportProfit7d" class="mono" style="font-size:14px; font-weight:bold;">—</span>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:center;">
+              <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:4px; white-space:nowrap;">30天盈亏</span>
+              <span id="adOrdersReportProfit30d" class="mono" style="font-size:14px; font-weight:bold;">—</span>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="oc-ad-orders-report-table-wrap">
         <table class="oc-table oc-ad-orders-report-table">
           <thead>
             <tr>
               <th rowspan="2" style="width:120px; text-align:left; vertical-align:middle;">国家/语种</th>
-              <th colspan="3" style="text-align:center;">今天</th>
-              <th colspan="3" style="text-align:center;">昨天</th>
-              <th colspan="3" style="text-align:center;">7天</th>
-              <th colspan="3" style="text-align:center;">30天</th>
-              <th colspan="3" style="text-align:center;">总计</th>
+              <th colspan="4" style="text-align:center;">今天</th>
+              <th colspan="4" style="text-align:center;">昨天</th>
+              <th colspan="4" style="text-align:center;">7天</th>
+              <th colspan="4" style="text-align:center;">30天</th>
+              <th colspan="4" style="text-align:center;">总计</th>
             </tr>
             <tr>
               <th style="width:85px; text-align:right;">消耗</th>
               <th style="width:60px; text-align:right;">单量</th>
               <th style="width:75px; text-align:right;">ROAS</th>
+              <th style="width:75px; text-align:right;">盈亏</th>
               <th style="width:85px; text-align:right;">消耗</th>
               <th style="width:60px; text-align:right;">单量</th>
               <th style="width:75px; text-align:right;">ROAS</th>
+              <th style="width:75px; text-align:right;">盈亏</th>
               <th style="width:85px; text-align:right;">消耗</th>
               <th style="width:60px; text-align:right;">单量</th>
               <th style="width:75px; text-align:right;">ROAS</th>
+              <th style="width:75px; text-align:right;">盈亏</th>
               <th style="width:85px; text-align:right;">消耗</th>
               <th style="width:60px; text-align:right;">单量</th>
               <th style="width:75px; text-align:right;">ROAS</th>
+              <th style="width:75px; text-align:right;">盈亏</th>
               <th style="width:85px; text-align:right;">消耗</th>
               <th style="width:60px; text-align:right;">单量</th>
               <th style="width:75px; text-align:right;">ROAS</th>
+              <th style="width:75px; text-align:right;">盈亏</th>
             </tr>
           </thead>
           <tbody id="adOrdersReportRows"></tbody>

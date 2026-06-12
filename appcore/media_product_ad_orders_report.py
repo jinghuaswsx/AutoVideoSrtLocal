@@ -82,11 +82,11 @@ def _realtime_ad_table_exists() -> bool:
 
 def _empty_row() -> dict[str, Any]:
     return {
-        "today_spend": 0.0, "today_orders": 0, "today_purchase_value": 0.0,
-        "yesterday_spend": 0.0, "yesterday_orders": 0, "yesterday_purchase_value": 0.0,
-        "last_7d_spend": 0.0, "last_7d_orders": 0, "last_7d_purchase_value": 0.0,
-        "last_30d_spend": 0.0, "last_30d_orders": 0, "last_30d_purchase_value": 0.0,
-        "total_spend": 0.0, "total_orders": 0, "total_purchase_value": 0.0,
+        "today_spend": 0.0, "today_orders": 0, "today_purchase_value": 0.0, "today_order_profit": 0.0,
+        "yesterday_spend": 0.0, "yesterday_orders": 0, "yesterday_purchase_value": 0.0, "yesterday_order_profit": 0.0,
+        "last_7d_spend": 0.0, "last_7d_orders": 0, "last_7d_purchase_value": 0.0, "last_7d_order_profit": 0.0,
+        "last_30d_spend": 0.0, "last_30d_orders": 0, "last_30d_purchase_value": 0.0, "last_30d_order_profit": 0.0,
+        "total_spend": 0.0, "total_orders": 0, "total_purchase_value": 0.0, "total_order_profit": 0.0,
     }
 
 def get_product_ad_orders_report(product_id: int, today: date | None = None) -> dict[str, Any]:
@@ -94,7 +94,8 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
     grouped by buyer country / market country (mapped to language code).
     """
     product = query_one(
-        "SELECT id, product_code, name FROM media_products WHERE id = %s AND deleted_at IS NULL",
+        "SELECT id, product_code, name, purchase_price, packet_cost_estimated, packet_cost_actual, standalone_price, standalone_shipping_fee "
+        "FROM media_products WHERE id = %s AND deleted_at IS NULL",
         (product_id,),
     )
     if not product:
@@ -102,6 +103,18 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
 
     product_code = str(product.get("product_code") or "").strip()
     business_today = today or current_meta_business_date()
+
+    from appcore import product_roas
+    rmb_per_usd = product_roas.get_configured_rmb_per_usd()
+    roas_calc = product_roas.calculate_break_even_roas(
+        purchase_price=product.get("purchase_price"),
+        estimated_packet_cost=product.get("packet_cost_estimated"),
+        actual_packet_cost=product.get("packet_cost_actual"),
+        standalone_price=product.get("standalone_price"),
+        standalone_shipping_fee=product.get("standalone_shipping_fee"),
+        rmb_per_usd=rmb_per_usd,
+    )
+    breakeven_roas = roas_calc.get("effective_roas") if roas_calc else None
 
     # Define date limits for windows
     yesterday = business_today - timedelta(days=1)
@@ -114,7 +127,12 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
         "  opl.product_id, "
         "  UPPER(TRIM(COALESCE(NULLIF(TRIM(opl.buyer_country), ''), NULLIF(TRIM(dol.buyer_country), ''), ''))) AS buyer_country, "
         "  dol.meta_business_date AS business_date, "
-        "  COUNT(DISTINCT NULLIF(TRIM(dol.dxm_package_id), '')) AS order_count "
+        "  COUNT(DISTINCT NULLIF(TRIM(dol.dxm_package_id), '')) AS order_count, "
+        "  SUM(COALESCE(opl.revenue_usd, 0)) AS revenue_usd, "
+        "  SUM(COALESCE(opl.shopify_fee_usd, 0)) AS shopify_fee_usd, "
+        "  SUM(COALESCE(opl.purchase_usd, 0)) AS purchase_usd, "
+        "  SUM(COALESCE(opl.shipping_cost_usd, 0)) AS shipping_cost_usd, "
+        "  SUM(COALESCE(opl.return_reserve_usd, 0)) AS return_reserve_usd "
         "FROM order_profit_lines opl "
         "JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id "
         "WHERE opl.product_id = %s "
@@ -140,29 +158,47 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
         country = str(row.get("buyer_country") or "").strip().upper()
         lang = _country_to_lang(country)
 
+        # Calculate profit metrics for this buyer country and business date combination
+        revenue = _float_value(row.get("revenue_usd"))
+        shopify_fee = _float_value(row.get("shopify_fee_usd"))
+        purchase = _float_value(row.get("purchase_usd"))
+        shipping = _float_value(row.get("shipping_cost_usd"))
+        return_reserve = _float_value(row.get("return_reserve_usd"))
+        order_profit = revenue - shopify_fee - purchase - shipping - return_reserve
+
         # Update total row
         if bdate == business_today:
             total_row["today_orders"] += count
+            total_row["today_order_profit"] += order_profit
         if bdate == yesterday:
             total_row["yesterday_orders"] += count
+            total_row["yesterday_order_profit"] += order_profit
         if last_7d_start <= bdate <= business_today:
             total_row["last_7d_orders"] += count
+            total_row["last_7d_order_profit"] += order_profit
         if last_30d_start <= bdate <= business_today:
             total_row["last_30d_orders"] += count
+            total_row["last_30d_order_profit"] += order_profit
         total_row["total_orders"] += count
+        total_row["total_order_profit"] += order_profit
 
         # Update language row
         if lang:
             l_row = get_or_create_lang_row(lang)
             if bdate == business_today:
                 l_row["today_orders"] += count
+                l_row["today_order_profit"] += order_profit
             if bdate == yesterday:
                 l_row["yesterday_orders"] += count
+                l_row["yesterday_order_profit"] += order_profit
             if last_7d_start <= bdate <= business_today:
                 l_row["last_7d_orders"] += count
+                l_row["last_7d_order_profit"] += order_profit
             if last_30d_start <= bdate <= business_today:
                 l_row["last_30d_orders"] += count
+                l_row["last_30d_order_profit"] += order_profit
             l_row["total_orders"] += count
+            l_row["total_order_profit"] += order_profit
 
     # 2. Fetch Ad candidates
     # Daily ad metrics (historical)
@@ -274,9 +310,11 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
             orders = int(row[f"{key}_orders"])
             pvalue = row[f"{key}_purchase_value"]
             roas = round(pvalue / spend, 2) if spend > 0 else None
+            profit = round(row[f"{key}_order_profit"] - spend, 2)
             out[f"{key}_spend"] = spend
             out[f"{key}_orders"] = orders
             out[f"{key}_roas"] = roas
+            out[f"{key}_profit"] = profit
         return out
 
     # Finalize total row and language rows
@@ -287,6 +325,7 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
         "product_id": product_id,
         "product_name": product.get("name") or "",
         "product_code": product_code,
+        "breakeven_roas": float(breakeven_roas) if breakeven_roas is not None else None,
         "total": final_total,
         "by_lang": final_by_lang,
         "computed_at": datetime.now().isoformat(),
