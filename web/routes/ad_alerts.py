@@ -5,6 +5,7 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-ad-level-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-high-loss-ads-tab-design.md
 """
 from __future__ import annotations
 
@@ -45,7 +46,24 @@ def _parse_threshold(raw: str | None) -> float | None:
 @login_required
 @admin_required
 def list_page():
-    """预警列表页。"""
+    """广告预警默认页：高额亏损广告。"""
+    threshold = ad_alerts.get_threshold()
+    return render_template(
+        "ad_alerts.html",
+        active_tab="high_loss",
+        threshold=threshold,
+        alert_counts={},
+        SEVERITY_LABELS=ad_alerts.SEVERITY_LABELS,
+        TREND_LABELS=ad_alerts.TREND_LABELS,
+        PHASE_LABELS=ad_alerts.PHASE_LABELS,
+    )
+
+
+@bp.route("/alerts")
+@login_required
+@admin_required
+def alerts_page_route():
+    """商品聚合广告预警页。"""
     threshold = ad_alerts.get_threshold()
     return render_template(
         "ad_alerts.html",
@@ -143,6 +161,28 @@ def api_problem_ads():
         "level": level,
         "business_date": business_date.isoformat(),
         "items": [_problem_ad_item_to_dict(item) for item in items],
+        "total": len(items),
+    })
+
+
+@bp.route("/api/high-loss-ads")
+@login_required
+@admin_required
+def api_high_loss_ads():
+    """高额亏损 AD Top 30 JSON API。"""
+    search = (request.args.get("q") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit") or 30)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid limit"}), 400
+
+    business_date, items = ad_alerts.get_high_loss_ads(
+        search=search,
+        limit=limit,
+    )
+    return jsonify({
+        "business_date": business_date.isoformat(),
+        "items": [_high_loss_ad_item_to_dict(item) for item in items],
         "total": len(items),
     })
 
@@ -317,6 +357,39 @@ def _problem_ad_item_to_dict(item: ad_alerts.ProblemAdItem) -> dict[str, Any]:
             }
             for key, metric in item.metrics.items()
         },
+    }
+
+
+def _high_loss_ad_item_to_dict(item: ad_alerts.HighLossAdItem) -> dict[str, Any]:
+    return {
+        "code": item.code,
+        "name": item.name,
+        "ad_account_id": item.ad_account_id,
+        "ad_account_name": item.ad_account_name,
+        "country": item.country,
+        "product_id": item.product_id,
+        "product_code": item.product_code,
+        "product_name": item.product_name,
+        "product_main_image": item.product_main_image,
+        "first_active_date": item.first_active_date,
+        "last_active_date": item.last_active_date,
+        "active_days": item.active_days,
+        "consecutive_loss_days": item.consecutive_loss_days,
+        "detail_url": item.detail_url,
+        "metrics": {
+            key: _high_loss_metric_to_dict(metric)
+            for key, metric in item.metrics.items()
+        },
+    }
+
+
+def _high_loss_metric_to_dict(metric: ad_alerts.HighLossMetric) -> dict[str, Any]:
+    return {
+        "spend_usd": metric.spend_usd,
+        "purchase_value_usd": metric.purchase_value_usd,
+        "result_count": metric.result_count,
+        "roas": metric.roas,
+        "estimated_loss": metric.estimated_loss,
     }
 
 

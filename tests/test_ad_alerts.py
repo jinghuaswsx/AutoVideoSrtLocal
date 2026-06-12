@@ -382,6 +382,104 @@ def test_get_problem_ads_uses_realtime_today_and_aggregates_windows(monkeypatch)
     }
 
 
+def test_get_high_loss_ads_prioritizes_recent_spend_and_counts_consecutive_loss(monkeypatch):
+    from appcore import ad_alerts
+
+    captured: dict[str, object] = {}
+
+    def fake_query(sql, params=None):
+        sql_text = str(sql)
+        if "GROUP BY s.code, s.ad_account_id, s.metric_date" in sql_text:
+            return [
+                {
+                    "code": "glow-ad-1",
+                    "ad_account_id": "1234",
+                    "metric_date": date(2026, 6, 12),
+                    "spend_usd": "12.00",
+                    "purchase_value_usd": "0.00",
+                    "result_count": "0",
+                },
+                {
+                    "code": "glow-ad-1",
+                    "ad_account_id": "1234",
+                    "metric_date": date(2026, 6, 11),
+                    "spend_usd": "20.00",
+                    "purchase_value_usd": "10.00",
+                    "result_count": "1",
+                },
+                {
+                    "code": "glow-ad-1",
+                    "ad_account_id": "1234",
+                    "metric_date": date(2026, 6, 10),
+                    "spend_usd": "20.00",
+                    "purchase_value_usd": "40.00",
+                    "result_count": "1",
+                },
+            ]
+        if "media_product_covers" in sql_text or "WHERE LOWER(product_code) IN" in sql_text:
+            return []
+
+        captured["sql"] = sql
+        captured["params"] = params
+        return [
+            {
+                "code": "glow-ad-1",
+                "name": "Glow Ad 1",
+                "ad_account_id": "1234",
+                "ad_account_name": "newjoyloo",
+                "country": "de",
+                "product_id": 10,
+                "product_code": "glow-rjc",
+                "product_name": "Glow Product",
+                "product_main_image": "covers/glow.jpg",
+                "first_active_date": date(2026, 5, 1),
+                "last_active_date": date(2026, 6, 12),
+                "active_days": "12",
+                "today_spend_usd": "12.00",
+                "today_purchase_value_usd": "0.00",
+                "today_result_count": "0",
+                "last_7d_spend_usd": "120.00",
+                "last_7d_purchase_value_usd": "40.00",
+                "last_7d_result_count": "1",
+                "last_30d_spend_usd": "300.00",
+                "last_30d_purchase_value_usd": "100.00",
+                "last_30d_result_count": "3",
+                "overall_spend_usd": "500.00",
+                "overall_purchase_value_usd": "180.00",
+                "overall_result_count": "6",
+            }
+        ]
+
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+    monkeypatch.setattr(ad_alerts, "current_meta_business_date", lambda: date(2026, 6, 12))
+
+    business_date, items = ad_alerts.get_high_loss_ads(search="Glow", limit=99)
+
+    assert business_date.isoformat() == "2026-06-12"
+    assert len(items) == 1
+    item = items[0]
+    assert item.code == "glow-ad-1"
+    assert item.product_code == "glow-rjc"
+    assert item.product_main_image == "/medias/obj/covers/glow.jpg"
+    assert item.metrics["last_7d"].spend_usd == 120.0
+    assert item.metrics["last_7d"].roas == 0.3333
+    assert item.metrics["last_7d"].estimated_loss == -80.0
+    assert item.consecutive_loss_days == 2
+    assert "ads_level=ad" in item.detail_url
+    assert "start_date=2026-05-01" in item.detail_url
+
+    sql = str(captured["sql"])
+    assert "meta_ad_realtime_daily_ad_metrics" in sql
+    assert "meta_ad_daily_ad_metrics" in sql
+    assert "GROUP BY business_date, ad_account_id" in sql
+    assert "HAVING last_7d_spend_usd > 0" in sql
+    assert "last_7d_result_count = 0" in sql
+    assert "last_7d_purchase_value_usd / NULLIF(last_7d_spend_usd, 0)" in sql
+    assert "ORDER BY last_7d_spend_usd DESC, today_spend_usd DESC, last_30d_spend_usd DESC" in sql
+    assert captured["params"]["limit"] == 30
+    assert captured["params"]["search"] == "%Glow%"
+
+
 def test_get_ad_detail_and_trend_returns_result_counts(monkeypatch):
     from appcore import ad_alerts
 
@@ -625,5 +723,4 @@ def test_batch_fetch_problem_ad_details_images(monkeypatch):
     assert item1.product_main_image == "https://img.example.com/mp.jpg"
     assert item2.product_main_image == "/medias/obj/79/medias/796/cover.png"
     assert len(query_queries) > 0
-
 

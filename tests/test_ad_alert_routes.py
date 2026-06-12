@@ -307,6 +307,65 @@ def test_api_problem_ads_serializes_table_rows(monkeypatch):
     assert response.get_json()["error"] == "invalid_param"
 
 
+def test_api_high_loss_ads_serializes_card_rows(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+    from datetime import date
+
+    item = ad_alerts.HighLossAdItem(
+        code="glow-ad-1",
+        name="Glow Ad 1",
+        ad_account_id="1234",
+        ad_account_name="newjoyloo",
+        country="DE",
+        product_id=10,
+        product_code="glow-rjc",
+        product_name="Glow Product",
+        product_main_image="/medias/obj/covers/glow.jpg",
+        first_active_date="2026-05-01",
+        last_active_date="2026-06-12",
+        active_days=12,
+        consecutive_loss_days=4,
+        detail_url="/order-analytics?tab=ads&ads_level=ad&ads_code=glow-ad-1",
+        metrics={
+            "today": ad_alerts.HighLossMetric(12.0, 0.0, 0, 0.0, -12.0),
+            "last_7d": ad_alerts.HighLossMetric(120.0, 40.0, 1, 0.3333, -80.0),
+            "last_30d": ad_alerts.HighLossMetric(300.0, 100.0, 3, 0.3333, -200.0),
+            "overall": ad_alerts.HighLossMetric(500.0, 180.0, 6, 0.36, -320.0),
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_high_loss_ads(**kwargs):
+        captured.update(kwargs)
+        return date(2026, 6, 12), [item]
+
+    monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", fake_get_high_loss_ads)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context("/ad-alerts/api/high-loss-ads?q=Glow&limit=30"):
+        response = _unwrap(route.api_high_loss_ads)()
+
+    payload = response.get_json()
+    assert captured == {"search": "Glow", "limit": 30}
+    assert payload["business_date"] == "2026-06-12"
+    assert payload["total"] == 1
+    assert payload["items"][0]["product_code"] == "glow-rjc"
+    assert payload["items"][0]["consecutive_loss_days"] == 4
+    assert payload["items"][0]["metrics"]["last_7d"] == {
+        "spend_usd": 120.0,
+        "purchase_value_usd": 40.0,
+        "result_count": 1,
+        "roas": 0.3333,
+        "estimated_loss": -80.0,
+    }
+
+    with flask_app.test_request_context("/ad-alerts/api/high-loss-ads?limit=bad"):
+        response, status = _unwrap(route.api_high_loss_ads)()
+    assert status == 400
+    assert response.get_json()["error"] == "invalid limit"
+
+
 def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypatch):
     from datetime import date
     from web.routes import ad_alerts as route
@@ -316,14 +375,24 @@ def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypa
     # 未登录校验
     unauth_response = raw_client.get("/ad-alerts/")
     assert unauth_response.status_code == 302
+    unauth_response_alerts = raw_client.get("/ad-alerts/alerts")
+    assert unauth_response_alerts.status_code == 302
     unauth_response_prob = raw_client.get("/ad-alerts/problem")
     assert unauth_response_prob.status_code == 302
 
     monkeypatch.setattr(route.ad_alerts, "get_threshold", lambda: 1.4)
     
-    # 广告预警页面
+    # 默认高额亏损广告页面
     page_response = authed_client_no_db.get("/ad-alerts/")
     assert page_response.status_code == 200
+    assert "高额亏损广告" in page_response.get_data(as_text=True)
+
+    # 广告预警页面
+    page_response_alerts = authed_client_no_db.get("/ad-alerts/alerts")
+    assert page_response_alerts.status_code == 200
+    assert "广告预警" in page_response_alerts.get_data(as_text=True)
+
+    # 兼容：默认页仍包含广告预警 Tab
     assert "广告预警" in page_response.get_data(as_text=True)
 
     # 问题广告页面
@@ -335,6 +404,11 @@ def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypa
     api_response = authed_client_no_db.get("/ad-alerts/api/problem-ads?level=campaign")
     assert api_response.status_code == 200
     assert api_response.get_json()["business_date"] == "2026-06-12"
+
+    monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", lambda *args, **kwargs: (date(2026, 6, 12), []))
+    high_loss_response = authed_client_no_db.get("/ad-alerts/api/high-loss-ads")
+    assert high_loss_response.status_code == 200
+    assert high_loss_response.get_json()["business_date"] == "2026-06-12"
 
 
 def test_ad_alert_detail_pages_render_with_mocked_data(authed_client_no_db, monkeypatch):

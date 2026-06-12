@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% block title %}{% if active_tab == 'problem' %}问题广告{% else %}广告预警{% endif %}{% endblock %}
+{% block title %}{% if active_tab == 'problem' %}问题广告{% elif active_tab == 'high_loss' %}高额亏损广告{% else %}广告预警{% endif %}{% endblock %}
 {% block extra_style %}
 <style>
 {% include "medias/_roas_styles.html" %}
@@ -333,6 +333,67 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+.oc-ad-alert-highloss-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.oc-ad-alert-highloss-note {
+  color: #0f766e;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #ecfeff;
+  border: 1px solid #bae6fd;
+  border-left: 4px solid var(--oc-ad-alert-cyan);
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+[data-theme='dark'] .oc-ad-alert-highloss-note {
+  color: #67e8f9;
+  background: #0f172a;
+  border-color: rgba(14, 165, 233, 0.28);
+}
+.oc-ad-alert-highloss-card .oc-ad-alert-card-content {
+  gap: 10px;
+}
+.oc-ad-alert-ad-meta,
+.oc-ad-alert-highloss-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-ad-meta span,
+.oc-ad-alert-highloss-metrics span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: var(--oc-ad-alert-subtle);
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.oc-ad-alert-highloss-metrics strong {
+  color: var(--oc-ad-alert-fg);
+  font-variant-numeric: tabular-nums;
+}
+.oc-ad-alert-highloss-link {
+  width: fit-content;
+  color: var(--oc-ad-alert-blue);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 800;
+}
+.oc-ad-alert-highloss-link:hover {
+  text-decoration: underline;
 }
 .oc-ad-alert-column-picker {
   position: relative;
@@ -1040,7 +1101,7 @@
 <div class="oc oc-ad-alert-page" data-threshold="{{ threshold }}">
   <div class="oc-ad-alert-head">
     <div class="oc-ad-alert-title">
-      <h1>{% if active_tab == 'problem' %}问题广告{% else %}广告预警{% endif %}</h1>
+      <h1>{% if active_tab == 'problem' %}问题广告{% elif active_tab == 'high_loss' %}高额亏损广告{% else %}广告预警{% endif %}</h1>
       <span class="oc-ad-alert-count" id="adAlertCount">加载中</span>
     </div>
     <div class="oc-ad-alert-tools">
@@ -1053,9 +1114,24 @@
   </div>
 
   <div class="oc-ad-alert-tabs" id="adAlertTabs" role="tablist" aria-label="广告预警子 Tab">
-    <a class="oc-ad-alert-tab {% if active_tab == 'alerts' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/" role="tab" data-ad-alert-tab="alerts" aria-selected="{% if active_tab == 'alerts' %}true{% else %}false{% endif %}">广告预警</a>
+    <a class="oc-ad-alert-tab {% if active_tab == 'high_loss' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/" role="tab" data-ad-alert-tab="high_loss" aria-selected="{% if active_tab == 'high_loss' %}true{% else %}false{% endif %}">高额亏损广告</a>
+    <a class="oc-ad-alert-tab {% if active_tab == 'alerts' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/alerts" role="tab" data-ad-alert-tab="alerts" aria-selected="{% if active_tab == 'alerts' %}true{% else %}false{% endif %}">广告预警</a>
     <a class="oc-ad-alert-tab {% if active_tab == 'problem' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/problem" role="tab" data-ad-alert-tab="problem" aria-selected="{% if active_tab == 'problem' %}true{% else %}false{% endif %}">问题广告</a>
   </div>
+
+  <section class="oc-ad-alert-panel" data-ad-alert-panel="high_loss" {% if active_tab != 'high_loss' %}hidden{% endif %}>
+    <div class="oc-ad-alert-highloss-toolbar">
+      <div class="oc-ad-alert-business-date" id="adAlertHighLossDate">Meta 业务日：加载中</div>
+      <div class="oc-ad-alert-problem-actions">
+        <input class="oc-ad-alert-search" id="adAlertHighLossSearch" type="search" placeholder="搜索广告、商品名称或 product code">
+        <button class="oc-ad-alert-btn" type="button" id="adAlertHighLossRefresh">查询</button>
+      </div>
+    </div>
+    <div class="oc-ad-alert-highloss-note">高额亏损广告定义：最近 7 天有消耗，且最近 7 天不出单或 ROAS 低于 1；默认按最近 7 天消耗从高到低取前 30 条。</div>
+    <div class="oc-ad-alert-list" id="adAlertHighLossList">
+      <div class="oc-ad-alert-state loading">加载中</div>
+    </div>
+  </section>
 
   <section class="oc-ad-alert-panel" data-ad-alert-panel="alerts" {% if active_tab != 'alerts' %}hidden{% endif %}>
     <div class="oc-ad-alert-filters">
@@ -1192,6 +1268,8 @@
     severity: '',
     search: '',
     activeTab: {{ active_tab|tojson }},
+    highLossLoaded: false,
+    highLossSearch: '',
     problemLoaded: false,
     problemLevel: 'campaign',
     problemSearch: '',
@@ -1203,6 +1281,8 @@
   var listEl = document.getElementById('adAlertList');
   var countEl = document.getElementById('adAlertCount');
   var thresholdText = document.getElementById('adAlertThresholdText');
+  var highLossList = document.getElementById('adAlertHighLossList');
+  var highLossDate = document.getElementById('adAlertHighLossDate');
   var problemBody = document.getElementById('adAlertProblemBody');
   var problemDate = document.getElementById('adAlertProblemDate');
 
@@ -1453,6 +1533,91 @@
     }).join('');
   }
 
+  function loadHighLossAds() {
+    if (!highLossList) return;
+    highLossList.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
+    var params = new URLSearchParams();
+    params.set('limit', '30');
+    if (state.highLossSearch) params.set('q', state.highLossSearch);
+    fetch('/ad-alerts/api/high-loss-ads?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('high_loss_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        state.highLossLoaded = true;
+        renderHighLossAds(data.items || []);
+        if (highLossDate) {
+          highLossDate.textContent = 'Meta 业务日：' + (data.business_date || '—') + ' · ' + String(data.total || 0) + ' 条';
+        }
+        if (countEl) {
+          countEl.textContent = String(data.total || 0) + ' 条高额亏损广告';
+        }
+      })
+      .catch(function() {
+        if (highLossDate) highLossDate.textContent = 'Meta 业务日：加载失败';
+        highLossList.innerHTML = '<div class="oc-ad-alert-state">加载失败</div>';
+        if (countEl) countEl.textContent = '加载失败';
+      });
+  }
+
+  function renderHighLossAds(items) {
+    if (!highLossList) return;
+    if (!items.length) {
+      highLossList.innerHTML = '<div class="oc-ad-alert-state">当前没有命中最近 7 天高额亏损规则的 AD</div>';
+      return;
+    }
+    highLossList.innerHTML = items.map(function(item) {
+      var productName = item.product_name || item.product_code || '未匹配商品';
+      var productCode = item.product_code || item.code || '';
+      var metrics = item.metrics || {};
+      var imgHtml = '';
+      if (item.product_main_image) {
+        imgHtml = '  <div class="oc-ad-alert-card-image-wrapper"><img src="' + html(item.product_main_image) + '" class="oc-ad-alert-card-image" alt="商品主图"></div>';
+      } else {
+        imgHtml = '  <div class="oc-ad-alert-card-image-wrapper" style="background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 14px;">暂无主图</div>';
+      }
+      return ''
+        + '<article class="oc-ad-alert-card oc-ad-alert-highloss-card" role="button" tabindex="0" data-detail-url="' + html(item.detail_url || '') + '">'
+        + imgHtml
+        + '  <div class="oc-ad-alert-card-content">'
+        + '    <span class="oc-ad-alert-card-top">'
+        + '      <span class="oc-ad-alert-product">'
+        + '        <span class="oc-ad-alert-name">' + html(productName) + '</span>'
+        + '        <span class="oc-ad-alert-code">' + html(productCode) + '</span>'
+        + '      </span>'
+        + '      <span class="oc-ad-alert-badge oc-ad-alert-severe">连续亏损 ' + Number(item.consecutive_loss_days || 0) + ' 天</span>'
+        + '    </span>'
+        + '    <div class="oc-ad-alert-ad-meta">'
+        + '      <span>AD ' + html(item.name || item.code || '') + '</span>'
+        + '      <span>Code ' + html(item.code || '') + '</span>'
+        + '      <span>账户 ' + html(item.ad_account_name || item.ad_account_id || '—') + '</span>'
+        + '      <span>国家 ' + html(item.country || '—') + '</span>'
+        + '      <span>首投 ' + html(item.first_active_date || '—') + '</span>'
+        + '    </div>'
+        + '    <div class="oc-ad-alert-highloss-metrics">'
+        + highLossMetricBlock('今天', metrics.today)
+        + highLossMetricBlock('7 天', metrics.last_7d)
+        + highLossMetricBlock('30 天', metrics.last_30d)
+        + highLossMetricBlock('整体', metrics.overall)
+        + '    </div>'
+        + '    <a class="oc-ad-alert-highloss-link" href="' + html(item.detail_url || '#') + '" target="_blank" rel="noopener noreferrer" data-stop-card>打开广告分析详情</a>'
+        + '  </div>'
+        + '</article>';
+    }).join('');
+  }
+
+  function highLossMetricBlock(label, metric) {
+    metric = metric || {};
+    return ''
+      + '<span><strong>' + html(label) + '</strong>'
+      + '消耗 <strong>' + money(metric.spend_usd, 0) + '</strong>'
+      + '成效 <strong>' + intText(metric.result_count) + '</strong>'
+      + 'ROAS <strong>' + roas(metric.roas) + '</strong>'
+      + '盈亏 ' + loss(metric.estimated_loss)
+      + '</span>';
+  }
+
   function loadProblemAds() {
     if (!problemBody) return;
     problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state loading">加载中</td></tr>';
@@ -1554,6 +1719,7 @@
         panel.setAttribute('hidden', '');
       }
     });
+    if (tab === 'high_loss' && !state.highLossLoaded) loadHighLossAds();
     if (tab === 'problem' && !state.problemLoaded) loadProblemAds();
   }
 
@@ -1960,6 +2126,47 @@
       + '</svg>';
   }
 
+  function refreshActiveTab() {
+    if (state.activeTab === 'high_loss') {
+      loadHighLossAds();
+      return;
+    }
+    if (state.activeTab === 'problem') {
+      loadProblemAds();
+      return;
+    }
+    loadList();
+  }
+
+  document.getElementById('adAlertHighLossRefresh').addEventListener('click', function() {
+    state.highLossSearch = (document.getElementById('adAlertHighLossSearch').value || '').trim();
+    loadHighLossAds();
+  });
+
+  document.getElementById('adAlertHighLossSearch').addEventListener('keydown', function(event) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    state.highLossSearch = this.value.trim();
+    loadHighLossAds();
+  });
+
+  highLossList.addEventListener('click', function(event) {
+    if (event.target.closest('[data-stop-card]')) return;
+    var card = event.target.closest('.oc-ad-alert-card');
+    if (!card) return;
+    var url = card.getAttribute('data-detail-url');
+    if (url) window.location.href = url;
+  });
+
+  highLossList.addEventListener('keydown', function(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    var card = event.target.closest('.oc-ad-alert-card');
+    if (!card) return;
+    event.preventDefault();
+    var url = card.getAttribute('data-detail-url');
+    if (url) window.location.href = url;
+  });
+
   listEl.addEventListener('click', function(event) {
     var evalBtn = event.target.closest('.oc-ad-alert-btn-ai');
     if (evalBtn) {
@@ -2109,7 +2316,7 @@
     if (pid && lang) openDetail(parseInt(pid, 10), lang);
   });
 
-  document.getElementById('adAlertRefresh').addEventListener('click', loadList);
+  document.getElementById('adAlertRefresh').addEventListener('click', refreshActiveTab);
   document.getElementById('adAlertStartDate').addEventListener('change', loadList);
   document.getElementById('adAlertEndDate').addEventListener('change', loadList);
   document.getElementById('adAlertDateClear').addEventListener('click', function() {
@@ -2168,14 +2375,16 @@
         thresholdText.textContent = state.threshold.toFixed(2);
         closeMask('adAlertThresholdMask');
         showToast('阈值已更新为 ' + state.threshold.toFixed(2), 'success');
-        loadList();
+        refreshActiveTab();
       })
       .catch(function(error) {
         showToast('保存失败：' + (error.message || '未知错误'), 'error');
       });
   });
 
-  if (state.activeTab === 'problem') {
+  if (state.activeTab === 'high_loss') {
+    loadHighLossAds();
+  } else if (state.activeTab === 'problem') {
     loadProblemAds();
   } else {
     restoreUrlParams();

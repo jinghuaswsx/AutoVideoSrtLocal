@@ -11,12 +11,18 @@ def test_ad_alert_template_contract():
     assert '{% extends "layout.html" %}' in source
     assert "/ad-alerts/api/list" in source
     assert "/ad-alerts/api/detail" in source
+    assert "/ad-alerts/api/high-loss-ads" in source
     assert "/ad-alerts/api/problem-ads" in source
     assert "/ad-alerts/api/ad-list" in source
     assert "/ad-alerts/api/evaluate" in source
     assert "/ad-alerts/api/threshold" in source
     assert 'href="/ad-alerts/"' in source
+    assert 'href="/ad-alerts/alerts"' in source
     assert 'href="/ad-alerts/problem"' in source
+    assert "高额亏损广告" in source
+    assert "最近 7 天有消耗" in source
+    assert "function loadHighLossAds" in source
+    assert "function renderHighLossAds" in source
     assert 'data-level="campaign"' in source
     assert 'data-level="adset"' in source
     assert 'data-level="ad"' in source
@@ -74,7 +80,7 @@ def test_ad_alert_template_url_persistence_contract():
     assert "state.severity = params.get('severity') || ''" in source
     assert "state.search = params.get('search') || ''" in source
     assert "restoreUrlParams();" in source
-    assert "  } else {\n    restoreUrlParams();\n    loadList();\n  }" in source
+    assert "  } else if (state.activeTab === 'problem') {\n    loadProblemAds();\n  } else {\n    restoreUrlParams();\n    loadList();\n  }" in source
     assert "syncUrlParams();" in source
     assert source.index("renderList(data.items || []);") < source.index("syncUrlParams();")
 
