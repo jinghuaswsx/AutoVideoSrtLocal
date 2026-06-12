@@ -214,6 +214,8 @@ def _problem_ad_item_to_dict(item: ad_alerts.ProblemAdItem) -> dict[str, Any]:
         "level": item.level,
         "code": item.code,
         "name": item.name,
+        "product_cn_name": item.product_cn_name,
+        "product_theme": item.product_theme,
         "ad_account_id": item.ad_account_id,
         "ad_account_name": item.ad_account_name,
         "first_active_date": item.first_active_date,
@@ -228,6 +230,7 @@ def _problem_ad_item_to_dict(item: ad_alerts.ProblemAdItem) -> dict[str, Any]:
             for key, metric in item.metrics.items()
         },
     }
+
 
 
 def _aggregated_product_to_dict(item: ad_alerts.AggregatedProductAlert) -> dict[str, Any]:

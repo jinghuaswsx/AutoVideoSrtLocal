@@ -791,12 +791,13 @@
         <thead>
           <tr>
             <th rowspan="2">广告</th>
-            <th rowspan="2">账户</th>
+            <th rowspan="2">商品主题</th>
             <th colspan="3">今天</th>
             <th colspan="3">昨天</th>
             <th colspan="3">最近 7 天</th>
             <th colspan="3">最近 30 天</th>
             <th colspan="3">整体</th>
+            <th rowspan="2">账户</th>
           </tr>
           <tr>
             <th class="oc-ad-alert-num">消耗</th>
@@ -817,9 +818,10 @@
           </tr>
         </thead>
         <tbody id="adAlertProblemBody">
-          <tr><td colspan="17" class="oc-ad-alert-state">点击「问题广告」后加载</td></tr>
+          <tr><td colspan="18" class="oc-ad-alert-state">点击「问题广告」后加载</td></tr>
         </tbody>
       </table>
+
     </div>
   </section>
 </div>
@@ -963,7 +965,7 @@
 
   function loadProblemAds() {
     if (!problemBody) return;
-    problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">加载中</td></tr>';
+    problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state">加载中</td></tr>';
     var params = new URLSearchParams();
     params.set('level', state.problemLevel);
     params.set('limit', '200');
@@ -982,35 +984,57 @@
       })
       .catch(function() {
         if (problemDate) problemDate.textContent = '今天：加载失败';
-        problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">加载失败</td></tr>';
+        problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state">加载失败</td></tr>';
       });
   }
 
   function renderProblemAds(items) {
     if (!items.length) {
-      problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">当前维度暂无问题广告</td></tr>';
+      problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state">当前维度暂无问题广告</td></tr>';
       return;
     }
     problemBody.innerHTML = items.map(function(item) {
       var m = item.metrics || {};
+      var prodCode = item.code || '';
+      var actionButtonsHtml = '';
+      if (prodCode) {
+        actionButtonsHtml = ''
+          + '<button class="copy-code-btn" type="button" data-code="' + html(prodCode) + '" title="复制产品 ID" style="padding: 2px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; cursor: pointer; color: #4b5563; transition: all 0.15s; outline: none; vertical-align: middle; flex-shrink: 0; margin-left: 4px;">'
+          + '  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+          + '</button>'
+          + '<button class="search-code-btn" type="button" data-code="' + html(prodCode) + '" title="在素材管理中搜索" style="padding: 2px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; cursor: pointer; color: #4b5563; transition: all 0.15s; outline: none; vertical-align: middle; flex-shrink: 0; margin-left: 4px;">'
+          + '  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>'
+          + '</button>';
+      }
+
       return ''
         + '<tr class="oc-ad-alert-problem-row" data-detail-url="' + html(item.detail_url || '') + '">'
         + '<td>'
-        + '  <span class="oc-ad-alert-ad-name">' + html(item.name || item.code || '') + '</span>'
-        + '  <span class="oc-ad-alert-ad-code">' + html(item.code || '') + '</span>'
+        + '  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 8px;">'
+        + '    <span class="oc-ad-alert-ad-name" style="font-weight: 600; font-size: 13px; color: #111827; word-break: break-all;">' + html(item.name || item.code || '') + '</span>'
+        + '  </div>'
+        + '  <div style="display: flex; align-items: center; gap: 2px; margin-top: 2px; flex-wrap: wrap;">'
+        + '    <span class="oc-ad-alert-ad-code" style="color: #6b7280; font-size: 11px; font-family: monospace;">' + html(item.code || '') + '</span>'
+        + '    ' + actionButtonsHtml
+        + '  </div>'
+        + '  <div class="oc-ad-alert-ad-cn-name" style="margin-top: 4px; font-size: 11px; color: #047857; font-weight: 500; word-break: break-all;">' + html(item.product_cn_name || '无中文产品名') + '</div>'
         + '</td>'
         + '<td>'
-        + '  <span class="oc-ad-alert-account">' + html(item.ad_account_name || item.ad_account_id || '—') + '</span>'
-        + '  <span class="oc-ad-alert-ad-code">' + html((item.first_active_date || '—') + ' 起') + '</span>'
+        + '  <span class="oc-ad-alert-theme" style="font-size: 13px; color: #374151; font-weight: 500;">' + html(item.product_theme || '未分类') + '</span>'
         + '</td>'
         + problemMetricCells(m.today)
         + problemMetricCells(m.yesterday)
         + problemMetricCells(m.last_7d)
         + problemMetricCells(m.last_30d)
         + problemMetricCells(m.overall)
+        + '<td>'
+        + '  <span class="oc-ad-alert-account" style="font-weight: 500;">' + html(item.ad_account_name || item.ad_account_id || '—') + '</span>'
+        + '  <span class="oc-ad-alert-ad-code" style="font-size: 11px;">' + html((item.first_active_date || '—') + ' 起') + '</span>'
+        + '</td>'
         + '</tr>';
     }).join('');
   }
+
 
   function problemMetricCells(metric) {
     metric = metric || {};
@@ -1205,11 +1229,43 @@
   });
 
   problemBody.addEventListener('click', function(event) {
+    var copyBtn = event.target.closest('.copy-code-btn');
+    if (copyBtn) {
+      event.stopPropagation();
+      var code = copyBtn.getAttribute('data-code');
+      if (code) {
+        navigator.clipboard.writeText(code).then(function() {
+          var origBg = copyBtn.style.background;
+          var origBorder = copyBtn.style.borderColor;
+          copyBtn.style.background = '#def7ec';
+          copyBtn.style.borderColor = '#31c48d';
+          setTimeout(function() {
+            copyBtn.style.background = origBg;
+            copyBtn.style.borderColor = origBorder;
+          }, 800);
+        }).catch(function() {
+          alert('复制失败，请手动复制');
+        });
+      }
+      return;
+    }
+
+    var searchBtn = event.target.closest('.search-code-btn');
+    if (searchBtn) {
+      event.stopPropagation();
+      var code = searchBtn.getAttribute('data-code');
+      if (code) {
+        window.location.href = '/medias?q=' + encodeURIComponent(code);
+      }
+      return;
+    }
+
     var row = event.target.closest('[data-detail-url]');
     if (!row) return;
     var url = row.getAttribute('data-detail-url');
     if (url) window.location.href = url;
   });
+
 
   document.getElementById('adAlertSeveritySet').addEventListener('click', function(event) {
     var btn = event.target.closest('.oc-ad-alert-filter');

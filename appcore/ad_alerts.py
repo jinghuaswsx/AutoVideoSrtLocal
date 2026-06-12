@@ -149,6 +149,9 @@ class ProblemAdItem:
     last_active_date: str | None
     detail_url: str
     metrics: dict[str, ProblemMetric]
+    product_cn_name: str | None = None
+    product_theme: str | None = None
+
 
 
 @dataclass
@@ -443,6 +446,7 @@ def get_problem_ads(
           MAX(s.name) AS name,
           s.ad_account_id,
           MAX(s.ad_account_name) AS ad_account_name,
+          MAX(s.matched_product_code) AS matched_product_code,
           MIN(s.metric_date) AS first_active_date,
           MAX(s.metric_date) AS last_active_date,
           SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS today_spend_usd,
@@ -511,9 +515,124 @@ def get_problem_ads(
                     "last_30d": _problem_metric(row, "last_30d"),
                     "overall": _problem_metric(row, "overall"),
                 },
+                product_cn_name=None,
+                product_theme=None,
             )
         )
+
+    try:
+        _batch_fetch_problem_ad_details(items, rows)
+    except Exception as e:
+        log.exception("Failed to batch fetch problem ad details: %s", e)
+
     return business_date, items
+
+
+def _batch_fetch_problem_ad_details(items: list[ProblemAdItem], rows: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+
+    # 1. Gather all product codes
+    code_to_items: dict[str, list[ProblemAdItem]] = {}
+    for item, row in zip(items, rows or []):
+        matched = _safe_str(row.get("matched_product_code"))
+        prod_code = (matched or item.code or "").strip().lower()
+        if prod_code:
+            if prod_code not in code_to_items:
+                code_to_items[prod_code] = []
+            code_to_items[prod_code].append(item)
+
+    clean_codes = list(code_to_items.keys())
+    if not clean_codes:
+        return
+
+    from appcore.db import query as db_query
+
+    # 2. Batch fetch Chinese names
+    try:
+        from appcore.product_name_dictionary import get_names
+        # pass db_query as the custom query_fn so that get_names queries through it
+        names_dict = get_names(clean_codes, query_fn=db_query)
+    except Exception as e:
+        log.warning("Failed to import or call get_names: %s", e)
+        names_dict = {}
+
+    # 3. Fallback: query media_products for names
+    placeholders = ",".join(["%s"] * len(clean_codes))
+    try:
+        rows_mp = db_query(
+            f"""
+            SELECT LOWER(product_code) AS code, name
+            FROM media_products
+            WHERE LOWER(product_code) IN ({placeholders})
+              AND deleted_at IS NULL
+            """,
+            tuple(clean_codes)
+        )
+        for r in rows_mp or []:
+            c = str(r["code"]).lower()
+            name = str(r["name"] or "").strip()
+            if c not in names_dict:
+                names_dict[c] = {"cn_name": "", "en_name": ""}
+            if not names_dict[c]["cn_name"] and name:
+                names_dict[c]["cn_name"] = name
+    except Exception as e:
+        log.warning("Failed to query media_products for names: %s", e)
+
+    # 4. Batch fetch product themes (categories)
+    themes: dict[str, str] = {}
+    # 4.1 From tabcut_goods
+    try:
+        rows_tabcut = db_query(
+            f"""
+            SELECT LOWER(product_code) AS code, COALESCE(category_l1_name_zh, category_l1_name) AS theme
+            FROM tabcut_goods
+            WHERE LOWER(product_code) IN ({placeholders})
+              AND (category_l1_name_zh IS NOT NULL AND category_l1_name_zh <> ''
+                   OR category_l1_name IS NOT NULL AND category_l1_name <> '')
+            """,
+            tuple(clean_codes)
+        )
+        for r in rows_tabcut or []:
+            c = str(r["code"]).lower()
+            t = str(r["theme"] or "").strip()
+            if t:
+                themes[c] = t
+    except Exception as e:
+        log.warning("Failed to query product themes from tabcut_goods: %s", e)
+
+    # 4.2 From meta_hot_posts / meta_hot_post_product_analyses
+    try:
+        from appcore.meta_hot_posts.categories import category_label_zh
+        rows_meta = db_query(
+            f"""
+            SELECT LOWER(mp.product_code) AS code, a.category_l1 AS theme
+            FROM media_products mp
+            JOIN meta_hot_posts hp ON hp.local_product_id = mp.id
+            JOIN meta_hot_post_product_analyses a ON a.product_url_hash = hp.product_url_hash
+            WHERE LOWER(mp.product_code) IN ({placeholders})
+              AND a.category_l1 IS NOT NULL AND a.category_l1 <> ''
+            """,
+            tuple(clean_codes)
+        )
+        for r in rows_meta or []:
+            c = str(r["code"]).lower()
+            if c not in themes:
+                raw_theme = str(r["theme"] or "").strip()
+                if raw_theme:
+                    themes[c] = category_label_zh(raw_theme)
+    except Exception as e:
+        log.warning("Failed to query product themes from meta_hot_posts: %s", e)
+
+    # 5. Populate items
+    for c, it_list in code_to_items.items():
+        cn_name = names_dict.get(c, {}).get("cn_name") or ""
+        theme = themes.get(c) or ""
+        for it in it_list:
+            it.product_cn_name = cn_name or None
+            it.product_theme = theme or None
+
+
 
 
 def get_trend_series(
