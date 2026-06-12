@@ -179,6 +179,7 @@ class AggregatedProductAlert:
     computed_at: str | None
     top_losing_ads: list[AdListItem] = field(default_factory=list)
     evaluation_lang: str | None = None
+    product_main_image: str | None = None
 
 
 @dataclass
@@ -1425,6 +1426,28 @@ def get_aggregated_products(
         grouped.setdefault(item.product_id, []).append(item)
 
     res: list[AggregatedProductAlert] = []
+    product_ids = list(grouped.keys())
+    product_images = {}
+    if product_ids:
+        placeholders = ",".join(["%s"] * len(product_ids))
+        try:
+            img_rows = query(
+                f"""
+                SELECT id, main_image
+                FROM media_products
+                WHERE id IN ({placeholders})
+                  AND deleted_at IS NULL
+                """,
+                tuple(product_ids)
+            )
+            for r in img_rows or []:
+                pid = r["id"]
+                img = r["main_image"]
+                if img:
+                    product_images[pid] = img
+        except Exception as e:
+            log.warning("Failed to query product images in get_aggregated_products: %s", e)
+
     for pid, p_items in grouped.items():
         if severity and not any(it.severity == severity for it in p_items):
             continue
@@ -1482,6 +1505,7 @@ def get_aggregated_products(
                 computed_at=max_item.computed_at,
                 top_losing_ads=top_losing_ads[:3],
                 evaluation_lang=max_item.lang,
+                product_main_image=product_images.get(pid),
             )
         )
 

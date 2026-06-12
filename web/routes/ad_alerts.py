@@ -347,6 +347,7 @@ def _aggregated_product_to_dict(item: ad_alerts.AggregatedProductAlert) -> dict[
         "product_id": item.product_id,
         "product_code": item.product_code,
         "product_name": item.product_name,
+        "product_main_image": item.product_main_image,
         "store_codes": item.store_codes,
         "ad_spend_usd": item.ad_spend_usd,
         "purchase_value_usd": item.purchase_value_usd,
