@@ -106,7 +106,7 @@ def test_get_product_alert_details(monkeypatch):
                     "store_code": "DE01",
                 }
             ]
-        elif "meta_ad_realtime_daily_ad_metrics" in sql:
+        elif "meta_ad_realtime_daily_ad_metrics" in sql and "EXISTS" not in sql:
             return []  # today's realtime ads
         else:
             # daily ad metrics

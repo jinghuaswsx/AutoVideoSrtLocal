@@ -412,7 +412,7 @@ def test_get_alerts_dynamically_date_range(monkeypatch):
     )
 
     assert len(captured_sqls) == 1
-    assert "media_product_lang_ad_summary_cache" not in captured_sqls[0]
+    assert "media_product_lang_ad_summary_cache" in captured_sqls[0]
     assert "meta_ad_daily_ad_metrics" in captured_sqls[0]
     assert captured_params[0]["start_date"] == "2026-06-01"
     assert captured_params[0]["end_date"] == "2026-06-10"

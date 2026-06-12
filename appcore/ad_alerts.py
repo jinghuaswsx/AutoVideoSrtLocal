@@ -348,7 +348,7 @@ def _get_alerts_dynamically(
           COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd,
           COALESCE(m.meta_business_date, m.report_date) AS activity_date
         FROM media_items i
-        JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL
+        JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL AND p.archived = 0
         JOIN media_languages ml ON ml.code = i.lang AND ml.enabled = 1
         JOIN meta_ad_daily_ad_metrics m
           ON m.product_id = i.product_id
@@ -378,7 +378,7 @@ def _get_alerts_dynamically(
           COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd,
           m.business_date AS activity_date
         FROM media_items i
-        JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL
+        JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL AND p.archived = 0
         JOIN media_languages ml ON ml.code = i.lang AND ml.enabled = 1
         JOIN (
           SELECT rt.*
@@ -486,7 +486,11 @@ def _get_alerts_dynamically(
           p.product_code,
           p.name AS product_name
         FROM {combined_source}
-        JOIN media_products p ON p.id = matched.product_id AND p.deleted_at IS NULL
+        JOIN media_products p ON p.id = matched.product_id AND p.deleted_at IS NULL AND p.archived = 0
+        JOIN media_product_lang_ad_summary_cache lc 
+          ON lc.product_id = matched.product_id 
+         AND lc.lang = matched.lang
+         AND lc.active_7d_ad_spend_usd > 0
         WHERE 1=1 {where_clause}
         GROUP BY matched.product_id, matched.lang, p.product_code, p.name
         HAVING SUM(matched.spend_usd) > 0 
@@ -539,7 +543,7 @@ def get_alerts(
                    c.ad_roas, c.active_7d_ad_spend_usd, c.computed_at,
                    p.product_code, p.name AS product_name
             FROM media_product_lang_ad_summary_cache c
-            JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL
+            JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL AND p.archived = 0
             WHERE {where_clause}
             ORDER BY c.ad_roas ASC, c.active_7d_ad_spend_usd DESC
             """,
@@ -625,7 +629,7 @@ def get_alert_detail(
                c.ad_roas, c.active_7d_ad_spend_usd, c.computed_at,
                p.product_code, p.name AS product_name
         FROM media_product_lang_ad_summary_cache c
-        JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL
+        JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL AND p.archived = 0
         WHERE c.product_id = %(product_id)s AND c.lang = %(lang)s
         """,
         {"product_id": product_id, "lang": lower_lang},
@@ -805,6 +809,22 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
           AND COALESCE(m.spend_usd, 0) > 0
           AND m.market_country IS NOT NULL
           AND TRIM(m.market_country) <> ''
+          AND (
+            EXISTS (
+              SELECT 1 FROM meta_ad_daily_ad_metrics d
+              WHERE d.product_id = m.product_id
+                AND d.normalized_ad_code = m.normalized_ad_code
+                AND d.spend_usd > 0
+                AND DATE(COALESCE(d.meta_business_date, d.report_date)) >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+            )
+            OR
+            EXISTS (
+              SELECT 1 FROM meta_ad_realtime_daily_ad_metrics rt
+              WHERE rt.normalized_ad_code = m.normalized_ad_code
+                AND rt.spend_usd > 0
+                AND rt.business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+            )
+          )
           AND EXISTS (
             SELECT 1
             FROM media_items i
@@ -1141,7 +1161,7 @@ def get_aggregated_products(
 def get_product_alert_details(product_id: int, threshold: float | None = None) -> dict[str, Any]:
     """查询商品下的国家与广告预警列表。"""
     p_row = query_one(
-        "SELECT id, product_code, name FROM media_products WHERE id = %(product_id)s AND deleted_at IS NULL",
+        "SELECT id, product_code, name FROM media_products WHERE id = %(product_id)s AND deleted_at IS NULL AND archived = 0",
         {"product_id": product_id}
     )
     if not p_row:
@@ -1153,8 +1173,9 @@ def get_product_alert_details(product_id: int, threshold: float | None = None) -
                c.ad_roas, c.active_7d_ad_spend_usd, c.computed_at,
                p.product_code, p.name AS product_name
         FROM media_product_lang_ad_summary_cache c
-        JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL
+        JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL AND p.archived = 0
         WHERE c.product_id = %(product_id)s
+          AND c.active_7d_ad_spend_usd > 0
         ORDER BY c.ad_roas ASC, c.active_7d_ad_spend_usd DESC
         """,
         {"product_id": product_id}
@@ -1181,6 +1202,22 @@ def get_product_alert_details(product_id: int, threshold: float | None = None) -
           COUNT(DISTINCT DATE(COALESCE(m.meta_business_date, m.report_date))) AS active_days
         FROM meta_ad_daily_ad_metrics m
         WHERE m.product_id = %(product_id)s
+          AND (
+            EXISTS (
+              SELECT 1 FROM meta_ad_daily_ad_metrics d
+              WHERE d.product_id = m.product_id
+                AND d.normalized_ad_code = m.normalized_ad_code
+                AND d.spend_usd > 0
+                AND DATE(COALESCE(d.meta_business_date, d.report_date)) >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+            )
+            OR
+            EXISTS (
+              SELECT 1 FROM meta_ad_realtime_daily_ad_metrics rt
+              WHERE rt.normalized_ad_code = m.normalized_ad_code
+                AND rt.spend_usd > 0
+                AND rt.business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+            )
+          )
         GROUP BY m.normalized_ad_code, m.ad_account_id
         ORDER BY ad_spend_usd DESC
         """,
