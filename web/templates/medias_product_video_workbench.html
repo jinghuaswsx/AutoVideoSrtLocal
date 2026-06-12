@@ -1238,6 +1238,7 @@
     if (!row || row.status === 'missing') return '未翻译';
     const version = row.version || {};
     if (version.delivery_status === 'active') return '投放中';
+    if (version.delivery_status === 'stopped') return '终止投放';
     return '未投放';
   }
   function metricSpendRoas(perf, prefix) {
