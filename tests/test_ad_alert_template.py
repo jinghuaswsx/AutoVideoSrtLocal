@@ -96,7 +96,7 @@ def test_ad_alert_template_problem_column_picker_contract():
     assert "applyColumnVisibility();" in source
     assert '<colgroup span="3" class="oc-ad-alert-col-today"></colgroup>' in source
     assert '<colgroup span="3" class="oc-ad-alert-col-yesterday"></colgroup>' in source
-    assert '<th colspan="3" class="oc-ad-alert-col-yesterday">昨天</th>' in source
+    assert '<th colspan="3" class="oc-ad-alert-col-yesterday oc-ad-alert-group-start">昨天</th>' in source
     assert "problemMetricCells(m.yesterday, 'yesterday')" in source
     assert "oc-ad-alert-col-' + groupKey" in source
 

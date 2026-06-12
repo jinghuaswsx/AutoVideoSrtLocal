@@ -407,11 +407,18 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+.oc-ad-alert-table th[colspan="3"] {
+  text-align: center;
+}
 .oc-ad-alert-table th.oc-ad-alert-num,
 .oc-ad-alert-table td.oc-ad-alert-num {
-  text-align: right;
+  text-align: center;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
+}
+.oc-ad-alert-table th.oc-ad-alert-group-start,
+.oc-ad-alert-table td.oc-ad-alert-group-start {
+  border-left: 2px solid var(--oc-ad-alert-border) !important;
 }
 .oc-ad-alert-problem-row {
   cursor: pointer;
@@ -1082,27 +1089,27 @@
           <tr>
             <th rowspan="2">广告</th>
             <th rowspan="2">商品主图</th>
-            <th colspan="3" class="oc-ad-alert-col-today">今天</th>
-            <th colspan="3" class="oc-ad-alert-col-yesterday">昨天</th>
-            <th colspan="3" class="oc-ad-alert-col-last_7d">最近 7 天</th>
-            <th colspan="3" class="oc-ad-alert-col-last_30d">最近 30 天</th>
-            <th colspan="3" class="oc-ad-alert-col-overall">整体</th>
-            <th rowspan="2">账户</th>
+            <th colspan="3" class="oc-ad-alert-col-today oc-ad-alert-group-start">今天</th>
+            <th colspan="3" class="oc-ad-alert-col-yesterday oc-ad-alert-group-start">昨天</th>
+            <th colspan="3" class="oc-ad-alert-col-last_7d oc-ad-alert-group-start">最近 7 天</th>
+            <th colspan="3" class="oc-ad-alert-col-last_30d oc-ad-alert-group-start">最近 30 天</th>
+            <th colspan="3" class="oc-ad-alert-col-overall oc-ad-alert-group-start">整体</th>
+            <th rowspan="2" class="oc-ad-alert-group-start">账户</th>
           </tr>
           <tr>
-            <th class="oc-ad-alert-num oc-ad-alert-col-today">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-today oc-ad-alert-group-start">消耗</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-today">成效</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-today">ROAS</th>
-            <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-yesterday oc-ad-alert-group-start">消耗</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">成效</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">ROAS</th>
-            <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_7d oc-ad-alert-group-start">消耗</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">成效</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">ROAS</th>
-            <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_30d oc-ad-alert-group-start">消耗</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">成效</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">ROAS</th>
-            <th class="oc-ad-alert-num oc-ad-alert-col-overall">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-overall oc-ad-alert-group-start">消耗</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-overall">成效</th>
             <th class="oc-ad-alert-num oc-ad-alert-col-overall">ROAS</th>
           </tr>
@@ -1486,7 +1493,7 @@
         + problemMetricCells(m.last_7d, 'last_7d')
         + problemMetricCells(m.last_30d, 'last_30d')
         + problemMetricCells(m.overall, 'overall')
-        + '<td>'
+        + '<td class="oc-ad-alert-group-start">'
         + '  <span class="oc-ad-alert-account" style="font-weight: 500;">' + html(item.ad_account_name || item.ad_account_id || '—') + '</span>'
         + '  <span class="oc-ad-alert-ad-code" style="font-size: 11px;">' + html((item.first_active_date || '—') + ' 起') + '</span>'
         + '</td>'
@@ -1498,7 +1505,7 @@
   function problemMetricCells(metric, groupKey) {
     metric = metric || {};
     return ''
-      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + money(metric.spend_usd, 2) + '</td>'
+      + '<td class="oc-ad-alert-num oc-ad-alert-group-start oc-ad-alert-col-' + groupKey + '">' + money(metric.spend_usd, 2) + '</td>'
       + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + intText(metric.result_count) + '</td>'
       + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + roas(metric.roas) + '</td>';
   }
