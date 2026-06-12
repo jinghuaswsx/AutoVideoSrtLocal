@@ -74,7 +74,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `web/routes/ad_alerts.py`
 
-- [ ] **Step 1: _alert_item_to_dict 新增 top_losing_ads 序列化**
+- [x] **Step 1: _alert_item_to_dict 新增 top_losing_ads 序列化**
 
 找到 `_alert_item_to_dict()` 函数（约第 118 行），在 `"computed_at"` 字段之后、return 之前添加：
 

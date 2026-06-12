@@ -32,6 +32,17 @@ def test_api_list_serializes_alert_items(monkeypatch):
         reason="ROAS 低于 1.0",
         estimated_loss=-60.0,
         active_days=10,
+        top_losing_ads=[
+            ad_alerts.AdListItem(
+                country="DE",
+                ad_name="ABC123_DE_01",
+                normalized_ad_code="abc123_de_01",
+                total_spend=100.0,
+                total_purchase=40.0,
+                ad_roas=0.4,
+                active_days=9,
+            )
+        ],
     )
     captured: dict[str, object] = {}
 
@@ -57,6 +68,17 @@ def test_api_list_serializes_alert_items(monkeypatch):
     assert payload["items"][0]["severity_label"] == "严重"
     assert payload["items"][0]["active_days"] == 10
     assert payload["items"][0]["estimated_loss"] == -60.0
+    assert payload["items"][0]["top_losing_ads"] == [
+        {
+            "country": "DE",
+            "ad_name": "ABC123_DE_01",
+            "normalized_ad_code": "abc123_de_01",
+            "total_spend": 100.0,
+            "total_purchase": 40.0,
+            "ad_roas": 0.4,
+            "active_days": 9,
+        }
+    ]
 
 
 def test_api_detail_validates_inputs_and_serializes_detail(monkeypatch):
