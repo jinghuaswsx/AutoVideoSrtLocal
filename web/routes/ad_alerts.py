@@ -7,6 +7,7 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-high-loss-ads-tab-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-mobile-share-link.md
+- docs/superpowers/specs/2026-06-12-ad-alert-action-workflow-design.md
 """
 from __future__ import annotations
 
@@ -16,7 +17,7 @@ from typing import Any
 from flask import Blueprint, abort, current_app, jsonify, render_template, request, url_for
 from flask_login import login_required
 
-from appcore import ad_alerts
+from appcore import ad_alert_actions, ad_alerts
 import config
 from web.auth import admin_required
 
@@ -42,6 +43,10 @@ def _parse_threshold(raw: str | None) -> float | None:
     except (TypeError, ValueError):
         return None
     return value if value > 0 else None
+
+
+def _parse_include_handled(raw: str | None) -> bool:
+    return str(raw or "").strip().lower() in {"1", "true", "yes"}
 
 
 @bp.route("/")
@@ -110,6 +115,7 @@ def api_list():
         lang=lang,
         severity=severity,
         search=search,
+        include_handled=_parse_include_handled(request.args.get("include_handled")),
     )
     return jsonify({
         "items": [_alert_item_to_dict(item) for item in items],
@@ -181,12 +187,52 @@ def api_high_loss_ads():
     business_date, items = ad_alerts.get_high_loss_ads(
         search=search,
         limit=limit,
+        include_handled=_parse_include_handled(request.args.get("include_handled")),
     )
     return jsonify({
         "business_date": business_date.isoformat(),
         "items": [_high_loss_ad_item_to_dict(item) for item in items],
         "total": len(items),
     })
+
+
+@bp.route("/api/actions", methods=["POST"])
+@login_required
+@admin_required
+def api_set_alert_action():
+    """标记/取消标记一条预警的处理状态。"""
+    body = request.get_json(silent=True) or {}
+    scope = str(body.get("scope") or "").strip()
+    target_key = str(body.get("target_key") or "").strip()
+    action = str(body.get("action") or "").strip()
+    note = str(body.get("note") or "").strip() or None
+
+    if action == "clear":
+        try:
+            ad_alert_actions.clear_action(scope, target_key)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "action": None})
+
+    operator_user_id = None
+    try:
+        from flask_login import current_user
+
+        operator_user_id = getattr(current_user, "id", None)
+    except Exception:
+        operator_user_id = None
+
+    try:
+        saved = ad_alert_actions.set_action(
+            scope,
+            target_key,
+            action,
+            note=note,
+            operator_user_id=operator_user_id,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True, "action": saved})
 
 
 @bp.route("/api/high-loss-ads/share", methods=["POST"])
@@ -235,6 +281,7 @@ def public_high_loss_share():
     business_date, items = ad_alerts.get_high_loss_ads(
         search=share.get("q") or None,
         limit=share.get("limit") or 30,
+        include_handled=False,
     )
     return render_template(
         "ad_alerts_high_loss_share.html",
@@ -359,6 +406,8 @@ def _alert_item_to_dict(item: ad_alerts.AlertItem) -> dict[str, Any]:
         "top_losing_ads": [
             _ad_list_item_to_dict(ad) for ad in getattr(item, "top_losing_ads", [])
         ],
+        "action": item.action,
+        "action_target_key": ad_alert_actions.language_target_key(item.product_id, item.lang),
     }
 
 
@@ -445,6 +494,10 @@ def _high_loss_ad_item_to_dict(item: ad_alerts.HighLossAdItem) -> dict[str, Any]
             key: _high_loss_metric_to_dict(metric)
             for key, metric in item.metrics.items()
         },
+        "action": item.action,
+        "action_target_key": ad_alert_actions.high_loss_target_key(
+            item.ad_account_id, item.code
+        ),
     }
 
 
