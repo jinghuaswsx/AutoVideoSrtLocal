@@ -124,6 +124,18 @@ def _validate_against_input(
     return errors
 
 
+def _estimate_max_tokens(utterances: list[dict]) -> int:
+    """按输入规模动态估算 max_tokens，避免长视频输出截断。
+
+    估算公式：600（基础开销）+ 文本字符数×2（非拉丁文字 token 膨胀冗余）
+    + 条数×30（JSON 结构开销）。结果限制在 [4000, 16000]。
+    宁可偏大，禁止再出现输出截断。
+    """
+    text_chars = sum(len(str(u.get("text") or "")) for u in utterances)
+    est = 600 + text_chars * 2 + len(utterances) * 30
+    return min(16000, max(4000, est))
+
+
 def _binding_meta(use_case_code: str) -> tuple[str | None, str | None]:
     try:
         from appcore import llm_bindings
@@ -135,10 +147,12 @@ def _binding_meta(use_case_code: str) -> tuple[str | None, str | None]:
 
 
 def _call(use_case_code: str, *, system: str, user_payload: dict,
-          task_id: str, user_id: int | None) -> tuple[list[dict] | None, dict, str, dict]:
+          task_id: str, user_id: int | None,
+          max_tokens: int = 4000) -> tuple[list[dict] | None, dict, str, dict]:
     """Return (parsed items or None, usage, raw_text, debug_call).
 
     None items = LLM error / non-JSON response.
+    max_tokens 由调用方通过 _estimate_max_tokens 动态传入，避免长视频输出截断。
     """
     messages = [
         {"role": "system", "content": system},
@@ -159,7 +173,7 @@ def _call(use_case_code: str, *, system: str, user_payload: dict,
             messages=messages,
             response_format=_response_format(),
             temperature=0.0,
-            max_tokens=4000,
+            max_tokens=max_tokens,
         ),
         meta={"language": user_payload.get("language")},
     )
@@ -169,7 +183,7 @@ def _call(use_case_code: str, *, system: str, user_payload: dict,
             messages=messages,
             response_format=_response_format(),
             temperature=0.0,
-            max_tokens=4000,
+            max_tokens=max_tokens,
             user_id=user_id,
             project_id=task_id,
         )
@@ -220,9 +234,10 @@ def purify_utterances(
 
     all_errors: list[str] = []
     debug_calls: list[dict] = []
+    estimated_max_tokens = _estimate_max_tokens(utterances)
     primary_items, primary_usage, primary_raw, primary_debug = _call(
         "asr_clean.purify_primary", system=system, user_payload=user_payload,
-        task_id=task_id, user_id=user_id,
+        task_id=task_id, user_id=user_id, max_tokens=estimated_max_tokens,
     )
     debug_calls.append(primary_debug)
     if primary_items is not None:
@@ -245,7 +260,7 @@ def purify_utterances(
 
     fallback_items, fallback_usage, fallback_raw, fallback_debug = _call(
         "asr_clean.purify_fallback", system=system, user_payload=user_payload,
-        task_id=task_id, user_id=user_id,
+        task_id=task_id, user_id=user_id, max_tokens=estimated_max_tokens,
     )
     debug_calls.append(fallback_debug)
     if fallback_items is not None:
