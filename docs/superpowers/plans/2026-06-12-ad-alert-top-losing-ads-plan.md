@@ -100,7 +100,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `web/templates/ad_alerts.html`
 
-- [ ] **Step 1: 修改 renderList()，在卡片上渲染亏损 AD 预览**
+- [x] **Step 1: 修改 renderList()，在卡片上渲染亏损 AD 预览**
 
 找到 `renderList` 函数，在 `item.estimated_loss` 渲染之后、闭合 `</button>` 之前插入：
 
@@ -127,7 +127,7 @@ html += '<div class="oc-ad-alert-card-actions">'
   + '</div>';
 ```
 
-- [ ] **Step 2: 添加 runCardEvaluation() 函数和评估结果浮层**
+- [x] **Step 2: 添加 runCardEvaluation() 函数和评估结果浮层**
 
 在已有 script 中添加（可放在 `runAdEvaluation` 函数前后）：
 
@@ -197,7 +197,7 @@ function runCardEvaluation(productId, lang, threshold, btn) {
 }
 ```
 
-- [ ] **Step 3: 添加 CSS 样式（在 `<style>` 块中追加）**
+- [x] **Step 3: 添加 CSS 样式（在 `<style>` 块中追加）**
 
 ```css
 .oc-ad-alert-losing-ads {
