@@ -66,6 +66,8 @@
     new_product: '',
     date_from: '',
     date_to: '',
+    task_created_from: '',
+    task_created_to: '',
     sort: 'created_at_desc',
     video_size: '',
   };
@@ -106,6 +108,11 @@
 
   function escapeAttr(value) {
     return escapeHtml(value).replace(/`/g, '&#96;');
+  }
+
+  function formatListTime(value) {
+    const raw = String(value || '').trim();
+    return raw ? raw.replace('T', ' ').slice(0, 16) : '—';
   }
 
   function safeExternalHref(url) {
@@ -375,6 +382,8 @@
     document.getElementById('f-keyword').value = paramValue(params, 'keyword', DEFAULT_FILTERS.keyword);
     document.getElementById('f-date-from').value = paramValue(params, 'date_from', DEFAULT_FILTERS.date_from);
     document.getElementById('f-date-to').value = paramValue(params, 'date_to', DEFAULT_FILTERS.date_to);
+    document.getElementById('f-task-created-from').value = paramValue(params, 'task_created_from', DEFAULT_FILTERS.task_created_from);
+    document.getElementById('f-task-created-to').value = paramValue(params, 'task_created_to', DEFAULT_FILTERS.task_created_to);
     state.page = params.has('page') ? normalizePage(params.get('page')) : 1;
   }
 
@@ -398,6 +407,10 @@
     params.set('date_from', df);
     const dt = document.getElementById('f-date-to').value;
     params.set('date_to', dt);
+    const taskCreatedFrom = document.getElementById('f-task-created-from').value;
+    params.set('task_created_from', taskCreatedFrom);
+    const taskCreatedTo = document.getElementById('f-task-created-to').value;
+    params.set('task_created_to', taskCreatedTo);
     const sortSel = document.getElementById('f-sort');
     params.set('sort', sortSel.value || 'created_at_desc');
     params.set('page', String(state.page));
@@ -1360,7 +1373,8 @@
       <td class="push-lang-cell">${renderLangPill(it.lang)}</td>
       <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness, it)}</td>
       <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
-      <td class="time push-time-cell">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+      <td class="time push-time-cell">${escapeHtml(formatListTime(it.created_at))}</td>
+      <td class="time push-task-time-cell">${escapeHtml(formatListTime(it.task_created_at))}</td>
       ${window.PUSH_IS_ADMIN ? `<td class="push-action-cell">${renderActionCell(it)}</td>` : ''}
     </tr>`;
   }
@@ -1461,7 +1475,8 @@
       <td class="ready-cell push-ready-cell">${renderReadinessText(it.readiness, it)}</td>
       <td class="audit-cell-wrap">${renderAuditCell(it)}</td>
       <td class="push-status-cell">${renderStatusBadge(it.status)}</td>
-      <td class="time push-time-cell">${escapeHtml((it.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+      <td class="time push-time-cell">${escapeHtml(formatListTime(it.created_at))}</td>
+      <td class="time push-task-time-cell">${escapeHtml(formatListTime(it.task_created_at))}</td>
       ${window.PUSH_IS_ADMIN ? `<td class="push-action-cell">${renderActionCell(it)}</td>` : ''}
     </tr>`;
   }
@@ -1471,7 +1486,7 @@
       syncUrlFromFilters(options.urlMode || 'push');
     }
     const tbody = document.getElementById('push-tbody');
-    const colspan = window.PUSH_IS_ADMIN ? 13 : 12;
+    const colspan = window.PUSH_IS_ADMIN ? 14 : 13;
     tbody.innerHTML = `<tr><td colspan="${colspan}">加载中…</td></tr>`;
     const totalCountEl = document.getElementById('push-total-count');
     if (totalCountEl) {
