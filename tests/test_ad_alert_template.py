@@ -15,8 +15,8 @@ def test_ad_alert_template_contract():
     assert "/ad-alerts/api/ad-list" in source
     assert "/ad-alerts/api/evaluate" in source
     assert "/ad-alerts/api/threshold" in source
-    assert 'data-ad-alert-tab="alerts"' in source
-    assert 'data-ad-alert-tab="problem"' in source
+    assert 'href="/ad-alerts/"' in source
+    assert 'href="/ad-alerts/problem"' in source
     assert 'data-level="campaign"' in source
     assert 'data-level="adset"' in source
     assert 'data-level="ad"' in source
