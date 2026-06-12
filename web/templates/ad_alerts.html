@@ -399,6 +399,43 @@
 .oc-ad-alert-highloss-link:hover {
   text-decoration: underline;
 }
+.oc-ad-alert-handled-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--oc-ad-alert-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.oc-ad-alert-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-btn-mark {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.oc-ad-alert-action-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: var(--oc-ad-alert-green);
+  font-size: 12px;
+  font-weight: 800;
+}
+.oc-ad-alert-action-note {
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+}
 .oc-ad-alert-share-result {
   display: grid;
   gap: 8px;
@@ -1321,6 +1358,7 @@
       <div class="oc-ad-alert-business-date" id="adAlertHighLossDate">Meta 业务日：加载中</div>
       <div class="oc-ad-alert-problem-actions">
         <input class="oc-ad-alert-search" id="adAlertHighLossSearch" type="search" placeholder="搜索广告、商品名称或 product code">
+        <label class="oc-ad-alert-handled-toggle"><input type="checkbox" id="adAlertShowHandled"> 显示已处理</label>
         <button class="oc-ad-alert-btn" type="button" id="adAlertHighLossRefresh">查询</button>
         <button class="oc-ad-alert-btn oc-ad-alert-btn-primary" type="button" id="adAlertHighLossShare">生成分享链接</button>
       </div>
@@ -1475,6 +1513,7 @@
     activeTab: {{ active_tab|tojson }},
     highLossLoaded: false,
     highLossSearch: '',
+    showHandled: false,
     problemLoaded: false,
     problemLevel: 'campaign',
     problemSearch: '',
@@ -1747,6 +1786,7 @@
     var params = new URLSearchParams();
     params.set('limit', '30');
     if (state.highLossSearch) params.set('q', state.highLossSearch);
+    if (state.showHandled) params.set('include_handled', '1');
     fetch('/ad-alerts/api/high-loss-ads?' + params.toString(), { headers: { 'Accept': 'application/json' } })
       .then(function(resp) {
         if (!resp.ok) throw new Error('high_loss_failed');
@@ -1810,9 +1850,55 @@
         + highLossMetricBlock('整体', metrics.overall)
         + '    </div>'
         + '    <a class="oc-ad-alert-highloss-link" href="' + html(item.detail_url || '#') + '" target="_blank" rel="noopener noreferrer" data-stop-card>打开广告分析详情</a>'
+        + renderHighLossActionRow(item)
         + '  </div>'
         + '</article>';
     }).join('');
+  }
+
+  function renderHighLossActionRow(item) {
+    var key = item.action_target_key || '';
+    if (!key) return '';
+    if (item.action) {
+      return ''
+        + '<div class="oc-ad-alert-action-row" data-stop-card>'
+        + '  <span class="oc-ad-alert-action-badge">' + html(item.action.action_label || item.action.action || '') + '</span>'
+        + (item.action.note ? '<span class="oc-ad-alert-action-note">' + html(item.action.note) + '</span>' : '')
+        + '  <button class="oc-ad-alert-btn oc-ad-alert-btn-mark" type="button" data-mark-action="clear" data-target-key="' + html(key) + '">取消标记</button>'
+        + '</div>';
+    }
+    return ''
+      + '<div class="oc-ad-alert-action-row" data-stop-card>'
+      + '  <button class="oc-ad-alert-btn oc-ad-alert-btn-mark" type="button" data-mark-action="resolved" data-target-key="' + html(key) + '">标记已处理</button>'
+      + '  <button class="oc-ad-alert-btn oc-ad-alert-btn-mark" type="button" data-mark-action="ignored" data-target-key="' + html(key) + '">忽略</button>'
+      + '</div>';
+  }
+
+  function markHighLossAction(targetKey, action, btn) {
+    if (btn) btn.disabled = true;
+    fetch('/ad-alerts/api/actions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRFToken': csrfToken()
+      },
+      body: JSON.stringify({ scope: 'high_loss', target_key: targetKey, action: action })
+    })
+      .then(function(resp) {
+        return resp.json().then(function(data) {
+          if (!resp.ok) throw new Error(data.error || 'action_failed');
+          return data;
+        });
+      })
+      .then(function() {
+        showToast(action === 'clear' ? '已取消标记' : '已标记，列表已刷新', 'success');
+        loadHighLossAds();
+      })
+      .catch(function(error) {
+        if (btn) btn.disabled = false;
+        showToast('操作失败：' + (error.message || '未知错误'), 'error');
+      });
   }
 
   function highLossMetricBlock(label, metric) {
@@ -2431,12 +2517,31 @@
   });
 
   highLossList.addEventListener('click', function(event) {
+    var markBtn = event.target.closest('[data-mark-action]');
+    if (markBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      markHighLossAction(
+        markBtn.getAttribute('data-target-key'),
+        markBtn.getAttribute('data-mark-action'),
+        markBtn
+      );
+      return;
+    }
     if (event.target.closest('[data-stop-card]')) return;
     var card = event.target.closest('.oc-ad-alert-card');
     if (!card) return;
     var url = card.getAttribute('data-detail-url');
     if (url) window.location.href = url;
   });
+
+  var showHandledToggle = document.getElementById('adAlertShowHandled');
+  if (showHandledToggle) {
+    showHandledToggle.addEventListener('change', function() {
+      state.showHandled = !!this.checked;
+      loadHighLossAds();
+    });
+  }
 
   highLossList.addEventListener('keydown', function(event) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
