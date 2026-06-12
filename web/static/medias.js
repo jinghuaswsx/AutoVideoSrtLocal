@@ -3190,6 +3190,39 @@
     } else {
       url.searchParams.delete('created_to');
     }
+
+    const filterRoas = $('filterRoasStatus');
+    const roasStatus = filterRoas ? filterRoas.value : 'all';
+    if (roasStatus && roasStatus !== 'all') {
+      url.searchParams.set('roas_status', roasStatus);
+    } else {
+      url.searchParams.delete('roas_status');
+    }
+
+    const filterDelivery = $('filterDeliveryStatus');
+    const deliveryStatus = filterDelivery ? filterDelivery.value : 'all';
+    if (deliveryStatus && deliveryStatus !== 'all') {
+      url.searchParams.set('delivery_status', deliveryStatus);
+    } else {
+      url.searchParams.delete('delivery_status');
+    }
+
+    const filterStability = $('filterStabilityStatus');
+    const stabilityStatus = filterStability ? filterStability.value : 'all';
+    if (stabilityStatus && stabilityStatus !== 'all') {
+      url.searchParams.set('stability_status', stabilityStatus);
+    } else {
+      url.searchParams.delete('stability_status');
+    }
+
+    const filterSource = $('filterProductSource');
+    const productSource = filterSource ? filterSource.value : 'all';
+    if (productSource && productSource !== 'all') {
+      url.searchParams.set('product_source', productSource);
+    } else {
+      url.searchParams.delete('product_source');
+    }
+
     window.history.replaceState(null, '', url);
   }
 
@@ -10123,7 +10156,7 @@
 
   // ---------- Events ----------
   document.addEventListener('DOMContentLoaded', () => {
-    // 解析 URL 参数初始化日期
+    // 解析 URL 参数初始化日期与筛选下拉框
     const url = new URL(window.location.href);
     const initialCreatedFrom = url.searchParams.get('created_from') || '';
     const initialCreatedTo = url.searchParams.get('created_to') || '';
@@ -10131,6 +10164,22 @@
     const createdToEl = $('createdTo');
     if (createdFromEl && initialCreatedFrom) createdFromEl.value = initialCreatedFrom;
     if (createdToEl && initialCreatedTo) createdToEl.value = initialCreatedTo;
+
+    const initialRoasStatus = url.searchParams.get('roas_status') || 'all';
+    const initFilterRoas = $('filterRoasStatus');
+    if (initFilterRoas && initialRoasStatus) initFilterRoas.value = initialRoasStatus;
+
+    const initialDeliveryStatus = url.searchParams.get('delivery_status') || 'all';
+    const initFilterDelivery = $('filterDeliveryStatus');
+    if (initFilterDelivery && initialDeliveryStatus) initFilterDelivery.value = initialDeliveryStatus;
+
+    const initialStabilityStatus = url.searchParams.get('stability_status') || 'all';
+    const initFilterStability = $('filterStabilityStatus');
+    if (initFilterStability && initialStabilityStatus) initFilterStability.value = initialStabilityStatus;
+
+    const initialProductSource = url.searchParams.get('product_source') || 'all';
+    const initFilterSource = $('filterProductSource');
+    if (initFilterSource && initialProductSource) initFilterSource.value = initialProductSource;
 
     // 初始化日期选择器
     initCreatedDateRangePicker();
