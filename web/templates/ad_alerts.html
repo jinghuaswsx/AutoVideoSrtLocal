@@ -208,6 +208,11 @@
   min-height: 36px;
   padding: 0 16px;
 }
+.oc-ad-alert-btn-sm {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
 .oc-ad-alert-btn:hover {
   background: var(--oc-ad-alert-subtle);
   border-color: var(--oc-ad-alert-blue);
@@ -326,6 +331,37 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+.oc-ad-alert-column-picker {
+  position: relative;
+}
+.oc-ad-alert-column-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: var(--oc-ad-alert-card);
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 10px;
+  padding: 8px 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  min-width: 160px;
+}
+.oc-ad-alert-column-dropdown label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.oc-ad-alert-column-dropdown label:hover {
+  background: var(--oc-ad-alert-table-hover);
+}
+.oc-ad-alert-col-hidden {
+  display: none;
 }
 .oc-ad-alert-business-date {
   color: var(--oc-ad-alert-blue);
@@ -832,6 +868,10 @@
   font-size: 13px;
   font-weight: 800;
 }
+.oc-ad-alert-evaluation-actions {
+  display: flex;
+  justify-content: flex-end;
+}
 .oc-ad-alert-evaluation-group {
   display: grid;
   gap: 5px;
@@ -860,6 +900,34 @@
   outline: none;
   border-color: var(--oc-ad-alert-blue);
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+}
+.oc-ad-alert-toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.oc-ad-alert-toast {
+  pointer-events: auto;
+  padding: 12px 20px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  animation: ocToastIn 0.3s ease-out, ocToastOut 0.3s ease-in 2.2s forwards;
+}
+@keyframes ocToastIn {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ocToastOut {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateX(40px); }
 }
 @media (max-width: 760px) {
   .oc-ad-alert-detail-grid {
@@ -939,6 +1007,10 @@
         <button class="oc-ad-alert-level-tab" type="button" data-level="adset" aria-pressed="false">Ad Set</button>
         <button class="oc-ad-alert-level-tab" type="button" data-level="ad" aria-pressed="false">Ad</button>
       </div>
+      <div class="oc-ad-alert-column-picker">
+        <button class="oc-ad-alert-btn" type="button" id="adAlertColumnPickerBtn">自定义列 ▾</button>
+        <div class="oc-ad-alert-column-dropdown" id="adAlertColumnDropdown" hidden></div>
+      </div>
       <div class="oc-ad-alert-problem-actions">
         <input class="oc-ad-alert-search" id="adAlertProblemSearch" type="search" placeholder="搜索广告名称或 code">
         <button class="oc-ad-alert-btn" type="button" id="adAlertProblemRefresh">查询</button>
@@ -948,32 +1020,38 @@
     <div class="oc-ad-alert-problem-note">问题广告定义：今天有消耗且今天成效为 0。点击行会跳转到广告分析详情页，默认展示该广告自上线以来的数据。</div>
     <div class="oc-ad-alert-table-wrap">
       <table class="oc-ad-alert-table" aria-label="问题广告列表">
+        <colgroup span="2"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-today"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-yesterday"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-last_7d"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-last_30d"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-overall"></colgroup>
         <thead>
           <tr>
             <th rowspan="2">广告</th>
             <th rowspan="2">账户</th>
-            <th colspan="3">今天</th>
-            <th colspan="3">昨天</th>
-            <th colspan="3">最近 7 天</th>
-            <th colspan="3">最近 30 天</th>
-            <th colspan="3">整体</th>
+            <th colspan="3" class="oc-ad-alert-col-today">今天</th>
+            <th colspan="3" class="oc-ad-alert-col-yesterday">昨天</th>
+            <th colspan="3" class="oc-ad-alert-col-last_7d">最近 7 天</th>
+            <th colspan="3" class="oc-ad-alert-col-last_30d">最近 30 天</th>
+            <th colspan="3" class="oc-ad-alert-col-overall">整体</th>
           </tr>
           <tr>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-today">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-today">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-today">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-overall">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-overall">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-overall">ROAS</th>
           </tr>
         </thead>
         <tbody id="adAlertProblemBody">
@@ -1016,6 +1094,13 @@
 {% block scripts %}
 <script>
 (function() {
+  var columnGroups = {
+    today: { label: '今天', default: true },
+    yesterday: { label: '昨天', default: false },
+    last_7d: { label: '最近 7 天', default: true },
+    last_30d: { label: '最近 30 天', default: true },
+    overall: { label: '整体', default: true }
+  };
   var state = {
     threshold: Number({{ threshold|tojson }}),
     severity: '',
@@ -1023,7 +1108,9 @@
     activeTab: {{ active_tab|tojson }},
     problemLoaded: false,
     problemLevel: 'campaign',
-    problemSearch: ''
+    problemSearch: '',
+    visibleCols: readVisibleColumns(),
+    evalCacheKey: ''
   };
   var adEvaluationCache = {};
   var timer = null;
@@ -1033,9 +1120,121 @@
   var problemBody = document.getElementById('adAlertProblemBody');
   var problemDate = document.getElementById('adAlertProblemDate');
 
+  function showToast(message, type) {
+    var container = document.getElementById('adAlertToastContainer');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'oc-ad-alert-toast-container';
+      container.id = 'adAlertToastContainer';
+      (document.querySelector('.oc-ad-alert-page') || document.body).appendChild(container);
+    }
+    var toast = document.createElement('div');
+    toast.className = 'oc-ad-alert-toast';
+    toast.textContent = message || '';
+    var colors = {
+      success: 'var(--oc-ad-alert-green, #10b981)',
+      error: 'var(--oc-ad-alert-red, #ef4444)',
+      info: 'var(--oc-ad-alert-blue, #3b82f6)'
+    };
+    toast.style.background = colors[type] || colors.info;
+    container.appendChild(toast);
+    window.setTimeout(function() {
+      toast.remove();
+    }, 2500);
+  }
+
   function csrfToken() {
     var meta = document.querySelector('meta[name="csrf-token"]');
     return meta ? meta.getAttribute('content') : '';
+  }
+
+  function syncUrlParams() {
+    if (state.activeTab !== 'alerts') return;
+    var params = new URLSearchParams();
+    var startVal = document.getElementById('adAlertStartDate').value;
+    var endVal = document.getElementById('adAlertEndDate').value;
+    if (state.severity) params.set('severity', state.severity);
+    if (state.search) params.set('search', state.search);
+    if (startVal) params.set('start_date', startVal);
+    if (endVal) params.set('end_date', endVal);
+    var query = params.toString();
+    var nextUrl = window.location.pathname + (query ? '?' + query : '');
+    if (nextUrl !== window.location.pathname + window.location.search) {
+      window.history.replaceState(null, '', nextUrl);
+    }
+  }
+
+  function restoreUrlParams() {
+    if (state.activeTab !== 'alerts') return;
+    var params = new URLSearchParams(window.location.search);
+    state.severity = params.get('severity') || '';
+    state.search = params.get('search') || '';
+    var severitySet = document.getElementById('adAlertSeveritySet');
+    if (severitySet) {
+      Array.prototype.forEach.call(severitySet.querySelectorAll('.oc-ad-alert-filter'), function(item) {
+        item.classList.toggle('oc-ad-alert-active', (item.getAttribute('data-value') || '') === state.severity);
+      });
+    }
+    var searchInput = document.getElementById('adAlertSearch');
+    if (searchInput) searchInput.value = state.search;
+    var startInput = document.getElementById('adAlertStartDate');
+    var endInput = document.getElementById('adAlertEndDate');
+    if (startInput) startInput.value = params.get('start_date') || '';
+    if (endInput) endInput.value = params.get('end_date') || '';
+  }
+
+  function defaultVisibleColumns() {
+    var visible = {};
+    Object.keys(columnGroups).forEach(function(groupKey) {
+      visible[groupKey] = Boolean(columnGroups[groupKey].default);
+    });
+    return visible;
+  }
+
+  function readVisibleColumns() {
+    var visible = defaultVisibleColumns();
+    try {
+      var raw = sessionStorage.getItem('problem_ads_cols');
+      if (!raw) return visible;
+      var parsed = JSON.parse(raw);
+      Object.keys(columnGroups).forEach(function(groupKey) {
+        if (Object.prototype.hasOwnProperty.call(parsed, groupKey)) {
+          visible[groupKey] = Boolean(parsed[groupKey]);
+        }
+      });
+    } catch (error) {
+      return visible;
+    }
+    return visible;
+  }
+
+  function persistVisibleColumns() {
+    try {
+      sessionStorage.setItem('problem_ads_cols', JSON.stringify(state.visibleCols));
+    } catch (error) {
+      return;
+    }
+  }
+
+  function renderColumnPicker() {
+    var dropdown = document.getElementById('adAlertColumnDropdown');
+    if (!dropdown) return;
+    dropdown.innerHTML = Object.keys(columnGroups).map(function(groupKey) {
+      var group = columnGroups[groupKey];
+      var checked = state.visibleCols[groupKey] ? ' checked' : '';
+      return '<label><input type="checkbox" data-column-group="' + html(groupKey) + '"' + checked + '> ' + html(group.label) + '</label>';
+    }).join('');
+  }
+
+  function applyColumnVisibility() {
+    Object.keys(columnGroups).forEach(function(groupKey) {
+      var visible = state.visibleCols[groupKey] !== false;
+      document.querySelectorAll('.oc-ad-alert-col-' + groupKey).forEach(function(item) {
+        item.classList.toggle('oc-ad-alert-col-hidden', !visible);
+      });
+      var checkbox = document.querySelector('[data-column-group="' + groupKey + '"]');
+      if (checkbox) checkbox.checked = visible;
+    });
   }
 
   function html(value) {
@@ -1085,6 +1284,7 @@
       })
       .then(function(data) {
         renderList(data.items || []);
+        syncUrlParams();
         countEl.textContent = String(data.total || 0) + ' 个商品';
       })
       .catch(function() {
@@ -1190,6 +1390,7 @@
   function renderProblemAds(items) {
     if (!items.length) {
       problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">当前维度暂无问题广告</td></tr>';
+      applyColumnVisibility();
       return;
     }
     problemBody.innerHTML = items.map(function(item) {
@@ -1204,21 +1405,22 @@
         + '  <span class="oc-ad-alert-account">' + html(item.ad_account_name || item.ad_account_id || '—') + '</span>'
         + '  <span class="oc-ad-alert-ad-code">' + html((item.first_active_date || '—') + ' 起') + '</span>'
         + '</td>'
-        + problemMetricCells(m.today)
-        + problemMetricCells(m.yesterday)
-        + problemMetricCells(m.last_7d)
-        + problemMetricCells(m.last_30d)
-        + problemMetricCells(m.overall)
+        + problemMetricCells(m.today, 'today')
+        + problemMetricCells(m.yesterday, 'yesterday')
+        + problemMetricCells(m.last_7d, 'last_7d')
+        + problemMetricCells(m.last_30d, 'last_30d')
+        + problemMetricCells(m.overall, 'overall')
         + '</tr>';
     }).join('');
+    applyColumnVisibility();
   }
 
-  function problemMetricCells(metric) {
+  function problemMetricCells(metric, groupKey) {
     metric = metric || {};
     return ''
-      + '<td class="oc-ad-alert-num">' + money(metric.spend_usd, 2) + '</td>'
-      + '<td class="oc-ad-alert-num">' + intText(metric.result_count) + '</td>'
-      + '<td class="oc-ad-alert-num">' + roas(metric.roas) + '</td>';
+      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + money(metric.spend_usd, 2) + '</td>'
+      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + intText(metric.result_count) + '</td>'
+      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + roas(metric.roas) + '</td>';
   }
 
   function setPrimaryTab(tab) {
@@ -1375,10 +1577,12 @@
     var safeThreshold = Number(threshold || state.threshold || 0);
     var cacheKey = String(productId) + ':' + normalizedLang + ':' + safeThreshold.toFixed(2);
     if (adEvaluationCache[cacheKey]) {
-      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl);
+      state.evalCacheKey = cacheKey;
+      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl, cacheKey);
       return;
     }
 
+    state.evalCacheKey = cacheKey;
     btn.disabled = true;
     btn.textContent = '分析中';
     fetch('/ad-alerts/api/evaluate', {
@@ -1405,7 +1609,8 @@
       .then(function(data) {
         var evaluations = data.evaluations || [];
         adEvaluationCache[cacheKey] = evaluations;
-        renderAdEvaluations(evaluations, resultEl);
+        showToast('评估完成，共 ' + evaluations.length + ' 条建议', 'info');
+        renderAdEvaluations(evaluations, resultEl, cacheKey);
       })
       .catch(function(error) {
         resultEl.innerHTML = '<div class="oc-ad-alert-state">评估失败：' + html(error.message || '未知错误') + '</div>';
@@ -1422,9 +1627,11 @@
     if (!btn || !resultEl) return;
     var cacheKey = String(productId) + ':' + String(lang || '').toLowerCase() + ':' + Number(state.threshold || 0).toFixed(2);
     if (adEvaluationCache[cacheKey]) {
-      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl);
+      state.evalCacheKey = cacheKey;
+      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl, cacheKey);
       return;
     }
+    state.evalCacheKey = cacheKey;
     btn.disabled = true;
     btn.textContent = '分析中';
     resultEl.hidden = false;
@@ -1453,7 +1660,8 @@
       .then(function(data) {
         var evaluations = data.evaluations || [];
         adEvaluationCache[cacheKey] = evaluations;
-        renderAdEvaluations(evaluations, resultEl);
+        showToast('评估完成，共 ' + evaluations.length + ' 条建议', 'info');
+        renderAdEvaluations(evaluations, resultEl, cacheKey);
       })
       .catch(function(error) {
         resultEl.hidden = false;
@@ -1465,12 +1673,13 @@
       });
   }
 
-  function renderAdEvaluations(evaluations, container) {
+  function renderAdEvaluations(evaluations, container, cacheKey) {
     container.hidden = false;
     if (!evaluations.length) {
       container.innerHTML = '<div class="oc-ad-alert-state">暂无需要评估的亏损广告</div>';
       return;
     }
+    cacheKey = cacheKey || state.evalCacheKey;
     var groups = { '关停': [], '优化': [], '观察': [] };
     evaluations.forEach(function(item) {
       var key = groups[item.judgment] ? item.judgment : '观察';
@@ -1481,7 +1690,13 @@
       { key: '优化', title: '建议优化', color: 'var(--oc-ad-alert-orange)' },
       { key: '观察', title: '建议观察', color: 'var(--oc-ad-alert-muted)' }
     ];
-    var htmlParts = ['<div class="oc-ad-alert-evaluation"><div class="oc-ad-alert-evaluation-title">AI 评估结果</div>'];
+    var htmlParts = [
+      '<div class="oc-ad-alert-evaluation">'
+      + '<div class="oc-ad-alert-evaluation-title">AI 评估结果</div>'
+      + '<div class="oc-ad-alert-evaluation-actions">'
+      + '<button class="oc-ad-alert-btn oc-ad-alert-btn-sm" type="button" id="adAlertEvalCopyBtn">📋 复制 JSON</button>'
+      + '</div>'
+    ];
     labels.forEach(function(group) {
       var items = groups[group.key] || [];
       if (!items.length) return;
@@ -1496,6 +1711,47 @@
     });
     htmlParts.push('</div>');
     container.innerHTML = htmlParts.join('');
+    bindEvaluationCopy(container, cacheKey);
+  }
+
+  function fallbackCopyText(text) {
+    var textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      if (document.execCommand('copy')) {
+        showToast('已复制评估结果', 'success');
+      } else {
+        showToast('复制失败，请手动选择复制', 'error');
+      }
+    } catch (error) {
+      showToast('复制失败，请手动选择复制', 'error');
+    } finally {
+      textarea.remove();
+    }
+  }
+
+  function bindEvaluationCopy(container, cacheKey) {
+    var button = container.querySelector('#adAlertEvalCopyBtn');
+    if (!button) return;
+    button.addEventListener('click', function() {
+      var data = adEvaluationCache[cacheKey];
+      if (!data) return;
+      var json = JSON.stringify(data, null, 2);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json).then(function() {
+          showToast('已复制评估结果', 'success');
+        }).catch(function() {
+          fallbackCopyText(json);
+        });
+        return;
+      }
+      fallbackCopyText(json);
+    });
   }
 
   function detailCell(label, value) {
@@ -1641,6 +1897,27 @@
     loadProblemAds();
   });
 
+  renderColumnPicker();
+  applyColumnVisibility();
+  document.getElementById('adAlertColumnPickerBtn').addEventListener('click', function(event) {
+    var dropdown = document.getElementById('adAlertColumnDropdown');
+    event.stopPropagation();
+    dropdown.hidden = !dropdown.hidden;
+  });
+
+  document.getElementById('adAlertColumnDropdown').addEventListener('change', function(event) {
+    var checkbox = event.target.closest('[data-column-group]');
+    if (!checkbox) return;
+    state.visibleCols[checkbox.getAttribute('data-column-group')] = checkbox.checked;
+    persistVisibleColumns();
+    applyColumnVisibility();
+  });
+
+  document.addEventListener('click', function(event) {
+    if (event.target.closest('.oc-ad-alert-column-picker')) return;
+    document.getElementById('adAlertColumnDropdown').hidden = true;
+  });
+
   problemBody.addEventListener('click', function(event) {
     var row = event.target.closest('[data-detail-url]');
     if (!row) return;
@@ -1721,7 +1998,10 @@
   });
   document.getElementById('adAlertThresholdSave').addEventListener('click', function() {
     var value = Number(document.getElementById('adAlertThresholdInput').value);
-    if (!value || value <= 0) return;
+    if (!value || value <= 0) {
+      showToast('阈值必须大于 0', 'error');
+      return;
+    }
     fetch('/ad-alerts/api/threshold', {
       method: 'POST',
       headers: {
@@ -1739,13 +2019,18 @@
         state.threshold = Number(data.threshold || value);
         thresholdText.textContent = state.threshold.toFixed(2);
         closeMask('adAlertThresholdMask');
+        showToast('阈值已更新为 ' + state.threshold.toFixed(2), 'success');
         loadList();
+      })
+      .catch(function(error) {
+        showToast('保存失败：' + (error.message || '未知错误'), 'error');
       });
   });
 
   if (state.activeTab === 'problem') {
     loadProblemAds();
   } else {
+    restoreUrlParams();
     loadList();
   }
 })();

@@ -331,3 +331,80 @@ def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypa
     api_response = authed_client_no_db.get("/ad-alerts/api/problem-ads?level=campaign")
     assert api_response.status_code == 200
     assert api_response.get_json()["business_date"] == "2026-06-12"
+
+
+def test_ad_alert_detail_pages_render_with_mocked_data(authed_client_no_db, monkeypatch):
+    from web.routes import ad_alerts as route
+
+    judgment = ad_alerts.Judgment(
+        severity=ad_alerts.Severity.SEVERE,
+        trend=ad_alerts.TrendDirection.WORSENING,
+        phase=ad_alerts.Phase.STABLE,
+        conclusion="建议关停",
+        reason="ROAS 低于保本线",
+    )
+    detail = ad_alerts.AlertDetail(
+        product_id=10,
+        product_code="ABC123",
+        product_name="Demo Product",
+        lang="de",
+        lang_label="德语",
+        store_codes=["DE01"],
+        ad_spend_usd=100.0,
+        purchase_value_usd=40.0,
+        ad_roas=0.4,
+        active_7d_ad_spend_usd=12.0,
+        estimated_loss=-60.0,
+        delivery_start_time="2026-06-01",
+        delivery_end_time="2026-06-10",
+        active_days=10,
+        computed_at="2026-06-11T08:00:00",
+        judgment=judgment,
+        trend=[ad_alerts.DailyPoint(date="2026-06-10", spend_usd=10.0, purchase_value_usd=4.0, roas=0.4)],
+    )
+    ad_detail = {
+        "product_id": 10,
+        "ad_code": "bad-code",
+        "ad_name": "Bad Ad",
+        "ad_account_id": "act_1",
+        "ad_account_name": "Demo Account",
+        "first_active_date": "2026-06-01",
+        "last_active_date": "2026-06-10",
+        "metrics": {
+            "today": {"spend_usd": 12.0, "purchase_value_usd": 0.0, "roas": 0.0},
+            "yesterday": {"spend_usd": 8.0, "purchase_value_usd": 16.0, "roas": 2.0},
+            "last_7d": {"spend_usd": 70.0, "purchase_value_usd": 35.0, "roas": 0.5},
+            "last_30d": {"spend_usd": 300.0, "purchase_value_usd": 120.0, "roas": 0.4},
+            "overall": {"spend_usd": 500.0, "purchase_value_usd": 200.0, "roas": 0.4},
+        },
+        "trend": [ad_alerts.DailyPoint(date="2026-06-10", spend_usd=12.0, purchase_value_usd=0.0, roas=0.0)],
+    }
+
+    monkeypatch.setattr(route.ad_alerts, "get_threshold", lambda: 1.4)
+    monkeypatch.setattr(
+        route.ad_alerts,
+        "get_product_alert_details",
+        lambda product_id, threshold=None: {
+            "product_id": product_id,
+            "product_code": "ABC123",
+            "product_name": "Demo Product",
+            "countries": [detail],
+            "ads": [],
+        },
+    )
+    monkeypatch.setattr(route.ad_alerts, "get_alert_detail", lambda product_id, lang, threshold=None: detail)
+    monkeypatch.setattr(route.ad_alerts, "get_ad_detail_and_trend", lambda product_id, ad_code, ad_account_id: ad_detail)
+
+    product_response = authed_client_no_db.get("/ad-alerts/product/10")
+    assert product_response.status_code == 200
+    assert "Demo Product" in product_response.get_data(as_text=True)
+
+    country_response = authed_client_no_db.get("/ad-alerts/product/10/country/de")
+    assert country_response.status_code == 200
+    assert "countryAdList" in country_response.get_data(as_text=True)
+
+    ad_response = authed_client_no_db.get("/ad-alerts/product/10/ad/bad-code?ad_account_id=act_1&lang=de&country=DE")
+    ad_html = ad_response.get_data(as_text=True)
+    assert ad_response.status_code == 200
+    assert "adDetailMetricGrid" in ad_html
+    assert "/ad-alerts/product/10/country/de" in ad_html
