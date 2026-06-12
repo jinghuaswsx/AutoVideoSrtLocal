@@ -1010,6 +1010,33 @@ def _batch_fetch_problem_ad_details(items: list[ProblemAdItem], rows: list[dict[
             it.product_main_image = main_img or None
 
 
+def _match_media_item(
+    ad_name: str,
+    ad_code: str,
+    country: str,
+    media_items: list[dict],
+    lower_lang: str,
+) -> bool:
+    """在 Python 内存中判断一个 ad 是否与 media_items 匹配。"""
+    country_lang_map = {
+        'US': 'en', 'GB': 'en', 'UK': 'en', 'AU': 'en', 'CA': 'en', 'IE': 'en', 'NZ': 'en',
+        'DE': 'de', 'AT': 'de', 'FR': 'fr', 'ES': 'es', 'IT': 'it', 'NL': 'nl', 'SE': 'sv',
+        'FI': 'fi', 'JP': 'ja', 'KR': 'ko', 'BR': 'pt-br', 'PT': 'pt'
+    }
+    if country and country_lang_map.get(country.upper()) == lower_lang:
+        return True
+
+    for item in media_items:
+        fn = (item.get("filename") or "").strip()
+        dn = (item.get("display_name") or "").strip()
+        if fn and (fn in ad_name or fn in ad_code):
+            return True
+        if dn and (dn in ad_name or dn in ad_code):
+            return True
+
+    return False
+
+
 def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
     """查询某个商品语言下每条 AD 的聚合投放数据。"""
     lower_lang = lang.strip().lower()
@@ -1065,38 +1092,9 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
     if not active_codes:
         return []
 
-    # 3. 构造 media_items 匹配过滤条件 (移出 EXISTS 关联子查询)
-    country_lang_sql = _COUNTRY_LANG_CASE_SQL % "m.market_country"
-    sql_params = {
-        "product_id": product_id,
-        "lang": lower_lang,
-        "active_codes": tuple(active_codes),
-    }
-
-    like_conds = []
-    for idx, item in enumerate(media_items):
-        fn = (item.get("filename") or "").strip()
-        dn = (item.get("display_name") or "").strip()
-        if fn:
-            param_key = f"fn_{idx}"
-            sql_params[param_key] = f"%{fn}%"
-            like_conds.append(f"m.ad_name LIKE %({param_key})s")
-            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
-        if dn:
-            param_key = f"dn_{idx}"
-            sql_params[param_key] = f"%{dn}%"
-            like_conds.append(f"m.ad_name LIKE %({param_key})s")
-            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
-
-    country_cond = f"(m.market_country IS NOT NULL AND TRIM(m.market_country) <> '' AND {country_lang_sql} = %(lang)s)"
-
-    if like_conds:
-        match_sql = f"AND ({' OR '.join(like_conds)} OR {country_cond})"
-    else:
-        match_sql = f"AND {country_cond}"
-
+    # 3. 从数据库中极速查询该产品下的所有历史聚合广告记录
     rows = query(
-        f"""
+        """
         SELECT
           UPPER(TRIM(m.market_country)) AS country,
           COALESCE(NULLIF(TRIM(m.ad_name), ''), NULLIF(TRIM(m.normalized_ad_code), ''), '') AS ad_name,
@@ -1109,19 +1107,44 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
           AND COALESCE(m.spend_usd, 0) > 0
           AND m.market_country IS NOT NULL
           AND TRIM(m.market_country) <> ''
-          AND m.normalized_ad_code IN %(active_codes)s
-          {match_sql}
-        GROUP BY UPPER(TRIM(m.market_country)), m.ad_name, m.normalized_ad_code
-        ORDER BY COALESCE(
-          CASE WHEN SUM(COALESCE(m.spend_usd, 0)) > 0
-            THEN SUM(COALESCE(m.purchase_value_usd, 0)) / SUM(COALESCE(m.spend_usd, 0))
-          END,
-          999
-        ) ASC,
-        total_spend DESC
         """,
-        sql_params,
+        {"product_id": product_id},
     )
+
+    items: list[AdListItem] = []
+    for row in rows:
+        ad_name = _safe_str(row.get("ad_name"))
+        ad_code = _safe_str(row.get("normalized_ad_code"))
+        country = _safe_str(row.get("country")).upper()
+
+        if ad_code not in active_codes:
+            continue
+
+        if not _match_media_item(ad_name, ad_code, country, media_items, lower_lang):
+            continue
+
+        spend = _safe_float(row.get("total_spend"))
+        purchase = _safe_float(row.get("total_purchase"))
+        roas = round(purchase / spend, 4) if spend > 0.01 else None
+        items.append(
+            AdListItem(
+                country=country,
+                ad_name=ad_name,
+                normalized_ad_code=ad_code,
+                total_spend=round(spend, 2),
+                total_purchase=round(purchase, 2),
+                ad_roas=roas,
+                active_days=int(_safe_float(row.get("active_days"))),
+            )
+        )
+
+    items.sort(
+        key=lambda ad: (
+            ad.ad_roas if ad.ad_roas is not None else 999,
+            -ad.total_spend,
+        )
+    )
+    return items
 
     items: list[AdListItem] = []
     for row in rows:
@@ -1244,61 +1267,62 @@ def get_trend_series(
     if not media_items:
         return []
 
-    # 2. 构造 media_items 匹配过滤条件 (移出 EXISTS/JOIN 关联子查询)
-    country_lang_sql = _COUNTRY_LANG_CASE_SQL % "m.market_country"
-    sql_params = {
-        "product_id": product_id,
-        "lang": lower_lang,
-        "days": max(1, int(days)),
-        "end_date_val": end_date_val,
-    }
-
-    like_conds = []
-    for idx, item in enumerate(media_items):
-        fn = (item.get("filename") or "").strip()
-        dn = (item.get("display_name") or "").strip()
-        if fn:
-            param_key = f"fn_{idx}"
-            sql_params[param_key] = f"%{fn}%"
-            like_conds.append(f"m.ad_name LIKE %({param_key})s")
-            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
-        if dn:
-            param_key = f"dn_{idx}"
-            sql_params[param_key] = f"%{dn}%"
-            like_conds.append(f"m.ad_name LIKE %({param_key})s")
-            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
-
-    country_cond = f"(m.market_country IS NOT NULL AND TRIM(m.market_country) <> '' AND {country_lang_sql} = %(lang)s)"
-
-    if like_conds:
-        match_sql = f"AND ({' OR '.join(like_conds)} OR {country_cond})"
-    else:
-        match_sql = f"AND {country_cond}"
-
+    # 2. 查出指定时间范围内的明细记录
     rows = query(
-        f"""
+        """
         SELECT
-          matched.ad_date AS ad_date,
-          COALESCE(SUM(matched.spend_usd), 0) AS spend_usd,
-          COALESCE(SUM(matched.purchase_value_usd), 0) AS purchase_value_usd
-        FROM (
-          SELECT DISTINCT
-            m.id AS metric_id,
-            DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date,
-            COALESCE(m.spend_usd, 0) AS spend_usd,
-            COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd
-          FROM meta_ad_daily_ad_metrics m
-          WHERE m.product_id = %(product_id)s
-            AND COALESCE(m.spend_usd, 0) > 0
-            AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= DATE_SUB(DATE(%(end_date_val)s), INTERVAL %(days)s DAY)
-            AND DATE(COALESCE(m.meta_business_date, m.report_date)) < DATE(%(end_date_val)s)
-            {match_sql}
-        ) matched
-        GROUP BY matched.ad_date
-        ORDER BY matched.ad_date DESC
+          DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date,
+          UPPER(TRIM(m.market_country)) AS country,
+          COALESCE(NULLIF(TRIM(m.ad_name), ''), NULLIF(TRIM(m.normalized_ad_code), ''), '') AS ad_name,
+          COALESCE(NULLIF(TRIM(m.normalized_ad_code), ''), '') AS normalized_ad_code,
+          COALESCE(m.spend_usd, 0) AS spend_usd,
+          COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd
+        FROM meta_ad_daily_ad_metrics m
+        WHERE m.product_id = %(product_id)s
+          AND COALESCE(m.spend_usd, 0) > 0
+          AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= DATE_SUB(DATE(%(end_date_val)s), INTERVAL %(days)s DAY)
+          AND DATE(COALESCE(m.meta_business_date, m.report_date)) < DATE(%(end_date_val)s)
         """,
-        sql_params,
+        {
+            "product_id": product_id,
+            "days": max(1, int(days)),
+            "end_date_val": end_date_val,
+        },
     )
+
+    # 3. 在 Python 内存中过滤并 Group By 聚合
+    date_to_metrics: dict[str, list[float]] = {}
+    for row in rows:
+        ad_date = _iso_date(row.get("ad_date"))
+        if not ad_date:
+            continue
+        ad_name = _safe_str(row.get("ad_name"))
+        ad_code = _safe_str(row.get("normalized_ad_code"))
+        country = _safe_str(row.get("country")).upper()
+
+        if not _match_media_item(ad_name, ad_code, country, media_items, lower_lang):
+            continue
+
+        spend = _safe_float(row.get("spend_usd"))
+        purchase = _safe_float(row.get("purchase_value_usd"))
+        
+        metrics = date_to_metrics.setdefault(ad_date, [0.0, 0.0])
+        metrics[0] += spend
+        metrics[1] += purchase
+
+    series: list[DailyPoint] = []
+    for ad_date in sorted(date_to_metrics.keys(), reverse=True):
+        spend, purchase = date_to_metrics[ad_date]
+        roas = round(purchase / spend, 4) if spend > 0.01 else None
+        series.append(
+            DailyPoint(
+                date=ad_date,
+                spend_usd=round(spend, 2),
+                purchase_value_usd=round(purchase, 2),
+                roas=roas,
+            )
+        )
+    return series
 
     series: list[DailyPoint] = []
     for row in rows:
@@ -1904,52 +1928,46 @@ def _get_active_window(product_id: int, lang: str) -> ActiveWindow:
     if not media_items:
         return ActiveWindow(None, None, 0)
 
-    # 2. 构造 media_items 匹配过滤条件 (移出 EXISTS/JOIN 关联子查询)
-    country_lang_sql = _COUNTRY_LANG_CASE_SQL % "m.market_country"
-    sql_params = {
-        "product_id": product_id,
-        "lang": lower_lang,
-    }
-
-    like_conds = []
-    for idx, item in enumerate(media_items):
-        fn = (item.get("filename") or "").strip()
-        dn = (item.get("display_name") or "").strip()
-        if fn:
-            param_key = f"fn_{idx}"
-            sql_params[param_key] = f"%{fn}%"
-            like_conds.append(f"m.ad_name LIKE %({param_key})s")
-            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
-        if dn:
-            param_key = f"dn_{idx}"
-            sql_params[param_key] = f"%{dn}%"
-            like_conds.append(f"m.ad_name LIKE %({param_key})s")
-            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
-
-    country_cond = f"(m.market_country IS NOT NULL AND TRIM(m.market_country) <> '' AND {country_lang_sql} = %(lang)s)"
-
-    if like_conds:
-        match_sql = f"AND ({' OR '.join(like_conds)} OR {country_cond})"
-    else:
-        match_sql = f"AND {country_cond}"
-
-    row = query_one(
-        f"""
+    # 2. 查询该产品所有有消耗的记录明细
+    rows = query(
+        """
         SELECT
-          MIN(matched.ad_date) AS delivery_start,
-          MAX(matched.ad_date) AS delivery_end,
-          COUNT(DISTINCT matched.ad_date) AS active_days
-        FROM (
-          SELECT DISTINCT
-            m.id AS metric_id,
-            DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date
-          FROM meta_ad_daily_ad_metrics m
-          WHERE m.product_id = %(product_id)s
-            AND COALESCE(m.spend_usd, 0) > 0
-            {match_sql}
-        ) matched
+          DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date,
+          UPPER(TRIM(m.market_country)) AS country,
+          COALESCE(NULLIF(TRIM(m.ad_name), ''), NULLIF(TRIM(m.normalized_ad_code), ''), '') AS ad_name,
+          COALESCE(NULLIF(TRIM(m.normalized_ad_code), ''), '') AS normalized_ad_code
+        FROM meta_ad_daily_ad_metrics m
+        WHERE m.product_id = %(product_id)s
+          AND COALESCE(m.spend_usd, 0) > 0
         """,
-        sql_params,
+        {"product_id": product_id},
+    )
+
+    # 3. 在 Python 内存中过滤并计算活跃天数及边界
+    matched_dates = set()
+    for row in rows:
+        ad_date = row.get("ad_date")
+        if not ad_date:
+            continue
+        date_str = _iso_date(ad_date)
+        if not date_str:
+            continue
+
+        ad_name = _safe_str(row.get("ad_name"))
+        ad_code = _safe_str(row.get("normalized_ad_code"))
+        country = _safe_str(row.get("country")).upper()
+
+        if _match_media_item(ad_name, ad_code, country, media_items, lower_lang):
+            matched_dates.add(date_str)
+
+    if not matched_dates:
+        return ActiveWindow(None, None, 0)
+
+    sorted_dates = sorted(list(matched_dates))
+    return ActiveWindow(
+        delivery_start=sorted_dates[0],
+        delivery_end=sorted_dates[-1],
+        active_days=len(sorted_dates),
     )
     if not row:
         return ActiveWindow(None, None, 0)

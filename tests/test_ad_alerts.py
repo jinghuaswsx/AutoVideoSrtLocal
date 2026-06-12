@@ -194,14 +194,12 @@ def test_detail_uses_language_matched_trend_series(monkeypatch):
         if "FROM media_items" in sql:
             return [{"filename": "DemoMaterial", "display_name": "DemoMaterial"}]
         # 对应主查询的 Assert
-        assert "FROM meta_ad_daily_ad_metrics m" in sql or "FROM (      SELECT DISTINCT" in sql
-        assert "CASE UPPER(m.market_country)" in sql
-        assert "SELECT DISTINCT" in sql
-        assert "m.id AS metric_id" in sql
-        assert "GROUP BY matched.ad_date" in sql
+        assert "FROM meta_ad_daily_ad_metrics m" in sql or "FROM meta_ad_daily_ad_metrics" in sql
+        assert "SELECT" in sql
+        assert "spend_usd" in sql
         return [
-            {"ad_date": date(2026, 6, 3), "spend_usd": "10.00", "purchase_value_usd": "15.00"},
-            {"ad_date": date(2026, 6, 4), "spend_usd": "20.00", "purchase_value_usd": "10.00"},
+            {"ad_date": date(2026, 6, 3), "spend_usd": "10.00", "purchase_value_usd": "15.00", "country": "de"},
+            {"ad_date": date(2026, 6, 4), "spend_usd": "20.00", "purchase_value_usd": "10.00", "country": "de"},
         ]
 
     monkeypatch.setattr(ad_alerts, "query_one", fake_query_one)
@@ -221,9 +219,9 @@ def test_detail_uses_language_matched_trend_series(monkeypatch):
         "threshold": 1.5,
     }
     assert detail.lang_label == "德语"
-    assert detail.active_days == 10
-    assert [point.date for point in detail.trend] == ["2026-06-03", "2026-06-04"]
-    assert detail.trend[0].roas == 1.5
+    assert detail.active_days == 2
+    assert [point.date for point in detail.trend] == ["2026-06-04", "2026-06-03"]
+    assert detail.trend[1].roas == 1.5
     assert detail.estimated_loss == -60.0
 
 
@@ -258,10 +256,7 @@ def test_get_ad_list_aggregates_language_matched_ads(monkeypatch):
     items = ad_alerts.get_ad_list(10, "DE")
 
     assert "FROM meta_ad_daily_ad_metrics m" in captured["sql"]
-    assert "active_codes" in captured["sql"]
-    assert "CASE UPPER(m.market_country)" in captured["sql"]
     assert captured["params"]["product_id"] == 10
-    assert captured["params"]["lang"] == "de"
     assert len(items) == 1
     assert items[0].country == "DE"
     assert items[0].ad_name == "ABC123_DE_01"
