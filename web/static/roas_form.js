@@ -15,6 +15,16 @@
     'standalone_price',
     'standalone_shipping_fee',
   ];
+  const SOURCE_FIELDS = [
+    'standalone_price',
+    'purchase_price',
+    'standalone_shipping_fee',
+    'package_length_cm',
+    'package_width_cm',
+    'package_height_cm',
+    'packet_cost_estimated',
+    'packet_cost_actual',
+  ];
   const DEBOUNCE_MS = 600;
   const FEE_RATE = 0.07;
 
@@ -37,6 +47,14 @@
   function formatTime(d) {
     const pad = (n) => String(n).padStart(2, '0');
     return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function sourceLabel(entry) {
+    const basis = entry && entry.basis ? String(entry.basis) : '';
+    if (basis === 'actual') return '实算';
+    if (basis === 'estimated') return '估算';
+    if (basis === 'default') return '默认';
+    return '';
   }
 
   function escapeAttr(value) {
@@ -261,7 +279,20 @@
           ? `<img src="${escapeAttr(coverUrl)}" alt="">`
           : '<svg width="24" height="24"><use href="#ic-package"/></svg>';
       }
+      this.renderSourceLabels(product.roas_inputs_source || {});
       this.renderResult();
+    }
+
+    renderSourceLabels(sourceMap) {
+      SOURCE_FIELDS.forEach((field) => {
+        const chip = this.root.querySelector(`[data-roas-source-field="${field}"]`);
+        if (!chip) return;
+        const entry = sourceMap && sourceMap[field];
+        const label = sourceLabel(entry);
+        chip.textContent = label;
+        chip.dataset.basis = entry && entry.basis ? String(entry.basis) : '';
+        chip.title = entry && entry.source ? String(entry.source) : '';
+      });
     }
 
     collectPayload() {

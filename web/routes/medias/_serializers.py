@@ -14,6 +14,18 @@ def _json_number_or_none(value):
         return value
 
 
+def _json_dict_or_empty(value):
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _int_or_none(value):
     if value in (None, ""):
         return None
@@ -233,6 +245,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         legacy_shopifyid=p.get("shopifyid"),
         default_domain=default_link_domain,
     )
+    roas_inputs_source = _json_dict_or_empty(p.get("roas_inputs_source_json"))
 
     resolved_shopify_title = (p.get("shopify_title") or "").strip()
     if not resolved_shopify_title and p.get("product_code"):
@@ -332,6 +345,7 @@ def _serialize_product(p: dict, items_count: int | None = None,
         "tk_sale_price": _json_number_or_none(p.get("tk_sale_price")),
         "standalone_price": _json_number_or_none(p.get("standalone_price")),
         "standalone_shipping_fee": _json_number_or_none(p.get("standalone_shipping_fee")),
+        "roas_inputs_source": roas_inputs_source,
         "roas_rmb_per_usd": float(product_roas.normalize_rmb_per_usd(roas_rmb_per_usd)),
         "roas_calculation": product_roas.calculate_break_even_roas(
             purchase_price=p.get("purchase_price"),

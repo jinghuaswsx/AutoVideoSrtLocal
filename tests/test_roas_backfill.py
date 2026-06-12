@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+import json
 
 import pytest
 
@@ -194,3 +195,248 @@ def test_backfill_parcel_costs_no_candidates_returns_zero(monkeypatch):
     monkeypatch.setattr(mod, "_dianxiaomi_shop_groups", lambda force: ({}, {}))
     result = mod.backfill_parcel_costs_via_dxm()
     assert result == {"candidates": 0, "shops": 0, "with_fees": 0, "updated": 0}
+
+
+def test_fetch_first_shopify_variant_price_uses_first_variant(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return json.dumps({
+                "variants": [
+                    {"id": 11, "sku": "FIRST", "price": 2999},
+                    {"id": 22, "sku": "SECOND", "price": 1999},
+                ]
+            }).encode("utf-8")
+
+    monkeypatch.setattr(mod, "urlopen", lambda req, timeout: FakeResponse())
+
+    out = mod.fetch_first_shopify_variant_price("https://shop.test/products/item.js")
+
+    assert out["value"] == Decimal("29.99")
+    assert out["variant_id"] == 11
+    assert out["sku"] == "FIRST"
+    assert out["source"] == "shopify_product_js_first_variant"
+
+
+def test_shopify_product_js_urls_include_product_link_localized_and_default(monkeypatch):
+    from appcore import product_link_domains
+
+    monkeypatch.setattr(
+        product_link_domains,
+        "resolve_product_page_url_rows",
+        lambda product, lang: [{"url": "https://newjoyloo.com/products/item-rjc"}],
+    )
+    product = {
+        "id": 10,
+        "product_code": "item-rjc",
+        "product_link": "https://shop.test/products/item",
+        "localized_links_json": json.dumps({
+            "fr": {"newjoyloo.com": "https://newjoyloo.com/fr/products/item-rjc"},
+        }),
+    }
+
+    urls = mod._shopify_product_js_urls(product)
+
+    assert urls == [
+        "https://shop.test/products/item.js",
+        "https://newjoyloo.com/products/item-rjc.js",
+        "https://newjoyloo.com/fr/products/item-rjc.js",
+    ]
+
+
+def test_backfill_complete_product_roas_estimates_missing_inputs_and_sources(monkeypatch):
+    products = [
+        {
+            "id": 1,
+            "product_code": "portable-car-urinal-bucket-rjc",
+            "product_link": None,
+            "localized_links_json": None,
+            "standalone_price": None,
+            "standalone_shipping_fee": None,
+            "purchase_price": None,
+            "packet_cost_estimated": None,
+            "packet_cost_actual": None,
+            "package_length_cm": None,
+            "package_width_cm": None,
+            "package_height_cm": None,
+            "roas_inputs_source_json": None,
+        },
+        {
+            "id": 2,
+            "product_code": "actual-source-rjc",
+            "product_link": None,
+            "localized_links_json": None,
+            "standalone_price": Decimal("39.99"),
+            "standalone_shipping_fee": None,
+            "purchase_price": None,
+            "packet_cost_estimated": None,
+            "packet_cost_actual": None,
+            "package_length_cm": Decimal("20"),
+            "package_width_cm": Decimal("8"),
+            "package_height_cm": Decimal("6"),
+            "roas_inputs_source_json": None,
+        },
+    ]
+    writes = []
+
+    monkeypatch.setattr(mod, "_active_roas_products", lambda **kwargs: products)
+    monkeypatch.setattr(mod, "_variant_prices_by_pid", lambda product_ids: {})
+    monkeypatch.setattr(mod, "_shopify_price_modes_by_pid", lambda: {})
+    monkeypatch.setattr(mod, "_purchase_costs_by_pid", lambda product_ids: {
+        2: {
+            "value": Decimal("12.34"),
+            "basis": "actual",
+            "source": "dianxiaomi_yuncang_skus_median",
+            "sample_size": 3,
+        },
+    })
+    monkeypatch.setattr(mod, "_logistic_costs_by_pid", lambda *args, **kwargs: {
+        2: {
+            "value": Decimal("23.45"),
+            "basis": "actual",
+            "source": "dianxiaomi_logistic_fee_median",
+            "sample_size": 5,
+            "window_start": "2026-05-01",
+            "window_end": "2026-05-31",
+        },
+    })
+    monkeypatch.setattr(mod, "_shipping_fees_by_pid", lambda product_ids: {
+        2: {
+            "value": Decimal("7.77"),
+            "basis": "actual",
+            "source": "shopify_orders_average_shipping",
+            "sample_size": 4,
+        },
+    })
+    monkeypatch.setattr(mod, "_shopify_product_js_urls", lambda product: ["https://shop.test/products/%s.js" % product["product_code"]])
+    monkeypatch.setattr(mod, "execute", lambda sql, params: writes.append((sql, params)))
+
+    def fetch_price(url, *, timeout_s):
+        assert timeout_s == 12
+        if "portable-car" in url:
+            return {"value": Decimal("29.99"), "source": "shopify_product_js_first_variant", "url": url}
+        return None
+
+    result = mod.backfill_complete_product_roas(
+        rmb_per_usd=Decimal("7"),
+        product_ids=[1, 2],
+        fetch_price_fn=fetch_price,
+        now_func=lambda: datetime(2026, 6, 12, 10, 0, 0),
+    )
+
+    assert result["products_total"] == 2
+    assert result["completed"] == 2
+    assert result["missing_price"] == 0
+    assert result["estimated_price"] == 0
+    assert result["estimated_purchase"] == 1
+    assert result["estimated_packet"] == 1
+    assert result["estimated_shipping"] == 1
+    assert result["default_dimensions"] == 1
+    assert result["updated"] == 2
+    assert "products" not in result
+    assert len(writes) == 2
+
+    first_sql, first_params = writes[0]
+    assert "roas_inputs_source_json=%s" in first_sql
+    assert first_params[-1] == 1
+    assert Decimal(str(first_params[0])) == Decimal("29.99")
+    assert Decimal(str(first_params[1])) == Decimal("20.99")
+    assert Decimal(str(first_params[2])) == Decimal("41.99")
+    assert Decimal(str(first_params[3])) == Decimal("6.99")
+    first_source = json.loads(first_params[-2])
+    assert first_source["standalone_price"]["basis"] == "actual"
+    assert first_source["purchase_price"]["basis"] == "estimated"
+    assert first_source["packet_cost_estimated"]["basis"] == "estimated"
+    assert first_source["standalone_shipping_fee"]["source"] == "default_6_99"
+    assert first_source["package_length_cm"]["basis"] == "default"
+    assert first_source["calculation"]["effective_basis"] == "estimated"
+    assert first_source["calculation"]["effective_roas"] is not None
+
+    second_source = json.loads(writes[1][1][-2])
+    assert second_source["purchase_price"]["basis"] == "actual"
+    assert second_source["packet_cost_actual"]["basis"] == "actual"
+    assert second_source["packet_cost_estimated"]["source"] == "packet_cost_actual_mirror"
+    assert second_source["standalone_shipping_fee"]["basis"] == "actual"
+
+
+def test_backfill_complete_product_roas_uses_estimated_price_fallback(monkeypatch):
+    products = [
+        {
+            "id": 1,
+            "product_code": "missing-price-rjc",
+            "product_link": None,
+            "localized_links_json": None,
+            "standalone_price": None,
+            "standalone_shipping_fee": None,
+            "purchase_price": None,
+            "packet_cost_estimated": None,
+            "packet_cost_actual": None,
+            "package_length_cm": None,
+            "package_width_cm": None,
+            "package_height_cm": None,
+            "roas_inputs_source_json": None,
+        },
+        {
+            "id": 2,
+            "product_code": "price-source-rjc",
+            "product_link": None,
+            "localized_links_json": None,
+            "standalone_price": Decimal("49.99"),
+            "standalone_shipping_fee": None,
+            "purchase_price": None,
+            "packet_cost_estimated": None,
+            "packet_cost_actual": None,
+            "package_length_cm": None,
+            "package_width_cm": None,
+            "package_height_cm": None,
+            "roas_inputs_source_json": None,
+        },
+    ]
+    writes = []
+
+    monkeypatch.setattr(mod, "_active_roas_products", lambda **kwargs: products)
+    monkeypatch.setattr(mod, "_variant_prices_by_pid", lambda product_ids: {})
+    monkeypatch.setattr(mod, "_shopify_price_modes_by_pid", lambda: {})
+    monkeypatch.setattr(mod, "_purchase_costs_by_pid", lambda product_ids: {})
+    monkeypatch.setattr(mod, "_logistic_costs_by_pid", lambda *args, **kwargs: {})
+    monkeypatch.setattr(mod, "_shipping_fees_by_pid", lambda product_ids: {})
+    monkeypatch.setattr(mod, "_shopify_product_js_urls", lambda product: [])
+    monkeypatch.setattr(mod, "execute", lambda sql, params: writes.append((sql, params)))
+
+    result = mod.backfill_complete_product_roas(
+        rmb_per_usd=Decimal("7"),
+        fetch_price_fn=lambda *args, **kwargs: None,
+        now_func=lambda: datetime(2026, 6, 12, 10, 0, 0),
+    )
+
+    assert result["completed"] == 2
+    assert result["missing_price"] == 0
+    assert result["estimated_price"] == 1
+    first_source = json.loads(writes[0][1][-2])
+    assert Decimal(str(writes[0][1][0])) == Decimal("49.99")
+    assert first_source["standalone_price"]["basis"] == "estimated"
+    assert first_source["standalone_price"]["source"] == "active_product_price_median"
+    assert first_source["standalone_price"]["sample_size"] == 1
+
+
+def test_active_roas_products_filters_product_ids_and_codes(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(mod, "query", fake_query)
+
+    mod._active_roas_products(product_ids=[3, 4], product_codes=["a-rjc", "b-rjc"])
+
+    assert "id IN (%s,%s)" in captured["sql"]
+    assert "product_code IN (%s,%s)" in captured["sql"]
+    assert "product_link" in captured["sql"]
+    assert captured["params"] == (3, 4, "a-rjc", "b-rjc")
