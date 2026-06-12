@@ -323,13 +323,13 @@
 .vw-country-chip.state-active-green { border-color: #bbf7d0; background: #f0fdf4; color: #15803d; }
 .vw-country-chip.state-active-orange { border-color: #fed7aa; background: #fff7ed; color: #c2410c; }
 .vw-country-chip.state-active-red { border-color: #fed7d7; background: #fff5f5; color: #e53e3e; }
-.vw-country-chip.state-stopped { border-color: #f87171; background: #fee2e2; color: #991b1b; }
+.vw-country-chip.state-stopped { border-color: #cbd5e1; background: #ffffff; color: #475569; }
 .vw-country-chip.state-missing { border-color: #e2e8f0; background: #fff; color: #64748b; }
 .vw-country-chip.state-active .vw-chip-sub,
 .vw-country-chip.state-active-green .vw-chip-sub { color: #166534; opacity: 0.85; }
 .vw-country-chip.state-active-orange .vw-chip-sub { color: #9a3412; opacity: 0.85; }
 .vw-country-chip.state-active-red .vw-chip-sub { color: #b91c1c; opacity: 0.85; }
-.vw-country-chip.state-stopped .vw-chip-sub { color: #7f1d1d; opacity: 0.85; }
+.vw-country-chip.state-stopped .vw-chip-sub { color: #64748b; opacity: 0.85; }
 .vw-country-chip .vw-chip-roas-badge {
   display: inline-flex;
   align-items: center;
@@ -358,9 +358,14 @@
   border: 1px solid #fed7d7;
 }
 .vw-country-chip.state-stopped .vw-chip-roas-badge {
-  background: #fecaca;
-  color: #991b1b;
-  border: 1px solid #f87171;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+.vw-status-stopped-text {
+  color: #dc2626;
+  font-weight: 800;
+  font-size: 18px;
 }
 .vw-chip-main { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-weight: 800; font-size: 12px; }
 .vw-chip-sub {
@@ -1307,9 +1312,12 @@
 
       const isTranslating = row.task && row.task.id && row.status === 'missing';
       const statusText = countryStatusText(row);
-      const statusHtml = isTranslating
-        ? `<span style="color: #ea580c; font-weight: bold;">${esc(statusText)}</span>`
-        : esc(statusText);
+      let statusHtml = esc(statusText);
+      if (isTranslating) {
+        statusHtml = `<span style="color: #ea580c; font-weight: bold;">${esc(statusText)}</span>`;
+      } else if (cls === 'state-stopped') {
+        statusHtml = `<span class="vw-status-stopped-text">${esc(statusText)}</span>`;
+      }
 
       const badgeClass = isTranslating ? 'vw-task-badge is-translating' : 'vw-task-badge';
       const iconSize = isTranslating ? 24 : 12;
