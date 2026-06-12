@@ -106,6 +106,7 @@ class AlertItem:
     estimated_loss: float
     active_days: int = 0
     top_losing_ads: list[AdListItem] = field(default_factory=list)
+    action: dict[str, Any] | None = None
 
 
 @dataclass
@@ -193,6 +194,7 @@ class HighLossAdItem:
     consecutive_loss_days: int
     detail_url: str
     metrics: dict[str, HighLossMetric]
+    action: dict[str, Any] | None = None
 
 
 
@@ -658,6 +660,7 @@ def get_alerts(
     search: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    include_handled: bool = False,
 ) -> list[AlertItem]:
     """查询低 ROAS 且仍有活跃消耗的商品语言预警列表（支持时间范围选择与亏损过滤）。"""
     threshold_value = _normalize_threshold(threshold)
@@ -763,7 +766,33 @@ def get_alerts(
                 top_losing_ads=top_losing_ads,
             )
         )
-    return items
+    return _apply_language_actions(items, include_handled=include_handled)
+
+
+def _apply_language_actions(
+    items: list[AlertItem], *, include_handled: bool
+) -> list[AlertItem]:
+    """附加商品语言级预警的处理状态并按需过滤已处理条目。"""
+    from appcore import ad_alert_actions
+
+    if not items:
+        return items
+    keys = [
+        ad_alert_actions.language_target_key(item.product_id, item.lang)
+        for item in items
+    ]
+    try:
+        action_map = ad_alert_actions.get_actions(ad_alert_actions.SCOPE_LANGUAGE, keys)
+    except Exception:
+        log.warning("ad alert action lookup failed; showing unfiltered list", exc_info=True)
+        action_map = {}
+    kept: list[AlertItem] = []
+    for item, key in zip(items, keys):
+        item.action = action_map.get(key)
+        if not include_handled and item.action is not None:
+            continue
+        kept.append(item)
+    return kept
 
 
 def get_alert_detail(
@@ -957,10 +986,15 @@ def get_high_loss_ads(
     *,
     search: str | None = None,
     limit: int = 30,
+    include_handled: bool = False,
 ) -> tuple[date, list[HighLossAdItem]]:
     """查询 AD 级高额亏损广告 Top 列表。
 
+    默认过滤掉已标记处理/忽略的条目；SQL 多取 3 倍候选以保证过滤后仍能
+    凑满 ``limit`` 条。``include_handled=True`` 时不过滤，但仍附带状态。
+
     Docs-anchor: docs/superpowers/specs/2026-06-12-ad-alert-high-loss-ads-tab-design.md
+    Docs-anchor: docs/superpowers/specs/2026-06-12-ad-alert-action-workflow-design.md
     """
     business_date = current_meta_business_date()
     last_7d_start = business_date - timedelta(days=6)
@@ -972,7 +1006,7 @@ def get_high_loss_ads(
         "today": business_date,
         "last_7d_start": last_7d_start,
         "last_30d_start": last_30d_start,
-        "limit": safe_limit,
+        "limit": safe_limit * 3,
     }
     if search:
         params["search"] = f"%{search.strip()}%"
@@ -1084,9 +1118,43 @@ def get_high_loss_ads(
             )
         )
 
+    items = _apply_high_loss_actions(
+        items, include_handled=include_handled, limit=safe_limit
+    )
     _fill_high_loss_product_images(items)
     _attach_high_loss_consecutive_days(items, business_date)
     return business_date, items
+
+
+def _apply_high_loss_actions(
+    items: list[HighLossAdItem],
+    *,
+    include_handled: bool,
+    limit: int,
+) -> list[HighLossAdItem]:
+    """附加处理状态并按需过滤已处理条目，截断到 limit。"""
+    from appcore import ad_alert_actions
+
+    if not items:
+        return items
+    keys = [
+        ad_alert_actions.high_loss_target_key(item.ad_account_id, item.code)
+        for item in items
+    ]
+    try:
+        action_map = ad_alert_actions.get_actions(ad_alert_actions.SCOPE_HIGH_LOSS, keys)
+    except Exception:
+        log.warning("ad alert action lookup failed; showing unfiltered list", exc_info=True)
+        action_map = {}
+    kept: list[HighLossAdItem] = []
+    for item, key in zip(items, keys):
+        item.action = action_map.get(key)
+        if not include_handled and item.action is not None:
+            continue
+        kept.append(item)
+        if len(kept) >= limit:
+            break
+    return kept
 
 
 
