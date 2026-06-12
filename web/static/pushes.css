@@ -60,7 +60,7 @@
    * docs/superpowers/specs/2026-04-18-push-management-design.md
    * docs/superpowers/specs/2026-05-20-xuanpin-secondary-screen-columns-design.md
    */
-  --push-table-min-w: 1864px;
+  --push-table-min-w: 1976px;
   --push-col-thumb: 168px;
   --push-col-product: 144px;
   --push-col-product-tag: 88px;
@@ -73,6 +73,7 @@
   --push-col-audit: 230px;
   --push-col-status: 86px;
   --push-col-time: 110px;
+  --push-col-task-time: 112px;
   --push-col-action: 156px;
 }
 
@@ -335,6 +336,7 @@
 .push-col-audit { width: var(--push-col-audit); }
 .push-col-status { width: var(--push-col-status); }
 .push-col-time { width: var(--push-col-time); }
+.push-col-task-time { width: var(--push-col-task-time); }
 .push-col-action { width: var(--push-col-action); }
 .push-table th {
   text-align: center;
@@ -1254,7 +1256,7 @@
 /* ---------- 响应式 ---------- */
 @media (min-width: 769px) and (max-width: 1500px) {
   :root {
-    --push-table-min-w: 1490px;
+    --push-table-min-w: 1574px;
     --push-col-thumb: 140px;
     --push-col-product: 126px;
     --push-col-product-tag: 72px;
@@ -1267,6 +1269,7 @@
     --push-col-audit: 170px;
     --push-col-status: 70px;
     --push-col-time: 86px;
+    --push-col-task-time: 84px;
     --push-col-action: 98px;
   }
   .main-content {
@@ -1348,6 +1351,7 @@
     --push-col-audit: 112px;
     --push-col-status: 58px;
     --push-col-time: 64px;
+    --push-col-task-time: 64px;
     --push-col-action: 92px;
   }
   .sidebar { transform: translateX(-100%); }
@@ -2925,4 +2929,3 @@
   line-height: 0.8;
   font-family: inherit;
 }
-

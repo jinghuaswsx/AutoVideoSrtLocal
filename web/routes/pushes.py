@@ -480,6 +480,7 @@ def _serialize_row(
         "file_size": row.get("file_size"),
         "file_size_mb": pushes.push_video_size_check_for_item(row)["size_mb"],
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "task_created_at": row.get("task_created_at").isoformat() if row.get("task_created_at") else None,
         "pushed_at": row["pushed_at"].isoformat() if row.get("pushed_at") else None,
         "status": status,
         "readiness": readiness,
@@ -512,6 +513,8 @@ def api_list():
     new_product = None if new_product_raw == "" else new_product_raw == "1"
     date_from = (request.args.get("date_from") or "").strip() or None
     date_to = (request.args.get("date_to") or "").strip() or None
+    task_created_from = (request.args.get("task_created_from") or "").strip() or None
+    task_created_to = (request.args.get("task_created_to") or "").strip() or None
     sort = (request.args.get("sort") or "created_at_desc").strip()
     if sort not in {"created_at_asc", "created_at_desc"}:
         sort = "created_at_desc"
@@ -541,6 +544,8 @@ def api_list():
         new_product=new_product,
         date_from=date_from,
         date_to=date_to,
+        task_created_from=task_created_from,
+        task_created_to=task_created_to,
         sort=sort,
         offset=0,
         limit=None,
