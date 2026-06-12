@@ -222,46 +222,86 @@
 }
 .oc-ad-alert-filter-set {
   display: inline-flex;
-  border: 1px solid var(--oc-ad-alert-border);
+  border: 1.5px solid #bfdbfe;
   border-radius: 10px;
   overflow: hidden;
+  background: #eff6ff;
 }
 .oc-ad-alert-filter {
   min-height: 36px;
   padding: 0 16px;
   border: 0;
-  border-right: 1px solid var(--oc-ad-alert-border);
+  border-right: 1.5px solid #bfdbfe;
   border-radius: 0;
-  color: var(--oc-ad-alert-muted);
+  color: #1e40af;
+  background: #eff6ff;
   box-shadow: none;
+  font-weight: 700;
 }
 .oc-ad-alert-filter:last-child {
   border-right: 0;
 }
 .oc-ad-alert-filter:hover {
-  background: var(--oc-ad-alert-subtle);
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 .oc-ad-alert-filter.oc-ad-alert-active {
-  background: var(--oc-ad-alert-blue);
-  color: #fff;
+  background: var(--oc-ad-alert-blue, #3b82f6) !important;
+  color: #ffffff !important;
   font-weight: 800;
 }
 .oc-ad-alert-search {
   width: min(360px, 100%);
   min-height: 36px;
   padding: 0 14px;
-  border: 1px solid var(--oc-ad-alert-border);
+  border: 1.5px solid #93c5fd;
   border-radius: 10px;
-  background: var(--oc-ad-alert-card);
-  color: var(--oc-ad-alert-fg);
+  background: #ffffff;
+  color: #111827;
   font: inherit;
   font-size: 13px;
   transition: all 0.2s;
 }
+.oc-ad-alert-search::placeholder {
+  color: #64748b !important;
+  opacity: 1 !important;
+}
 .oc-ad-alert-search:focus {
   outline: none;
-  border-color: var(--oc-ad-alert-blue);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+}
+
+/* Dark theme overrides for filters and search */
+[data-theme='dark'] .oc-ad-alert-filter-set {
+  border-color: #334155;
+  background: #1e293b;
+}
+[data-theme='dark'] .oc-ad-alert-filter {
+  border-right-color: #334155;
+  color: #94a3b8;
+  background: #1e293b;
+}
+[data-theme='dark'] .oc-ad-alert-filter:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+[data-theme='dark'] .oc-ad-alert-filter.oc-ad-alert-active {
+  background: var(--oc-ad-alert-blue, #0ea5e9) !important;
+  color: #ffffff !important;
+}
+[data-theme='dark'] .oc-ad-alert-search {
+  border-color: #334155;
+  background: #0f172a;
+  color: #f8fafc;
+}
+[data-theme='dark'] .oc-ad-alert-search::placeholder {
+  color: #475569 !important;
+  opacity: 1 !important;
+}
+[data-theme='dark'] .oc-ad-alert-search:focus {
+  border-color: #0ea5e9 !important;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2) !important;
 }
 .oc-ad-alert-list {
   display: grid;
