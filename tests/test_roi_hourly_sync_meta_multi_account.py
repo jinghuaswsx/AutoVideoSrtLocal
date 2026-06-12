@@ -557,6 +557,27 @@ def _patch_session(monkeypatch, session, *, raise_on_open: Exception | None = No
     )
 
 
+def _patch_sessions(monkeypatch, sessions: list):
+    """Patch open_meta_ads_session to yield one fake session per open."""
+    from contextlib import contextmanager
+
+    opened: list = []
+
+    @contextmanager
+    def fake_open():
+        if not sessions:
+            raise AssertionError("unexpected extra open_meta_ads_session call")
+        session = sessions.pop(0)
+        opened.append(session)
+        yield session
+
+    monkeypatch.setattr(
+        "appcore.meta_ads_in_page_fetch.open_meta_ads_session",
+        lambda: fake_open(),
+    )
+    return opened
+
+
 def test_sync_meta_realtime_daily_uses_xhr_session_for_xhr_api_account(
     monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
 ):
@@ -821,6 +842,55 @@ def test_sync_meta_realtime_daily_isolates_xhr_per_account_failure(
     assert statuses == {"a": "failed", "b": "success"}
     assert summary["status"] == "success"  # at least one account succeeded
     assert summary["spend_usd"] == 3.0
+
+
+def test_sync_meta_realtime_daily_retries_transient_xhr_fetch_failure_once(
+    monkeypatch, disable_appcore_db_writes, stub_meta_run_lifecycle
+):
+    """Docs-anchor:
+    docs/superpowers/specs/2026-06-12-meta-realtime-xhr-fetch-retry-fix.md
+    """
+    from appcore.meta_ads_in_page_fetch import MetaAdsInPageFetchError
+
+    accounts = [_account("a", "111", sync_mode="xhr_api")]
+    monkeypatch.setattr(meta_ad_accounts, "get_enabled_accounts", lambda: accounts)
+
+    class FailingSession:
+        calls: list[tuple[str, str]] = []
+
+        def fetch_insights(self, account_id, *, level, **kw):
+            self.calls.append((account_id, level))
+            raise MetaAdsInPageFetchError(
+                "in-page /insights failed: Page.evaluate: TypeError: Failed to fetch"
+            )
+
+    retry_session = _FakeSession({"111": [{"campaign_id": "ok", "spend": "3.0"}]})
+    opened = _patch_sessions(monkeypatch, [FailingSession(), retry_session])
+
+    def fake_import(**kw):
+        return {
+            "rows_imported": len(kw["rows"]),
+            "spend_usd": sum(float(r["spend"]) for r in kw["rows"]),
+        }
+
+    monkeypatch.setattr(
+        roi_hourly_sync,
+        "_import_meta_realtime_api_rows",
+        fake_import,
+    )
+
+    summary = roi_hourly_sync._sync_meta_realtime_daily(
+        date(2026, 5, 9), datetime(2026, 5, 9, 12, 20), meta_channel="browser",
+    )
+
+    assert len(opened) == 2
+    assert retry_session.calls == [("111", "campaign"), ("111", "adset"), ("111", "ad")]
+    assert summary["status"] == "success"
+    assert summary["rows_imported"] == 1
+    assert summary["spend_usd"] == 3.0
+    result = summary["account_results"][0]
+    assert result["code"] == "a"
+    assert result["status"] == "success"
 
 
 def test_sync_meta_realtime_daily_session_open_failure_marks_all_xhr_failed(
