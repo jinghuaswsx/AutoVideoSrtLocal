@@ -1135,6 +1135,58 @@ def api_events(tid: int):
     return _json_response({"events": tasks_svc.list_task_events(tid, limit=300)})
 
 
+@bp.route("/api/admin/cleanup-raw-niuma-done-dupes", methods=["POST"])
+@login_required
+@admin_required
+def api_cleanup_raw_niuma_done_dupes():
+    """临时管理端点：清理重复的 raw_niuma_done 事件（一次性）。"""
+    from appcore.db import query_all, execute
+    event_type = "raw_niuma_done"
+    dupes = query_all(
+        "SELECT task_id, "
+        "JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.subtitle_task_id')) AS stid, "
+        "COUNT(*) AS cnt "
+        "FROM task_events WHERE event_type=%s "
+        "GROUP BY task_id, JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.subtitle_task_id')) "
+        "HAVING cnt > 1 ORDER BY cnt DESC",
+        (event_type,),
+    )
+    if not dupes:
+        return _json_response({"ok": True, "deleted": 0, "message": "没有重复数据"})
+
+    total_deleted = 0
+    details = []
+    for row in dupes:
+        task_id = int(row["task_id"])
+        stid = row["stid"]
+        cnt = int(row["cnt"])
+        first = query_all(
+            "SELECT id FROM task_events WHERE task_id=%s AND event_type=%s "
+            "AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.subtitle_task_id'))=%s "
+            "ORDER BY id ASC LIMIT 1",
+            (task_id, event_type, stid),
+        )
+        if not first:
+            continue
+        keep_id = int(first[0]["id"])
+        deleted = execute(
+            "DELETE FROM task_events WHERE task_id=%s AND event_type=%s "
+            "AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.subtitle_task_id'))=%s "
+            "AND id != %s",
+            (task_id, event_type, stid, keep_id),
+        )
+        total_deleted += deleted
+        details.append({"task_id": task_id, "stid": stid, "deleted": deleted, "keep_id": keep_id})
+
+    remaining = query_all("SELECT COUNT(*) AS cnt FROM task_events WHERE event_type=%s", (event_type,))
+    return _json_response({
+        "ok": True,
+        "deleted": total_deleted,
+        "remaining_total": remaining[0]["cnt"] if remaining else 0,
+        "details": details,
+    })
+
+
 @bp.route("/api/<int:tid>/review-assets", methods=["GET"])
 @login_required
 def api_review_assets(tid: int):
