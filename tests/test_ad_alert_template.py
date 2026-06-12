@@ -12,6 +12,8 @@ def test_ad_alert_template_contract():
     assert "/ad-alerts/api/list" in source
     assert "/ad-alerts/api/detail" in source
     assert "/ad-alerts/api/problem-ads" in source
+    assert "/ad-alerts/api/ad-list" in source
+    assert "/ad-alerts/api/evaluate" in source
     assert "/ad-alerts/api/threshold" in source
     assert 'data-ad-alert-tab="alerts"' in source
     assert 'data-ad-alert-tab="problem"' in source
@@ -23,6 +25,10 @@ def test_ad_alert_template_contract():
     assert "最近 30 天" in source
     assert "整体" in source
     assert "X-CSRFToken" in source
+    assert "function loadAdList" in source
+    assert "function runAdEvaluation" in source
+    assert "function renderAdEvaluations" in source
+    assert "adAlertEvaluateBtn" in source
     assert "<svg" in source
     assert "Chart" not in source
     assert ".oc-ad-alert-" in source

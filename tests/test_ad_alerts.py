@@ -183,6 +183,91 @@ def test_detail_uses_language_matched_trend_series(monkeypatch):
     assert detail.estimated_loss == -60.0
 
 
+def test_get_ad_list_aggregates_language_matched_ads(monkeypatch):
+    from appcore import ad_alerts
+
+    captured: dict[str, object] = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [
+            {
+                "country": "de",
+                "ad_name": "ABC123_DE_01",
+                "normalized_ad_code": "abc123_de_01",
+                "total_spend": "100.00",
+                "total_purchase": "40.00",
+                "active_days": 9,
+            }
+        ]
+
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+
+    items = ad_alerts.get_ad_list(10, "DE")
+
+    assert "FROM meta_ad_daily_ad_metrics m" in captured["sql"]
+    assert "EXISTS (" in captured["sql"]
+    assert "LOWER(i.lang) = %(lang)s" in captured["sql"]
+    assert "CASE UPPER(m.market_country)" in captured["sql"]
+    assert captured["params"] == {"product_id": 10, "lang": "de"}
+    assert len(items) == 1
+    assert items[0].country == "DE"
+    assert items[0].ad_name == "ABC123_DE_01"
+    assert items[0].total_spend == 100.0
+    assert items[0].total_purchase == 40.0
+    assert items[0].ad_roas == 0.4
+    assert items[0].active_days == 9
+
+
+def test_evaluate_ads_calls_gemini_for_losing_ads(monkeypatch):
+    from appcore import ad_alerts, llm_client
+
+    monkeypatch.setattr(
+        ad_alerts,
+        "get_ad_list",
+        lambda product_id, lang: [
+            ad_alerts.AdListItem("DE", "bad-ad", "bad-code", 100.0, 40.0, 0.4, 10),
+            ad_alerts.AdListItem("AT", "good-ad", "good-code", 100.0, 190.0, 1.9, 10),
+        ],
+    )
+    monkeypatch.setattr(
+        ad_alerts,
+        "query_one",
+        lambda sql, params=None: {"product_code": "ABC123", "name": "Demo Product"},
+    )
+    captured: dict[str, object] = {}
+
+    def fake_invoke_chat(use_case_code, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured.update(kwargs)
+        return {
+            "text": '```json\n[{"country":"DE","ad_name":"bad-ad","roas":0.4,'
+                    '"judgment":"关停","reason":"ROAS 低于保本线且持续消耗"}]\n```'
+        }
+
+    monkeypatch.setattr(llm_client, "invoke_chat", fake_invoke_chat)
+
+    evaluations = ad_alerts.evaluate_ads(10, "de", threshold=1.5, user_id=7)
+
+    assert captured["use_case_code"] == "ad_alert.evaluate"
+    assert captured["user_id"] == 7
+    assert captured["project_id"] == "ad-alert:10:de"
+    prompt_text = captured["messages"][1]["content"]
+    assert "bad-ad" in prompt_text
+    assert "good-ad" not in prompt_text
+    assert captured["billing_extra"] == {"product_id": 10, "lang": "de", "ad_count": 1}
+    assert evaluations == [
+        ad_alerts.AdEvaluation(
+            country="DE",
+            ad_name="bad-ad",
+            roas=0.4,
+            judgment="关停",
+            reason="ROAS 低于保本线且持续消耗",
+        )
+    ]
+
+
 def test_get_problem_ads_uses_realtime_today_and_aggregates_windows(monkeypatch):
     from appcore import ad_alerts
 
