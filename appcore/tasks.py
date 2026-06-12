@@ -1173,6 +1173,7 @@ def list_task_center_items(
     assignee_name_expr = _user_display_name_expr("u")
     sql = (
         "SELECT t.*, p.name AS product_name, p.product_code AS product_code, "
+        "       p.main_image AS product_main_image, "
         "       source_mi.filename AS source_media_filename, "
         "       (SELECT GROUP_CONCAT(c.country_code ORDER BY c.country_code SEPARATOR ',') "
         "        FROM tasks c WHERE c.parent_task_id = t.id) AS child_country_codes, "
@@ -1202,6 +1203,7 @@ def list_task_center_items(
             "media_item_id": row["media_item_id"],
             "product_name": row["product_name"],
             "product_code": row.get("product_code"),
+            "product_main_image": row.get("product_main_image"),
             "source_media_filename": row.get("source_media_filename"),
             "child_country_codes": row.get("child_country_codes") or "",
             "country_code": row["country_code"],
