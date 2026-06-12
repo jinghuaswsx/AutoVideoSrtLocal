@@ -281,11 +281,11 @@ def main():
     # Double check confirmation
     try:
         confirm = input("Are you absolutely sure you want to perform HARD DELETE? This is irreversible! (yes/no): ")
-    except KeyboardInterrupt:
-        print("\nCancelled.")
+    except (KeyboardInterrupt, EOFError):
+        print("\nCancelled (KeyboardInterrupt/EOFError).")
         return
         
-    if confirm.lower() != "yes":
+    if confirm.strip().lower() != "yes":
         print("Aborted.")
         return
         
