@@ -3,28 +3,53 @@
 {% block extra_style %}
 <style>
 .oc-ad-alert-page {
-  --oc-ad-alert-fg: #f8fafc;
-  --oc-ad-alert-muted: #94a3b8;
-  --oc-ad-alert-border: #1e3a8a;
-  --oc-ad-alert-card: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  --oc-ad-alert-subtle: #0f172a;
-  --oc-ad-alert-blue: #38bdf8;
-  --oc-ad-alert-cyan: #06b6d4;
-  --oc-ad-alert-green: #34d399;
-  --oc-ad-alert-red: #f87171;
-  --oc-ad-alert-orange: #fb923c;
-  --oc-ad-alert-amber: #fbbf24;
+  --oc-ad-alert-fg: var(--text-main, #111827);
+  --oc-ad-alert-muted: #64748b;
+  --oc-ad-alert-border: var(--border-main, #e5e7eb);
+  --oc-ad-alert-card: var(--bg-card, #ffffff);
+  --oc-ad-alert-subtle: #f8fafc;
+  --oc-ad-alert-blue: var(--primary-color, #3b82f6);
+  --oc-ad-alert-cyan: #0ea5e9;
+  --oc-ad-alert-green: #10b981;
+  --oc-ad-alert-red: #ef4444;
+  --oc-ad-alert-orange: #f97316;
+  --oc-ad-alert-amber: #f59e0b;
+  --oc-ad-alert-page-bg: var(--bg-body, #f2f4f8);
+  
+  --oc-ad-alert-detail-cell-bg: #f8fafc;
+  
+  --oc-ad-alert-judgment-bg: #f8fafc;
+  --oc-ad-alert-judgment-fg: #475569;
+  --oc-ad-alert-judgment-border: #94a3b8;
+  
   display: grid;
   gap: 20px;
   max-width: 1280px;
   padding: 24px;
-  background: #0b1329;
+  background: var(--oc-ad-alert-page-bg);
   border-radius: 16px;
-  border: 1px solid #1e293b;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--oc-ad-alert-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03);
   animation: fadeIn 0.4s ease-out;
   color: var(--oc-ad-alert-fg);
 }
+
+[data-theme='dark'] .oc-ad-alert-page {
+  --oc-ad-alert-fg: var(--text-main, #e2e8f0);
+  --oc-ad-alert-muted: #94a3b8;
+  --oc-ad-alert-border: var(--border-main, #1e293b);
+  --oc-ad-alert-card: var(--bg-card, #0f172a);
+  --oc-ad-alert-subtle: #0a0f1c;
+  --oc-ad-alert-blue: var(--primary-color, #0ea5e9);
+  --oc-ad-alert-page-bg: var(--bg-body, #0a0f1c);
+  
+  --oc-ad-alert-detail-cell-bg: #1e293b;
+  
+  --oc-ad-alert-judgment-bg: rgba(15, 23, 42, 0.4);
+  --oc-ad-alert-judgment-fg: #cbd5e1;
+  --oc-ad-alert-judgment-border: #475569;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -60,7 +85,7 @@
 }
 .oc-ad-alert-title h1 {
   margin: 0;
-  color: #ffffff;
+  color: var(--oc-ad-alert-fg);
   font-size: 24px;
   line-height: 1.2;
   font-weight: 800;
@@ -75,7 +100,7 @@
   color: var(--oc-ad-alert-muted);
   font-size: 12px;
   font-weight: 600;
-  background: #1e293b;
+  background: var(--oc-ad-alert-subtle);
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid var(--oc-ad-alert-border);
@@ -90,7 +115,7 @@
   padding: 12px;
   border: 1px solid var(--oc-ad-alert-border);
   border-radius: 10px;
-  background: #1e293b;
+  background: var(--oc-ad-alert-detail-cell-bg);
 }
 .oc-ad-alert-detail-label {
   margin-bottom: 6px;
@@ -101,7 +126,7 @@
   letter-spacing: 0.05em;
 }
 .oc-ad-alert-detail-value {
-  color: #ffffff;
+  color: var(--oc-ad-alert-fg);
   font-size: 15px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -113,48 +138,61 @@
   margin-bottom: 18px;
   border: 1px solid var(--oc-ad-alert-border);
   border-radius: 12px;
-  background: #0a0f1c;
+  background: var(--oc-ad-alert-card);
   padding: 16px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+[data-theme='dark'] .oc-ad-alert-chart {
+  background: #0a0f1c;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .oc-ad-alert-judgment {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 16px 20px;
+  padding: 12px 14px;
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.4);
-  color: #e2e8f0;
-  font-size: 14px;
-  line-height: 1.6;
-  border-left: 6px solid #64748b;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--oc-ad-alert-judgment-bg);
+  color: var(--oc-ad-alert-judgment-fg);
+  font-size: 13px;
+  line-height: 1.5;
+  border-left: 4px solid var(--oc-ad-alert-judgment-border);
 }
 .oc-ad-alert-judgment span:first-child {
   color: var(--oc-ad-alert-muted);
-  font-size: 18px;
+  font-size: 15px;
 }
 .oc-ad-alert-judgment strong {
-  color: #ffffff;
-  margin-right: 8px;
+  color: var(--oc-ad-alert-fg);
+  margin-right: 6px;
   font-weight: 800;
 }
 .oc-ad-alert-severe.oc-ad-alert-judgment {
   border-left-color: var(--oc-ad-alert-red);
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+[data-theme='dark'] .oc-ad-alert-severe.oc-ad-alert-judgment {
   background: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
 }
 .oc-ad-alert-moderate.oc-ad-alert-judgment {
   border-left-color: var(--oc-ad-alert-orange);
+  background: #fff7ed;
+  color: #7c2d12;
+}
+[data-theme='dark'] .oc-ad-alert-moderate.oc-ad-alert-judgment {
   background: rgba(249, 115, 22, 0.1);
-  border-color: rgba(249, 115, 22, 0.2);
+  color: #ffedd5;
 }
 .oc-ad-alert-mild.oc-ad-alert-judgment {
   border-left-color: var(--oc-ad-alert-amber);
-  background: rgba(234, 179, 8, 0.1);
-  border-color: rgba(234, 179, 8, 0.2);
+  background: #fffbeb;
+  color: #713f12;
+}
+[data-theme='dark'] .oc-ad-alert-mild.oc-ad-alert-judgment {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fef3c7;
 }
 .oc-ad-alert-loss {
   color: var(--oc-ad-alert-red);
@@ -237,7 +275,7 @@
     </div>
   </div>
 
-  <h2 style="margin-top: 10px; font-size: 18px; color: #ffffff;">近 14 天趋势图 (Spend vs Purchase)</h2>
+  <h2 style="margin-top: 10px; font-size: 18px; color: var(--oc-ad-alert-fg);">近 14 天趋势图 (Spend vs Purchase)</h2>
   <div class="oc-ad-alert-chart" id="trendChart">
     <div class="oc-ad-alert-state">图表加载中...</div>
   </div>

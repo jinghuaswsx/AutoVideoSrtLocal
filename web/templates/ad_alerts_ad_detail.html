@@ -3,28 +3,53 @@
 {% block extra_style %}
 <style>
 .oc-ad-alert-page {
-  --oc-ad-alert-fg: #f8fafc;
-  --oc-ad-alert-muted: #94a3b8;
-  --oc-ad-alert-border: #1e3a8a;
-  --oc-ad-alert-card: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  --oc-ad-alert-subtle: #0f172a;
-  --oc-ad-alert-blue: #38bdf8;
-  --oc-ad-alert-cyan: #06b6d4;
-  --oc-ad-alert-green: #34d399;
-  --oc-ad-alert-red: #f87171;
-  --oc-ad-alert-orange: #fb923c;
-  --oc-ad-alert-amber: #fbbf24;
+  --oc-ad-alert-fg: var(--text-main, #111827);
+  --oc-ad-alert-muted: #64748b;
+  --oc-ad-alert-border: var(--border-main, #e5e7eb);
+  --oc-ad-alert-card: var(--bg-card, #ffffff);
+  --oc-ad-alert-subtle: #f8fafc;
+  --oc-ad-alert-blue: var(--primary-color, #3b82f6);
+  --oc-ad-alert-cyan: #0ea5e9;
+  --oc-ad-alert-green: #10b981;
+  --oc-ad-alert-red: #ef4444;
+  --oc-ad-alert-orange: #f97316;
+  --oc-ad-alert-amber: #f59e0b;
+  --oc-ad-alert-page-bg: var(--bg-body, #f2f4f8);
+  
+  --oc-ad-alert-detail-cell-bg: #f8fafc;
+  
+  --oc-ad-alert-table-head: #f8fafc;
+  --oc-ad-alert-table-head-fg: #475569;
+  --oc-ad-alert-table-hover: #eff6ff;
+  
   display: grid;
   gap: 20px;
   max-width: 1280px;
   padding: 24px;
-  background: #0b1329;
+  background: var(--oc-ad-alert-page-bg);
   border-radius: 16px;
-  border: 1px solid #1e293b;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--oc-ad-alert-border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03);
   animation: fadeIn 0.4s ease-out;
   color: var(--oc-ad-alert-fg);
 }
+
+[data-theme='dark'] .oc-ad-alert-page {
+  --oc-ad-alert-fg: var(--text-main, #e2e8f0);
+  --oc-ad-alert-muted: #94a3b8;
+  --oc-ad-alert-border: var(--border-main, #1e293b);
+  --oc-ad-alert-card: var(--bg-card, #0f172a);
+  --oc-ad-alert-subtle: #0a0f1c;
+  --oc-ad-alert-blue: var(--primary-color, #0ea5e9);
+  --oc-ad-alert-page-bg: var(--bg-body, #0a0f1c);
+  
+  --oc-ad-alert-detail-cell-bg: #1e293b;
+  
+  --oc-ad-alert-table-head: #1e293b;
+  --oc-ad-alert-table-head-fg: #ffffff;
+  --oc-ad-alert-table-hover: #1e293b;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -60,7 +85,7 @@
 }
 .oc-ad-alert-title h1 {
   margin: 0;
-  color: #ffffff;
+  color: var(--oc-ad-alert-fg);
   font-size: 22px;
   line-height: 1.2;
   font-weight: 800;
@@ -79,7 +104,7 @@
   color: var(--oc-ad-alert-muted);
   font-size: 12px;
   font-weight: 600;
-  background: #1e293b;
+  background: var(--oc-ad-alert-subtle);
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid var(--oc-ad-alert-border);
@@ -94,7 +119,7 @@
   padding: 12px;
   border: 1px solid var(--oc-ad-alert-border);
   border-radius: 10px;
-  background: #1e293b;
+  background: var(--oc-ad-alert-detail-cell-bg);
 }
 .oc-ad-alert-detail-label {
   margin-bottom: 6px;
@@ -105,7 +130,7 @@
   letter-spacing: 0.05em;
 }
 .oc-ad-alert-detail-value {
-  color: #ffffff;
+  color: var(--oc-ad-alert-fg);
   font-size: 14px;
   font-weight: 800;
   overflow-wrap: anywhere;
@@ -115,8 +140,8 @@
   overflow-x: auto;
   border: 1px solid var(--oc-ad-alert-border);
   border-radius: 12px;
-  background: #0f172a;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  background: var(--oc-ad-alert-card);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
   margin-bottom: 20px;
 }
 .oc-ad-alert-table {
@@ -124,7 +149,6 @@
   min-width: 800px;
   border-collapse: collapse;
   font-size: 13px;
-  background: #0f172a;
 }
 .oc-ad-alert-table th,
 .oc-ad-alert-table td {
@@ -132,14 +156,14 @@
   border-bottom: 1px solid var(--oc-ad-alert-border);
   vertical-align: middle;
   white-space: nowrap;
-  color: #e2e8f0;
+  color: var(--oc-ad-alert-fg);
 }
 .oc-ad-alert-table th {
-  background: #1e3a8a;
-  color: #ffffff;
+  background: var(--oc-ad-alert-table-head);
+  color: var(--oc-ad-alert-table-head-fg);
   font-weight: 800;
   text-align: left;
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -155,14 +179,18 @@
   margin-bottom: 18px;
   border: 1px solid var(--oc-ad-alert-border);
   border-radius: 12px;
-  background: #0a0f1c;
+  background: var(--oc-ad-alert-card);
   padding: 16px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+[data-theme='dark'] .oc-ad-alert-chart {
+  background: #0a0f1c;
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .oc-ad-alert-btn {
   border: 1px solid var(--oc-ad-alert-border);
   border-radius: 10px;
-  background: #0f172a;
+  background: var(--oc-ad-alert-card);
   color: var(--oc-ad-alert-fg);
   font: inherit;
   font-size: 13px;
@@ -178,16 +206,16 @@
   width: fit-content;
 }
 .oc-ad-alert-btn-primary {
-  border-color: #2563eb;
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border-color: var(--oc-ad-alert-blue);
+  background: linear-gradient(135deg, var(--oc-ad-alert-blue), #1d4ed8);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
 }
 .oc-ad-alert-btn-primary:hover {
-  background: linear-gradient(135deg, #3b82f6, #1e40af);
-  border-color: #3b82f6;
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  border-color: #2563eb;
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
 }
 .oc-ad-alert-state {
   padding: 48px 20px;
