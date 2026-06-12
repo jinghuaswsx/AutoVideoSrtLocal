@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
+
+import pytest
 
 
 def test_threshold_defaults_and_persists_json(monkeypatch):
@@ -28,6 +30,49 @@ def test_threshold_defaults_and_persists_json(monkeypatch):
 
     stored["value"] = "not-json"
     assert ad_alerts.get_threshold() == ad_alerts.DEFAULT_THRESHOLD
+
+
+def test_high_loss_share_token_binds_expiry_and_options():
+    from appcore import ad_alerts
+
+    now = datetime(2026, 6, 12, 4, 0, 0, tzinfo=timezone.utc)
+    payload = ad_alerts.build_high_loss_share_payload(
+        search="Glow",
+        limit=99,
+        expires_in_hours=24,
+        now=now,
+    )
+    token = ad_alerts.sign_share_token(payload, "test-secret")
+
+    verified = ad_alerts.verify_high_loss_share_token(
+        token,
+        payload["expires_at"],
+        "test-secret",
+        now=now + timedelta(hours=1),
+    )
+
+    assert payload["scope"] == ad_alerts.HIGH_LOSS_SHARE_SCOPE
+    assert payload["limit"] == 30
+    assert payload["expires_at"] == "2026-06-13T04:00:00Z"
+    assert verified["q"] == "Glow"
+    assert verified["limit"] == 30
+    assert verified["expires_at"] == payload["expires_at"]
+
+    with pytest.raises(ValueError):
+        ad_alerts.verify_high_loss_share_token(
+            token,
+            "2026-06-13T05:00:00Z",
+            "test-secret",
+            now=now,
+        )
+
+    with pytest.raises(ValueError):
+        ad_alerts.verify_high_loss_share_token(
+            token,
+            payload["expires_at"],
+            "test-secret",
+            now=now + timedelta(hours=25),
+        )
 
 
 def test_judge_alert_outputs_expected_conclusions():
@@ -723,4 +768,3 @@ def test_batch_fetch_problem_ad_details_images(monkeypatch):
     assert item1.product_main_image == "https://img.example.com/mp.jpg"
     assert item2.product_main_image == "/medias/obj/79/medias/796/cover.png"
     assert len(query_queries) > 0
-

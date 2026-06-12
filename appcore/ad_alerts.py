@@ -9,17 +9,20 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-high-loss-ads-tab-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-review-remediation.md
+- docs/superpowers/specs/2026-06-12-ad-alert-mobile-share-link.md
 """
 from __future__ import annotations
 
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any
 from urllib.parse import urlencode
+
+from itsdangerous import BadSignature, URLSafeSerializer
 
 from appcore import settings as system_settings
 from appcore.db import query, query_one
@@ -29,6 +32,10 @@ log = logging.getLogger(__name__)
 
 ALERT_THRESHOLD_SETTING_KEY = "ad_alert_roas_threshold"
 DEFAULT_THRESHOLD = 1.5
+HIGH_LOSS_SHARE_SCOPE = "ad_alert_high_loss"
+DEFAULT_HIGH_LOSS_SHARE_EXPIRES_HOURS = 24
+MAX_HIGH_LOSS_SHARE_EXPIRES_HOURS = 168
+_SHARE_TOKEN_SALT = "ad-alert-share-v1"
 
 
 class Severity(str, Enum):
@@ -346,6 +353,115 @@ def set_threshold(value: float) -> None:
     threshold = max(0.1, float(value))
     payload = json.dumps({"threshold": threshold}, ensure_ascii=False)
     system_settings.set_setting(ALERT_THRESHOLD_SETTING_KEY, payload)
+
+
+def normalize_high_loss_share_limit(value: Any) -> int:
+    """Normalize high-loss share limit to the same public Top 30 boundary."""
+    try:
+        limit = int(value or 30)
+    except (TypeError, ValueError):
+        limit = 30
+    return max(1, min(limit, 30))
+
+
+def normalize_high_loss_share_expires_hours(value: Any) -> int:
+    """Normalize high-loss share expiry to a bounded hour count."""
+    try:
+        hours = int(value or DEFAULT_HIGH_LOSS_SHARE_EXPIRES_HOURS)
+    except (TypeError, ValueError):
+        hours = DEFAULT_HIGH_LOSS_SHARE_EXPIRES_HOURS
+    return max(1, min(hours, MAX_HIGH_LOSS_SHARE_EXPIRES_HOURS))
+
+
+def build_high_loss_share_payload(
+    *,
+    search: str | None = None,
+    limit: Any = 30,
+    expires_in_hours: Any = DEFAULT_HIGH_LOSS_SHARE_EXPIRES_HOURS,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Build the signed payload for public high-loss ad share links.
+
+    Docs-anchor: docs/superpowers/specs/2026-06-12-ad-alert-mobile-share-link.md
+    """
+    current = _share_utc_now(now)
+    hours = normalize_high_loss_share_expires_hours(expires_in_hours)
+    expires_at = current + timedelta(hours=hours)
+    return {
+        "scope": HIGH_LOSS_SHARE_SCOPE,
+        "q": _safe_str(search).strip()[:200],
+        "limit": normalize_high_loss_share_limit(limit),
+        "issued_at": _format_share_datetime(current),
+        "expires_at": _format_share_datetime(expires_at),
+    }
+
+
+def sign_share_token(payload: dict[str, Any], secret_key: str) -> str:
+    """Sign a share payload into an opaque URL-safe token."""
+    if not secret_key:
+        raise ValueError("secret key required")
+    return URLSafeSerializer(secret_key, salt=_SHARE_TOKEN_SALT).dumps(payload)
+
+
+def verify_high_loss_share_token(
+    token: str | None,
+    expires: str | None,
+    secret_key: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Verify a public high-loss share token and return normalized options."""
+    if not token or not expires or not secret_key:
+        raise ValueError("invalid share token")
+    try:
+        payload = URLSafeSerializer(secret_key, salt=_SHARE_TOKEN_SALT).loads(token)
+    except BadSignature as exc:
+        raise ValueError("invalid share token") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("invalid share token")
+    if payload.get("scope") != HIGH_LOSS_SHARE_SCOPE:
+        raise ValueError("invalid share scope")
+
+    expires_at_raw = _safe_str(payload.get("expires_at"))
+    if not expires_at_raw or expires_at_raw != _safe_str(expires):
+        raise ValueError("invalid share expiry")
+
+    expires_at = _parse_share_datetime(expires_at_raw)
+    if expires_at <= _share_utc_now(now):
+        raise ValueError("share token expired")
+
+    return {
+        "scope": HIGH_LOSS_SHARE_SCOPE,
+        "q": _safe_str(payload.get("q")).strip()[:200],
+        "limit": normalize_high_loss_share_limit(payload.get("limit")),
+        "issued_at": _safe_str(payload.get("issued_at")),
+        "expires_at": expires_at_raw,
+    }
+
+
+def _share_utc_now(value: datetime | None = None) -> datetime:
+    current = value or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return current.astimezone(timezone.utc).replace(microsecond=0)
+
+
+def _format_share_datetime(value: datetime) -> str:
+    return _share_utc_now(value).isoformat().replace("+00:00", "Z")
+
+
+def _parse_share_datetime(raw: str) -> datetime:
+    value = _safe_str(raw).strip()
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("invalid share expiry") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).replace(microsecond=0)
 
 
 def _get_top_losing_ads(

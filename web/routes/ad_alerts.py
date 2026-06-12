@@ -6,16 +6,18 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-12-ad-alert-ad-level-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-high-loss-ads-tab-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-mobile-share-link.md
 """
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from flask import Blueprint, jsonify, render_template, request, abort
+from flask import Blueprint, abort, current_app, jsonify, render_template, request, url_for
 from flask_login import login_required
 
 from appcore import ad_alerts
+import config
 from web.auth import admin_required
 
 log = logging.getLogger(__name__)
@@ -187,6 +189,62 @@ def api_high_loss_ads():
     })
 
 
+@bp.route("/api/high-loss-ads/share", methods=["POST"])
+@login_required
+@admin_required
+def api_share_high_loss_ads():
+    """生成高额亏损广告公开分享链接。"""
+    body = request.get_json(silent=True) or {}
+    search = (body.get("q") or body.get("search") or "").strip() or None
+    payload = ad_alerts.build_high_loss_share_payload(
+        search=search,
+        limit=body.get("limit", 30),
+        expires_in_hours=body.get("expires_in_hours", 24),
+    )
+    token = ad_alerts.sign_share_token(payload, current_app.config.get("SECRET_KEY", ""))
+    share_path = url_for(
+        "ad_alerts.public_high_loss_share",
+        token=token,
+        expires=payload["expires_at"],
+    )
+    share_url = f"{_public_share_base_url()}{share_path}"
+    return jsonify({
+        "share_url": share_url,
+        "token": token,
+        "expires_at": payload["expires_at"],
+        "expires_in_hours": ad_alerts.normalize_high_loss_share_expires_hours(
+            body.get("expires_in_hours", 24)
+        ),
+        "q": payload["q"],
+        "limit": payload["limit"],
+    })
+
+
+@bp.route("/share/high-loss")
+def public_high_loss_share():
+    """公开只读高额亏损广告分享页。"""
+    try:
+        share = ad_alerts.verify_high_loss_share_token(
+            request.args.get("token"),
+            request.args.get("expires"),
+            current_app.config.get("SECRET_KEY", ""),
+        )
+    except ValueError:
+        abort(403)
+
+    business_date, items = ad_alerts.get_high_loss_ads(
+        search=share.get("q") or None,
+        limit=share.get("limit") or 30,
+    )
+    return render_template(
+        "ad_alerts_high_loss_share.html",
+        share=share,
+        business_date=business_date.isoformat(),
+        items=[_high_loss_ad_item_to_dict(item) for item in items],
+        total=len(items),
+    )
+
+
 @bp.route("/api/ad-list")
 @login_required
 @admin_required
@@ -208,6 +266,13 @@ def api_ad_list():
         "ads": [_ad_list_item_to_dict(ad) for ad in ads],
         "total": len(ads),
     })
+
+
+def _public_share_base_url() -> str:
+    base = (getattr(config, "AD_ALERT_PUBLIC_SHARE_BASE_URL", "") or "").strip().rstrip("/")
+    if base:
+        return base
+    return request.url_root.rstrip("/")
 
 
 @bp.route("/api/evaluate", methods=["POST"])

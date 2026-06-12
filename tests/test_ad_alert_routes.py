@@ -366,6 +366,103 @@ def test_api_high_loss_ads_serializes_card_rows(monkeypatch):
     assert response.get_json()["error"] == "invalid limit"
 
 
+def test_api_share_high_loss_ads_returns_public_signed_url(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+
+    monkeypatch.setattr(route.config, "AD_ALERT_PUBLIC_SHARE_BASE_URL", "http://public.example.test")
+
+    flask_app = Flask(__name__)
+    flask_app.config["SECRET_KEY"] = "test-secret"
+    flask_app.register_blueprint(route.bp)
+    with flask_app.test_request_context(
+        "/ad-alerts/api/high-loss-ads/share",
+        method="POST",
+        json={"q": "Glow", "limit": 99, "expires_in_hours": 24},
+    ):
+        response = _unwrap(route.api_share_high_loss_ads)()
+
+    payload = response.get_json()
+    assert payload["share_url"].startswith("http://public.example.test/ad-alerts/share/high-loss?token=")
+    assert "&expires=" in payload["share_url"]
+    assert payload["q"] == "Glow"
+    assert payload["limit"] == 30
+    assert payload["expires_in_hours"] == 24
+    verified = route.ad_alerts.verify_high_loss_share_token(
+        payload["token"],
+        payload["expires_at"],
+        "test-secret",
+    )
+    assert verified["q"] == "Glow"
+    assert verified["limit"] == 30
+
+
+def test_public_high_loss_share_validates_token_and_renders(monkeypatch):
+    from datetime import date, datetime, timezone
+    from flask import Flask
+    from pathlib import Path
+    from urllib.parse import quote
+    from web.routes import ad_alerts as route
+
+    item = ad_alerts.HighLossAdItem(
+        code="glow-ad-1",
+        name="Glow Ad 1",
+        ad_account_id="1234",
+        ad_account_name="newjoyloo",
+        country="DE",
+        product_id=10,
+        product_code="glow-rjc",
+        product_name="Glow Product",
+        product_main_image="/medias/obj/covers/glow.jpg",
+        first_active_date="2026-05-01",
+        last_active_date="2026-06-12",
+        active_days=12,
+        consecutive_loss_days=4,
+        detail_url="/order-analytics?tab=ads&ads_level=ad&ads_code=glow-ad-1",
+        metrics={
+            "today": ad_alerts.HighLossMetric(12.0, 0.0, 0, 0.0, -12.0),
+            "last_7d": ad_alerts.HighLossMetric(120.0, 40.0, 1, 0.3333, -80.0),
+            "last_30d": ad_alerts.HighLossMetric(300.0, 100.0, 3, 0.3333, -200.0),
+            "overall": ad_alerts.HighLossMetric(500.0, 180.0, 6, 0.36, -320.0),
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_high_loss_ads(**kwargs):
+        captured.update(kwargs)
+        return date(2026, 6, 12), [item]
+
+    monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", fake_get_high_loss_ads)
+    payload = ad_alerts.build_high_loss_share_payload(
+        search="Glow",
+        limit=30,
+        expires_in_hours=24,
+        now=datetime(2026, 6, 12, 4, 0, 0, tzinfo=timezone.utc),
+    )
+    token = ad_alerts.sign_share_token(payload, "test-secret")
+
+    flask_app = Flask(__name__, template_folder=str(Path("web/templates").resolve()))
+    flask_app.config["SECRET_KEY"] = "test-secret"
+    flask_app.register_blueprint(route.bp)
+    client = flask_app.test_client()
+    response = client.get(
+        "/ad-alerts/share/high-loss?token="
+        + quote(token)
+        + "&expires="
+        + quote(payload["expires_at"])
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "高额亏损广告分享" in html
+    assert "Glow Product" in html
+    assert "2026-06-13T04:00:00Z" in html
+    assert captured == {"search": "Glow", "limit": 30}
+
+    invalid = client.get("/ad-alerts/share/high-loss?token=bad&expires=2026-06-13T04:00:00Z")
+    assert invalid.status_code == 403
+
+
 def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypatch):
     from datetime import date
     from web.routes import ad_alerts as route
