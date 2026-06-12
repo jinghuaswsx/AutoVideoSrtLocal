@@ -50,6 +50,38 @@
   gap: 10px;
   flex-wrap: wrap;
 }
+.oc-ad-alert-tabs,
+.oc-ad-alert-level-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-subtle);
+}
+.oc-ad-alert-tab,
+.oc-ad-alert-level-tab {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--oc-ad-alert-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.oc-ad-alert-tab.oc-ad-alert-active,
+.oc-ad-alert-level-tab.oc-ad-alert-active {
+  background: var(--oc-ad-alert-blue);
+  color: #fff;
+}
+.oc-ad-alert-panel[hidden] {
+  display: none;
+}
 .oc-ad-alert-threshold {
   display: inline-flex;
   align-items: center;
@@ -129,6 +161,83 @@
 .oc-ad-alert-list {
   display: grid;
   gap: 10px;
+}
+.oc-ad-alert-problem-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-problem-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-business-date {
+  color: var(--oc-ad-alert-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.oc-ad-alert-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-card);
+}
+.oc-ad-alert-table {
+  width: 100%;
+  min-width: 1260px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.oc-ad-alert-table th,
+.oc-ad-alert-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.oc-ad-alert-table th {
+  background: var(--oc-ad-alert-subtle);
+  color: var(--oc-ad-alert-muted);
+  font-weight: 800;
+  text-align: left;
+}
+.oc-ad-alert-table th.oc-ad-alert-num,
+.oc-ad-alert-table td.oc-ad-alert-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.oc-ad-alert-problem-row {
+  cursor: pointer;
+}
+.oc-ad-alert-problem-row:hover {
+  background: #f8fbff;
+}
+.oc-ad-alert-ad-name {
+  display: block;
+  max-width: 280px;
+  color: var(--oc-ad-alert-fg);
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oc-ad-alert-ad-code,
+.oc-ad-alert-account {
+  display: block;
+  max-width: 280px;
+  color: var(--oc-ad-alert-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oc-ad-alert-problem-note {
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .oc-ad-alert-card {
   display: grid;
@@ -352,10 +461,14 @@
     grid-template-columns: 1fr;
   }
   .oc-ad-alert-filter-set,
-  .oc-ad-alert-search {
+  .oc-ad-alert-search,
+  .oc-ad-alert-tabs,
+  .oc-ad-alert-level-tabs {
     width: 100%;
   }
-  .oc-ad-alert-filter {
+  .oc-ad-alert-filter,
+  .oc-ad-alert-tab,
+  .oc-ad-alert-level-tab {
     flex: 1;
   }
 }
@@ -378,19 +491,77 @@
     </div>
   </div>
 
-  <div class="oc-ad-alert-filters">
-    <div class="oc-ad-alert-filter-set" id="adAlertSeveritySet">
-      <button class="oc-ad-alert-filter oc-ad-alert-active" type="button" data-value="">全部</button>
-      <button class="oc-ad-alert-filter" type="button" data-value="severe">严重</button>
-      <button class="oc-ad-alert-filter" type="button" data-value="moderate">中度</button>
-      <button class="oc-ad-alert-filter" type="button" data-value="mild">轻度</button>
-    </div>
-    <input class="oc-ad-alert-search" id="adAlertSearch" type="search" placeholder="搜索商品名称或编码">
+  <div class="oc-ad-alert-tabs" id="adAlertTabs" role="tablist" aria-label="广告预警子 Tab">
+    <button class="oc-ad-alert-tab oc-ad-alert-active" type="button" data-ad-alert-tab="alerts" aria-pressed="true">广告预警</button>
+    <button class="oc-ad-alert-tab" type="button" data-ad-alert-tab="problem" aria-pressed="false">问题广告</button>
   </div>
 
-  <div class="oc-ad-alert-list" id="adAlertList">
-    <div class="oc-ad-alert-state">加载中</div>
-  </div>
+  <section class="oc-ad-alert-panel" data-ad-alert-panel="alerts">
+    <div class="oc-ad-alert-filters">
+      <div class="oc-ad-alert-filter-set" id="adAlertSeveritySet">
+        <button class="oc-ad-alert-filter oc-ad-alert-active" type="button" data-value="">全部</button>
+        <button class="oc-ad-alert-filter" type="button" data-value="severe">严重</button>
+        <button class="oc-ad-alert-filter" type="button" data-value="moderate">中度</button>
+        <button class="oc-ad-alert-filter" type="button" data-value="mild">轻度</button>
+      </div>
+      <input class="oc-ad-alert-search" id="adAlertSearch" type="search" placeholder="搜索商品名称或编码">
+    </div>
+
+    <div class="oc-ad-alert-list" id="adAlertList">
+      <div class="oc-ad-alert-state">加载中</div>
+    </div>
+  </section>
+
+  <section class="oc-ad-alert-panel" data-ad-alert-panel="problem" hidden>
+    <div class="oc-ad-alert-problem-toolbar">
+      <div class="oc-ad-alert-level-tabs" id="adAlertProblemLevels" role="tablist" aria-label="问题广告维度">
+        <button class="oc-ad-alert-level-tab oc-ad-alert-active" type="button" data-level="campaign" aria-pressed="true">Campaign</button>
+        <button class="oc-ad-alert-level-tab" type="button" data-level="adset" aria-pressed="false">Ad Set</button>
+        <button class="oc-ad-alert-level-tab" type="button" data-level="ad" aria-pressed="false">Ad</button>
+      </div>
+      <div class="oc-ad-alert-problem-actions">
+        <input class="oc-ad-alert-search" id="adAlertProblemSearch" type="search" placeholder="搜索广告名称或 code">
+        <button class="oc-ad-alert-btn" type="button" id="adAlertProblemRefresh">查询</button>
+      </div>
+    </div>
+    <div class="oc-ad-alert-business-date" id="adAlertProblemDate">今天：加载中</div>
+    <div class="oc-ad-alert-problem-note">问题广告定义：今天有消耗且今天成效为 0。点击行会跳转到广告分析详情页，默认展示该广告自上线以来的数据。</div>
+    <div class="oc-ad-alert-table-wrap">
+      <table class="oc-ad-alert-table" aria-label="问题广告列表">
+        <thead>
+          <tr>
+            <th rowspan="2">广告</th>
+            <th rowspan="2">账户</th>
+            <th colspan="3">今天</th>
+            <th colspan="3">昨天</th>
+            <th colspan="3">最近 7 天</th>
+            <th colspan="3">最近 30 天</th>
+            <th colspan="3">整体</th>
+          </tr>
+          <tr>
+            <th class="oc-ad-alert-num">消耗</th>
+            <th class="oc-ad-alert-num">成效</th>
+            <th class="oc-ad-alert-num">ROAS</th>
+            <th class="oc-ad-alert-num">消耗</th>
+            <th class="oc-ad-alert-num">成效</th>
+            <th class="oc-ad-alert-num">ROAS</th>
+            <th class="oc-ad-alert-num">消耗</th>
+            <th class="oc-ad-alert-num">成效</th>
+            <th class="oc-ad-alert-num">ROAS</th>
+            <th class="oc-ad-alert-num">消耗</th>
+            <th class="oc-ad-alert-num">成效</th>
+            <th class="oc-ad-alert-num">ROAS</th>
+            <th class="oc-ad-alert-num">消耗</th>
+            <th class="oc-ad-alert-num">成效</th>
+            <th class="oc-ad-alert-num">ROAS</th>
+          </tr>
+        </thead>
+        <tbody id="adAlertProblemBody">
+          <tr><td colspan="17" class="oc-ad-alert-state">点击「问题广告」后加载</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
 
 <div class="oc-ad-alert-modal-mask" id="adAlertDetailMask" hidden>
@@ -428,12 +599,18 @@
   var state = {
     threshold: Number({{ threshold|tojson }}),
     severity: '',
-    search: ''
+    search: '',
+    activeTab: 'alerts',
+    problemLoaded: false,
+    problemLevel: 'campaign',
+    problemSearch: ''
   };
   var timer = null;
   var listEl = document.getElementById('adAlertList');
   var countEl = document.getElementById('adAlertCount');
   var thresholdText = document.getElementById('adAlertThresholdText');
+  var problemBody = document.getElementById('adAlertProblemBody');
+  var problemDate = document.getElementById('adAlertProblemDate');
 
   function csrfToken() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -452,6 +629,12 @@
 
   function roas(value) {
     return value === null || value === undefined ? 'N/A' : Number(value).toFixed(2);
+  }
+
+  function intText(value) {
+    var n = Number(value || 0);
+    if (!isFinite(n)) return '0';
+    return n.toLocaleString('en-US');
   }
 
   function loss(value) {
@@ -513,6 +696,82 @@
         + '  <span class="oc-ad-alert-judgment"><span>⚠</span><span><strong>' + html(item.conclusion || '') + '</strong>' + html(item.reason || '') + '</span></span>'
         + '</button>';
     }).join('');
+  }
+
+  function loadProblemAds() {
+    if (!problemBody) return;
+    problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">加载中</td></tr>';
+    var params = new URLSearchParams();
+    params.set('level', state.problemLevel);
+    params.set('limit', '200');
+    if (state.problemSearch) params.set('q', state.problemSearch);
+    fetch('/ad-alerts/api/problem-ads?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('problem_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        state.problemLoaded = true;
+        renderProblemAds(data.items || []);
+        if (problemDate) {
+          problemDate.textContent = '今天：' + (data.business_date || '—') + ' · ' + String(data.total || 0) + ' 条';
+        }
+      })
+      .catch(function() {
+        if (problemDate) problemDate.textContent = '今天：加载失败';
+        problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">加载失败</td></tr>';
+      });
+  }
+
+  function renderProblemAds(items) {
+    if (!items.length) {
+      problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">当前维度暂无问题广告</td></tr>';
+      return;
+    }
+    problemBody.innerHTML = items.map(function(item) {
+      var m = item.metrics || {};
+      return ''
+        + '<tr class="oc-ad-alert-problem-row" data-detail-url="' + html(item.detail_url || '') + '">'
+        + '<td>'
+        + '  <span class="oc-ad-alert-ad-name">' + html(item.name || item.code || '') + '</span>'
+        + '  <span class="oc-ad-alert-ad-code">' + html(item.code || '') + '</span>'
+        + '</td>'
+        + '<td>'
+        + '  <span class="oc-ad-alert-account">' + html(item.ad_account_name || item.ad_account_id || '—') + '</span>'
+        + '  <span class="oc-ad-alert-ad-code">' + html((item.first_active_date || '—') + ' 起')</span>'
+        + '</td>'
+        + problemMetricCells(m.today)
+        + problemMetricCells(m.yesterday)
+        + problemMetricCells(m.last_7d)
+        + problemMetricCells(m.last_30d)
+        + problemMetricCells(m.overall)
+        + '</tr>';
+    }).join('');
+  }
+
+  function problemMetricCells(metric) {
+    metric = metric || {};
+    return ''
+      + '<td class="oc-ad-alert-num">' + money(metric.spend_usd, 2) + '</td>'
+      + '<td class="oc-ad-alert-num">' + intText(metric.result_count) + '</td>'
+      + '<td class="oc-ad-alert-num">' + roas(metric.roas) + '</td>';
+  }
+
+  function setPrimaryTab(tab) {
+    state.activeTab = tab;
+    document.querySelectorAll('[data-ad-alert-tab]').forEach(function(btn) {
+      var on = btn.getAttribute('data-ad-alert-tab') === tab;
+      btn.classList.toggle('oc-ad-alert-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-ad-alert-panel]').forEach(function(panel) {
+      if (panel.getAttribute('data-ad-alert-panel') === tab) {
+        panel.removeAttribute('hidden');
+      } else {
+        panel.setAttribute('hidden', '');
+      }
+    });
+    if (tab === 'problem' && !state.problemLoaded) loadProblemAds();
   }
 
   function openDetail(productId, lang) {
@@ -612,6 +871,44 @@
     var card = event.target.closest('.oc-ad-alert-card');
     if (!card) return;
     openDetail(card.getAttribute('data-product-id'), card.getAttribute('data-lang'));
+  });
+
+  document.getElementById('adAlertTabs').addEventListener('click', function(event) {
+    var btn = event.target.closest('[data-ad-alert-tab]');
+    if (!btn) return;
+    setPrimaryTab(btn.getAttribute('data-ad-alert-tab'));
+  });
+
+  document.getElementById('adAlertProblemLevels').addEventListener('click', function(event) {
+    var btn = event.target.closest('[data-level]');
+    if (!btn) return;
+    state.problemLevel = btn.getAttribute('data-level') || 'campaign';
+    state.problemLoaded = false;
+    Array.prototype.forEach.call(this.querySelectorAll('[data-level]'), function(item) {
+      var on = item.getAttribute('data-level') === state.problemLevel;
+      item.classList.toggle('oc-ad-alert-active', on);
+      item.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    loadProblemAds();
+  });
+
+  document.getElementById('adAlertProblemRefresh').addEventListener('click', function() {
+    state.problemSearch = (document.getElementById('adAlertProblemSearch').value || '').trim();
+    loadProblemAds();
+  });
+
+  document.getElementById('adAlertProblemSearch').addEventListener('keydown', function(event) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    state.problemSearch = this.value.trim();
+    loadProblemAds();
+  });
+
+  problemBody.addEventListener('click', function(event) {
+    var row = event.target.closest('[data-detail-url]');
+    if (!row) return;
+    var url = row.getAttribute('data-detail-url');
+    if (url) window.location.href = url;
   });
 
   document.getElementById('adAlertSeveritySet').addEventListener('click', function(event) {

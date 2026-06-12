@@ -181,3 +181,71 @@ def test_detail_uses_language_matched_trend_series(monkeypatch):
     assert [point.date for point in detail.trend] == ["2026-06-03", "2026-06-04"]
     assert detail.trend[0].roas == 1.5
     assert detail.estimated_loss == -60.0
+
+
+def test_get_problem_ads_uses_realtime_today_and_aggregates_windows(monkeypatch):
+    from appcore import ad_alerts
+
+    captured: dict[str, object] = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [
+            {
+                "code": "glow-ad-1",
+                "name": "Glow Ad 1",
+                "ad_account_id": "1234",
+                "ad_account_name": "newjoyloo",
+                "first_active_date": date(2026, 5, 1),
+                "last_active_date": date(2026, 6, 12),
+                "today_spend_usd": "12.00",
+                "today_purchase_value_usd": "0.00",
+                "today_result_count": "0",
+                "yesterday_spend_usd": "8.00",
+                "yesterday_purchase_value_usd": "16.00",
+                "yesterday_result_count": "1",
+                "last_7d_spend_usd": "70.00",
+                "last_7d_purchase_value_usd": "35.00",
+                "last_7d_result_count": "2",
+                "last_30d_spend_usd": "300.00",
+                "last_30d_purchase_value_usd": "450.00",
+                "last_30d_result_count": "8",
+                "overall_spend_usd": "500.00",
+                "overall_purchase_value_usd": "1000.00",
+                "overall_result_count": "20",
+            },
+        ]
+
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+    monkeypatch.setattr(ad_alerts, "current_meta_business_date", lambda: date(2026, 6, 12))
+
+    business_date, items = ad_alerts.get_problem_ads("ad", search="Glow", limit=20)
+
+    assert business_date.isoformat() == "2026-06-12"
+    assert len(items) == 1
+    assert items[0].metrics["today"].spend_usd == 12.0
+    assert items[0].metrics["today"].result_count == 0
+    assert items[0].metrics["today"].roas == 0.0
+    assert items[0].metrics["last_7d"].roas == 0.5
+    assert items[0].metrics["overall"].roas == 2.0
+    assert "start_date=2026-05-01" in items[0].detail_url
+    assert "end_date=2026-06-12" in items[0].detail_url
+    assert "ads_level=ad" in items[0].detail_url
+
+    sql = str(captured["sql"])
+    assert "meta_ad_realtime_daily_ad_metrics" in sql
+    assert "meta_ad_daily_ad_metrics" in sql
+    assert "GROUP BY business_date, ad_account_id" in sql
+    assert "problem_today.ad_account_id <=> s.ad_account_id" in sql
+    assert "HAVING SUM(COALESCE(t.spend_usd, 0)) > 0" in sql
+    assert "AND SUM(COALESCE(t.result_count, 0)) = 0" in sql
+    assert "LOWER(s.name) LIKE LOWER(%(search)s)" in sql
+    assert captured["params"] == {
+        "today": date(2026, 6, 12),
+        "yesterday": date(2026, 6, 11),
+        "last_7d_start": date(2026, 6, 6),
+        "last_30d_start": date(2026, 5, 14),
+        "limit": 20,
+        "search": "%Glow%",
+    }

@@ -767,13 +767,15 @@ def test_ads_level_rows_drill_down_through_hierarchy():
 
 
 def test_ads_deep_link_defaults_detail_range_to_recent_month():
-    """素材广告计划深链进入 Campaign 详情时，日期默认最近一个月。"""
+    """素材广告计划深链默认最近一个月；URL 日期可覆盖。"""
     template = _template_source()
 
     assert "function adsRecentMonthStartIso()" in template
     assert "function adsApplyDeepLinkDateRange(level)" in template
-    assert "startDetailEl.value = adsRecentMonthStartIso();" in template
-    assert "endDetailEl.value = adsDefaultEndIso(level);" in template
+    assert "var startParam = (params.get('start_date') || '').trim();" in template
+    assert "var endParam = (params.get('end_date') || '').trim();" in template
+    assert "startDetailEl.value = startParam || adsRecentMonthStartIso();" in template
+    assert "endDetailEl.value = endParam || adsDefaultEndIso(level);" in template
     assert "new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate()" in template
 
     deep_link = template[
