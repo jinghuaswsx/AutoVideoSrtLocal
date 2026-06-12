@@ -5,6 +5,7 @@
 Docs anchors:
 - docs/superpowers/specs/2026-06-11-ad-alert-module-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-ad-level-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
 """
 from __future__ import annotations
 
@@ -92,6 +93,7 @@ class AlertItem:
     reason: str
     estimated_loss: float
     active_days: int = 0
+    top_losing_ads: list[AdListItem] = field(default_factory=list)
 
 
 @dataclass
@@ -237,6 +239,22 @@ def set_threshold(value: float) -> None:
     system_settings.set_setting(ALERT_THRESHOLD_SETTING_KEY, payload)
 
 
+def _get_top_losing_ads(
+    product_id: int,
+    lang: str,
+    threshold: float,
+    limit: int = 3,
+) -> list[AdListItem]:
+    """获取某商品语言下亏损最严重的 AD，按 ROAS 升序返回。"""
+    all_ads = get_ad_list(product_id, lang)
+    losing_ads = [
+        ad for ad in all_ads
+        if ad.ad_roas is not None and ad.ad_roas < threshold
+    ]
+    losing_ads.sort(key=lambda ad: ad.ad_roas if ad.ad_roas is not None else 999)
+    return losing_ads[:max(0, int(limit))]
+
+
 def get_alerts(
     threshold: float | None = None,
     lang: str | None = None,
@@ -294,6 +312,12 @@ def get_alerts(
         )
         if severity and judgment.severity != severity:
             continue
+        top_losing_ads = _get_top_losing_ads(
+            product_id,
+            item_lang,
+            threshold_value,
+            limit=3,
+        )
         items.append(
             AlertItem(
                 product_id=product_id,
@@ -315,6 +339,7 @@ def get_alerts(
                 reason=judgment.reason,
                 estimated_loss=_estimated_loss(purchase, spend),
                 active_days=active_window.active_days,
+                top_losing_ads=top_losing_ads,
             )
         )
     return items

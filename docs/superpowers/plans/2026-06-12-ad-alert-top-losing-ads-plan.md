@@ -11,7 +11,7 @@
 **Files:**
 - Modify: `appcore/ad_alerts.py`
 
-- [ ] **Step 1: AlertItem 新增 top_losing_ads 字段**
+- [x] **Step 1: AlertItem 新增 top_losing_ads 字段**
 
 找到 `AlertItem` dataclass（约第 79 行），在 `active_days: int = 0` 之后添加：
 
@@ -19,7 +19,7 @@
     top_losing_ads: list[AdListItem] = field(default_factory=list)
 ```
 
-- [ ] **Step 2: 新增 _get_top_losing_ads 辅助函数**
+- [x] **Step 2: 新增 _get_top_losing_ads 辅助函数**
 
 在 `get_alerts()` 函数之前（或任意位置，但放在一起方便阅读），添加：
 
@@ -40,7 +40,7 @@ def _get_top_losing_ads(
     return losing[:limit]
 ```
 
-- [ ] **Step 3: 在 get_alerts() 中填充 top_losing_ads**
+- [x] **Step 3: 在 get_alerts() 中填充 top_losing_ads**
 
 找到 `get_alerts()` 中构建 `AlertItem` 的地方（约第 249-271 行），在创建 `AlertItem` 时添加 `top_losing_ads` 参数：
 
