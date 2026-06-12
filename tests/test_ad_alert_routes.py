@@ -347,7 +347,7 @@ def test_api_high_loss_ads_serializes_card_rows(monkeypatch):
         response = _unwrap(route.api_high_loss_ads)()
 
     payload = response.get_json()
-    assert captured == {"search": "Glow", "limit": 30}
+    assert captured == {"search": "Glow", "limit": 30, "include_handled": False}
     assert payload["business_date"] == "2026-06-12"
     assert payload["total"] == 1
     assert payload["items"][0]["product_code"] == "glow-rjc"
@@ -457,7 +457,7 @@ def test_public_high_loss_share_validates_token_and_renders(monkeypatch):
     assert "高额亏损广告分享" in html
     assert "Glow Product" in html
     assert "2026-06-13T04:00:00Z" in html
-    assert captured == {"search": "Glow", "limit": 30}
+    assert captured == {"search": "Glow", "limit": 30, "include_handled": False}
 
     invalid = client.get("/ad-alerts/share/high-loss?token=bad&expires=2026-06-13T04:00:00Z")
     assert invalid.status_code == 403
@@ -583,3 +583,102 @@ def test_ad_alert_detail_pages_render_with_mocked_data(authed_client_no_db, monk
     assert ad_response.status_code == 200
     assert "adDetailMetricGrid" in ad_html
     assert "/ad-alerts/product/10/country/de" in ad_html
+
+
+def test_api_set_alert_action_validates_and_persists(monkeypatch):
+    from web.routes import ad_alerts as route
+    from appcore import ad_alert_actions
+    from flask import Flask
+
+    captured: dict[str, object] = {}
+
+    def fake_set_action(scope, target_key, action, *, note=None, operator_user_id=None):
+        if scope not in ("high_loss", "language"):
+            raise ValueError("bad scope")
+        captured.update(
+            scope=scope, target_key=target_key, action=action,
+            note=note, operator_user_id=operator_user_id,
+        )
+        return {"scope": scope, "target_key": target_key, "action": action, "note": note}
+
+    monkeypatch.setattr(ad_alert_actions, "set_action", fake_set_action)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context(
+        "/ad-alerts/api/actions",
+        method="POST",
+        json={
+            "scope": "high_loss",
+            "target_key": "123:120210",
+            "action": "resolved",
+            "note": "已关停",
+        },
+    ):
+        response = _unwrap(route.api_set_alert_action)()
+
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["action"]["action"] == "resolved"
+    assert captured["scope"] == "high_loss"
+    assert captured["target_key"] == "123:120210"
+    assert captured["note"] == "已关停"
+
+    with flask_app.test_request_context(
+        "/ad-alerts/api/actions",
+        method="POST",
+        json={"scope": "bad", "target_key": "x", "action": "resolved"},
+    ):
+        response, status = _unwrap(route.api_set_alert_action)()
+    assert status == 400
+
+
+def test_api_clear_alert_action(monkeypatch):
+    from web.routes import ad_alerts as route
+    from appcore import ad_alert_actions
+    from flask import Flask
+
+    cleared: list[tuple] = []
+    monkeypatch.setattr(
+        ad_alert_actions, "clear_action",
+        lambda scope, target_key: cleared.append((scope, target_key)) or True,
+    )
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context(
+        "/ad-alerts/api/actions",
+        method="POST",
+        json={"scope": "language", "target_key": "45:de", "action": "clear"},
+    ):
+        response = _unwrap(route.api_set_alert_action)()
+
+    assert response.get_json()["ok"] is True
+    assert cleared == [("language", "45:de")]
+
+
+def test_list_apis_pass_include_handled(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+    from datetime import date
+
+    captured: dict[str, object] = {}
+
+    def fake_get_alerts(**kwargs):
+        captured["alerts_kwargs"] = kwargs
+        return []
+
+    def fake_get_high_loss_ads(**kwargs):
+        captured["high_loss_kwargs"] = kwargs
+        return date(2026, 6, 12), []
+
+    monkeypatch.setattr(route.ad_alerts, "get_alerts", fake_get_alerts)
+    monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", fake_get_high_loss_ads)
+    monkeypatch.setattr(route.ad_alerts, "get_threshold", lambda: 1.5)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context("/ad-alerts/api/list?include_handled=1"):
+        _unwrap(route.api_list)()
+    assert captured["alerts_kwargs"]["include_handled"] is True
+
+    with flask_app.test_request_context("/ad-alerts/api/high-loss-ads?include_handled=1"):
+        _unwrap(route.api_high_loss_ads)()
+    assert captured["high_loss_kwargs"]["include_handled"] is True
