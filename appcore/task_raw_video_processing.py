@@ -365,13 +365,19 @@ def attach_niuma_result_to_parent_task(
 
     from appcore import tasks as tasks_svc
 
+    subtitle_task_id = str(subtitle_task_id or "").strip()
+    transition_actor_user_id = int(payload.get("assignee_id") or actor_user_id)
+
     # 防止重复写入 raw_niuma_done 事件（外部进程可能反复轮询同一个已完成的任务）
-    if _event_exists(parent_task_id, "raw_niuma_done", subtitle_task_id):
+    if subtitle_task_id and _event_exists(parent_task_id, "raw_niuma_done", subtitle_task_id):
         # 如果任务状态卡在 raw_in_progress（上次 mark_uploaded 可能因权限不匹配失败），
         # 重试标记为已上传，让任务不再被 reconciliation 反复捞起
         if payload.get("status") == PARENT_RAW_IN_PROGRESS:
             try:
-                tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
+                tasks_svc.mark_uploaded(
+                    task_id=parent_task_id,
+                    actor_user_id=transition_actor_user_id,
+                )
             except tasks_svc.StateError:
                 pass
         return
@@ -395,19 +401,28 @@ def attach_niuma_result_to_parent_task(
     with result_path.open("rb") as stream:
         local_media_storage.write_stream(result_object_key, stream)
 
-    _write_event(
-        parent_task_id,
+    done_event_exists = bool(subtitle_task_id) and _event_exists(
+        int(parent_task_id),
         "raw_niuma_done",
-        actor_user_id,
-        {
-            "subtitle_task_id": subtitle_task_id,
-            "new_size": new_size,
-            "result_object_key": result_object_key,
-        },
+        subtitle_task_id,
     )
+    if not done_event_exists:
+        _write_event(
+            parent_task_id,
+            "raw_niuma_done",
+            actor_user_id,
+            {
+                "subtitle_task_id": subtitle_task_id,
+                "new_size": new_size,
+                "result_object_key": result_object_key,
+            },
+        )
 
     if payload.get("status") == PARENT_RAW_IN_PROGRESS:
-        tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
+        tasks_svc.mark_uploaded(
+            task_id=parent_task_id,
+            actor_user_id=transition_actor_user_id,
+        )
         
         # Probe duration from result video path
         duration = None
@@ -421,7 +436,7 @@ def attach_niuma_result_to_parent_task(
         if size_check["over_limit"]:
             tasks_svc.reject_raw(
                 task_id=parent_task_id,
-                actor_user_id=actor_user_id,
+                actor_user_id=transition_actor_user_id,
                 reason=video_size_limits.build_push_video_oversize_reason(new_size, duration),
             )
 

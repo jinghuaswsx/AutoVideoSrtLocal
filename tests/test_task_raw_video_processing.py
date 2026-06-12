@@ -370,7 +370,7 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
     )
     monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
     monkeypatch.setattr(processing, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
-    monkeypatch.setattr(processing, "_event_exists", lambda *a, **kw: False)
+    monkeypatch.setattr(processing, "_event_exists", lambda *args, **kwargs: False)
     monkeypatch.setattr(processing, "_write_event", lambda task_id, event_type, actor_user_id, payload=None: events.append((task_id, event_type, actor_user_id, payload)))
     monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
     monkeypatch.setattr(
@@ -389,6 +389,135 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
     assert written["9/medias/7/raw_sources/demo.mp4"] == b"cleaned"
     assert events[0][1] == "raw_niuma_done"
     assert marked == [{"task_id": 5, "actor_user_id": 9}]
+
+
+def test_attach_niuma_result_marks_uploaded_with_current_parent_assignee_after_reassignment(
+    monkeypatch,
+    tmp_path,
+):
+    from appcore import task_raw_video_processing as processing
+    from appcore import tasks
+
+    result_path = tmp_path / "result.mp4"
+    result_path.write_bytes(b"cleaned")
+    destination = tmp_path / "media.mp4"
+    destination.write_bytes(b"old")
+    events = []
+    marked = []
+
+    monkeypatch.setattr(
+        processing,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_product_id": 7,
+            "item_user_id": 238,
+            "media_item_id": 11,
+            "assignee_id": 77,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+            "status": "raw_in_progress",
+        },
+    )
+    monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
+    monkeypatch.setattr(processing, "_event_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(
+        processing,
+        "_write_event",
+        lambda task_id, event_type, actor_user_id, payload=None: events.append(
+            (task_id, event_type, actor_user_id, payload)
+        ),
+    )
+    monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
+    monkeypatch.setattr(
+        processing.local_media_storage,
+        "write_stream",
+        lambda key, stream: stream.read(),
+    )
+
+    processing.attach_niuma_result_to_parent_task(
+        parent_task_id=5,
+        subtitle_task_id="tcraw-5",
+        actor_user_id=238,
+        result_video_path=str(result_path),
+    )
+
+    assert events == [
+        (
+            5,
+            "raw_niuma_done",
+            238,
+            {
+                "subtitle_task_id": "tcraw-5",
+                "new_size": 7,
+                "result_object_key": "238/medias/7/raw_sources/demo.mp4",
+            },
+        )
+    ]
+    assert marked == [{"task_id": 5, "actor_user_id": 77}]
+
+
+def test_attach_niuma_result_does_not_duplicate_done_event_on_retry(
+    monkeypatch,
+    tmp_path,
+):
+    from appcore import task_raw_video_processing as processing
+    from appcore import tasks
+
+    result_path = tmp_path / "result.mp4"
+    result_path.write_bytes(b"cleaned")
+    destination = tmp_path / "media.mp4"
+    destination.write_bytes(b"old")
+    events = []
+    marked = []
+
+    monkeypatch.setattr(
+        processing,
+        "_load_parent_task_payload",
+        lambda task_id: {
+            "task_id": task_id,
+            "media_product_id": 7,
+            "item_user_id": 238,
+            "media_item_id": 11,
+            "assignee_id": 77,
+            "filename": "demo.mp4",
+            "object_key": "mk-import/7/demo.mp4",
+            "status": "raw_in_progress",
+        },
+    )
+    monkeypatch.setattr(
+        processing,
+        "_event_exists",
+        lambda parent_task_id, event_type, subtitle_task_id: (
+            parent_task_id == 5
+            and event_type == "raw_niuma_done"
+            and subtitle_task_id == "tcraw-5"
+        ),
+    )
+    monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
+    monkeypatch.setattr(
+        processing,
+        "_write_event",
+        lambda task_id, event_type, actor_user_id, payload=None: events.append(
+            (task_id, event_type, actor_user_id, payload)
+        ),
+    )
+    monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
+    monkeypatch.setattr(
+        processing.local_media_storage,
+        "write_stream",
+        lambda key, stream: stream.read(),
+    )
+
+    processing.attach_niuma_result_to_parent_task(
+        parent_task_id=5,
+        subtitle_task_id="tcraw-5",
+        actor_user_id=238,
+        result_video_path=str(result_path),
+    )
+
+    assert events == []
+    assert marked == [{"task_id": 5, "actor_user_id": 77}]
 
 
 def test_attach_niuma_result_rejects_oversize_push_video(monkeypatch, tmp_path):
@@ -418,7 +547,7 @@ def test_attach_niuma_result_rejects_oversize_push_video(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
-    monkeypatch.setattr(processing, "_event_exists", lambda *a, **kw: False)
+    monkeypatch.setattr(processing, "_event_exists", lambda *args, **kwargs: False)
     monkeypatch.setattr(processing, "_write_event", lambda *args, **kwargs: None)
     monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
     monkeypatch.setattr(tasks, "reject_raw", lambda **kwargs: rejected.append(kwargs))
