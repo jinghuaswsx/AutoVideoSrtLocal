@@ -445,7 +445,7 @@ def _get_alerts_dynamically(
         WHERE i.deleted_at IS NULL
     """
 
-    if end_date >= today_str:
+    if end_date >= today_str and _has_realtime_ad_table():
         combined_source = f"({daily_sql} UNION ALL {realtime_sql}) matched"
     else:
         combined_source = f"({daily_sql}) matched"
@@ -912,6 +912,17 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
     if product_id <= 0 or not lower_lang:
         return []
 
+    realtime_exists_sql = ""
+    if _has_realtime_ad_table():
+        realtime_exists_sql = """
+            OR EXISTS (
+              SELECT 1 FROM meta_ad_realtime_daily_ad_metrics rt
+              WHERE rt.normalized_ad_code = m.normalized_ad_code
+                AND rt.spend_usd > 0
+                AND rt.business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+            )
+        """
+
     country_lang_sql = _COUNTRY_LANG_CASE_SQL % "m.market_country"
     rows = query(
         f"""
@@ -935,13 +946,7 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
                 AND d.spend_usd > 0
                 AND DATE(COALESCE(d.meta_business_date, d.report_date)) >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
             )
-            OR
-            EXISTS (
-              SELECT 1 FROM meta_ad_realtime_daily_ad_metrics rt
-              WHERE rt.normalized_ad_code = m.normalized_ad_code
-                AND rt.spend_usd > 0
-                AND rt.business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-            )
+            {realtime_exists_sql}
           )
           AND EXISTS (
             SELECT 1
@@ -1307,8 +1312,19 @@ def get_product_alert_details(product_id: int, threshold: float | None = None) -
         if detail:
             countries.append(detail)
 
-    ads_rows = query(
+    realtime_exists_sql = ""
+    if _has_realtime_ad_table():
+        realtime_exists_sql = """
+            OR EXISTS (
+              SELECT 1 FROM meta_ad_realtime_daily_ad_metrics rt
+              WHERE rt.normalized_ad_code = m.normalized_ad_code
+                AND rt.spend_usd > 0
+                AND rt.business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+            )
         """
+
+    ads_rows = query(
+        f"""
         SELECT
           m.normalized_ad_code AS ad_code,
           MAX(m.ad_name) AS ad_name,
@@ -1329,13 +1345,7 @@ def get_product_alert_details(product_id: int, threshold: float | None = None) -
                 AND d.spend_usd > 0
                 AND DATE(COALESCE(d.meta_business_date, d.report_date)) >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
             )
-            OR
-            EXISTS (
-              SELECT 1 FROM meta_ad_realtime_daily_ad_metrics rt
-              WHERE rt.normalized_ad_code = m.normalized_ad_code
-                AND rt.spend_usd > 0
-                AND rt.business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-            )
+            {realtime_exists_sql}
           )
         GROUP BY m.normalized_ad_code, m.ad_account_id
         ORDER BY ad_spend_usd DESC
@@ -1874,3 +1884,19 @@ def _problem_detail_url(
     if ad_account_id:
         params["ad_account_id"] = ad_account_id
     return "/order-analytics?" + urlencode(params)
+
+
+_realtime_ad_table_exists: bool | None = None
+
+
+def _has_realtime_ad_table() -> bool:
+    """检查数据库中是否存在 meta_ad_realtime_daily_ad_metrics 表。"""
+    global _realtime_ad_table_exists
+    if _realtime_ad_table_exists is not None:
+        return _realtime_ad_table_exists
+    try:
+        query_one("SELECT 1 FROM meta_ad_realtime_daily_ad_metrics LIMIT 1")
+        _realtime_ad_table_exists = True
+    except Exception:
+        _realtime_ad_table_exists = False
+    return _realtime_ad_table_exists
