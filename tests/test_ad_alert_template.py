@@ -41,3 +41,18 @@ def test_ad_alert_template_contract():
     assert ".alert-" not in source
     assert "#8b5cf6" not in source.lower()
     assert "purple" not in source.lower()
+
+
+def test_ad_alert_template_toast_feedback_contract():
+    template = Path("web/templates/ad_alerts.html")
+    source = template.read_text(encoding="utf-8")
+
+    assert "function showToast(message, type)" in source
+    assert "oc-ad-alert-toast-container" in source
+    assert "oc-ad-alert-toast" in source
+    assert "@keyframes ocToastIn" in source
+    assert "@keyframes ocToastOut" in source
+    assert "showToast('阈值必须大于 0', 'error')" in source
+    assert "showToast('阈值已更新为 ' + state.threshold.toFixed(2), 'success')" in source
+    assert "showToast('保存失败：' + (error.message || '未知错误'), 'error')" in source
+    assert "showToast('评估完成，共 ' + evaluations.length + ' 条建议', 'info')" in source

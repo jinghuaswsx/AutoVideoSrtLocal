@@ -861,6 +861,34 @@
   border-color: var(--oc-ad-alert-blue);
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
 }
+.oc-ad-alert-toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.oc-ad-alert-toast {
+  pointer-events: auto;
+  padding: 12px 20px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  animation: ocToastIn 0.3s ease-out, ocToastOut 0.3s ease-in 2.2s forwards;
+}
+@keyframes ocToastIn {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ocToastOut {
+  from { opacity: 1; }
+  to { opacity: 0; transform: translateX(40px); }
+}
 @media (max-width: 760px) {
   .oc-ad-alert-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1032,6 +1060,29 @@
   var thresholdText = document.getElementById('adAlertThresholdText');
   var problemBody = document.getElementById('adAlertProblemBody');
   var problemDate = document.getElementById('adAlertProblemDate');
+
+  function showToast(message, type) {
+    var container = document.getElementById('adAlertToastContainer');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'oc-ad-alert-toast-container';
+      container.id = 'adAlertToastContainer';
+      (document.querySelector('.oc-ad-alert-page') || document.body).appendChild(container);
+    }
+    var toast = document.createElement('div');
+    toast.className = 'oc-ad-alert-toast';
+    toast.textContent = message || '';
+    var colors = {
+      success: 'var(--oc-ad-alert-green, #10b981)',
+      error: 'var(--oc-ad-alert-red, #ef4444)',
+      info: 'var(--oc-ad-alert-blue, #3b82f6)'
+    };
+    toast.style.background = colors[type] || colors.info;
+    container.appendChild(toast);
+    window.setTimeout(function() {
+      toast.remove();
+    }, 2500);
+  }
 
   function csrfToken() {
     var meta = document.querySelector('meta[name="csrf-token"]');
@@ -1405,6 +1456,7 @@
       .then(function(data) {
         var evaluations = data.evaluations || [];
         adEvaluationCache[cacheKey] = evaluations;
+        showToast('评估完成，共 ' + evaluations.length + ' 条建议', 'info');
         renderAdEvaluations(evaluations, resultEl);
       })
       .catch(function(error) {
@@ -1453,6 +1505,7 @@
       .then(function(data) {
         var evaluations = data.evaluations || [];
         adEvaluationCache[cacheKey] = evaluations;
+        showToast('评估完成，共 ' + evaluations.length + ' 条建议', 'info');
         renderAdEvaluations(evaluations, resultEl);
       })
       .catch(function(error) {
@@ -1721,7 +1774,10 @@
   });
   document.getElementById('adAlertThresholdSave').addEventListener('click', function() {
     var value = Number(document.getElementById('adAlertThresholdInput').value);
-    if (!value || value <= 0) return;
+    if (!value || value <= 0) {
+      showToast('阈值必须大于 0', 'error');
+      return;
+    }
     fetch('/ad-alerts/api/threshold', {
       method: 'POST',
       headers: {
@@ -1739,7 +1795,11 @@
         state.threshold = Number(data.threshold || value);
         thresholdText.textContent = state.threshold.toFixed(2);
         closeMask('adAlertThresholdMask');
+        showToast('阈值已更新为 ' + state.threshold.toFixed(2), 'success');
         loadList();
+      })
+      .catch(function(error) {
+        showToast('保存失败：' + (error.message || '未知错误'), 'error');
       });
   });
 
