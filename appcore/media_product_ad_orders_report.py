@@ -82,11 +82,11 @@ def _realtime_ad_table_exists() -> bool:
 
 def _empty_row() -> dict[str, Any]:
     return {
-        "today_spend": 0.0, "today_orders": 0, "today_purchase_value": 0.0, "today_order_profit": 0.0,
-        "yesterday_spend": 0.0, "yesterday_orders": 0, "yesterday_purchase_value": 0.0, "yesterday_order_profit": 0.0,
-        "last_7d_spend": 0.0, "last_7d_orders": 0, "last_7d_purchase_value": 0.0, "last_7d_order_profit": 0.0,
-        "last_30d_spend": 0.0, "last_30d_orders": 0, "last_30d_purchase_value": 0.0, "last_30d_order_profit": 0.0,
-        "total_spend": 0.0, "total_orders": 0, "total_purchase_value": 0.0, "total_order_profit": 0.0,
+        "today_spend": 0.0, "today_orders": 0, "today_purchase_value": 0.0, "today_order_profit": 0.0, "today_revenue": 0.0,
+        "yesterday_spend": 0.0, "yesterday_orders": 0, "yesterday_purchase_value": 0.0, "yesterday_order_profit": 0.0, "yesterday_revenue": 0.0,
+        "last_7d_spend": 0.0, "last_7d_orders": 0, "last_7d_purchase_value": 0.0, "last_7d_order_profit": 0.0, "last_7d_revenue": 0.0,
+        "last_30d_spend": 0.0, "last_30d_orders": 0, "last_30d_purchase_value": 0.0, "last_30d_order_profit": 0.0, "last_30d_revenue": 0.0,
+        "total_spend": 0.0, "total_orders": 0, "total_purchase_value": 0.0, "total_order_profit": 0.0, "total_revenue": 0.0,
     }
 
 def get_product_ad_orders_report(product_id: int, today: date | None = None) -> dict[str, Any]:
@@ -170,17 +170,22 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
         if bdate == business_today:
             total_row["today_orders"] += count
             total_row["today_order_profit"] += order_profit
+            total_row["today_revenue"] += revenue
         if bdate == yesterday:
             total_row["yesterday_orders"] += count
             total_row["yesterday_order_profit"] += order_profit
+            total_row["yesterday_revenue"] += revenue
         if last_7d_start <= bdate <= business_today:
             total_row["last_7d_orders"] += count
             total_row["last_7d_order_profit"] += order_profit
+            total_row["last_7d_revenue"] += revenue
         if last_30d_start <= bdate <= business_today:
             total_row["last_30d_orders"] += count
             total_row["last_30d_order_profit"] += order_profit
+            total_row["last_30d_revenue"] += revenue
         total_row["total_orders"] += count
         total_row["total_order_profit"] += order_profit
+        total_row["total_revenue"] += revenue
 
         # Update language row
         if lang:
@@ -188,17 +193,22 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
             if bdate == business_today:
                 l_row["today_orders"] += count
                 l_row["today_order_profit"] += order_profit
+                l_row["today_revenue"] += revenue
             if bdate == yesterday:
                 l_row["yesterday_orders"] += count
                 l_row["yesterday_order_profit"] += order_profit
+                l_row["yesterday_revenue"] += revenue
             if last_7d_start <= bdate <= business_today:
                 l_row["last_7d_orders"] += count
                 l_row["last_7d_order_profit"] += order_profit
+                l_row["last_7d_revenue"] += revenue
             if last_30d_start <= bdate <= business_today:
                 l_row["last_30d_orders"] += count
                 l_row["last_30d_order_profit"] += order_profit
+                l_row["last_30d_revenue"] += revenue
             l_row["total_orders"] += count
             l_row["total_order_profit"] += order_profit
+            l_row["total_revenue"] += revenue
 
     # 2. Fetch Ad candidates
     # Daily ad metrics (historical)
@@ -311,10 +321,14 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
             pvalue = row[f"{key}_purchase_value"]
             roas = round(pvalue / spend, 2) if spend > 0 else None
             profit = round(row[f"{key}_order_profit"] - spend, 2)
+            revenue = row[f"{key}_revenue"]
+            order_roas = round(revenue / spend, 2) if spend > 0 else None
             out[f"{key}_spend"] = spend
             out[f"{key}_orders"] = orders
             out[f"{key}_roas"] = roas
             out[f"{key}_profit"] = profit
+            out[f"{key}_order_roas"] = order_roas
+            out[f"{key}_revenue"] = round(revenue, 2)
         return out
 
     # Finalize total row and language rows
