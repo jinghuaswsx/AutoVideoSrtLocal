@@ -559,6 +559,7 @@
     }
     const roasCalc = productObj.roas_calculation || {};
     const breakevenRoas = roasCalc.effective_roas;
+    const breakevenRoasBasis = roasCalc.effective_basis === 'actual' ? '小包实费' : '小包预估';
     const purchasePrice = productObj.purchase_price;
     const packetCost = productObj.packet_cost_actual !== null && productObj.packet_cost_actual !== undefined
       ? productObj.packet_cost_actual
@@ -591,27 +592,29 @@
       ? lines.join('')
       : '<div class="oc-lang-empty oc-country-metrics-line muted">—</div>';
 
-    const parts = [];
+    const costParts = [];
     if (purchasePrice !== null && purchasePrice !== undefined && purchasePrice !== '') {
-      parts.push(`采购: ¥${Number(purchasePrice).toFixed(1)}`);
+      costParts.push(`采购: ¥${Number(purchasePrice).toFixed(1)}`);
     } else {
-      parts.push(`采购: ¥-`);
+      costParts.push(`采购: ¥-`);
     }
     if (packetCost !== null && packetCost !== undefined && packetCost !== '') {
       const isActual = productObj.packet_cost_actual !== null && productObj.packet_cost_actual !== undefined;
-      parts.push(`物流: ¥${Number(packetCost).toFixed(1)}${isActual ? ' (实)' : ' (估)'}`);
+      costParts.push(`物流: ¥${Number(packetCost).toFixed(1)}${isActual ? ' (实)' : ' (估)'}`);
     } else {
-      parts.push(`物流: ¥-`);
+      costParts.push(`物流: ¥-`);
     }
+    const costText = costParts.join(' | ');
+    let breakevenTitle = `保本 ROAS: — / 口径: 独立站估算 / ${breakevenRoasBasis}`;
+    let breakevenLineHtml = `<div class="oc-breakeven-roas-line muted" title="${escapeHtml(breakevenTitle)}" style="display:flex; align-items:baseline; gap:3px; min-width:0; white-space:nowrap; line-height:1.1;"><span style="font-size:11px;">保本</span><strong style="font-size:13px; color:var(--oc-fg-muted); font-weight:800; margin-left:0;">—</strong><span class="oc-breakeven-roas-note" style="font-size:10px; color:var(--oc-fg-subtle); font-weight:500;">独立站估算</span></div>`;
     if (breakevenRoas !== undefined && breakevenRoas !== null && breakevenRoas !== '') {
-      parts.push(`保本 ROAS ${fmtBreakevenRoas(breakevenRoas)}`);
-    } else {
-      parts.push(`保本 ROAS -`);
+      const breakevenValue = fmtBreakevenRoas(breakevenRoas);
+      breakevenTitle = `保本 ROAS: ${breakevenValue} / 口径: 独立站估算 / ${breakevenRoasBasis}`;
+      breakevenLineHtml = `<div class="oc-breakeven-roas-line" title="${escapeHtml(breakevenTitle)}" style="display:flex; align-items:baseline; gap:3px; min-width:0; white-space:nowrap; line-height:1.1;"><span style="font-size:11px; color:var(--oc-fg-muted); font-weight:600;">保本</span><strong style="font-size:14px; color:var(--oc-accent); font-weight:800; margin-left:0;">${breakevenValue}</strong><span class="oc-breakeven-roas-note" style="font-size:10px; color:var(--oc-fg-subtle); font-weight:500;">独立站估算</span></div>`;
     }
-    const infoText = parts.join(' | ');
 
-    const breakevenHtml = infoText
-      ? `<span style="font-size: 10px; color: var(--oc-fg-subtle); font-weight: normal; white-space: nowrap; line-height: 1.2; text-overflow: ellipsis; overflow: hidden; max-width: 100%; display: block;" title="${escapeHtml(infoText)}">${infoText}</span>`
+    const costHtml = costText
+      ? `<span class="oc-breakeven-cost-line" style="font-size: 10px; color: var(--oc-fg-subtle); font-weight: normal; white-space: nowrap; line-height: 1.2; text-overflow: ellipsis; overflow: hidden; max-width: 100%; display: block;" title="${escapeHtml(costText)}">${costText}</span>`
       : '';
 
     const btnHtml = productId
@@ -619,9 +622,10 @@
       : '';
 
     let leftColHtml = '';
-    if (breakevenHtml || btnHtml) {
+    if (costHtml || breakevenLineHtml || btnHtml) {
       leftColHtml = `<div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; height: 100%; gap: 2px; min-width: 0; max-width: 100%; overflow: hidden;">`
-        + breakevenHtml
+        + costHtml
+        + breakevenLineHtml
         + btnHtml
         + `</div>`;
     }
