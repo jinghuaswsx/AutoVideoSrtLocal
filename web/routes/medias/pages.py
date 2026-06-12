@@ -121,7 +121,6 @@ def product_supplement_page(pid: int):
 
 @bp.route("/product/video_workbench/<int:pid>", methods=["GET"])
 @login_required
-@admin_required
 @permission_required("medias")
 def product_video_workbench_page(pid: int):
     product = medias.get_product(pid)
@@ -136,7 +135,6 @@ def product_video_workbench_page(pid: int):
 
 @bp.route("/product/mingkong_pairing/<int:pid>", methods=["GET"])
 @login_required
-@admin_required
 @permission_required("medias")
 def product_mingkong_pairing_page(pid: int):
     product = medias.get_product(pid)

@@ -694,12 +694,13 @@ def test_manual_ai_evaluate_clip_resolves_relative_eval_clip_path(
     assert resp.data == b"processed"
 
 
-def test_manual_ai_evaluate_clip_requires_admin(authed_user_client_no_db):
+def test_manual_ai_evaluate_clip_accessible_to_regular_user(authed_user_client_no_db):
     resp = authed_user_client_no_db.get(
         "/medias/api/products/123/evaluate/clip?media_item_id=456"
     )
 
-    assert resp.status_code in {302, 403}
+    # Since it is no longer admin-required, the user gets 404 (product not found) rather than 403/302.
+    assert resp.status_code == 404
 
 
 def test_manual_ai_evaluate_request_preview_passes_mingkong_product_link(

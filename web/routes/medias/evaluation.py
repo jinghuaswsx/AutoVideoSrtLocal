@@ -160,7 +160,6 @@ def api_product_evaluate(pid: int):
 
 @bp.route("/api/products/<int:pid>/evaluate/status", methods=["GET"])
 @login_required
-@admin_required
 def api_product_evaluate_status(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
@@ -172,7 +171,6 @@ def api_product_evaluate_status(pid: int):
 
 @bp.route("/api/products/<int:pid>/evaluate/<run_id>/countries/<country_code>/rerun", methods=["POST"])
 @login_required
-@admin_required
 def api_product_evaluate_country_rerun(pid: int, run_id: str, country_code: str):
     p = medias.get_product(pid)
     if not _can_access_product(p):
@@ -208,7 +206,6 @@ def api_product_evaluate_request_payload(pid: int):
 
 @bp.route("/api/products/<int:pid>/evaluate/clip", methods=["GET"])
 @login_required
-@admin_required
 def api_product_evaluate_clip(pid: int):
     p = medias.get_product(pid)
     if not _can_access_product(p):
