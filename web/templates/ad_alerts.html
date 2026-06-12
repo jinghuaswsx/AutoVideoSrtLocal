@@ -1,7 +1,8 @@
 {% extends "layout.html" %}
 {% block title %}{% if active_tab == 'problem' %}问题广告{% else %}广告预警{% endif %}{% endblock %}
 {% block extra_style %}
-<style>
+{% include "medias/_roas_styles.html" %}
+
 .oc-ad-alert-page {
   --oc-ad-alert-fg: var(--text-main, #111827);
   --oc-ad-alert-muted: #64748b;
@@ -654,71 +655,6 @@
   font-size: 14px;
   font-weight: 500;
 }
-.oc-ad-alert-modal-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: var(--oc-ad-alert-modal-mask);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  animation: modalFadeIn 0.2s ease-out;
-}
-@keyframes modalFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.oc-ad-alert-modal-mask[hidden] {
-  display: none;
-}
-.oc-ad-alert-modal {
-  width: min(840px, 100%);
-  max-height: min(90vh, 800px);
-  overflow: hidden;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  border-radius: 16px;
-  border: 1px solid var(--oc-ad-alert-border);
-  background: var(--oc-ad-alert-modal-bg);
-  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15);
-  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes modalSlideUp {
-  from { transform: translateY(16px) scale(0.98); }
-  to { transform: translateY(0) scale(1); }
-}
-.oc-ad-alert-modal-small {
-  width: min(440px, 100%);
-}
-.oc-ad-alert-modal-head,
-.oc-ad-alert-modal-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--oc-ad-alert-border);
-  background: var(--oc-ad-alert-modal-head-bg);
-  color: var(--oc-ad-alert-modal-head-fg);
-}
-.oc-ad-alert-modal-foot {
-  justify-content: flex-end;
-  border-top: 1px solid var(--oc-ad-alert-border);
-  border-bottom: 0;
-}
-.oc-ad-alert-modal-head h2 {
-  margin: 0;
-  color: inherit;
-  font-size: 18px;
-  font-weight: 800;
-}
-.oc-ad-alert-modal-body {
-  overflow: auto;
-  padding: 20px;
-  background: var(--oc-ad-alert-modal-bg);
-}
 .oc-ad-alert-detail-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -886,11 +822,16 @@
     flex: 1;
   }
 }
-</style>
 {% endblock %}
 
 {% block content %}
-<div class="oc-ad-alert-page" data-threshold="{{ threshold }}">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  </defs>
+</svg>
+
+<div class="oc oc-ad-alert-page" data-threshold="{{ threshold }}">
   <div class="oc-ad-alert-head">
     <div class="oc-ad-alert-title">
       <h1>{% if active_tab == 'problem' %}问题广告{% else %}广告预警{% endif %}</h1>
@@ -984,30 +925,34 @@
   </section>
 </div>
 
-<div class="oc-ad-alert-modal-mask" id="adAlertDetailMask" hidden>
-  <div class="oc-ad-alert-modal" role="dialog" aria-modal="true" aria-labelledby="adAlertDetailTitle">
-    <div class="oc-ad-alert-modal-head">
-      <h2 id="adAlertDetailTitle">广告预警详情</h2>
-      <button class="oc-ad-alert-icon-btn" type="button" id="adAlertDetailClose" aria-label="关闭">×</button>
+<div class="oc-modal-mask oc" id="adAlertDetailMask" hidden>
+  <div class="oc-modal" style="width: min(840px, 100vw - 48px);" role="dialog" aria-modal="true" aria-labelledby="adAlertDetailTitle">
+    <div class="oc-modal-head">
+      <h3 id="adAlertDetailTitle">广告预警详情</h3>
+      <button type="button" id="adAlertDetailClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
     </div>
-    <div class="oc-ad-alert-modal-body" id="adAlertDetailBody">
+    <div class="oc-modal-body" id="adAlertDetailBody">
       <div class="oc-ad-alert-state">加载中</div>
     </div>
   </div>
 </div>
 
-<div class="oc-ad-alert-modal-mask" id="adAlertThresholdMask" hidden>
-  <div class="oc-ad-alert-modal oc-ad-alert-modal-small" role="dialog" aria-modal="true" aria-labelledby="adAlertThresholdTitle">
-    <div class="oc-ad-alert-modal-head">
-      <h2 id="adAlertThresholdTitle">修改 ROAS 阈值</h2>
-      <button class="oc-ad-alert-icon-btn" type="button" id="adAlertThresholdClose" aria-label="关闭">×</button>
+<div class="oc-modal-mask oc" id="adAlertThresholdMask" hidden>
+  <div class="oc-modal" style="width: min(440px, 100vw - 48px);" role="dialog" aria-modal="true" aria-labelledby="adAlertThresholdTitle">
+    <div class="oc-modal-head">
+      <h3 id="adAlertThresholdTitle">修改 ROAS 阈值</h3>
+      <button type="button" id="adAlertThresholdClose" class="oc-icon-btn" aria-label="关闭">
+        <svg width="16" height="16"><use href="#ic-close"/></svg>
+      </button>
     </div>
-    <div class="oc-ad-alert-modal-body">
+    <div class="oc-modal-body">
       <input class="oc-ad-alert-input" id="adAlertThresholdInput" type="number" min="0.1" step="0.1" value="{{ "%.1f"|format(threshold) }}">
     </div>
-    <div class="oc-ad-alert-modal-foot">
-      <button class="oc-ad-alert-btn" type="button" id="adAlertThresholdCancel">取消</button>
-      <button class="oc-ad-alert-btn oc-ad-alert-btn-primary" type="button" id="adAlertThresholdSave">保存</button>
+    <div class="oc-modal-foot">
+      <button class="oc-btn ghost" type="button" id="adAlertThresholdCancel">取消</button>
+      <button class="oc-btn primary" type="button" id="adAlertThresholdSave">保存</button>
     </div>
   </div>
 </div>
