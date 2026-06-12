@@ -4152,7 +4152,7 @@
     }
     updateProgress();
 
-    const concurrency = 6;
+    const concurrency = 1;
     let queueIndex = 0;
     const domain404Map = {};
 
