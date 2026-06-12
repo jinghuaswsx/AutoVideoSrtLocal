@@ -1043,21 +1043,25 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
     if product_id <= 0 or not lower_lang:
         return []
 
-    # 1. 预先查出该商品语言下的所有 media_items
+    # 1. 预先查出该商品语言下的所有 media_items 并获取 product_code
     media_items = query(
         """
-        SELECT filename, display_name
-        FROM media_items
-        WHERE product_id = %(product_id)s
-          AND deleted_at IS NULL
-          AND LOWER(lang) = %(lang)s
+        SELECT i.filename, i.display_name, p.product_code
+        FROM media_items i
+        JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL AND p.archived = 0
+        WHERE i.product_id = %(product_id)s
+          AND i.deleted_at IS NULL
+          AND LOWER(i.lang) = %(lang)s
         """,
         {"product_id": product_id, "lang": lower_lang}
     )
     if not media_items:
         return []
 
-    # 2. 预先查出该产品近 3 天活跃的 ad_code 集合，避免 EXISTS 子查询
+    product_code = media_items[0].get("product_code") if media_items else None
+
+    # 2. 预先查出该产品近 3天活跃的 ad_code 集合，避免 EXISTS 子查询
+
     active_codes = set()
     active_daily = query(
         """
@@ -1074,14 +1078,16 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
         if c:
             active_codes.add(c)
 
-    if _has_realtime_ad_table():
+    if _has_realtime_ad_table() and product_code:
         active_realtime = query(
             """
             SELECT DISTINCT COALESCE(NULLIF(TRIM(normalized_ad_code), ''), '') AS code
             FROM meta_ad_realtime_daily_ad_metrics
-            WHERE COALESCE(spend_usd, 0) > 0
+            WHERE product_code = %(product_code)s
+              AND COALESCE(spend_usd, 0) > 0
               AND business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-            """
+            """,
+            {"product_code": product_code}
         )
         for r in active_realtime:
             c = r.get("code")
@@ -1492,6 +1498,7 @@ def get_product_alert_details(product_id: int, threshold: float | None = None) -
     )
     if not p_row:
         return {}
+    product_code = p_row.get("product_code")
 
     rows = query(
         """
@@ -1533,14 +1540,16 @@ def get_product_alert_details(product_id: int, threshold: float | None = None) -
         if c:
             active_codes.add(c)
 
-    if _has_realtime_ad_table():
+    if _has_realtime_ad_table() and product_code:
         active_realtime = query(
             """
             SELECT DISTINCT COALESCE(NULLIF(TRIM(normalized_ad_code), ''), '') AS code
             FROM meta_ad_realtime_daily_ad_metrics
-            WHERE COALESCE(spend_usd, 0) > 0
+            WHERE product_code = %(product_code)s
+              AND COALESCE(spend_usd, 0) > 0
               AND business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-            """
+            """,
+            {"product_code": product_code}
         )
         for r in active_realtime:
             c = r.get("code")
