@@ -1077,6 +1077,7 @@
       <div class="vw-kpi"><span>本地素材</span><strong>${s.local_material_count || 0}</strong></div>
       <div class="vw-kpi"><span>产品消耗</span><strong>${money(ad.ad_spend_usd || 0)}</strong></div>
       <div class="vw-kpi"><span>整体 ROAS</span><strong>${roas(ad.overall_roas)}</strong></div>
+      <div class="vw-kpi"><span>保本 ROAS</span><strong>${data.product && data.product.breakeven_roas != null ? Number(data.product.breakeven_roas).toFixed(2) : '-'}</strong></div>
       <div class="vw-kpi"><span>投放情况</span><strong>${statusText(ad.delivery_status)}</strong></div>
     `;
     const totalMk = Number(s.total_mk_videos || 0);

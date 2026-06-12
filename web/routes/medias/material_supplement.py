@@ -392,7 +392,8 @@ def _ad_detail_date_range(args: Mapping[str, Any], *, today: date | None = None)
 
 def _load_product(product_id: int, query_fn=db_query) -> dict | None:
     rows = query_fn(
-        "SELECT id, name, product_code, ai_score, ai_evaluation_result, ai_evaluation_detail "
+        "SELECT id, name, product_code, ai_score, ai_evaluation_result, ai_evaluation_detail, "
+        "purchase_price, packet_cost_estimated, packet_cost_actual, standalone_price, standalone_shipping_fee "
         "FROM media_products "
         "WHERE id = %s AND deleted_at IS NULL",
         [product_id],
@@ -1280,6 +1281,18 @@ def build_product_video_workbench(
     else:
         cards.sort(key=lambda c: (not c["in_library"], -_safe_float(c["mk_video"].get("spends") or 0.0), -int(c["mk_video"].get("ads_count") or 0)))
 
+    from appcore import product_roas
+    roas_rmb_per_usd = product_roas.get_configured_rmb_per_usd()
+    roas_calc = product_roas.calculate_break_even_roas(
+        purchase_price=product.get("purchase_price"),
+        estimated_packet_cost=product.get("packet_cost_estimated"),
+        actual_packet_cost=product.get("packet_cost_actual"),
+        standalone_price=product.get("standalone_price"),
+        standalone_shipping_fee=product.get("standalone_shipping_fee"),
+        rmb_per_usd=roas_rmb_per_usd,
+    )
+    breakeven_roas = roas_calc.get("effective_roas") if roas_calc else None
+
     total_mk = sum(1 for card in cards if card.get("source_type") != _LOCAL_EN_CJH_SOURCE_TYPE)
     in_lib_count = sum(1 for card in cards if card["in_library"])
     return {
@@ -1288,6 +1301,7 @@ def build_product_video_workbench(
             "name": product.get("name") or "",
             "product_code": product_code,
             "mk_search_handle": mk_search_handle,
+            "breakeven_roas": breakeven_roas,
         },
         "summary": {
             "total_mk_videos": total_mk,
