@@ -20,7 +20,7 @@ import io
 import logging
 import sys
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -95,6 +95,53 @@ def _open_business_dates_in_range(date_from: date, date_to: date) -> list[date]:
     return out
 
 
+def _date_value(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if hasattr(value, "date"):
+        return value.date()
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _load_profit_units(
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> dict[tuple[date, int], int]:
+    """按产品盈亏口径加载可用于广告费分摊的订单数量。"""
+    if not date_from or not date_to or date_from > date_to:
+        return {}
+    sql = (
+        "SELECT d.meta_business_date AS business_date, p.product_id, "
+        "COALESCE(SUM(d.quantity), 0) AS units "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        "WHERE d.meta_business_date BETWEEN %s AND %s "
+        "  AND p.product_id IS NOT NULL "
+    )
+    params: list[Any] = [date_from, date_to]
+    market_country = normalize_market_country(country)
+    if is_single_market_country(market_country):
+        sql += "  AND p.buyer_country = %s "
+        params.append(market_country)
+    sql += "GROUP BY d.meta_business_date, p.product_id"
+    rows = query(sql, tuple(params))
+    out: dict[tuple[date, int], int] = {}
+    for row in rows or []:
+        business_date = _date_value(row.get("business_date"))
+        product_id = row.get("product_id")
+        if business_date and product_id is not None:
+            out[(business_date, int(product_id))] = int(row.get("units") or 0)
+    return out
+
+
 def _load_ad_spend_and_value(date_from: date, date_to: date, country: str | None = None) -> dict[int, dict[str, Decimal]]:
     """每个产品在日期范围内归属的广告 spend 和 purchase_value 合计。
 
@@ -111,14 +158,23 @@ def _load_ad_spend_and_value(date_from: date, date_to: date, country: str | None
         else:
             daily_rows = list(_query_daily_ad_spend_and_value(date_from, daily_to, market_country))
     else:
+        daily_to = date_to
         daily_rows = list(_query_daily_ad_spend_and_value(date_from, date_to, market_country))
 
     out: dict[int, dict[str, Decimal]] = {}
+    units_by_product = (
+        _load_profit_units(date_from, daily_to, market_country)
+        if daily_rows and daily_to >= date_from
+        else {}
+    )
     for r in daily_rows:
+        business_date = _date_value(r.get("business_date"))
         pid = r.get("product_id")
-        if pid is None:
+        if not business_date or pid is None:
             continue
         pid_int = int(pid)
+        if int(units_by_product.get((business_date, pid_int)) or 0) <= 0:
+            continue
         out.setdefault(pid_int, {"spend": Decimal("0"), "purchase_value": Decimal("0")})
         out[pid_int]["spend"] += Decimal(str(r.get("spend") or 0))
         out[pid_int]["purchase_value"] += Decimal(str(r.get("purchase_value") or 0))
@@ -148,26 +204,53 @@ def _load_ad_spend(date_from: date, date_to: date, country: str | None = None) -
 def _query_daily_ad_spend_and_value(date_from: date, date_to: date, market_country: str | None):
     if is_single_market_country(market_country):
         return query(
-            "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend, COALESCE(SUM(purchase_value_usd), 0) AS purchase_value "
+            "SELECT COALESCE(meta_business_date, report_date) AS business_date, "
+            "product_id, COALESCE(SUM(spend_usd), 0) AS spend, COALESCE(SUM(purchase_value_usd), 0) AS purchase_value "
             "FROM meta_ad_daily_ad_metrics "
             "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
             "  AND product_id IS NOT NULL "
             "  AND market_country = %s "
-            "GROUP BY product_id",
+            "GROUP BY COALESCE(meta_business_date, report_date), product_id",
             (date_from, date_to, market_country),
         )
     return query(
-        "SELECT product_id, COALESCE(SUM(spend_usd), 0) AS spend "
+        "SELECT COALESCE(meta_business_date, report_date) AS business_date, "
+        "product_id, COALESCE(SUM(spend_usd), 0) AS spend, COALESCE(SUM(purchase_value_usd), 0) AS purchase_value "
         "FROM meta_ad_daily_campaign_metrics "
         "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
         "  AND product_id IS NOT NULL "
-        "GROUP BY product_id",
+        "GROUP BY COALESCE(meta_business_date, report_date), product_id",
+        (date_from, date_to),
+    )
+
+
+def _query_daily_unallocated_ad_spend_candidates(
+    date_from: date,
+    date_to: date,
+    market_country: str | None,
+):
+    if is_single_market_country(market_country):
+        return query(
+            "SELECT COALESCE(meta_business_date, report_date) AS business_date, "
+            "product_id, COALESCE(SUM(spend_usd), 0) AS spend "
+            "FROM meta_ad_daily_ad_metrics "
+            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+            "  AND market_country = %s "
+            "GROUP BY COALESCE(meta_business_date, report_date), product_id",
+            (date_from, date_to, market_country),
+        )
+    return query(
+        "SELECT COALESCE(meta_business_date, report_date) AS business_date, "
+        "product_id, COALESCE(SUM(spend_usd), 0) AS spend "
+        "FROM meta_ad_daily_campaign_metrics "
+        "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
+        "GROUP BY COALESCE(meta_business_date, report_date), product_id",
         (date_from, date_to),
     )
 
 
 def _load_unallocated_ad_spend(date_from: date, date_to: date, country: str | None = None) -> Decimal:
-    """日期范围内未匹配到 product_id 的广告 spend。
+    """日期范围内没有进入产品行分摊的广告 spend。
 
     全国家口径读取 campaign 日终表；单国家口径读取 ad 层 market_country 表。
     这部分不属于任何产品行，但属于窗口总利润，必须在 summary 中扣减。
@@ -186,24 +269,23 @@ def _load_unallocated_ad_spend(date_from: date, date_to: date, country: str | No
         daily_to = date_to
     total = Decimal("0")
     if daily_to >= date_from:
-        if is_single_market_country(market_country):
-            row = query_one(
-                "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
-                "FROM meta_ad_daily_ad_metrics "
-                "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-                "  AND product_id IS NULL "
-                "  AND market_country = %s",
-                (date_from, daily_to, market_country),
-            )
-        else:
-            row = query_one(
-                "SELECT COALESCE(SUM(spend_usd), 0) AS spend "
-                "FROM meta_ad_daily_campaign_metrics "
-                "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-                "  AND product_id IS NULL",
-                (date_from, daily_to),
-            )
-        total = Decimal(str((row or {}).get("spend") or 0))
+        units_by_product = _load_profit_units(date_from, daily_to, market_country)
+        for row in _query_daily_unallocated_ad_spend_candidates(
+            date_from, daily_to, market_country
+        ) or []:
+            spend = Decimal(str(row.get("spend") or 0))
+            if spend <= 0:
+                continue
+            product_id = row.get("product_id")
+            if product_id is None:
+                total += spend
+                continue
+            business_date = _date_value(row.get("business_date"))
+            if (
+                not business_date
+                or int(units_by_product.get((business_date, int(product_id))) or 0) <= 0
+            ):
+                total += spend
     if open_dates and not is_single_market_country(market_country):
         from .order_profit_aggregation import _load_realtime_ad_snapshot_fallback
 
@@ -470,7 +552,7 @@ def generate_list_xlsx(
         ("订单数", s["total_orders"], fmt_int),
         ("收入(USD)", s["total_revenue_usd"], fmt_money),
         ("已归属广告费(USD)", s.get("allocated_ad_spend_usd", 0), fmt_money),
-        ("未匹配广告费(USD)", s.get("unallocated_ad_spend_usd", 0), fmt_money),
+        ("未分摊广告费(USD)", s.get("unallocated_ad_spend_usd", 0), fmt_money),
         ("总广告费(USD)", s.get("total_ad_spend_usd", 0), fmt_money),
         ("利润(USD)", s["total_profit_usd"], fmt_money),
         ("整体 ROAS", s["overall_roas"], fmt_money),

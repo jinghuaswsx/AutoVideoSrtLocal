@@ -222,9 +222,10 @@ def test_load_unmatched_campaign_metrics_uses_campaign_table_by_default():
         )
 
     assert "FROM meta_ad_daily_campaign_metrics m" in captured["sql"]
+    assert "LEFT JOIN media_products mp ON mp.id = m.product_id" in captured["sql"]
     assert "COALESCE(m.meta_business_date, m.report_date) AS report_date" in captured["sql"]
     assert "COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s" in captured["sql"]
-    assert "m.product_id IS NULL" in captured["sql"]
+    assert "m.product_id IS NULL" not in captured["sql"]
     assert "m.market_country = %s" not in captured["sql"]
     assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7))
 
@@ -245,10 +246,73 @@ def test_load_unmatched_campaign_metrics_with_country_uses_ad_table_filter():
         )
 
     assert "FROM meta_ad_daily_ad_metrics m" in captured["sql"]
+    assert "LEFT JOIN media_products mp ON mp.id = m.product_id" in captured["sql"]
     assert "m.normalized_ad_code AS normalized_campaign_code" in captured["sql"]
     assert "m.ad_name AS campaign_name" in captured["sql"]
     assert "m.market_country = %s" in captured["sql"]
     assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7), "VN")
+
+
+def test_load_unmatched_campaign_metrics_includes_closed_day_matched_no_units():
+    target = date(2026, 6, 10)
+
+    def fake_query(sql, params):
+        if "FROM meta_ad_daily_campaign_metrics m" in sql:
+            return [
+                {
+                    "report_date": target,
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "newjoyloo",
+                    "normalized_campaign_code": "has-orders-rjc",
+                    "campaign_name": "Has Orders",
+                    "product_id": 100,
+                    "matched_product_code": "has-orders",
+                    "matched_product_name": "Has Orders Product",
+                    "spend_usd": Decimal("10.00"),
+                    "result_count": 1,
+                    "purchase_value_usd": Decimal("30.00"),
+                },
+                {
+                    "report_date": target,
+                    "ad_account_id": "act_1",
+                    "ad_account_name": "newjoyloo",
+                    "normalized_campaign_code": "no-orders-rjc",
+                    "campaign_name": "No Orders",
+                    "product_id": 200,
+                    "matched_product_code": "no-orders",
+                    "matched_product_name": "No Orders Product",
+                    "spend_usd": Decimal("25.00"),
+                    "result_count": 2,
+                    "purchase_value_usd": Decimal("50.00"),
+                },
+                {
+                    "report_date": target,
+                    "ad_account_id": "act_2",
+                    "ad_account_name": "omurio",
+                    "normalized_campaign_code": "mystery",
+                    "campaign_name": "Mystery",
+                    "product_id": None,
+                    "matched_product_code": None,
+                    "matched_product_name": None,
+                    "spend_usd": Decimal("5.00"),
+                    "result_count": 0,
+                    "purchase_value_usd": Decimal("0.00"),
+                },
+            ]
+        if "FROM order_profit_lines p" in sql:
+            return [{"business_date": target, "product_id": 100, "units": 4}]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    with patch.object(ppa, "query", side_effect=fake_query):
+        result = ppa._load_unmatched_campaign_metrics(target, target)
+
+    by_code = {row["normalized_campaign_code"]: row for row in result}
+    assert set(by_code) == {"no-orders-rjc", "mystery"}
+    assert by_code["no-orders-rjc"]["allocation_reason"] == "matched_no_units"
+    assert by_code["no-orders-rjc"]["matched_product_id"] == 200
+    assert by_code["no-orders-rjc"]["matched_product_code"] == "no-orders"
+    assert by_code["no-orders-rjc"]["matched_profit_units"] == 0
+    assert by_code["mystery"]["allocation_reason"] == "unmatched_product"
 
 
 def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():

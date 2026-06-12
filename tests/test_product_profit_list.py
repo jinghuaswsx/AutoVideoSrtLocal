@@ -10,6 +10,8 @@ import pytest
 
 from appcore.order_analytics import product_profit_list as ppl
 
+_REAL_LOAD_UNALLOCATED_AD_SPEND = ppl._load_unallocated_ad_spend
+
 
 @pytest.fixture(autouse=True)
 def _stub_unallocated_ad_spend(monkeypatch):
@@ -229,7 +231,7 @@ def test_load_ad_spend_uses_meta_business_date_with_report_date_fallback():
         ppl._load_ad_spend(date(2026, 5, 1), date(2026, 5, 7))
 
     assert "COALESCE(meta_business_date, report_date) BETWEEN %s AND %s" in captured["sql"]
-    assert "GROUP BY product_id" in captured["sql"]
+    assert "GROUP BY COALESCE(meta_business_date, report_date), product_id" in captured["sql"]
     assert captured["params"] == (date(2026, 5, 1), date(2026, 5, 7))
 
 
@@ -238,9 +240,13 @@ def test_load_ad_spend_with_country_uses_ad_level_market_country():
     captured: dict[str, Any] = {}
 
     def _fake_query(sql, params):
-        captured["sql"] = sql
-        captured["params"] = params
-        return [{"product_id": 317, "spend": Decimal("20335.80")}]
+        if "FROM meta_ad_daily_ad_metrics" in sql:
+            captured["sql"] = sql
+            captured["params"] = params
+            return [{"business_date": date(2026, 5, 7), "product_id": 317, "spend": Decimal("20335.80")}]
+        if "FROM order_profit_lines p" in sql:
+            return [{"business_date": date(2026, 5, 7), "product_id": 317, "units": 5}]
+        raise AssertionError(f"unexpected query: {sql}")
 
     with patch.object(ppl, "query", side_effect=_fake_query):
         result = ppl._load_ad_spend(date(2026, 4, 7), date(2026, 5, 7), "us")
@@ -249,8 +255,61 @@ def test_load_ad_spend_with_country_uses_ad_level_market_country():
     assert "FROM meta_ad_daily_ad_metrics" in captured["sql"]
     assert "market_country = %s" in captured["sql"]
     assert "FROM meta_ad_daily_campaign_metrics" not in captured["sql"]
-    assert "GROUP BY product_id" in captured["sql"]
+    assert "GROUP BY COALESCE(meta_business_date, report_date), product_id" in captured["sql"]
     assert captured["params"] == (date(2026, 4, 7), date(2026, 5, 7), "US")
+
+
+def test_load_ad_spend_excludes_closed_day_matched_no_units_spend():
+    """收盘日已匹配产品但无订单 units 的 spend 不再进入产品行广告费。"""
+    target = date(2026, 6, 10)
+
+    def _fake_query(sql, params):
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {
+                    "business_date": target,
+                    "product_id": 100,
+                    "spend": Decimal("10.00"),
+                    "purchase_value": Decimal("30.00"),
+                },
+                {
+                    "business_date": target,
+                    "product_id": 200,
+                    "spend": Decimal("25.00"),
+                    "purchase_value": Decimal("50.00"),
+                },
+            ]
+        if "FROM order_profit_lines p" in sql:
+            return [{"business_date": target, "product_id": 100, "units": 2}]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    with patch.object(ppl, "query", side_effect=_fake_query):
+        result = ppl._load_ad_spend_and_value(target, target)
+
+    assert result == {
+        100: {"spend": Decimal("10.00"), "purchase_value": Decimal("30.00")}
+    }
+
+
+def test_load_unallocated_ad_spend_includes_closed_day_matched_no_units_spend():
+    """收盘日未分摊广告费 = 未匹配产品 + 已匹配但无可分摊订单。"""
+    target = date(2026, 6, 10)
+
+    def _fake_query(sql, params):
+        if "FROM order_profit_lines p" in sql:
+            return [{"business_date": target, "product_id": 100, "units": 3}]
+        if "FROM meta_ad_daily_campaign_metrics" in sql:
+            return [
+                {"business_date": target, "product_id": None, "spend": Decimal("5.00")},
+                {"business_date": target, "product_id": 100, "spend": Decimal("10.00")},
+                {"business_date": target, "product_id": 200, "spend": Decimal("25.00")},
+            ]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    with patch.object(ppl, "query", side_effect=_fake_query):
+        result = _REAL_LOAD_UNALLOCATED_AD_SPEND(target, target)
+
+    assert result == Decimal("30.00")
 
 
 def _line(

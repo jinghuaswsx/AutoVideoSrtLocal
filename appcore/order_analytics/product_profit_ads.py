@@ -148,20 +148,26 @@ def _sql_in(values: list[Any]) -> str:
 def _load_profit_units_for_products(
     business_dates: list[date],
     product_ids: set[int],
+    country: str | None = None,
 ) -> dict[tuple[date, int], int]:
     if not business_dates or not product_ids:
         return {}
     product_list = sorted(product_ids)
-    rows = query(
+    sql = (
         "SELECT d.meta_business_date AS business_date, p.product_id, "
         "COALESCE(SUM(d.quantity), 0) AS units "
         "FROM order_profit_lines p "
         "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
         f"WHERE d.meta_business_date IN ({_sql_in(business_dates)}) "
         f"AND p.product_id IN ({_sql_in(product_list)}) "
-        "GROUP BY d.meta_business_date, p.product_id",
-        tuple(list(business_dates) + product_list),
     )
+    params: list[Any] = list(business_dates) + product_list
+    market_country = normalize_market_country(country)
+    if is_single_market_country(market_country):
+        sql += "AND p.buyer_country = %s "
+        params.append(market_country)
+    sql += "GROUP BY d.meta_business_date, p.product_id"
+    rows = query(sql, tuple(params))
     out: dict[tuple[date, int], int] = {}
     for row in rows or []:
         business_date = _date_value(row.get("business_date"))
@@ -176,33 +182,83 @@ def _load_daily_unmatched_campaign_metrics(
     date_to: date,
     country: str | None = None,
 ) -> list[dict[str, Any]]:
-    """拉日终表里仍未匹配 product_id 的广告行。"""
+    """拉日终表里会计入未分摊广告费的广告行。"""
     market_country = normalize_market_country(country)
     if is_single_market_country(market_country):
-        return query(
+        rows = query(
             "SELECT COALESCE(m.meta_business_date, m.report_date) AS report_date, "
             "       m.ad_account_id, m.ad_account_name, "
             "       m.normalized_ad_code AS normalized_campaign_code, "
             "       m.ad_name AS campaign_name, "
+            "       m.product_id, mp.product_code AS matched_product_code, "
+            "       mp.name AS matched_product_name, "
             "       m.spend_usd, m.result_count, m.purchase_value_usd "
             "FROM meta_ad_daily_ad_metrics m "
+            "LEFT JOIN media_products mp ON mp.id = m.product_id "
             "WHERE COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s "
-            "  AND m.product_id IS NULL "
             "  AND m.market_country = %s "
             "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC",
             (date_from, date_to, market_country),
         )
-    return query(
-        "SELECT COALESCE(m.meta_business_date, m.report_date) AS report_date, "
-        "       m.ad_account_id, m.ad_account_name, "
-        "       m.normalized_campaign_code, m.campaign_name, "
-        "       m.spend_usd, m.result_count, m.purchase_value_usd "
-        "FROM meta_ad_daily_campaign_metrics m "
-        "WHERE COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s "
-        "  AND m.product_id IS NULL "
-        "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC",
-        (date_from, date_to),
+    else:
+        rows = query(
+            "SELECT COALESCE(m.meta_business_date, m.report_date) AS report_date, "
+            "       m.ad_account_id, m.ad_account_name, "
+            "       m.normalized_campaign_code, m.campaign_name, "
+            "       m.product_id, "
+            "       COALESCE(m.matched_product_code, mp.product_code) AS matched_product_code, "
+            "       mp.name AS matched_product_name, "
+            "       m.spend_usd, m.result_count, m.purchase_value_usd "
+            "FROM meta_ad_daily_campaign_metrics m "
+            "LEFT JOIN media_products mp ON mp.id = m.product_id "
+            "WHERE COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s "
+            "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC",
+            (date_from, date_to),
+        )
+
+    if not rows:
+        return []
+
+    business_dates = sorted(
+        {
+            business_date
+            for business_date in (_date_value(row.get("report_date")) for row in rows)
+            if business_date
+        }
     )
+    product_ids = {
+        int(row["product_id"])
+        for row in rows
+        if row.get("product_id") is not None
+    }
+    units_by_product = _load_profit_units_for_products(
+        business_dates,
+        product_ids,
+        market_country,
+    )
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        spend = Decimal(str(row.get("spend_usd") or 0))
+        if spend <= 0:
+            continue
+        business_date = _date_value(row.get("report_date"))
+        product_id = row.get("product_id")
+        item = dict(row)
+        item["report_date"] = business_date
+        item["allocation_reason"] = "unmatched_product"
+        item["matched_product_id"] = None
+        item["matched_profit_units"] = None
+        if product_id is not None:
+            pid = int(product_id)
+            units = int(units_by_product.get((business_date, pid)) or 0)
+            if units > 0:
+                continue
+            item["allocation_reason"] = "matched_no_units"
+            item["matched_product_id"] = pid
+            item["matched_profit_units"] = units
+        out.append(item)
+    return out
 
 
 def _load_realtime_unmatched_campaign_metrics(
