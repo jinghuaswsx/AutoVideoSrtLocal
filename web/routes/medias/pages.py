@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from flask import abort, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from web.auth import admin_required, permission_required
 from appcore import medias
@@ -61,6 +61,8 @@ def product_tab_page():
 @login_required
 @permission_required("medias")
 def video_tab_page():
+    if current_user.role == "user":
+        return redirect(url_for("medias.product_tab_page"))
     return _render_tab_page("videos")
 
 

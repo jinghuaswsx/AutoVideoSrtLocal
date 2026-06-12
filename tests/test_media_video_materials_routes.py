@@ -237,3 +237,38 @@ def test_video_materials_binding_saves_and_audits(authed_client_no_db, monkeypat
     assert captured["mk_video_metadata"] == {"spends": 10}
     assert audits[0]["action"] == "media_item_mk_bound"
     assert audits[0]["target_id"] == 11
+
+
+def test_medias_page_hides_subtabs_and_redirects_video_route_for_regular_user(authed_client_no_db, monkeypatch):
+    fake_user = {
+        "id": 1,
+        "username": "user",
+        "role": "user",
+        "is_active": 1,
+    }
+    monkeypatch.setattr("web.auth.get_by_id", lambda user_id: fake_user if int(user_id) == 1 else None)
+    
+    monkeypatch.setattr(
+        "web.services.media_pages.shopify_image_localizer_release.get_release_info",
+        lambda: SimpleNamespace(version="", released_at_display="", released_at=""),
+    )
+    monkeypatch.setattr(
+        "web.services.media_pages.product_roas.get_configured_rmb_per_usd",
+        lambda: 6.83,
+    )
+
+    response = authed_client_no_db.get("/medias/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'data-media-tab="products"' in html
+    assert "产品管理" in html
+    
+    assert 'href="/medias/video"' not in html
+    assert "视频素材管理" not in html
+    assert 'href="/medias/ai-material-strategist"' not in html
+    assert "AI素材军师" not in html
+
+    video_response = authed_client_no_db.get("/medias/video")
+    assert video_response.status_code == 302
+    assert video_response.headers["Location"].endswith("/medias/product")
+
