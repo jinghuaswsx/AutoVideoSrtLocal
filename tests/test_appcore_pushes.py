@@ -1853,6 +1853,7 @@ def test_pushes_serialize_row_includes_new_product_push_flag():
         "duration_seconds": 12.3,
         "file_size": 456,
         "created_at": datetime(2026, 6, 1, 8, 30),
+        "task_created_at": datetime(2026, 5, 30, 9, 15),
         "pushed_at": None,
         "cover_object_key": "covers/demo.jpg",
         "object_key": "videos/demo.mp4",
@@ -1870,6 +1871,7 @@ def test_pushes_serialize_row_includes_new_product_push_flag():
     )
 
     assert serialized["is_new_product_for_push"] is True
+    assert serialized["task_created_at"] == "2026-05-30T09:15:00"
 
 
 def test_list_items_for_push_selects_product_owner_name(monkeypatch):
@@ -1896,6 +1898,33 @@ def test_list_items_for_push_selects_product_owner_name(monkeypatch):
     assert " AS owner_name" in sql
     assert "u_product.username" in sql
     assert "LEFT JOIN users u ON u.id = p.user_id" in sql
+
+
+def test_list_items_for_push_selects_task_created_at(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr("appcore.pushes.query_one", lambda sql, args: {"c": 0})
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    def fake_query(sql, args):
+        captured["sql"] = sql
+        captured["args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+
+    rows, total = pushes.list_items_for_push(offset=0, limit=20)
+
+    assert rows == []
+    assert total == 0
+    sql = captured["sql"]
+    assert "t_child.created_at" in sql
+    assert " AS task_created_at" in sql
+    assert "t_child.id = i.task_id" in sql
+    assert "t_child.media_product_id = i.product_id" in sql
 
 
 def test_list_items_for_push_does_not_exclude_english(monkeypatch):
@@ -1974,6 +2003,44 @@ def test_list_items_for_push_filter_by_audit_result(monkeypatch):
     assert total == 0
     assert "p.ai_evaluation_result = %s" in captured["sql"]
     assert "部分适合推广" in captured["args"]
+
+
+def test_list_items_for_push_filter_by_task_created_at(monkeypatch):
+    captured = {}
+
+    def fake_query_one(sql, args):
+        captured["count_sql"] = sql
+        captured["count_args"] = args
+        return {"c": 0}
+
+    def fake_query(sql, args):
+        captured["list_sql"] = sql
+        captured["list_args"] = args
+        return []
+
+    monkeypatch.setattr("appcore.pushes.query_one", fake_query_one)
+    monkeypatch.setattr("appcore.pushes.query", fake_query)
+    monkeypatch.setattr(
+        "appcore.pushes.medias._media_product_owner_name_expr",
+        lambda: "u.username",
+    )
+
+    rows, total = pushes.list_items_for_push(
+        task_created_from="2026-05-01",
+        task_created_to="2026-05-31",
+        offset=0,
+        limit=20,
+    )
+
+    assert rows == []
+    assert total == 0
+    assert "t_child.created_at" in captured["count_sql"]
+    assert ">= %s" in captured["count_sql"]
+    assert "<= %s" in captured["count_sql"]
+    assert "2026-05-01 00:00:00" in captured["count_args"]
+    assert "2026-05-31 23:59:59" in captured["count_args"]
+    assert "2026-05-01 00:00:00" in captured["list_args"]
+    assert "2026-05-31 23:59:59" in captured["list_args"]
 
 
 def test_list_items_for_push_sorts_by_created_at_asc(monkeypatch):
@@ -2198,4 +2265,3 @@ def test_record_push_failure_rollback_on_error(monkeypatch):
     assert rollback_called is True
     assert commit_called is False
     assert close_called is True
-

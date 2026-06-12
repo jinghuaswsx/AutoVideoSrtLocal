@@ -59,6 +59,7 @@
     </div>
     <div class="filter-actions" style="align-self: flex-end; margin-bottom: 0;">
       <button id="btn-apply" type="button" style="height: 32px; padding: 0 16px; border-radius: var(--oc-r, 6px); background: var(--oc-accent, #3b82f6); color: #fff; border: none; font-size: 13px; font-weight: 500; cursor: pointer;">筛选</button>
+      <button id="btn-clear-keyword" type="button" style="height: 32px; padding: 0 16px; border-radius: var(--oc-r, 6px); background: var(--oc-bg, #fff); color: var(--oc-fg-muted, #4b5563); border: 1px solid var(--oc-border-strong, #d1d5db); font-size: 13px; font-weight: 500; cursor: pointer; margin-left: 8px;">搜索重置</button>
       <button id="btn-reset" type="button" style="height: 32px; padding: 0 16px; border-radius: var(--oc-r, 6px); background: var(--oc-bg, #fff); color: var(--oc-fg-muted, #4b5563); border: 1px solid var(--oc-border-strong, #d1d5db); font-size: 13px; font-weight: 500; cursor: pointer; margin-left: 8px;">重置</button>
     </div>
   </div>
@@ -1456,6 +1457,18 @@
         state.page = 1;
         load();
       }
+    });
+  }
+
+  const clearKeywordBtn = document.getElementById('btn-clear-keyword');
+  if (clearKeywordBtn) {
+    clearKeywordBtn.addEventListener('click', () => {
+      const keywordInput = document.getElementById('f-keyword');
+      if (keywordInput) {
+        keywordInput.value = '';
+      }
+      state.page = 1;
+      load();
     });
   }
 

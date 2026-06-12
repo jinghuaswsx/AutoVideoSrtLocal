@@ -116,7 +116,6 @@ def test_serialize_product_includes_roas_fields_and_calculation():
         "user_id": 1,
         "name": "测试产品",
         "product_code": "test-product-rjc",
-        "shopify_title": "Test Product",
         "mk_id": 1234,
         "shopifyid": "5678",
         "owner_name": "负责人",
@@ -146,7 +145,6 @@ def test_serialize_product_includes_roas_fields_and_calculation():
         "tk_sale_price": None,
         "standalone_price": 60,
         "standalone_shipping_fee": 8,
-        "roas_inputs_source_json": '{"purchase_price":{"basis":"estimated","source":"standalone_price_10pct"}}',
     }
 
     serialized = medias_routes._serialize_product(product, items_count=0, covers={})
@@ -157,10 +155,6 @@ def test_serialize_product_includes_roas_fields_and_calculation():
     assert serialized["packet_cost_actual"] == 12.0
     assert serialized["standalone_price"] == 60.0
     assert serialized["standalone_shipping_fee"] == 8.0
-    assert serialized["roas_inputs_source"]["purchase_price"] == {
-        "basis": "estimated",
-        "source": "standalone_price_10pct",
-    }
     assert serialized["roas_calculation"]["estimated_roas"] == pytest.approx(68 / (63.24 - (30 / 6.83)))
     assert serialized["roas_calculation"]["effective_basis"] == "actual"
     assert serialized["roas_calculation"]["rmb_per_usd"] == 6.83

@@ -559,6 +559,7 @@
     }
     const roasCalc = productObj.roas_calculation || {};
     const breakevenRoas = roasCalc.effective_roas;
+    const breakevenRoasBasis = roasCalc.effective_basis === 'actual' ? '小包实费' : '小包预估';
     const purchasePrice = productObj.purchase_price;
     const packetCost = productObj.packet_cost_actual !== null && productObj.packet_cost_actual !== undefined
       ? productObj.packet_cost_actual
@@ -591,27 +592,29 @@
       ? lines.join('')
       : '<div class="oc-lang-empty oc-country-metrics-line muted">—</div>';
 
-    const parts = [];
+    const costParts = [];
     if (purchasePrice !== null && purchasePrice !== undefined && purchasePrice !== '') {
-      parts.push(`采购: ¥${Number(purchasePrice).toFixed(1)}`);
+      costParts.push(`采购: ¥${Number(purchasePrice).toFixed(1)}`);
     } else {
-      parts.push(`采购: ¥-`);
+      costParts.push(`采购: ¥-`);
     }
     if (packetCost !== null && packetCost !== undefined && packetCost !== '') {
       const isActual = productObj.packet_cost_actual !== null && productObj.packet_cost_actual !== undefined;
-      parts.push(`物流: ¥${Number(packetCost).toFixed(1)}${isActual ? ' (实)' : ' (估)'}`);
+      costParts.push(`物流: ¥${Number(packetCost).toFixed(1)}${isActual ? ' (实)' : ' (估)'}`);
     } else {
-      parts.push(`物流: ¥-`);
+      costParts.push(`物流: ¥-`);
     }
+    const costText = costParts.join(' | ');
+    let breakevenTitle = `保本 ROAS: — / 口径: 独立站估算 / ${breakevenRoasBasis}`;
+    let breakevenLineHtml = `<div class="oc-breakeven-roas-line muted" title="${escapeHtml(breakevenTitle)}" style="display:flex; align-items:baseline; gap:3px; min-width:0; white-space:nowrap; line-height:1.1;"><span style="font-size:11px;">保本</span><strong style="font-size:13px; color:var(--oc-fg-muted); font-weight:800; margin-left:0;">—</strong><span class="oc-breakeven-roas-note" style="font-size:10px; color:var(--oc-fg-subtle); font-weight:500;">独立站估算</span></div>`;
     if (breakevenRoas !== undefined && breakevenRoas !== null && breakevenRoas !== '') {
-      parts.push(`保本 ROAS ${fmtBreakevenRoas(breakevenRoas)}`);
-    } else {
-      parts.push(`保本 ROAS -`);
+      const breakevenValue = fmtBreakevenRoas(breakevenRoas);
+      breakevenTitle = `保本 ROAS: ${breakevenValue} / 口径: 独立站估算 / ${breakevenRoasBasis}`;
+      breakevenLineHtml = `<div class="oc-breakeven-roas-line" title="${escapeHtml(breakevenTitle)}" style="display:flex; align-items:baseline; gap:3px; min-width:0; white-space:nowrap; line-height:1.1;"><span style="font-size:11px; color:var(--oc-fg-muted); font-weight:600;">保本</span><strong style="font-size:14px; color:var(--oc-accent); font-weight:800; margin-left:0;">${breakevenValue}</strong><span class="oc-breakeven-roas-note" style="font-size:10px; color:var(--oc-fg-subtle); font-weight:500;">独立站估算</span></div>`;
     }
-    const infoText = parts.join(' | ');
 
-    const breakevenHtml = infoText
-      ? `<span style="font-size: 10px; color: var(--oc-fg-subtle); font-weight: normal; white-space: nowrap; line-height: 1.2; text-overflow: ellipsis; overflow: hidden; max-width: 100%; display: block;" title="${escapeHtml(infoText)}">${infoText}</span>`
+    const costHtml = costText
+      ? `<span class="oc-breakeven-cost-line" style="font-size: 10px; color: var(--oc-fg-subtle); font-weight: normal; white-space: nowrap; line-height: 1.2; text-overflow: ellipsis; overflow: hidden; max-width: 100%; display: block;" title="${escapeHtml(costText)}">${costText}</span>`
       : '';
 
     const btnHtml = productId
@@ -619,9 +622,10 @@
       : '';
 
     let leftColHtml = '';
-    if (breakevenHtml || btnHtml) {
+    if (costHtml || breakevenLineHtml || btnHtml) {
       leftColHtml = `<div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; height: 100%; gap: 2px; min-width: 0; max-width: 100%; overflow: hidden;">`
-        + breakevenHtml
+        + costHtml
+        + breakevenLineHtml
         + btnHtml
         + `</div>`;
     }
@@ -630,8 +634,7 @@
 
     return `<div class="oc-lang-bar oc-country-metrics-bar">`
       + `<div class="oc-lang-summary oc-country-metrics-summary" title="${escapeHtml(summaryTitle)}">`
-      + `<div style="display: flex; align-items: center; height: 100%; min-width: 0; max-width: 100%; overflow: hidden; padding-right: 8px;">${leftColHtml}</div>`
-      + `<div></div>`
+      + `<div style="grid-column: span 2; display: flex; align-items: center; height: 100%; min-width: 0; max-width: 100%; overflow: hidden; padding-right: 8px;">${leftColHtml}</div>`
       + `<div class="oc-lang-roas">`
       + `<div class="oc-lang-roas-block"><span class="oc-lang-label">订单ROAS</span><strong style="color: #2563eb;">${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
       + `<div class="oc-lang-spend-block"><span class="oc-lang-label">总消耗</span><strong style="color: #2563eb;">${fmtAdSpend(productSummary.ad_spend_usd)}</strong></div>`
@@ -4247,6 +4250,34 @@
     const mask = $('linkCheckModalMask');
     if (!mask) return;
 
+    mask.hidden = false;
+
+    // Try to load saved state
+    const savedStateStr = localStorage.getItem('link_check_last_state');
+    if (savedStateStr) {
+      try {
+        const state = JSON.parse(savedStateStr);
+        if (state && state.created_from && state.created_to) {
+          $('linkCheckCreatedFrom').value = state.created_from;
+          $('linkCheckCreatedTo').value = state.created_to;
+          
+          $('linkCheckProgressContainer').hidden = false;
+          $('linkCheckProgressLabel').textContent = state.progress_text || '检查进度：0 / 0 (0%)';
+          $('linkCheckProgressBar').style.width = state.progress_bar_width || '0%';
+          $('linkCheckLog').innerHTML = state.log_html || '';
+          
+          // Render 404 results
+          render404Results(state.domain404Map || {});
+          
+          $('linkCheckStartBtn').disabled = false;
+          $('linkCheckStopBtn').disabled = true;
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to parse link_check_last_state', e);
+      }
+    }
+
     const toDate = getPastDateString(0);
     const fromDate = getPastDateString(6);
 
@@ -4260,8 +4291,6 @@
     $('linkCheckResultContainer').innerHTML = '';
     $('linkCheckStartBtn').disabled = false;
     $('linkCheckStopBtn').disabled = true;
-
-    mask.hidden = false;
   }
 
   function closeLinkCheckModal() {
@@ -4281,82 +4310,147 @@
 
   async function startLinkCheck() {
     if (linkCheckRunning) return;
-    linkCheckRunning = true;
-    activeControllers = [];
 
     const fromVal = $('linkCheckCreatedFrom').value;
     const toVal = $('linkCheckCreatedTo').value;
     if (!fromVal || !toVal) {
       alert('请选择完整的时间范围');
-      linkCheckRunning = false;
       return;
     }
+
+    // Try to load saved state to see if we can resume
+    let resume = false;
+    let taskQueue = [];
+    let queueIndex = 0;
+    let completed = 0;
+    let total = 0;
+    const domain404Map = {};
+
+    const savedStateStr = localStorage.getItem('link_check_last_state');
+    if (savedStateStr) {
+      try {
+        const state = JSON.parse(savedStateStr);
+        if (state && 
+            state.created_from === fromVal && 
+            state.created_to === toVal && 
+            state.taskQueue && 
+            state.taskQueue.length > 0 &&
+            state.queueIndex < state.taskQueue.length) {
+          
+          resume = true;
+          taskQueue = state.taskQueue;
+          queueIndex = state.queueIndex;
+          completed = state.completed;
+          total = state.total;
+          
+          // Deep copy map
+          Object.assign(domain404Map, state.domain404Map || {});
+          
+          console.log(`Resuming check from index ${queueIndex} / ${total}`);
+        }
+      } catch (e) {
+        console.error('Failed to parse saved state for resume', e);
+      }
+    }
+
+    linkCheckRunning = true;
+    activeControllers = [];
 
     const logEl = $('linkCheckLog');
-    logEl.innerHTML = '正在获取商品列表...\n';
-    $('linkCheckProgressContainer').hidden = false;
-    $('linkCheckResultContainer').innerHTML = '';
-    $('linkCheckStartBtn').disabled = true;
-    $('linkCheckStopBtn').disabled = false;
+    
+    if (resume) {
+      // We are resuming
+      $('linkCheckProgressContainer').hidden = false;
+      $('linkCheckStartBtn').disabled = true;
+      $('linkCheckStopBtn').disabled = false;
+      
+      const resumeLine = document.createElement('div');
+      resumeLine.style.fontWeight = 'bold';
+      resumeLine.style.marginTop = '8px';
+      resumeLine.style.color = '#ffd43b';
+      resumeLine.textContent = '--- 已点击开始，正在恢复上次未完成的检测任务 ---';
+      logEl.appendChild(resumeLine);
+      logEl.scrollTop = logEl.scrollHeight;
+    } else {
+      // Starting a fresh check
+      logEl.innerHTML = '正在获取商品列表...\n';
+      $('linkCheckProgressContainer').hidden = false;
+      $('linkCheckResultContainer').innerHTML = '';
+      $('linkCheckStartBtn').disabled = true;
+      $('linkCheckStopBtn').disabled = false;
 
-    let products = [];
-    try {
-      const res = await fetchJSON(`/medias/api/products/list-for-link-check?created_from=${fromVal}&created_to=${toVal}`);
-      products = res.products || [];
-    } catch (err) {
-      logEl.innerHTML += `获取商品列表失败: ${err.message || err}\n`;
-      linkCheckRunning = false;
-      $('linkCheckStartBtn').disabled = false;
-      $('linkCheckStopBtn').disabled = true;
-      return;
-    }
+      let products = [];
+      try {
+        const res = await fetchJSON(`/medias/api/products/list-for-link-check?created_from=${fromVal}&created_to=${toVal}`);
+        products = res.products || [];
+      } catch (err) {
+        logEl.innerHTML += `获取商品列表失败: ${err.message || err}\n`;
+        linkCheckRunning = false;
+        $('linkCheckStartBtn').disabled = false;
+        $('linkCheckStopBtn').disabled = true;
+        return;
+      }
 
-    if (products.length === 0) {
-      logEl.innerHTML += '该时间范围内没有未删除、未归档的商品。\n';
-      linkCheckRunning = false;
-      $('linkCheckStartBtn').disabled = false;
-      $('linkCheckStopBtn').disabled = true;
-      return;
-    }
+      if (products.length === 0) {
+        logEl.innerHTML += '该时间范围内没有未删除、未归档的商品。\n';
+        linkCheckRunning = false;
+        $('linkCheckStartBtn').disabled = false;
+        $('linkCheckStopBtn').disabled = true;
+        return;
+      }
 
-    logEl.innerHTML += `成功获取到 ${products.length} 个商品。正在准备检测任务...\n`;
+      logEl.innerHTML += `成功获取到 ${products.length} 个商品。正在准备检测任务...\n`;
 
-    const taskQueue = [];
-    products.forEach(p => {
-      p.urls.forEach(u => {
-        taskQueue.push({
-          pid: p.id,
-          product_code: p.product_code,
-          name: p.name,
-          domain: u.domain,
-          url: u.url
+      products.forEach(p => {
+        p.urls.forEach(u => {
+          taskQueue.push({
+            pid: p.id,
+            product_code: p.product_code,
+            name: p.name,
+            domain: u.domain,
+            url: u.url
+          });
         });
       });
-    });
 
-    if (taskQueue.length === 0) {
-      logEl.innerHTML += '没有需要检测的域名链接。\n';
-      linkCheckRunning = false;
-      $('linkCheckStartBtn').disabled = false;
-      $('linkCheckStopBtn').disabled = true;
-      return;
+      if (taskQueue.length === 0) {
+        logEl.innerHTML += '没有需要检测的域名链接。\n';
+        linkCheckRunning = false;
+        $('linkCheckStartBtn').disabled = false;
+        $('linkCheckStopBtn').disabled = true;
+        return;
+      }
+
+      logEl.innerHTML += `共有 ${taskQueue.length} 个域名链接需要检测。\n`;
+      total = taskQueue.length;
+      completed = 0;
+      queueIndex = 0;
     }
-
-    logEl.innerHTML += `共有 ${taskQueue.length} 个域名链接需要检测。\n`;
-
-    const total = taskQueue.length;
-    let completed = 0;
 
     function updateProgress() {
       const pct = Math.round((completed / total) * 100);
-      $('linkCheckProgressLabel').textContent = `检查进度：${completed} / ${total} (${pct}%)`;
+      const progressText = `检查进度：${completed} / ${total} (${pct}%)`;
+      $('linkCheckProgressLabel').textContent = progressText;
       $('linkCheckProgressBar').style.width = `${pct}%`;
+      
+      // Save state to localStorage
+      const stateToSave = {
+        created_from: fromVal,
+        created_to: toVal,
+        completed: completed,
+        total: total,
+        queueIndex: queueIndex,
+        taskQueue: taskQueue,
+        domain404Map: domain404Map,
+        log_html: logEl.innerHTML,
+        progress_text: progressText,
+        progress_bar_width: `${pct}%`
+      };
+      localStorage.setItem('link_check_last_state', JSON.stringify(stateToSave));
     }
     updateProgress();
 
     const concurrency = 1;
-    let queueIndex = 0;
-    const domain404Map = {};
 
     async function worker() {
       while (linkCheckRunning && queueIndex < taskQueue.length) {
@@ -4366,7 +4460,8 @@
         if (!task) break;
 
         const lineEl = document.createElement('div');
-        lineEl.textContent = `[${task.domain}] 正在检查产品 ${task.product_code} (${task.url})...`;
+        lineEl.style.marginBottom = '6px';
+        lineEl.innerHTML = `[${task.domain}] 正在检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>)...`;
         logEl.appendChild(lineEl);
         logEl.scrollTop = logEl.scrollHeight;
 
@@ -4393,41 +4488,30 @@
           const status = item.http_status;
 
           const statusText = status !== null ? status : (item.error ? `ERR (${item.error})` : '未知');
-          const resultLine = document.createElement('div');
-          resultLine.style.paddingLeft = '12px';
 
           if (status === 404) {
-            resultLine.textContent = `↳ 结果：${statusText} (404) ❌`;
-            resultLine.style.color = '#ff6b6b';
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #ff6b6b; font-weight: bold;">${statusText} (404) ❌</span>`;
 
             if (!domain404Map[task.domain]) {
               domain404Map[task.domain] = [];
             }
-            domain404Map[task.domain].push(task.product_code);
+            if (!domain404Map[task.domain].includes(task.product_code)) {
+              domain404Map[task.domain].push(task.product_code);
+            }
           } else if (status >= 200 && status < 400) {
-            resultLine.textContent = `↳ 结果：${statusText} (OK) ✓`;
-            resultLine.style.color = '#51cf66';
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #51cf66;">${statusText} (OK) ✓</span>`;
           } else {
-            resultLine.textContent = `↳ 结果：${statusText} ⚠️`;
-            resultLine.style.color = '#ffd43b';
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #ffd43b;">${statusText} ⚠️</span>`;
           }
-          logEl.appendChild(resultLine);
           logEl.scrollTop = logEl.scrollHeight;
 
         } catch (err) {
           if (err.name === 'AbortError') {
-            const resultLine = document.createElement('div');
-            resultLine.textContent = `↳ 已取消`;
-            resultLine.style.color = '#aaa';
-            logEl.appendChild(resultLine);
-            logEl.scrollTop = logEl.scrollHeight;
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ <span style="color: #abb2bf;">已取消</span>`;
           } else {
-            const resultLine = document.createElement('div');
-            resultLine.textContent = `↳ 检查失败: ${err.message || err}`;
-            resultLine.style.color = '#ff6b6b';
-            logEl.appendChild(resultLine);
-            logEl.scrollTop = logEl.scrollHeight;
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ <span style="color: #ff6b6b;">检查失败: ${err.message || err}</span>`;
           }
+          logEl.scrollTop = logEl.scrollHeight;
         } finally {
           const idx = activeControllers.indexOf(controller);
           if (idx > -1) activeControllers.splice(idx, 1);
@@ -4440,7 +4524,7 @@
     }
 
     const workers = [];
-    for (let i = 0; i < Math.min(concurrency, taskQueue.length); i++) {
+    for (let i = 0; i < Math.min(concurrency, taskQueue.length - queueIndex); i++) {
       workers.push(worker());
     }
 
@@ -4456,6 +4540,9 @@
     finishLine.textContent = completed === total ? '检查完成！' : '检查被终止。';
     logEl.appendChild(finishLine);
     logEl.scrollTop = logEl.scrollHeight;
+
+    // Save final status
+    updateProgress();
   }
 
   function stopLinkCheck() {
