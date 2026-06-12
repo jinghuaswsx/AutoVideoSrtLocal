@@ -1089,6 +1089,41 @@
     return meta ? meta.getAttribute('content') : '';
   }
 
+  function syncUrlParams() {
+    if (state.activeTab !== 'alerts') return;
+    var params = new URLSearchParams();
+    var startVal = document.getElementById('adAlertStartDate').value;
+    var endVal = document.getElementById('adAlertEndDate').value;
+    if (state.severity) params.set('severity', state.severity);
+    if (state.search) params.set('search', state.search);
+    if (startVal) params.set('start_date', startVal);
+    if (endVal) params.set('end_date', endVal);
+    var query = params.toString();
+    var nextUrl = window.location.pathname + (query ? '?' + query : '');
+    if (nextUrl !== window.location.pathname + window.location.search) {
+      window.history.replaceState(null, '', nextUrl);
+    }
+  }
+
+  function restoreUrlParams() {
+    if (state.activeTab !== 'alerts') return;
+    var params = new URLSearchParams(window.location.search);
+    state.severity = params.get('severity') || '';
+    state.search = params.get('search') || '';
+    var severitySet = document.getElementById('adAlertSeveritySet');
+    if (severitySet) {
+      Array.prototype.forEach.call(severitySet.querySelectorAll('.oc-ad-alert-filter'), function(item) {
+        item.classList.toggle('oc-ad-alert-active', (item.getAttribute('data-value') || '') === state.severity);
+      });
+    }
+    var searchInput = document.getElementById('adAlertSearch');
+    if (searchInput) searchInput.value = state.search;
+    var startInput = document.getElementById('adAlertStartDate');
+    var endInput = document.getElementById('adAlertEndDate');
+    if (startInput) startInput.value = params.get('start_date') || '';
+    if (endInput) endInput.value = params.get('end_date') || '';
+  }
+
   function html(value) {
     var div = document.createElement('div');
     div.textContent = value == null ? '' : String(value);
@@ -1136,6 +1171,7 @@
       })
       .then(function(data) {
         renderList(data.items || []);
+        syncUrlParams();
         countEl.textContent = String(data.total || 0) + ' 个商品';
       })
       .catch(function() {
@@ -1806,6 +1842,7 @@
   if (state.activeTab === 'problem') {
     loadProblemAds();
   } else {
+    restoreUrlParams();
     loadList();
   }
 })();

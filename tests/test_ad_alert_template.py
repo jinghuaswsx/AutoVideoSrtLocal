@@ -56,3 +56,24 @@ def test_ad_alert_template_toast_feedback_contract():
     assert "showToast('阈值已更新为 ' + state.threshold.toFixed(2), 'success')" in source
     assert "showToast('保存失败：' + (error.message || '未知错误'), 'error')" in source
     assert "showToast('评估完成，共 ' + evaluations.length + ' 条建议', 'info')" in source
+
+
+def test_ad_alert_template_url_persistence_contract():
+    template = Path("web/templates/ad_alerts.html")
+    source = template.read_text(encoding="utf-8")
+
+    assert "function syncUrlParams()" in source
+    assert "function restoreUrlParams()" in source
+    assert "if (state.activeTab !== 'alerts') return;" in source
+    assert "params.set('severity', state.severity)" in source
+    assert "params.set('search', state.search)" in source
+    assert "params.set('start_date', startVal)" in source
+    assert "params.set('end_date', endVal)" in source
+    assert "window.history.replaceState(null, '', nextUrl)" in source
+    assert "new URLSearchParams(window.location.search)" in source
+    assert "state.severity = params.get('severity') || ''" in source
+    assert "state.search = params.get('search') || ''" in source
+    assert "restoreUrlParams();" in source
+    assert "  } else {\n    restoreUrlParams();\n    loadList();\n  }" in source
+    assert "syncUrlParams();" in source
+    assert source.index("renderList(data.items || []);") < source.index("syncUrlParams();")
