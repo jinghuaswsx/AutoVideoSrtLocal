@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
 {% block title %}{% if active_tab == 'problem' %}问题广告{% else %}广告预警{% endif %}{% endblock %}
 {% block extra_style %}
+<style>
 {% include "medias/_roas_styles.html" %}
 
 .oc-ad-alert-page {
@@ -998,6 +999,7 @@
     flex: 1;
   }
 }
+</style>
 {% endblock %}
 
 {% block content %}
