@@ -663,9 +663,10 @@ def _workbench_country_for_code(country_code: str) -> dict[str, str] | None:
 
 
 def _version_delivery_status(perf: dict[str, Any]) -> str:
+    active_spend = (perf.get("today_spend_usd") or 0.0) + (perf.get("yesterday_spend_usd") or 0.0)
     return _delivery_status(
         perf.get("total_spend_usd") or 0.0,
-        perf.get("last_7d_spend_usd") or 0.0,
+        active_spend,
     )
 
 

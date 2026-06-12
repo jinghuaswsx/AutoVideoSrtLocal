@@ -616,9 +616,9 @@ def test_build_product_video_workbench_payload_includes_versions_orders_and_ai(m
         for row in rows:
             perf = route._empty_ad_performance()
             if row["lang"] == "de":
-                perf.update({"total_spend_usd": 40.0, "last_7d_spend_usd": 10.0, "purchase_value_usd": 80.0, "roas": 2.0})
+                perf.update({"total_spend_usd": 40.0, "last_7d_spend_usd": 10.0, "today_spend_usd": 10.0, "purchase_value_usd": 80.0, "roas": 2.0})
             if row["lang"] == "pt":
-                perf.update({"total_spend_usd": 20.0, "last_30d_spend_usd": 20.0, "purchase_value_usd": 10.0, "roas": 0.5})
+                perf.update({"total_spend_usd": 20.0, "last_30d_spend_usd": 20.0, "today_spend_usd": 10.0, "purchase_value_usd": 10.0, "roas": 0.5})
             row["ad_performance"] = perf
 
     def order_report(product_id):
