@@ -670,6 +670,13 @@
 .oc-icon-btn { display:flex; align-items:center; justify-content:center; width:28px; height:28px; border:none; border-radius:var(--oc-r); background:transparent; color:var(--oc-fg-muted); cursor:pointer; transition:background var(--oc-dur-fast) var(--oc-ease); }
 .oc-icon-btn:hover { background:var(--oc-bg-muted); color:var(--oc-fg); }
 
+.oc-btn { display:inline-flex; align-items:center; gap:var(--oc-sp-2); height:32px; padding:0 14px; border-radius:var(--oc-r); border:1px solid transparent; font-family:inherit; font-size:13px; font-weight:500; cursor:pointer; transition:background var(--oc-dur-fast) var(--oc-ease), border-color var(--oc-dur-fast) var(--oc-ease), color var(--oc-dur-fast) var(--oc-ease); white-space:nowrap; }
+.oc-btn:focus-visible { outline:none; box-shadow:0 0 0 2px var(--oc-accent-ring); }
+.oc-btn.primary { background:var(--oc-accent); color:#fff; }
+.oc-btn.primary:hover { background:var(--oc-accent-hover); }
+.oc-btn.ghost { background:var(--oc-bg); color:var(--oc-fg); border-color:var(--oc-border-strong); }
+.oc-btn.ghost:hover { background:var(--oc-bg-muted); border-color:var(--oc-border-strong); }
+
 .oc-ad-alert-detail-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
