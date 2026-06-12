@@ -1,6 +1,7 @@
 """广告预警路由。
 
 Docs anchor: docs/superpowers/specs/2026-06-11-ad-alert-module-design.md
+Docs anchor: docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
 """
 from __future__ import annotations
 
@@ -98,6 +99,33 @@ def api_detail():
     return jsonify({"detail": _alert_detail_to_dict(detail)})
 
 
+@bp.route("/api/problem-ads")
+@login_required
+@admin_required
+def api_problem_ads():
+    """问题广告 JSON API。"""
+    level = (request.args.get("level") or "campaign").strip().lower()
+    search = (request.args.get("q") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid limit"}), 400
+    try:
+        business_date, items = ad_alerts.get_problem_ads(
+            level,
+            search=search,
+            limit=limit,
+        )
+    except ValueError as exc:
+        return jsonify({"error": "invalid_param", "detail": str(exc)}), 400
+    return jsonify({
+        "level": level,
+        "business_date": business_date.isoformat(),
+        "items": [_problem_ad_item_to_dict(item) for item in items],
+        "total": len(items),
+    })
+
+
 @bp.route("/api/threshold", methods=["POST"])
 @login_required
 @admin_required
@@ -178,4 +206,25 @@ def _alert_detail_to_dict(detail: ad_alerts.AlertDetail) -> dict[str, Any]:
             }
             for point in detail.trend
         ],
+    }
+
+
+def _problem_ad_item_to_dict(item: ad_alerts.ProblemAdItem) -> dict[str, Any]:
+    return {
+        "level": item.level,
+        "code": item.code,
+        "name": item.name,
+        "ad_account_id": item.ad_account_id,
+        "ad_account_name": item.ad_account_name,
+        "first_active_date": item.first_active_date,
+        "last_active_date": item.last_active_date,
+        "detail_url": item.detail_url,
+        "metrics": {
+            key: {
+                "spend_usd": metric.spend_usd,
+                "result_count": metric.result_count,
+                "roas": metric.roas,
+            }
+            for key, metric in item.metrics.items()
+        },
     }

@@ -3,19 +3,22 @@
 基于 media_product_lang_ad_summary_cache 判断低 ROAS 仍在投放的广告，
 提供趋势数据查询和规则引擎研判结论。
 Docs anchor: docs/superpowers/specs/2026-06-11-ad-alert-module-design.md
+Docs anchor: docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
 """
 from __future__ import annotations
 
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any
+from urllib.parse import urlencode
 
 from appcore import settings as system_settings
 from appcore.db import query, query_one
+from appcore.order_analytics._helpers import current_meta_business_date
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +131,26 @@ class AlertDetail:
     trend: list[DailyPoint] = field(default_factory=list)
 
 
+@dataclass
+class ProblemMetric:
+    spend_usd: float
+    result_count: int
+    roas: float | None
+
+
+@dataclass
+class ProblemAdItem:
+    level: str
+    code: str
+    name: str
+    ad_account_id: str
+    ad_account_name: str
+    first_active_date: str | None
+    last_active_date: str | None
+    detail_url: str
+    metrics: dict[str, ProblemMetric]
+
+
 _LANG_LABELS: dict[str, str] = {
     "en": "英语",
     "de": "德语",
@@ -167,6 +190,34 @@ _COUNTRY_LANG_CASE_SQL = """CASE UPPER(%s)
            WHEN 'PT' THEN 'pt'
            ELSE NULL
          END"""
+
+
+_PROBLEM_LEVEL_CONFIG: dict[str, dict[str, str]] = {
+    "campaign": {
+        "daily_table": "meta_ad_daily_campaign_metrics",
+        "daily_code_col": "normalized_campaign_code",
+        "daily_name_col": "campaign_name",
+        "realtime_table": "meta_ad_realtime_daily_campaign_metrics",
+        "realtime_code_col": "normalized_campaign_code",
+        "realtime_name_col": "campaign_name",
+    },
+    "adset": {
+        "daily_table": "meta_ad_daily_adset_metrics",
+        "daily_code_col": "normalized_adset_code",
+        "daily_name_col": "adset_name",
+        "realtime_table": "meta_ad_realtime_daily_adset_metrics",
+        "realtime_code_col": "normalized_adset_code",
+        "realtime_name_col": "adset_name",
+    },
+    "ad": {
+        "daily_table": "meta_ad_daily_ad_metrics",
+        "daily_code_col": "normalized_ad_code",
+        "daily_name_col": "ad_name",
+        "realtime_table": "meta_ad_realtime_daily_ad_metrics",
+        "realtime_code_col": "normalized_ad_code",
+        "realtime_name_col": "ad_name",
+    },
+}
 
 
 def get_threshold() -> float:
@@ -329,6 +380,120 @@ def get_alert_detail(
         judgment=judgment,
         trend=trend_series[:14],
     )
+
+
+def get_problem_ads(
+    level: str,
+    *,
+    search: str | None = None,
+    limit: int = 200,
+) -> tuple[date, list[ProblemAdItem]]:
+    """查询今天有消耗但成效为 0 的广告，并聚合多时间窗口指标。
+
+    Docs-anchor: docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
+    """
+    cfg = _problem_level_config(level)
+    business_date = current_meta_business_date()
+    yesterday = business_date - timedelta(days=1)
+    last_7d_start = business_date - timedelta(days=6)
+    last_30d_start = business_date - timedelta(days=29)
+    safe_limit = max(1, min(int(limit or 200), 500))
+
+    search_clause = ""
+    params: dict[str, Any] = {
+        "today": business_date,
+        "yesterday": yesterday,
+        "last_7d_start": last_7d_start,
+        "last_30d_start": last_30d_start,
+        "limit": safe_limit,
+    }
+    if search:
+        params["search"] = f"%{search.strip()}%"
+        search_clause = (
+            "AND (LOWER(s.name) LIKE LOWER(%(search)s) "
+            "OR LOWER(s.code) LIKE LOWER(%(search)s) "
+            "OR LOWER(COALESCE(s.matched_product_code, '')) LIKE LOWER(%(search)s)) "
+        )
+
+    source_sql = _problem_ads_source_sql(cfg)
+    rows = query(
+        f"""
+        SELECT
+          s.code,
+          MAX(s.name) AS name,
+          s.ad_account_id,
+          MAX(s.ad_account_name) AS ad_account_name,
+          MIN(s.metric_date) AS first_active_date,
+          MAX(s.metric_date) AS last_active_date,
+          SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS today_spend_usd,
+          SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS today_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.result_count, 0) ELSE 0 END) AS today_result_count,
+          SUM(CASE WHEN s.metric_date = %(yesterday)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS yesterday_spend_usd,
+          SUM(CASE WHEN s.metric_date = %(yesterday)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS yesterday_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date = %(yesterday)s THEN COALESCE(s.result_count, 0) ELSE 0 END) AS yesterday_result_count,
+          SUM(CASE WHEN s.metric_date >= %(last_7d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS last_7d_spend_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_7d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS last_7d_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_7d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.result_count, 0) ELSE 0 END) AS last_7d_result_count,
+          SUM(CASE WHEN s.metric_date >= %(last_30d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS last_30d_spend_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_30d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS last_30d_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_30d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.result_count, 0) ELSE 0 END) AS last_30d_result_count,
+          SUM(COALESCE(s.spend_usd, 0)) AS overall_spend_usd,
+          SUM(COALESCE(s.purchase_value_usd, 0)) AS overall_purchase_value_usd,
+          SUM(COALESCE(s.result_count, 0)) AS overall_result_count
+        FROM {source_sql} s
+        JOIN (
+          SELECT t.code, t.ad_account_id
+          FROM {source_sql} t
+          WHERE t.metric_date = %(today)s
+          GROUP BY t.code, t.ad_account_id
+          HAVING SUM(COALESCE(t.spend_usd, 0)) > 0
+             AND SUM(COALESCE(t.result_count, 0)) = 0
+        ) problem_today
+          ON problem_today.code = s.code
+         AND problem_today.ad_account_id <=> s.ad_account_id
+        WHERE COALESCE(s.spend_usd, 0) > 0
+          {search_clause}
+        GROUP BY s.code, s.ad_account_id
+        ORDER BY today_spend_usd DESC, last_7d_spend_usd DESC, overall_spend_usd DESC
+        LIMIT %(limit)s
+        """,
+        params,
+    )
+
+    items: list[ProblemAdItem] = []
+    for row in rows or []:
+        code = _safe_str(row.get("code"))
+        first_active = _iso_date(row.get("first_active_date")) or business_date.isoformat()
+        last_active = _iso_date(row.get("last_active_date"))
+        account_id = _safe_str(row.get("ad_account_id"))
+        name = _safe_str(row.get("name")) or code
+        items.append(
+            ProblemAdItem(
+                level=level,
+                code=code,
+                name=name,
+                ad_account_id=account_id,
+                ad_account_name=_safe_str(row.get("ad_account_name")),
+                first_active_date=first_active,
+                last_active_date=last_active,
+                detail_url=_problem_detail_url(
+                    level=level,
+                    code=code,
+                    name=name,
+                    ad_account_id=account_id,
+                    start_date=first_active,
+                    end_date=business_date.isoformat(),
+                ),
+                metrics={
+                    "today": _problem_metric(row, "today"),
+                    "yesterday": _problem_metric(row, "yesterday"),
+                    "last_7d": _problem_metric(row, "last_7d"),
+                    "last_30d": _problem_metric(row, "last_30d"),
+                    "overall": _problem_metric(row, "overall"),
+                },
+            )
+        )
+    return business_date, items
 
 
 def get_trend_series(
@@ -538,3 +703,97 @@ def _iso_date(value: Any) -> str | None:
 
 def _lang_label(code: str) -> str:
     return _LANG_LABELS.get(code.lower(), code.upper())
+
+
+def _problem_level_config(level: str) -> dict[str, str]:
+    normalized = (level or "").strip().lower()
+    cfg = _PROBLEM_LEVEL_CONFIG.get(normalized)
+    if not cfg:
+        raise ValueError("level must be one of campaign/adset/ad")
+    return cfg
+
+
+def _problem_ads_source_sql(cfg: dict[str, str]) -> str:
+    daily_table = cfg["daily_table"]
+    daily_code_col = cfg["daily_code_col"]
+    daily_name_col = cfg["daily_name_col"]
+    realtime_table = cfg["realtime_table"]
+    realtime_code_col = cfg["realtime_code_col"]
+    realtime_name_col = cfg["realtime_name_col"]
+    return f"""
+        (
+          SELECT
+            COALESCE(meta_business_date, report_date) AS metric_date,
+            {daily_code_col} AS code,
+            {daily_name_col} AS name,
+            ad_account_id,
+            ad_account_name,
+            matched_product_code,
+            spend_usd,
+            purchase_value_usd,
+            result_count
+          FROM {daily_table}
+          WHERE COALESCE(meta_business_date, report_date) < %(today)s
+            AND {daily_code_col} IS NOT NULL
+            AND {daily_code_col} <> ''
+          UNION ALL
+          SELECT
+            m.business_date AS metric_date,
+            m.{realtime_code_col} AS code,
+            m.{realtime_name_col} AS name,
+            m.ad_account_id,
+            m.ad_account_name,
+            NULL AS matched_product_code,
+            m.spend_usd,
+            m.purchase_value_usd,
+            m.result_count
+          FROM {realtime_table} m
+          INNER JOIN (
+            SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at
+            FROM {realtime_table}
+            WHERE business_date = %(today)s
+              AND data_completeness = 'realtime_partial'
+            GROUP BY business_date, ad_account_id
+          ) latest
+            ON latest.business_date = m.business_date
+           AND latest.ad_account_id = m.ad_account_id
+           AND latest.max_snapshot_at = m.snapshot_at
+          WHERE m.business_date = %(today)s
+            AND m.data_completeness = 'realtime_partial'
+            AND m.{realtime_code_col} IS NOT NULL
+            AND m.{realtime_code_col} <> ''
+        )
+    """
+
+
+def _problem_metric(row: dict[str, Any], prefix: str) -> ProblemMetric:
+    spend = round(_safe_float(row.get(f"{prefix}_spend_usd")), 2)
+    purchase = _safe_float(row.get(f"{prefix}_purchase_value_usd"))
+    result_count = int(_safe_float(row.get(f"{prefix}_result_count")))
+    return ProblemMetric(
+        spend_usd=spend,
+        result_count=result_count,
+        roas=round(purchase / spend, 4) if spend > 0.01 else None,
+    )
+
+
+def _problem_detail_url(
+    *,
+    level: str,
+    code: str,
+    name: str,
+    ad_account_id: str,
+    start_date: str,
+    end_date: str,
+) -> str:
+    params = {
+        "tab": "ads",
+        "ads_level": level,
+        "ads_code": code,
+        "ads_name": name,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    if ad_account_id:
+        params["ad_account_id"] = ad_account_id
+    return "/order-analytics?" + urlencode(params)

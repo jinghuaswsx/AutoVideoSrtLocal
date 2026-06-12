@@ -1067,6 +1067,18 @@ def test_ads_adset_and_ad_default_to_meta_business_today(authed_client_no_db):
     assert "adsSyncLevelRangeSelection(level);" in init_block
 
 
+def test_ads_deep_link_prefers_url_date_range(authed_client_no_db):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md"""
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "var startParam = (params.get('start_date') || '').trim();" in body
+    assert "var endParam = (params.get('end_date') || '').trim();" in body
+    assert "startDetailEl.value = startParam || adsRecentMonthStartIso();" in body
+    assert "endDetailEl.value = endParam || adsDefaultEndIso(level);" in body
+
+
 def test_ads_analysis_page_has_ad_account_filter_controls(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics/realtime/trend")
 

@@ -123,3 +123,77 @@ def test_api_set_threshold_rejects_invalid_and_persists(monkeypatch):
         response, status = _unwrap(route.api_set_threshold)()
     assert status == 400
     assert response.get_json()["error"] == "threshold must be a positive number"
+
+
+def test_api_problem_ads_serializes_table_rows(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+    from datetime import date
+
+    item = ad_alerts.ProblemAdItem(
+        level="campaign",
+        code="glow-campaign",
+        name="Glow Campaign",
+        ad_account_id="1234",
+        ad_account_name="newjoyloo",
+        first_active_date="2026-05-01",
+        last_active_date="2026-06-12",
+        detail_url="/order-analytics?tab=ads&ads_level=campaign&ads_code=glow-campaign",
+        metrics={
+            "today": ad_alerts.ProblemMetric(spend_usd=12.0, result_count=0, roas=0.0),
+            "yesterday": ad_alerts.ProblemMetric(spend_usd=8.0, result_count=1, roas=2.0),
+            "last_7d": ad_alerts.ProblemMetric(spend_usd=70.0, result_count=2, roas=0.5),
+            "last_30d": ad_alerts.ProblemMetric(spend_usd=300.0, result_count=8, roas=1.5),
+            "overall": ad_alerts.ProblemMetric(spend_usd=500.0, result_count=20, roas=2.0),
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_problem_ads(level, **kwargs):
+        if level == "bogus":
+            raise ValueError("level must be one of campaign/adset/ad")
+        captured["level"] = level
+        captured.update(kwargs)
+        return date(2026, 6, 12), [item]
+
+    monkeypatch.setattr(route.ad_alerts, "get_problem_ads", fake_get_problem_ads)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context("/ad-alerts/api/problem-ads?level=campaign&q=Glow&limit=50"):
+        response = _unwrap(route.api_problem_ads)()
+
+    payload = response.get_json()
+    assert captured == {"level": "campaign", "search": "Glow", "limit": 50}
+    assert payload["business_date"] == "2026-06-12"
+    assert payload["total"] == 1
+    assert payload["items"][0]["metrics"]["today"] == {
+        "spend_usd": 12.0,
+        "result_count": 0,
+        "roas": 0.0,
+    }
+    assert payload["items"][0]["detail_url"].startswith("/order-analytics?")
+
+    with flask_app.test_request_context("/ad-alerts/api/problem-ads?level=bogus"):
+        response, status = _unwrap(route.api_problem_ads)()
+    assert status == 400
+    assert response.get_json()["error"] == "invalid_param"
+
+
+def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypatch):
+    from datetime import date
+    from web.routes import ad_alerts as route
+
+    raw_client = authed_client_no_db.application.test_client()
+    unauth_response = raw_client.get("/ad-alerts/")
+    assert unauth_response.status_code == 302
+
+    monkeypatch.setattr(route.ad_alerts, "get_threshold", lambda: 1.4)
+    page_response = authed_client_no_db.get("/ad-alerts/")
+    assert page_response.status_code == 200
+    assert "广告预警" in page_response.get_data(as_text=True)
+    assert "问题广告" in page_response.get_data(as_text=True)
+
+    monkeypatch.setattr(route.ad_alerts, "get_problem_ads", lambda *args, **kwargs: (date(2026, 6, 12), []))
+    api_response = authed_client_no_db.get("/ad-alerts/api/problem-ads?level=campaign")
+    assert api_response.status_code == 200
+    assert api_response.get_json()["business_date"] == "2026-06-12"

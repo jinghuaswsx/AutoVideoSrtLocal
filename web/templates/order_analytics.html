@@ -12282,10 +12282,14 @@
   }
 
   function adsApplyDeepLinkDateRange(level) {
+    // Docs-anchor: docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
+    var params = new URLSearchParams(window.location.search);
     var startDetailEl = document.querySelector('[data-ads-detail-start="' + level + '"]');
     var endDetailEl = document.querySelector('[data-ads-detail-end="' + level + '"]');
-    if (startDetailEl) startDetailEl.value = adsRecentMonthStartIso();
-    if (endDetailEl) endDetailEl.value = adsDefaultEndIso(level);
+    var startParam = (params.get('start_date') || '').trim();
+    var endParam = (params.get('end_date') || '').trim();
+    if (startDetailEl) startDetailEl.value = startParam || adsRecentMonthStartIso();
+    if (endDetailEl) endDetailEl.value = endParam || adsDefaultEndIso(level);
     if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
   }
 
