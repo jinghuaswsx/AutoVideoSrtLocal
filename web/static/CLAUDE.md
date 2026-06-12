@@ -58,3 +58,6 @@ empty / loading / error 三态都要有；响应式：侧栏 < 1024 折叠为抽
 - 行高：正文 `--leading`（1.55），标题 `--leading-tight`（1.3）
 - 数字 / 代码用 `--font-mono`
 - UI label 半角标点，正文全角
+
+## mobile.css 表格兜底 vs 模板自有移动端布局（事故 2026-06-12）
+`mobile.css` 的「表格兜底横滚」规则 `.main-content table:not(.mobile-no-scroll) > thead/tbody { display: table }` specificity 为 (0,2,2)，会压过模板内 `.xxx-table thead { display: none }` 这类 (0,1,1) 的移动端卡片化规则——广告预警「问题广告」表移动端布局曾因此整体失效（表头不隐藏、tr 不变卡片）。**模板要自管小屏表格布局时，必须给 `<table>` 加 `mobile-no-scroll` class 退出兜底**；模板 contract 测试只查 CSS 文本存在，拦不住级联覆盖，必要时用真实浏览器 computed style 验证。

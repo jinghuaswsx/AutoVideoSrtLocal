@@ -351,6 +351,17 @@
   var chartEl = document.getElementById('trendChart');
   var jumpBtn = document.getElementById('jumpAnalyticsBtn');
 
+  function fetchWithTimeout(url, options, timeoutMs) {
+    options = options || {};
+    if (typeof AbortController === 'function' && !options.signal) {
+      var controller = new AbortController();
+      var timer = window.setTimeout(function() { controller.abort(); }, timeoutMs || 30000);
+      options.signal = controller.signal;
+      return fetch(url, options).finally(function() { window.clearTimeout(timer); });
+    }
+    return fetch(url, options);
+  }
+
   function html(value) {
     var div = document.createElement('div');
     div.textContent = value == null ? '' : String(value);
@@ -374,7 +385,7 @@
             + '&ad_code=' + encodeURIComponent(adCode) 
             + '&ad_account_id=' + encodeURIComponent(adAccountId);
             
-    fetch(url)
+    fetchWithTimeout(url)
       .then(function(resp) {
         if (!resp.ok) throw new Error('ad_detail_failed');
         return resp.json();

@@ -140,6 +140,11 @@
       font-weight: 800;
       white-space: nowrap;
     }
+    .loss-days-recovering {
+      border-color: rgba(245, 158, 11, 0.3);
+      background: #fffbeb;
+      color: #b45309;
+    }
     .ad-meta {
       display: flex;
       flex-wrap: wrap;
@@ -252,7 +257,11 @@
                 <strong>{{ item.product_name or item.product_code or "未匹配商品" }}</strong>
                 <span class="code">{{ item.product_code or item.code }}</span>
               </div>
-              <span class="loss-days">连续亏损 {{ item.consecutive_loss_days or 0 }} 天</span>
+              {% if (item.consecutive_loss_days or 0) > 0 %}
+              <span class="loss-days">连续亏损 {{ item.consecutive_loss_days }} 天</span>
+              {% else %}
+              <span class="loss-days loss-days-recovering">7 天亏损 · 今日转好</span>
+              {% endif %}
             </div>
             <div class="ad-meta">
               <span>AD {{ item.name or item.code }}</span>

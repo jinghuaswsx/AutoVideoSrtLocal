@@ -404,6 +404,17 @@
   var chartEl = document.getElementById('trendChart');
   var countryAdListEl = document.getElementById('countryAdList');
 
+  function fetchWithTimeout(url, options, timeoutMs) {
+    options = options || {};
+    if (typeof AbortController === 'function' && !options.signal) {
+      var controller = new AbortController();
+      var timer = window.setTimeout(function() { controller.abort(); }, timeoutMs || 30000);
+      options.signal = controller.signal;
+      return fetch(url, options).finally(function() { window.clearTimeout(timer); });
+    }
+    return fetch(url, options);
+  }
+
   function html(value) {
     var div = document.createElement('div');
     div.textContent = value == null ? '' : String(value);
@@ -494,7 +505,7 @@
   }
 
   function loadChartData() {
-    fetch('/ad-alerts/api/detail?product_id=' + productId + '&lang=' + encodeURIComponent(lang))
+    fetchWithTimeout('/ad-alerts/api/detail?product_id=' + productId + '&lang=' + encodeURIComponent(lang))
       .then(function(resp) {
         if (!resp.ok) throw new Error('chart_failed');
         return resp.json();
@@ -514,11 +525,11 @@
     var adListUrl = '/ad-alerts/api/ad-list?product_id=' + productId + '&lang=' + encodeURIComponent(lang);
     var productUrl = '/ad-alerts/api/product-detail/' + productId + '?threshold=' + encodeURIComponent(threshold);
     Promise.all([
-      fetch(adListUrl).then(function(resp) {
+      fetchWithTimeout(adListUrl).then(function(resp) {
         if (!resp.ok) throw new Error('ad_list_failed');
         return resp.json();
       }),
-      fetch(productUrl).then(function(resp) {
+      fetchWithTimeout(productUrl).then(function(resp) {
         if (!resp.ok) throw new Error('product_detail_failed');
         return resp.json();
       })

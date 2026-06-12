@@ -1197,14 +1197,22 @@
   .oc-ad-alert-title h1 {
     font-size: 22px;
   }
-  .oc-ad-alert-tools,
+  .oc-ad-alert-tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+    gap: 8px;
+  }
   .oc-ad-alert-problem-actions,
   .oc-ad-alert-highloss-toolbar .oc-ad-alert-problem-actions {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
+    gap: 8px;
   }
-  .oc-ad-alert-tools > *,
+  .oc-ad-alert-problem-actions > .oc-ad-alert-search {
+    grid-column: 1 / -1;
+  }
   .oc-ad-alert-problem-actions > *,
   .oc-ad-alert-column-picker,
   .oc-ad-alert-column-picker > button,
@@ -1230,6 +1238,15 @@
   }
   .oc-ad-alert-share-row {
     display: grid;
+  }
+  .oc-ad-alert-highloss-note,
+  .oc-ad-alert-problem-note {
+    padding: 8px 12px;
+    font-size: 11px;
+    margin-bottom: 10px;
+  }
+  .oc-ad-alert-business-date {
+    margin: 4px 0;
   }
   .oc-ad-alert-card {
     display: grid;
@@ -1460,7 +1477,7 @@
     <div class="oc-ad-alert-business-date" id="adAlertProblemDate">今天：加载中</div>
     <div class="oc-ad-alert-problem-note">问题广告定义：今天有消耗且今天成效为 0。点击行会跳转到广告分析详情页，默认展示该广告自上线以来的数据。</div>
     <div class="oc-ad-alert-table-wrap oc-ad-alert-problem-table-wrap">
-      <table class="oc-ad-alert-table oc-ad-alert-problem-table" aria-label="问题广告列表">
+      <table class="oc-ad-alert-table oc-ad-alert-problem-table mobile-no-scroll" aria-label="问题广告列表">
         <colgroup span="2"></colgroup>
         <colgroup span="3" class="oc-ad-alert-col-today"></colgroup>
         <colgroup span="3" class="oc-ad-alert-col-yesterday"></colgroup>
@@ -1575,6 +1592,17 @@
   var highLossShareMeta = document.getElementById('adAlertHighLossShareMeta');
   var problemBody = document.getElementById('adAlertProblemBody');
   var problemDate = document.getElementById('adAlertProblemDate');
+
+  function fetchWithTimeout(url, options, timeoutMs) {
+    options = options || {};
+    if (typeof AbortController === 'function' && !options.signal) {
+      var controller = new AbortController();
+      var timer = window.setTimeout(function() { controller.abort(); }, timeoutMs || 30000);
+      options.signal = controller.signal;
+      return fetch(url, options).finally(function() { window.clearTimeout(timer); });
+    }
+    return fetch(url, options);
+  }
 
   function showToast(message, type) {
     var container = document.getElementById('adAlertToastContainer');
@@ -1733,7 +1761,7 @@
     if (endVal) params.set('end_date', endVal);
 
     // Legacy endpoint: /ad-alerts/api/list
-    fetch('/ad-alerts/api/products?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+    fetchWithTimeout('/ad-alerts/api/products?' + params.toString(), { headers: { 'Accept': 'application/json' } })
       .then(function(resp) {
         if (!resp.ok) throw new Error('list_failed');
         return resp.json();
@@ -1830,7 +1858,7 @@
     params.set('limit', '30');
     if (state.highLossSearch) params.set('q', state.highLossSearch);
     if (state.showHandled) params.set('include_handled', '1');
-    fetch('/ad-alerts/api/high-loss-ads?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+    fetchWithTimeout('/ad-alerts/api/high-loss-ads?' + params.toString(), { headers: { 'Accept': 'application/json' } })
       .then(function(resp) {
         if (!resp.ok) throw new Error('high_loss_failed');
         return resp.json();
@@ -1862,6 +1890,10 @@
       var productName = item.product_name || item.product_code || '未匹配商品';
       var productCode = item.product_code || item.code || '';
       var metrics = item.metrics || {};
+      var lossDays = Number(item.consecutive_loss_days || 0);
+      var lossBadge = lossDays > 0
+        ? '<span class="oc-ad-alert-badge oc-ad-alert-severe">连续亏损 ' + lossDays + ' 天</span>'
+        : '<span class="oc-ad-alert-badge oc-ad-alert-mild">7 天亏损 · 今日转好</span>';
       var imgHtml = '';
       if (item.product_main_image) {
         imgHtml = '  <div class="oc-ad-alert-card-image-wrapper"><img src="' + html(item.product_main_image) + '" class="oc-ad-alert-card-image" alt="商品主图"></div>';
@@ -1877,7 +1909,7 @@
         + '        <span class="oc-ad-alert-name">' + html(productName) + '</span>'
         + '        <span class="oc-ad-alert-code">' + html(productCode) + '</span>'
         + '      </span>'
-        + '      <span class="oc-ad-alert-badge oc-ad-alert-severe">连续亏损 ' + Number(item.consecutive_loss_days || 0) + ' 天</span>'
+        + '      ' + lossBadge
         + '    </span>'
         + '    <div class="oc-ad-alert-ad-meta">'
         + '      <span>AD ' + html(item.name || item.code || '') + '</span>'
@@ -1919,7 +1951,7 @@
 
   function markHighLossAction(targetKey, action, btn) {
     if (btn) btn.disabled = true;
-    fetch('/ad-alerts/api/actions', {
+    fetchWithTimeout('/ad-alerts/api/actions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1969,7 +2001,7 @@
     state.highLossSearch = (searchInput && searchInput.value || '').trim();
     btn.disabled = true;
     btn.textContent = '生成中';
-    fetch('/ad-alerts/api/high-loss-ads/share', {
+    fetchWithTimeout('/ad-alerts/api/high-loss-ads/share', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2011,7 +2043,7 @@
     params.set('level', state.problemLevel);
     params.set('limit', '200');
     if (state.problemSearch) params.set('q', state.problemSearch);
-    fetch('/ad-alerts/api/problem-ads?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+    fetchWithTimeout('/ad-alerts/api/problem-ads?' + params.toString(), { headers: { 'Accept': 'application/json' } })
       .then(function(resp) {
         if (!resp.ok) throw new Error('problem_failed');
         return resp.json();
@@ -2116,7 +2148,7 @@
     adEvaluationCache = {};
     mask.removeAttribute('hidden');
     body.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
-    fetch('/ad-alerts/api/detail?product_id=' + encodeURIComponent(productId) + '&lang=' + encodeURIComponent(lang), {
+    fetchWithTimeout('/ad-alerts/api/detail?product_id=' + encodeURIComponent(productId) + '&lang=' + encodeURIComponent(lang), {
       headers: { 'Accept': 'application/json' }
     })
       .then(function(resp) {
@@ -2178,7 +2210,7 @@
     var btn = document.getElementById('adAlertEvaluateBtn');
     if (!container) return;
     if (btn) btn.disabled = true;
-    fetch('/ad-alerts/api/ad-list?product_id=' + encodeURIComponent(productId) + '&lang=' + encodeURIComponent(lang), {
+    fetchWithTimeout('/ad-alerts/api/ad-list?product_id=' + encodeURIComponent(productId) + '&lang=' + encodeURIComponent(lang), {
       headers: { 'Accept': 'application/json' }
     })
       .then(function(resp) {
@@ -2255,7 +2287,7 @@
     state.evalCacheKey = cacheKey;
     btn.disabled = true;
     btn.textContent = '分析中';
-    fetch('/ad-alerts/api/evaluate', {
+    fetchWithTimeout('/ad-alerts/api/evaluate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2267,7 +2299,7 @@
         lang: normalizedLang,
         threshold: safeThreshold
       })
-    })
+    }, 120000)
       .then(function(resp) {
         return resp.json().then(function(data) {
           if (!resp.ok) {
@@ -2306,7 +2338,7 @@
     btn.textContent = '分析中';
     resultEl.hidden = false;
     resultEl.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
-    fetch('/ad-alerts/api/evaluate', {
+    fetchWithTimeout('/ad-alerts/api/evaluate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2318,7 +2350,7 @@
         lang: String(lang || '').toLowerCase(),
         threshold: Number(state.threshold || 0)
       })
-    })
+    }, 120000)
       .then(function(resp) {
         return resp.json().then(function(data) {
           if (!resp.ok) {
@@ -2785,7 +2817,7 @@
       showToast('阈值必须大于 0', 'error');
       return;
     }
-    fetch('/ad-alerts/api/threshold', {
+    fetchWithTimeout('/ad-alerts/api/threshold', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
