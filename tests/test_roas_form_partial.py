@@ -49,6 +49,13 @@ def test_partial_contains_calculate_button_and_results():
     assert 'id="roasEffectiveValue"' in html
 
 
+def test_partial_documents_roas_fallback_formula():
+    html = PARTIAL.read_text(encoding="utf-8")
+    assert "用户支付运费为空按 $7" in html
+    assert "总收入 10% / 20% 兜底" in html
+    assert "手续费按总收入 7%" in html
+
+
 def test_medias_list_includes_partial():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     assert "medias/_roas_form.html" in html

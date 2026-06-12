@@ -545,6 +545,22 @@
     });
   }
 
+  function roasEffectiveBasisLabel(calc) {
+    const basis = calc && calc.effective_basis;
+    if (basis === 'actual') return '实际';
+    if (basis === 'fallback') return '部分兜底';
+    return '估算兜底';
+  }
+
+  function roasSourceSummary(calc) {
+    const value = calc || {};
+    const parts = [];
+    parts.push(value.shipping_source === 'fallback_7usd' ? '运费 $7 兜底' : '运费用实际值');
+    parts.push(value.purchase_source === 'fallback_10pct' ? '采购 10% 兜底' : '采购用实际值');
+    parts.push(value.packet_source === 'fallback_20pct' ? '物流 20% 兜底' : '物流用实际值');
+    return parts.join(' / ');
+  }
+
   function renderProductLangAdBar(coverage, langAdSummary, adSummary, productId, p) {
     const coverageMap = coverage || {};
     const langSummary = langAdSummary || {};
@@ -559,7 +575,8 @@
     }
     const roasCalc = productObj.roas_calculation || {};
     const breakevenRoas = roasCalc.effective_roas;
-    const breakevenRoasBasis = roasCalc.effective_basis === 'actual' ? '小包实费' : '小包预估';
+    const breakevenRoasBasis = roasEffectiveBasisLabel(roasCalc);
+    const breakevenSource = roasSourceSummary(roasCalc);
     const purchasePrice = productObj.purchase_price;
     const packetCost = productObj.packet_cost_actual !== null && productObj.packet_cost_actual !== undefined
       ? productObj.packet_cost_actual
@@ -593,24 +610,33 @@
       : '<div class="oc-lang-empty oc-country-metrics-line muted">—</div>';
 
     const costParts = [];
-    if (purchasePrice !== null && purchasePrice !== undefined && purchasePrice !== '') {
+    if (roasCalc.purchase_source === 'fallback_10pct') {
+      costParts.push('采购: 10%兜底');
+    } else if (purchasePrice !== null && purchasePrice !== undefined && purchasePrice !== '') {
       costParts.push(`采购: ¥${Number(purchasePrice).toFixed(1)}`);
     } else {
-      costParts.push(`采购: ¥-`);
+      costParts.push('采购: 10%兜底');
     }
-    if (packetCost !== null && packetCost !== undefined && packetCost !== '') {
+    if (roasCalc.packet_source === 'fallback_20pct') {
+      costParts.push('物流: 20%兜底');
+    } else if (packetCost !== null && packetCost !== undefined && packetCost !== '') {
       const isActual = productObj.packet_cost_actual !== null && productObj.packet_cost_actual !== undefined;
       costParts.push(`物流: ¥${Number(packetCost).toFixed(1)}${isActual ? ' (实)' : ' (估)'}`);
     } else {
-      costParts.push(`物流: ¥-`);
+      costParts.push('物流: 20%兜底');
+    }
+    if (roasCalc.shipping_source === 'fallback_7usd') {
+      costParts.push('运费: $7兜底');
+    } else if (productObj.standalone_shipping_fee !== null && productObj.standalone_shipping_fee !== undefined && productObj.standalone_shipping_fee !== '') {
+      costParts.push(`运费: $${Number(productObj.standalone_shipping_fee).toFixed(2)}`);
     }
     const costText = costParts.join(' | ');
-    let breakevenTitle = `保本 ROAS: — / 口径: 独立站估算 / ${breakevenRoasBasis}`;
-    let breakevenLineHtml = `<div class="oc-breakeven-roas-line muted" title="${escapeHtml(breakevenTitle)}" style="display:flex; align-items:baseline; gap:3px; min-width:0; white-space:nowrap; line-height:1.1;"><span style="font-size:11px;">保本</span><strong style="font-size:13px; color:var(--oc-fg-muted); font-weight:800; margin-left:0;">—</strong><span class="oc-breakeven-roas-note" style="font-size:10px; color:var(--oc-fg-subtle); font-weight:500;">独立站估算</span></div>`;
+    let breakevenTitle = `保本 ROAS: — / 口径: 独立站保底 / ${breakevenRoasBasis} / ${breakevenSource}`;
+    let breakevenLineHtml = `<div class="oc-breakeven-roas-line muted" title="${escapeHtml(breakevenTitle)}" style="display:flex; align-items:baseline; gap:3px; min-width:0; white-space:nowrap; line-height:1.1;"><span style="font-size:11px;">保本</span><strong style="font-size:13px; color:var(--oc-fg-muted); font-weight:800; margin-left:0;">—</strong><span class="oc-breakeven-roas-note" style="font-size:10px; color:var(--oc-fg-subtle); font-weight:500;">独立站保底</span></div>`;
     if (breakevenRoas !== undefined && breakevenRoas !== null && breakevenRoas !== '') {
       const breakevenValue = fmtBreakevenRoas(breakevenRoas);
-      breakevenTitle = `保本 ROAS: ${breakevenValue} / 口径: 独立站估算 / ${breakevenRoasBasis}`;
-      breakevenLineHtml = `<div class="oc-breakeven-roas-line" title="${escapeHtml(breakevenTitle)}" style="display:flex; align-items:baseline; gap:3px; min-width:0; white-space:nowrap; line-height:1.1;"><span style="font-size:11px; color:var(--oc-fg-muted); font-weight:600;">保本</span><strong style="font-size:14px; color:var(--oc-accent); font-weight:800; margin-left:0;">${breakevenValue}</strong><span class="oc-breakeven-roas-note" style="font-size:10px; color:var(--oc-fg-subtle); font-weight:500;">独立站估算</span></div>`;
+      breakevenTitle = `保本 ROAS: ${breakevenValue} / 口径: 独立站保底 / ${breakevenRoasBasis} / ${breakevenSource}`;
+      breakevenLineHtml = `<div class="oc-breakeven-roas-line" title="${escapeHtml(breakevenTitle)}" style="display:flex; align-items:baseline; gap:3px; min-width:0; white-space:nowrap; line-height:1.1;"><span style="font-size:11px; color:var(--oc-fg-muted); font-weight:600;">保本</span><strong style="font-size:14px; color:var(--oc-accent); font-weight:800; margin-left:0;">${breakevenValue}</strong><span class="oc-breakeven-roas-note" style="font-size:10px; color:var(--oc-fg-subtle); font-weight:500;">独立站保底</span></div>`;
     }
 
     const costHtml = costText
@@ -3477,7 +3503,7 @@
     if (!calc || calc.effective_roas === null || calc.effective_roas === undefined) return '<span class="muted">—</span>';
     const num = Number(calc.effective_roas);
     if (!isFinite(num)) return '<span class="muted">—</span>';
-    const basisLabel = calc.effective_basis === 'actual' ? '小包实费' : '小包预估';
+    const basisLabel = roasEffectiveBasisLabel(calc);
     if (num <= 0) {
       return `<span>${num.toFixed(2)}</span><span class="muted" style="font-size:11px;"> ${basisLabel}</span>`;
     }
@@ -3587,7 +3613,7 @@
     document.getElementById('skuDetailShopifyTitle').textContent = product.shopify_title || '—';
     document.getElementById('skuDetailShopifyId').textContent = product.shopifyid || '—';
     const note = document.getElementById('skuDetailCostNote');
-    note.textContent = '估算保本 ROAS：variant 级 Shopify 售价 + 人工采购价 / 店小秘云仓采购价（如有）/ 否则产品级采购价 + 产品级小包成本 + 用户支付运费；后缀「小包实费/小包预估」只表示小包成本来源。订单保本 ROAS：最近稳定订单快照，后缀表示 Shopify Payments 手续费来源。';
+    note.textContent = '估算保本 ROAS：variant 级 Shopify 售价 + 用户支付运费（无值按 $7）+ 真实采购/物流；缺失采购按总收入 10% 兜底，缺失物流按总收入 20% 兜底。订单保本 ROAS：最近稳定订单快照，后缀表示 Shopify Payments 手续费来源。';
 
     const skus = Array.isArray(product.skus) ? product.skus : [];
     const tbody = document.getElementById('skuDetailRows');
