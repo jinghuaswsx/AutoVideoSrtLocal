@@ -691,7 +691,6 @@
   font-size: 14px;
   font-weight: 500;
 }
-
 /* ────────── Modal ────────── */
 .oc-modal-mask { position:fixed; inset:0; background:oklch(22% 0.02 235 / 0.48); display:flex; align-items:center; justify-content:center; padding:var(--oc-sp-5); z-index:200; animation:oc-fade var(--oc-dur) var(--oc-ease-out); }
 @keyframes oc-fade { from{opacity:0;} to{opacity:1;} }
@@ -713,6 +712,93 @@
 .oc-btn.ghost { background:var(--oc-bg); color:var(--oc-fg); border-color:var(--oc-border-strong); }
 .oc-btn.ghost:hover { background:var(--oc-bg-muted); border-color:var(--oc-border-strong); }
 
+.oc-ad-alert-state.loading {
+  color: var(--oc-ad-alert-blue);
+  font-weight: bold;
+  font-size: 42px;
+}
+.oc-ad-alert-state.loading::after {
+  content: '';
+  display: inline-block;
+  text-align: left;
+  width: 1.5em;
+  animation: loading-dots 2s steps(6) infinite;
+}
+@keyframes loading-dots {
+  0% { content: ''; }
+  16.6% { content: '.'; }
+  33.3% { content: '..'; }
+  50% { content: '...'; }
+  66.6% { content: '....'; }
+  83.3% { content: '.....'; }
+  100% { content: '......'; }
+}
+.oc-ad-alert-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--oc-ad-alert-modal-mask);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  animation: modalFadeIn 0.2s ease-out;
+}
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.oc-ad-alert-modal-mask[hidden] {
+  display: none;
+}
+.oc-ad-alert-modal {
+  width: min(840px, 100%);
+  max-height: min(90vh, 800px);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  border-radius: 16px;
+  border: 1px solid var(--oc-ad-alert-border);
+  background: var(--oc-ad-alert-modal-bg);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.15);
+  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes modalSlideUp {
+  from { transform: translateY(16px) scale(0.98); }
+  to { transform: translateY(0) scale(1); }
+}
+.oc-ad-alert-modal-small {
+  width: min(440px, 100%);
+}
+.oc-ad-alert-modal-head,
+.oc-ad-alert-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+  background: var(--oc-ad-alert-modal-head-bg);
+  color: var(--oc-ad-alert-modal-head-fg);
+}
+.oc-ad-alert-modal-foot {
+  justify-content: flex-end;
+  border-top: 1px solid var(--oc-ad-alert-border);
+  border-bottom: 0;
+}
+.oc-ad-alert-modal-head h2 {
+  margin: 0;
+  color: inherit;
+  font-size: 18px;
+  font-weight: 800;
+}
+.oc-ad-alert-modal-body {
+  overflow: auto;
+  padding: 20px;
+  background: var(--oc-ad-alert-modal-bg);
+}
+>>>>>>> style-loading-animation
 .oc-ad-alert-detail-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -959,7 +1045,7 @@
     </div>
 
     <div class="oc-ad-alert-list" id="adAlertList">
-      <div class="oc-ad-alert-state">加载中</div>
+      <div class="oc-ad-alert-state loading">加载中</div>
     </div>
   </section>
 
@@ -1037,7 +1123,7 @@
       </button>
     </div>
     <div class="oc-modal-body" id="adAlertDetailBody">
-      <div class="oc-ad-alert-state">加载中</div>
+      <div class="oc-ad-alert-state loading">加载中</div>
     </div>
   </div>
 </div>
@@ -1235,7 +1321,7 @@
   }
 
   function loadList() {
-    listEl.innerHTML = '<div class="oc-ad-alert-state">加载中</div>';
+    listEl.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
     var params = new URLSearchParams();
     if (state.threshold) params.set('threshold', state.threshold);
     if (state.severity) params.set('severity', state.severity);
@@ -1330,7 +1416,7 @@
 
   function loadProblemAds() {
     if (!problemBody) return;
-    problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state">加载中</td></tr>';
+    problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state loading">加载中</td></tr>';
     var params = new URLSearchParams();
     params.set('level', state.problemLevel);
     params.set('limit', '200');
@@ -1437,7 +1523,7 @@
     var body = document.getElementById('adAlertDetailBody');
     adEvaluationCache = {};
     mask.removeAttribute('hidden');
-    body.innerHTML = '<div class="oc-ad-alert-state">加载中</div>';
+    body.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
     fetch('/ad-alerts/api/detail?product_id=' + encodeURIComponent(productId) + '&lang=' + encodeURIComponent(lang), {
       headers: { 'Accept': 'application/json' }
     })
@@ -1488,7 +1574,7 @@
       + '    <button class="oc-btn primary" type="button" id="adAlertEvaluateBtn" data-product-id="' + html(detail.product_id) + '" data-lang="' + html(detail.lang || '') + '">AI 评估</button>'
       + '  </div>'
       + '  <div class="oc-ad-alert-table-wrap" id="adAlertAdList">'
-      + '    <div class="oc-ad-alert-state">加载 AD 数据</div>'
+      + '    <div class="oc-ad-alert-state loading">加载中</div>'
       + '  </div>'
       + '  <div id="adAlertEvaluationResult" hidden></div>'
       + '</div>';
@@ -1557,7 +1643,7 @@
     }
     var resultEl = document.createElement('div');
     resultEl.className = 'oc-ad-alert-card-eval';
-    resultEl.innerHTML = '<div class="oc-ad-alert-state">正在分析广告数据</div>';
+    resultEl.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
     var actions = btn.closest('.oc-ad-alert-card-actions');
     if (actions) {
       actions.insertAdjacentElement('afterend', resultEl);
@@ -1627,7 +1713,7 @@
     btn.disabled = true;
     btn.textContent = '分析中';
     resultEl.hidden = false;
-    resultEl.innerHTML = '<div class="oc-ad-alert-state">正在分析广告数据</div>';
+    resultEl.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
     fetch('/ad-alerts/api/evaluate', {
       method: 'POST',
       headers: {
