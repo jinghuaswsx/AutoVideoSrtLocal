@@ -48,6 +48,8 @@ from appcore.order_analytics.profit_repository import (
 )
 log = logging.getLogger(__name__)
 
+PURCHASE_SANITY_MAX_REVENUE_RATIO = Decimal("1.0")
+
 
 _LINE_QUERY = (
     "SELECT d.id AS dxm_order_line_id, d.product_id, d.quantity, "
@@ -65,6 +67,42 @@ _LINE_QUERY = (
     "WHERE d.meta_business_date BETWEEN %s AND %s "
     "ORDER BY d.id"
 )
+
+
+def _purchase_price_source(line: dict[str, Any], purchase_price: float | None) -> str | None:
+    if purchase_price is None:
+        return None
+    if _safe_positive(line.get("purchase_price_snapshot_cny")) is not None:
+        return "order_snapshot"
+    return "media_product"
+
+
+def _purchase_price_sanity(
+    *,
+    purchase_price_cny: float | None,
+    quantity: int,
+    rmb_per_usd: Decimal,
+    line_revenue_usd: float,
+    source: str | None,
+) -> dict[str, Any] | None:
+    if purchase_price_cny is None or quantity <= 0 or rmb_per_usd <= 0:
+        return None
+    revenue = Decimal(str(line_revenue_usd or 0))
+    if revenue <= 0:
+        return None
+    purchase = Decimal(str(purchase_price_cny)) * Decimal(quantity) / rmb_per_usd
+    max_allowed = revenue * PURCHASE_SANITY_MAX_REVENUE_RATIO
+    if purchase <= max_allowed:
+        return None
+    return {
+        "reason": "purchase_usd_exceeds_line_revenue",
+        "source": source,
+        "purchase_price_cny": float(Decimal(str(purchase_price_cny))),
+        "quantity": int(quantity),
+        "purchase_usd": float(purchase.quantize(Decimal("0.0001"))),
+        "line_revenue_usd": float(revenue.quantize(Decimal("0.0001"))),
+        "max_revenue_ratio": float(PURCHASE_SANITY_MAX_REVENUE_RATIO),
+    }
 
 
 def _iter_months(date_from: date, date_to: date):
@@ -126,8 +164,24 @@ def _process_line(
     line_amount = float(line.get("line_amount") or 0)
     quantity = int(line.get("quantity") or 1)
 
+    shipping_alloc = allocate_shipping_to_line(
+        line_amount=line_amount,
+        order_total_line_amount=order_total_amount,
+        order_shipping_usd=order_shipping,
+    )
+
     # 采购价完备性
     purchase_price = _safe_positive(line.get("purchase_price"))
+    purchase_source = _purchase_price_source(line, purchase_price)
+    purchase_sanity = _purchase_price_sanity(
+        purchase_price_cny=purchase_price,
+        quantity=quantity,
+        rmb_per_usd=rmb_per_usd,
+        line_revenue_usd=line_amount + float(shipping_alloc or 0),
+        source=purchase_source,
+    )
+    if purchase_sanity is not None:
+        purchase_price = None
     missing: list[str] = []
     if purchase_price is None:
         missing.append("purchase_price")
@@ -192,6 +246,8 @@ def _process_line(
         "sku_daily_units": sku_units_cache[cache_key],
         "sku_daily_ad_spend_usd": sku_spend_cache[cache_key],
         "product_purchase_price_cny": purchase_price,
+        "purchase_price_source": purchase_source,
+        "purchase_price_sanity": purchase_sanity,
         "shipping_cost_cny": shipping_cost_cny,
         "shipping_cost_source": shipping_cost_source,
         **(exchange_rate_basis or {}),

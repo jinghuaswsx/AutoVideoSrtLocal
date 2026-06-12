@@ -186,6 +186,8 @@ def calculate_line_profit(
             "exchange_rate_source_id": line.get("exchange_rate_source_id"),
             "return_reserve_rate": float(return_reserve_rate),
             "purchase_price_cny": float(purchase_cny),
+            "purchase_price_source": line.get("purchase_price_source"),
+            "purchase_price_sanity": line.get("purchase_price_sanity"),
             "shipping_cost_cny": float(shipping_cost_cny),
             "shipping_cost_source": line.get("shipping_cost_source"),
             "sku_daily_units": int(line.get("sku_daily_units") or 0),
