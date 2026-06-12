@@ -10395,9 +10395,6 @@
     });
     // Link Check Modal bindings
     $('linkCheckModalClose') && $('linkCheckModalClose').addEventListener('click', closeLinkCheckModal);
-    $('linkCheckModalMask') && $('linkCheckModalMask').addEventListener('click', (e) => {
-      if (e.target.id === 'linkCheckModalMask') closeLinkCheckModal();
-    });
     $('linkCheckStartBtn') && $('linkCheckStartBtn').addEventListener('click', startLinkCheck);
     $('linkCheckStopBtn') && $('linkCheckStopBtn').addEventListener('click', stopLinkCheck);
 
@@ -10411,7 +10408,6 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && $('roasModalMask') && !$('roasModalMask').hidden) closeRoasModal();
       if (e.key === 'Escape' && $('adOrdersReportMask') && !$('adOrdersReportMask').hidden) closeAdOrdersReportModal();
-      if (e.key === 'Escape' && $('linkCheckModalMask') && !$('linkCheckModalMask').hidden) closeLinkCheckModal();
     });
 
     $('cwAddBtn').addEventListener('click', () => {

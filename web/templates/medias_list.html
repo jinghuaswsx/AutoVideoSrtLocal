@@ -4744,7 +4744,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
   </div>
 </div>
 <div id="linkCheckModalMask" class="oc-modal-mask oc" hidden>
-  <div class="oc-modal" role="dialog" aria-modal="true" aria-labelledby="linkCheckModalTitle" style="max-width: 800px; width: 90%;">
+  <div class="oc-modal" role="dialog" aria-modal="true" aria-labelledby="linkCheckModalTitle" style="max-width: 1000px; width: 95%; height: 750px; max-height: 90vh; display: flex; flex-direction: column;">
     <div class="oc-modal-head">
       <div>
         <h3 id="linkCheckModalTitle">链接检查</h3>
@@ -4754,7 +4754,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
         <svg width="16" height="16"><use href="#ic-close"/></svg>
       </button>
     </div>
-    <div class="oc-modal-body" style="display: flex; flex-direction: column; gap: 16px;">
+    <div class="oc-modal-body" style="display: flex; flex-direction: column; gap: 16px; flex: 1; overflow-y: auto;">
       <!-- 时间范围选择 -->
       <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
         <label style="font-weight: 500;">创建时间范围：</label>
@@ -4776,7 +4776,7 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
           <div id="linkCheckProgressBar" style="width: 0%; height: 100%; background: #007bff; transition: width 0.2s;"></div>
         </div>
         <!-- 正在检查的日志滚动区 -->
-        <div id="linkCheckLog" style="height: 150px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 12px; padding: 8px; border-radius: 4px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;">
+        <div id="linkCheckLog" style="height: 250px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 12px; padding: 12px; border-radius: 6px; line-height: 1.5; white-space: pre-wrap; word-break: break-all;">
           <!-- 实时日志打印在这里 -->
         </div>
       </div>
