@@ -425,9 +425,9 @@
   max-width: 280px;
   color: var(--oc-ad-alert-fg);
   font-weight: 800;
-  overflow: hidden;
-  text-overflow: ellipsis;
   font-size: 13px;
+  white-space: normal;
+  word-break: break-all;
 }
 .oc-ad-alert-ad-code,
 .oc-ad-alert-account {
@@ -799,7 +799,6 @@
   padding: 20px;
   background: var(--oc-ad-alert-modal-bg);
 }
->>>>>>> style-loading-animation
 .oc-ad-alert-detail-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -896,9 +895,8 @@
 }
 .oc-ad-alert-ad-name {
   max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
 }
 .oc-ad-alert-evaluation {
   display: grid;
@@ -1479,7 +1477,7 @@
         + '  <div class="oc-ad-alert-ad-cn-name" style="margin-top: 4px; font-size: 11px; color: #047857; font-weight: 500; word-break: break-all;">' + html(item.product_cn_name || '无中文产品名') + '</div>'
         + '</td>'
         + '<td style="text-align: center; vertical-align: middle; padding: 4px;">'
-        + '  ' + (item.product_main_image ? '<img src="' + html(item.product_main_image) + '" style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; display: block; margin: 0 auto;" alt="主图" onerror="this.style.display=\'none\'; if(this.nextElementSibling) this.nextElementSibling.style.display=\'flex\';"><div style="width: 48px; height: 48px; border-radius: 4px; background-color: #f3f4f6; color: #9ca3af; display: none; align-items: center; justify-content: center; font-size: 11px; margin: 0 auto;">无图</div>' : '<div style="width: 48px; height: 48px; border-radius: 4px; background-color: #f3f4f6; color: #9ca3af; display: flex; align-items: center; justify-content: center; font-size: 11px; margin: 0 auto;">无图</div>')
+        + '  ' + (item.product_main_image ? '<img src="' + html(item.product_main_image) + '" style="width: 200px; height: 200px; object-fit: cover; border-radius: 4px; display: block; margin: 0 auto;" alt="主图" onerror="this.style.display=\'none\'; if(this.nextElementSibling) this.nextElementSibling.style.display=\'flex\';"><div style="width: 200px; height: 200px; border-radius: 4px; background-color: #f3f4f6; color: #9ca3af; display: none; align-items: center; justify-content: center; font-size: 14px; margin: 0 auto;">无图</div>' : '<div style="width: 200px; height: 200px; border-radius: 4px; background-color: #f3f4f6; color: #9ca3af; display: flex; align-items: center; justify-content: center; font-size: 14px; margin: 0 auto;">无图</div>')
         + '</td>'
         + problemMetricCells(m.today, 'today')
         + problemMetricCells(m.yesterday, 'yesterday')
