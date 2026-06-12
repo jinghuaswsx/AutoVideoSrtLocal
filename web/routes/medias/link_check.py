@@ -148,7 +148,7 @@ def api_list_for_link_check():
 
     sql = """
         SELECT id, product_code, name, localized_links_json, localized_links
-        FROM media_product
+        FROM media_products
         WHERE deleted_at IS NULL AND archived = 0
           AND created_at >= %s AND created_at <= %s
         ORDER BY created_at DESC
