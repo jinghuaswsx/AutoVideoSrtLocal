@@ -46,6 +46,10 @@
   animation: fadeIn 0.4s ease-out;
   color: var(--oc-ad-alert-fg);
 }
+.oc-ad-alert-page,
+.oc-ad-alert-page * {
+  box-sizing: border-box;
+}
 
 [data-theme='dark'] .oc-ad-alert-page {
   --oc-ad-alert-fg: var(--text-main, #e2e8f0);
@@ -395,6 +399,36 @@
 .oc-ad-alert-highloss-link:hover {
   text-decoration: underline;
 }
+.oc-ad-alert-share-result {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  background: #ecfeff;
+}
+.oc-ad-alert-share-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.oc-ad-alert-share-input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 8px;
+  background: var(--oc-ad-alert-card);
+  color: var(--oc-ad-alert-fg);
+  font: inherit;
+  font-size: 12px;
+}
+.oc-ad-alert-share-meta {
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
 .oc-ad-alert-column-picker {
   position: relative;
 }
@@ -424,7 +458,7 @@
   background: var(--oc-ad-alert-table-hover);
 }
 .oc-ad-alert-col-hidden {
-  display: none;
+  display: none !important;
 }
 .oc-ad-alert-business-date {
   color: var(--oc-ad-alert-blue);
@@ -964,6 +998,32 @@
   border-collapse: collapse;
   font-size: 13px;
 }
+.oc-ad-alert-problem-table {
+  min-width: 1260px;
+}
+.oc-ad-alert-problem-image {
+  width: 112px;
+  height: 112px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--oc-ad-alert-border);
+  display: block;
+  margin: 0 auto;
+  background: var(--oc-ad-alert-subtle);
+}
+.oc-ad-alert-problem-image-placeholder {
+  width: 112px;
+  height: 112px;
+  border-radius: 6px;
+  border: 1px solid var(--oc-ad-alert-border);
+  background: var(--oc-ad-alert-subtle);
+  color: var(--oc-ad-alert-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  margin: 0 auto;
+}
 .oc-ad-alert-table th,
 .oc-ad-alert-table td {
   padding: 9px 10px;
@@ -1064,6 +1124,143 @@
   to { opacity: 0; transform: translateX(40px); }
 }
 @media (max-width: 760px) {
+  .oc-ad-alert-page {
+    max-width: none;
+    padding: 12px;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    gap: 14px;
+  }
+  .oc-ad-alert-head,
+  .oc-ad-alert-highloss-toolbar,
+  .oc-ad-alert-problem-toolbar {
+    align-items: stretch;
+    display: grid;
+  }
+  .oc-ad-alert-title {
+    display: grid;
+    gap: 6px;
+  }
+  .oc-ad-alert-title h1 {
+    font-size: 22px;
+  }
+  .oc-ad-alert-tools,
+  .oc-ad-alert-problem-actions,
+  .oc-ad-alert-highloss-toolbar .oc-ad-alert-problem-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+  .oc-ad-alert-tools > *,
+  .oc-ad-alert-problem-actions > *,
+  .oc-ad-alert-column-picker,
+  .oc-ad-alert-column-picker > button,
+  .oc-ad-alert-share-row,
+  .oc-ad-alert-share-input {
+    width: 100%;
+  }
+  .oc-ad-alert-share-row {
+    display: grid;
+  }
+  .oc-ad-alert-card {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px;
+  }
+  .oc-ad-alert-card-image-wrapper {
+    width: 92px;
+    height: 92px;
+  }
+  .oc-ad-alert-highloss-metrics {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .oc-ad-alert-highloss-metrics span {
+    align-items: flex-start;
+    display: grid;
+    gap: 2px;
+  }
+  .oc-ad-alert-problem-table-wrap {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .oc-ad-alert-problem-table {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .oc-ad-alert-problem-table colgroup,
+  .oc-ad-alert-problem-table thead {
+    display: none;
+  }
+  .oc-ad-alert-problem-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+  .oc-ad-alert-problem-table tr {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 8px 10px;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--oc-ad-alert-border);
+    border-radius: 12px;
+    background: var(--oc-ad-alert-card);
+  }
+  .oc-ad-alert-problem-table td {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border-bottom: 0;
+    white-space: normal;
+    text-align: left !important;
+  }
+  .oc-ad-alert-problem-ad-cell {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .oc-ad-alert-problem-image-cell {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .oc-ad-alert-problem-account-cell {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: end;
+  }
+  .oc-ad-alert-problem-metric-cell {
+    grid-column: 1 / -1;
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 34px;
+    padding: 7px 10px !important;
+    border: 1px solid var(--oc-ad-alert-border);
+    border-radius: 8px;
+    background: var(--oc-ad-alert-subtle);
+    font-variant-numeric: tabular-nums;
+  }
+  .oc-ad-alert-problem-metric-cell::before {
+    content: attr(data-mobile-label);
+    color: var(--oc-ad-alert-muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .oc-ad-alert-problem-image,
+  .oc-ad-alert-problem-image-placeholder {
+    width: 84px;
+    height: 84px;
+  }
+  .oc-ad-alert-problem-table .oc-ad-alert-col-hidden {
+    display: none !important;
+  }
   .oc-ad-alert-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1125,9 +1322,17 @@
       <div class="oc-ad-alert-problem-actions">
         <input class="oc-ad-alert-search" id="adAlertHighLossSearch" type="search" placeholder="搜索广告、商品名称或 product code">
         <button class="oc-ad-alert-btn" type="button" id="adAlertHighLossRefresh">查询</button>
+        <button class="oc-ad-alert-btn oc-ad-alert-btn-primary" type="button" id="adAlertHighLossShare">生成分享链接</button>
       </div>
     </div>
     <div class="oc-ad-alert-highloss-note">高额亏损广告定义：最近 7 天有消耗，且最近 7 天不出单或 ROAS 低于 1；默认按最近 7 天消耗从高到低取前 30 条。</div>
+    <div class="oc-ad-alert-share-result" id="adAlertHighLossShareResult" hidden>
+      <div class="oc-ad-alert-share-row">
+        <input class="oc-ad-alert-share-input" id="adAlertHighLossShareUrl" type="text" readonly aria-label="高额亏损广告分享链接">
+        <button class="oc-ad-alert-btn" type="button" id="adAlertHighLossShareCopy">复制链接</button>
+      </div>
+      <div class="oc-ad-alert-share-meta" id="adAlertHighLossShareMeta"></div>
+    </div>
     <div class="oc-ad-alert-list" id="adAlertHighLossList">
       <div class="oc-ad-alert-state loading">加载中</div>
     </div>
@@ -1173,8 +1378,8 @@
     </div>
     <div class="oc-ad-alert-business-date" id="adAlertProblemDate">今天：加载中</div>
     <div class="oc-ad-alert-problem-note">问题广告定义：今天有消耗且今天成效为 0。点击行会跳转到广告分析详情页，默认展示该广告自上线以来的数据。</div>
-    <div class="oc-ad-alert-table-wrap">
-      <table class="oc-ad-alert-table" aria-label="问题广告列表">
+    <div class="oc-ad-alert-table-wrap oc-ad-alert-problem-table-wrap">
+      <table class="oc-ad-alert-table oc-ad-alert-problem-table" aria-label="问题广告列表">
         <colgroup span="2"></colgroup>
         <colgroup span="3" class="oc-ad-alert-col-today"></colgroup>
         <colgroup span="3" class="oc-ad-alert-col-yesterday"></colgroup>
@@ -1283,6 +1488,9 @@
   var thresholdText = document.getElementById('adAlertThresholdText');
   var highLossList = document.getElementById('adAlertHighLossList');
   var highLossDate = document.getElementById('adAlertHighLossDate');
+  var highLossShareResult = document.getElementById('adAlertHighLossShareResult');
+  var highLossShareUrl = document.getElementById('adAlertHighLossShareUrl');
+  var highLossShareMeta = document.getElementById('adAlertHighLossShareMeta');
   var problemBody = document.getElementById('adAlertProblemBody');
   var problemDate = document.getElementById('adAlertProblemDate');
 
@@ -1618,6 +1826,55 @@
       + '</span>';
   }
 
+  function renderHighLossShareResult(data) {
+    if (!highLossShareResult || !highLossShareUrl) return;
+    highLossShareUrl.value = data.share_url || '';
+    if (highLossShareMeta) {
+      highLossShareMeta.textContent = '链接有效期至 ' + (data.expires_at || '—') + '，公网地址走现有 SSH 反向隧道。';
+    }
+    highLossShareResult.hidden = false;
+  }
+
+  function createHighLossShare(btn) {
+    var searchInput = document.getElementById('adAlertHighLossSearch');
+    state.highLossSearch = (searchInput && searchInput.value || '').trim();
+    btn.disabled = true;
+    btn.textContent = '生成中';
+    fetch('/ad-alerts/api/high-loss-ads/share', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRFToken': csrfToken()
+      },
+      body: JSON.stringify({
+        q: state.highLossSearch,
+        limit: 30,
+        expires_in_hours: 24
+      })
+    })
+      .then(function(resp) {
+        return resp.json().then(function(data) {
+          if (!resp.ok) throw new Error(data.error || 'share_failed');
+          return data;
+        });
+      })
+      .then(function(data) {
+        renderHighLossShareResult(data);
+        if (data.share_url) {
+          copyTextToClipboard(data.share_url, '已复制分享链接');
+        }
+        showToast('分享链接已生成，24 小时内有效', 'success');
+      })
+      .catch(function(error) {
+        showToast('生成分享链接失败：' + (error.message || '未知错误'), 'error');
+      })
+      .finally(function() {
+        btn.disabled = false;
+        btn.textContent = '生成分享链接';
+      });
+  }
+
   function loadProblemAds() {
     if (!problemBody) return;
     problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state loading">加载中</td></tr>';
@@ -1670,7 +1927,7 @@
 
       return ''
         + '<tr class="oc-ad-alert-problem-row" data-detail-url="' + html(item.detail_url || '') + '">'
-        + '<td>'
+        + '<td class="oc-ad-alert-problem-ad-cell">'
         + '  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 8px;">'
         + '    <span class="oc-ad-alert-ad-name" style="font-weight: 600; font-size: 13px; color: #111827; word-break: break-all;">' + html(item.name || item.code || '') + '</span>'
         + '  </div>'
@@ -1680,15 +1937,15 @@
         + '  </div>'
         + '  <div class="oc-ad-alert-ad-cn-name" style="margin-top: 4px; font-size: 11px; color: #047857; font-weight: 500; word-break: break-all;">' + html(item.product_cn_name || '无中文产品名') + '</div>'
         + '</td>'
-        + '<td style="text-align: center; vertical-align: middle; padding: 4px;">'
-        + '  ' + (item.product_main_image ? '<img src="' + html(item.product_main_image) + '" style="width: 200px; height: 200px; object-fit: cover; border-radius: 4px; display: block; margin: 0 auto;" alt="主图" onerror="this.style.display=\'none\'; if(this.nextElementSibling) this.nextElementSibling.style.display=\'flex\';"><div style="width: 200px; height: 200px; border-radius: 4px; background-color: #f3f4f6; color: #9ca3af; display: none; align-items: center; justify-content: center; font-size: 14px; margin: 0 auto;">无图</div>' : '<div style="width: 200px; height: 200px; border-radius: 4px; background-color: #f3f4f6; color: #9ca3af; display: flex; align-items: center; justify-content: center; font-size: 14px; margin: 0 auto;">无图</div>')
+        + '<td class="oc-ad-alert-problem-image-cell">'
+        + '  ' + (item.product_main_image ? '<img src="' + html(item.product_main_image) + '" class="oc-ad-alert-problem-image" alt="主图" onerror="this.style.display=\'none\'; if(this.nextElementSibling) this.nextElementSibling.style.display=\'flex\';"><div class="oc-ad-alert-problem-image-placeholder" style="display: none;">无图</div>' : '<div class="oc-ad-alert-problem-image-placeholder">无图</div>')
         + '</td>'
         + problemMetricCells(m.today, 'today')
         + problemMetricCells(m.yesterday, 'yesterday')
         + problemMetricCells(m.last_7d, 'last_7d')
         + problemMetricCells(m.last_30d, 'last_30d')
         + problemMetricCells(m.overall, 'overall')
-        + '<td class="oc-ad-alert-group-start">'
+        + '<td class="oc-ad-alert-group-start oc-ad-alert-problem-account-cell">'
         + '  <span class="oc-ad-alert-account" style="font-weight: 500;">' + html(item.ad_account_name || item.ad_account_id || '—') + '</span>'
         + '  <span class="oc-ad-alert-ad-code" style="font-size: 11px;">' + html((item.first_active_date || '—') + ' 起') + '</span>'
         + '</td>'
@@ -1699,10 +1956,11 @@
 
   function problemMetricCells(metric, groupKey) {
     metric = metric || {};
+    var group = columnGroups[groupKey] || { label: groupKey };
     return ''
-      + '<td class="oc-ad-alert-num oc-ad-alert-group-start oc-ad-alert-col-' + groupKey + '">' + money(metric.spend_usd, 2) + '</td>'
-      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + intText(metric.result_count) + '</td>'
-      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + roas(metric.roas) + '</td>';
+      + '<td class="oc-ad-alert-num oc-ad-alert-group-start oc-ad-alert-problem-metric-cell oc-ad-alert-col-' + groupKey + '" data-mobile-label="' + html(group.label + ' 消耗') + '">' + money(metric.spend_usd, 2) + '</td>'
+      + '<td class="oc-ad-alert-num oc-ad-alert-problem-metric-cell oc-ad-alert-col-' + groupKey + '" data-mobile-label="' + html(group.label + ' 成效') + '">' + intText(metric.result_count) + '</td>'
+      + '<td class="oc-ad-alert-num oc-ad-alert-problem-metric-cell oc-ad-alert-col-' + groupKey + '" data-mobile-label="' + html(group.label + ' ROAS') + '">' + roas(metric.roas) + '</td>';
   }
 
   function setPrimaryTab(tab) {
@@ -1997,7 +2255,19 @@
     bindEvaluationCopy(container, cacheKey);
   }
 
-  function fallbackCopyText(text) {
+  function copyTextToClipboard(text, successMessage) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function() {
+        showToast(successMessage || '已复制', 'success');
+      }).catch(function() {
+        fallbackCopyText(text, successMessage);
+      });
+      return;
+    }
+    fallbackCopyText(text, successMessage);
+  }
+
+  function fallbackCopyText(text, successMessage) {
     var textarea = document.createElement('textarea');
     textarea.value = text;
     textarea.setAttribute('readonly', '');
@@ -2007,7 +2277,7 @@
     textarea.select();
     try {
       if (document.execCommand('copy')) {
-        showToast('已复制评估结果', 'success');
+        showToast(successMessage || '已复制评估结果', 'success');
       } else {
         showToast('复制失败，请手动选择复制', 'error');
       }
@@ -2141,6 +2411,16 @@
   document.getElementById('adAlertHighLossRefresh').addEventListener('click', function() {
     state.highLossSearch = (document.getElementById('adAlertHighLossSearch').value || '').trim();
     loadHighLossAds();
+  });
+
+  document.getElementById('adAlertHighLossShare').addEventListener('click', function() {
+    createHighLossShare(this);
+  });
+
+  document.getElementById('adAlertHighLossShareCopy').addEventListener('click', function() {
+    var url = highLossShareUrl ? highLossShareUrl.value : '';
+    if (!url) return;
+    copyTextToClipboard(url, '已复制分享链接');
   });
 
   document.getElementById('adAlertHighLossSearch').addEventListener('keydown', function(event) {

@@ -12,6 +12,7 @@ def test_ad_alert_template_contract():
     assert "/ad-alerts/api/list" in source
     assert "/ad-alerts/api/detail" in source
     assert "/ad-alerts/api/high-loss-ads" in source
+    assert "/ad-alerts/api/high-loss-ads/share" in source
     assert "/ad-alerts/api/problem-ads" in source
     assert "/ad-alerts/api/ad-list" in source
     assert "/ad-alerts/api/evaluate" in source
@@ -23,6 +24,9 @@ def test_ad_alert_template_contract():
     assert "最近 7 天有消耗" in source
     assert "function loadHighLossAds" in source
     assert "function renderHighLossAds" in source
+    assert "function createHighLossShare" in source
+    assert 'id="adAlertHighLossShare"' in source
+    assert 'id="adAlertHighLossShareUrl"' in source
     assert 'data-level="campaign"' in source
     assert 'data-level="adset"' in source
     assert 'data-level="ad"' in source
@@ -47,6 +51,37 @@ def test_ad_alert_template_contract():
     assert ".alert-" not in source
     assert "#8b5cf6" not in source.lower()
     assert "purple" not in source.lower()
+
+
+def test_ad_alert_problem_mobile_table_contract():
+    template = Path("web/templates/ad_alerts.html")
+    source = template.read_text(encoding="utf-8")
+
+    assert "oc-ad-alert-problem-table-wrap" in source
+    assert "oc-ad-alert-problem-table" in source
+    assert "oc-ad-alert-problem-row" in source
+    assert "oc-ad-alert-problem-ad-cell" in source
+    assert "oc-ad-alert-problem-image-cell" in source
+    assert "oc-ad-alert-problem-account-cell" in source
+    assert "oc-ad-alert-problem-metric-cell" in source
+    assert "data-mobile-label" in source
+    assert "@media (max-width: 760px)" in source
+    assert ".oc-ad-alert-problem-table thead" in source
+    assert "grid-template-columns: 84px minmax(0, 1fr)" in source
+    assert ".oc-ad-alert-problem-table .oc-ad-alert-col-hidden" in source
+
+
+def test_ad_alert_high_loss_share_public_template_contract():
+    template = Path("web/templates/ad_alerts_high_loss_share.html")
+    assert template.exists()
+    source = template.read_text(encoding="utf-8")
+
+    assert "高额亏损广告分享" in source
+    assert "过期时间" in source
+    assert "此页面为只读分享结果" in source
+    assert "metric_block" in source
+    assert "item.metrics.last_7d" in source
+    assert "item.consecutive_loss_days" in source
 
 
 def test_ad_alert_template_toast_feedback_contract():

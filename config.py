@@ -69,6 +69,10 @@ def _optional_path(name: str) -> str:
 # ---------------------------------------------------------------------------
 SERVER_ENV = _env("SERVER_ENV", "local").lower() or "local"
 LOCAL_SERVER_BASE_URL = _env("LOCAL_SERVER_BASE_URL", SERVER_BASE_URL).rstrip("/")
+AD_ALERT_PUBLIC_SHARE_BASE_URL = _env(
+    "AD_ALERT_PUBLIC_SHARE_BASE_URL",
+    "http://14.103.60.217",
+).rstrip("/")
 SCHEDULED_TASKS_ENABLED = _env_bool("SCHEDULED_TASKS_ENABLED", True)
 
 
