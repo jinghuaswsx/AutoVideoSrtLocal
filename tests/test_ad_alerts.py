@@ -194,6 +194,9 @@ def test_detail_uses_language_matched_trend_series(monkeypatch):
         assert "JOIN media_items i" in sql
         assert "LOWER(i.lang) = %(lang)s" in sql
         assert "CASE UPPER(m.market_country)" in sql
+        assert "SELECT DISTINCT" in sql
+        assert "m.id AS metric_id" in sql
+        assert "GROUP BY matched.ad_date" in sql
         return [
             {"ad_date": date(2026, 6, 3), "spend_usd": "10.00", "purchase_value_usd": "15.00"},
             {"ad_date": date(2026, 6, 4), "spend_usd": "20.00", "purchase_value_usd": "10.00"},
@@ -207,6 +210,14 @@ def test_detail_uses_language_matched_trend_series(monkeypatch):
 
     assert detail is not None
     assert "p.store_code" not in cache_sql
+    assert "c.ad_roas < %(threshold)s" in cache_sql
+    assert "c.active_7d_ad_spend_usd > 0" in cache_sql
+    assert "c.ad_spend_usd > 0" in cache_sql
+    assert next(params for sql, params in queries if sql == cache_sql) == {
+        "product_id": 10,
+        "lang": "de",
+        "threshold": 1.5,
+    }
     assert detail.lang_label == "德语"
     assert detail.active_days == 10
     assert [point.date for point in detail.trend] == ["2026-06-03", "2026-06-04"]
@@ -365,6 +376,59 @@ def test_get_problem_ads_uses_realtime_today_and_aggregates_windows(monkeypatch)
         "limit": 20,
         "search": "%Glow%",
     }
+
+
+def test_get_ad_detail_and_trend_returns_result_counts(monkeypatch):
+    from appcore import ad_alerts
+
+    captured: dict[str, object] = {}
+
+    def fake_query_one(sql, params=None):
+        captured["detail_sql"] = sql
+        captured["detail_params"] = params
+        return {
+            "first_active_date": date(2026, 5, 1),
+            "last_active_date": date(2026, 6, 12),
+            "ad_name": "Glow Ad 1",
+            "ad_account_name": "newjoyloo",
+            "today_spend_usd": "12.00",
+            "today_purchase_value_usd": "0.00",
+            "today_result_count": "0",
+            "yesterday_spend_usd": "8.00",
+            "yesterday_purchase_value_usd": "16.00",
+            "yesterday_result_count": "1",
+            "last_7d_spend_usd": "70.00",
+            "last_7d_purchase_value_usd": "35.00",
+            "last_7d_result_count": "2",
+            "last_30d_spend_usd": "300.00",
+            "last_30d_purchase_value_usd": "450.00",
+            "last_30d_result_count": "8",
+            "overall_spend_usd": "500.00",
+            "overall_purchase_value_usd": "1000.00",
+            "overall_result_count": "20",
+        }
+
+    def fake_query(sql, params=None):
+        captured["trend_sql"] = sql
+        captured["trend_params"] = params
+        return []
+
+    monkeypatch.setattr(ad_alerts, "query_one", fake_query_one)
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+    monkeypatch.setattr(ad_alerts, "current_meta_business_date", lambda: date(2026, 6, 12))
+
+    detail = ad_alerts.get_ad_detail_and_trend(10, "glow-ad-1", "1234")
+
+    assert detail is not None
+    assert "today_result_count" in str(captured["detail_sql"])
+    assert "overall_result_count" in str(captured["detail_sql"])
+    assert detail["metrics"]["today"]["result_count"] == 0
+    assert detail["metrics"]["yesterday"]["result_count"] == 1
+    assert detail["metrics"]["last_7d"]["result_count"] == 2
+    assert detail["metrics"]["last_30d"]["result_count"] == 8
+    assert detail["metrics"]["overall"]["result_count"] == 20
+    assert detail["metrics"]["overall"]["purchase_value_usd"] == 1000.0
+    assert detail["metrics"]["overall"]["roas"] == 2.0
 
 
 def test_get_alerts_dynamically_date_range(monkeypatch):

@@ -252,7 +252,7 @@ def _alert_item_to_dict(item: ad_alerts.AlertItem) -> dict[str, Any]:
         "estimated_loss": item.estimated_loss,
         "computed_at": item.computed_at,
         "top_losing_ads": [
-            _ad_list_item_to_dict(ad) for ad in item.top_losing_ads
+            _ad_list_item_to_dict(ad) for ad in getattr(item, "top_losing_ads", [])
         ],
     }
 
@@ -359,9 +359,9 @@ def _aggregated_product_to_dict(item: ad_alerts.AggregatedProductAlert) -> dict[
         "active_days": item.active_days,
         "computed_at": item.computed_at,
         "top_losing_ads": [
-            _ad_list_item_to_dict(ad) for ad in item.top_losing_ads
+            _ad_list_item_to_dict(ad) for ad in getattr(item, "top_losing_ads", [])
         ],
-        "evaluation_lang": item.evaluation_lang,
+        "evaluation_lang": getattr(item, "evaluation_lang", None),
     }
 
 

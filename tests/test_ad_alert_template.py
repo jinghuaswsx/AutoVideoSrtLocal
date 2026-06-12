@@ -151,3 +151,11 @@ def test_ad_alert_detail_pages_fill_contract():
     assert "request.args.get('lang')" in ad_source
     assert "/ad-alerts/product/{{ product_id }}/country/" in ad_source
     assert "/ad-alerts/api/ad-detail?product_id=" in ad_source
+
+
+def test_ad_alert_ad_detail_template_uses_result_count_for_results_column():
+    source = Path("web/templates/ad_alerts_ad_detail.html").read_text(encoding="utf-8")
+
+    assert "成效 (购买次数)" in source
+    assert "intText(item.result_count)" in source
+    assert "intText(item.purchase_value_usd)" not in source

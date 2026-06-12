@@ -82,6 +82,8 @@ def test_get_aggregated_products(monkeypatch):
 
 
 def test_get_product_alert_details(monkeypatch):
+    captured_summary: dict[str, object] = {}
+
     # Mock query_one for product lookup
     monkeypatch.setattr(
         ad_alerts,
@@ -92,6 +94,8 @@ def test_get_product_alert_details(monkeypatch):
     # Mock query to return summary cache row and ad metrics rows
     def fake_query(sql, params=None):
         if "media_product_lang_ad_summary_cache" in sql:
+            captured_summary["sql"] = sql
+            captured_summary["params"] = params
             return [
                 {
                     "product_id": 10,
@@ -152,6 +156,12 @@ def test_get_product_alert_details(monkeypatch):
     )
 
     details = ad_alerts.get_product_alert_details(10)
+    summary_sql = str(captured_summary["sql"])
+    assert "c.ad_roas IS NOT NULL" in summary_sql
+    assert "c.ad_roas < %(threshold)s" in summary_sql
+    assert "c.active_7d_ad_spend_usd > 0" in summary_sql
+    assert "c.ad_spend_usd > 0" in summary_sql
+    assert captured_summary["params"] == {"product_id": 10, "threshold": 1.5}
     assert details["product_id"] == 10
     assert details["product_code"] == "ABC123"
     assert len(details["countries"]) == 1
@@ -192,6 +202,8 @@ def test_api_products_route(monkeypatch):
     assert payload["total"] == 1
     assert payload["items"][0]["product_id"] == 10
     assert payload["items"][0]["max_severity_label"] == "严重"
+    assert payload["items"][0]["top_losing_ads"] == []
+    assert payload["items"][0]["evaluation_lang"] is None
 
 
 def test_ad_detail_page_route(monkeypatch):

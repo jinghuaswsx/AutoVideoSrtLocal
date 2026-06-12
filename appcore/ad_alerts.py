@@ -7,6 +7,7 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-ad-level-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-review-remediation.md
 """
 from __future__ import annotations
 
@@ -624,7 +625,7 @@ def get_alert_detail(
     threshold: float | None = None,
 ) -> AlertDetail | None:
     """查询单条预警详情，包含累计数据、投放时长和近 30 天趋势。"""
-    _normalize_threshold(threshold)
+    threshold_value = _normalize_threshold(threshold)
     lower_lang = lang.strip().lower()
     row = query_one(
         """
@@ -634,8 +635,12 @@ def get_alert_detail(
         FROM media_product_lang_ad_summary_cache c
         JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL AND p.archived = 0
         WHERE c.product_id = %(product_id)s AND c.lang = %(lang)s
+          AND c.ad_roas IS NOT NULL
+          AND c.ad_roas < %(threshold)s
+          AND c.active_7d_ad_spend_usd > 0
+          AND c.ad_spend_usd > 0
         """,
-        {"product_id": product_id, "lang": lower_lang},
+        {"product_id": product_id, "lang": lower_lang, "threshold": threshold_value},
     )
     if not row:
         return None
@@ -1095,31 +1100,38 @@ def get_trend_series(
     rows = query(
         f"""
         SELECT
-          DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date,
-          COALESCE(SUM(COALESCE(m.spend_usd, 0)), 0) AS spend_usd,
-          COALESCE(SUM(COALESCE(m.purchase_value_usd, 0)), 0) AS purchase_value_usd
-        FROM meta_ad_daily_ad_metrics m
-        JOIN media_items i
-          ON i.product_id = m.product_id
-         AND i.deleted_at IS NULL
-         AND LOWER(i.lang) = %(lang)s
-         AND (
-           m.ad_name LIKE CONCAT('%%', i.filename, '%%')
-           OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
-           OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
-           OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
-           OR (
-             m.market_country IS NOT NULL
-             AND m.market_country <> ''
-             AND LOWER(i.lang) = {_COUNTRY_LANG_CASE_SQL % "m.market_country"}
+          matched.ad_date AS ad_date,
+          COALESCE(SUM(matched.spend_usd), 0) AS spend_usd,
+          COALESCE(SUM(matched.purchase_value_usd), 0) AS purchase_value_usd
+        FROM (
+          SELECT DISTINCT
+            m.id AS metric_id,
+            DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date,
+            COALESCE(m.spend_usd, 0) AS spend_usd,
+            COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd
+          FROM meta_ad_daily_ad_metrics m
+          JOIN media_items i
+            ON i.product_id = m.product_id
+           AND i.deleted_at IS NULL
+           AND LOWER(i.lang) = %(lang)s
+           AND (
+             m.ad_name LIKE CONCAT('%%', i.filename, '%%')
+             OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
+             OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
+             OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
+             OR (
+               m.market_country IS NOT NULL
+               AND m.market_country <> ''
+               AND LOWER(i.lang) = {_COUNTRY_LANG_CASE_SQL % "m.market_country"}
+             )
            )
-         )
-        WHERE m.product_id = %(product_id)s
-          AND COALESCE(m.spend_usd, 0) > 0
-          AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= DATE_SUB(DATE(%(end_date_val)s), INTERVAL %(days)s DAY)
-          AND DATE(COALESCE(m.meta_business_date, m.report_date)) < DATE(%(end_date_val)s)
-        GROUP BY ad_date
-        ORDER BY ad_date DESC
+          WHERE m.product_id = %(product_id)s
+            AND COALESCE(m.spend_usd, 0) > 0
+            AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= DATE_SUB(DATE(%(end_date_val)s), INTERVAL %(days)s DAY)
+            AND DATE(COALESCE(m.meta_business_date, m.report_date)) < DATE(%(end_date_val)s)
+        ) matched
+        GROUP BY matched.ad_date
+        ORDER BY matched.ad_date DESC
         """,
         {"product_id": product_id, "lang": lower_lang, "days": max(1, int(days)), "end_date_val": end_date_val},
     )
@@ -1284,6 +1296,7 @@ def get_aggregated_products(
 
 def get_product_alert_details(product_id: int, threshold: float | None = None) -> dict[str, Any]:
     """查询商品下的国家与广告预警列表。"""
+    threshold_value = _normalize_threshold(threshold)
     p_row = query_one(
         "SELECT id, product_code, name FROM media_products WHERE id = %(product_id)s AND deleted_at IS NULL AND archived = 0",
         {"product_id": product_id}
@@ -1299,10 +1312,13 @@ def get_product_alert_details(product_id: int, threshold: float | None = None) -
         FROM media_product_lang_ad_summary_cache c
         JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL AND p.archived = 0
         WHERE c.product_id = %(product_id)s
+          AND c.ad_roas IS NOT NULL
+          AND c.ad_roas < %(threshold)s
           AND c.active_7d_ad_spend_usd > 0
+          AND c.ad_spend_usd > 0
         ORDER BY c.ad_roas ASC, c.active_7d_ad_spend_usd DESC
         """,
-        {"product_id": product_id}
+        {"product_id": product_id, "threshold": threshold_value}
     )
 
     countries = []
@@ -1490,14 +1506,19 @@ def get_ad_detail_and_trend(
           MAX(s.ad_account_name) AS ad_account_name,
           SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS today_spend_usd,
           SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS today_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.result_count, 0) ELSE 0 END) AS today_result_count,
           SUM(CASE WHEN s.metric_date = %(yesterday)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS yesterday_spend_usd,
           SUM(CASE WHEN s.metric_date = %(yesterday)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS yesterday_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date = %(yesterday)s THEN COALESCE(s.result_count, 0) ELSE 0 END) AS yesterday_result_count,
           SUM(CASE WHEN s.metric_date >= %(last_7d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS last_7d_spend_usd,
           SUM(CASE WHEN s.metric_date >= %(last_7d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS last_7d_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_7d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.result_count, 0) ELSE 0 END) AS last_7d_result_count,
           SUM(CASE WHEN s.metric_date >= %(last_30d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS last_30d_spend_usd,
           SUM(CASE WHEN s.metric_date >= %(last_30d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS last_30d_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_30d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.result_count, 0) ELSE 0 END) AS last_30d_result_count,
           SUM(COALESCE(s.spend_usd, 0)) AS overall_spend_usd,
-          SUM(COALESCE(s.purchase_value_usd, 0)) AS overall_purchase_value_usd
+          SUM(COALESCE(s.purchase_value_usd, 0)) AS overall_purchase_value_usd,
+          SUM(COALESCE(s.result_count, 0)) AS overall_result_count
         FROM {source_sql} s
         WHERE s.code = %(ad_code)s
           AND s.ad_account_id = %(ad_account_id)s
@@ -1513,7 +1534,8 @@ def get_ad_detail_and_trend(
                    MAX(m.ad_name) AS ad_name,
                    MAX(m.ad_account_name) AS ad_account_name,
                    SUM(COALESCE(m.spend_usd, 0)) AS overall_spend_usd,
-                   SUM(COALESCE(m.purchase_value_usd, 0)) AS overall_purchase_value_usd
+                   SUM(COALESCE(m.purchase_value_usd, 0)) AS overall_purchase_value_usd,
+                   SUM(COALESCE(m.result_count, 0)) AS overall_result_count
             FROM meta_ad_daily_ad_metrics m
             WHERE m.normalized_ad_code = %(ad_code)s
               AND m.ad_account_id = %(ad_account_id)s
@@ -1529,14 +1551,19 @@ def get_ad_detail_and_trend(
             "ad_account_name": fallback.get("ad_account_name"),
             "today_spend_usd": 0.0,
             "today_purchase_value_usd": 0.0,
+            "today_result_count": 0,
             "yesterday_spend_usd": 0.0,
             "yesterday_purchase_value_usd": 0.0,
+            "yesterday_result_count": 0,
             "last_7d_spend_usd": 0.0,
             "last_7d_purchase_value_usd": 0.0,
+            "last_7d_result_count": 0,
             "last_30d_spend_usd": 0.0,
             "last_30d_purchase_value_usd": 0.0,
+            "last_30d_result_count": 0,
             "overall_spend_usd": fallback.get("overall_spend_usd"),
             "overall_purchase_value_usd": fallback.get("overall_purchase_value_usd"),
+            "overall_result_count": fallback.get("overall_result_count"),
         }
 
     def _metric(prefix: str) -> dict[str, Any]:
@@ -1546,6 +1573,7 @@ def get_ad_detail_and_trend(
         return {
             "spend_usd": spend,
             "purchase_value_usd": round(purchase, 2),
+            "result_count": int(_safe_float(row.get(f"{prefix}_result_count"))),
             "roas": roas,
         }
 
@@ -1699,27 +1727,32 @@ def _get_active_window(product_id: int, lang: str) -> ActiveWindow:
     row = query_one(
         f"""
         SELECT
-          MIN(DATE(COALESCE(m.meta_business_date, m.report_date))) AS delivery_start,
-          MAX(DATE(COALESCE(m.meta_business_date, m.report_date))) AS delivery_end,
-          COUNT(DISTINCT DATE(COALESCE(m.meta_business_date, m.report_date))) AS active_days
-        FROM meta_ad_daily_ad_metrics m
-        JOIN media_items i
-          ON i.product_id = m.product_id
-         AND i.deleted_at IS NULL
-         AND LOWER(i.lang) = %(lang)s
-         AND (
-           m.ad_name LIKE CONCAT('%%', i.filename, '%%')
-           OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
-           OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
-           OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
-           OR (
-             m.market_country IS NOT NULL
-             AND m.market_country <> ''
-             AND LOWER(i.lang) = {_COUNTRY_LANG_CASE_SQL % "m.market_country"}
+          MIN(matched.ad_date) AS delivery_start,
+          MAX(matched.ad_date) AS delivery_end,
+          COUNT(DISTINCT matched.ad_date) AS active_days
+        FROM (
+          SELECT DISTINCT
+            m.id AS metric_id,
+            DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date
+          FROM meta_ad_daily_ad_metrics m
+          JOIN media_items i
+            ON i.product_id = m.product_id
+           AND i.deleted_at IS NULL
+           AND LOWER(i.lang) = %(lang)s
+           AND (
+             m.ad_name LIKE CONCAT('%%', i.filename, '%%')
+             OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
+             OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
+             OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
+             OR (
+               m.market_country IS NOT NULL
+               AND m.market_country <> ''
+               AND LOWER(i.lang) = {_COUNTRY_LANG_CASE_SQL % "m.market_country"}
+             )
            )
-         )
-        WHERE m.product_id = %(product_id)s
-          AND COALESCE(m.spend_usd, 0) > 0
+          WHERE m.product_id = %(product_id)s
+            AND COALESCE(m.spend_usd, 0) > 0
+        ) matched
         """,
         {"product_id": product_id, "lang": lang.strip().lower()},
     )
