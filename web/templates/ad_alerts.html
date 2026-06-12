@@ -993,7 +993,7 @@
         <thead>
           <tr>
             <th rowspan="2">广告</th>
-            <th rowspan="2">商品主题</th>
+            <th rowspan="2">商品主图</th>
             <th colspan="3" class="oc-ad-alert-col-today">今天</th>
             <th colspan="3" class="oc-ad-alert-col-yesterday">昨天</th>
             <th colspan="3" class="oc-ad-alert-col-last_7d">最近 7 天</th>
@@ -1390,8 +1390,8 @@
         + '  </div>'
         + '  <div class="oc-ad-alert-ad-cn-name" style="margin-top: 4px; font-size: 11px; color: #047857; font-weight: 500; word-break: break-all;">' + html(item.product_cn_name || '无中文产品名') + '</div>'
         + '</td>'
-        + '<td>'
-        + '  <span class="oc-ad-alert-theme" style="font-size: 13px; color: #374151; font-weight: 500;">' + html(item.product_theme || '未分类') + '</span>'
+        + '<td style="text-align: center; vertical-align: middle; padding: 4px;">'
+        + '  ' + (item.product_main_image ? '<img src="' + html(item.product_main_image) + '" style="width: 48px; height: 48px; object-fit: cover; border-radius: 4px; display: block; margin: 0 auto;" alt="主图" onerror="this.style.display=\'none\'; if(this.nextElementSibling) this.nextElementSibling.style.display=\'flex\';"><div style="width: 48px; height: 48px; border-radius: 4px; background-color: #f3f4f6; color: #9ca3af; display: none; align-items: center; justify-content: center; font-size: 11px; margin: 0 auto;">无图</div>' : '<div style="width: 48px; height: 48px; border-radius: 4px; background-color: #f3f4f6; color: #9ca3af; display: flex; align-items: center; justify-content: center; font-size: 11px; margin: 0 auto;">无图</div>')
         + '</td>'
         + problemMetricCells(m.today, 'today')
         + problemMetricCells(m.yesterday, 'yesterday')

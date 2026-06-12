@@ -270,6 +270,8 @@ def test_api_problem_ads_serializes_table_rows(monkeypatch):
             "last_30d": ad_alerts.ProblemMetric(spend_usd=300.0, result_count=8, roas=1.5),
             "overall": ad_alerts.ProblemMetric(spend_usd=500.0, result_count=20, roas=2.0),
         },
+        product_theme="Home",
+        product_main_image="https://img.example.com/item.jpg",
     )
     captured: dict[str, object] = {}
 
@@ -290,6 +292,8 @@ def test_api_problem_ads_serializes_table_rows(monkeypatch):
     assert captured == {"level": "campaign", "search": "Glow", "limit": 50}
     assert payload["business_date"] == "2026-06-12"
     assert payload["total"] == 1
+    assert payload["items"][0]["product_theme"] == "Home"
+    assert payload["items"][0]["product_main_image"] == "https://img.example.com/item.jpg"
     assert payload["items"][0]["metrics"]["today"] == {
         "spend_usd": 12.0,
         "result_count": 0,

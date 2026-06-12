@@ -559,3 +559,38 @@ def test_get_alerts_filters_out_profit_unless_worsening_and_huge_spend(monkeypat
     assert 11 not in pids
     assert 12 in pids
     assert len(items) == 2
+
+
+def test_batch_fetch_problem_ad_details_images(monkeypatch):
+    from appcore import ad_alerts
+    from appcore.ad_alerts import ProblemAdItem
+
+    item = ProblemAdItem(
+        level="ad",
+        code="rjc-test-product",
+        name="Test Ad",
+        ad_account_id="123",
+        ad_account_name="Account",
+        first_active_date=None,
+        last_active_date=None,
+        detail_url="",
+        metrics={},
+        product_cn_name=None,
+        product_theme=None,
+        product_main_image=None,
+    )
+
+    query_queries = []
+    def fake_db_query(sql, params=None):
+        query_queries.append((sql, params))
+        if "media_products" in sql:
+            return [{"code": "rjc-test-product", "main_image": "https://img.example.com/mp.jpg"}]
+        return []
+
+    monkeypatch.setattr("appcore.db.query", fake_db_query)
+
+    ad_alerts._batch_fetch_problem_ad_details([item], [{"matched_product_code": "rjc-test-product"}])
+
+    assert item.product_main_image == "https://img.example.com/mp.jpg"
+    assert len(query_queries) > 0
+
