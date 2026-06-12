@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% block title %}广告预警{% endblock %}
+{% block title %}{% if active_tab == 'problem' %}问题广告{% else %}广告预警{% endif %}{% endblock %}
 {% block extra_style %}
 <style>
 .oc-ad-alert-page {
@@ -140,6 +140,10 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 .oc-ad-alert-tab:hover,
 .oc-ad-alert-level-tab:hover {
@@ -739,7 +743,7 @@
 <div class="oc-ad-alert-page" data-threshold="{{ threshold }}">
   <div class="oc-ad-alert-head">
     <div class="oc-ad-alert-title">
-      <h1>广告预警</h1>
+      <h1>{% if active_tab == 'problem' %}问题广告{% else %}广告预警{% endif %}</h1>
       <span class="oc-ad-alert-count" id="adAlertCount">加载中</span>
     </div>
     <div class="oc-ad-alert-tools">
@@ -752,11 +756,11 @@
   </div>
 
   <div class="oc-ad-alert-tabs" id="adAlertTabs" role="tablist" aria-label="广告预警子 Tab">
-    <button class="oc-ad-alert-tab oc-ad-alert-active" type="button" data-ad-alert-tab="alerts" aria-pressed="true">广告预警</button>
-    <button class="oc-ad-alert-tab" type="button" data-ad-alert-tab="problem" aria-pressed="false">问题广告</button>
+    <a class="oc-ad-alert-tab {% if active_tab == 'alerts' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/" role="tab" aria-selected="{% if active_tab == 'alerts' %}true{% else %}false{% endif %}">广告预警</a>
+    <a class="oc-ad-alert-tab {% if active_tab == 'problem' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/problem" role="tab" aria-selected="{% if active_tab == 'problem' %}true{% else %}false{% endif %}">问题广告</a>
   </div>
 
-  <section class="oc-ad-alert-panel" data-ad-alert-panel="alerts">
+  <section class="oc-ad-alert-panel" data-ad-alert-panel="alerts" {% if active_tab != 'alerts' %}hidden{% endif %}>
     <div class="oc-ad-alert-filters">
       <div class="oc-ad-alert-filter-set" id="adAlertSeveritySet">
         <button class="oc-ad-alert-filter oc-ad-alert-active" type="button" data-value="">全部</button>
@@ -765,6 +769,12 @@
         <button class="oc-ad-alert-filter" type="button" data-value="mild">轻度</button>
       </div>
       <input class="oc-ad-alert-search" id="adAlertSearch" type="search" placeholder="搜索商品名称或编码">
+      <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
+        <input class="oc-ad-alert-search" id="adAlertStartDate" type="date" style="width: 140px; padding: 0 10px;" title="开始日期">
+        <span style="color: var(--oc-ad-alert-muted);">至</span>
+        <input class="oc-ad-alert-search" id="adAlertEndDate" type="date" style="width: 140px; padding: 0 10px;" title="结束日期">
+        <button class="oc-ad-alert-btn" type="button" id="adAlertDateClear" style="min-height: 36px; padding: 0 12px;">清除</button>
+      </div>
     </div>
 
     <div class="oc-ad-alert-list" id="adAlertList">
@@ -772,7 +782,7 @@
     </div>
   </section>
 
-  <section class="oc-ad-alert-panel" data-ad-alert-panel="problem" hidden>
+  <section class="oc-ad-alert-panel" data-ad-alert-panel="problem" {% if active_tab != 'problem' %}hidden{% endif %}>
     <div class="oc-ad-alert-problem-toolbar">
       <div class="oc-ad-alert-level-tabs" id="adAlertProblemLevels" role="tablist" aria-label="问题广告维度">
         <button class="oc-ad-alert-level-tab oc-ad-alert-active" type="button" data-level="campaign" aria-pressed="true">Campaign</button>
@@ -860,7 +870,7 @@
     threshold: Number({{ threshold|tojson }}),
     severity: '',
     search: '',
-    activeTab: 'alerts',
+    activeTab: {{ active_tab|tojson }},
     problemLoaded: false,
     problemLevel: 'campaign',
     problemSearch: ''
@@ -910,6 +920,12 @@
     if (state.threshold) params.set('threshold', state.threshold);
     if (state.severity) params.set('severity', state.severity);
     if (state.search) params.set('search', state.search);
+    
+    var startVal = document.getElementById('adAlertStartDate').value;
+    var endVal = document.getElementById('adAlertEndDate').value;
+    if (startVal) params.set('start_date', startVal);
+    if (endVal) params.set('end_date', endVal);
+
     // Legacy endpoint: /ad-alerts/api/list
     fetch('/ad-alerts/api/products?' + params.toString(), { headers: { 'Accept': 'application/json' } })
       .then(function(resp) {
@@ -979,10 +995,14 @@
         if (problemDate) {
           problemDate.textContent = '今天：' + (data.business_date || '—') + ' · ' + String(data.total || 0) + ' 条';
         }
+        if (countEl) {
+          countEl.textContent = String(data.total || 0) + ' 条问题广告';
+        }
       })
       .catch(function() {
         if (problemDate) problemDate.textContent = '今天：加载失败';
         problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">加载失败</td></tr>';
+        if (countEl) countEl.textContent = '加载失败';
       });
   }
 
@@ -1173,11 +1193,7 @@
 
   // Navigation is handled directly by <a> tags in Level 1.
 
-  document.getElementById('adAlertTabs').addEventListener('click', function(event) {
-    var btn = event.target.closest('[data-ad-alert-tab]');
-    if (!btn) return;
-    setPrimaryTab(btn.getAttribute('data-ad-alert-tab'));
-  });
+  // Click listener for tabs removed as navigation uses <a> links directly.
 
   document.getElementById('adAlertProblemLevels').addEventListener('click', function(event) {
     var btn = event.target.closest('[data-level]');
@@ -1232,6 +1248,13 @@
   });
 
   document.getElementById('adAlertRefresh').addEventListener('click', loadList);
+  document.getElementById('adAlertStartDate').addEventListener('change', loadList);
+  document.getElementById('adAlertEndDate').addEventListener('change', loadList);
+  document.getElementById('adAlertDateClear').addEventListener('click', function() {
+    document.getElementById('adAlertStartDate').value = '';
+    document.getElementById('adAlertEndDate').value = '';
+    loadList();
+  });
 
   function closeMask(id) {
     document.getElementById(id).setAttribute('hidden', '');
@@ -1278,7 +1301,11 @@
       });
   });
 
-  loadList();
+  if (state.activeTab === 'problem') {
+    loadProblemAds();
+  } else {
+    loadList();
+  }
 })();
 </script>
 {% endblock %}
