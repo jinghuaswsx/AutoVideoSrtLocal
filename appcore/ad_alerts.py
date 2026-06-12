@@ -926,6 +926,29 @@ def _batch_fetch_problem_ad_details(items: list[ProblemAdItem], rows: list[dict[
     except Exception as e:
         log.warning("Failed to query product images from media_products: %s", e)
 
+    # From media_product_covers
+    try:
+        rows_cov = db_query(
+            f"""
+            SELECT LOWER(mp.product_code) AS code, c.object_key AS main_image
+            FROM media_products mp
+            JOIN media_product_covers c ON c.product_id = mp.id
+            WHERE LOWER(mp.product_code) IN ({placeholders})
+              AND c.object_key IS NOT NULL AND c.object_key <> ''
+              AND mp.deleted_at IS NULL
+            ORDER BY (CASE WHEN c.lang = 'en' THEN 0 ELSE 1 END), c.updated_at DESC
+            """,
+            tuple(clean_codes)
+        )
+        for r in rows_cov or []:
+            c = str(r["code"]).lower()
+            if c not in images:
+                img = str(r["main_image"] or "").strip()
+                if img:
+                    images[c] = img
+    except Exception as e:
+        log.warning("Failed to query product images from media_product_covers: %s", e)
+
     # From tabcut_goods
     try:
         rows_tabcut_img = db_query(
@@ -967,6 +990,14 @@ def _batch_fetch_problem_ad_details(items: list[ProblemAdItem], rows: list[dict[
                     images[c] = img
     except Exception as e:
         log.warning("Failed to query product images from meta_hot_posts: %s", e)
+
+    # Normalize image paths
+    for c, img in list(images.items()):
+        if img:
+            img = img.strip()
+            if not (img.startswith("http://") or img.startswith("https://") or img.startswith("/")):
+                img = "/medias/obj/" + img
+            images[c] = img
 
     # 5. Populate items
     for c, it_list in code_to_items.items():
