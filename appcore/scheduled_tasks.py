@@ -706,6 +706,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
     },
+    "ad_alert_daily_feishu_report": {
+        "code": "ad_alert_daily_feishu_report",
+        "name": "广告预警每日飞书推送",
+        "description": (
+            "每天北京时间 17:00 推送高亏损广告 Top 榜到飞书，"
+            "附 24 小时公开分享链接；feishu_alerts.enabled 未启用时记录跳过不发送。"
+            "Docs-anchor: docs/superpowers/specs/2026-06-12-ad-alert-action-workflow-design.md"
+        ),
+        "schedule": "每天 17:00",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "ad_alert_daily_feishu_report",
+        "runner": "appcore.ad_alert_daily_report.tick_once",
+        "deployment": "Web 服务启动时注册",
+        "log_table": "scheduled_task_runs",
+        "default_enabled": True,
+    },
     "weekly_ai_analysis_report": {
         "code": "weekly_ai_analysis_report",
         "name": "每周 AI 分析报告",

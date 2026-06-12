@@ -53,6 +53,21 @@ def test_build_report_text_lists_ads_and_share_url():
     assert "https://example.com/ad-alerts/share/high-loss?token=x" in text
 
 
+def test_daily_report_task_registered_for_scheduled_tasks_ui():
+    from appcore import ad_alert_daily_report, scheduled_tasks
+
+    assert scheduled_tasks.is_known_task(ad_alert_daily_report.TASK_CODE)
+
+    definition = scheduled_tasks.get_task_definition(ad_alert_daily_report.TASK_CODE)
+
+    assert definition["name"] == "广告预警每日飞书推送"
+    assert definition["source_type"] == "apscheduler"
+    assert definition["source_ref"] == ad_alert_daily_report.TASK_CODE
+    assert definition["runner"] == "appcore.ad_alert_daily_report.tick_once"
+    assert definition["log_table"] == "scheduled_task_runs"
+    assert definition["default_enabled"] is True
+
+
 def test_tick_once_skips_when_feishu_disabled(monkeypatch):
     from appcore import ad_alert_daily_report, feishu_alerts, scheduled_tasks
 

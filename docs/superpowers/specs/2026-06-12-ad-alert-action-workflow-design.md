@@ -110,6 +110,8 @@ register(scheduler)                                         # cron BJ 17:00
 
 `appcore/scheduler.py` 中按既有模式 import + `register(_scheduler)`，cron `hour=17, minute=0`（BJ 业务日 16:00 切换后 1 小时，前一业务日数据已完整）。启停通过 `/scheduled-tasks` 面板控制；飞书总开关 `feishu_alerts.enabled` 不开则任务自动跳过。
 
+`ad_alert_daily_feishu_report` 必须同步登记到 `appcore/scheduled_tasks.py` 的 `TASK_DEFINITIONS`，`source_type=apscheduler`、`log_table=scheduled_task_runs`、`default_enabled=True`。否则 APScheduler 虽然创建了 job，但 `scheduled_tasks.run_if_enabled()` 会把未知任务视为停用，且 `/scheduled-tasks` 管理页不会显示该任务。
+
 ---
 
 ## 涉及文件
