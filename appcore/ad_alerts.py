@@ -906,26 +906,6 @@ def _batch_fetch_problem_ad_details(items: list[ProblemAdItem], rows: list[dict[
 
     # 4.3 From meta_hot_posts / meta_hot_post_product_analyses (images)
     images: dict[str, str] = {}
-    # From media_products
-    try:
-        rows_mp_img = db_query(
-            f"""
-            SELECT LOWER(product_code) AS code, main_image
-            FROM media_products
-            WHERE LOWER(product_code) IN ({placeholders})
-              AND main_image IS NOT NULL AND main_image <> ''
-              AND deleted_at IS NULL
-            """,
-            tuple(clean_codes)
-        )
-        for r in rows_mp_img or []:
-            c = str(r["code"]).lower()
-            img = str(r["main_image"] or "").strip()
-            if img:
-                images[c] = img
-    except Exception as e:
-        log.warning("Failed to query product images from media_products: %s", e)
-
     # From media_product_covers
     try:
         rows_cov = db_query(
@@ -948,6 +928,28 @@ def _batch_fetch_problem_ad_details(items: list[ProblemAdItem], rows: list[dict[
                     images[c] = img
     except Exception as e:
         log.warning("Failed to query product images from media_product_covers: %s", e)
+
+    # From media_products
+    try:
+        rows_mp_img = db_query(
+            f"""
+            SELECT LOWER(product_code) AS code, main_image
+            FROM media_products
+            WHERE LOWER(product_code) IN ({placeholders})
+              AND main_image IS NOT NULL AND main_image <> ''
+              AND deleted_at IS NULL
+            """,
+            tuple(clean_codes)
+        )
+        for r in rows_mp_img or []:
+            c = str(r["code"]).lower()
+            if c not in images:
+                img = str(r["main_image"] or "").strip()
+                if img:
+                    images[c] = img
+    except Exception as e:
+        log.warning("Failed to query product images from media_products: %s", e)
+
 
     # From tabcut_goods
     try:
