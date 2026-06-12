@@ -36,6 +36,18 @@ def test_medias_js_wires_roas_button_and_calculation():
     assert "roas_calculation" in js
 
 
+def test_media_list_breakeven_roas_summary_uses_product_calculation_not_order_snapshot():
+    js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    render_fn = js.split("function renderProductLangAdBar", 1)[1].split(
+        "function renderProductOrderStatsBar", 1
+    )[0]
+
+    assert "productObj.roas_calculation" in render_fn
+    assert "actual_breakeven_roas" not in render_fn
+    assert "oc-breakeven-roas-line" in render_fn
+    assert "独立站估算" in render_fn
+
+
 def test_sku_detail_modal_supports_manual_variant_creation():
     html = (ROOT / "web" / "templates" / "medias_list.html").read_text(encoding="utf-8")
     js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
