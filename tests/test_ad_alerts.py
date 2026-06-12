@@ -565,10 +565,25 @@ def test_batch_fetch_problem_ad_details_images(monkeypatch):
     from appcore import ad_alerts
     from appcore.ad_alerts import ProblemAdItem
 
-    item = ProblemAdItem(
+    item1 = ProblemAdItem(
         level="ad",
-        code="rjc-test-product",
-        name="Test Ad",
+        code="rjc-test-product-1",
+        name="Test Ad 1",
+        ad_account_id="123",
+        ad_account_name="Account",
+        first_active_date=None,
+        last_active_date=None,
+        detail_url="",
+        metrics={},
+        product_cn_name=None,
+        product_theme=None,
+        product_main_image=None,
+    )
+
+    item2 = ProblemAdItem(
+        level="ad",
+        code="rjc-test-product-2",
+        name="Test Ad 2",
         ad_account_id="123",
         ad_account_name="Account",
         first_active_date=None,
@@ -583,14 +598,28 @@ def test_batch_fetch_problem_ad_details_images(monkeypatch):
     query_queries = []
     def fake_db_query(sql, params=None):
         query_queries.append((sql, params))
-        if "media_products" in sql:
-            return [{"code": "rjc-test-product", "main_image": "https://img.example.com/mp.jpg"}]
+        if "media_product_covers" in sql:
+            if params and any("rjc-test-product-2" in p for p in params):
+                return [{"code": "rjc-test-product-2", "main_image": "79/medias/796/cover.png"}]
+            return []
+        elif "media_products" in sql:
+            if "name" in sql:
+                return [{"code": "rjc-test-product-1", "name": "Test Product 1 Name"}]
+            if "main_image" in sql:
+                if params and any("rjc-test-product-1" in p for p in params):
+                    return [{"code": "rjc-test-product-1", "main_image": "https://img.example.com/mp.jpg"}]
+            return []
         return []
 
     monkeypatch.setattr("appcore.db.query", fake_db_query)
 
-    ad_alerts._batch_fetch_problem_ad_details([item], [{"matched_product_code": "rjc-test-product"}])
+    ad_alerts._batch_fetch_problem_ad_details([item1, item2], [
+        {"matched_product_code": "rjc-test-product-1"},
+        {"matched_product_code": "rjc-test-product-2"}
+    ])
 
-    assert item.product_main_image == "https://img.example.com/mp.jpg"
+    assert item1.product_main_image == "https://img.example.com/mp.jpg"
+    assert item2.product_main_image == "/medias/obj/79/medias/796/cover.png"
     assert len(query_queries) > 0
+
 
