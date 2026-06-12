@@ -1107,6 +1107,7 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
           AND COALESCE(m.spend_usd, 0) > 0
           AND m.market_country IS NOT NULL
           AND TRIM(m.market_country) <> ''
+        GROUP BY country, ad_name, normalized_ad_code
         """,
         {"product_id": product_id},
     )
