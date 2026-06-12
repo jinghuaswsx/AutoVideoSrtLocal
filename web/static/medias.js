@@ -4457,7 +4457,7 @@
 
         const lineEl = document.createElement('div');
         lineEl.style.marginBottom = '6px';
-        lineEl.innerHTML = `[${task.domain}] 正在检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>)...`;
+        lineEl.innerHTML = `[${task.domain}] 正在检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>)...`;
         logEl.appendChild(lineEl);
         logEl.scrollTop = logEl.scrollHeight;
 
@@ -4486,7 +4486,7 @@
           const statusText = status !== null ? status : (item.error ? `ERR (${item.error})` : '未知');
 
           if (status === 404) {
-            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #ff6b6b; font-weight: bold;">${statusText} (404) ❌</span>`;
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #ff6b6b; font-weight: bold;">${statusText} (404) ❌</span>`;
 
             if (!domain404Map[task.domain]) {
               domain404Map[task.domain] = [];
@@ -4495,17 +4495,17 @@
               domain404Map[task.domain].push(task.product_code);
             }
           } else if (status >= 200 && status < 400) {
-            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #51cf66;">${statusText} (OK) ✓</span>`;
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #51cf66;">${statusText} (OK) ✓</span>`;
           } else {
-            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #ffd43b;">${statusText} ⚠️</span>`;
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ 结果：<span style="color: #ffd43b;">${statusText} ⚠️</span>`;
           }
           logEl.scrollTop = logEl.scrollHeight;
 
         } catch (err) {
           if (err.name === 'AbortError') {
-            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ <span style="color: #abb2bf;">已取消</span>`;
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ <span style="color: #abb2bf;">已取消</span>`;
           } else {
-            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ <span style="color: #ff6b6b;">检查失败: ${err.message || err}</span>`;
+            lineEl.innerHTML = `[${task.domain}] 检查产品 ${task.product_code} (<a href="${task.url}" target="_blank" rel="noopener noreferrer" style="color: #61afef; text-decoration: underline; word-break: break-all;">${task.url}</a>) ↳ <span style="color: #ff6b6b;">检查失败: ${err.message || err}</span>`;
           }
           logEl.scrollTop = logEl.scrollHeight;
         } finally {
