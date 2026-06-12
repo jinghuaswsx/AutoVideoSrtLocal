@@ -50,6 +50,8 @@ def get_scheduler() -> BackgroundScheduler:
         tos_backup_job.register(_scheduler)
         from appcore import weekly_roas_report
         weekly_roas_report.register(_scheduler)
+        from appcore import ad_alert_daily_report
+        ad_alert_daily_report.register(_scheduler)
         from appcore.order_analytics import weekly_ai_report
         weekly_ai_report.register(_scheduler)
         from appcore.meta_hot_posts import scheduler as meta_hot_posts_scheduler
