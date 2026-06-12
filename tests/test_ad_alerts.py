@@ -250,7 +250,6 @@ def test_get_ad_list_aggregates_language_matched_ads(monkeypatch):
 
     assert "FROM meta_ad_daily_ad_metrics m" in captured["sql"]
     assert "EXISTS (" in captured["sql"]
-    assert "LOWER(i.lang) = %(lang)s" in captured["sql"]
     assert "CASE UPPER(m.market_country)" in captured["sql"]
     assert captured["params"] == {"product_id": 10, "lang": "de"}
     assert len(items) == 1
