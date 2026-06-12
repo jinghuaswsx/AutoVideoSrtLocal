@@ -25,6 +25,7 @@ LOW_BALANCE_USD = Decimal("1")
 MIN_GAP_USD = Decimal("1.00")
 MIN_GAP_RATIO = Decimal("0.20")
 REQUEST_TIMEOUT_SECONDS = 15
+DISPLAY_USD = Decimal("0.1")
 
 
 class ApimartBalanceWatchdogError(RuntimeError):
@@ -40,6 +41,10 @@ def _to_decimal(value: Any, *, field: str) -> Decimal:
         raise ApimartBalanceWatchdogError(
             f"invalid APIMART balance field {field}: {value!r}"
         ) from exc
+
+
+def _format_usd(value: Any) -> str:
+    return str(_to_decimal(value, field="usd").quantize(DISPLAY_USD))
 
 
 def _api_error_message(payload: dict[str, Any]) -> str:
@@ -134,6 +139,7 @@ def local_usage_summary(
     cost_cny: Decimal | int | str | None = Decimal("0"),
     call_count: int = 0,
     unpriced_calls: int = 0,
+    chargeable_failure_calls: int = 0,
 ) -> dict[str, Any]:
     cost_cny_decimal = _to_decimal(cost_cny, field="cost_cny")
     cost_usd = Decimal("0")
@@ -144,6 +150,7 @@ def local_usage_summary(
         "cost_usd": cost_usd,
         "call_count": int(call_count or 0),
         "unpriced_calls": int(unpriced_calls or 0),
+        "chargeable_failure_calls": int(chargeable_failure_calls or 0),
         "usd_to_cny": USD_TO_CNY,
     }
 
@@ -154,16 +161,30 @@ def local_apimart_usage_usd(
 ) -> dict[str, Any]:
     if start is None or end is None:
         return local_usage_summary()
+    error_expr = "JSON_UNQUOTE(JSON_EXTRACT(extra_data, '$.error'))"
     rows = query(
-        """
+        f"""
         SELECT COALESCE(SUM(cost_cny), 0) AS cost_cny,
                COUNT(*) AS call_count,
-               COALESCE(SUM(CASE WHEN cost_cny IS NULL THEN 1 ELSE 0 END), 0) AS unpriced_calls
+               COALESCE(SUM(CASE WHEN cost_cny IS NULL THEN 1 ELSE 0 END), 0) AS unpriced_calls,
+               COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS chargeable_failure_calls
         FROM usage_logs
         WHERE provider = %s
-          AND success = 1
           AND called_at >= %s
           AND called_at < %s
+          AND (
+            success = 1
+            OR (
+              success = 0
+              AND (
+                {error_expr} = 'signal=15'
+                OR LOCATE('APIMART 图片翻译请求超过 120s', {error_expr}) = 1
+                OR LOCATE('APIMART 任务失败', {error_expr}) = 1
+                OR LOCATE('APIMART 轮询失败', {error_expr}) = 1
+                OR LOCATE('APIMART 图片下载失败', {error_expr}) = 1
+              )
+            )
+          )
         """,
         (USAGE_LOG_PROVIDER, start, end),
     )
@@ -172,6 +193,7 @@ def local_apimart_usage_usd(
         cost_cny=row.get("cost_cny") or Decimal("0"),
         call_count=int(row.get("call_count") or 0),
         unpriced_calls=int(row.get("unpriced_calls") or 0),
+        chargeable_failure_calls=int(row.get("chargeable_failure_calls") or 0),
     )
 
 
@@ -273,8 +295,8 @@ def evaluate_snapshot(
             "alert": True,
             "reason": "low_balance",
             "message": (
-                f"APIMART {label} remaining balance is {remaining_usd} USD, "
-                f"below {LOW_BALANCE_USD} USD."
+                f"APIMART {label} remaining balance is {_format_usd(remaining_usd)} USD, "
+                f"below {_format_usd(LOW_BALANCE_USD)} USD."
             ),
             "low_balance_label": label,
             "low_balance_remaining_usd": remaining_usd,
@@ -295,8 +317,9 @@ def evaluate_snapshot(
             "reason": "usage_gap",
             "message": (
                 "Detected unexplained APIMART usage: "
-                f"remote delta {remote_delta_usd} USD, local billing {local_usage_usd} USD, "
-                f"gap {gap_usd} USD."
+                f"remote delta {_format_usd(remote_delta_usd)} USD, "
+                f"local billing {_format_usd(local_usage_usd)} USD, "
+                f"gap {_format_usd(gap_usd)} USD."
             ),
         }
 

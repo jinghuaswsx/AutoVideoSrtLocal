@@ -169,6 +169,10 @@ def test_evaluate_snapshot_alerts_when_remote_usage_exceeds_local_billing():
     assert result["remote_delta_usd"] == Decimal("10")
     assert result["local_usage_usd"] == Decimal("2")
     assert result["gap_usd"] == Decimal("8")
+    assert (
+        result["message"]
+        == "Detected unexplained APIMART usage: remote delta 10.0 USD, local billing 2.0 USD, gap 8.0 USD."
+    )
 
 
 def test_evaluate_snapshot_allows_small_gap_under_thresholds():
@@ -220,6 +224,7 @@ def test_local_apimart_usage_usd_queries_successful_apimart_calls(monkeypatch):
                 "cost_cny": Decimal("21.60"),
                 "call_count": 3,
                 "unpriced_calls": 1,
+                "chargeable_failure_calls": 2,
             }
         ]
 
@@ -233,9 +238,14 @@ def test_local_apimart_usage_usd_queries_successful_apimart_calls(monkeypatch):
     assert result["cost_usd"] == Decimal("3")
     assert result["call_count"] == 3
     assert result["unpriced_calls"] == 1
+    assert result["chargeable_failure_calls"] == 2
     assert calls[0][1] == ("apimart", start, end)
     assert "provider = %s" in calls[0][0]
     assert "success = 1" in calls[0][0]
+    assert "success = 0" in calls[0][0]
+    assert "APIMART 图片翻译请求超过 120s" in calls[0][0]
+    assert "APIMART 图片下载失败" in calls[0][0]
+    assert "APIMART 提交失败" not in calls[0][0]
 
 
 def test_latest_success_snapshot_reads_prior_summary(monkeypatch):
