@@ -810,9 +810,16 @@ def _rank_input(row: Mapping[str, Any]) -> dict[str, Any]:
         "orders_today", "orders_yesterday", "orders_7d", "orders_30d",
         "revenue_30d", "profit_30d", "true_roas_30d", "meta_roas_30d",
         "ad_count_30d", "results_30d", "local_material_count", "local_material_langs",
-        "delivery_status",
+        "delivery_status", "effective_breakeven_roas",
     )
-    return {key: row.get(key) for key in keys}
+    payload = {key: row.get(key) for key in keys}
+    breakeven = _safe_float(row.get("effective_breakeven_roas"))
+    true_roas = row.get("true_roas_30d")
+    if breakeven > 0 and true_roas is not None:
+        payload["roas_vs_breakeven"] = round(_safe_float(true_roas) / breakeven, 4)
+    else:
+        payload["roas_vs_breakeven"] = None
+    return payload
 
 
 MATERIAL_REVIEW_RESPONSE_SCHEMA: dict[str, Any] = {
@@ -1741,7 +1748,10 @@ def _ranking_prompt(payload: dict) -> str:
     return (
         "你是跨境电商素材投放军师。只根据输入 JSON 判断，不编造数据。\n"
         "表现好必须同时有量和效率；1-2 单高 ROAS 不得排前。优先选择有持续消耗、订单、广告数、"
-        "并且有可补素材空间的产品。输出严格 JSON，字段符合 response_schema。\n"
+        "并且有可补素材空间的产品。\n"
+        "效率判断必须参照 roas_vs_breakeven（true_roas_30d / 保本ROAS）：>=1 代表已过保本线，"
+        "不同产品保本线不同，禁止只看绝对 ROAS 高低比较产品；该字段为 null 时改看 true_roas_30d 并在理由中注明缺少保本线。\n"
+        "输出严格 JSON，字段符合 response_schema。\n"
         f"输入数据：\n{_json_dumps(payload)}"
     )
 

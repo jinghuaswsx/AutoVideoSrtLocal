@@ -485,6 +485,34 @@ def test_run_product_analysis_uses_googlewj_material_review(monkeypatch):
     assert result["mode"] == "ai"
 
 
+def test_rank_input_includes_breakeven_roas_context():
+    row = _row(
+        product_id=7,
+        spend_30d=400,
+        revenue_30d=800,
+        purchase_value_30d=700,
+        orders_30d=40,
+    )
+    row["effective_breakeven_roas"] = 1.6
+
+    payload = svc._rank_input(row)
+
+    assert payload["effective_breakeven_roas"] == 1.6
+    # true_roas_30d = 2.0 → 2.0 / 1.6 = 1.25
+    assert payload["roas_vs_breakeven"] == 1.25
+    assert "roas_vs_breakeven" in svc._ranking_prompt({"products": [payload]})
+
+
+def test_rank_input_breakeven_missing_yields_null_ratio():
+    row = _row(product_id=8, spend_30d=100, revenue_30d=200, purchase_value_30d=150, orders_30d=10)
+    row["effective_breakeven_roas"] = None
+
+    payload = svc._rank_input(row)
+
+    assert payload["effective_breakeven_roas"] is None
+    assert payload["roas_vs_breakeven"] is None
+
+
 def test_snake_batches_mix_strong_and_weak_candidates():
     items = [{"product_id": i, "score": 100 - i} for i in range(60)]
     batches = svc._snake_batches(items, size=20)
