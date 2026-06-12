@@ -70,6 +70,7 @@ def test_get_alerts_queries_cache_and_filters_by_severity(monkeypatch):
     from appcore import ad_alerts
 
     captured: dict[str, object] = {}
+    ad_list_calls: list[tuple[int, str]] = []
 
     def fake_query(sql, params=None):
         captured["sql"] = sql
@@ -112,6 +113,14 @@ def test_get_alerts_queries_cache_and_filters_by_severity(monkeypatch):
         "_alert_trend_inputs",
         lambda product_id, lang: (None, None),
     )
+    monkeypatch.setattr(
+        ad_alerts,
+        "get_ad_list",
+        lambda product_id, lang: ad_list_calls.append((product_id, lang)) or [
+            ad_alerts.AdListItem("DE", "worst-ad", "worst-code", 100.0, 40.0, 0.4, 10),
+            ad_alerts.AdListItem("AT", "safe-ad", "safe-code", 100.0, 180.0, 1.8, 10),
+        ],
+    )
 
     items = ad_alerts.get_alerts(
         threshold=1.5,
@@ -130,6 +139,28 @@ def test_get_alerts_queries_cache_and_filters_by_severity(monkeypatch):
     assert items[0].severity == ad_alerts.Severity.SEVERE
     assert items[0].phase == ad_alerts.Phase.STABLE
     assert items[0].estimated_loss == -60.0
+    assert ad_list_calls == [(10, "de")]
+    assert [ad.ad_name for ad in items[0].top_losing_ads] == ["worst-ad"]
+
+
+def test_get_top_losing_ads_filters_sorts_and_limits(monkeypatch):
+    from appcore import ad_alerts
+
+    monkeypatch.setattr(
+        ad_alerts,
+        "get_ad_list",
+        lambda product_id, lang: [
+            ad_alerts.AdListItem("DE", "warn-ad", "warn-code", 100.0, 120.0, 1.2, 8),
+            ad_alerts.AdListItem("AT", "worst-ad", "worst-code", 100.0, 20.0, 0.2, 8),
+            ad_alerts.AdListItem("CH", "no-roas", "no-roas-code", 0.0, 0.0, None, 0),
+            ad_alerts.AdListItem("FR", "safe-ad", "safe-code", 100.0, 180.0, 1.8, 8),
+            ad_alerts.AdListItem("ES", "second-ad", "second-code", 100.0, 70.0, 0.7, 8),
+        ],
+    )
+
+    losing_ads = ad_alerts._get_top_losing_ads(10, "DE", threshold=1.5, limit=2)
+
+    assert [ad.ad_name for ad in losing_ads] == ["worst-ad", "second-ad"]
 
 
 def test_detail_uses_language_matched_trend_series(monkeypatch):
@@ -371,6 +402,7 @@ def test_get_alerts_dynamically_date_range(monkeypatch):
         "_alert_trend_inputs",
         lambda product_id, lang, end_date=None: (None, None),
     )
+    monkeypatch.setattr(ad_alerts, "get_ad_list", lambda product_id, lang: [])
 
     items = ad_alerts.get_alerts(
         threshold=1.5,

@@ -6,6 +6,7 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-11-ad-alert-module-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-ad-level-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
 """
 from __future__ import annotations
 
@@ -95,6 +96,7 @@ class AlertItem:
     reason: str
     estimated_loss: float
     active_days: int = 0
+    top_losing_ads: list[AdListItem] = field(default_factory=list)
 
 
 @dataclass
@@ -170,6 +172,8 @@ class AggregatedProductAlert:
     alert_count: int
     active_days: int
     computed_at: str | None
+    top_losing_ads: list[AdListItem] = field(default_factory=list)
+    evaluation_lang: str | None = None
 
 
 @dataclass
@@ -307,6 +311,22 @@ def set_threshold(value: float) -> None:
     threshold = max(0.1, float(value))
     payload = json.dumps({"threshold": threshold}, ensure_ascii=False)
     system_settings.set_setting(ALERT_THRESHOLD_SETTING_KEY, payload)
+
+
+def _get_top_losing_ads(
+    product_id: int,
+    lang: str,
+    threshold: float,
+    limit: int = 3,
+) -> list[AdListItem]:
+    """获取某商品语言下亏损最严重的 AD，按 ROAS 升序返回。"""
+    all_ads = get_ad_list(product_id, lang)
+    losing_ads = [
+        ad for ad in all_ads
+        if ad.ad_roas is not None and ad.ad_roas < threshold
+    ]
+    losing_ads.sort(key=lambda ad: ad.ad_roas if ad.ad_roas is not None else 999)
+    return losing_ads[:max(0, int(limit))]
 
 
 def _get_alerts_dynamically(
@@ -558,6 +578,12 @@ def get_alerts(
         if not (is_loss or is_worsening_and_huge_spend):
             continue
 
+        top_losing_ads = _get_top_losing_ads(
+            product_id,
+            item_lang,
+            threshold_value,
+            limit=3,
+        )
         items.append(
             AlertItem(
                 product_id=product_id,
@@ -579,6 +605,7 @@ def get_alerts(
                 reason=judgment.reason,
                 estimated_loss=estimated_loss,
                 active_days=active_window.active_days,
+                top_losing_ads=top_losing_ads,
             )
         )
     return items
@@ -1075,6 +1102,13 @@ def get_aggregated_products(
             }
             for it in p_items
         ]
+        top_losing_ads = [
+            ad
+            for it in p_items
+            for ad in it.top_losing_ads
+            if ad.ad_roas is not None
+        ]
+        top_losing_ads.sort(key=lambda ad: ad.ad_roas if ad.ad_roas is not None else 999)
 
         res.append(
             AggregatedProductAlert(
@@ -1093,6 +1127,8 @@ def get_aggregated_products(
                 alert_count=len(p_items),
                 active_days=max(it.active_days for it in p_items),
                 computed_at=max_item.computed_at,
+                top_losing_ads=top_losing_ads[:3],
+                evaluation_lang=max_item.lang,
             )
         )
 

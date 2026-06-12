@@ -4,6 +4,7 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-11-ad-alert-module-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-ad-level-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
 """
 from __future__ import annotations
 
@@ -250,6 +251,9 @@ def _alert_item_to_dict(item: ad_alerts.AlertItem) -> dict[str, Any]:
         "reason": item.reason,
         "estimated_loss": item.estimated_loss,
         "computed_at": item.computed_at,
+        "top_losing_ads": [
+            _ad_list_item_to_dict(ad) for ad in item.top_losing_ads
+        ],
     }
 
 
@@ -352,6 +356,10 @@ def _aggregated_product_to_dict(item: ad_alerts.AggregatedProductAlert) -> dict[
         "alert_count": item.alert_count,
         "active_days": item.active_days,
         "computed_at": item.computed_at,
+        "top_losing_ads": [
+            _ad_list_item_to_dict(ad) for ad in item.top_losing_ads
+        ],
+        "evaluation_lang": item.evaluation_lang,
     }
 
 

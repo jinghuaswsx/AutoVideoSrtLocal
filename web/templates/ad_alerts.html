@@ -579,6 +579,62 @@
   background: rgba(245, 158, 11, 0.1);
   color: #fef3c7;
 }
+.oc-ad-alert-losing-ads {
+  display: grid;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--oc-ad-alert-subtle);
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.oc-ad-alert-losing-ad {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+.oc-ad-alert-losing-ad strong {
+  color: var(--oc-ad-alert-fg);
+}
+.oc-ad-alert-roas-bad {
+  color: var(--oc-ad-alert-red) !important;
+}
+.oc-ad-alert-roas-warn {
+  color: var(--oc-ad-alert-orange) !important;
+}
+.oc-ad-alert-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-btn-ai {
+  min-height: 28px;
+  padding: 0 10px;
+  border-color: var(--oc-ad-alert-blue);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--oc-ad-alert-blue);
+  font-size: 12px;
+}
+.oc-ad-alert-btn-ai:hover:not(:disabled) {
+  background: #eff6ff;
+}
+.oc-ad-alert-card-eval {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--oc-ad-alert-subtle);
+}
+.oc-ad-alert-card-eval .oc-ad-alert-state {
+  padding: 8px;
+}
+.oc-ad-alert-card-eval .oc-ad-alert-evaluation {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
 .oc-ad-alert-state {
   padding: 48px 20px;
   border: 1px dashed var(--oc-ad-alert-border);
@@ -841,8 +897,8 @@
   </div>
 
   <div class="oc-ad-alert-tabs" id="adAlertTabs" role="tablist" aria-label="广告预警子 Tab">
-    <a class="oc-ad-alert-tab {% if active_tab == 'alerts' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/" role="tab" aria-selected="{% if active_tab == 'alerts' %}true{% else %}false{% endif %}">广告预警</a>
-    <a class="oc-ad-alert-tab {% if active_tab == 'problem' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/problem" role="tab" aria-selected="{% if active_tab == 'problem' %}true{% else %}false{% endif %}">问题广告</a>
+    <a class="oc-ad-alert-tab {% if active_tab == 'alerts' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/" role="tab" data-ad-alert-tab="alerts" aria-selected="{% if active_tab == 'alerts' %}true{% else %}false{% endif %}">广告预警</a>
+    <a class="oc-ad-alert-tab {% if active_tab == 'problem' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/problem" role="tab" data-ad-alert-tab="problem" aria-selected="{% if active_tab == 'problem' %}true{% else %}false{% endif %}">问题广告</a>
   </div>
 
   <section class="oc-ad-alert-panel" data-ad-alert-panel="alerts" {% if active_tab != 'alerts' %}hidden{% endif %}>
@@ -1028,6 +1084,34 @@
       });
   }
 
+  function renderTopLosingAds(item) {
+    var ads = item.top_losing_ads || [];
+    if (!ads.length) return '';
+    var rows = ads.map(function(ad) {
+      var adRoas = ad.ad_roas === null || ad.ad_roas === undefined ? null : Number(ad.ad_roas);
+      var tone = adRoas !== null && adRoas < 1 ? 'bad' : 'warn';
+      var icon = tone === 'bad' ? '●' : '▲';
+      var lossAmount = Number(ad.total_purchase || 0) - Number(ad.total_spend || 0);
+      return ''
+        + '<div class="oc-ad-alert-losing-ad">'
+        + '<span class="oc-ad-alert-roas-' + tone + '">' + icon + '</span>'
+        + '<strong>' + html(ad.country || '') + '</strong>'
+        + '<span>·</span><span>' + html(ad.ad_name || ad.normalized_ad_code || '') + '</span>'
+        + '<span>· ROAS <strong class="oc-ad-alert-roas-' + tone + '">' + roas(adRoas) + '</strong></span>'
+        + '<span>· 亏 <strong class="oc-ad-alert-loss">' + money(Math.abs(lossAmount), 0) + '</strong></span>'
+        + '</div>';
+    }).join('');
+    return '<div class="oc-ad-alert-losing-ads">' + rows + '</div>';
+  }
+
+  function renderCardActions(item) {
+    if (!item.evaluation_lang) return '';
+    return ''
+      + '<div class="oc-ad-alert-card-actions">'
+      + '  <button type="button" class="oc-ad-alert-btn oc-ad-alert-btn-ai" data-card-evaluate data-product-id="' + html(item.product_id) + '" data-lang="' + html(item.evaluation_lang || '') + '" data-threshold="' + html(Number(state.threshold || 0)) + '">AI 评估</button>'
+      + '</div>';
+  }
+
   function renderList(items) {
     if (!items.length) {
       listEl.innerHTML = '<div class="oc-ad-alert-state">暂无预警</div>';
@@ -1041,7 +1125,7 @@
              + html(langObj.lang.toUpperCase()) + ' (' + html(langObj.severity_label) + ')</span>';
       }).join('');
       return ''
-        + '<a href="/ad-alerts/product/' + html(item.product_id) + '" class="oc-ad-alert-card" style="text-decoration: none; display: grid; color: inherit;">'
+        + '<article class="oc-ad-alert-card" role="button" tabindex="0" data-detail-url="/ad-alerts/product/' + html(item.product_id) + '" style="text-decoration: none; display: grid; color: inherit;">'
         + '  <span class="oc-ad-alert-card-top">'
         + '    <span class="oc-ad-alert-product">'
         + '      <span class="oc-ad-alert-name">' + html(item.product_name || item.product_code) + '</span>'
@@ -1059,7 +1143,9 @@
         + '    <span class="oc-ad-alert-metric">预警语言数 <strong>' + Number(item.alert_count || 0) + ' 个</strong></span>'
         + '    <span class="oc-ad-alert-metric">总预估盈亏 ' + loss(item.estimated_loss) + '</span>'
         + '  </span>'
-        + '</a>';
+        + renderTopLosingAds(item)
+        + renderCardActions(item)
+        + '</article>';
     }).join('');
   }
 
@@ -1258,6 +1344,69 @@
       + '</table>';
   }
 
+  function runCardEvaluation(productId, lang, threshold, btn) {
+    var card = btn.closest('.oc-ad-alert-card');
+    if (!card) return;
+    var existingResult = card.querySelector('.oc-ad-alert-card-eval');
+    if (existingResult) {
+      existingResult.remove();
+      return;
+    }
+    var resultEl = document.createElement('div');
+    resultEl.className = 'oc-ad-alert-card-eval';
+    resultEl.innerHTML = '<div class="oc-ad-alert-state">正在分析广告数据</div>';
+    var actions = btn.closest('.oc-ad-alert-card-actions');
+    if (actions) {
+      actions.insertAdjacentElement('afterend', resultEl);
+    } else {
+      card.appendChild(resultEl);
+    }
+
+    var normalizedLang = String(lang || '').toLowerCase();
+    var safeThreshold = Number(threshold || state.threshold || 0);
+    var cacheKey = String(productId) + ':' + normalizedLang + ':' + safeThreshold.toFixed(2);
+    if (adEvaluationCache[cacheKey]) {
+      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl);
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '分析中';
+    fetch('/ad-alerts/api/evaluate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRFToken': csrfToken()
+      },
+      body: JSON.stringify({
+        product_id: Number(productId || 0),
+        lang: normalizedLang,
+        threshold: safeThreshold
+      })
+    })
+      .then(function(resp) {
+        return resp.json().then(function(data) {
+          if (!resp.ok) {
+            throw new Error(data.error || 'evaluate_failed');
+          }
+          return data;
+        });
+      })
+      .then(function(data) {
+        var evaluations = data.evaluations || [];
+        adEvaluationCache[cacheKey] = evaluations;
+        renderAdEvaluations(evaluations, resultEl);
+      })
+      .catch(function(error) {
+        resultEl.innerHTML = '<div class="oc-ad-alert-state">评估失败：' + html(error.message || '未知错误') + '</div>';
+      })
+      .finally(function() {
+        btn.disabled = false;
+        btn.textContent = 'AI 评估';
+      });
+  }
+
   function runAdEvaluation(productId, lang) {
     var btn = document.getElementById('adAlertEvaluateBtn');
     var resultEl = document.getElementById('adAlertEvaluationResult');
@@ -1429,9 +1578,34 @@
       + '</svg>';
   }
 
-  // Navigation is handled directly by <a> tags in Level 1.
+  listEl.addEventListener('click', function(event) {
+    var evalBtn = event.target.closest('.oc-ad-alert-btn-ai');
+    if (evalBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      runCardEvaluation(
+        evalBtn.getAttribute('data-product-id'),
+        evalBtn.getAttribute('data-lang'),
+        Number(evalBtn.getAttribute('data-threshold') || state.threshold || 0),
+        evalBtn
+      );
+      return;
+    }
+    var card = event.target.closest('.oc-ad-alert-card');
+    if (!card) return;
+    var url = card.getAttribute('data-detail-url');
+    if (url) window.location.href = url;
+  });
 
-  // Click listener for tabs removed as navigation uses <a> links directly.
+  listEl.addEventListener('keydown', function(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.target.closest('.oc-ad-alert-btn-ai')) return;
+    var card = event.target.closest('.oc-ad-alert-card');
+    if (!card) return;
+    event.preventDefault();
+    var url = card.getAttribute('data-detail-url');
+    if (url) window.location.href = url;
+  });
 
   document.getElementById('adAlertProblemLevels').addEventListener('click', function(event) {
     var btn = event.target.closest('[data-level]');
