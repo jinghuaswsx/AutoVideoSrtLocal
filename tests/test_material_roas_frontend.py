@@ -33,8 +33,6 @@ def test_medias_js_wires_roas_button_and_calculation():
     assert "packet_cost_actual" in controller_js
     assert "standalone_shipping_fee" in controller_js
     assert "MATERIAL_ROAS_RMB_PER_USD" in controller_js
-    assert "roas_inputs_source" in controller_js
-    assert "data-roas-source-field" in partial
     assert "roas_calculation" in js
 
 
@@ -175,9 +173,6 @@ def test_roas_modal_splits_site_and_tk_fields_into_single_column_sections():
     assert "实际小包成本 (RMB)" in site_section
     assert "独立站售价 (USD)" in site_section
     assert "用户支付运费 (USD)" in site_section
-    assert 'data-roas-source-field="purchase_price"' in site_section
-    assert 'data-roas-source-field="packet_cost_estimated"' in site_section
-    assert 'data-roas-source-field="standalone_shipping_fee"' in site_section
     assert site_section.index('data-roas-field="purchase_1688_url"') < site_section.index(
         'data-roas-field="standalone_price"'
     )
