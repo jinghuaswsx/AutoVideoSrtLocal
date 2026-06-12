@@ -611,7 +611,7 @@
     const infoText = parts.join(' | ');
 
     const breakevenHtml = infoText
-      ? `<span style="font-size: 13.5px; color: #000; font-weight: 700; white-space: nowrap; line-height: 1.2;">${infoText}</span>`
+      ? `<span style="font-size: 10px; color: var(--oc-fg-subtle); font-weight: normal; white-space: nowrap; line-height: 1.2; text-overflow: ellipsis; overflow: hidden; max-width: 100%; display: block;" title="${escapeHtml(infoText)}">${infoText}</span>`
       : '';
 
     const btnHtml = productId
@@ -620,7 +620,7 @@
 
     let leftColHtml = '';
     if (breakevenHtml || btnHtml) {
-      leftColHtml = `<div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; height: 100%; gap: 2px;">`
+      leftColHtml = `<div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center; height: 100%; gap: 2px; min-width: 0; max-width: 100%; overflow: hidden;">`
         + breakevenHtml
         + btnHtml
         + `</div>`;
@@ -630,7 +630,7 @@
 
     return `<div class="oc-lang-bar oc-country-metrics-bar">`
       + `<div class="oc-lang-summary oc-country-metrics-summary" title="${escapeHtml(summaryTitle)}">`
-      + `<div style="display: flex; align-items: center; height: 100%;">${leftColHtml}</div>`
+      + `<div style="display: flex; align-items: center; height: 100%; min-width: 0; max-width: 100%; overflow: hidden; padding-right: 8px;">${leftColHtml}</div>`
       + `<div></div>`
       + `<div class="oc-lang-roas">`
       + `<div class="oc-lang-roas-block"><span class="oc-lang-label">订单ROAS</span><strong style="color: #2563eb;">${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
