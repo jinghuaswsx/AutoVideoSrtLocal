@@ -708,6 +708,8 @@ def update_product(product_id: int, **fields) -> int:
         if number_key in fields:
             value = product_roas.decimal_or_none(fields[number_key])
             fields[number_key] = float(value) if value is not None else None
+    if "standalone_price" in fields:
+        _validate_standalone_price_unit(product_id, fields["standalone_price"])
     keys = [k for k in fields if k in allowed]
     if not keys:
         return 0
@@ -738,6 +740,27 @@ def update_product(product_id: int, **fields) -> int:
         except Exception:
             pass
     return res
+
+
+def _validate_standalone_price_unit(product_id: int, standalone_price: Any) -> None:
+    price = product_roas.decimal_or_none(standalone_price)
+    if price is None or price < product_roas.STANDALONE_PRICE_CENTS_GUARD_MIN:
+        return
+    rows = query(
+        "SELECT shopify_price FROM media_product_skus "
+        "WHERE product_id=%s AND shopify_price IS NOT NULL",
+        (int(product_id),),
+    )
+    matched_sku_price = product_roas.match_cents_unit_standalone_price(
+        price,
+        [row.get("shopify_price") for row in rows or []],
+    )
+    if matched_sku_price is not None:
+        raise ValueError(
+            "standalone_price looks like cents unit: "
+            f"SKU price {matched_sku_price} matched {price}/100; "
+            "use the USD value instead"
+        )
 
 
 def soft_delete_product(product_id: int) -> int:

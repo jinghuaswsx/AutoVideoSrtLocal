@@ -1,0 +1,496 @@
+{% extends "layout.html" %}
+{% block title %}{{ page_title }} - AutoVideoSrt{% endblock %}
+{% block page_title %}{{ page_title }}{% endblock %}
+
+{% block extra_style %}
+<style>
+  .laf-detail-page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .laf-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .laf-detail-title {
+    margin: 0;
+    color: var(--fg);
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+  .laf-detail-subtitle {
+    margin-top: 6px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .laf-back,
+  .laf-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--fg);
+    background: var(--bg-card);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .laf-btn-primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  .laf-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .laf-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .laf-field input {
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--fg);
+    font-size: 13px;
+  }
+  .laf-field input[type="number"] {
+    width: 88px;
+  }
+  .laf-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .laf-kpi {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+    padding: 14px 16px;
+    min-width: 0;
+  }
+  .laf-kpi-label {
+    color: var(--fg-muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .laf-kpi-value {
+    margin-top: 4px;
+    color: var(--fg);
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+  .laf-kpi-sub {
+    margin-top: 4px;
+    color: var(--fg-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .laf-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-card);
+  }
+  .laf-table-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 800;
+  }
+  .laf-table {
+    width: 100%;
+    min-width: 1180px;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .laf-table th,
+  .laf-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  .laf-table th {
+    color: var(--fg-muted);
+    background: var(--bg-subtle);
+    font-weight: 800;
+  }
+  .laf-table tbody tr:hover td {
+    background: var(--bg-subtle);
+  }
+  .laf-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .laf-ratio {
+    color: var(--danger-fg);
+    font-weight: 800;
+  }
+  .laf-muted {
+    color: var(--fg-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .laf-source {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-full);
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .laf-source.is-estimated {
+    background: var(--warning-bg);
+    color: var(--warning-fg);
+  }
+  .laf-empty,
+  .laf-loading,
+  .laf-error {
+    padding: 32px;
+    text-align: center;
+    color: var(--fg-muted);
+  }
+  .laf-error {
+    color: var(--danger-fg);
+    background: var(--danger-bg);
+  }
+  .laf-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 0 0;
+  }
+  @media (max-width: 768px) {
+    .laf-detail-title {
+      font-size: 20px;
+    }
+    .laf-kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .laf-kpi {
+      padding: 12px;
+    }
+    .laf-kpi-value {
+      font-size: 20px;
+    }
+    .laf-back,
+    .laf-btn {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="laf-detail-page" data-product-id="{{ product_id }}">
+  <!-- Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md -->
+  <header class="laf-detail-header">
+    <div>
+      <h1 class="laf-detail-title" id="lafProductTitle">物流费预警订单明细</h1>
+      <div class="laf-detail-subtitle" id="lafSubtitle">加载中...</div>
+    </div>
+    <a class="laf-back" id="lafBack" href="/order-analytics/logistics-alert">返回物流费预警</a>
+  </header>
+
+  <div class="laf-toolbar">
+    <label class="laf-field">开始日期 <input type="date" id="lafStartDate"></label>
+    <label class="laf-field">结束日期 <input type="date" id="lafEndDate"></label>
+    <label class="laf-field">物流费占比超过 <input type="number" id="lafThreshold" min="0.01" step="0.01" value="20" inputmode="decimal"> %</label>
+    <button type="button" class="laf-btn laf-btn-primary" id="lafRefresh">查询</button>
+  </div>
+
+  <section class="laf-kpis" aria-label="物流费预警汇总">
+    <div class="laf-kpi">
+      <div class="laf-kpi-label">超标订单行</div>
+      <div class="laf-kpi-value" id="lafLineCount">0</div>
+      <div class="laf-kpi-sub">该产品明细</div>
+    </div>
+    <div class="laf-kpi">
+      <div class="laf-kpi-label">包裹数</div>
+      <div class="laf-kpi-value" id="lafPackageCount">0</div>
+      <div class="laf-kpi-sub">去重包裹号</div>
+    </div>
+    <div class="laf-kpi">
+      <div class="laf-kpi-label">总销售额</div>
+      <div class="laf-kpi-value" id="lafRevenue">$0.00</div>
+      <div class="laf-kpi-sub">订单行总销售额</div>
+    </div>
+    <div class="laf-kpi">
+      <div class="laf-kpi-label">物流费</div>
+      <div class="laf-kpi-value" id="lafShipping">$0.0000</div>
+      <div class="laf-kpi-sub" id="lafRatio">物流费占比 -</div>
+    </div>
+  </section>
+
+  <div class="laf-table-wrap">
+    <div class="laf-table-title">
+      <span>超标订单列表</span>
+      <span class="laf-muted" id="lafPageInfo">加载中...</span>
+    </div>
+    <table class="laf-table">
+      <thead>
+        <tr>
+          <th>订单时间</th>
+          <th>业务日</th>
+          <th>店铺</th>
+          <th>店小秘订单</th>
+          <th>包裹号</th>
+          <th>SKU</th>
+          <th class="laf-num">件数</th>
+          <th class="laf-num">总销售额</th>
+          <th class="laf-num">物流费</th>
+          <th class="laf-num">物流费占比</th>
+          <th>费用口径</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody id="logisticsAlertDetailBody">
+        <tr><td colspan="12" class="laf-loading">加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="laf-pagination">
+    <button type="button" class="laf-btn" id="lafPrev">上一页</button>
+    <button type="button" class="laf-btn" id="lafNext">下一页</button>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var productId = {{ product_id | tojson }};
+  var state = { page: 1, pageSize: 100 };
+
+  function text(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function today() {
+    var now = new Date();
+    return now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function(ch) {
+      return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[ch];
+    });
+  }
+
+  function fmtInt(value) {
+    return (parseInt(value, 10) || 0).toLocaleString();
+  }
+
+  function fmtMoney(value, digits) {
+    var n = parseFloat(value);
+    if (!isFinite(n)) n = 0;
+    return '$' + n.toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
+
+  function fmtPct(value) {
+    var n = parseFloat(value);
+    if (!isFinite(n)) return '-';
+    return n.toFixed(2) + '%';
+  }
+
+  function sourceLabel(source) {
+    var labels = {
+      order_logistic_fee: '实际物流费',
+      product_actual: '产品实际物流费',
+      product_estimated: '产品估算物流费',
+      estimated: '估算物流费',
+      unknown: '未知口径'
+    };
+    return labels[source] || source || '未知口径';
+  }
+
+  function sourceBadge(source) {
+    var estimated = source === 'estimated' || source === 'product_estimated';
+    return '<span class="laf-source' + (estimated ? ' is-estimated' : '') + '">' + escapeHtml(sourceLabel(source)) + '</span>';
+  }
+
+  function thresholdValue() {
+    var input = document.getElementById('lafThreshold');
+    var value = input ? parseFloat(input.value) : 20;
+    if (!isFinite(value) || value <= 0) value = 20;
+    if (input) input.value = String(value);
+    return value;
+  }
+
+  function params(page) {
+    var start = document.getElementById('lafStartDate');
+    var end = document.getElementById('lafEndDate');
+    var p = new URLSearchParams();
+    p.set('start_date', (start && start.value) || today());
+    p.set('end_date', (end && end.value) || today());
+    p.set('threshold_pct', String(thresholdValue()));
+    p.set('page', String(page || 1));
+    p.set('page_size', String(state.pageSize));
+    return p;
+  }
+
+  function updateBackLink() {
+    var back = document.getElementById('lafBack');
+    if (!back) return;
+    var p = params(1);
+    p.delete('page_size');
+    back.href = '/order-analytics/logistics-alert?' + p.toString();
+  }
+
+  function updateUrl(page) {
+    var p = params(page || state.page || 1);
+    var next = '/order-analytics/logistics-alert/products/' + productId + '?' + p.toString();
+    if (window.location.pathname + window.location.search !== next) {
+      window.history.replaceState(null, '', next);
+    }
+    updateBackLink();
+  }
+
+  function setSummary(data) {
+    var product = data.product || {};
+    var summary = data.summary || {};
+    var name = product.product_name || ('产品 ID ' + productId);
+    text('lafProductTitle', name);
+    text('lafSubtitle', '产品 ID: ' + productId + (product.product_code ? ' · ' + product.product_code : ''));
+    text('lafLineCount', fmtInt(summary.alert_line_count || 0));
+    text('lafPackageCount', fmtInt(summary.package_count || 0));
+    text('lafRevenue', fmtMoney(summary.revenue_usd || 0, 2));
+    text('lafShipping', fmtMoney(summary.shipping_cost_usd || 0, 4));
+    text('lafRatio', '物流费占比 ' + fmtPct(summary.shipping_ratio_pct));
+  }
+
+  function setPageInfo(pageInfo) {
+    pageInfo = pageInfo || {};
+    var current = parseInt(pageInfo.page, 10) || 1;
+    var pages = parseInt(pageInfo.pages, 10) || 0;
+    var total = parseInt(pageInfo.total, 10) || 0;
+    state.page = current;
+    text('lafPageInfo', total ? '第 ' + current + ' / ' + pages + ' 页 · 共 ' + fmtInt(total) + ' 条' : '暂无订单');
+    var prev = document.getElementById('lafPrev');
+    var next = document.getElementById('lafNext');
+    if (prev) prev.disabled = current <= 1;
+    if (next) next.disabled = !pages || current >= pages;
+  }
+
+  function renderRows(rows) {
+    var body = document.getElementById('logisticsAlertDetailBody');
+    if (!body) return;
+    if (!rows || !rows.length) {
+      body.innerHTML = '<tr><td colspan="12" class="laf-empty">当前日期范围内没有超过阈值的订单</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(row) {
+      return '<tr>' +
+        '<td>' + escapeHtml(String(row.paid_at || '').replace('T', ' ').slice(0, 19) || '-') + '</td>' +
+        '<td>' + escapeHtml(row.business_date || '-') + '</td>' +
+        '<td>' + escapeHtml(row.site_code || '-') + '</td>' +
+        '<td>' + escapeHtml(row.dxm_order_id || '-') + '<div class="laf-muted">Line ID: ' + escapeHtml(row.dxm_order_line_id) + '</div></td>' +
+        '<td>' + escapeHtml(row.package_number || row.dxm_package_id || '-') + '</td>' +
+        '<td>' + escapeHtml(row.sku || '-') + '</td>' +
+        '<td class="laf-num">' + fmtInt(row.quantity || 0) + '</td>' +
+        '<td class="laf-num">' + fmtMoney(row.revenue_usd || 0, 2) + '</td>' +
+        '<td class="laf-num">' + fmtMoney(row.shipping_cost_usd || 0, 4) + '</td>' +
+        '<td class="laf-num laf-ratio">' + fmtPct(row.shipping_ratio_pct) + '</td>' +
+        '<td>' + sourceBadge(row.shipping_source) + '</td>' +
+        '<td>' + escapeHtml(row.status || '-') + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function load(page) {
+    var body = document.getElementById('logisticsAlertDetailBody');
+    if (body) body.innerHTML = '<tr><td colspan="12" class="laf-loading">加载中...</td></tr>';
+    updateUrl(page || 1);
+    fetch('/order-analytics/logistics-alert/products/' + productId + '/data?' + params(page || 1).toString(), {
+      credentials: 'same-origin'
+    })
+      .then(function(resp) {
+        return resp.json().then(function(payload) {
+          if (!resp.ok || payload.ok === false) {
+            throw new Error(payload.detail || payload.error || '物流费预警订单加载失败');
+          }
+          return payload;
+        });
+      })
+      .then(function(data) {
+        setSummary(data);
+        setPageInfo(data.page || {});
+        renderRows(data.orders || []);
+      })
+      .catch(function(err) {
+        if (body) {
+          body.innerHTML = '<tr><td colspan="12" class="laf-error">' + escapeHtml(err.message || '物流费预警订单加载失败') + '</td></tr>';
+        }
+        setPageInfo({page: 1, pages: 0, total: 0});
+      });
+  }
+
+  function init() {
+    var query = new URLSearchParams(window.location.search);
+    var start = document.getElementById('lafStartDate');
+    var end = document.getElementById('lafEndDate');
+    var threshold = document.getElementById('lafThreshold');
+    if (start) start.value = query.get('start_date') || today();
+    if (end) end.value = query.get('end_date') || today();
+    if (threshold) threshold.value = query.get('threshold_pct') || '20';
+    var refresh = document.getElementById('lafRefresh');
+    if (refresh) refresh.addEventListener('click', function() { load(1); });
+    [start, end, threshold].forEach(function(el) {
+      if (el) el.addEventListener('change', function() { load(1); });
+    });
+    var prev = document.getElementById('lafPrev');
+    if (prev) prev.addEventListener('click', function() {
+      if (state.page > 1) load(state.page - 1);
+    });
+    var next = document.getElementById('lafNext');
+    if (next) next.addEventListener('click', function() {
+      load(state.page + 1);
+    });
+    load(parseInt(query.get('page'), 10) || 1);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+{% endblock %}

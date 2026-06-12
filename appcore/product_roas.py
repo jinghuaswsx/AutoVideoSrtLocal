@@ -13,6 +13,8 @@ PURCHASE_FALLBACK_RATE = Decimal("0.10")
 PACKET_FALLBACK_RATE = Decimal("0.20")
 DEFAULT_RMB_PER_USD = Decimal("6.83")
 RMB_PER_USD_SETTING_KEY = "material_roas_rmb_per_usd"
+STANDALONE_PRICE_CENTS_GUARD_MIN = Decimal("100")
+STANDALONE_PRICE_CENTS_TOLERANCE = Decimal("0.01")
 
 
 def decimal_or_none(value: Any) -> Decimal | None:
@@ -44,6 +46,27 @@ def format_decimal(value: Any) -> str:
     decimal_value = normalize_rmb_per_usd(value)
     text = format(decimal_value.normalize(), "f")
     return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def match_cents_unit_standalone_price(
+    standalone_price: Any,
+    sku_prices: list[Any],
+) -> Decimal | None:
+    """Return the matching SKU price when standalone_price looks like cents."""
+    price = decimal_or_none(standalone_price)
+    if price is None or price < STANDALONE_PRICE_CENTS_GUARD_MIN:
+        return None
+    cents_unit_price = price / Decimal("100")
+    for raw_sku_price in sku_prices:
+        try:
+            sku_price = decimal_or_none(raw_sku_price)
+        except ValueError:
+            continue
+        if sku_price is None or sku_price <= 0:
+            continue
+        if abs(sku_price - cents_unit_price) <= STANDALONE_PRICE_CENTS_TOLERANCE:
+            return sku_price
+    return None
 
 
 def get_configured_rmb_per_usd() -> Decimal:

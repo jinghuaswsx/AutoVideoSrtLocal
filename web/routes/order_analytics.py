@@ -594,6 +594,46 @@ def realtime_estimates_page():
     )
 
 
+@bp.route("/order-analytics/logistics-alert")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def logistics_alert_page():
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md"""
+    resp = make_response(render_template(
+        "order_analytics.html",
+        realtime_store_options=_realtime_store_options(),
+        active_tab="logisticsAlert",
+        active_subtab="trend",
+    ))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
+
+
+@bp.route("/order-analytics/logistics-alert/products/<int:product_id>")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def logistics_alert_product_page(product_id: int):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md"""
+    return render_template(
+        "logistics_fee_alert_detail.html",
+        page_title="物流费预警订单明细",
+        product_id=product_id,
+    )
+
+
+def _logistics_alert_args() -> dict:
+    today = _today_in_cst().isoformat()
+    return {
+        "start_date": (request.args.get("start_date") or today).strip(),
+        "end_date": (request.args.get("end_date") or today).strip(),
+        "threshold_pct": float((request.args.get("threshold_pct") or "20").strip()),
+        "page": _parse_positive_int_arg("page", 1),
+        "page_size": _parse_positive_int_arg("page_size", 100, max_value=500),
+    }
+
+
 # ── API ───────────────────────────────────────────────
 
 @bp.route("/order-analytics/realtime-unmatched-orders/data")
@@ -735,6 +775,41 @@ def realtime_estimates_data():
         "products": result.get("estimate_products") or [],
         "rules": result.get("estimate_rules") or {},
     }))
+
+
+@bp.route("/order-analytics/logistics-alert/data")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def logistics_alert_data():
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md"""
+    try:
+        result = oa.list_logistics_fee_alert_products(**_logistics_alert_args())
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:  # noqa: BLE001
+        log.exception("logistics fee alert query failed: %s", exc)
+        return _json_response(error="internal_error", detail="logistics alert query failed"), 500
+    return _json_response(_json_safe({"ok": True, **result}))
+
+
+@bp.route("/order-analytics/logistics-alert/products/<int:product_id>/data")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def logistics_alert_product_data(product_id: int):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md"""
+    try:
+        result = oa.list_logistics_fee_alert_order_details(
+            product_id=product_id,
+            **_logistics_alert_args(),
+        )
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:  # noqa: BLE001
+        log.exception("logistics fee alert product query failed: %s", exc)
+        return _json_response(error="internal_error", detail="logistics alert product query failed"), 500
+    return _json_response(_json_safe({"ok": True, **result}))
 
 
 @bp.route("/order-analytics/upload", methods=["POST"])
