@@ -1213,6 +1213,52 @@ def get_trend_series(
     """查询近 N 天商品语言维度广告花费和购买价值趋势。"""
     lower_lang = lang.strip().lower()
     end_date_val = end_date if end_date else date.today().isoformat()
+
+    # 1. 预先查出该商品语言下的所有 media_items
+    media_items = query(
+        """
+        SELECT filename, display_name
+        FROM media_items
+        WHERE product_id = %(product_id)s
+          AND deleted_at IS NULL
+          AND LOWER(lang) = %(lang)s
+        """,
+        {"product_id": product_id, "lang": lower_lang}
+    )
+    if not media_items:
+        return []
+
+    # 2. 构造 media_items 匹配过滤条件 (移出 EXISTS/JOIN 关联子查询)
+    country_lang_sql = _COUNTRY_LANG_CASE_SQL % "m.market_country"
+    sql_params = {
+        "product_id": product_id,
+        "lang": lower_lang,
+        "days": max(1, int(days)),
+        "end_date_val": end_date_val,
+    }
+
+    like_conds = []
+    for idx, item in enumerate(media_items):
+        fn = (item.get("filename") or "").strip()
+        dn = (item.get("display_name") or "").strip()
+        if fn:
+            param_key = f"fn_{idx}"
+            sql_params[param_key] = f"%{fn}%"
+            like_conds.append(f"m.ad_name LIKE %({param_key})s")
+            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
+        if dn:
+            param_key = f"dn_{idx}"
+            sql_params[param_key] = f"%{dn}%"
+            like_conds.append(f"m.ad_name LIKE %({param_key})s")
+            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
+
+    country_cond = f"(m.market_country IS NOT NULL AND TRIM(m.market_country) <> '' AND {country_lang_sql} = %(lang)s)"
+
+    if like_conds:
+        match_sql = f"AND ({' OR '.join(like_conds)} OR {country_cond})"
+    else:
+        match_sql = f"AND {country_cond}"
+
     rows = query(
         f"""
         SELECT
@@ -1226,30 +1272,16 @@ def get_trend_series(
             COALESCE(m.spend_usd, 0) AS spend_usd,
             COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd
           FROM meta_ad_daily_ad_metrics m
-          JOIN media_items i
-            ON i.product_id = m.product_id
-           AND i.deleted_at IS NULL
-           AND LOWER(i.lang) = %(lang)s
-           AND (
-             m.ad_name LIKE CONCAT('%%', i.filename, '%%')
-             OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
-             OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
-             OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
-             OR (
-               m.market_country IS NOT NULL
-               AND m.market_country <> ''
-               AND LOWER(i.lang) = {_COUNTRY_LANG_CASE_SQL % "m.market_country"}
-             )
-           )
           WHERE m.product_id = %(product_id)s
             AND COALESCE(m.spend_usd, 0) > 0
             AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= DATE_SUB(DATE(%(end_date_val)s), INTERVAL %(days)s DAY)
             AND DATE(COALESCE(m.meta_business_date, m.report_date)) < DATE(%(end_date_val)s)
+            {match_sql}
         ) matched
         GROUP BY matched.ad_date
         ORDER BY matched.ad_date DESC
         """,
-        {"product_id": product_id, "lang": lower_lang, "days": max(1, int(days)), "end_date_val": end_date_val},
+        sql_params,
     )
 
     series: list[DailyPoint] = []
@@ -1840,6 +1872,51 @@ def _coerce_json_payload(payload: Any) -> Any:
 
 
 def _get_active_window(product_id: int, lang: str) -> ActiveWindow:
+    lower_lang = lang.strip().lower()
+
+    # 1. 预先查出该商品语言下的所有 media_items
+    media_items = query(
+        """
+        SELECT filename, display_name
+        FROM media_items
+        WHERE product_id = %(product_id)s
+          AND deleted_at IS NULL
+          AND LOWER(lang) = %(lang)s
+        """,
+        {"product_id": product_id, "lang": lower_lang}
+    )
+    if not media_items:
+        return ActiveWindow(None, None, 0)
+
+    # 2. 构造 media_items 匹配过滤条件 (移出 EXISTS/JOIN 关联子查询)
+    country_lang_sql = _COUNTRY_LANG_CASE_SQL % "m.market_country"
+    sql_params = {
+        "product_id": product_id,
+        "lang": lower_lang,
+    }
+
+    like_conds = []
+    for idx, item in enumerate(media_items):
+        fn = (item.get("filename") or "").strip()
+        dn = (item.get("display_name") or "").strip()
+        if fn:
+            param_key = f"fn_{idx}"
+            sql_params[param_key] = f"%{fn}%"
+            like_conds.append(f"m.ad_name LIKE %({param_key})s")
+            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
+        if dn:
+            param_key = f"dn_{idx}"
+            sql_params[param_key] = f"%{dn}%"
+            like_conds.append(f"m.ad_name LIKE %({param_key})s")
+            like_conds.append(f"m.normalized_ad_code LIKE %({param_key})s")
+
+    country_cond = f"(m.market_country IS NOT NULL AND TRIM(m.market_country) <> '' AND {country_lang_sql} = %(lang)s)"
+
+    if like_conds:
+        match_sql = f"AND ({' OR '.join(like_conds)} OR {country_cond})"
+    else:
+        match_sql = f"AND {country_cond}"
+
     row = query_one(
         f"""
         SELECT
@@ -1851,26 +1928,12 @@ def _get_active_window(product_id: int, lang: str) -> ActiveWindow:
             m.id AS metric_id,
             DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date
           FROM meta_ad_daily_ad_metrics m
-          JOIN media_items i
-            ON i.product_id = m.product_id
-           AND i.deleted_at IS NULL
-           AND LOWER(i.lang) = %(lang)s
-           AND (
-             m.ad_name LIKE CONCAT('%%', i.filename, '%%')
-             OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
-             OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
-             OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
-             OR (
-               m.market_country IS NOT NULL
-               AND m.market_country <> ''
-               AND LOWER(i.lang) = {_COUNTRY_LANG_CASE_SQL % "m.market_country"}
-             )
-           )
           WHERE m.product_id = %(product_id)s
             AND COALESCE(m.spend_usd, 0) > 0
+            {match_sql}
         ) matched
         """,
-        {"product_id": product_id, "lang": lang.strip().lower()},
+        sql_params,
     )
     if not row:
         return ActiveWindow(None, None, 0)
