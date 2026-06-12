@@ -509,6 +509,15 @@
   color: var(--oc-ad-alert-amber);
   border: 1px solid rgba(245, 158, 11, 0.25);
 }
+.oc-ad-alert-lang-btn:hover {
+  filter: brightness(1.15);
+  transform: scale(1.04);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+.oc-ad-alert-lang-btn:focus-visible {
+  outline: 2px solid var(--oc-ad-alert-blue);
+  outline-offset: 2px;
+}
 .oc-ad-alert-metrics {
   display: flex;
   gap: 20px;
@@ -1037,7 +1046,7 @@
       var maxSeverity = item.max_severity || 'mild';
       var stores = (item.store_codes || []).join(' / ');
       var langBadges = (item.alert_languages || []).map(function(langObj) {
-        return '<span class="oc-ad-alert-badge oc-ad-alert-' + html(langObj.severity) + '" style="margin-right: 6px; padding: 2px 8px; border-radius: 4px; font-size: 11px; min-height: 20px; display: inline-flex;">' 
+        return '<span class="oc-ad-alert-badge oc-ad-alert-' + html(langObj.severity) + ' oc-ad-alert-lang-btn" data-product-id="' + html(item.product_id) + '" data-lang="' + html(langObj.lang) + '" role="button" tabindex="0" title="点击查看 ' + html(langObj.lang.toUpperCase()) + ' 详情" style="margin-right: 6px; padding: 2px 8px; border-radius: 4px; font-size: 11px; min-height: 20px; display: inline-flex; cursor: pointer;">'
              + html(langObj.lang.toUpperCase()) + ' (' + html(langObj.severity_label) + ')</span>';
       }).join('');
       return ''
@@ -1057,7 +1066,7 @@
         + '    <span class="oc-ad-alert-metric">活跃 <strong>' + money(item.active_7d_ad_spend_usd, 0) + '</strong></span>'
         + '    <span class="oc-ad-alert-metric">最大运行 <strong>' + Number(item.active_days || 0) + ' 天</strong></span>'
         + '    <span class="oc-ad-alert-metric">预警语言数 <strong>' + Number(item.alert_count || 0) + ' 个</strong></span>'
-        + '    <span class="oc-ad-alert-metric">总预估盈亏 ' + loss(item.estimated_loss) + '</span>'
+        + '    <span class="oc-ad-alert-metric">预估净盈亏 ' + loss(item.estimated_loss) + '</span>'
         + '  </span>'
         + '</a>';
     }).join('');
@@ -1182,7 +1191,7 @@
       + detailCell('总消耗', money(detail.ad_spend_usd, 2))
       + detailCell('购买价值', money(detail.purchase_value_usd, 2))
       + detailCell('近7天活跃消耗', money(detail.active_7d_ad_spend_usd, 2))
-      + detailCell('预估盈亏', stripTags(loss(detail.estimated_loss)))
+      + detailCell('预估净盈亏', stripTags(loss(detail.estimated_loss)))
       + '</div>'
       + '<div class="oc-ad-alert-chart">' + renderSvg(detail.trend || []) + '</div>'
       + renderAdSection(detail)
@@ -1489,6 +1498,16 @@
       state.search = value;
       loadList();
     }, 260);
+  });
+
+  /* 语言 badge 点击 -> 打开详情弹窗 */
+  listEl.addEventListener('click', function(event) {
+    var badge = event.target.closest('.oc-ad-alert-lang-btn');
+    if (!badge) return;
+    event.preventDefault();
+    var pid = badge.getAttribute('data-product-id');
+    var lang = badge.getAttribute('data-lang');
+    if (pid && lang) openDetail(parseInt(pid, 10), lang);
   });
 
   document.getElementById('adAlertRefresh').addEventListener('click', loadList);
