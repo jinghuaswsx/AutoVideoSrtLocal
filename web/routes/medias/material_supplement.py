@@ -1698,7 +1698,6 @@ def build_video_workbench_ad_detail(
 
 @bp.route("/api/product/<int:product_id>/supplement", methods=["GET"])
 @login_required
-@admin_required
 def api_product_supplement(product_id: int):
     """聚合本地明空视频快照、素材库状态和广告投放表现。"""
     sort_by = (request.args.get("sort_by") or request.args.get("sort") or "spend_90").strip().lower()
@@ -2048,7 +2047,6 @@ def api_product_supplement(product_id: int):
 
 @bp.route("/api/product/<int:product_id>/video-workbench", methods=["GET"])
 @login_required
-@admin_required
 def api_product_video_workbench(product_id: int):
     sort_by = (request.args.get("sort_by") or request.args.get("sort") or "spend_90").strip().lower()
     try:
@@ -2059,7 +2057,6 @@ def api_product_video_workbench(product_id: int):
 
 @bp.route("/api/product/<int:product_id>/video-workbench/ad-detail", methods=["GET"])
 @login_required
-@admin_required
 def api_product_video_workbench_ad_detail(product_id: int):
     try:
         payload = build_video_workbench_ad_detail(product_id, request.args)
@@ -2076,7 +2073,6 @@ def api_product_video_workbench_ad_detail(product_id: int):
 
 @bp.route("/api/video-material/<int:item_id>/ad-detail", methods=["GET"])
 @login_required
-@admin_required
 def api_video_material_ad_detail(item_id: int):
     """懒加载单个视频素材的广告投放详情。"""
 

@@ -1111,7 +1111,6 @@ def api_refresh_product_shopify_sku(pid: int):
 
 @bp.route("/api/products/<int:pid>/mingkong-pairing", methods=["GET"])
 @login_required
-@admin_required
 @permission_required("medias")
 def api_mingkong_pairing_workbench(pid: int):
     routes = _routes_module()
@@ -1124,7 +1123,6 @@ def api_mingkong_pairing_workbench(pid: int):
 
 @bp.route("/api/products/<int:pid>/mingkong-pairing/import-skus", methods=["POST"])
 @login_required
-@admin_required
 @permission_required("medias")
 def api_mingkong_pairing_import_skus(pid: int):
     routes = _routes_module()
@@ -1138,7 +1136,6 @@ def api_mingkong_pairing_import_skus(pid: int):
 
 @bp.route("/api/products/<int:pid>/mingkong-pairing/confirm", methods=["POST"])
 @login_required
-@admin_required
 @permission_required("medias")
 def api_mingkong_pairing_confirm(pid: int):
     routes = _routes_module()
@@ -1153,7 +1150,6 @@ def api_mingkong_pairing_confirm(pid: int):
 
 @bp.route("/api/products/<int:pid>/mingkong-pairing/replicate", methods=["POST"])
 @login_required
-@admin_required
 @permission_required("medias")
 def api_mingkong_pairing_replicate(pid: int):
     routes = _routes_module()
@@ -1175,7 +1171,6 @@ def api_mingkong_pairing_replicate(pid: int):
 
 @bp.route("/api/products/<int:pid>/mingkong-pairing/sync", methods=["POST"])
 @login_required
-@admin_required
 @permission_required("medias")
 def api_mingkong_pairing_sync(pid: int):
     routes = _routes_module()
@@ -1190,7 +1185,6 @@ def api_mingkong_pairing_sync(pid: int):
 
 @bp.route("/api/products/<int:pid>/mingkong-pairing/ai-review", methods=["POST"])
 @login_required
-@admin_required
 @permission_required("medias")
 def api_mingkong_pairing_ai_review(pid: int):
     routes = _routes_module()
