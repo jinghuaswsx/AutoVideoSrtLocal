@@ -1,7 +1,10 @@
 """广告预警路由。
 
-Docs anchor: docs/superpowers/specs/2026-06-11-ad-alert-module-design.md
-Docs anchor: docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
+Docs anchors:
+- docs/superpowers/specs/2026-06-11-ad-alert-module-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-ad-level-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
 """
 from __future__ import annotations
 
@@ -46,6 +49,24 @@ def list_page():
     threshold = ad_alerts.get_threshold()
     return render_template(
         "ad_alerts.html",
+        active_tab="alerts",
+        threshold=threshold,
+        alert_counts={},
+        SEVERITY_LABELS=ad_alerts.SEVERITY_LABELS,
+        TREND_LABELS=ad_alerts.TREND_LABELS,
+        PHASE_LABELS=ad_alerts.PHASE_LABELS,
+    )
+
+
+@bp.route("/problem")
+@login_required
+@admin_required
+def problem_page_route():
+    """问题广告独立页面。"""
+    threshold = ad_alerts.get_threshold()
+    return render_template(
+        "ad_alerts.html",
+        active_tab="problem",
         threshold=threshold,
         alert_counts={},
         SEVERITY_LABELS=ad_alerts.SEVERITY_LABELS,
@@ -126,6 +147,69 @@ def api_problem_ads():
     })
 
 
+@bp.route("/api/ad-list")
+@login_required
+@admin_required
+def api_ad_list():
+    """获取某商品语言下每条 AD 的投放数据列表。"""
+    try:
+        product_id = int(request.args.get("product_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid product_id"}), 400
+    if product_id <= 0:
+        return jsonify({"error": "invalid product_id"}), 400
+
+    lang = (request.args.get("lang") or "").strip().lower()
+    if not lang:
+        return jsonify({"error": "lang required"}), 400
+
+    ads = ad_alerts.get_ad_list(product_id, lang)
+    return jsonify({
+        "ads": [_ad_list_item_to_dict(ad) for ad in ads],
+        "total": len(ads),
+    })
+
+
+@bp.route("/api/evaluate", methods=["POST"])
+@login_required
+@admin_required
+def api_evaluate():
+    """调用 Gemini 评估某商品语言下亏损 AD。"""
+    body = request.get_json(silent=True) or {}
+    try:
+        product_id = int(body.get("product_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid product_id"}), 400
+    if product_id <= 0:
+        return jsonify({"error": "invalid product_id"}), 400
+
+    lang = (body.get("lang") or "").strip().lower()
+    if not lang:
+        return jsonify({"error": "lang required"}), 400
+
+    threshold = _parse_threshold(body.get("threshold"))
+    user_id = None
+    try:
+        from flask_login import current_user
+        user_id = getattr(current_user, "id", None)
+    except Exception:
+        user_id = None
+
+    evaluations = ad_alerts.evaluate_ads(
+        product_id,
+        lang,
+        threshold=threshold,
+        user_id=user_id,
+    )
+    if evaluations is None:
+        return jsonify({"error": "evaluation failed"}), 500
+
+    return jsonify({
+        "evaluations": [_ad_evaluation_to_dict(item) for item in evaluations],
+        "total": len(evaluations),
+    })
+
+
 @bp.route("/api/threshold", methods=["POST"])
 @login_required
 @admin_required
@@ -167,6 +251,9 @@ def _alert_item_to_dict(item: ad_alerts.AlertItem) -> dict[str, Any]:
         "reason": item.reason,
         "estimated_loss": item.estimated_loss,
         "computed_at": item.computed_at,
+        "top_losing_ads": [
+            _ad_list_item_to_dict(ad) for ad in item.top_losing_ads
+        ],
     }
 
 
@@ -232,6 +319,27 @@ def _problem_ad_item_to_dict(item: ad_alerts.ProblemAdItem) -> dict[str, Any]:
     }
 
 
+def _ad_list_item_to_dict(item: ad_alerts.AdListItem) -> dict[str, Any]:
+    return {
+        "country": item.country,
+        "ad_name": item.ad_name,
+        "normalized_ad_code": item.normalized_ad_code,
+        "total_spend": item.total_spend,
+        "total_purchase": item.total_purchase,
+        "ad_roas": item.ad_roas,
+        "active_days": item.active_days,
+    }
+
+
+def _ad_evaluation_to_dict(item: ad_alerts.AdEvaluation) -> dict[str, Any]:
+    return {
+        "country": item.country,
+        "ad_name": item.ad_name,
+        "roas": item.roas,
+        "judgment": item.judgment,
+        "reason": item.reason,
+    }
+
 
 def _aggregated_product_to_dict(item: ad_alerts.AggregatedProductAlert) -> dict[str, Any]:
     return {
@@ -250,6 +358,10 @@ def _aggregated_product_to_dict(item: ad_alerts.AggregatedProductAlert) -> dict[
         "alert_count": item.alert_count,
         "active_days": item.active_days,
         "computed_at": item.computed_at,
+        "top_losing_ads": [
+            _ad_list_item_to_dict(ad) for ad in item.top_losing_ads
+        ],
+        "evaluation_lang": item.evaluation_lang,
     }
 
 
@@ -320,12 +432,16 @@ def api_products():
     lang = (request.args.get("lang") or "").strip().lower() or None
     severity = _parse_severity(request.args.get("severity"))
     search = (request.args.get("search") or "").strip() or None
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
 
     items = ad_alerts.get_aggregated_products(
         threshold=threshold,
         lang=lang,
         severity=severity,
         search=search,
+        start_date=start_date,
+        end_date=end_date,
     )
     return jsonify({
         "items": [_aggregated_product_to_dict(item) for item in items],
@@ -402,4 +518,3 @@ def api_ad_detail():
         "metrics": detail["metrics"],
         "trend": serialized_trend,
     })
-

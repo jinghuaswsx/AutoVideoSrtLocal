@@ -128,6 +128,18 @@ def test_order_analytics_weekly_ai_analysis_use_case_registered():
     assert product_uc["units_type"] == "tokens"
 
 
+def test_ad_alert_evaluate_use_case_registered():
+    uc = USE_CASES["ad_alert.evaluate"]
+
+    assert uc["module"] == "ad_alerts"
+    assert uc["label"] == "广告预警 AI 评估"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.5-flash"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+    assert MODULE_LABELS["ad_alerts"] == "广告预警"
+
+
 def test_ai_material_strategist_use_cases_use_googlewj_gemini_35_flash():
     for code in (
         "medias.ai_material_strategist_rank_products",
@@ -155,7 +167,7 @@ def test_ad_material_ai_analysis_use_cases_use_googlewj_gemini_35_flash():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 75
+    assert len(USE_CASES) == 76
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
