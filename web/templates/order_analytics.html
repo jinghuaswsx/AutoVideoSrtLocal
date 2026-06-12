@@ -2627,6 +2627,7 @@
               <th>META ROAS</th>
               <th>商品净销售额</th>
               <th>运费</th>
+              <th>订单情况</th>
             </tr>
           </thead>
           <tbody id="realtimeProductSalesBody"></tbody>
@@ -8290,11 +8291,12 @@
 
       addTextCell(tr, fmtMoney(row.product_net_sales));
       addTextCell(tr, fmtMoney(row.shipping));
+      addRealtimeProductOrderDetailCell(tr, row);
 
       body.appendChild(tr);
     });
     if (!body.children.length) {
-      body.innerHTML = '<tr><td colspan="9">暂无产品销量数据</td></tr>';
+      body.innerHTML = '<tr><td colspan="10">暂无产品销量数据</td></tr>';
     }
   }
 
@@ -8569,6 +8571,23 @@
     }
 
     td.appendChild(stack);
+    tr.appendChild(td);
+  }
+
+  function addRealtimeProductOrderDetailCell(tr, row) {
+    var codeText = String((row && row.product_code) || '').trim();
+    if (!codeText) {
+      addTextCell(tr, '-');
+      return;
+    }
+
+    var td = document.createElement('td');
+    var link = document.createElement('a');
+    link.className = 'btn btn-default btn-xs';
+    link.href = '/order-analytics/dxm-orders-view/order-trend/' + encodeURIComponent(codeText);
+    link.textContent = '订单详情';
+    link.title = '查看单品订单曲线';
+    td.appendChild(link);
     tr.appendChild(td);
   }
 

@@ -692,6 +692,40 @@ def test_realtime_product_sales_name_and_code_have_copy_and_medias_search():
     assert ".oar-product-line-action.is-copied" in template
 
 
+def test_realtime_product_sales_has_order_detail_link_column():
+    """Docs-anchor: docs/superpowers/specs/2026-06-11-realtime-product-sales-order-detail-link.md"""
+    template = _template_source()
+    panel = _realtime_panel_source()
+    products_start = panel.index('id="realtimeSubProducts"')
+    products_end = panel.index('id="realtimeSubCampaigns"', products_start)
+    products_panel = panel[products_start:products_end]
+    table = products_panel[
+        products_panel.index('id="realtimeProductStatsTable"'):
+        products_panel.index("</table>", products_panel.index('id="realtimeProductStatsTable"'))
+    ]
+
+    assert "<th>订单情况</th>" in table
+    assert table.index("<th>运费</th>") < table.index("<th>订单情况</th>")
+
+    render_start = template.index("function renderRealtimeProductSales")
+    render_end = template.index("function formatCampaignAllocationStatus", render_start)
+    render_func = template[render_start:render_end]
+
+    assert "addRealtimeProductOrderDetailCell(tr, row);" in render_func
+    assert 'body.innerHTML = \'<tr><td colspan="10">暂无产品销量数据</td></tr>\';' in render_func
+    assert "function addRealtimeProductOrderDetailCell(tr, row)" in template
+
+    helper_start = template.index("function addRealtimeProductOrderDetailCell(tr, row)")
+    helper_end = template.index("function addTextCell", helper_start)
+    helper = template[helper_start:helper_end]
+
+    assert "订单详情" in helper
+    assert "codeText = String((row && row.product_code) || '').trim();" in helper
+    assert "link.href = '/order-analytics/dxm-orders-view/order-trend/' + encodeURIComponent(codeText);" in helper
+    assert "link.className = 'btn btn-default btn-xs';" in helper
+    assert "addTextCell(tr, '-');" in helper
+
+
 def test_ads_subtabs_use_large_click_targets():
     """Docs-anchor: docs/superpowers/specs/2026-05-08-ads-analytics-tabs-design.md"""
     template = _template_source()
