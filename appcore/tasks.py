@@ -842,14 +842,37 @@ def _load_user_display_context(user_ids: Iterable[int]) -> dict[str, dict]:
     return result
 
 
-def list_task_events(task_id: int) -> list[dict]:
+def list_task_events(task_id: int, *, limit: int | None = None) -> list[dict]:
     actor_name_expr = _user_display_name_expr("u")
-    rows = query_all(
-        f"SELECT te.*, u.username AS actor_username, {actor_name_expr} AS actor_display_name "
-        "FROM task_events te LEFT JOIN users u ON u.id=te.actor_user_id "
-        "WHERE te.task_id=%s ORDER BY te.id ASC",
-        (int(task_id),),
-    )
+    args: tuple = (int(task_id),)
+    if limit is not None and limit > 0:
+        # 取最新 N 条（DESC），避免返回过多历史事件导致前端卡死；
+        # 然后 Python 侧反转为 ASC 供时间线渲染
+        count_sql = "SELECT COUNT(*) AS cnt FROM task_events WHERE task_id=%s"
+        cnt_row = query_one(count_sql, (int(task_id),))
+        total = int((cnt_row or {}).get("cnt", 0))
+        if total > limit:
+            sql = (
+                f"SELECT te.*, u.username AS actor_username, {actor_name_expr} AS actor_display_name "
+                "FROM task_events te LEFT JOIN users u ON u.id=te.actor_user_id "
+                "WHERE te.task_id=%s ORDER BY te.id DESC LIMIT %s"
+            )
+            args = (int(task_id), int(limit))
+            rows = list(reversed(query_all(sql, args)))
+        else:
+            sql = (
+                f"SELECT te.*, u.username AS actor_username, {actor_name_expr} AS actor_display_name "
+                "FROM task_events te LEFT JOIN users u ON u.id=te.actor_user_id "
+                "WHERE te.task_id=%s ORDER BY te.id ASC"
+            )
+            rows = query_all(sql, args)
+    else:
+        sql = (
+            f"SELECT te.*, u.username AS actor_username, {actor_name_expr} AS actor_display_name "
+            "FROM task_events te LEFT JOIN users u ON u.id=te.actor_user_id "
+            "WHERE te.task_id=%s ORDER BY te.id ASC"
+        )
+        rows = query_all(sql, args)
     payload_by_event_id: dict[int, dict] = {}
     payload_user_ids: set[int] = set()
     payload_subtitle_task_ids: set[str] = set()

@@ -1131,7 +1131,8 @@ def api_child_cancel(tid: int):
 @bp.route("/api/<int:tid>/events", methods=["GET"])
 @login_required
 def api_events(tid: int):
-    return _json_response({"events": tasks_svc.list_task_events(tid)})
+    # 限制单次返回最多 300 条事件，防止历史事件堆积导致前端浏览器卡死
+    return _json_response({"events": tasks_svc.list_task_events(tid, limit=300)})
 
 
 @bp.route("/api/<int:tid>/review-assets", methods=["GET"])

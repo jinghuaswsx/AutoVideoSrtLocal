@@ -363,6 +363,19 @@ def attach_niuma_result_to_parent_task(
     if not payload:
         raise RawVideoProcessingError("parent task media item not found")
 
+    from appcore import tasks as tasks_svc
+
+    # 防止重复写入 raw_niuma_done 事件（外部进程可能反复轮询同一个已完成的任务）
+    if _event_exists(parent_task_id, "raw_niuma_done", subtitle_task_id):
+        # 如果任务状态卡在 raw_in_progress（上次 mark_uploaded 可能因权限不匹配失败），
+        # 重试标记为已上传，让任务不再被 reconciliation 反复捞起
+        if payload.get("status") == PARENT_RAW_IN_PROGRESS:
+            try:
+                tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)
+            except tasks_svc.StateError:
+                pass
+        return
+
     product_id = int(payload.get("media_product_id") or 0)
     filename = os.path.basename(str(payload.get("filename") or "source.mp4"))
     user_id = int(payload.get("item_user_id") or actor_user_id or payload.get("created_by") or 0)
@@ -392,7 +405,6 @@ def attach_niuma_result_to_parent_task(
             "result_object_key": result_object_key,
         },
     )
-    from appcore import tasks as tasks_svc
 
     if payload.get("status") == PARENT_RAW_IN_PROGRESS:
         tasks_svc.mark_uploaded(task_id=parent_task_id, actor_user_id=actor_user_id)

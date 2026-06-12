@@ -1272,9 +1272,16 @@
         if (version.delivery_status === 'active') {
           if (rVal !== null) {
             const roasNum = Number(rVal);
-            if (roasNum > 1.45) {
+            let breakeven = 1.5;
+            if (currentData && currentData.product && currentData.product.breakeven_roas != null) {
+              breakeven = Number(currentData.product.breakeven_roas);
+            }
+            breakeven = parseFloat(breakeven.toFixed(2));
+            const orangeThreshold = parseFloat((breakeven * 0.8).toFixed(2));
+
+            if (roasNum > breakeven) {
               cls = 'state-active-green';
-            } else if (roasNum >= 1.2) {
+            } else if (roasNum >= orangeThreshold) {
               cls = 'state-active-orange';
             } else {
               cls = 'state-active-red';

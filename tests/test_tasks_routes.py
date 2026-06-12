@@ -2515,7 +2515,7 @@ def test_api_events_delegates_to_tasks_service(authed_client_no_db, monkeypatch)
         }
     ]
 
-    def fake_list_task_events(task_id):
+    def fake_list_task_events(task_id, **kwargs):
         captured.append(task_id)
         return expected_events
 

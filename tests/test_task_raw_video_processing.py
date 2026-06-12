@@ -370,6 +370,7 @@ def test_attach_niuma_result_replaces_parent_media_and_marks_uploaded(monkeypatc
     )
     monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
     monkeypatch.setattr(processing, "execute", lambda sql, args=(): executed.append((sql, args)) or 1)
+    monkeypatch.setattr(processing, "_event_exists", lambda *a, **kw: False)
     monkeypatch.setattr(processing, "_write_event", lambda task_id, event_type, actor_user_id, payload=None: events.append((task_id, event_type, actor_user_id, payload)))
     monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
     monkeypatch.setattr(
@@ -417,6 +418,7 @@ def test_attach_niuma_result_rejects_oversize_push_video(monkeypatch, tmp_path):
         },
     )
     monkeypatch.setattr(processing, "_resolve_media_item_path", lambda object_key: destination)
+    monkeypatch.setattr(processing, "_event_exists", lambda *a, **kw: False)
     monkeypatch.setattr(processing, "_write_event", lambda *args, **kwargs: None)
     monkeypatch.setattr(tasks, "mark_uploaded", lambda **kwargs: marked.append(kwargs))
     monkeypatch.setattr(tasks, "reject_raw", lambda **kwargs: rejected.append(kwargs))
