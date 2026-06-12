@@ -317,3 +317,43 @@ def test_product_refresh_sqls_contain_expected_unions_and_date_casts():
     assert "CAST(COALESCE(meta_business_date, report_date) AS DATETIME) AS delivery_start_time" in daily_only_sql
     assert "imported_at" not in daily_only_sql
 
+
+def test_refresh_product_filters_by_product_id(monkeypatch):
+    from appcore import media_product_ad_status_cache as cache
+
+    calls: list[str] = []
+    params_list = []
+
+    class FakeCursor:
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc, tb): return False
+        def execute(self, sql, params=None):
+            calls.append(sql)
+            params_list.append(params)
+
+    class FakeConn:
+        def begin(self): pass
+        def cursor(self): return FakeCursor()
+        def commit(self): pass
+        def close(self): pass
+
+    monkeypatch.setattr(cache, "get_conn", lambda: FakeConn())
+
+    # Call refresh_product
+    cache.refresh_product(42)
+
+    # Verify delete statements
+    assert any("DELETE FROM media_product_ad_summary_cache WHERE product_id = %s" in sql for sql in calls)
+    assert any("DELETE FROM media_product_lang_ad_summary_cache WHERE product_id = %s" in sql for sql in calls)
+
+    # Verify product ID target in p_sql and l_sql
+    p_sqls = [sql for sql in calls if "INSERT INTO media_product_ad_summary_cache" in sql]
+    l_sqls = [sql for sql in calls if "INSERT INTO media_product_lang_ad_summary_cache" in sql]
+
+    assert len(p_sqls) == 1
+    assert "AND p.id = 42" in p_sqls[0]
+
+    assert len(l_sqls) == 1
+    assert "AND i.product_id = 42" in l_sqls[0]
+
+

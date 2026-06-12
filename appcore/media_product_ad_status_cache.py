@@ -821,3 +821,39 @@ def refresh_all() -> dict[str, int]:
         raise
     finally:
         conn.close()
+
+
+def refresh_product(product_id: int) -> None:
+    product_id = int(product_id)
+    conn = get_conn()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            product_refresh_sql = (
+                _PRODUCT_REFRESH_SQL
+                if _table_exists(cur, "meta_ad_realtime_daily_ad_metrics")
+                else _PRODUCT_REFRESH_SQL_DAILY_ONLY
+            )
+            lang_refresh_sql = (
+                _LANG_REFRESH_SQL
+                if _table_exists(cur, "meta_ad_realtime_daily_ad_metrics")
+                else _LANG_REFRESH_SQL_DAILY_ONLY
+            )
+
+            # Delete old cached stats for this product
+            cur.execute("DELETE FROM media_product_ad_summary_cache WHERE product_id = %s", (product_id,))
+            cur.execute("DELETE FROM media_product_lang_ad_summary_cache WHERE product_id = %s", (product_id,))
+
+            # Replace filters to target a single product safely
+            p_sql = product_refresh_sql.replace("WHERE p.deleted_at IS NULL", f"WHERE p.deleted_at IS NULL AND p.id = {product_id}")
+            l_sql = lang_refresh_sql.replace("WHERE i.deleted_at IS NULL", f"WHERE i.deleted_at IS NULL AND i.product_id = {product_id}")
+
+            cur.execute(p_sql)
+            cur.execute(l_sql)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
