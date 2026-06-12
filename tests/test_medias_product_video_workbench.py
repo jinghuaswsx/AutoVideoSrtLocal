@@ -1023,3 +1023,49 @@ def test_build_video_workbench_ad_detail_with_country_filter():
     assert captured["params"][-1] == "DE"
     assert len(payload["rows"]) == 1
     assert payload["rows"][0]["market_country"] == "DE"
+
+
+def test_build_product_video_workbench_includes_breakeven_roas(monkeypatch):
+    from web.routes.medias import material_supplement as route
+
+    monkeypatch.setattr(
+        "appcore.mingkong_materials._enrich_material_yesterday_delta",
+        lambda rows, **kwargs: None,
+    )
+
+    def fake_query(sql, params=None):
+        if "FROM media_products" in sql:
+            # 返回包含 ROAS 计算属性的数据
+            return [{
+                "id": 321,
+                "name": "Demo",
+                "product_code": "demo-rjc",
+                "purchase_price": "20.00",
+                "packet_cost_estimated": "30.00",
+                "packet_cost_actual": "25.00",
+                "standalone_price": "50.00",
+                "standalone_shipping_fee": "5.00",
+            }]
+        if "FROM media_items" in sql:
+            return []
+        if "FROM mingkong_material_daily_snapshots" in sql:
+            return []
+        if "FROM media_product_ad_summary_cache" in sql:
+            return [{"ad_spend_usd": "0", "active_7d_ad_spend_usd": "0", "overall_roas": None, "delivery_status": "never"}]
+        return []
+
+    # 后台配置的汇率默认为 6.83，则
+    # standalone_price + standalone_shipping_fee = 50 + 5 = 55
+    # actual_packet_cost (25) + purchase_price (20) = 45 RMB -> 45 / 6.83 = 6.588 USD
+    # available_ad_spend = 55 * (1 - 0.07) - 6.588 = 51.15 - 6.588 = 44.562
+    # breakeven_roas = 55 / 44.562 = 1.234
+
+    payload = route.build_product_video_workbench(
+        321,
+        query_fn=fake_query,
+    )
+
+    assert "breakeven_roas" in payload["product"]
+    assert payload["product"]["breakeven_roas"] is not None
+    assert round(payload["product"]["breakeven_roas"], 2) == 1.23
+
