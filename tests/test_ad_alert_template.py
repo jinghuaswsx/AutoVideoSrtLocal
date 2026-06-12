@@ -118,3 +118,36 @@ def test_ad_alert_template_ai_eval_export_contract():
     assert "document.execCommand('copy')" in source
     assert "showToast('已复制评估结果', 'success')" in source
     assert "showToast('复制失败，请手动选择复制', 'error')" in source
+
+
+def test_ad_alert_detail_pages_fill_contract():
+    route_source = Path("web/routes/ad_alerts.py").read_text(encoding="utf-8")
+    product_source = Path("web/templates/ad_alerts_product.html").read_text(encoding="utf-8")
+    country_source = Path("web/templates/ad_alerts_country.html").read_text(encoding="utf-8")
+    ad_source = Path("web/templates/ad_alerts_ad_detail.html").read_text(encoding="utf-8")
+
+    assert "ad_alerts.get_product_alert_details(product_id" in route_source
+    assert "ad_alerts.get_alert_detail(product_id, lang" in route_source
+    assert "ad_alerts.get_ad_detail_and_trend(product_id, ad_code, ad_account_id)" in route_source
+
+    assert "function loadDetails()" in product_source
+    assert "/ad-alerts/api/product-detail/" in product_source
+    assert "/ad-alerts/product/' + productId + '/country/" in product_source
+    assert "data-account-id" in product_source
+
+    assert 'id="countryAdList"' in country_source
+    assert "function loadCountryAds()" in country_source
+    assert "/ad-alerts/api/ad-list?product_id=" in country_source
+    assert "/ad-alerts/api/product-detail/" in country_source
+    assert "function renderCountryAds(ads, productAds)" in country_source
+    assert "?ad_account_id=' + encodeURIComponent(accountId) + '&lang=' + encodeURIComponent(lang) + '&country='" in country_source
+    assert "data-detail-url" in country_source
+
+    assert 'id="adDetailMetricGrid"' in ad_source
+    assert "总花费" in ad_source
+    assert "总购买" in ad_source
+    assert "国家" in ad_source
+    assert "活跃天数" in ad_source
+    assert "request.args.get('lang')" in ad_source
+    assert "/ad-alerts/product/{{ product_id }}/country/" in ad_source
+    assert "/ad-alerts/api/ad-detail?product_id=" in ad_source

@@ -202,6 +202,81 @@
   color: var(--oc-ad-alert-green);
   font-weight: 800;
 }
+.oc-ad-alert-ad-section {
+  display: grid;
+  gap: 12px;
+}
+.oc-ad-alert-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-section-head h2 {
+  margin: 0;
+  color: var(--oc-ad-alert-fg);
+  font-size: 18px;
+}
+.oc-ad-alert-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 12px;
+  background: var(--oc-ad-alert-card);
+}
+.oc-ad-alert-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.oc-ad-alert-table th,
+.oc-ad-alert-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+  white-space: nowrap;
+  color: var(--oc-ad-alert-fg);
+}
+.oc-ad-alert-table th {
+  background: var(--oc-ad-alert-subtle);
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+.oc-ad-alert-table tr:last-child td {
+  border-bottom: 0;
+}
+.oc-ad-alert-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.oc-ad-alert-ad-row {
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.oc-ad-alert-ad-row:hover {
+  background: var(--oc-ad-alert-table-hover, #eff6ff);
+}
+.oc-ad-alert-ad-name {
+  display: block;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--oc-ad-alert-fg);
+  font-weight: 800;
+}
+.oc-ad-alert-ad-code {
+  display: block;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--oc-ad-alert-muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
 .oc-ad-alert-state {
   padding: 48px 20px;
   text-align: center;
@@ -287,6 +362,15 @@
       {{ detail.judgment.reason }}
     </span>
   </div>
+
+  <div class="oc-ad-alert-ad-section">
+    <div class="oc-ad-alert-section-head">
+      <h2>该语言下的 AD 列表</h2>
+    </div>
+    <div class="oc-ad-alert-table-wrap" id="countryAdList">
+      <div class="oc-ad-alert-state">加载 AD 数据...</div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -295,12 +379,22 @@
 (function() {
   var productId = "{{ product_id }}";
   var lang = "{{ lang }}";
+  var threshold = Number({{ threshold|tojson }});
   var chartEl = document.getElementById('trendChart');
+  var countryAdListEl = document.getElementById('countryAdList');
 
   function html(value) {
     var div = document.createElement('div');
     div.textContent = value == null ? '' : String(value);
     return div.innerHTML;
+  }
+
+  function money(value, digits) {
+    return '$' + Number(value || 0).toFixed(digits == null ? 2 : digits);
+  }
+
+  function roas(value) {
+    return value === null || value === undefined ? 'N/A' : Number(value).toFixed(2);
   }
 
   function renderSvg(points) {
@@ -395,7 +489,76 @@
       });
   }
 
+  function loadCountryAds() {
+    var adListUrl = '/ad-alerts/api/ad-list?product_id=' + productId + '&lang=' + encodeURIComponent(lang);
+    var productUrl = '/ad-alerts/api/product-detail/' + productId + '?threshold=' + encodeURIComponent(threshold);
+    Promise.all([
+      fetch(adListUrl).then(function(resp) {
+        if (!resp.ok) throw new Error('ad_list_failed');
+        return resp.json();
+      }),
+      fetch(productUrl).then(function(resp) {
+        if (!resp.ok) throw new Error('product_detail_failed');
+        return resp.json();
+      })
+    ])
+      .then(function(results) {
+        renderCountryAds(results[0].ads || [], results[1].ads || []);
+      })
+      .catch(function() {
+        countryAdListEl.innerHTML = '<div class="oc-ad-alert-state">加载失败</div>';
+      });
+  }
+
+  function renderCountryAds(ads, productAds) {
+    if (!ads.length) {
+      countryAdListEl.innerHTML = '<div class="oc-ad-alert-state">暂无 AD 级数据</div>';
+      return;
+    }
+    var accountByCode = {};
+    (productAds || []).forEach(function(ad) {
+      if (!ad.ad_code || accountByCode[ad.ad_code]) return;
+      accountByCode[ad.ad_code] = ad;
+    });
+    var rows = ads.map(function(ad) {
+      var matched = accountByCode[ad.normalized_ad_code] || {};
+      var accountId = matched.ad_account_id || '';
+      var detailUrl = accountId
+        ? '/ad-alerts/product/' + productId + '/ad/' + encodeURIComponent(ad.normalized_ad_code || '')
+          + '?ad_account_id=' + encodeURIComponent(accountId) + '&lang=' + encodeURIComponent(lang) + '&country=' + encodeURIComponent(ad.country || '')
+        : '';
+      var adRoas = ad.ad_roas === null || ad.ad_roas === undefined ? null : Number(ad.ad_roas);
+      var tone = adRoas === null ? 'var(--oc-ad-alert-muted)' :
+        (adRoas < threshold ? 'var(--oc-ad-alert-red)' : 'var(--oc-ad-alert-green)');
+      return ''
+        + '<tr class="oc-ad-alert-ad-row" data-detail-url="' + html(detailUrl) + '">'
+        + '  <td><strong>' + html(ad.country || '') + '</strong></td>'
+        + '  <td>'
+        + '    <span class="oc-ad-alert-ad-name">' + html(ad.ad_name || ad.normalized_ad_code || '') + '</span>'
+        + '    <span class="oc-ad-alert-ad-code">' + html(ad.normalized_ad_code || '') + '</span>'
+        + '  </td>'
+        + '  <td class="oc-ad-alert-num">' + money(ad.total_spend, 2) + '</td>'
+        + '  <td class="oc-ad-alert-num">' + money(ad.total_purchase, 2) + '</td>'
+        + '  <td class="oc-ad-alert-num" style="color:' + tone + ';font-weight:800;">' + roas(adRoas) + '</td>'
+        + '  <td class="oc-ad-alert-num">' + Number(ad.active_days || 0) + ' 天</td>'
+        + '</tr>';
+    }).join('');
+    countryAdListEl.innerHTML = ''
+      + '<table class="oc-ad-alert-table" aria-label="该语言下 AD 列表">'
+      + '  <thead><tr><th>国家</th><th>AD 名称</th><th class="oc-ad-alert-num">花费</th><th class="oc-ad-alert-num">购买</th><th class="oc-ad-alert-num">ROAS</th><th class="oc-ad-alert-num">活跃天数</th></tr></thead>'
+      + '  <tbody>' + rows + '</tbody>'
+      + '</table>';
+  }
+
+  countryAdListEl.addEventListener('click', function(event) {
+    var row = event.target.closest('[data-detail-url]');
+    if (!row) return;
+    var url = row.getAttribute('data-detail-url');
+    if (url) window.location.href = url;
+  });
+
   loadChartData();
+  loadCountryAds();
 })();
 </script>
 {% endblock %}

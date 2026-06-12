@@ -239,7 +239,12 @@
 <div class="oc-ad-alert-page" id="adDetailPage">
   <div class="oc-ad-alert-head">
     <div class="oc-ad-alert-title">
+      {% set back_lang = request.args.get('lang') %}
+      {% if back_lang %}
+      <a href="/ad-alerts/product/{{ product_id }}/country/{{ back_lang }}" class="oc-ad-alert-back-btn">← 返回国家详情</a>
+      {% else %}
       <a href="/ad-alerts/product/{{ product_id }}" class="oc-ad-alert-back-btn">← 返回商品详情</a>
+      {% endif %}
       <h1>广告: {{ detail.ad_name or detail.ad_code }}</h1>
     </div>
     <div class="oc-ad-alert-tools">
@@ -247,7 +252,8 @@
     </div>
   </div>
 
-  <div class="oc-ad-alert-detail-grid">
+  {% set overall = detail.metrics.get('overall', {}) if detail.metrics else {} %}
+  <div class="oc-ad-alert-detail-grid" id="adDetailMetricGrid">
     <div class="oc-ad-alert-detail-cell">
       <div class="oc-ad-alert-detail-label">广告账户</div>
       <div class="oc-ad-alert-detail-value">{{ detail.ad_account_name or detail.ad_account_id }}</div>
@@ -264,9 +270,29 @@
       <div class="oc-ad-alert-detail-label">最后活跃</div>
       <div class="oc-ad-alert-detail-value">{{ detail.last_active_date or '—' }}</div>
     </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">总花费</div>
+      <div class="oc-ad-alert-detail-value">${{ "%.2f"|format(overall.get('spend_usd') or 0) }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">总购买</div>
+      <div class="oc-ad-alert-detail-value">${{ "%.2f"|format(overall.get('purchase_value_usd') or 0) }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">ROAS</div>
+      <div class="oc-ad-alert-detail-value">{{ "%.2f"|format(overall.get('roas')) if overall.get('roas') is not none else 'N/A' }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">活跃天数</div>
+      <div class="oc-ad-alert-detail-value">{{ detail.trend|length }} 天</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">国家</div>
+      <div class="oc-ad-alert-detail-value">{{ request.args.get('country', '—') or '—' }}</div>
+    </div>
   </div>
 
-  <h2 style="margin-top: 10px; font-size: 18px; color: #ffffff;">多时间窗口数据</h2>
+  <h2 style="margin-top: 10px; font-size: 18px; color: var(--oc-ad-alert-fg);">多时间窗口数据</h2>
   <div class="oc-ad-alert-table-wrap">
     <table class="oc-ad-alert-table" aria-label="广告多窗口表现">
       <thead>
@@ -283,7 +309,7 @@
     </table>
   </div>
 
-  <h2 style="margin-top: 10px; font-size: 18px; color: #ffffff;">近 30 天每日消耗与购买趋势</h2>
+  <h2 style="margin-top: 10px; font-size: 18px; color: var(--oc-ad-alert-fg);">近 30 天每日消耗与购买趋势</h2>
   <div class="oc-ad-alert-chart" id="trendChart">
     <div class="oc-ad-alert-state">图表加载中...</div>
   </div>
