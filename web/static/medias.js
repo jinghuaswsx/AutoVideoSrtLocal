@@ -3664,12 +3664,16 @@
     const empty = document.getElementById('adOrdersReportEmpty');
     
     // Clear and reset the top-right stat card values
+    const orderRoasEl = document.getElementById('adOrdersReportOrderRoas');
+    const orderProfitEl = document.getElementById('adOrdersReportOrderProfit');
     const beRoasEl = document.getElementById('adOrdersReportBreakevenRoas');
     const profitTodayEl = document.getElementById('adOrdersReportProfitToday');
     const profitYesterdayEl = document.getElementById('adOrdersReportProfitYesterday');
     const profit7dEl = document.getElementById('adOrdersReportProfit7d');
     const profit30dEl = document.getElementById('adOrdersReportProfit30d');
 
+    if (orderRoasEl) orderRoasEl.textContent = '—';
+    if (orderProfitEl) { orderProfitEl.textContent = '—'; orderProfitEl.style.color = ''; }
     if (beRoasEl) beRoasEl.textContent = '—';
     if (profitTodayEl) { profitTodayEl.textContent = '—'; profitTodayEl.style.color = ''; }
     if (profitYesterdayEl) { profitYesterdayEl.textContent = '—'; profitYesterdayEl.style.color = ''; }
@@ -3714,6 +3718,13 @@
         const total = data.total || {};
 
         // Populate the top-right stat card
+        if (orderRoasEl) {
+          orderRoasEl.textContent = total.total_order_roas !== null && total.total_order_roas !== undefined
+            ? Number(total.total_order_roas).toFixed(2)
+            : '—';
+        }
+        formatProfitStat(orderProfitEl, total.total_profit);
+
         const beRoas = data.breakeven_roas !== undefined && data.breakeven_roas !== null
           ? data.breakeven_roas
           : (product.roas_calculation ? product.roas_calculation.effective_roas : null);

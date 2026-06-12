@@ -92,19 +92,23 @@ def test_get_product_ad_orders_report_aggregation(monkeypatch):
     assert total["last_30d_roas"] == 2.12
     # 30d order profit: 180 + 30d US (250-7.5-50-37.5-5 = 150) = 330. Spend: 85. Net profit: 245
     assert total["last_30d_profit"] == 245.0
+    assert total["last_30d_order_roas"] == 6.47
 
     assert total["total_spend"] == 85.0
     assert total["total_orders"] == 12
     assert total["total_roas"] == 2.12
     # Total order profit: 330 + total XX (50-1.5-10-7.5-1 = 30) = 360. Spend: 85. Net profit: 275
     assert total["total_profit"] == 275.0
+    assert total["total_order_roas"] == 7.06
 
     de = res["by_lang"]["de"]
     assert de["today_spend"] == 5.0
     assert de["today_orders"] == 2
     assert de["today_roas"] == 3.0
     assert de["today_profit"] == 55.0
+    assert de["today_order_roas"] == 20.0
     assert de["yesterday_spend"] == 10.0
     assert de["yesterday_orders"] == 1
     assert de["yesterday_roas"] == 2.5
     assert de["yesterday_profit"] == 20.0
+    assert de["yesterday_order_roas"] == 5.0
