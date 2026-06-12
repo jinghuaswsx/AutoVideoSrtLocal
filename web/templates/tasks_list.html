@@ -542,38 +542,42 @@
   }
   .tc-table tbody tr:hover td { background:transparent; }
   .tc-table th:nth-child(1),
-  .tc-table td:nth-child(1) { grid-column:1 / span 2; grid-row:1; }
-  .tc-table th:nth-child(2),
-  .tc-table td:nth-child(2) { grid-column:3; grid-row:1; }
-  .tc-table th:nth-child(4),
-  .tc-table td:nth-child(4) { grid-column:4; grid-row:1; justify-content:flex-start; }
+  .tc-table td:nth-child(1) { display: none !important; }
   .tc-table th:nth-child(3),
-  .tc-table td:nth-child(3) { grid-column:1; grid-row:2; }
-  .tc-table th:nth-child(5),
-  .tc-table td:nth-child(5) { grid-column:2; grid-row:2; }
+  .tc-table td:nth-child(3) { display: none !important; }
+  .tc-table th:nth-child(2),
+  .tc-table td:nth-child(2) { grid-column:1 / span 2; grid-row:1; }
+  .tc-table th:nth-child(4),
+  .tc-table td:nth-child(4) { grid-column:3; grid-row:1; }
   .tc-table th:nth-child(6),
-  .tc-table td:nth-child(6) { display:none !important; }
+  .tc-table td:nth-child(6) { grid-column:4; grid-row:1; justify-content:flex-start; }
+  .tc-table th:nth-child(5),
+  .tc-table td:nth-child(5) { grid-column:1; grid-row:2; }
   .tc-table th:nth-child(7),
-  .tc-table td:nth-child(7) { grid-column:3 / span 2; grid-row:2; justify-content:flex-start; }
-  .tc-table td:nth-child(1) {
+  .tc-table td:nth-child(7) { grid-column:2; grid-row:2; }
+  .tc-table th:nth-child(8),
+  .tc-table td:nth-child(8) { display:none !important; }
+  .tc-table th:nth-child(9),
+  .tc-table td:nth-child(9) { grid-column:3 / span 2; grid-row:2; justify-content:flex-start; }
+  .tc-table td:nth-child(2) {
     flex-direction:column;
     align-items:flex-start;
     justify-content:center;
     gap:3px;
   }
-  .tc-table td:nth-child(5) .tc-input {
+  .tc-table td:nth-child(7) .tc-input {
     width:100% !important;
     min-width:0 !important;
     max-width:100%;
   }
-  .tc-table td:nth-child(7) .tc-row-actions {
+  .tc-table td:nth-child(9) .tc-row-actions {
     display:grid;
     grid-template-columns:repeat(2, minmax(0, 1fr));
     width:100%;
     justify-content:stretch;
     gap:4px;
   }
-  .tc-table td:nth-child(7) .tc-row-actions .tc-btn {
+  .tc-table td:nth-child(9) .tc-row-actions .tc-btn {
     width:100%;
     min-width:0;
     height:26px;
@@ -3308,8 +3312,17 @@ async function tcRenderTaskList(wrap, tab, bucket) {
     return `<tr data-task-id="${it.id}" data-parent="${it.parent_task_id ?? ''}">${tcBuildTaskRowHtml(it, users)}</tr>`;
   }).join('');
   wrap.innerHTML = tcRenderTaskPager(data, data.items.length, true)
-    + `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    + `<div class="tc-table-scroll"><table class="tc-table"><thead><tr><th>商品</th><th>任务</th><th>原始视频文件</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`
     + tcRenderTaskPager(data, data.items.length, false);
+}
+
+function tcGetProductImageSrc(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    return `/medias/external-image?url=${encodeURIComponent(raw)}`;
+  }
+  return raw;
 }
 
 function tcBuildTaskRowHtml(it, users) {
@@ -3332,7 +3345,28 @@ function tcBuildTaskRowHtml(it, users) {
     assigneeSelector = tcEsc(it.assignee_display_name || it.assignee_username || '—');
   }
 
+  const imgUrl = tcGetProductImageSrc(it.product_main_image);
+  const imgCell = imgUrl 
+    ? `<td>
+        <img src="${tcEsc(imgUrl)}" style="width:100px; height:100px; object-fit:cover; border-radius:4px; display:block; margin:0 auto;" alt="商品图" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <div style="width:100px; height:100px; border-radius:4px; background-color:var(--tc-bg-alt, #f3f4f6); color:var(--tc-fg-muted, #9ca3af); display:none; align-items:center; justify-content:center; font-size:12px; margin:0 auto;">无图</div>
+       </td>`
+    : `<td>
+        <div style="width:100px; height:100px; border-radius:4px; background-color:var(--tc-bg-alt, #f3f4f6); color:var(--tc-fg-muted, #9ca3af); display:flex; align-items:center; justify-content:center; font-size:12px; margin:0 auto;">无图</div>
+       </td>`;
+
+  const videoFilename = it.source_media_filename || '';
+  const videoCell = videoFilename 
+    ? `<td style="max-width:220px; word-break:break-all;">
+        <div style="display:flex; align-items:center; gap:4px; justify-content:flex-start;">
+          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;" title="${tcEsc(videoFilename)}">${tcEsc(videoFilename)}</span>
+          ${tcCopyIconButton(videoFilename, '复制原始素材文件名', 'tc-video-filename-copy')}
+        </div>
+       </td>`
+    : `<td>—</td>`;
+
   return `
+    ${imgCell}
     <td>
       <div class="tc-task-name-row" style="display:flex; align-items:center; gap:6px;">
         <div class="tc-task-name" title="${tcAttr(it.product_name || '')}" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${tcEsc(it.product_name)}</div>
@@ -3345,6 +3379,7 @@ function tcBuildTaskRowHtml(it, users) {
         ${it.product_code ? tcCopyIconButton(it.product_code, '复制产品Code', 'tc-task-code-copy') : ''}
       </div>
     </td>
+    ${videoCell}
     <td>${tcEsc(kind)}</td>
     <td>${country}</td>
     <td>${tcTaskStatusCell(it)}</td>

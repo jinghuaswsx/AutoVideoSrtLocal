@@ -252,7 +252,7 @@ def test_task_center_overview_uses_status_subtabs_and_pagination(authed_client_n
     assert "function tcTaskJumpPage" in body
     assert "function tcNormalizeTaskPage" in body
     assert "Number.isFinite(parsed)" in body
-    assert "<th>任务</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th>" in body
+    assert "<th>商品</th><th>任务</th><th>原始视频文件</th><th>类型</th><th>语言</th><th>状态</th><th>负责人</th><th>创建时间</th><th>操作</th>" in body
 
 
 def test_task_center_overview_has_task_type_filter_before_refresh(authed_client_no_db):
@@ -304,11 +304,11 @@ def test_task_center_mobile_filters_can_collapse_and_table_scrolls(authed_client
     assert ".tc-filters { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr));" in body
     assert ".tc-table-scroll { display:block; overflow-x:hidden; -webkit-overflow-scrolling:touch; }" in body
     assert "grid-template-columns:minmax(82px, 1fr) minmax(82px, 1fr) minmax(78px, .9fr) minmax(76px, .85fr);" in body
-    assert ".tc-table th:nth-child(1)," in body
-    assert ".tc-table td:nth-child(1) { grid-column:1 / span 2; grid-row:1; }" in body
-    assert ".tc-table th:nth-child(3)," in body
-    assert ".tc-table td:nth-child(6) { display:none !important; }" in body
-    assert ".tc-table td:nth-child(7) { grid-column:3 / span 2; grid-row:2; justify-content:flex-start; }" in body
+    assert ".tc-table th:nth-child(2)," in body
+    assert ".tc-table td:nth-child(2) { grid-column:1 / span 2; grid-row:1; }" in body
+    assert ".tc-table th:nth-child(5)," in body
+    assert ".tc-table td:nth-child(8) { display:none !important; }" in body
+    assert ".tc-table td:nth-child(9) { grid-column:3 / span 2; grid-row:2; justify-content:flex-start; }" in body
     assert ".tc-task-created-mobile { display:none; }" in body
     assert ".tc-task-created-mobile { display:inline; }" in body
     assert "grid-template-columns:repeat(2, minmax(0, 1fr));" in body
