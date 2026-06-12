@@ -156,6 +156,7 @@ class ProblemAdItem:
     metrics: dict[str, ProblemMetric]
     product_cn_name: str | None = None
     product_theme: str | None = None
+    product_main_image: str | None = None
 
 
 
@@ -794,6 +795,7 @@ def get_problem_ads(
                 },
                 product_cn_name=None,
                 product_theme=None,
+                product_main_image=None,
             )
         )
 
@@ -902,13 +904,79 @@ def _batch_fetch_problem_ad_details(items: list[ProblemAdItem], rows: list[dict[
     except Exception as e:
         log.warning("Failed to query product themes from meta_hot_posts: %s", e)
 
+    # 4.3 From meta_hot_posts / meta_hot_post_product_analyses (images)
+    images: dict[str, str] = {}
+    # From media_products
+    try:
+        rows_mp_img = db_query(
+            f"""
+            SELECT LOWER(product_code) AS code, main_image
+            FROM media_products
+            WHERE LOWER(product_code) IN ({placeholders})
+              AND main_image IS NOT NULL AND main_image <> ''
+              AND deleted_at IS NULL
+            """,
+            tuple(clean_codes)
+        )
+        for r in rows_mp_img or []:
+            c = str(r["code"]).lower()
+            img = str(r["main_image"] or "").strip()
+            if img:
+                images[c] = img
+    except Exception as e:
+        log.warning("Failed to query product images from media_products: %s", e)
+
+    # From tabcut_goods
+    try:
+        rows_tabcut_img = db_query(
+            f"""
+            SELECT LOWER(product_code) AS code, item_pic_url AS main_image
+            FROM tabcut_goods
+            WHERE LOWER(product_code) IN ({placeholders})
+              AND item_pic_url IS NOT NULL AND item_pic_url <> ''
+            """,
+            tuple(clean_codes)
+        )
+        for r in rows_tabcut_img or []:
+            c = str(r["code"]).lower()
+            if c not in images:
+                img = str(r["main_image"] or "").strip()
+                if img:
+                    images[c] = img
+    except Exception as e:
+        log.warning("Failed to query product images from tabcut_goods: %s", e)
+
+    # From meta_hot_posts
+    try:
+        rows_meta_img = db_query(
+            f"""
+            SELECT LOWER(mp.product_code) AS code, a.product_main_image_url AS main_image
+            FROM media_products mp
+            JOIN meta_hot_posts hp ON hp.local_product_id = mp.id
+            JOIN meta_hot_post_product_analyses a ON a.product_url_hash = hp.product_url_hash
+            WHERE LOWER(mp.product_code) IN ({placeholders})
+              AND a.product_main_image_url IS NOT NULL AND a.product_main_image_url <> ''
+            """,
+            tuple(clean_codes)
+        )
+        for r in rows_meta_img or []:
+            c = str(r["code"]).lower()
+            if c not in images:
+                img = str(r["main_image"] or "").strip()
+                if img:
+                    images[c] = img
+    except Exception as e:
+        log.warning("Failed to query product images from meta_hot_posts: %s", e)
+
     # 5. Populate items
     for c, it_list in code_to_items.items():
         cn_name = names_dict.get(c, {}).get("cn_name") or ""
         theme = themes.get(c) or ""
+        main_img = images.get(c) or ""
         for it in it_list:
             it.product_cn_name = cn_name or None
             it.product_theme = theme or None
+            it.product_main_image = main_img or None
 
 
 def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
