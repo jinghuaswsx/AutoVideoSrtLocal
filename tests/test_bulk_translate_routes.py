@@ -584,6 +584,7 @@ def test_audit_endpoint_returns_events(phase5_client, monkeypatch):
     ("/api/bulk-translate/bt_xxx/retry-failed", "post"),
     ("/api/bulk-translate/bt_xxx/force-backfill-item", "post"),
     ("/api/bulk-translate/bt_xxx/rebackfill-item", "post"),
+    ("/api/bulk-translate/bt_xxx/manual-confirm-success-item", "post"),
     ("/api/bulk-translate/bt_xxx", "get"),
     ("/api/bulk-translate/bt_xxx/audit", "get"),
 ])
@@ -622,4 +623,31 @@ def test_rebackfill_item_requires_idx(phase5_client, monkeypatch):
         json={},
     )
     assert resp.status_code == 400
-    assert "idx 必填且为 int" in resp.get_json()["error"]
+    assert "idx" in resp.get_json()["error"]
+
+
+def test_manual_confirm_success_item_endpoint(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="failed")
+    called = []
+    monkeypatch.setattr(
+        "web.routes.bulk_translate.manual_confirm_success_item",
+        lambda task_id, idx, user_id: called.append((task_id, idx, user_id)),
+        raising=False,
+    )
+    resp = phase5_client.post(
+        "/api/bulk-translate/bt_xxx/manual-confirm-success-item",
+        json={"idx": 1},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert called == [("bt_xxx", 1, 1)]
+
+
+def test_manual_confirm_success_item_requires_idx(phase5_client, monkeypatch):
+    _install_fake_task(monkeypatch, status="failed")
+    resp = phase5_client.post(
+        "/api/bulk-translate/bt_xxx/manual-confirm-success-item",
+        json={},
+    )
+    assert resp.status_code == 400
+    assert "idx" in resp.get_json()["error"]

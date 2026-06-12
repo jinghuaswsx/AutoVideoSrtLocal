@@ -125,14 +125,11 @@
     if (item.force_backfillable) {
       actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="force-backfill-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。">强制回填</button>');
     }
+    if (item.manual_success_backfillable) {
+      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="manual-confirm-success-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="子任务已成功时，先重新回填商品和素材库，回填成功后再把该项标记为成功。">手动确认成功并回填</button>');
+    }
     if (item.detail_url) {
       actions.push(`<a class="bt-btn bt-btn--ghost" ${newTabAttrs(item.detail_url)}>${item.manual_step === 'voice_selection' ? '人工选声音' : '查看详情'}</a>`);
-    }
-    if (item.child_task_id && !['pending', 'dispatching', 'running', 'syncing_result'].includes(item.status)) {
-      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="rebackfill-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="重新从该子任务详情中读取最新结果并回填">重新回填</button>');
-    }
-    if (item.retryable) {
-      actions.push('<button type="button" class="bt-btn bt-btn--ghost" data-task-action="retry-item" data-task-id="' + esc(task.id) + '" data-item-idx="' + esc(item.idx) + '" title="只重跑这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。">重跑此项</button>');
     }
     return `
       <article class="mtt-item">
@@ -384,9 +381,8 @@
       const confirmMap = {
         resume: '将重新启动整个批量任务，只恢复中断的子项，已完成项不会重复执行。确定继续吗？',
         'retry-failed': '将只重跑失败或中断的子项，已完成项不会重复执行。确定继续吗？',
-        'retry-item': '将只重跑这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。确定继续吗？',
         'force-backfill-item': '将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。确定继续吗？',
-        'rebackfill-item': '将重新从该子任务详情中读取最新结果并回填至商品及素材库。确定继续吗？',
+        'manual-confirm-success-item': '将先重新回填商品和素材库；只有回填成功后，才把该子项手动标记为成功。确定继续吗？',
       };
       if (confirmMap[action] && !window.confirm(confirmMap[action])) {
         return;
@@ -397,14 +393,11 @@
         url = `/api/bulk-translate/${taskId}/resume`;
       } else if (action === 'retry-failed') {
         url = `/api/bulk-translate/${taskId}/retry-failed`;
-      } else if (action === 'retry-item') {
-        url = `/api/bulk-translate/${taskId}/retry-item`;
-        payload = { idx: Number(itemIdx) };
       } else if (action === 'force-backfill-item') {
         url = `/api/bulk-translate/${taskId}/force-backfill-item`;
         payload = { idx: Number(itemIdx) };
-      } else if (action === 'rebackfill-item') {
-        url = `/api/bulk-translate/${taskId}/rebackfill-item`;
+      } else if (action === 'manual-confirm-success-item') {
+        url = `/api/bulk-translate/${taskId}/manual-confirm-success-item`;
         payload = { idx: Number(itemIdx) };
       } else {
         return;

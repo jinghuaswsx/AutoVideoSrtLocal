@@ -513,6 +513,64 @@ def rebackfill_item(task_id: str, idx: int, user_id: int) -> None:
     _save_state(task_id, state, status=_derive_parent_status(plan, task.get("status") or "done"))
 
 
+def manual_confirm_success_item(task_id: str, idx: int, user_id: int) -> None:
+    task = get_task(task_id)
+    if not task:
+        raise ValueError(f"Task {task_id} not found")
+
+    state = task["state"]
+    plan = [_normalize_item(item) for item in state.get("plan") or []]
+    state["plan"] = plan
+    if idx < 0 or idx >= len(plan):
+        raise ValueError(f"Invalid idx={idx}, plan has {len(plan)} items")
+
+    item = plan[idx]
+    child_task_id = item.get("child_task_id") or item.get("sub_task_id")
+    child_task_type = item.get("child_task_type") or _child_type_for_kind(item.get("kind"))
+    if not child_task_id or not child_task_type:
+        raise ValueError("Child task not created or not started yet")
+    item["child_task_id"] = child_task_id
+    item["child_task_type"] = child_task_type
+
+    child_state = _load_child_snapshot(child_task_type, child_task_id)
+    if not child_state:
+        raise ValueError("Child task state not found")
+
+    child_status = _normalized_status(child_state.get("_project_status"))
+    if child_status not in {"done", "composing_done"}:
+        raise ValueError(f"Child task is not completed: {child_status}")
+
+    completed_child_error = _get_completed_child_error(item, child_state)
+    if completed_child_error:
+        raise ValueError(completed_child_error)
+
+    # Manual confirmation is only accepted after the ordinary backfill path succeeds.
+    _sync_child_result(task_id, item, state, child_state)
+
+    item["result_synced"] = True
+    item["status"] = "done"
+    item["error"] = None
+    item["finished_at"] = _now_iso()
+    item["manual_success_confirmed"] = True
+    item["manual_success_confirmed_at"] = item["finished_at"]
+    item["manual_success_confirmed_by"] = user_id
+    item["manual_success_child_task_id"] = child_task_id
+
+    _roll_up_cost_once_for_item(state, item, child_state)
+    _append_audit(
+        state,
+        user_id,
+        "manual_confirm_success_item",
+        {
+            "idx": idx,
+            "child_task_id": child_task_id,
+            "child_task_type": child_task_type,
+            "kind": item.get("kind"),
+        },
+    )
+    _save_state(task_id, state, status=_derive_parent_status(plan, task.get("status") or "done"))
+
+
 def refresh_task_from_children(task_id: str, user_id: int | None = None) -> dict | None:
     """Poll existing child tasks and sync recovered results without creating new children."""
     task = get_task(task_id)

@@ -360,7 +360,7 @@ def sync_video_result(
                     """
                     UPDATE media_items 
                        SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
-                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s, updated_at=NOW()
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s
                      WHERE id=%s
                     """,
                     (
@@ -380,7 +380,7 @@ def sync_video_result(
                     """
                     UPDATE media_items 
                        SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
-                           duration_seconds=%s, file_size=%s, source_raw_id=%s, updated_at=NOW()
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s
                      WHERE id=%s
                     """,
                     (

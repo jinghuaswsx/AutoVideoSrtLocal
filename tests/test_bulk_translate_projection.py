@@ -427,3 +427,57 @@ def test_serialize_item_marks_failed_detail_image_as_force_backfillable(monkeypa
 
     assert item["force_backfillable"] is True
     assert item["lang_label"] == "德语 (DE)"
+
+
+def test_serialize_item_marks_terminal_child_item_as_manual_success_backfillable(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda code: {"it": "意大利语"}.get(code, code))
+
+    item = mod._serialize_item(
+        {
+            "idx": 1,
+            "kind": "videos",
+            "lang": "it",
+            "status": "failed",
+            "child_task_id": "omni-child-1",
+            "child_task_type": "omni_translate",
+            "ref": {"source_raw_id": 301},
+        },
+        parent_detail_url="/tasks/bt-1",
+    )
+
+    assert item["manual_success_backfillable"] is True
+
+
+def test_serialize_item_does_not_manual_confirm_active_or_already_synced_items(monkeypatch):
+    from appcore import bulk_translate_projection as mod
+
+    monkeypatch.setattr(mod.medias, "get_language_name", lambda code: code)
+
+    running = mod._serialize_item(
+        {
+            "idx": 1,
+            "kind": "videos",
+            "lang": "it",
+            "status": "running",
+            "child_task_id": "omni-child-1",
+            "child_task_type": "omni_translate",
+        },
+        parent_detail_url="/tasks/bt-1",
+    )
+    done = mod._serialize_item(
+        {
+            "idx": 1,
+            "kind": "videos",
+            "lang": "it",
+            "status": "done",
+            "result_synced": True,
+            "child_task_id": "omni-child-1",
+            "child_task_type": "omni_translate",
+        },
+        parent_detail_url="/tasks/bt-1",
+    )
+
+    assert running["manual_success_backfillable"] is False
+    assert done["manual_success_backfillable"] is False
