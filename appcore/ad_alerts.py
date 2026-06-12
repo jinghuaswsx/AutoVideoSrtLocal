@@ -1430,23 +1430,56 @@ def get_aggregated_products(
     product_images = {}
     if product_ids:
         placeholders = ",".join(["%s"] * len(product_ids))
+        # 1. Prioritize local covers from media_product_covers
+        try:
+            cov_rows = query(
+                f"""
+                SELECT product_id, object_key AS main_image
+                FROM media_product_covers
+                WHERE product_id IN ({placeholders})
+                  AND object_key IS NOT NULL AND object_key <> ''
+                ORDER BY (CASE WHEN lang = 'en' THEN 0 ELSE 1 END), updated_at DESC
+                """,
+                tuple(product_ids)
+            )
+            for r in cov_rows or []:
+                pid = int(r["product_id"])
+                if pid not in product_images:
+                    img = str(r["main_image"] or "").strip()
+                    if img:
+                        product_images[pid] = img
+        except Exception as e:
+            log.warning("Failed to query media_product_covers in get_aggregated_products: %s", e)
+
+        # 2. Fallback to media_products.main_image
         try:
             img_rows = query(
                 f"""
                 SELECT id, main_image
                 FROM media_products
                 WHERE id IN ({placeholders})
+                  AND main_image IS NOT NULL AND main_image <> ''
                   AND deleted_at IS NULL
                 """,
                 tuple(product_ids)
             )
             for r in img_rows or []:
-                pid = r["id"]
-                img = r["main_image"]
-                if img:
-                    product_images[pid] = img
+                pid = int(r["id"])
+                if pid not in product_images:
+                    img = str(r["main_image"] or "").strip()
+                    if img:
+                        product_images[pid] = img
         except Exception as e:
-            log.warning("Failed to query product images in get_aggregated_products: %s", e)
+            log.warning("Failed to query media_products in get_aggregated_products: %s", e)
+
+        # 3. Normalize image paths
+        for pid, img in list(product_images.items()):
+            if img:
+                img = img.strip()
+                if not (img.startswith("http://") or img.startswith("https://") or img.startswith("/")):
+                    img = "/medias/obj/" + img
+                product_images[pid] = img
+
 
     for pid, p_items in grouped.items():
         if severity and not any(it.severity == severity for it in p_items):
