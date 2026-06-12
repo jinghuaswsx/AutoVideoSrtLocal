@@ -1,0 +1,522 @@
+{% extends "layout.html" %}
+{% block title %}{{ product_code }} - 商品广告预警详情{% endblock %}
+{% block extra_style %}
+<style>
+.oc-ad-alert-page {
+  --oc-ad-alert-fg: #f8fafc;
+  --oc-ad-alert-muted: #94a3b8;
+  --oc-ad-alert-border: #1e3a8a;
+  --oc-ad-alert-card: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  --oc-ad-alert-subtle: #0f172a;
+  --oc-ad-alert-blue: #38bdf8;
+  --oc-ad-alert-cyan: #06b6d4;
+  --oc-ad-alert-green: #34d399;
+  --oc-ad-alert-red: #f87171;
+  --oc-ad-alert-orange: #fb923c;
+  --oc-ad-alert-amber: #fbbf24;
+  display: grid;
+  gap: 20px;
+  max-width: 1280px;
+  padding: 24px;
+  background: #0b1329;
+  border-radius: 16px;
+  border: 1px solid #1e293b;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 0.4s ease-out;
+  color: var(--oc-ad-alert-fg);
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.oc-ad-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+  padding-bottom: 16px;
+}
+.oc-ad-alert-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.oc-ad-alert-back-btn {
+  color: var(--oc-ad-alert-blue);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  transition: opacity 0.2s;
+}
+.oc-ad-alert-back-btn:hover {
+  opacity: 0.8;
+}
+.oc-ad-alert-title h1 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+.oc-ad-alert-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.oc-ad-alert-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  padding: 3px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 10px;
+  background: #0f172a;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+.oc-ad-alert-tab {
+  min-height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--oc-ad-alert-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.oc-ad-alert-tab:hover {
+  color: var(--oc-ad-alert-fg);
+}
+.oc-ad-alert-tab.oc-ad-alert-active {
+  background: #1e3a8a;
+  color: var(--oc-ad-alert-blue);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.oc-ad-alert-panel[hidden] {
+  display: none;
+}
+.oc-ad-alert-list {
+  display: grid;
+  gap: 12px;
+}
+.oc-ad-alert-card {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 14px;
+  background: var(--oc-ad-alert-card);
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: left;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+}
+.oc-ad-alert-card:hover {
+  border-color: var(--oc-ad-alert-blue);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px -4px rgba(56, 189, 248, 0.25), 0 4px 12px -2px rgba(56, 189, 248, 0.1);
+}
+.oc-ad-alert-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.oc-ad-alert-product {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-lang {
+  display: inline-grid;
+  place-items: center;
+  min-width: 38px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: #1e3a8a;
+  color: var(--oc-ad-alert-blue);
+  font-size: 11px;
+  font-weight: 800;
+  border: 1px solid #2563eb;
+}
+.oc-ad-alert-name {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.oc-ad-alert-code,
+.oc-ad-alert-store {
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  font-weight: 600;
+  background: #1e293b;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--oc-ad-alert-border);
+}
+.oc-ad-alert-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.oc-ad-alert-severe {
+  background: #ef4444;
+  color: #ffffff;
+  border: 1px solid #f87171;
+}
+.oc-ad-alert-moderate {
+  background: #f97316;
+  color: #ffffff;
+  border: 1px solid #fb923c;
+}
+.oc-ad-alert-mild {
+  background: #eab308;
+  color: #ffffff;
+  border: 1px solid #fde047;
+}
+.oc-ad-alert-metrics {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  color: var(--oc-ad-alert-muted);
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--oc-ad-alert-border);
+}
+.oc-ad-alert-metric strong {
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+.oc-ad-alert-loss {
+  color: var(--oc-ad-alert-red);
+  font-weight: 800;
+}
+.oc-ad-alert-profit {
+  color: var(--oc-ad-alert-green);
+  font-weight: 800;
+}
+.oc-ad-alert-judgment {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.4);
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 1.5;
+  border-left: 4px solid #64748b;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.oc-ad-alert-judgment span:first-child {
+  color: var(--oc-ad-alert-muted);
+  font-size: 15px;
+}
+.oc-ad-alert-judgment strong {
+  color: #ffffff;
+  margin-right: 6px;
+  font-weight: 800;
+}
+.oc-ad-alert-severe.oc-ad-alert-judgment {
+  border-left-color: var(--oc-ad-alert-red);
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+.oc-ad-alert-moderate.oc-ad-alert-judgment {
+  border-left-color: var(--oc-ad-alert-orange);
+  background: rgba(249, 115, 22, 0.1);
+  border-color: rgba(249, 115, 22, 0.2);
+}
+.oc-ad-alert-mild.oc-ad-alert-judgment {
+  border-left-color: var(--oc-ad-alert-amber);
+  background: rgba(234, 179, 8, 0.1);
+  border-color: rgba(234, 179, 8, 0.2);
+}
+.oc-ad-alert-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 12px;
+  background: #0f172a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.oc-ad-alert-table {
+  width: 100%;
+  min-width: 1000px;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: #0f172a;
+}
+.oc-ad-alert-table th,
+.oc-ad-alert-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+  vertical-align: middle;
+  white-space: nowrap;
+  color: #e2e8f0;
+}
+.oc-ad-alert-table th {
+  background: #1e3a8a;
+  color: #ffffff;
+  font-weight: 800;
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.oc-ad-alert-table th.oc-ad-alert-num,
+.oc-ad-alert-table td.oc-ad-alert-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.oc-ad-alert-problem-row {
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.oc-ad-alert-problem-row:hover {
+  background: #1e293b;
+}
+.oc-ad-alert-ad-name {
+  display: block;
+  max-width: 320px;
+  color: #ffffff;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+.oc-ad-alert-ad-code,
+.oc-ad-alert-account {
+  display: block;
+  max-width: 320px;
+  color: var(--oc-ad-alert-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.oc-ad-alert-state {
+  padding: 48px 20px;
+  border: 1px dashed var(--oc-ad-alert-border);
+  border-radius: 12px;
+  background: #0f172a;
+  color: var(--oc-ad-alert-muted);
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="oc-ad-alert-page" data-product-id="{{ product_id }}" data-threshold="{{ threshold }}">
+  <div class="oc-ad-alert-head">
+    <div class="oc-ad-alert-title">
+      <a href="/ad-alerts/" class="oc-ad-alert-back-btn">← 返回全部商品</a>
+      <h1 id="productTitle">{{ product_name or product_code }} ({{ product_code }}) 预警分析</h1>
+    </div>
+    <div class="oc-ad-alert-tools">
+      <span class="oc-ad-alert-store">ROAS 阈值: <strong>{{ "%.2f"|format(threshold) }}</strong></span>
+    </div>
+  </div>
+
+  <div class="oc-ad-alert-tabs" id="productAlertTabs" role="tablist">
+    <button class="oc-ad-alert-tab oc-ad-alert-active" type="button" data-tab="countries" aria-pressed="true">国家/语种详情</button>
+    <button class="oc-ad-alert-tab" type="button" data-tab="ads" aria-pressed="false">单条 AD 详情</button>
+  </div>
+
+  <section class="oc-ad-alert-panel" data-panel="countries">
+    <div class="oc-ad-alert-list" id="countryList">
+      <div class="oc-ad-alert-state">加载中...</div>
+    </div>
+  </section>
+
+  <section class="oc-ad-alert-panel" data-panel="ads" hidden>
+    <div class="oc-ad-alert-table-wrap">
+      <table class="oc-ad-alert-table" aria-label="广告明细列表">
+        <thead>
+          <tr>
+            <th>广告名称 / 编码</th>
+            <th>广告账户</th>
+            <th class="oc-ad-alert-num">总消耗</th>
+            <th class="oc-ad-alert-num">总购买价值</th>
+            <th class="oc-ad-alert-num">ROAS</th>
+            <th class="oc-ad-alert-num">运行天数</th>
+            <th>最后活跃时间</th>
+          </tr>
+        </thead>
+        <tbody id="adListBody">
+          <tr><td colspan="7" class="oc-ad-alert-state">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var productId = "{{ product_id }}";
+  var threshold = Number({{ threshold|tojson }});
+  var countryListEl = document.getElementById('countryList');
+  var adListBodyEl = document.getElementById('adListBody');
+
+  function html(value) {
+    var div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+  }
+
+  function money(value, digits) {
+    return '$' + Number(value || 0).toFixed(digits == null ? 2 : digits);
+  }
+
+  function roas(value) {
+    return value === null || value === undefined ? 'N/A' : Number(value).toFixed(2);
+  }
+
+  function loss(value) {
+    var n = Number(value || 0);
+    if (n < 0) return '<span class="oc-ad-alert-loss">-' + money(Math.abs(n), 2) + '</span>';
+    if (n > 0) return '<span class="oc-ad-alert-profit">+' + money(n, 2) + '</span>';
+    return money(0, 2);
+  }
+
+  function loadDetails() {
+    fetch('/ad-alerts/api/product-detail/' + productId + '?threshold=' + threshold)
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('detail_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        renderCountries(data.countries || []);
+        renderAds(data.ads || []);
+      })
+      .catch(function() {
+        countryListEl.innerHTML = '<div class="oc-ad-alert-state">加载失败</div>';
+        adListBodyEl.innerHTML = '<tr><td colspan="7" class="oc-ad-alert-state">加载失败</td></tr>';
+      });
+  }
+
+  function renderCountries(countries) {
+    if (!countries.length) {
+      countryListEl.innerHTML = '<div class="oc-ad-alert-state">暂无国家维度的预警</div>';
+      return;
+    }
+    countryListEl.innerHTML = countries.map(function(item) {
+      var severity = item.judgment.severity || 'mild';
+      var stores = (item.store_codes || []).join(' / ') || '—';
+      return ''
+        + '<a href="/ad-alerts/product/' + productId + '/country/' + html(item.lang) + '" class="oc-ad-alert-card" style="text-decoration: none; color: inherit;">'
+        + '  <span class="oc-ad-alert-card-top">'
+        + '    <span class="oc-ad-alert-product">'
+        + '      <span class="oc-ad-alert-lang">' + html(String(item.lang || '').toUpperCase()) + '</span>'
+        + '      <span class="oc-ad-alert-name">' + html(item.lang_label || item.lang) + '</span>'
+        + '      <span class="oc-ad-alert-store">店铺: ' + html(stores) + '</span>'
+        + '    </span>'
+        + '    <span class="oc-ad-alert-badge oc-ad-alert-' + html(severity) + '">' + html(item.judgment.severity_label || '') + '</span>'
+        + '  </span>'
+        + '  <span class="oc-ad-alert-metrics">'
+        + '    <span class="oc-ad-alert-metric">ROAS <strong>' + roas(item.ad_roas) + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">消耗 <strong>' + money(item.ad_spend_usd, 0) + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">活跃 <strong>' + money(item.active_7d_ad_spend_usd, 0) + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">运行 <strong>' + Number(item.active_days || 0) + ' 天</strong></span>'
+        + '    <span class="oc-ad-alert-metric">预估盈亏 ' + loss(item.estimated_loss) + '</span>'
+        + '  </span>'
+        + '  <span class="oc-ad-alert-judgment"><span>⚠</span><span><strong>' + html(item.judgment.conclusion || '') + '</strong>' + html(item.judgment.reason || '') + '</span></span>'
+        + '</a>';
+    }).join('');
+  }
+
+  function renderAds(ads) {
+    if (!ads.length) {
+      adListBodyEl.innerHTML = '<tr><td colspan="7" class="oc-ad-alert-state">无广告记录</td></tr>';
+      return;
+    }
+    adListBodyEl.innerHTML = ads.map(function(ad) {
+      var isAlerting = ad.ad_roas !== null && ad.ad_roas < threshold;
+      var roasClass = isAlerting ? 'class="oc-ad-alert-loss"' : 'class="oc-ad-alert-profit"';
+      var roasStyle = isAlerting ? 'style="color: var(--oc-ad-alert-red);"' : '';
+      return ''
+        + '<tr class="oc-ad-alert-problem-row" data-ad-code="' + html(ad.ad_code) + '" data-account-id="' + html(ad.ad_account_id) + '">'
+        + '  <td>'
+        + '    <span class="oc-ad-alert-ad-name">' + html(ad.ad_name || ad.ad_code || '') + '</span>'
+        + '    <span class="oc-ad-alert-ad-code">' + html(ad.ad_code || '') + '</span>'
+        + '  </td>'
+        + '  <td>'
+        + '    <span class="oc-ad-alert-account">' + html(ad.ad_account_name || ad.ad_account_id || '—') + '</span>'
+        + '    <span class="oc-ad-alert-ad-code">ID: ' + html(ad.ad_account_id || '') + '</span>'
+        + '  </td>'
+        + '  <td class="oc-ad-alert-num">' + money(ad.ad_spend_usd, 2) + '</td>'
+        + '  <td class="oc-ad-alert-num">' + money(ad.purchase_value_usd, 2) + '</td>'
+        + '  <td class="oc-ad-alert-num" ' + roasStyle + '><strong>' + roas(ad.ad_roas) + '</strong></td>'
+        + '  <td class="oc-ad-alert-num">' + Number(ad.active_days || 0) + ' 天</td>'
+        + '  <td>' + html(ad.last_active_date || '—') + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  // Handle Tabs Switch
+  document.getElementById('productAlertTabs').addEventListener('click', function(event) {
+    var btn = event.target.closest('[data-tab]');
+    if (!btn) return;
+    var tab = btn.getAttribute('data-tab');
+    
+    document.querySelectorAll('#productAlertTabs .oc-ad-alert-tab').forEach(function(item) {
+      var on = item.getAttribute('data-tab') === tab;
+      item.classList.toggle('oc-ad-alert-active', on);
+      item.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+
+    document.querySelectorAll('.oc-ad-alert-panel').forEach(function(panel) {
+      if (panel.getAttribute('data-panel') === tab) {
+        panel.removeAttribute('hidden');
+      } else {
+        panel.setAttribute('hidden', '');
+      }
+    });
+  });
+
+  // Handle click on Ad Row to navigate to Level 3
+  adListBodyEl.addEventListener('click', function(event) {
+    var row = event.target.closest('[data-ad-code]');
+    if (!row) return;
+    var adCode = row.getAttribute('data-ad-code');
+    var accountId = row.getAttribute('data-account-id');
+    if (adCode && accountId) {
+      window.location.href = '/ad-alerts/product/' + productId + '/ad/' + encodeURIComponent(adCode) + '?ad_account_id=' + encodeURIComponent(accountId);
+    }
+  });
+
+  loadDetails();
+})();
+</script>
+{% endblock %}
