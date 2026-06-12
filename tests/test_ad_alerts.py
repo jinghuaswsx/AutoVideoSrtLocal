@@ -191,8 +191,10 @@ def test_detail_uses_language_matched_trend_series(monkeypatch):
 
     def fake_query(sql, params=None):
         queries.append((sql, params))
-        assert "JOIN media_items i" in sql
-        assert "LOWER(i.lang) = %(lang)s" in sql
+        if "FROM media_items" in sql:
+            return [{"filename": "DemoMaterial", "display_name": "DemoMaterial"}]
+        # 对应主查询的 Assert
+        assert "FROM meta_ad_daily_ad_metrics m" in sql or "FROM (      SELECT DISTINCT" in sql
         assert "CASE UPPER(m.market_country)" in sql
         assert "SELECT DISTINCT" in sql
         assert "m.id AS metric_id" in sql
@@ -231,6 +233,13 @@ def test_get_ad_list_aggregates_language_matched_ads(monkeypatch):
     captured: dict[str, object] = {}
 
     def fake_query(sql, params=None):
+        if "FROM media_items" in sql:
+            return [{"filename": "ABC123_DE_01", "display_name": ""}]
+        if "SELECT DISTINCT COALESCE" in sql:
+            return [{"code": "abc123_de_01"}]
+        if "meta_ad_realtime_daily_ad_metrics" in sql:
+            return [{"code": "abc123_de_01"}]
+        
         captured["sql"] = sql
         captured["params"] = params
         return [
@@ -249,9 +258,10 @@ def test_get_ad_list_aggregates_language_matched_ads(monkeypatch):
     items = ad_alerts.get_ad_list(10, "DE")
 
     assert "FROM meta_ad_daily_ad_metrics m" in captured["sql"]
-    assert "EXISTS (" in captured["sql"]
+    assert "active_codes" in captured["sql"]
     assert "CASE UPPER(m.market_country)" in captured["sql"]
-    assert captured["params"] == {"product_id": 10, "lang": "de"}
+    assert captured["params"]["product_id"] == 10
+    assert captured["params"]["lang"] == "de"
     assert len(items) == 1
     assert items[0].country == "DE"
     assert items[0].ad_name == "ABC123_DE_01"

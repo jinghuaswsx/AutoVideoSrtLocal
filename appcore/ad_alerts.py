@@ -1030,11 +1030,47 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
     if not media_items:
         return []
 
-    # 2. 构造 media_items 匹配过滤条件 (移出 EXISTS 关联子查询)
+    # 2. 预先查出该产品近 3 天活跃的 ad_code 集合，避免 EXISTS 子查询
+    active_codes = set()
+    active_daily = query(
+        """
+        SELECT DISTINCT COALESCE(NULLIF(TRIM(normalized_ad_code), ''), '') AS code
+        FROM meta_ad_daily_ad_metrics
+        WHERE product_id = %(product_id)s
+          AND COALESCE(spend_usd, 0) > 0
+          AND DATE(COALESCE(meta_business_date, report_date)) >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+        """,
+        {"product_id": product_id}
+    )
+    for r in active_daily:
+        c = r.get("code")
+        if c:
+            active_codes.add(c)
+
+    if _has_realtime_ad_table():
+        active_realtime = query(
+            """
+            SELECT DISTINCT COALESCE(NULLIF(TRIM(normalized_ad_code), ''), '') AS code
+            FROM meta_ad_realtime_daily_ad_metrics
+            WHERE COALESCE(spend_usd, 0) > 0
+              AND business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+            """
+        )
+        for r in active_realtime:
+            c = r.get("code")
+            if c:
+                active_codes.add(c)
+
+    # 如果近 3 天没有任何活跃的广告代码，直接返回空
+    if not active_codes:
+        return []
+
+    # 3. 构造 media_items 匹配过滤条件 (移出 EXISTS 关联子查询)
     country_lang_sql = _COUNTRY_LANG_CASE_SQL % "m.market_country"
     sql_params = {
         "product_id": product_id,
         "lang": lower_lang,
+        "active_codes": tuple(active_codes),
     }
 
     like_conds = []
@@ -1059,17 +1095,6 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
     else:
         match_sql = f"AND {country_cond}"
 
-    realtime_exists_sql = ""
-    if _has_realtime_ad_table():
-        realtime_exists_sql = """
-            OR EXISTS (
-              SELECT 1 FROM meta_ad_realtime_daily_ad_metrics rt
-              WHERE rt.normalized_ad_code = m.normalized_ad_code
-                AND rt.spend_usd > 0
-                AND rt.business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-            )
-        """
-
     rows = query(
         f"""
         SELECT
@@ -1084,16 +1109,7 @@ def get_ad_list(product_id: int, lang: str) -> list[AdListItem]:
           AND COALESCE(m.spend_usd, 0) > 0
           AND m.market_country IS NOT NULL
           AND TRIM(m.market_country) <> ''
-          AND (
-            EXISTS (
-              SELECT 1 FROM meta_ad_daily_ad_metrics d
-              WHERE d.product_id = m.product_id
-                AND d.normalized_ad_code = m.normalized_ad_code
-                AND d.spend_usd > 0
-                AND DATE(COALESCE(d.meta_business_date, d.report_date)) >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-            )
-            {realtime_exists_sql}
-          )
+          AND m.normalized_ad_code IN %(active_codes)s
           {match_sql}
         GROUP BY UPPER(TRIM(m.market_country)), m.ad_name, m.normalized_ad_code
         ORDER BY COALESCE(
