@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
+
+import pytest
 
 
 def test_threshold_defaults_and_persists_json(monkeypatch):
@@ -28,6 +30,49 @@ def test_threshold_defaults_and_persists_json(monkeypatch):
 
     stored["value"] = "not-json"
     assert ad_alerts.get_threshold() == ad_alerts.DEFAULT_THRESHOLD
+
+
+def test_high_loss_share_token_binds_expiry_and_options():
+    from appcore import ad_alerts
+
+    now = datetime(2026, 6, 12, 4, 0, 0, tzinfo=timezone.utc)
+    payload = ad_alerts.build_high_loss_share_payload(
+        search="Glow",
+        limit=99,
+        expires_in_hours=24,
+        now=now,
+    )
+    token = ad_alerts.sign_share_token(payload, "test-secret")
+
+    verified = ad_alerts.verify_high_loss_share_token(
+        token,
+        payload["expires_at"],
+        "test-secret",
+        now=now + timedelta(hours=1),
+    )
+
+    assert payload["scope"] == ad_alerts.HIGH_LOSS_SHARE_SCOPE
+    assert payload["limit"] == 30
+    assert payload["expires_at"] == "2026-06-13T04:00:00Z"
+    assert verified["q"] == "Glow"
+    assert verified["limit"] == 30
+    assert verified["expires_at"] == payload["expires_at"]
+
+    with pytest.raises(ValueError):
+        ad_alerts.verify_high_loss_share_token(
+            token,
+            "2026-06-13T05:00:00Z",
+            "test-secret",
+            now=now,
+        )
+
+    with pytest.raises(ValueError):
+        ad_alerts.verify_high_loss_share_token(
+            token,
+            payload["expires_at"],
+            "test-secret",
+            now=now + timedelta(hours=25),
+        )
 
 
 def test_judge_alert_outputs_expected_conclusions():
@@ -476,7 +521,8 @@ def test_get_high_loss_ads_prioritizes_recent_spend_and_counts_consecutive_loss(
     assert "last_7d_result_count = 0" in sql
     assert "last_7d_purchase_value_usd / NULLIF(last_7d_spend_usd, 0)" in sql
     assert "ORDER BY last_7d_spend_usd DESC, today_spend_usd DESC, last_30d_spend_usd DESC" in sql
-    assert captured["params"]["limit"] == 30
+    # LIMIT 取 3 倍候选，过滤已处理项后仍能凑满展示条数
+    assert captured["params"]["limit"] == 90
     assert captured["params"]["search"] == "%Glow%"
 
 
@@ -724,3 +770,146 @@ def test_batch_fetch_problem_ad_details_images(monkeypatch):
     assert item2.product_main_image == "/medias/obj/79/medias/796/cover.png"
     assert len(query_queries) > 0
 
+
+def _high_loss_row(code: str, account: str = "1234") -> dict:
+    return {
+        "code": code,
+        "name": f"Ad {code}",
+        "ad_account_id": account,
+        "ad_account_name": "newjoyloo",
+        "country": "DE",
+        "product_id": 10,
+        "product_code": "glow-rjc",
+        "product_name": "Glow Product",
+        "product_main_image": None,
+        "first_active_date": date(2026, 6, 1),
+        "last_active_date": date(2026, 6, 12),
+        "active_days": "5",
+        "today_spend_usd": "10.00",
+        "today_purchase_value_usd": "0.00",
+        "today_result_count": "0",
+        "last_7d_spend_usd": "70.00",
+        "last_7d_purchase_value_usd": "10.00",
+        "last_7d_result_count": "1",
+        "last_30d_spend_usd": "100.00",
+        "last_30d_purchase_value_usd": "20.00",
+        "last_30d_result_count": "1",
+        "overall_spend_usd": "100.00",
+        "overall_purchase_value_usd": "20.00",
+        "overall_result_count": "1",
+    }
+
+
+def test_get_high_loss_ads_hides_handled_items_by_default(monkeypatch):
+    from appcore import ad_alert_actions, ad_alerts
+
+    captured: dict[str, object] = {}
+
+    def fake_query(sql, params=None):
+        sql_text = str(sql)
+        if "GROUP BY s.code, s.ad_account_id, s.metric_date" in sql_text:
+            return []
+        if "media_product_covers" in sql_text or "WHERE LOWER(product_code) IN" in sql_text:
+            return []
+        captured["params"] = params
+        return [_high_loss_row("ad-handled"), _high_loss_row("ad-open")]
+
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+    monkeypatch.setattr(ad_alerts, "current_meta_business_date", lambda: date(2026, 6, 12))
+    monkeypatch.setattr(
+        ad_alert_actions,
+        "get_actions",
+        lambda scope, keys: {
+            "1234:ad-handled": {"action": "resolved", "action_label": "已处理"}
+        },
+    )
+
+    _, items = ad_alerts.get_high_loss_ads(limit=30)
+
+    assert captured["params"]["limit"] == 90
+    assert [item.code for item in items] == ["ad-open"]
+    assert items[0].action is None
+
+
+def test_get_high_loss_ads_include_handled_attaches_action(monkeypatch):
+    from appcore import ad_alert_actions, ad_alerts
+
+    def fake_query(sql, params=None):
+        sql_text = str(sql)
+        if "GROUP BY s.code, s.ad_account_id, s.metric_date" in sql_text:
+            return []
+        if "media_product_covers" in sql_text or "WHERE LOWER(product_code) IN" in sql_text:
+            return []
+        return [_high_loss_row("ad-handled"), _high_loss_row("ad-open")]
+
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+    monkeypatch.setattr(ad_alerts, "current_meta_business_date", lambda: date(2026, 6, 12))
+    monkeypatch.setattr(
+        ad_alert_actions,
+        "get_actions",
+        lambda scope, keys: {
+            "1234:ad-handled": {"action": "ignored", "action_label": "已忽略"}
+        },
+    )
+
+    _, items = ad_alerts.get_high_loss_ads(limit=30, include_handled=True)
+
+    assert [item.code for item in items] == ["ad-handled", "ad-open"]
+    assert items[0].action == {"action": "ignored", "action_label": "已忽略"}
+    assert items[1].action is None
+
+
+def test_get_alerts_hides_handled_language_alerts(monkeypatch):
+    from appcore import ad_alert_actions, ad_alerts
+
+    def fake_query(sql, params=None):
+        return [
+            {
+                "product_id": 10,
+                "lang": "de",
+                "ad_spend_usd": "100.00",
+                "purchase_value_usd": "40.00",
+                "ad_roas": "0.4000",
+                "active_7d_ad_spend_usd": "12.00",
+                "computed_at": datetime(2026, 6, 12, 8, 0, 0),
+                "product_code": "ABC123",
+                "product_name": "Demo Product",
+            },
+            {
+                "product_id": 11,
+                "lang": "fr",
+                "ad_spend_usd": "100.00",
+                "purchase_value_usd": "30.00",
+                "ad_roas": "0.3000",
+                "active_7d_ad_spend_usd": "8.00",
+                "computed_at": datetime(2026, 6, 12, 8, 0, 0),
+                "product_code": "DEF456",
+                "product_name": "Other Product",
+            },
+        ]
+
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+    monkeypatch.setattr(
+        ad_alerts, "_get_active_window",
+        lambda product_id, lang: ad_alerts.ActiveWindow(None, None, 8),
+    )
+    monkeypatch.setattr(
+        ad_alerts, "_alert_trend_inputs",
+        lambda product_id, lang, end_date=None: (None, None),
+    )
+    monkeypatch.setattr(
+        ad_alerts, "_get_top_losing_ads",
+        lambda product_id, lang, threshold, limit=3: [],
+    )
+    monkeypatch.setattr(
+        ad_alert_actions,
+        "get_actions",
+        lambda scope, keys: {"10:de": {"action": "resolved", "action_label": "已处理"}},
+    )
+
+    items = ad_alerts.get_alerts(threshold=1.5)
+    assert [item.product_id for item in items] == [11]
+
+    items_all = ad_alerts.get_alerts(threshold=1.5, include_handled=True)
+    assert [item.product_id for item in items_all] == [10, 11]
+    assert items_all[0].action == {"action": "resolved", "action_label": "已处理"}

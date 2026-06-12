@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 
 from appcore import medias
@@ -132,6 +134,46 @@ def test_update_product_accepts_roas_fields(monkeypatch):
 def test_update_product_rejects_invalid_roas_number():
     with pytest.raises(ValueError):
         medias.update_product(9, purchase_price="abc")
+
+
+def test_update_product_rejects_standalone_price_that_matches_sku_cents(monkeypatch):
+    monkeypatch.setattr(
+        medias,
+        "query",
+        lambda sql, args=(): [
+            {"shopify_price": Decimal("9.99")},
+            {"shopify_price": Decimal("19.99")},
+        ],
+    )
+
+    def fail_execute(_sql, _args=()):
+        raise AssertionError("invalid standalone_price should not be written")
+
+    monkeypatch.setattr(medias, "execute", fail_execute)
+
+    with pytest.raises(ValueError, match="standalone_price.*9.99.*999"):
+        medias.update_product(9, standalone_price="999")
+
+
+def test_update_product_allows_legitimate_high_standalone_price(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        medias,
+        "query",
+        lambda sql, args=(): [{"shopify_price": Decimal("129.99")}],
+    )
+
+    def fake_execute(sql, args=()):
+        captured["sql"] = sql
+        captured["args"] = args
+        return 1
+
+    monkeypatch.setattr(medias, "execute", fake_execute)
+
+    assert medias.update_product(9, standalone_price="129.99") == 1
+    assert "standalone_price=%s" in captured["sql"]
+    assert captured["args"] == (129.99, 9)
 
 
 def test_serialize_product_includes_roas_fields_and_calculation():

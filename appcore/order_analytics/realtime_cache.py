@@ -84,7 +84,25 @@ def get_freshness_marker() -> str:
         if order_rows and order_rows[0]:
             order_part = f"{order_rows[0].get('max_id')}"
 
-        marker = f"s:{snap_part}|o:{order_part}"
+        profit_rows = oa_query(
+            "SELECT MAX(id) AS max_id, MAX(updated_at) AS max_updated "
+            "FROM order_profit_lines"
+        )
+        profit_part = ""
+        if profit_rows and profit_rows[0]:
+            profit_part = (
+                f"{profit_rows[0].get('max_id')}:"
+                f"{profit_rows[0].get('max_updated')}"
+            )
+
+        product_rows = oa_query(
+            "SELECT MAX(updated_at) AS max_updated FROM media_products"
+        )
+        product_part = ""
+        if product_rows and product_rows[0]:
+            product_part = f"{product_rows[0].get('max_updated')}"
+
+        marker = f"s:{snap_part}|o:{order_part}|p:{profit_part}|m:{product_part}"
     except Exception:
         log.debug("freshness marker query failed, using empty", exc_info=True)
         marker = ""

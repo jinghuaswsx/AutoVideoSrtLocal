@@ -144,6 +144,30 @@ def test_calculate_line_profit_estimates_purchase_when_missing():
     assert result["profit_usd"] is not None
 
 
+def test_calculate_line_profit_preserves_purchase_sanity_basis():
+    line = _complete_line_input(
+        product_purchase_price_cny=None,
+        purchase_price_sanity={
+            "reason": "purchase_usd_exceeds_line_revenue",
+            "source": "order_snapshot",
+            "purchase_price_cny": 680.0,
+            "purchase_usd": 100.0,
+            "line_revenue_usd": 17.0,
+        },
+    )
+
+    result = calculate_line_profit(line, rmb_per_usd=Decimal("6.80"))
+
+    assert result["status"] == "incomplete"
+    assert result["cost_basis"]["purchase_price_sanity"] == {
+        "reason": "purchase_usd_exceeds_line_revenue",
+        "source": "order_snapshot",
+        "purchase_price_cny": 680.0,
+        "purchase_usd": 100.0,
+        "line_revenue_usd": 17.0,
+    }
+
+
 def test_calculate_line_profit_estimates_shipping_when_missing():
     """缺物流成本 → 用 revenue × 20% 估算。"""
     line = _complete_line_input(shipping_cost_cny=None, shipping_cost_source=None)

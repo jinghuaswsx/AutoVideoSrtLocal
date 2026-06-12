@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
+import pytest
+
 from tools import order_profit_backfill as opb
 
 
@@ -62,6 +64,49 @@ def test_process_line_uses_meta_business_date_for_ad_allocation(monkeypatch):
         "units_date": date(2026, 4, 30),
         "spend_date": date(2026, 4, 30),
     }
+
+
+def test_process_line_downgrades_purchase_snapshot_that_exceeds_revenue(monkeypatch):
+    """A purchase snapshot larger than line revenue is safer as an estimate."""
+    monkeypatch.setattr(opb, "get_sku_daily_units", lambda **kwargs: 1)
+    monkeypatch.setattr(opb, "get_sku_daily_ad_spend", lambda **kwargs: 0)
+
+    line = {
+        "dxm_order_line_id": 301,
+        "product_id": 697,
+        "quantity": 1,
+        "line_amount": Decimal("17.00"),
+        "order_amount": Decimal("17.00"),
+        "ship_amount": Decimal("0.00"),
+        "buyer_country": "US",
+        "order_paid_at": datetime(2026, 6, 12, 18, 30, 0),
+        "paid_at": datetime(2026, 6, 12, 18, 30, 0),
+        "meta_business_date": date(2026, 6, 12),
+        "dxm_package_id": "PKG-BAD-PURCHASE",
+        "logistic_fee": None,
+        "purchase_price": Decimal("680.00"),
+        "purchase_price_snapshot_cny": Decimal("680.00"),
+        "purchase_price_snapshot_at": datetime(2026, 6, 12, 18, 40, 4),
+        "packet_cost_actual": Decimal("5.00"),
+        "packet_cost_estimated": None,
+    }
+
+    result, _business_date = opb._process_line(
+        line,
+        order_total_amount=17.0,
+        order_shipping=0.0,
+        sku_units_cache={},
+        sku_spend_cache={},
+        rmb_per_usd=Decimal("6.80"),
+        return_reserve_rate=Decimal("0.01"),
+    )
+
+    assert result["status"] == "incomplete"
+    assert "purchase_price" in result["missing_fields"]
+    assert result["purchase_usd"] == pytest.approx(1.7, abs=0.01)
+    sanity = result["cost_basis"]["purchase_price_sanity"]
+    assert sanity["reason"] == "purchase_usd_exceeds_line_revenue"
+    assert sanity["source"] == "order_snapshot"
 
 
 def test_backfill_uses_daily_exchange_rate_per_business_date(monkeypatch):

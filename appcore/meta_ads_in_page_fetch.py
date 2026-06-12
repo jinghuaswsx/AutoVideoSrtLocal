@@ -71,6 +71,20 @@ class MetaAdsTokenExpiredError(MetaAdsInPageFetchError):
     """
 
 
+def is_transient_in_page_fetch_error(exc: Exception) -> bool:
+    """Return whether an in-page fetch error is worth one fresh-session retry.
+
+    Docs-anchor:
+    docs/superpowers/specs/2026-06-12-meta-realtime-xhr-fetch-retry-fix.md
+    """
+    if not isinstance(exc, MetaAdsInPageFetchError):
+        return False
+    if isinstance(exc, MetaAdsTokenExpiredError):
+        return False
+    text = f"{exc} {getattr(exc, 'body', '')}"
+    return "TypeError: Failed to fetch" in text
+
+
 # JS executed inside the page. Pages all the result rows for one URL,
 # returns {"rows": [...], "pages": N} or raises with status + body.
 _FETCH_JS = """

@@ -14,6 +14,7 @@
 <span class="oa-page-heading">数据分析</span>
 <span class="oa-tabs oa-tabs-topbar" role="tablist" aria-label="数据分析模块">
   <button type="button" class="oa-tab {% if active_tab == 'realtime' %}active{% endif %}" data-tab="realtime" role="tab" aria-selected="{% if active_tab == 'realtime' %}true{% else %}false{% endif %}">实时大盘</button>
+  <button type="button" class="oa-tab {% if active_tab == 'logisticsAlert' %}active{% endif %}" data-tab="logisticsAlert" role="tab" aria-selected="{% if active_tab == 'logisticsAlert' %}true{% else %}false{% endif %}">物流费预警</button>
   <button type="button" class="oa-tab {% if active_tab == 'newProductLaunch' %}active{% endif %}" data-tab="newProductLaunch" role="tab" aria-selected="{% if active_tab == 'newProductLaunch' %}true{% else %}false{% endif %}">新品投放分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
@@ -2278,6 +2279,7 @@
 
 <nav class="oa-mobile-tabs" role="tablist" aria-label="数据分析模块（移动）">
   <button type="button" class="oa-tab {% if active_tab == 'realtime' %}active{% endif %}" data-tab="realtime" role="tab" aria-selected="{% if active_tab == 'realtime' %}true{% else %}false{% endif %}">实时大盘</button>
+  <button type="button" class="oa-tab {% if active_tab == 'logisticsAlert' %}active{% endif %}" data-tab="logisticsAlert" role="tab" aria-selected="{% if active_tab == 'logisticsAlert' %}true{% else %}false{% endif %}">物流费预警</button>
   <button type="button" class="oa-tab {% if active_tab == 'newProductLaunch' %}active{% endif %}" data-tab="newProductLaunch" role="tab" aria-selected="{% if active_tab == 'newProductLaunch' %}true{% else %}false{% endif %}">新品投放分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
@@ -2705,6 +2707,83 @@
   </div>
 </section>
 
+<section class="oa-panel {% if active_tab == 'logisticsAlert' %}active{% endif %}" id="panelLogisticsAlert">
+  <!-- Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md -->
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row">
+      {{ analytics_date_range('物流费预警', 'logisticsAlertStartDate', 'logisticsAlertEndDate', 'aria-label="物流费预警开始日期"', 'aria-label="物流费预警结束日期"') }}
+      <div class="logistics-alert-threshold">
+        <label class="oar-site-filter-label" for="logisticsAlertThreshold">物流费占比超过</label>
+        <input type="number" id="logisticsAlertThreshold" min="0.01" step="0.01" value="20" inputmode="decimal" aria-label="物流费占比阈值">
+        <span class="oar-note">%</span>
+      </div>
+      <div class="oad-segmented" role="group" aria-label="物流费占比快捷筛选">
+        <button type="button" class="oad-seg is-active" data-logistics-alert-threshold="20" aria-pressed="true">超过 20%</button>
+        <button type="button" class="oad-seg" data-logistics-alert-threshold="30" aria-pressed="false">超过 30%</button>
+      </div>
+      <button type="button" class="oad-btn-primary" id="logisticsAlertRefresh">查询</button>
+    </div>
+    <div class="oar-note" id="logisticsAlertNote">按订单盈亏明细统计：物流费 / 订单行总销售额，包含店小秘同步的实际物流费与估算物流费。</div>
+  </div>
+
+  <div class="oa-stats oar-summary-stats" id="logisticsAlertSummary">
+    <div class="oar-summary-row oar-summary-row-main">
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">超标产品数</div>
+        <div class="oa-stat-value" id="logisticsAlertProductCount">0</div>
+        <div class="oa-stat-sub">按产品聚合</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">超标订单行</div>
+        <div class="oa-stat-value" id="logisticsAlertLineCount">0</div>
+        <div class="oa-stat-sub">点击产品看明细</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">超标销售额</div>
+        <div class="oa-stat-value" id="logisticsAlertRevenue">$0.00</div>
+        <div class="oa-stat-sub">订单行总销售额</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">物流费</div>
+        <div class="oa-stat-value" id="logisticsAlertShipping">$0.00</div>
+        <div class="oa-stat-sub" id="logisticsAlertRatio">物流费占比 -</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">物流费预警产品列表 <span class="oar-page-info" id="logisticsAlertPageInfo">加载中...</span></div>
+      <div class="oar-note">默认展示物流费占比超过 20% 的产品，按超标占比从高到低排序。</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table oar-compact-table">
+        <thead>
+          <tr>
+            <th>产品</th>
+            <th>产品 Code</th>
+            <th>超标订单行</th>
+            <th>包裹数</th>
+            <th>总销售额</th>
+            <th>物流费</th>
+            <th>物流费占比</th>
+            <th>最高单行占比</th>
+            <th>费用口径</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="logisticsAlertProductBody">
+          <tr><td colspan="10" class="oad-loading">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="logistics-alert-actions">
+      <button type="button" class="oad-row-action" id="logisticsAlertPrev">上一页</button>
+      <button type="button" class="oad-row-action" id="logisticsAlertNext">下一页</button>
+    </div>
+  </div>
+</section>
+
 <section class="oa-panel {% if active_tab == 'newProductLaunch' %}active{% endif %}" id="panelNewProductLaunch">
   <!-- Docs-anchor: docs/superpowers/specs/2026-06-11-new-product-launch-subtabs-realtime-alignment.md -->
   <div class="oad-toolbar">
@@ -3068,6 +3147,54 @@
                     background: var(--bg-card); border-color: var(--border-strong);
                     color: var(--accent); }
   .oad-row-action:hover { background: var(--accent-subtle); border-color: var(--accent); color: var(--accent); }
+  .logistics-alert-threshold {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .logistics-alert-threshold input {
+    width: 88px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--fg);
+    font-size: var(--text-sm);
+  }
+  .logistics-alert-row {
+    cursor: pointer;
+  }
+  .logistics-alert-row:hover td {
+    background: var(--accent-subtle);
+  }
+  .logistics-alert-source {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-full);
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .logistics-alert-source.is-estimated {
+    background: var(--warning-bg);
+    color: var(--warning-fg);
+  }
+  .logistics-alert-ratio {
+    color: var(--danger-fg);
+    font-weight: 800;
+  }
+  .logistics-alert-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+  }
   .oa-warning-banner {
     margin: 0 0 var(--space-3);
     padding: var(--space-3) var(--space-4);
@@ -5221,6 +5348,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
   var tabs = document.querySelectorAll('.oa-tab');
   var tabUrls = {
     'realtime': '/order-analytics/realtime',
+    'logisticsAlert': '/order-analytics/logistics-alert',
     'newProductLaunch': '/order-analytics/new-product-launch',
     'dxmOrders': '/order-analytics/dxm-orders-view',
     'ads': '/order-analytics/ads-view',
@@ -6101,6 +6229,9 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
         syncDxmRangeSelection();
         loadDxmOrders(1);
         return;
+      case 'logisticsAlertStartDate':
+        loadLogisticsAlertProducts(1);
+        return;
       case 'adStartDate':
         syncAdRangeSelection();
         if (typeof window.loadAdSummary === 'function') window.loadAdSummary();
@@ -6315,6 +6446,11 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     unallocatedAd: 0
   };
   var newProductLaunchLastCampaignRows = [];
+  var logisticsAlertState = {
+    page: 1,
+    pageSize: 100,
+    thresholdPct: 20
+  };
 
   function normalizeLaunchWindowDays(value) {
     var allowed = ['3', '7', '15', '30', '60'];
@@ -6511,6 +6647,40 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
   if (nplCampaignFilterClear) {
     nplCampaignFilterClear.addEventListener('click', clearNewProductLaunchCampaignFilter);
   }
+  var logisticsAlertRefresh = document.getElementById('logisticsAlertRefresh');
+  if (logisticsAlertRefresh) {
+    logisticsAlertRefresh.addEventListener('click', function() {
+      loadLogisticsAlertProducts(1);
+    });
+  }
+  var logisticsAlertThreshold = document.getElementById('logisticsAlertThreshold');
+  if (logisticsAlertThreshold) {
+    logisticsAlertThreshold.addEventListener('change', function() {
+      syncLogisticsAlertThresholdButtons();
+      loadLogisticsAlertProducts(1);
+    });
+  }
+  document.querySelectorAll('[data-logistics-alert-threshold]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var value = btn.dataset.logisticsAlertThreshold || '20';
+      var input = document.getElementById('logisticsAlertThreshold');
+      if (input) input.value = value;
+      syncLogisticsAlertThresholdButtons();
+      loadLogisticsAlertProducts(1);
+    });
+  });
+  var logisticsAlertPrev = document.getElementById('logisticsAlertPrev');
+  if (logisticsAlertPrev) {
+    logisticsAlertPrev.addEventListener('click', function() {
+      if (logisticsAlertState.page > 1) loadLogisticsAlertProducts(logisticsAlertState.page - 1);
+    });
+  }
+  var logisticsAlertNext = document.getElementById('logisticsAlertNext');
+  if (logisticsAlertNext) {
+    logisticsAlertNext.addEventListener('click', function() {
+      loadLogisticsAlertProducts(logisticsAlertState.page + 1);
+    });
+  }
   var initialTab = "{{ active_tab }}";
   function initActiveOrderAnalyticsTab() {
     setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
@@ -6577,6 +6747,8 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
       loadRealtimeOverview();
     } else if (initialTab === 'newProductLaunch') {
       initNewProductLaunch();
+    } else if (initialTab === 'logisticsAlert') {
+      initLogisticsAlert();
     } else if (initialTab === 'countryDashboard') {
       initCountryDashboard();
     } else if (initialTab === 'dxmOrders') {
@@ -6584,6 +6756,189 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     } else {
       loadRealtimeOverview();
     }
+  }
+
+  function initLogisticsAlert() {
+    var params = new URLSearchParams(window.location.search);
+    var today = localDateString(new Date());
+    setInputValue('logisticsAlertStartDate', params.get('start_date') || today);
+    setInputValue('logisticsAlertEndDate', params.get('end_date') || today);
+    var threshold = params.get('threshold_pct') || '20';
+    var input = document.getElementById('logisticsAlertThreshold');
+    if (input) input.value = threshold;
+    syncLogisticsAlertThresholdButtons();
+    loadLogisticsAlertProducts(parseInt(params.get('page'), 10) || 1);
+  }
+
+  function logisticsAlertThresholdValue() {
+    var input = document.getElementById('logisticsAlertThreshold');
+    var value = input ? parseFloat(input.value) : 20;
+    if (!isFinite(value) || value <= 0) value = 20;
+    logisticsAlertState.thresholdPct = value;
+    if (input) input.value = String(value);
+    return value;
+  }
+
+  function syncLogisticsAlertThresholdButtons() {
+    var value = String(logisticsAlertThresholdValue());
+    document.querySelectorAll('[data-logistics-alert-threshold]').forEach(function(btn) {
+      var active = String(parseFloat(btn.dataset.logisticsAlertThreshold || '0')) === value;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  function logisticsAlertParams(page) {
+    var today = localDateString(new Date());
+    var start = document.getElementById('logisticsAlertStartDate');
+    var end = document.getElementById('logisticsAlertEndDate');
+    var params = new URLSearchParams();
+    params.set('start_date', (start && start.value) || today);
+    params.set('end_date', (end && end.value) || today);
+    params.set('threshold_pct', String(logisticsAlertThresholdValue()));
+    params.set('page', String(page || 1));
+    params.set('page_size', String(logisticsAlertState.pageSize || 100));
+    return params;
+  }
+
+  function updateLogisticsAlertUrl(page) {
+    var params = logisticsAlertParams(page || logisticsAlertState.page || 1);
+    var next = '/order-analytics/logistics-alert?' + params.toString();
+    if (window.location.pathname + window.location.search !== next) {
+      window.history.replaceState(null, '', next);
+    }
+  }
+
+  function formatLogisticsUsd(value, digits) {
+    var n = parseFloat(value);
+    if (!isFinite(n)) n = 0;
+    return '$' + n.toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
+
+  function formatLogisticsPct(value) {
+    var n = parseFloat(value);
+    if (!isFinite(n)) return '-';
+    return n.toFixed(2) + '%';
+  }
+
+  function logisticsAlertSourceLabel(source) {
+    var labels = {
+      order_logistic_fee: '实际物流费',
+      product_actual: '产品实际物流费',
+      product_estimated: '产品估算物流费',
+      estimated: '估算物流费',
+      unknown: '未知口径'
+    };
+    return labels[source] || source || '未知口径';
+  }
+
+  function renderLogisticsAlertSourceCounts(counts) {
+    counts = counts || {};
+    var keys = Object.keys(counts);
+    if (!keys.length) return '<span class="logistics-alert-source">-</span>';
+    return keys.map(function(key) {
+      var cls = key === 'estimated' || key === 'product_estimated' ? ' logistics-alert-source is-estimated' : ' logistics-alert-source';
+      return '<span class="' + cls.trim() + '">' + escapeHtml(logisticsAlertSourceLabel(key)) + ' ' + fmtInt(counts[key]) + '</span>';
+    }).join(' ');
+  }
+
+  function logisticsAlertDetailUrl(productId, page) {
+    var params = logisticsAlertParams(page || 1);
+    params.delete('page_size');
+    return '/order-analytics/logistics-alert/products/' + encodeURIComponent(productId) + '?' + params.toString();
+  }
+
+  function setLogisticsAlertSummary(summary) {
+    summary = summary || {};
+    setRealtimeProfitText('logisticsAlertProductCount', fmtInt(summary.product_count || 0));
+    setRealtimeProfitText('logisticsAlertLineCount', fmtInt(summary.alert_line_count || 0));
+    setRealtimeProfitText('logisticsAlertRevenue', fmtMoney(summary.revenue_usd || 0));
+    setRealtimeProfitText('logisticsAlertShipping', formatLogisticsUsd(summary.shipping_cost_usd || 0, 4));
+    setRealtimeProfitText('logisticsAlertRatio', '物流费占比 ' + formatLogisticsPct(summary.shipping_ratio_pct));
+  }
+
+  function setLogisticsAlertPageControls(pageInfo) {
+    pageInfo = pageInfo || {};
+    var current = parseInt(pageInfo.page, 10) || 1;
+    var pages = parseInt(pageInfo.pages, 10) || 0;
+    var total = parseInt(pageInfo.total, 10) || 0;
+    logisticsAlertState.page = current;
+    var info = document.getElementById('logisticsAlertPageInfo');
+    if (info) {
+      info.textContent = total
+        ? '第 ' + current + ' / ' + pages + ' 页 · 共 ' + fmtInt(total) + ' 个产品'
+        : '暂无超标产品';
+    }
+    var prev = document.getElementById('logisticsAlertPrev');
+    var next = document.getElementById('logisticsAlertNext');
+    if (prev) prev.disabled = current <= 1;
+    if (next) next.disabled = !pages || current >= pages;
+  }
+
+  function renderLogisticsAlertProducts(data) {
+    setLogisticsAlertSummary(data.summary || {});
+    setLogisticsAlertPageControls(data.page || {});
+    var body = document.getElementById('logisticsAlertProductBody');
+    if (!body) return;
+    var rows = data.products || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="10" class="oad-empty">当前日期范围内没有超过阈值的物流费订单</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(row) {
+      var url = logisticsAlertDetailUrl(row.product_id, 1);
+      var productName = row.product_name || ('产品 ID ' + row.product_id);
+      return '<tr class="logistics-alert-row" data-logistics-alert-url="' + escapeHtml(url) + '">' +
+        '<td><strong>' + escapeHtml(productName) + '</strong><div class="oar-note">ID: ' + escapeHtml(row.product_id) + '</div></td>' +
+        '<td>' + escapeHtml(row.product_code || '-') + '</td>' +
+        '<td>' + fmtInt(row.alert_line_count || 0) + '</td>' +
+        '<td>' + fmtInt(row.package_count || 0) + '</td>' +
+        '<td>' + fmtMoney(row.revenue_usd || 0) + '</td>' +
+        '<td>' + formatLogisticsUsd(row.shipping_cost_usd || 0, 4) + '</td>' +
+        '<td class="logistics-alert-ratio">' + formatLogisticsPct(row.shipping_ratio_pct) + '</td>' +
+        '<td>' + formatLogisticsPct(row.max_shipping_ratio_pct) + '</td>' +
+        '<td>' + renderLogisticsAlertSourceCounts(row.shipping_source_counts || {}) + '</td>' +
+        '<td><a class="oad-row-action" href="' + escapeHtml(url) + '">查看订单</a></td>' +
+      '</tr>';
+    }).join('');
+    body.querySelectorAll('[data-logistics-alert-url]').forEach(function(row) {
+      row.addEventListener('click', function(evt) {
+        if (evt.target && evt.target.closest && evt.target.closest('a,button')) return;
+        window.location.href = row.getAttribute('data-logistics-alert-url');
+      });
+    });
+  }
+
+  function loadLogisticsAlertProducts(page) {
+    var targetPage = page || 1;
+    var body = document.getElementById('logisticsAlertProductBody');
+    if (body) body.innerHTML = '<tr><td colspan="10" class="oad-loading">加载中...</td></tr>';
+    var info = document.getElementById('logisticsAlertPageInfo');
+    if (info) info.textContent = '加载中...';
+    updateLogisticsAlertUrl(targetPage);
+    fetch('/order-analytics/logistics-alert/data?' + logisticsAlertParams(targetPage).toString(), {
+      credentials: 'same-origin'
+    })
+      .then(function(resp) {
+        return resp.json().then(function(payload) {
+          if (!resp.ok || payload.ok === false) {
+            throw new Error(payload.detail || payload.error || '物流费预警加载失败');
+          }
+          return payload;
+        });
+      })
+      .then(function(data) {
+        renderLogisticsAlertProducts(data);
+      })
+      .catch(function(err) {
+        if (body) {
+          body.innerHTML = '<tr><td colspan="10" class="oad-error">' + escapeHtml(err.message || '物流费预警加载失败') + '</td></tr>';
+        }
+        setLogisticsAlertPageControls({page: 1, pages: 0, total: 0});
+      });
   }
 
   function localDateString(value) {
