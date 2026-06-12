@@ -99,3 +99,22 @@ def test_ad_alert_template_problem_column_picker_contract():
     assert '<th colspan="3" class="oc-ad-alert-col-yesterday">昨天</th>' in source
     assert "problemMetricCells(m.yesterday, 'yesterday')" in source
     assert "oc-ad-alert-col-' + groupKey" in source
+
+
+def test_ad_alert_template_ai_eval_export_contract():
+    template = Path("web/templates/ad_alerts.html")
+    source = template.read_text(encoding="utf-8")
+
+    assert ".oc-ad-alert-btn-sm" in source
+    assert "evalCacheKey: ''" in source
+    assert "state.evalCacheKey = cacheKey" in source
+    assert "oc-ad-alert-evaluation-actions" in source
+    assert 'id="adAlertEvalCopyBtn"' in source
+    assert "复制 JSON" in source
+    assert "function bindEvaluationCopy(container, cacheKey)" in source
+    assert "var data = adEvaluationCache[cacheKey]" in source
+    assert "JSON.stringify(data, null, 2)" in source
+    assert "navigator.clipboard.writeText(json)" in source
+    assert "document.execCommand('copy')" in source
+    assert "showToast('已复制评估结果', 'success')" in source
+    assert "showToast('复制失败，请手动选择复制', 'error')" in source

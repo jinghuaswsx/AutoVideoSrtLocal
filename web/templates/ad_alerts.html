@@ -208,6 +208,11 @@
   min-height: 36px;
   padding: 0 16px;
 }
+.oc-ad-alert-btn-sm {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
 .oc-ad-alert-btn:hover {
   background: var(--oc-ad-alert-subtle);
   border-color: var(--oc-ad-alert-blue);
@@ -863,6 +868,10 @@
   font-size: 13px;
   font-weight: 800;
 }
+.oc-ad-alert-evaluation-actions {
+  display: flex;
+  justify-content: flex-end;
+}
 .oc-ad-alert-evaluation-group {
   display: grid;
   gap: 5px;
@@ -1100,7 +1109,8 @@
     problemLoaded: false,
     problemLevel: 'campaign',
     problemSearch: '',
-    visibleCols: readVisibleColumns()
+    visibleCols: readVisibleColumns(),
+    evalCacheKey: ''
   };
   var adEvaluationCache = {};
   var timer = null;
@@ -1567,10 +1577,12 @@
     var safeThreshold = Number(threshold || state.threshold || 0);
     var cacheKey = String(productId) + ':' + normalizedLang + ':' + safeThreshold.toFixed(2);
     if (adEvaluationCache[cacheKey]) {
-      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl);
+      state.evalCacheKey = cacheKey;
+      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl, cacheKey);
       return;
     }
 
+    state.evalCacheKey = cacheKey;
     btn.disabled = true;
     btn.textContent = '分析中';
     fetch('/ad-alerts/api/evaluate', {
@@ -1598,7 +1610,7 @@
         var evaluations = data.evaluations || [];
         adEvaluationCache[cacheKey] = evaluations;
         showToast('评估完成，共 ' + evaluations.length + ' 条建议', 'info');
-        renderAdEvaluations(evaluations, resultEl);
+        renderAdEvaluations(evaluations, resultEl, cacheKey);
       })
       .catch(function(error) {
         resultEl.innerHTML = '<div class="oc-ad-alert-state">评估失败：' + html(error.message || '未知错误') + '</div>';
@@ -1615,9 +1627,11 @@
     if (!btn || !resultEl) return;
     var cacheKey = String(productId) + ':' + String(lang || '').toLowerCase() + ':' + Number(state.threshold || 0).toFixed(2);
     if (adEvaluationCache[cacheKey]) {
-      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl);
+      state.evalCacheKey = cacheKey;
+      renderAdEvaluations(adEvaluationCache[cacheKey], resultEl, cacheKey);
       return;
     }
+    state.evalCacheKey = cacheKey;
     btn.disabled = true;
     btn.textContent = '分析中';
     resultEl.hidden = false;
@@ -1647,7 +1661,7 @@
         var evaluations = data.evaluations || [];
         adEvaluationCache[cacheKey] = evaluations;
         showToast('评估完成，共 ' + evaluations.length + ' 条建议', 'info');
-        renderAdEvaluations(evaluations, resultEl);
+        renderAdEvaluations(evaluations, resultEl, cacheKey);
       })
       .catch(function(error) {
         resultEl.hidden = false;
@@ -1659,12 +1673,13 @@
       });
   }
 
-  function renderAdEvaluations(evaluations, container) {
+  function renderAdEvaluations(evaluations, container, cacheKey) {
     container.hidden = false;
     if (!evaluations.length) {
       container.innerHTML = '<div class="oc-ad-alert-state">暂无需要评估的亏损广告</div>';
       return;
     }
+    cacheKey = cacheKey || state.evalCacheKey;
     var groups = { '关停': [], '优化': [], '观察': [] };
     evaluations.forEach(function(item) {
       var key = groups[item.judgment] ? item.judgment : '观察';
@@ -1675,7 +1690,13 @@
       { key: '优化', title: '建议优化', color: 'var(--oc-ad-alert-orange)' },
       { key: '观察', title: '建议观察', color: 'var(--oc-ad-alert-muted)' }
     ];
-    var htmlParts = ['<div class="oc-ad-alert-evaluation"><div class="oc-ad-alert-evaluation-title">AI 评估结果</div>'];
+    var htmlParts = [
+      '<div class="oc-ad-alert-evaluation">'
+      + '<div class="oc-ad-alert-evaluation-title">AI 评估结果</div>'
+      + '<div class="oc-ad-alert-evaluation-actions">'
+      + '<button class="oc-ad-alert-btn oc-ad-alert-btn-sm" type="button" id="adAlertEvalCopyBtn">📋 复制 JSON</button>'
+      + '</div>'
+    ];
     labels.forEach(function(group) {
       var items = groups[group.key] || [];
       if (!items.length) return;
@@ -1690,6 +1711,47 @@
     });
     htmlParts.push('</div>');
     container.innerHTML = htmlParts.join('');
+    bindEvaluationCopy(container, cacheKey);
+  }
+
+  function fallbackCopyText(text) {
+    var textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      if (document.execCommand('copy')) {
+        showToast('已复制评估结果', 'success');
+      } else {
+        showToast('复制失败，请手动选择复制', 'error');
+      }
+    } catch (error) {
+      showToast('复制失败，请手动选择复制', 'error');
+    } finally {
+      textarea.remove();
+    }
+  }
+
+  function bindEvaluationCopy(container, cacheKey) {
+    var button = container.querySelector('#adAlertEvalCopyBtn');
+    if (!button) return;
+    button.addEventListener('click', function() {
+      var data = adEvaluationCache[cacheKey];
+      if (!data) return;
+      var json = JSON.stringify(data, null, 2);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json).then(function() {
+          showToast('已复制评估结果', 'success');
+        }).catch(function() {
+          fallbackCopyText(json);
+        });
+        return;
+      }
+      fallbackCopyText(json);
+    });
   }
 
   function detailCell(label, value) {
