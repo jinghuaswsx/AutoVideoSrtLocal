@@ -545,10 +545,20 @@
     });
   }
 
-  function renderProductLangAdBar(coverage, langAdSummary, adSummary, productId) {
+  function renderProductLangAdBar(coverage, langAdSummary, adSummary, productId, roasCalculation) {
     const coverageMap = coverage || {};
     const langSummary = langAdSummary || {};
     const productSummary = adSummary || {};
+
+    function fmtBreakevenRoas(value) {
+      if (value === null || value === undefined || value === '') return '—';
+      const num = Number(value);
+      if (!isFinite(num)) return '—';
+      return num.toFixed(2);
+    }
+    const roasCalc = roasCalculation || {};
+    const breakevenRoas = roasCalc.effective_roas;
+
     const lines = mediaProductLangOrder(coverageMap, langSummary).map((code) => {
       const c = coverageMap[code] || { items: 0, copy: 0, cover: false };
       const summary = langSummary[code] || {};
@@ -576,14 +586,25 @@
       ? lines.join('')
       : '<div class="oc-lang-empty oc-country-metrics-line muted">—</div>';
 
-    const btnHtml = productId
-      ? `<button type="button" class="oc-btn text sm" data-product-ad-orders-report="${productId}" style="color: var(--oc-accent); font-weight: 600; padding: 0; cursor: pointer;">查看数据</button>`
+    const breakevenHtml = (breakevenRoas !== undefined && breakevenRoas !== null)
+      ? `<div style="font-size: 13.5px; color: #000; font-weight: 700; white-space: nowrap; margin-top: 4px;">保本 ROAS ${fmtBreakevenRoas(breakevenRoas)}</div>`
       : '';
+
+    let leftColHtml = '';
+    if (productId) {
+      leftColHtml = `<div style="display: flex; flex-direction: column; align-items: flex-start; justify-content: center;">`
+        + `<button type="button" class="oc-btn text sm" data-product-ad-orders-report="${productId}" style="color: var(--oc-accent); font-weight: 600; padding: 0; cursor: pointer;">查看数据</button>`
+        + breakevenHtml
+        + `</div>`;
+    } else {
+      leftColHtml = breakevenHtml;
+    }
+
     const summaryTitle = `订单ROAS: ${productSummary.overall_roas ?? '—'} / 总消耗 ${productSummary.ad_spend_usd ?? '—'} / 口径: 订单销售额+运费 / 产品总广告消耗`;
 
     return `<div class="oc-lang-bar oc-country-metrics-bar">`
       + `<div class="oc-lang-summary oc-country-metrics-summary" title="${escapeHtml(summaryTitle)}">`
-      + `<div style="display: flex; align-items: center;">${btnHtml}</div>`
+      + `<div style="display: flex; align-items: center;">${leftColHtml}</div>`
       + `<div></div>`
       + `<div class="oc-lang-roas">`
       + `<div class="oc-lang-roas-block"><span class="oc-lang-label">订单ROAS</span><strong style="color: #2563eb;">${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
@@ -4029,7 +4050,7 @@
             <button type="button" class="material-workbench-btn" data-material-workbench="${p.id}" title="素材工作台">素材工作台</button>
           </div>
         </td>
-        <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary, p.id)}</td>
+        <td>${renderProductLangAdBar(p.lang_coverage, p.lang_ad_summary, p.ad_summary, p.id, p.roas_calculation)}</td>
         <td>${renderProductOrderStatsBar(p.order_stats, p.lang_coverage, p.lang_ad_summary)}</td>
         <td class="delivery-status-cell">${renderDeliveryStatus(p)}</td>
         <td class="muted mono product-time-cell">${timeCell}</td>
