@@ -594,13 +594,19 @@
     const parts = [];
     if (purchasePrice !== null && purchasePrice !== undefined && purchasePrice !== '') {
       parts.push(`采购: ¥${Number(purchasePrice).toFixed(1)}`);
+    } else {
+      parts.push(`采购: ¥-`);
     }
     if (packetCost !== null && packetCost !== undefined && packetCost !== '') {
       const isActual = productObj.packet_cost_actual !== null && productObj.packet_cost_actual !== undefined;
       parts.push(`物流: ¥${Number(packetCost).toFixed(1)}${isActual ? ' (实)' : ' (估)'}`);
+    } else {
+      parts.push(`物流: ¥-`);
     }
     if (breakevenRoas !== undefined && breakevenRoas !== null && breakevenRoas !== '') {
       parts.push(`保本 ROAS ${fmtBreakevenRoas(breakevenRoas)}`);
+    } else {
+      parts.push(`保本 ROAS -`);
     }
     const infoText = parts.join(' | ');
 
