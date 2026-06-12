@@ -1605,6 +1605,18 @@
       });
     });
 
+    const clearKeywordBtn = document.getElementById('btn-clear-keyword');
+    if (clearKeywordBtn) {
+      clearKeywordBtn.addEventListener('click', () => {
+        const keywordInput = document.getElementById('f-keyword');
+        if (keywordInput) {
+          keywordInput.value = '';
+        }
+        state.page = 1;
+        load();
+      });
+    }
+
     document.getElementById('btn-reset').addEventListener('click', () => {
       document.querySelectorAll('.push-toolbar input').forEach(i => (i.value = ''));
       document.getElementById('f-status').value = 'pending';
