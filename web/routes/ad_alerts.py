@@ -48,6 +48,24 @@ def list_page():
     threshold = ad_alerts.get_threshold()
     return render_template(
         "ad_alerts.html",
+        active_tab="alerts",
+        threshold=threshold,
+        alert_counts={},
+        SEVERITY_LABELS=ad_alerts.SEVERITY_LABELS,
+        TREND_LABELS=ad_alerts.TREND_LABELS,
+        PHASE_LABELS=ad_alerts.PHASE_LABELS,
+    )
+
+
+@bp.route("/problem")
+@login_required
+@admin_required
+def problem_page_route():
+    """问题广告独立页面。"""
+    threshold = ad_alerts.get_threshold()
+    return render_template(
+        "ad_alerts.html",
+        active_tab="problem",
         threshold=threshold,
         alert_counts={},
         SEVERITY_LABELS=ad_alerts.SEVERITY_LABELS,
@@ -404,12 +422,16 @@ def api_products():
     lang = (request.args.get("lang") or "").strip().lower() or None
     severity = _parse_severity(request.args.get("severity"))
     search = (request.args.get("search") or "").strip() or None
+    start_date = (request.args.get("start_date") or "").strip() or None
+    end_date = (request.args.get("end_date") or "").strip() or None
 
     items = ad_alerts.get_aggregated_products(
         threshold=threshold,
         lang=lang,
         severity=severity,
         search=search,
+        start_date=start_date,
+        end_date=end_date,
     )
     return jsonify({
         "items": [_aggregated_product_to_dict(item) for item in items],

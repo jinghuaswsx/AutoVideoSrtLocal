@@ -334,3 +334,132 @@ def test_get_problem_ads_uses_realtime_today_and_aggregates_windows(monkeypatch)
         "limit": 20,
         "search": "%Glow%",
     }
+
+
+def test_get_alerts_dynamically_date_range(monkeypatch):
+    from appcore import ad_alerts
+
+    captured_sqls: list[str] = []
+    captured_params: list[dict] = []
+
+    def fake_query(sql, params=None):
+        captured_sqls.append(sql)
+        captured_params.append(params or {})
+        return [
+            {
+                "product_id": 10,
+                "lang": "de",
+                "ad_spend_usd": 150.00,
+                "purchase_value_usd": 50.00,
+                "ad_roas": 0.3333,
+                "active_7d_ad_spend_usd": 12.00,
+                "computed_at": datetime(2026, 6, 11, 8, 0, 0),
+                "product_code": "ABC123",
+                "product_name": "Demo Product",
+                "store_code": "DE01",
+            }
+        ]
+
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+    monkeypatch.setattr(
+        ad_alerts,
+        "_get_active_window",
+        lambda product_id, lang: ad_alerts.ActiveWindow(None, None, 8),
+    )
+    monkeypatch.setattr(
+        ad_alerts,
+        "_alert_trend_inputs",
+        lambda product_id, lang, end_date=None: (None, None),
+    )
+
+    items = ad_alerts.get_alerts(
+        threshold=1.5,
+        lang="de",
+        start_date="2026-06-01",
+        end_date="2026-06-10",
+    )
+
+    assert len(captured_sqls) == 1
+    assert "media_product_lang_ad_summary_cache" not in captured_sqls[0]
+    assert "meta_ad_daily_ad_metrics" in captured_sqls[0]
+    assert captured_params[0]["start_date"] == "2026-06-01"
+    assert captured_params[0]["end_date"] == "2026-06-10"
+    assert len(items) == 1
+    assert items[0].product_id == 10
+    assert items[0].estimated_loss == -100.0
+
+
+def test_get_alerts_filters_out_profit_unless_worsening_and_huge_spend(monkeypatch):
+    from appcore import ad_alerts
+
+    # 我们模拟 query 返回了三项：
+    # 1. 亏损项：spend=100, purchase=30
+    # 2. 盈利项但不是恶化大消耗：spend=100, purchase=150, trend=STABLE
+    # 3. 盈利项且是恶化大消耗：spend=400, purchase=420, trend=WORSENING, active_7d_ad_spend_usd=120
+    def fake_query(sql, params=None):
+        return [
+            {
+                "product_id": 10,
+                "lang": "de",
+                "ad_spend_usd": 100.00,
+                "purchase_value_usd": 30.00,
+                "ad_roas": 0.3,
+                "active_7d_ad_spend_usd": 10.00,
+                "computed_at": datetime(2026, 6, 11, 8, 0, 0),
+                "product_code": "ABC123",
+                "product_name": "Demo Product",
+                "store_code": "DE01",
+            },
+            {
+                "product_id": 11,
+                "lang": "fr",
+                "ad_spend_usd": 100.00,
+                "purchase_value_usd": 150.00,
+                "ad_roas": 1.5,
+                "active_7d_ad_spend_usd": 20.00,
+                "computed_at": datetime(2026, 6, 11, 8, 0, 0),
+                "product_code": "DEF456",
+                "product_name": "Other Product",
+                "store_code": "FR01",
+            },
+            {
+                "product_id": 12,
+                "lang": "es",
+                "ad_spend_usd": 400.00,
+                "purchase_value_usd": 420.00,
+                "ad_roas": 1.05,
+                "active_7d_ad_spend_usd": 120.00,
+                "computed_at": datetime(2026, 6, 11, 8, 0, 0),
+                "product_code": "XYZ789",
+                "product_name": "Third Product",
+                "store_code": "ES01",
+            },
+        ]
+
+    monkeypatch.setattr(ad_alerts, "query", fake_query)
+    monkeypatch.setattr(
+        ad_alerts,
+        "_get_active_window",
+        lambda product_id, lang: ad_alerts.ActiveWindow(None, None, 15),
+    )
+    
+    # 模拟不同的趋势。由于 10 没特别模拟，11 模拟 prior=1.0, recent=1.0 (持平)，
+    # 12 模拟 prior=1.5, recent=0.8 (即恶化 trend=WORSENING)
+    def fake_trend_inputs(product_id, lang, end_date=None):
+        if product_id == 12:
+            return (0.8, 1.5)  # recent, prior => ratio = 0.8/1.5 = 0.53 < 0.9 => worsening
+        return (1.0, 1.0)      # stable
+
+    monkeypatch.setattr(ad_alerts, "_alert_trend_inputs", fake_trend_inputs)
+
+    items = ad_alerts.get_alerts(threshold=2.0)
+
+    # 预期的 items：
+    # 10 被保留（估计亏损 -70.0 < 0）
+    # 11 被过滤（估计盈亏 +50.0 > 0 且趋势持平）
+    # 12 被保留（估计盈亏 +20.0 > 0，但趋势恶化且消耗很大）
+    pids = [it.product_id for it in items]
+    assert 10 in pids
+    assert 11 not in pids
+    assert 12 in pids
+    assert len(items) == 2

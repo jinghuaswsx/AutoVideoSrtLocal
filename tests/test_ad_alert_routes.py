@@ -286,14 +286,24 @@ def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypa
     from web.routes import ad_alerts as route
 
     raw_client = authed_client_no_db.application.test_client()
+    
+    # 未登录校验
     unauth_response = raw_client.get("/ad-alerts/")
     assert unauth_response.status_code == 302
+    unauth_response_prob = raw_client.get("/ad-alerts/problem")
+    assert unauth_response_prob.status_code == 302
 
     monkeypatch.setattr(route.ad_alerts, "get_threshold", lambda: 1.4)
+    
+    # 广告预警页面
     page_response = authed_client_no_db.get("/ad-alerts/")
     assert page_response.status_code == 200
     assert "广告预警" in page_response.get_data(as_text=True)
-    assert "问题广告" in page_response.get_data(as_text=True)
+
+    # 问题广告页面
+    page_response_prob = authed_client_no_db.get("/ad-alerts/problem")
+    assert page_response_prob.status_code == 200
+    assert "问题广告" in page_response_prob.get_data(as_text=True)
 
     monkeypatch.setattr(route.ad_alerts, "get_problem_ads", lambda *args, **kwargs: (date(2026, 6, 12), []))
     api_response = authed_client_no_db.get("/ad-alerts/api/problem-ads?level=campaign")

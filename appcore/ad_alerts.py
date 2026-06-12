@@ -309,43 +309,222 @@ def set_threshold(value: float) -> None:
     system_settings.set_setting(ALERT_THRESHOLD_SETTING_KEY, payload)
 
 
+def _get_alerts_dynamically(
+    start_date: str,
+    end_date: str,
+    threshold_value: float,
+    lang: str | None = None,
+    search: str | None = None,
+) -> list[dict[str, Any]]:
+    """在指定时间范围内动态聚合各产品与语言的广告指标。"""
+    today_str = date.today().isoformat()
+    
+    daily_sql = f"""
+        SELECT DISTINCT
+          i.product_id,
+          i.lang,
+          CONCAT('daily:', m.id) AS metric_id,
+          COALESCE(m.spend_usd, 0) AS spend_usd,
+          COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd,
+          COALESCE(m.meta_business_date, m.report_date) AS activity_date
+        FROM media_items i
+        JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL
+        JOIN media_languages ml ON ml.code = i.lang AND ml.enabled = 1
+        JOIN meta_ad_daily_ad_metrics m
+          ON m.product_id = i.product_id
+         AND COALESCE(m.spend_usd, 0) > 0
+         AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= %(start_date)s
+         AND DATE(COALESCE(m.meta_business_date, m.report_date)) <= %(end_date)s
+         AND (
+           m.ad_name LIKE CONCAT('%%', i.filename, '%%')
+           OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
+           OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
+           OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
+           OR (
+             m.market_country IS NOT NULL
+             AND m.market_country <> ''
+             AND LOWER(i.lang) = {_COUNTRY_LANG_CASE_SQL % "m.market_country"}
+           )
+         )
+        WHERE i.deleted_at IS NULL
+    """
+
+    realtime_sql = f"""
+        SELECT DISTINCT
+          i.product_id,
+          i.lang,
+          CONCAT('realtime:', m.id) AS metric_id,
+          COALESCE(m.spend_usd, 0) AS spend_usd,
+          COALESCE(m.purchase_value_usd, 0) AS purchase_value_usd,
+          m.business_date AS activity_date
+        FROM media_items i
+        JOIN media_products p ON p.id = i.product_id AND p.deleted_at IS NULL
+        JOIN media_languages ml ON ml.code = i.lang AND ml.enabled = 1
+        JOIN (
+          SELECT rt.*
+          FROM meta_ad_realtime_daily_ad_metrics rt
+          INNER JOIN (
+            SELECT ad_account_id, MAX(business_date) AS business_date, MAX(snapshot_at) AS max_snapshot_at
+            FROM meta_ad_realtime_daily_ad_metrics
+            WHERE data_completeness = 'realtime_partial'
+              AND business_date >= %(start_date)s
+              AND business_date <= %(end_date)s
+            GROUP BY ad_account_id, business_date
+          ) latest
+            ON rt.business_date = latest.business_date
+           AND rt.ad_account_id = latest.ad_account_id
+           AND rt.snapshot_at = latest.max_snapshot_at
+          WHERE rt.data_completeness = 'realtime_partial'
+            AND COALESCE(rt.spend_usd, 0) > 0
+        ) m
+          ON p.product_code IS NOT NULL
+         AND p.product_code <> ''
+         AND (
+           LOWER(COALESCE(m.normalized_campaign_code, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+           OR LOWER(COALESCE(m.campaign_name, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+           OR LOWER(COALESCE(m.normalized_ad_code, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+           OR LOWER(COALESCE(m.ad_name, '')) LIKE CONCAT(LOWER(p.product_code), '%%')
+         )
+         AND (
+           m.ad_name LIKE CONCAT('%%', i.filename, '%%')
+           OR m.normalized_ad_code LIKE CONCAT('%%', i.filename, '%%')
+           OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.ad_name LIKE CONCAT('%%', i.display_name, '%%'))
+           OR (i.display_name IS NOT NULL AND i.display_name <> '' AND m.normalized_ad_code LIKE CONCAT('%%', i.display_name, '%%'))
+           OR (
+             LOWER(i.lang) = CASE
+               WHEN m.country_code IS NOT NULL AND m.country_code <> '' THEN
+                 CASE UPPER(m.country_code)
+                   WHEN 'US' THEN 'en'
+                   WHEN 'GB' THEN 'en'
+                   WHEN 'UK' THEN 'en'
+                   WHEN 'AU' THEN 'en'
+                   WHEN 'CA' THEN 'en'
+                   WHEN 'IE' THEN 'en'
+                   WHEN 'NZ' THEN 'en'
+                   WHEN 'DE' THEN 'de'
+                   WHEN 'AT' THEN 'de'
+                   WHEN 'FR' THEN 'fr'
+                   WHEN 'ES' THEN 'es'
+                   WHEN 'IT' THEN 'it'
+                   WHEN 'NL' THEN 'nl'
+                   WHEN 'SE' THEN 'sv'
+                   WHEN 'FI' THEN 'fi'
+                   WHEN 'JP' THEN 'ja'
+                   WHEN 'KR' THEN 'ko'
+                   WHEN 'BR' THEN 'pt-br'
+                   WHEN 'PT' THEN 'pt'
+                   ELSE NULL
+                 END
+               ELSE NULL
+             END
+           )
+         )
+        WHERE i.deleted_at IS NULL
+    """
+
+    if end_date >= today_str:
+        combined_source = f"({daily_sql} UNION ALL {realtime_sql}) matched"
+    else:
+        combined_source = f"({daily_sql}) matched"
+
+    where_conditions = []
+    sql_params = {
+        "start_date": start_date,
+        "end_date": end_date,
+        "threshold": threshold_value,
+    }
+    if lang:
+        where_conditions.append("matched.lang = %(lang)s")
+        sql_params["lang"] = lang.strip().lower()
+    if search:
+        where_conditions.append("(p.product_code LIKE %(search)s OR p.name LIKE %(search)s)")
+        sql_params["search"] = f"%{search.strip()}%"
+
+    where_clause = " AND ".join(where_conditions)
+    if where_clause:
+        where_clause = f"AND {where_clause}"
+
+    query_str = f"""
+        SELECT 
+          matched.product_id,
+          matched.lang,
+          SUM(matched.spend_usd) AS ad_spend_usd,
+          SUM(matched.purchase_value_usd) AS purchase_value_usd,
+          CASE
+            WHEN SUM(matched.spend_usd) > 0
+            THEN ROUND(SUM(matched.purchase_value_usd) / SUM(matched.spend_usd), 4)
+            ELSE NULL
+          END AS ad_roas,
+          SUM(
+            CASE
+              WHEN matched.activity_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+              THEN matched.spend_usd
+              ELSE 0
+            END
+          ) AS active_7d_ad_spend_usd,
+          MAX(matched.activity_date) AS computed_at,
+          p.product_code,
+          p.name AS product_name
+        FROM {combined_source}
+        JOIN media_products p ON p.id = matched.product_id AND p.deleted_at IS NULL
+        WHERE 1=1 {where_clause}
+        GROUP BY matched.product_id, matched.lang, p.product_code, p.name
+        HAVING SUM(matched.spend_usd) > 0 
+           AND (SUM(matched.purchase_value_usd) / SUM(matched.spend_usd) < %(threshold)s)
+        ORDER BY ad_roas ASC, active_7d_ad_spend_usd DESC
+    """
+    return query(query_str, sql_params)
+
+
 def get_alerts(
     threshold: float | None = None,
     lang: str | None = None,
     severity: Severity | None = None,
     search: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[AlertItem]:
-    """查询低 ROAS 且仍有活跃消耗的商品语言预警列表。"""
+    """查询低 ROAS 且仍有活跃消耗的商品语言预警列表（支持时间范围选择与亏损过滤）。"""
     threshold_value = _normalize_threshold(threshold)
-    conditions = [
-        "c.ad_roas IS NOT NULL",
-        "c.ad_roas < %(threshold)s",
-        "c.active_7d_ad_spend_usd > 0",
-        "c.ad_spend_usd > 0",
-    ]
-    params: dict[str, Any] = {"threshold": threshold_value}
+    
+    if start_date and end_date:
+        rows = _get_alerts_dynamically(
+            start_date=start_date,
+            end_date=end_date,
+            threshold_value=threshold_value,
+            lang=lang,
+            search=search,
+        )
+    else:
+        conditions = [
+            "c.ad_roas IS NOT NULL",
+            "c.ad_roas < %(threshold)s",
+            "c.active_7d_ad_spend_usd > 0",
+            "c.ad_spend_usd > 0",
+        ]
+        params: dict[str, Any] = {"threshold": threshold_value}
 
-    if lang:
-        conditions.append("c.lang = %(lang)s")
-        params["lang"] = lang.strip().lower()
+        if lang:
+            conditions.append("c.lang = %(lang)s")
+            params["lang"] = lang.strip().lower()
 
-    if search:
-        conditions.append("(p.product_code LIKE %(search)s OR p.name LIKE %(search)s)")
-        params["search"] = f"%{search.strip()}%"
+        if search:
+            conditions.append("(p.product_code LIKE %(search)s OR p.name LIKE %(search)s)")
+            params["search"] = f"%{search.strip()}%"
 
-    where_clause = " AND ".join(conditions)
-    rows = query(
-        f"""
-        SELECT c.product_id, c.lang, c.ad_spend_usd, c.purchase_value_usd,
-               c.ad_roas, c.active_7d_ad_spend_usd, c.computed_at,
-               p.product_code, p.name AS product_name
-        FROM media_product_lang_ad_summary_cache c
-        JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL
-        WHERE {where_clause}
-        ORDER BY c.ad_roas ASC, c.active_7d_ad_spend_usd DESC
-        """,
-        params,
-    )
+        where_clause = " AND ".join(conditions)
+        rows = query(
+            f"""
+            SELECT c.product_id, c.lang, c.ad_spend_usd, c.purchase_value_usd,
+                   c.ad_roas, c.active_7d_ad_spend_usd, c.computed_at,
+                   p.product_code, p.name AS product_name
+            FROM media_product_lang_ad_summary_cache c
+            JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL
+            WHERE {where_clause}
+            ORDER BY c.ad_roas ASC, c.active_7d_ad_spend_usd DESC
+            """,
+            params,
+        )
 
     items: list[AlertItem] = []
     for row in rows:
@@ -356,7 +535,10 @@ def get_alerts(
         purchase = _safe_float(row.get("purchase_value_usd"))
         active_spend = _safe_float(row.get("active_7d_ad_spend_usd"))
         active_window = _get_active_window(product_id, item_lang)
-        recent_7d_roas, prior_7d_roas = _alert_trend_inputs(product_id, item_lang)
+        if end_date is not None:
+            recent_7d_roas, prior_7d_roas = _alert_trend_inputs(product_id, item_lang, end_date)
+        else:
+            recent_7d_roas, prior_7d_roas = _alert_trend_inputs(product_id, item_lang)
         judgment = judge_alert(
             roas,
             recent_7d_roas,
@@ -366,6 +548,16 @@ def get_alerts(
         )
         if severity and judgment.severity != severity:
             continue
+
+        estimated_loss = _estimated_loss(purchase, spend)
+        is_loss = estimated_loss < -0.01
+        is_worsening_and_huge_spend = (
+            judgment.trend == TrendDirection.WORSENING
+            and (active_spend >= 100.0 or spend >= 300.0)
+        )
+        if not (is_loss or is_worsening_and_huge_spend):
+            continue
+
         items.append(
             AlertItem(
                 product_id=product_id,
@@ -385,7 +577,7 @@ def get_alerts(
                 phase=judgment.phase,
                 conclusion=judgment.conclusion,
                 reason=judgment.reason,
-                estimated_loss=_estimated_loss(purchase, spend),
+                estimated_loss=estimated_loss,
                 active_days=active_window.active_days,
             )
         )
@@ -724,9 +916,11 @@ def get_trend_series(
     product_id: int,
     lang: str,
     days: int = 30,
+    end_date: str | None = None,
 ) -> list[DailyPoint]:
     """查询近 N 天商品语言维度广告花费和购买价值趋势。"""
     lower_lang = lang.strip().lower()
+    end_date_val = end_date if end_date else date.today().isoformat()
     rows = query(
         f"""
         SELECT
@@ -751,12 +945,12 @@ def get_trend_series(
          )
         WHERE m.product_id = %(product_id)s
           AND COALESCE(m.spend_usd, 0) > 0
-          AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= DATE_SUB(CURDATE(), INTERVAL %(days)s DAY)
-          AND DATE(COALESCE(m.meta_business_date, m.report_date)) < CURDATE()
+          AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= DATE_SUB(DATE(%(end_date_val)s), INTERVAL %(days)s DAY)
+          AND DATE(COALESCE(m.meta_business_date, m.report_date)) < DATE(%(end_date_val)s)
         GROUP BY ad_date
         ORDER BY ad_date DESC
         """,
-        {"product_id": product_id, "lang": lower_lang, "days": max(1, int(days))},
+        {"product_id": product_id, "lang": lower_lang, "days": max(1, int(days)), "end_date_val": end_date_val},
     )
 
     series: list[DailyPoint] = []
@@ -832,9 +1026,18 @@ def get_aggregated_products(
     lang: str | None = None,
     severity: Severity | None = None,
     search: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[AggregatedProductAlert]:
     """查询按产品维度聚合的广告预警列表。"""
-    items = get_alerts(threshold=threshold, lang=lang, severity=None, search=search)
+    items = get_alerts(
+        threshold=threshold,
+        lang=lang,
+        severity=None,
+        search=search,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
     # Group by product_id
     grouped: dict[int, list[AlertItem]] = {}
@@ -1212,8 +1415,8 @@ def get_ad_detail_and_trend(
 
 
 
-def _alert_trend_inputs(product_id: int, lang: str) -> tuple[float | None, float | None]:
-    series = get_trend_series(product_id, lang, days=14)
+def _alert_trend_inputs(product_id: int, lang: str, end_date: str | None = None) -> tuple[float | None, float | None]:
+    series = get_trend_series(product_id, lang, days=14, end_date=end_date)
     return _avg_roas(series, 0, 7), _avg_roas(series, 7, 7)
 
 
