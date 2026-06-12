@@ -77,3 +77,25 @@ def test_ad_alert_template_url_persistence_contract():
     assert "  } else {\n    restoreUrlParams();\n    loadList();\n  }" in source
     assert "syncUrlParams();" in source
     assert source.index("renderList(data.items || []);") < source.index("syncUrlParams();")
+
+
+def test_ad_alert_template_problem_column_picker_contract():
+    template = Path("web/templates/ad_alerts.html")
+    source = template.read_text(encoding="utf-8")
+
+    assert "var columnGroups = {" in source
+    assert "yesterday: { label: '昨天', default: false }" in source
+    assert 'id="adAlertColumnPickerBtn"' in source
+    assert 'id="adAlertColumnDropdown"' in source
+    assert ".oc-ad-alert-column-dropdown" in source
+    assert ".oc-ad-alert-col-hidden" in source
+    assert "sessionStorage.getItem('problem_ads_cols')" in source
+    assert "sessionStorage.setItem('problem_ads_cols', JSON.stringify(state.visibleCols))" in source
+    assert "function renderColumnPicker()" in source
+    assert "function applyColumnVisibility()" in source
+    assert "applyColumnVisibility();" in source
+    assert '<colgroup span="3" class="oc-ad-alert-col-today"></colgroup>' in source
+    assert '<colgroup span="3" class="oc-ad-alert-col-yesterday"></colgroup>' in source
+    assert '<th colspan="3" class="oc-ad-alert-col-yesterday">昨天</th>' in source
+    assert "problemMetricCells(m.yesterday, 'yesterday')" in source
+    assert "oc-ad-alert-col-' + groupKey" in source

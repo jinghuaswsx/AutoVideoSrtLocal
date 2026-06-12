@@ -327,6 +327,37 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+.oc-ad-alert-column-picker {
+  position: relative;
+}
+.oc-ad-alert-column-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: var(--oc-ad-alert-card);
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 10px;
+  padding: 8px 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  min-width: 160px;
+}
+.oc-ad-alert-column-dropdown label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.oc-ad-alert-column-dropdown label:hover {
+  background: var(--oc-ad-alert-table-hover);
+}
+.oc-ad-alert-col-hidden {
+  display: none;
+}
 .oc-ad-alert-business-date {
   color: var(--oc-ad-alert-blue);
   font-size: 13px;
@@ -967,6 +998,10 @@
         <button class="oc-ad-alert-level-tab" type="button" data-level="adset" aria-pressed="false">Ad Set</button>
         <button class="oc-ad-alert-level-tab" type="button" data-level="ad" aria-pressed="false">Ad</button>
       </div>
+      <div class="oc-ad-alert-column-picker">
+        <button class="oc-ad-alert-btn" type="button" id="adAlertColumnPickerBtn">自定义列 ▾</button>
+        <div class="oc-ad-alert-column-dropdown" id="adAlertColumnDropdown" hidden></div>
+      </div>
       <div class="oc-ad-alert-problem-actions">
         <input class="oc-ad-alert-search" id="adAlertProblemSearch" type="search" placeholder="搜索广告名称或 code">
         <button class="oc-ad-alert-btn" type="button" id="adAlertProblemRefresh">查询</button>
@@ -976,32 +1011,38 @@
     <div class="oc-ad-alert-problem-note">问题广告定义：今天有消耗且今天成效为 0。点击行会跳转到广告分析详情页，默认展示该广告自上线以来的数据。</div>
     <div class="oc-ad-alert-table-wrap">
       <table class="oc-ad-alert-table" aria-label="问题广告列表">
+        <colgroup span="2"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-today"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-yesterday"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-last_7d"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-last_30d"></colgroup>
+        <colgroup span="3" class="oc-ad-alert-col-overall"></colgroup>
         <thead>
           <tr>
             <th rowspan="2">广告</th>
             <th rowspan="2">账户</th>
-            <th colspan="3">今天</th>
-            <th colspan="3">昨天</th>
-            <th colspan="3">最近 7 天</th>
-            <th colspan="3">最近 30 天</th>
-            <th colspan="3">整体</th>
+            <th colspan="3" class="oc-ad-alert-col-today">今天</th>
+            <th colspan="3" class="oc-ad-alert-col-yesterday">昨天</th>
+            <th colspan="3" class="oc-ad-alert-col-last_7d">最近 7 天</th>
+            <th colspan="3" class="oc-ad-alert-col-last_30d">最近 30 天</th>
+            <th colspan="3" class="oc-ad-alert-col-overall">整体</th>
           </tr>
           <tr>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
-            <th class="oc-ad-alert-num">消耗</th>
-            <th class="oc-ad-alert-num">成效</th>
-            <th class="oc-ad-alert-num">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-today">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-today">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-today">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-yesterday">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_7d">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-last_30d">ROAS</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-overall">消耗</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-overall">成效</th>
+            <th class="oc-ad-alert-num oc-ad-alert-col-overall">ROAS</th>
           </tr>
         </thead>
         <tbody id="adAlertProblemBody">
@@ -1044,6 +1085,13 @@
 {% block scripts %}
 <script>
 (function() {
+  var columnGroups = {
+    today: { label: '今天', default: true },
+    yesterday: { label: '昨天', default: false },
+    last_7d: { label: '最近 7 天', default: true },
+    last_30d: { label: '最近 30 天', default: true },
+    overall: { label: '整体', default: true }
+  };
   var state = {
     threshold: Number({{ threshold|tojson }}),
     severity: '',
@@ -1051,7 +1099,8 @@
     activeTab: {{ active_tab|tojson }},
     problemLoaded: false,
     problemLevel: 'campaign',
-    problemSearch: ''
+    problemSearch: '',
+    visibleCols: readVisibleColumns()
   };
   var adEvaluationCache = {};
   var timer = null;
@@ -1122,6 +1171,60 @@
     var endInput = document.getElementById('adAlertEndDate');
     if (startInput) startInput.value = params.get('start_date') || '';
     if (endInput) endInput.value = params.get('end_date') || '';
+  }
+
+  function defaultVisibleColumns() {
+    var visible = {};
+    Object.keys(columnGroups).forEach(function(groupKey) {
+      visible[groupKey] = Boolean(columnGroups[groupKey].default);
+    });
+    return visible;
+  }
+
+  function readVisibleColumns() {
+    var visible = defaultVisibleColumns();
+    try {
+      var raw = sessionStorage.getItem('problem_ads_cols');
+      if (!raw) return visible;
+      var parsed = JSON.parse(raw);
+      Object.keys(columnGroups).forEach(function(groupKey) {
+        if (Object.prototype.hasOwnProperty.call(parsed, groupKey)) {
+          visible[groupKey] = Boolean(parsed[groupKey]);
+        }
+      });
+    } catch (error) {
+      return visible;
+    }
+    return visible;
+  }
+
+  function persistVisibleColumns() {
+    try {
+      sessionStorage.setItem('problem_ads_cols', JSON.stringify(state.visibleCols));
+    } catch (error) {
+      return;
+    }
+  }
+
+  function renderColumnPicker() {
+    var dropdown = document.getElementById('adAlertColumnDropdown');
+    if (!dropdown) return;
+    dropdown.innerHTML = Object.keys(columnGroups).map(function(groupKey) {
+      var group = columnGroups[groupKey];
+      var checked = state.visibleCols[groupKey] ? ' checked' : '';
+      return '<label><input type="checkbox" data-column-group="' + html(groupKey) + '"' + checked + '> ' + html(group.label) + '</label>';
+    }).join('');
+  }
+
+  function applyColumnVisibility() {
+    Object.keys(columnGroups).forEach(function(groupKey) {
+      var visible = state.visibleCols[groupKey] !== false;
+      document.querySelectorAll('.oc-ad-alert-col-' + groupKey).forEach(function(item) {
+        item.classList.toggle('oc-ad-alert-col-hidden', !visible);
+      });
+      var checkbox = document.querySelector('[data-column-group="' + groupKey + '"]');
+      if (checkbox) checkbox.checked = visible;
+    });
   }
 
   function html(value) {
@@ -1277,6 +1380,7 @@
   function renderProblemAds(items) {
     if (!items.length) {
       problemBody.innerHTML = '<tr><td colspan="17" class="oc-ad-alert-state">当前维度暂无问题广告</td></tr>';
+      applyColumnVisibility();
       return;
     }
     problemBody.innerHTML = items.map(function(item) {
@@ -1291,21 +1395,22 @@
         + '  <span class="oc-ad-alert-account">' + html(item.ad_account_name || item.ad_account_id || '—') + '</span>'
         + '  <span class="oc-ad-alert-ad-code">' + html((item.first_active_date || '—') + ' 起') + '</span>'
         + '</td>'
-        + problemMetricCells(m.today)
-        + problemMetricCells(m.yesterday)
-        + problemMetricCells(m.last_7d)
-        + problemMetricCells(m.last_30d)
-        + problemMetricCells(m.overall)
+        + problemMetricCells(m.today, 'today')
+        + problemMetricCells(m.yesterday, 'yesterday')
+        + problemMetricCells(m.last_7d, 'last_7d')
+        + problemMetricCells(m.last_30d, 'last_30d')
+        + problemMetricCells(m.overall, 'overall')
         + '</tr>';
     }).join('');
+    applyColumnVisibility();
   }
 
-  function problemMetricCells(metric) {
+  function problemMetricCells(metric, groupKey) {
     metric = metric || {};
     return ''
-      + '<td class="oc-ad-alert-num">' + money(metric.spend_usd, 2) + '</td>'
-      + '<td class="oc-ad-alert-num">' + intText(metric.result_count) + '</td>'
-      + '<td class="oc-ad-alert-num">' + roas(metric.roas) + '</td>';
+      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + money(metric.spend_usd, 2) + '</td>'
+      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + intText(metric.result_count) + '</td>'
+      + '<td class="oc-ad-alert-num oc-ad-alert-col-' + groupKey + '">' + roas(metric.roas) + '</td>';
   }
 
   function setPrimaryTab(tab) {
@@ -1728,6 +1833,27 @@
     event.preventDefault();
     state.problemSearch = this.value.trim();
     loadProblemAds();
+  });
+
+  renderColumnPicker();
+  applyColumnVisibility();
+  document.getElementById('adAlertColumnPickerBtn').addEventListener('click', function(event) {
+    var dropdown = document.getElementById('adAlertColumnDropdown');
+    event.stopPropagation();
+    dropdown.hidden = !dropdown.hidden;
+  });
+
+  document.getElementById('adAlertColumnDropdown').addEventListener('change', function(event) {
+    var checkbox = event.target.closest('[data-column-group]');
+    if (!checkbox) return;
+    state.visibleCols[checkbox.getAttribute('data-column-group')] = checkbox.checked;
+    persistVisibleColumns();
+    applyColumnVisibility();
+  });
+
+  document.addEventListener('click', function(event) {
+    if (event.target.closest('.oc-ad-alert-column-picker')) return;
+    document.getElementById('adAlertColumnDropdown').hidden = true;
   });
 
   problemBody.addEventListener('click', function(event) {
