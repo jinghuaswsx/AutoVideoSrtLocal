@@ -31,16 +31,14 @@ import json as _json_anchor
 from appcore.llm_prompt_configs import resolve_prompt_config as _resolve_prompt_anchor
 from appcore.runtime_multi import _PromptLocalizationAdapter as _BaseAdapter
 from appcore.runtime_multi import _JapaneseMultiTranslateAdapter as _JaAdapter
+from pipeline.localization import SOURCE_LANG_PROMPT_LABEL as _SOURCE_LANG_PROMPT_LABEL
 
 
 class OmniLocalizationAdapter(_BaseAdapter):
     """omni-flavored adapter: rewrite messages carry the original ASR transcript."""
 
-    _SOURCE_LANG_LABEL: dict[str, str] = {
-        "zh": "Chinese", "en": "English", "es": "Spanish", "pt": "Portuguese",
-        "fr": "French", "it": "Italian", "ja": "Japanese", "de": "German",
-        "nl": "Dutch", "sv": "Swedish", "fi": "Finnish",
-    }
+    # Reference the canonical mapping from pipeline.localization to avoid double-maintenance.
+    _SOURCE_LANG_LABEL = _SOURCE_LANG_PROMPT_LABEL
 
     def __init__(self, lang: str, source_language: str, original_asr_text: str):
         super().__init__(lang)

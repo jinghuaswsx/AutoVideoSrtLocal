@@ -206,6 +206,7 @@ def _generate_localized_translation_single(
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    source_language: str = "zh",
 ) -> dict:
     """Single-shot translation: original logic, no batching. Used directly for
     short videos and as the per-batch primitive for long-video batching."""
@@ -215,6 +216,7 @@ def _generate_localized_translation_single(
         script_segments,
         variant=variant,
         custom_system_prompt=custom_system_prompt,
+        source_language=source_language,
     )
 
     payload, usage = _invoke_chat_for_use_case(
@@ -250,6 +252,7 @@ def _generate_localized_translation_batched(
     provider_override: str | None = None,
     model_override: str | None = None,
     checkpoint_key: str | None = None,
+    source_language: str = "zh",
 ) -> dict:
     """Long-video translation: split source segments into ~batch_size batches,
     call _single per batch, normalize per-batch indices to global, then merge.
@@ -287,6 +290,7 @@ def _generate_localized_translation_batched(
             use_case=use_case, user_id=user_id, project_id=project_id,
             provider_override=provider_override,
             model_override=model_override,
+            source_language=source_language,
         )
         batch_indices = [int(s["index"]) for s in batch]
         _normalize_batch_source_indices(batch_result.get("sentences") or [], batch_indices)
@@ -331,6 +335,7 @@ def generate_localized_translation(
     provider_override: str | None = None,
     model_override: str | None = None,
     checkpoint_key: str | None = None,
+    source_language: str = "zh",
     # 已废弃；仅保留以避免老调用方 TypeError，值被忽略。
     provider: str | None = None,
     openrouter_api_key: str | None = None,
@@ -343,6 +348,7 @@ def generate_localized_translation(
     use_case 必传，走 appcore.llm_client.invoke_chat（adapter 解析 binding）。
     provider= / openrouter_api_key= 仅作为废弃 kwargs 保留以避免老调用方崩溃，
     实际值被忽略；如果要切 provider/model 用 provider_override / model_override。
+    source_language 默认 "zh"，保持 multi_translate 等旧调用方行为完全不变。
     """
     del provider, openrouter_api_key  # noqa: F841 — 兼容签名但忽略
     use_case = _require_use_case(use_case, fn="generate_localized_translation")
@@ -360,6 +366,7 @@ def generate_localized_translation(
             provider_override=provider_override,
             model_override=model_override,
             checkpoint_key=checkpoint_key,
+            source_language=source_language,
         )
     return _generate_localized_translation_single(
         source_full_text_zh, script_segments,
@@ -367,6 +374,7 @@ def generate_localized_translation(
         use_case=use_case, user_id=user_id, project_id=project_id,
         provider_override=provider_override,
         model_override=model_override,
+        source_language=source_language,
     )
 
 
