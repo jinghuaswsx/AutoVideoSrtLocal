@@ -690,6 +690,27 @@
   font-size: 14px;
   font-weight: 500;
 }
+.oc-ad-alert-state.loading {
+  color: var(--oc-ad-alert-blue);
+  font-weight: bold;
+  font-size: 42px;
+}
+.oc-ad-alert-state.loading::after {
+  content: '';
+  display: inline-block;
+  text-align: left;
+  width: 1.5em;
+  animation: loading-dots 2s steps(6) infinite;
+}
+@keyframes loading-dots {
+  0% { content: ''; }
+  16.6% { content: '.'; }
+  33.3% { content: '..'; }
+  50% { content: '...'; }
+  66.6% { content: '....'; }
+  83.3% { content: '.....'; }
+  100% { content: '......'; }
+}
 .oc-ad-alert-modal-mask {
   position: fixed;
   inset: 0;
@@ -996,7 +1017,7 @@
     </div>
 
     <div class="oc-ad-alert-list" id="adAlertList">
-      <div class="oc-ad-alert-state">加载中</div>
+      <div class="oc-ad-alert-state loading">加载中</div>
     </div>
   </section>
 
@@ -1072,7 +1093,7 @@
       <button class="oc-ad-alert-icon-btn" type="button" id="adAlertDetailClose" aria-label="关闭">×</button>
     </div>
     <div class="oc-ad-alert-modal-body" id="adAlertDetailBody">
-      <div class="oc-ad-alert-state">加载中</div>
+      <div class="oc-ad-alert-state loading">加载中</div>
     </div>
   </div>
 </div>
@@ -1268,7 +1289,7 @@
   }
 
   function loadList() {
-    listEl.innerHTML = '<div class="oc-ad-alert-state">加载中</div>';
+    listEl.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
     var params = new URLSearchParams();
     if (state.threshold) params.set('threshold', state.threshold);
     if (state.severity) params.set('severity', state.severity);
@@ -1363,7 +1384,7 @@
 
   function loadProblemAds() {
     if (!problemBody) return;
-    problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state">加载中</td></tr>';
+    problemBody.innerHTML = '<tr><td colspan="18" class="oc-ad-alert-state loading">加载中</td></tr>';
     var params = new URLSearchParams();
     params.set('level', state.problemLevel);
     params.set('limit', '200');
@@ -1470,7 +1491,7 @@
     var body = document.getElementById('adAlertDetailBody');
     adEvaluationCache = {};
     mask.removeAttribute('hidden');
-    body.innerHTML = '<div class="oc-ad-alert-state">加载中</div>';
+    body.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
     fetch('/ad-alerts/api/detail?product_id=' + encodeURIComponent(productId) + '&lang=' + encodeURIComponent(lang), {
       headers: { 'Accept': 'application/json' }
     })
@@ -1521,7 +1542,7 @@
       + '    <button class="oc-ad-alert-btn oc-ad-alert-btn-primary" type="button" id="adAlertEvaluateBtn" data-product-id="' + html(detail.product_id) + '" data-lang="' + html(detail.lang || '') + '">AI 评估</button>'
       + '  </div>'
       + '  <div class="oc-ad-alert-table-wrap" id="adAlertAdList">'
-      + '    <div class="oc-ad-alert-state">加载 AD 数据</div>'
+      + '    <div class="oc-ad-alert-state loading">加载中</div>'
       + '  </div>'
       + '  <div id="adAlertEvaluationResult" hidden></div>'
       + '</div>';
@@ -1590,7 +1611,7 @@
     }
     var resultEl = document.createElement('div');
     resultEl.className = 'oc-ad-alert-card-eval';
-    resultEl.innerHTML = '<div class="oc-ad-alert-state">正在分析广告数据</div>';
+    resultEl.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
     var actions = btn.closest('.oc-ad-alert-card-actions');
     if (actions) {
       actions.insertAdjacentElement('afterend', resultEl);
@@ -1660,7 +1681,7 @@
     btn.disabled = true;
     btn.textContent = '分析中';
     resultEl.hidden = false;
-    resultEl.innerHTML = '<div class="oc-ad-alert-state">正在分析广告数据</div>';
+    resultEl.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
     fetch('/ad-alerts/api/evaluate', {
       method: 'POST',
       headers: {

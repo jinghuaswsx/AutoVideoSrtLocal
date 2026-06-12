@@ -282,6 +282,27 @@
   text-align: center;
   color: var(--oc-ad-alert-muted);
 }
+.oc-ad-alert-state.loading {
+  color: var(--oc-ad-alert-blue);
+  font-weight: bold;
+  font-size: 42px;
+}
+.oc-ad-alert-state.loading::after {
+  content: '';
+  display: inline-block;
+  text-align: left;
+  width: 1.5em;
+  animation: loading-dots 2s steps(6) infinite;
+}
+@keyframes loading-dots {
+  0% { content: ''; }
+  16.6% { content: '.'; }
+  33.3% { content: '..'; }
+  50% { content: '...'; }
+  66.6% { content: '....'; }
+  83.3% { content: '.....'; }
+  100% { content: '......'; }
+}
 @media (max-width: 760px) {
   .oc-ad-alert-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -352,7 +373,7 @@
 
   <h2 style="margin-top: 10px; font-size: 18px; color: var(--oc-ad-alert-fg);">近 14 天趋势图 (Spend vs Purchase)</h2>
   <div class="oc-ad-alert-chart" id="trendChart">
-    <div class="oc-ad-alert-state">图表加载中...</div>
+    <div class="oc-ad-alert-state loading">加载中</div>
   </div>
 
   <div class="oc-ad-alert-judgment oc-ad-alert-{{ detail.judgment.severity.value }}">
@@ -368,7 +389,7 @@
       <h2>该语言下的 AD 列表</h2>
     </div>
     <div class="oc-ad-alert-table-wrap" id="countryAdList">
-      <div class="oc-ad-alert-state">加载 AD 数据...</div>
+      <div class="oc-ad-alert-state loading">加载中</div>
     </div>
   </div>
 </div>

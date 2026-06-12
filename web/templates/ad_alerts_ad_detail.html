@@ -222,6 +222,27 @@
   text-align: center;
   color: var(--oc-ad-alert-muted);
 }
+.oc-ad-alert-state.loading {
+  color: var(--oc-ad-alert-blue);
+  font-weight: bold;
+  font-size: 42px;
+}
+.oc-ad-alert-state.loading::after {
+  content: '';
+  display: inline-block;
+  text-align: left;
+  width: 1.5em;
+  animation: loading-dots 2s steps(6) infinite;
+}
+@keyframes loading-dots {
+  0% { content: ''; }
+  16.6% { content: '.'; }
+  33.3% { content: '..'; }
+  50% { content: '...'; }
+  66.6% { content: '....'; }
+  83.3% { content: '.....'; }
+  100% { content: '......'; }
+}
 @media (max-width: 760px) {
   .oc-ad-alert-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -304,14 +325,14 @@
         </tr>
       </thead>
       <tbody id="multiWindowBody">
-        <tr><td colspan="4" class="oc-ad-alert-state">数据加载中...</td></tr>
+        <tr><td colspan="4" class="oc-ad-alert-state loading">加载中</td></tr>
       </tbody>
     </table>
   </div>
 
   <h2 style="margin-top: 10px; font-size: 18px; color: var(--oc-ad-alert-fg);">近 30 天每日消耗与购买趋势</h2>
   <div class="oc-ad-alert-chart" id="trendChart">
-    <div class="oc-ad-alert-state">图表加载中...</div>
+    <div class="oc-ad-alert-state loading">加载中</div>
   </div>
 
   <div style="margin-top: 20px;">
