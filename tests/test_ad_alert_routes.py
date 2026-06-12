@@ -106,6 +106,108 @@ def test_api_detail_validates_inputs_and_serializes_detail(monkeypatch):
     assert response.get_json()["error"] == "invalid product_id"
 
 
+def test_api_ad_list_serializes_ad_items(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+
+    item = ad_alerts.AdListItem(
+        country="DE",
+        ad_name="ABC123_DE_01",
+        normalized_ad_code="abc123_de_01",
+        total_spend=100.0,
+        total_purchase=40.0,
+        ad_roas=0.4,
+        active_days=9,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_ad_list(product_id, lang):
+        captured["product_id"] = product_id
+        captured["lang"] = lang
+        return [item]
+
+    monkeypatch.setattr(route.ad_alerts, "get_ad_list", fake_get_ad_list)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context("/ad-alerts/api/ad-list?product_id=10&lang=DE"):
+        response = _unwrap(route.api_ad_list)()
+
+    payload = response.get_json()
+    assert captured == {"product_id": 10, "lang": "de"}
+    assert payload["total"] == 1
+    assert payload["ads"][0] == {
+        "country": "DE",
+        "ad_name": "ABC123_DE_01",
+        "normalized_ad_code": "abc123_de_01",
+        "total_spend": 100.0,
+        "total_purchase": 40.0,
+        "ad_roas": 0.4,
+        "active_days": 9,
+    }
+
+    with flask_app.test_request_context("/ad-alerts/api/ad-list?product_id=bad&lang=de"):
+        response, status = _unwrap(route.api_ad_list)()
+    assert status == 400
+    assert response.get_json()["error"] == "invalid product_id"
+
+
+def test_api_evaluate_serializes_evaluations(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+
+    captured: dict[str, object] = {}
+
+    def fake_evaluate_ads(product_id, lang, threshold=None, user_id=None):
+        captured["product_id"] = product_id
+        captured["lang"] = lang
+        captured["threshold"] = threshold
+        captured["user_id"] = user_id
+        return [
+            ad_alerts.AdEvaluation(
+                country="DE",
+                ad_name="bad-ad",
+                roas=0.4,
+                judgment="关停",
+                reason="ROAS 低于保本线",
+            )
+        ]
+
+    monkeypatch.setattr(route.ad_alerts, "evaluate_ads", fake_evaluate_ads)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context(
+        "/ad-alerts/api/evaluate",
+        method="POST",
+        json={"product_id": 10, "lang": "DE", "threshold": 1.4},
+    ):
+        response = _unwrap(route.api_evaluate)()
+
+    payload = response.get_json()
+    assert captured["product_id"] == 10
+    assert captured["lang"] == "de"
+    assert captured["threshold"] == 1.4
+    assert payload["total"] == 1
+    assert payload["evaluations"][0]["judgment"] == "关停"
+
+
+def test_api_evaluate_returns_500_when_llm_fails(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+
+    monkeypatch.setattr(route.ad_alerts, "evaluate_ads", lambda *args, **kwargs: None)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context(
+        "/ad-alerts/api/evaluate",
+        method="POST",
+        json={"product_id": 10, "lang": "de"},
+    ):
+        response, status = _unwrap(route.api_evaluate)()
+
+    assert status == 500
+    assert response.get_json()["error"] == "evaluation failed"
+
+
 def test_api_set_threshold_rejects_invalid_and_persists(monkeypatch):
     from web.routes import ad_alerts as route
     from flask import Flask
