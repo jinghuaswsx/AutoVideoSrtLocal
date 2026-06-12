@@ -27,7 +27,7 @@
 | 数据用途 | 来源 | 说明 |
 |---------|------|------|
 | 预警主判断 | `media_product_lang_ad_summary_cache` | 字段 `ad_roas`, `active_7d_ad_spend_usd`, `ad_spend_usd` |
-| 商品信息 | `media_products` | 商品名称、编码、店铺等 |
+| 商品信息 | `media_products` | 商品名称、编码等；线上表无 `store_code` 字段，预警查询不得依赖该列 |
 | 近 N 日趋势 | `meta_ad_daily_ad_metrics` | 按 `product_id` + 语言推导条件查每日 `spend_usd`, `purchase_value_usd` |
 | 运行时长 | `meta_ad_daily_ad_metrics` | 取最早 `meta_business_date` 和活跃天数 |
 | 账户信息 | `meta_ad_accounts` | 广告账户 code、store_codes 映射 |
@@ -150,6 +150,11 @@ web/routes/ad_alerts.py
 │ [查看详情 ▸]                                            │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### 线上 schema 兼容
+
+- `media_products` 线上实际字段不包含 `store_code`。广告预警列表与详情接口只从 `media_products` 读取 `id`、`product_code`、`name` 等稳定字段；店铺/域名标签必须作为可选展示，缺失时返回空数组，不能导致接口 500。
+- 2026-06-12 线上运营阈值调整为 **ROAS 1.4**，通过 `system_settings.ad_alert_roas_threshold` 持久化；代码默认值仍保留 1.5 作为无配置兜底。
 
 #### 详情弹窗
 

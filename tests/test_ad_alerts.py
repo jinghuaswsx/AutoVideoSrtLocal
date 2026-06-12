@@ -121,6 +121,7 @@ def test_get_alerts_queries_cache_and_filters_by_severity(monkeypatch):
     )
 
     assert "FROM media_product_lang_ad_summary_cache c" in captured["sql"]
+    assert "p.store_code" not in captured["sql"]
     assert "c.ad_roas < %(threshold)s" in captured["sql"]
     assert "c.active_7d_ad_spend_usd > 0" in captured["sql"]
     assert captured["params"] == {"threshold": 1.5, "lang": "de", "search": "%ABC%"}
@@ -171,8 +172,10 @@ def test_detail_uses_language_matched_trend_series(monkeypatch):
     monkeypatch.setattr(ad_alerts, "query", fake_query)
 
     detail = ad_alerts.get_alert_detail(10, "de", threshold=1.5)
+    cache_sql = next(sql for sql, _params in queries if "FROM media_product_lang_ad_summary_cache c" in sql)
 
     assert detail is not None
+    assert "p.store_code" not in cache_sql
     assert detail.lang_label == "德语"
     assert detail.active_days == 10
     assert [point.date for point in detail.trend] == ["2026-06-03", "2026-06-04"]

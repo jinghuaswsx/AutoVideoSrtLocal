@@ -218,7 +218,7 @@ def get_alerts(
         f"""
         SELECT c.product_id, c.lang, c.ad_spend_usd, c.purchase_value_usd,
                c.ad_roas, c.active_7d_ad_spend_usd, c.computed_at,
-               p.product_code, p.name AS product_name, p.store_code
+               p.product_code, p.name AS product_name
         FROM media_product_lang_ad_summary_cache c
         JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL
         WHERE {where_clause}
@@ -284,7 +284,7 @@ def get_alert_detail(
         """
         SELECT c.product_id, c.lang, c.ad_spend_usd, c.purchase_value_usd,
                c.ad_roas, c.active_7d_ad_spend_usd, c.computed_at,
-               p.product_code, p.name AS product_name, p.store_code
+               p.product_code, p.name AS product_name
         FROM media_product_lang_ad_summary_cache c
         JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL
         WHERE c.product_id = %(product_id)s AND c.lang = %(lang)s
