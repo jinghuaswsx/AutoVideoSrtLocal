@@ -565,10 +565,10 @@ def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
         template.index("function renderRealtimeOrders")
     ]
 
-    assert "fetchRealtimeScopeSummary(baseParams, 'global')" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'new')" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'old')" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'unmatched')" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'global', controller)" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'new', controller)" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'old', controller)" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'unmatched', controller)" in load_block
     assert "params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');" in load_block
     assert "params.set('product_launch_scope', scope);" in load_block
     assert "renderRealtimeScopeSummary('new'" in load_block

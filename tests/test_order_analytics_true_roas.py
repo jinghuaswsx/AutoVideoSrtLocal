@@ -2585,6 +2585,32 @@ def test_realtime_tab_defaults_to_meta_business_date(authed_client_no_db):
     assert "function resolveRealtimeRange(range) {\n    return window.orderAnalyticsMetaCalendar.resolveRange(range);\n  }" in body
 
 
+def test_order_analytics_shared_set_input_value_is_defined_before_dashboard_range(authed_client_no_db):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-realtime-dashboard-range-loading-fix.md"""
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    shared_helper = "window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || function(id, value)"
+    dashboard_range = "function setDashboardRange(range, skipRefresh)"
+    assert shared_helper in body
+    assert dashboard_range in body
+    assert body.index(shared_helper) < body.index(dashboard_range)
+
+    dashboard_script = body[
+        body.index("window.oad = oad;"):
+        body.index(dashboard_range)
+    ]
+    assert "function setInputValue(id, value)" in dashboard_script
+    assert "window.orderAnalyticsSetInputValue(id, value);" in dashboard_script
+
+    main_script_helper = body[
+        body.index("function setInputValue(id, value)", body.index("<script src=\"/static/analytics_date_range_picker.js\"")):
+        body.index("function handleAnalyticsDateRangeApply", body.index("<script src=\"/static/analytics_date_range_picker.js\""))
+    ]
+    assert "window.orderAnalyticsSetInputValue(id, value);" in main_script_helper
+
+
 def test_embedded_product_profit_report_defaults_to_meta_business_date(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
@@ -2684,7 +2710,7 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert "广告数据更新时间" in time_row
     assert "数据快照时间" in time_row
 
-    top_cards_start = body.index("function loadRealtimeTopCards()")
+    top_cards_start = body.index("function loadRealtimeTopCards(requestSeq)")
     top_cards_end = body.index("// ── 子 tab：跟随当前选择的广告系统日范围", top_cards_start)
     top_cards_js = body[top_cards_start:top_cards_end]
     assert "params.set('include_profit_summary', '1')" in top_cards_js
@@ -2788,7 +2814,7 @@ def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    subtab_start = body.index("function loadRealtimeSubTabs()")
+    subtab_start = body.index("function loadRealtimeSubTabs(requestSeq)")
     subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
     subtab_js = body[subtab_start:subtab_end]
 
@@ -2796,6 +2822,60 @@ def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     assert "params.set('start_date', range.start)" in subtab_js
     assert "params.set('end_date', range.end)" in subtab_js
     assert "params.set('include_details', '1')" in subtab_js
+
+
+def test_realtime_range_loading_uses_abortable_request_sequence(authed_client_no_db):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-realtime-dashboard-range-loading-fix.md"""
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    state_start = body.index("var realtimeState = {")
+    state_end = body.index("var newProductLaunchInited", state_start)
+    state_js = body[state_start:state_end]
+    for snippet in (
+        "requestSeq: 0",
+        "topCardsSeq: 0",
+        "subTabsSeq: 0",
+        "requestTimeoutMs: 30000",
+        "topCardsController: null",
+        "subTabsController: null",
+        "function nextRealtimeRequestSeq()",
+        "function assignRealtimeRequestSeq(kind, seq)",
+        "function createRealtimeController(kind)",
+        "function fetchRealtimeJson(url, controller)",
+        "setTimeout(function()",
+        "controller.__realtimeTimedOut = true",
+        "controller.abort()",
+        "controller && controller.__realtimeTimedOut",
+        "Promise.race([requestPromise, timeoutPromise])",
+    ):
+        assert snippet in state_js
+
+    overview_start = body.index("function loadRealtimeOverview()")
+    overview_end = body.index("function realtimeScopePrefix", overview_start)
+    overview_js = body[overview_start:overview_end]
+    assert "var requestSeq = nextRealtimeRequestSeq();" in overview_js
+    assert "loadRealtimeTopCards(requestSeq);" in overview_js
+    assert "loadRealtimeSubTabs(requestSeq);" in overview_js
+    assert "function loadRealtimeTopCards(requestSeq)" in overview_js
+    assert "requestSeq = assignRealtimeRequestSeq('top', requestSeq);" in overview_js
+    assert "var controller = createRealtimeController('top');" in overview_js
+    assert "fetchRealtimeScopeSummary(baseParams, 'global', controller)" in overview_js
+    assert "if (!isRealtimeRequestCurrent('top', requestSeq)) return;" in overview_js
+    assert "if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('top', requestSeq)) return;" in overview_js
+    assert "clearRealtimeController('top', controller);" in overview_js
+    assert "return fetchRealtimeJson(url, controller);" in overview_js
+
+    subtab_start = body.index("function loadRealtimeSubTabs(requestSeq)")
+    subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
+    subtab_js = body[subtab_start:subtab_end]
+    assert "requestSeq = assignRealtimeRequestSeq('sub', requestSeq);" in subtab_js
+    assert "var controller = createRealtimeController('sub');" in subtab_js
+    assert "fetchRealtimeJson(url, controller)" in subtab_js
+    assert "if (!isRealtimeRequestCurrent('sub', requestSeq)) return;" in subtab_js
+    assert "if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('sub', requestSeq)) return;" in subtab_js
+    assert "clearRealtimeController('sub', controller);" in subtab_js
 
 
 def test_realtime_subtab_click_refreshes_details_without_top_cards(authed_client_no_db):
@@ -2851,7 +2931,7 @@ def test_realtime_subtabs_request_product_and_pagination_params(authed_client_no
     response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    subtab_start = body.index("function loadRealtimeSubTabs()")
+    subtab_start = body.index("function loadRealtimeSubTabs(requestSeq)")
     subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
     subtab_js = body[subtab_start:subtab_end]
 

@@ -3114,6 +3114,13 @@
 <div id="dashboardTable"></div>
 
 <script>
+// Docs-anchor: docs/superpowers/specs/2026-06-12-realtime-dashboard-range-loading-fix.md
+window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || function(id, value) {
+  var el = document.getElementById(id);
+  if (el) el.value = value;
+  if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
+};
+
 (function() {
   var oad = {
     state: {
@@ -3125,6 +3132,10 @@
     },
   };
   window.oad = oad;
+
+  function setInputValue(id, value) {
+    window.orderAnalyticsSetInputValue(id, value);
+  }
 
   function addOadDays(date, days) {
     var next = new Date(date);
@@ -6054,9 +6065,7 @@
   }
 
   function setInputValue(id, value) {
-    var el = document.getElementById(id);
-    if (el) el.value = value;
-    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
+    window.orderAnalyticsSetInputValue(id, value);
   }
 
   function handleAnalyticsDateRangeApply(event) {
@@ -6185,6 +6194,12 @@
     campaignFilter: '',
     unallocatedAd: 0,
     launchWindowDays: '7',
+    requestSeq: 0,
+    topCardsSeq: 0,
+    subTabsSeq: 0,
+    requestTimeoutMs: 30000,
+    topCardsController: null,
+    subTabsController: null,
     estimateAvailability: {
       global: false,
       new: false,
@@ -6194,6 +6209,90 @@
   };
   var realtimeProductSearchTimer = null;
   var realtimeLastCampaignRows = [];
+
+  // Docs-anchor: docs/superpowers/specs/2026-06-12-realtime-dashboard-range-loading-fix.md
+  function nextRealtimeRequestSeq() {
+    realtimeState.requestSeq += 1;
+    return realtimeState.requestSeq;
+  }
+
+  function assignRealtimeRequestSeq(kind, seq) {
+    var nextSeq = seq || nextRealtimeRequestSeq();
+    if (kind === 'top') {
+      realtimeState.topCardsSeq = nextSeq;
+    } else {
+      realtimeState.subTabsSeq = nextSeq;
+    }
+    return nextSeq;
+  }
+
+  function isRealtimeRequestCurrent(kind, seq) {
+    return kind === 'top'
+      ? realtimeState.topCardsSeq === seq
+      : realtimeState.subTabsSeq === seq;
+  }
+
+  function createRealtimeController(kind) {
+    var key = kind === 'top' ? 'topCardsController' : 'subTabsController';
+    if (realtimeState[key] && typeof realtimeState[key].abort === 'function') {
+      realtimeState[key].abort();
+    }
+    if (typeof AbortController === 'undefined') {
+      realtimeState[key] = null;
+      return null;
+    }
+    realtimeState[key] = new AbortController();
+    return realtimeState[key];
+  }
+
+  function clearRealtimeController(kind, controller) {
+    var key = kind === 'top' ? 'topCardsController' : 'subTabsController';
+    if (realtimeState[key] === controller) realtimeState[key] = null;
+  }
+
+  function isRealtimeAbortError(err) {
+    return Boolean(err && (err.name === 'AbortError' || String(err.message || '').toLowerCase() === 'aborted'));
+  }
+
+  function fetchRealtimeJson(url, controller) {
+    var timeoutMs = Number(realtimeState.requestTimeoutMs || 30000);
+    var options = {};
+    if (controller && controller.signal) options.signal = controller.signal;
+    var timeoutId = null;
+    var didTimeout = false;
+    var timeoutPromise = new Promise(function(_, reject) {
+      timeoutId = setTimeout(function() {
+        didTimeout = true;
+        if (controller && typeof controller.abort === 'function') {
+          controller.__realtimeTimedOut = true;
+          controller.abort();
+        }
+        reject(new Error('请求超时，请稍后重试'));
+      }, timeoutMs);
+    });
+    var requestPromise = fetch(url, options)
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json()
+            .catch(function() { return {}; })
+            .then(function(data) {
+              throw new Error(data.detail || data.error || '查询失败');
+            });
+        }
+        return r.json();
+      })
+      .catch(function(err) {
+        if ((didTimeout || (controller && controller.__realtimeTimedOut)) && isRealtimeAbortError(err)) {
+          throw new Error('请求超时，请稍后重试');
+        }
+        throw err;
+      });
+    return Promise.race([requestPromise, timeoutPromise])
+      .finally(function() {
+        if (timeoutId !== null) clearTimeout(timeoutId);
+      });
+  }
+
   var newProductLaunchInited = false;
   var newProductLaunchState = {
     range: 'today',
@@ -7386,23 +7485,30 @@
 
   // ── 入口：同步刷新顶部卡片 + 子 tab ─────────────────
   function loadRealtimeOverview() {
+    var requestSeq = nextRealtimeRequestSeq();
     updateRealtimeUnmatchedDetailLinks();
-    loadRealtimeTopCards();
-    loadRealtimeSubTabs();
+    loadRealtimeTopCards(requestSeq);
+    loadRealtimeSubTabs(requestSeq);
     updateRealtimeUrlState();
   }
 
   // ── 顶部卡片：按选择的时间范围聚合 ───────────────
-  function loadRealtimeTopCards() {
+  function loadRealtimeTopCards(requestSeq) {
+    requestSeq = assignRealtimeRequestSeq('top', requestSeq);
+    var controller = createRealtimeController('top');
     var range;
     try {
       range = getRealtimeDateRange();
     } catch (err) {
       var note = document.getElementById('realtimeRangeNote');
       if (note) note.textContent = err.message;
+      clearRealtimeController('top', controller);
       return;
     }
-    if (!range) return;
+    if (!range) {
+      clearRealtimeController('top', controller);
+      return;
+    }
     var params = new URLSearchParams();
     params.set('start_date', range.start);
     params.set('end_date', range.end);
@@ -7413,12 +7519,13 @@
     var baseParams = params;
     setRealtimeScopeCardsLoading();
     Promise.all([
-      fetchRealtimeScopeSummary(baseParams, 'global'),
-      fetchRealtimeScopeSummary(baseParams, 'new'),
-      fetchRealtimeScopeSummary(baseParams, 'old'),
-      fetchRealtimeScopeSummary(baseParams, 'unmatched')
+      fetchRealtimeScopeSummary(baseParams, 'global', controller),
+      fetchRealtimeScopeSummary(baseParams, 'new', controller),
+      fetchRealtimeScopeSummary(baseParams, 'old', controller),
+      fetchRealtimeScopeSummary(baseParams, 'unmatched', controller)
     ])
       .then(function(results) {
+        if (!isRealtimeRequestCurrent('top', requestSeq)) return;
         var globalData = results[0] || {};
         var newData = results[1] || {};
         var oldData = results[2] || {};
@@ -7434,9 +7541,13 @@
         renderRealtimeFreshness(globalData);
       })
       .catch(function(err) {
+        if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('top', requestSeq)) return;
         var note = document.getElementById('realtimeRangeNote');
         if (note) note.textContent = '加载失败：' + err.message;
         setRealtimeScopeCardsError(err.message);
+      })
+      .finally(function() {
+        clearRealtimeController('top', controller);
       });
   }
 
@@ -7472,17 +7583,13 @@
     return next;
   }
 
-  function fetchRealtimeScopeSummary(baseParams, scope) {
+  function fetchRealtimeScopeSummary(baseParams, scope, controller) {
     var params = new URLSearchParams(baseParams.toString());
     if (scope && scope !== 'global') {
       params.set('product_launch_scope', scope);
     }
     var url = '/order-analytics/realtime-overview?' + params.toString();
-    return fetch(url)
-      .then(function(r) {
-        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
-        return r.json();
-      });
+    return fetchRealtimeJson(url, controller);
   }
 
   function realtimeScopePrefix(scope) {
@@ -7827,7 +7934,9 @@
   }
 
   // ── 子 tab：跟随当前选择的广告系统日范围 ──
-  function loadRealtimeSubTabs() {
+  function loadRealtimeSubTabs(requestSeq) {
+    requestSeq = assignRealtimeRequestSeq('sub', requestSeq);
+    var controller = createRealtimeController('sub');
     var hourlyBody = document.getElementById('realtimeHourlyBody');
     var orderBody = document.getElementById('realtimeOrderBody');
     var orderProfitBody = document.getElementById('realtimeOrderProfitBody');
@@ -7852,6 +7961,9 @@
       if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
       if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
       if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+      realtimeState.orderLoading = false;
+      realtimeState.profitLoading = false;
+      clearRealtimeController('sub', controller);
       return;
     }
     var params = new URLSearchParams();
@@ -7865,12 +7977,9 @@
     if (realtimeState.productId) params.set('product_id', realtimeState.productId);
     if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
     var url = '/order-analytics/realtime-overview?' + params.toString();
-    fetch(url)
-      .then(function(r) {
-        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
-        return r.json();
-      })
+    fetchRealtimeJson(url, controller)
       .then(function(data) {
+        if (!isRealtimeRequestCurrent('sub', requestSeq)) return;
         var s = data.summary || {};
         document.getElementById('realtimeGranularity').textContent =
           '每 20 分钟同步当天累计订单、商品销售额、运费、广告费和 ROAS；走势图按广告系统日小时节点展示，ROAS=总销售额/广告消耗费用';
@@ -7927,6 +8036,7 @@
         }
       })
       .catch(function(err) {
+        if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('sub', requestSeq)) return;
         if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
         if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
         if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
@@ -7936,8 +8046,11 @@
         renderRealtimeOrderProfitPagination(null, 0);
       })
       .finally(function() {
-        realtimeState.orderLoading = false;
-        realtimeState.profitLoading = false;
+        if (isRealtimeRequestCurrent('sub', requestSeq)) {
+          realtimeState.orderLoading = false;
+          realtimeState.profitLoading = false;
+        }
+        clearRealtimeController('sub', controller);
       });
   }
 
