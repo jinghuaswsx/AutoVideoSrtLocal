@@ -112,6 +112,9 @@ def test_get_product_alert_details(monkeypatch):
             ]
         elif "meta_ad_realtime_daily_ad_metrics" in sql and "EXISTS" not in sql:
             return []  # today's realtime ads
+        elif "SELECT DISTINCT" in sql and "meta_ad_daily_ad_metrics" in sql:
+            # active ad codes lookup
+            return [{"code": "ad_1"}]
         else:
             # daily ad metrics
             return [

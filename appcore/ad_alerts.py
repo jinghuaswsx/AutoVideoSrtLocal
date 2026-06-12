@@ -1517,46 +1517,59 @@ def get_product_alert_details(product_id: int, threshold: float | None = None) -
         if detail:
             countries.append(detail)
 
-    realtime_exists_sql = ""
-    if _has_realtime_ad_table():
-        realtime_exists_sql = """
-            OR EXISTS (
-              SELECT 1 FROM meta_ad_realtime_daily_ad_metrics rt
-              WHERE rt.normalized_ad_code = m.normalized_ad_code
-                AND rt.spend_usd > 0
-                AND rt.business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-            )
+    active_codes = set()
+    active_daily = query(
         """
-
-    ads_rows = query(
-        f"""
-        SELECT
-          m.normalized_ad_code AS ad_code,
-          MAX(m.ad_name) AS ad_name,
-          m.ad_account_id,
-          MAX(m.ad_account_name) AS ad_account_name,
-          MIN(DATE(COALESCE(m.meta_business_date, m.report_date))) AS first_active_date,
-          MAX(DATE(COALESCE(m.meta_business_date, m.report_date))) AS last_active_date,
-          SUM(COALESCE(m.spend_usd, 0)) AS ad_spend_usd,
-          SUM(COALESCE(m.purchase_value_usd, 0)) AS purchase_value_usd,
-          COUNT(DISTINCT DATE(COALESCE(m.meta_business_date, m.report_date))) AS active_days
-        FROM meta_ad_daily_ad_metrics m
-        WHERE m.product_id = %(product_id)s
-          AND (
-            EXISTS (
-              SELECT 1 FROM meta_ad_daily_ad_metrics d
-              WHERE d.product_id = m.product_id
-                AND d.normalized_ad_code = m.normalized_ad_code
-                AND d.spend_usd > 0
-                AND DATE(COALESCE(d.meta_business_date, d.report_date)) >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-            )
-            {realtime_exists_sql}
-          )
-        GROUP BY m.normalized_ad_code, m.ad_account_id
-        ORDER BY ad_spend_usd DESC
+        SELECT DISTINCT COALESCE(NULLIF(TRIM(normalized_ad_code), ''), '') AS code
+        FROM meta_ad_daily_ad_metrics
+        WHERE product_id = %(product_id)s
+          AND COALESCE(spend_usd, 0) > 0
+          AND DATE(COALESCE(meta_business_date, report_date)) >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
         """,
         {"product_id": product_id}
     )
+    for r in active_daily:
+        c = r.get("code")
+        if c:
+            active_codes.add(c)
+
+    if _has_realtime_ad_table():
+        active_realtime = query(
+            """
+            SELECT DISTINCT COALESCE(NULLIF(TRIM(normalized_ad_code), ''), '') AS code
+            FROM meta_ad_realtime_daily_ad_metrics
+            WHERE COALESCE(spend_usd, 0) > 0
+              AND business_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+            """
+        )
+        for r in active_realtime:
+            c = r.get("code")
+            if c:
+                active_codes.add(c)
+
+    if not active_codes:
+        ads_rows = []
+    else:
+        ads_rows = query(
+            """
+            SELECT
+              m.normalized_ad_code AS ad_code,
+              MAX(m.ad_name) AS ad_name,
+              m.ad_account_id,
+              MAX(m.ad_account_name) AS ad_account_name,
+              MIN(DATE(COALESCE(m.meta_business_date, m.report_date))) AS first_active_date,
+              MAX(DATE(COALESCE(m.meta_business_date, m.report_date))) AS last_active_date,
+              SUM(COALESCE(m.spend_usd, 0)) AS ad_spend_usd,
+              SUM(COALESCE(m.purchase_value_usd, 0)) AS purchase_value_usd,
+              COUNT(DISTINCT DATE(COALESCE(m.meta_business_date, m.report_date))) AS active_days
+            FROM meta_ad_daily_ad_metrics m
+            WHERE m.product_id = %(product_id)s
+              AND m.normalized_ad_code IN %(active_codes)s
+            GROUP BY m.normalized_ad_code, m.ad_account_id
+            ORDER BY ad_spend_usd DESC
+            """,
+            {"product_id": product_id, "active_codes": list(active_codes)}
+        )
 
     today_map = {}
     prod_code = _safe_str(p_row.get("product_code"))
