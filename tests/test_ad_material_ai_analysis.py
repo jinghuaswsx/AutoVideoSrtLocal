@@ -485,6 +485,26 @@ def test_run_product_analysis_uses_googlewj_material_review(monkeypatch):
     assert result["mode"] == "ai"
 
 
+def test_snake_batches_mix_strong_and_weak_candidates():
+    items = [{"product_id": i, "score": 100 - i} for i in range(60)]
+    batches = svc._snake_batches(items, size=20)
+    assert [len(b) for b in batches] == [20, 20, 20]
+    # 蛇形分配：全局前 3 名必须分散在 3 个不同批次，避免强者同批互斥
+    for batch in batches:
+        ids = {item["product_id"] for item in batch}
+        assert ids & {0, 1, 2}
+    # 不丢不重
+    all_ids = sorted(item["product_id"] for batch in batches for item in batch)
+    assert all_ids == list(range(60))
+
+
+def test_snake_batches_small_input_returns_single_batch():
+    items = [{"product_id": i} for i in range(8)]
+    batches = svc._snake_batches(items, size=20)
+    assert len(batches) == 1
+    assert [item["product_id"] for item in batches[0]] == list(range(8))
+
+
 def test_resolve_billing_user_id_handles_missing_and_fallback(monkeypatch):
     # 1. 显式传入 user_id 时，直接返回
     assert svc._resolve_billing_user_id(42) == 42

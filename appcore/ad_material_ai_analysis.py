@@ -423,6 +423,26 @@ def _chunked(items: list[dict], size: int) -> Iterable[list[dict]]:
         yield items[index:index + size]
 
 
+def _snake_batches(items: list[dict], size: int = 20) -> list[list[dict]]:
+    """按蛇形顺序把已排序候选交错分配到批次。
+
+    顺序切分会让全局第 11-20 名与最强的前 10 名同批互斥出局，而弱批的
+    第 41-60 名却能内部晋级；蛇形分配保证每批强弱混合，批内竞争公平。
+    """
+    items = list(items)
+    if not items:
+        return []
+    batch_count = math.ceil(len(items) / max(size, 1))
+    if batch_count <= 1:
+        return [items]
+    batches: list[list[dict]] = [[] for _ in range(batch_count)]
+    for index, item in enumerate(items):
+        round_no, pos = divmod(index, batch_count)
+        target = pos if round_no % 2 == 0 else batch_count - 1 - pos
+        batches[target].append(item)
+    return batches
+
+
 def _query_one_safe(sql: str, args: tuple[Any, ...] = ()) -> dict | None:
     try:
         return db.query_one(sql, args)
@@ -1765,7 +1785,7 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
     try:
         batch_results: list[dict[str, Any]] = []
         merged_candidates: list[dict[str, Any]] = []
-        for batch_index, batch in enumerate(_chunked(candidates, 20), start=1):
+        for batch_index, batch in enumerate(_snake_batches(candidates, 20), start=1):
             payload = {
                 "batch_index": batch_index,
                 "rule": "本批最多输出 Top10，剔除高ROAS低量产品。",
