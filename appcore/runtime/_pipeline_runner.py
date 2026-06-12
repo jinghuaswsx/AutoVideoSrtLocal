@@ -1228,6 +1228,8 @@ class PipelineRunner:
                     project_id=task_id,
                     checkpoint_key=f"tts_script.{variant}.r{round_index}",
                 )
+                if tts_script.get("_wording_fallback"):
+                    round_record["tts_script_source"] = "wording_fallback"
             tts_script_messages = tts_script.get("_messages") or []
             if tts_script_messages:
                 _save_llm_prompt_debug(

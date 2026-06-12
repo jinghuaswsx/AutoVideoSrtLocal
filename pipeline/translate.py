@@ -24,6 +24,8 @@ from appcore.llm_models import (
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
     TTS_SCRIPT_RESPONSE_FORMAT,
+    TtsScriptWordingMismatchError,
+    _rebuild_subtitle_chunks,
     _split_segments_into_batches,
     build_localized_translation_messages,
     build_tts_script_messages,
@@ -378,6 +380,36 @@ def generate_localized_translation(
     )
 
 
+def _deterministic_tts_script_from_sentences(
+    sentences: list[dict], validate_fn, max_words_kw: int = 10,
+) -> dict:
+    """确定性回退：一句一块，不再信任 LLM 切分。
+
+    blocks = 输入 sentences 一句一块；subtitle_chunks 通过 _rebuild_subtitle_chunks
+    确定性重建；结果标记 _wording_fallback=True。
+    """
+    blocks = [
+        {
+            "index": i,
+            "text": s.get("text", ""),
+            "sentence_indices": [i],
+            "source_segment_indices": list(s.get("source_segment_indices") or [i]),
+        }
+        for i, s in enumerate(sentences)
+    ]
+    payload = {
+        "full_text": " ".join(b["text"] for b in blocks if b["text"]),
+        "blocks": blocks,
+        "subtitle_chunks": [],
+    }
+    try:
+        result = validate_fn(payload, sentences=sentences)
+    except TypeError:
+        result = validate_fn(payload)
+    result["_wording_fallback"] = True
+    return result
+
+
 def _generate_tts_script_single(
     localized_translation: dict,
     *,
@@ -390,28 +422,61 @@ def _generate_tts_script_single(
     provider_override: str | None = None,
     model_override: str | None = None,
 ) -> dict:
-    """Single-shot tts_script generation: original logic, no batching."""
+    """Single-shot tts_script generation with wording-mismatch retry + deterministic fallback.
+
+    首次 mismatch → 追加反馈消息重试一次；
+    二次 mismatch → 确定性回退（_wording_fallback=True）。
+    其他 ValueError（schema 缺 blocks 等）保持原样向上抛。
+    """
     use_case = _require_use_case(use_case, fn="_generate_tts_script_single")
     builder = messages_builder or build_tts_script_messages
     messages = builder(localized_translation)
     rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
-
-    payload, usage = _invoke_chat_for_use_case(
-        use_case, messages, rf,
-        user_id=user_id, project_id=project_id,
-        provider_override=provider_override,
-        model_override=model_override,
-    )
-
-    log.info("tts_script parsed payload type=%s keys=%s",
-             type(payload).__name__,
-             list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     validate_fn = validator or validate_tts_script
     sentences = (localized_translation or {}).get("sentences") or []
+
+    def _attempt(msgs):
+        payload, usage = _invoke_chat_for_use_case(
+            use_case, msgs, rf,
+            user_id=user_id, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
+        )
+        log.info("tts_script parsed payload type=%s keys=%s",
+                 type(payload).__name__,
+                 list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
+        try:
+            result = validate_fn(payload, sentences=sentences)
+        except TypeError:
+            result = validate_fn(payload)
+        return result, usage
+
     try:
-        result = validate_fn(payload, sentences=sentences)
-    except TypeError:
-        result = validate_fn(payload)
+        result, usage = _attempt(messages)
+    except TtsScriptWordingMismatchError as first_err:
+        log.warning("tts_script wording mismatch (attempt 1), retrying: %s", first_err)
+        retry_messages = list(messages) + [
+            {
+                "role": "user",
+                "content": (
+                    "Your previous attempt changed the wording. "
+                    "Reproduce the input sentences with EXACT wording — "
+                    "same words in the same order. "
+                    "Only regroup them into blocks and subtitle_chunks."
+                ),
+            }
+        ]
+        try:
+            result, usage = _attempt(retry_messages)
+        except TtsScriptWordingMismatchError as second_err:
+            log.warning(
+                "tts_script wording mismatch (attempt 2), falling back deterministic: %s",
+                second_err,
+            )
+            result = _deterministic_tts_script_from_sentences(sentences, validate_fn)
+            result["_messages"] = messages
+            return result
+
     if usage:
         result["_usage"] = usage
         log.info("tts_script token usage: input=%s, output=%s",
@@ -502,9 +567,17 @@ def _generate_tts_script_batched(
     merged = {"full_text": full_text, "blocks": all_blocks, "subtitle_chunks": all_chunks}
     validate_fn = validator or validate_tts_script
     try:
-        final = validate_fn(merged, sentences=sentences)
-    except TypeError:
-        final = validate_fn(merged)
+        try:
+            final = validate_fn(merged, sentences=sentences)
+        except TypeError:
+            final = validate_fn(merged)
+    except TtsScriptWordingMismatchError as merge_err:
+        # 批边界可能引入整体 mismatch，整体走确定性回退
+        log.warning(
+            "tts_script batched merge wording mismatch, falling back deterministic: %s",
+            merge_err,
+        )
+        final = _deterministic_tts_script_from_sentences(sentences, validate_fn)
     if all_messages:
         final["_messages"] = all_messages
     if total_input or total_output:
