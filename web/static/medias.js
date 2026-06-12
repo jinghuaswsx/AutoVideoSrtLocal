@@ -630,8 +630,7 @@
 
     return `<div class="oc-lang-bar oc-country-metrics-bar">`
       + `<div class="oc-lang-summary oc-country-metrics-summary" title="${escapeHtml(summaryTitle)}">`
-      + `<div style="display: flex; align-items: center; height: 100%; min-width: 0; max-width: 100%; overflow: hidden; padding-right: 8px;">${leftColHtml}</div>`
-      + `<div></div>`
+      + `<div style="grid-column: span 2; display: flex; align-items: center; height: 100%; min-width: 0; max-width: 100%; overflow: hidden; padding-right: 8px;">${leftColHtml}</div>`
       + `<div class="oc-lang-roas">`
       + `<div class="oc-lang-roas-block"><span class="oc-lang-label">订单ROAS</span><strong style="color: #2563eb;">${fmtAdRoas(productSummary.overall_roas)}</strong></div>`
       + `<div class="oc-lang-spend-block"><span class="oc-lang-label">总消耗</span><strong style="color: #2563eb;">${fmtAdSpend(productSummary.ad_spend_usd)}</strong></div>`
