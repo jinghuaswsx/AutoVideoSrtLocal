@@ -585,6 +585,33 @@ def validate_localized_translation(payload) -> dict:
     return {"full_text": full_text, "sentences": sentences}
 
 
+class TtsScriptWordingMismatchError(ValueError):
+    """tts_script blocks 的词序列与输入 sentences 不一致（LLM 静默改写）。"""
+
+
+def ensure_tts_script_wording(blocks: list[dict], sentences: list[dict]) -> None:
+    """校验 blocks 的词序列与 sentences 完全一致（忽略大小写和标点）。
+
+    不一致时 raise TtsScriptWordingMismatchError，错误信息包含首个差异位置
+    附近的两边词序列片段（各 ≤15 词），便于日志定位。
+    """
+    expected = _subtitle_word_signature(_concat_items(sentences, "text"))
+    actual = _subtitle_word_signature(_concat_items(blocks, "text"))
+    if expected == actual:
+        return
+    pos = next(
+        (i for i, (a, b) in enumerate(zip(actual, expected)) if a != b),
+        min(len(actual), len(expected)),
+    )
+    lo = max(0, pos - 5)
+    raise TtsScriptWordingMismatchError(
+        f"tts_script wording mismatch at word {pos}: "
+        f"blocks[...{' '.join(actual[lo:pos + 10])}...] vs "
+        f"sentences[...{' '.join(expected[lo:pos + 10])}...] "
+        f"(blocks {len(actual)} words, sentences {len(expected)} words)"
+    )
+
+
 def validate_tts_script(payload, sentences: list[dict] | None = None,
                         max_words: int = 10) -> dict:
     # 兼容模型直接返回 list（如豆包）
@@ -608,6 +635,10 @@ def validate_tts_script(payload, sentences: list[dict] | None = None,
     concat = _concat_items(blocks, "text")
     if not full_text or concat != full_text:
         full_text = concat
+
+    # Block 2: 词级一致性校验——blocks 词序列必须与输入 sentences 完全一致
+    if sentences:
+        ensure_tts_script_wording(blocks, sentences)
 
     subtitle_chunks = _rebuild_subtitle_chunks(blocks, min_words=5, max_words=max_words)
     if not subtitle_chunks:
