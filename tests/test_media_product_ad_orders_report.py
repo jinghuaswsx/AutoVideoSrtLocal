@@ -100,6 +100,7 @@ def test_get_product_ad_orders_report_aggregation(monkeypatch):
     # Total order profit: 330 + total XX (50-1.5-10-7.5-1 = 30) = 360. Spend: 85. Net profit: 275
     assert total["total_profit"] == 275.0
     assert total["total_order_roas"] == 7.06
+    assert total["total_profit_margin"] == 45.83
 
     de = res["by_lang"]["de"]
     assert de["today_spend"] == 5.0
@@ -107,6 +108,7 @@ def test_get_product_ad_orders_report_aggregation(monkeypatch):
     assert de["today_roas"] == 3.0
     assert de["today_profit"] == 55.0
     assert de["today_order_roas"] == 20.0
+    assert de["today_profit_margin"] == 55.0
     assert de["yesterday_spend"] == 10.0
     assert de["yesterday_orders"] == 1
     assert de["yesterday_roas"] == 2.5

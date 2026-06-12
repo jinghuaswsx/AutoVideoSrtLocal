@@ -4916,35 +4916,49 @@ window.MEDIAS_PRODUCT_DETAIL = {% if is_product_detail_page %}{{ {
             <div id="adOrdersReportProductName" style="font-size:26px; font-weight:bold; color:#2563eb; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;">—</div>
           </div>
         </div>
-        <div id="adOrdersReportStatsCard" style="display:flex; flex-direction:column; gap:12px; background:var(--oc-bg-subtle); border:1px solid var(--oc-border); border-radius:8px; padding:16px; min-width:380px; box-sizing:border-box; align-self:stretch;">
-          <div style="display:flex; gap:20px; border-bottom:1px solid var(--oc-border); padding-bottom:8px; align-items:center;">
+        <div id="adOrdersReportStatsCard" style="display:flex; flex-direction:column; gap:12px; background:var(--oc-bg-subtle); border:1px solid var(--oc-border); border-radius:8px; padding:16px; min-width:480px; box-sizing:border-box; align-self:stretch;">
+          <!-- 第一部分：总计指标 (订单维度) -->
+          <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; border-bottom:1px solid var(--oc-border); padding-bottom:12px;">
+            <div style="display:flex; flex-direction:column; align-items:flex-start;">
+              <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:2px; white-space:nowrap;">总销售额 (总)</span>
+              <span id="adOrdersReportOrderSales" class="mono" style="font-size:15px; font-weight:bold; color:var(--oc-fg);">—</span>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:flex-start;">
+              <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:2px; white-space:nowrap;">总订单量 (总)</span>
+              <span id="adOrdersReportOrderCount" class="mono" style="font-size:15px; font-weight:bold; color:var(--oc-fg);">—</span>
+            </div>
             <div style="display:flex; flex-direction:column; align-items:flex-start;">
               <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:2px; white-space:nowrap;">订单 ROAS (总)</span>
-              <span id="adOrdersReportOrderRoas" class="mono" style="font-size:16px; font-weight:bold; color:#2563eb;">—</span>
+              <span id="adOrdersReportOrderRoas" class="mono" style="font-size:15px; font-weight:bold; color:#2563eb;">—</span>
             </div>
             <div style="display:flex; flex-direction:column; align-items:flex-start;">
               <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:2px; white-space:nowrap;">订单盈亏 (总)</span>
-              <span id="adOrdersReportOrderProfit" class="mono" style="font-size:16px; font-weight:bold;">—</span>
+              <span id="adOrdersReportOrderProfit" class="mono" style="font-size:15px; font-weight:bold;">—</span>
             </div>
-            <div style="display:flex; flex-direction:column; align-items:flex-start; margin-left:auto; border-left:1px solid var(--oc-border); padding-left:16px;">
+            <div style="display:flex; flex-direction:column; align-items:flex-start;">
+              <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:2px; white-space:nowrap;">利润率 (总)</span>
+              <span id="adOrdersReportOrderProfitMargin" class="mono" style="font-size:15px; font-weight:bold;">—</span>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:flex-start;">
               <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:2px; white-space:nowrap;">保本 ROAS</span>
-              <span id="adOrdersReportBreakevenRoas" class="mono" style="font-size:16px; font-weight:bold; color:var(--oc-fg);">—</span>
+              <span id="adOrdersReportBreakevenRoas" class="mono" style="font-size:15px; font-weight:bold; color:var(--oc-fg);">—</span>
             </div>
           </div>
-          <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:8px;">
-            <div style="display:flex; flex-direction:column; align-items:center;">
+          <!-- 第二部分：近期盈亏走势 -->
+          <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:12px; margin-top:4px;">
+            <div style="display:flex; flex-direction:column; align-items:flex-start;">
               <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:4px; white-space:nowrap;">今天盈亏</span>
               <span id="adOrdersReportProfitToday" class="mono" style="font-size:14px; font-weight:bold;">—</span>
             </div>
-            <div style="display:flex; flex-direction:column; align-items:center;">
+            <div style="display:flex; flex-direction:column; align-items:flex-start;">
               <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:4px; white-space:nowrap;">昨天盈亏</span>
               <span id="adOrdersReportProfitYesterday" class="mono" style="font-size:14px; font-weight:bold;">—</span>
             </div>
-            <div style="display:flex; flex-direction:column; align-items:center;">
+            <div style="display:flex; flex-direction:column; align-items:flex-start;">
               <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:4px; white-space:nowrap;">7天盈亏</span>
               <span id="adOrdersReportProfit7d" class="mono" style="font-size:14px; font-weight:bold;">—</span>
             </div>
-            <div style="display:flex; flex-direction:column; align-items:center;">
+            <div style="display:flex; flex-direction:column; align-items:flex-start;">
               <span style="font-size:11px; color:var(--oc-fg-muted); margin-bottom:4px; white-space:nowrap;">30天盈亏</span>
               <span id="adOrdersReportProfit30d" class="mono" style="font-size:14px; font-weight:bold;">—</span>
             </div>

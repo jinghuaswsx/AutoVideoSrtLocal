@@ -3723,16 +3723,22 @@
     const empty = document.getElementById('adOrdersReportEmpty');
     
     // Clear and reset the top-right stat card values
+    const orderSalesEl = document.getElementById('adOrdersReportOrderSales');
+    const orderCountEl = document.getElementById('adOrdersReportOrderCount');
     const orderRoasEl = document.getElementById('adOrdersReportOrderRoas');
     const orderProfitEl = document.getElementById('adOrdersReportOrderProfit');
+    const orderMarginEl = document.getElementById('adOrdersReportOrderProfitMargin');
     const beRoasEl = document.getElementById('adOrdersReportBreakevenRoas');
     const profitTodayEl = document.getElementById('adOrdersReportProfitToday');
     const profitYesterdayEl = document.getElementById('adOrdersReportProfitYesterday');
     const profit7dEl = document.getElementById('adOrdersReportProfit7d');
     const profit30dEl = document.getElementById('adOrdersReportProfit30d');
 
+    if (orderSalesEl) orderSalesEl.textContent = '—';
+    if (orderCountEl) orderCountEl.textContent = '—';
     if (orderRoasEl) orderRoasEl.textContent = '—';
     if (orderProfitEl) { orderProfitEl.textContent = '—'; orderProfitEl.style.color = ''; }
+    if (orderMarginEl) { orderMarginEl.textContent = '—'; orderMarginEl.style.color = ''; }
     if (beRoasEl) beRoasEl.textContent = '—';
     if (profitTodayEl) { profitTodayEl.textContent = '—'; profitTodayEl.style.color = ''; }
     if (profitYesterdayEl) { profitYesterdayEl.textContent = '—'; profitYesterdayEl.style.color = ''; }
@@ -3765,6 +3771,32 @@
       }
     }
 
+    function formatPercentStat(el, val) {
+      if (!el) return;
+      if (val === null || val === undefined) {
+        el.textContent = '—';
+        el.style.color = 'var(--oc-fg-muted)';
+        return;
+      }
+      const num = Number(val);
+      if (!isFinite(num)) {
+        el.textContent = '—';
+        el.style.color = 'var(--oc-fg-muted)';
+        return;
+      }
+      const formatted = num.toFixed(2) + '%';
+      if (num > 0) {
+        el.textContent = `+${formatted}`;
+        el.style.color = '#16a34a'; // Green
+      } else if (num < 0) {
+        el.textContent = `${formatted}`;
+        el.style.color = '#dc2626'; // Red
+      } else {
+        el.textContent = `0.00%`;
+        el.style.color = '';
+      }
+    }
+
     // Show loading skeleton (colspan is now 21 for 1 country column + 5 periods * 4 columns)
     tbody.innerHTML = '<tr><td colspan="21" style="text-align: center; padding: 20px;"><div class="oc-skel" style="height: 100px; margin: 0;"></div></td></tr>';
     empty.hidden = true;
@@ -3777,12 +3809,23 @@
         const total = data.total || {};
 
         // Populate the top-right stat card
+        if (orderSalesEl) {
+          orderSalesEl.textContent = total.total_revenue !== null && total.total_revenue !== undefined
+            ? `$${Number(total.total_revenue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            : '—';
+        }
+        if (orderCountEl) {
+          orderCountEl.textContent = total.total_orders !== null && total.total_orders !== undefined
+            ? total.total_orders
+            : '—';
+        }
         if (orderRoasEl) {
           orderRoasEl.textContent = total.total_order_roas !== null && total.total_order_roas !== undefined
             ? Number(total.total_order_roas).toFixed(2)
             : '—';
         }
         formatProfitStat(orderProfitEl, total.total_profit);
+        formatPercentStat(orderMarginEl, total.total_profit_margin);
 
         const beRoas = data.breakeven_roas !== undefined && data.breakeven_roas !== null
           ? data.breakeven_roas

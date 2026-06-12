@@ -323,12 +323,14 @@ def get_product_ad_orders_report(product_id: int, today: date | None = None) -> 
             profit = round(row[f"{key}_order_profit"] - spend, 2)
             revenue = row[f"{key}_revenue"]
             order_roas = round(revenue / spend, 2) if spend > 0 else None
+            profit_margin = round((profit / revenue) * 100, 2) if revenue > 0 else None
             out[f"{key}_spend"] = spend
             out[f"{key}_orders"] = orders
             out[f"{key}_roas"] = roas
             out[f"{key}_profit"] = profit
             out[f"{key}_order_roas"] = order_roas
             out[f"{key}_revenue"] = round(revenue, 2)
+            out[f"{key}_profit_margin"] = profit_margin
         return out
 
     # Finalize total row and language rows
