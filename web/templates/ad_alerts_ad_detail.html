@@ -1,0 +1,437 @@
+{% extends "layout.html" %}
+{% block title %}广告详情 - {{ detail.ad_name or detail.ad_code }}{% endblock %}
+{% block extra_style %}
+<style>
+.oc-ad-alert-page {
+  --oc-ad-alert-fg: #f8fafc;
+  --oc-ad-alert-muted: #94a3b8;
+  --oc-ad-alert-border: #1e3a8a;
+  --oc-ad-alert-card: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  --oc-ad-alert-subtle: #0f172a;
+  --oc-ad-alert-blue: #38bdf8;
+  --oc-ad-alert-cyan: #06b6d4;
+  --oc-ad-alert-green: #34d399;
+  --oc-ad-alert-red: #f87171;
+  --oc-ad-alert-orange: #fb923c;
+  --oc-ad-alert-amber: #fbbf24;
+  display: grid;
+  gap: 20px;
+  max-width: 1280px;
+  padding: 24px;
+  background: #0b1329;
+  border-radius: 16px;
+  border: 1px solid #1e293b;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 0.4s ease-out;
+  color: var(--oc-ad-alert-fg);
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.oc-ad-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+  padding-bottom: 16px;
+}
+.oc-ad-alert-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.oc-ad-alert-back-btn {
+  color: var(--oc-ad-alert-blue);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  transition: opacity 0.2s;
+}
+.oc-ad-alert-back-btn:hover {
+  opacity: 0.8;
+}
+.oc-ad-alert-title h1 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 800px;
+}
+.oc-ad-alert-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.oc-ad-alert-store {
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  font-weight: 600;
+  background: #1e293b;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--oc-ad-alert-border);
+}
+.oc-ad-alert-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.oc-ad-alert-detail-cell {
+  padding: 12px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 10px;
+  background: #1e293b;
+}
+.oc-ad-alert-detail-label {
+  margin-bottom: 6px;
+  color: var(--oc-ad-alert-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.oc-ad-alert-detail-value {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.oc-ad-alert-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 12px;
+  background: #0f172a;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  margin-bottom: 20px;
+}
+.oc-ad-alert-table {
+  width: 100%;
+  min-width: 800px;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: #0f172a;
+}
+.oc-ad-alert-table th,
+.oc-ad-alert-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+  vertical-align: middle;
+  white-space: nowrap;
+  color: #e2e8f0;
+}
+.oc-ad-alert-table th {
+  background: #1e3a8a;
+  color: #ffffff;
+  font-weight: 800;
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.oc-ad-alert-table th.oc-ad-alert-num,
+.oc-ad-alert-table td.oc-ad-alert-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.oc-ad-alert-chart {
+  width: 100%;
+  overflow-x: auto;
+  margin-bottom: 18px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 12px;
+  background: #0a0f1c;
+  padding: 16px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.oc-ad-alert-btn {
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 10px;
+  background: #0f172a;
+  color: var(--oc-ad-alert-fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 20px;
+  text-decoration: none;
+  width: fit-content;
+}
+.oc-ad-alert-btn-primary {
+  border-color: #2563eb;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+.oc-ad-alert-btn-primary:hover {
+  background: linear-gradient(135deg, #3b82f6, #1e40af);
+  border-color: #3b82f6;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.5);
+}
+.oc-ad-alert-state {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--oc-ad-alert-muted);
+}
+@media (max-width: 760px) {
+  .oc-ad-alert-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .oc-ad-alert-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="oc-ad-alert-page" id="adDetailPage">
+  <div class="oc-ad-alert-head">
+    <div class="oc-ad-alert-title">
+      <a href="/ad-alerts/product/{{ product_id }}" class="oc-ad-alert-back-btn">← 返回商品详情</a>
+      <h1>广告: {{ detail.ad_name or detail.ad_code }}</h1>
+    </div>
+    <div class="oc-ad-alert-tools">
+      <span class="oc-ad-alert-store">ROAS 阈值: <strong>{{ "%.2f"|format(threshold) }}</strong></span>
+    </div>
+  </div>
+
+  <div class="oc-ad-alert-detail-grid">
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">广告账户</div>
+      <div class="oc-ad-alert-detail-value">{{ detail.ad_account_name or detail.ad_account_id }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">广告编码</div>
+      <div class="oc-ad-alert-detail-value">{{ detail.ad_code }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">首次活跃</div>
+      <div class="oc-ad-alert-detail-value">{{ detail.first_active_date or '—' }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">最后活跃</div>
+      <div class="oc-ad-alert-detail-value">{{ detail.last_active_date or '—' }}</div>
+    </div>
+  </div>
+
+  <h2 style="margin-top: 10px; font-size: 18px; color: #ffffff;">多时间窗口数据</h2>
+  <div class="oc-ad-alert-table-wrap">
+    <table class="oc-ad-alert-table" aria-label="广告多窗口表现">
+      <thead>
+        <tr>
+          <th>时间窗口</th>
+          <th class="oc-ad-alert-num">消耗</th>
+          <th class="oc-ad-alert-num">成效 (购买次数)</th>
+          <th class="oc-ad-alert-num">ROAS</th>
+        </tr>
+      </thead>
+      <tbody id="multiWindowBody">
+        <tr><td colspan="4" class="oc-ad-alert-state">数据加载中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 style="margin-top: 10px; font-size: 18px; color: #ffffff;">近 30 天每日消耗与购买趋势</h2>
+  <div class="oc-ad-alert-chart" id="trendChart">
+    <div class="oc-ad-alert-state">图表加载中...</div>
+  </div>
+
+  <div style="margin-top: 20px;">
+    <a href="#" class="oc-ad-alert-btn oc-ad-alert-btn-primary" id="jumpAnalyticsBtn">📊 跳转广告分析详情页</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var productId = "{{ product_id }}";
+  var adCode = "{{ ad_code }}";
+  var adAccountId = "{{ ad_account_id }}";
+  var tableBody = document.getElementById('multiWindowBody');
+  var chartEl = document.getElementById('trendChart');
+  var jumpBtn = document.getElementById('jumpAnalyticsBtn');
+
+  function html(value) {
+    var div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+  }
+
+  function money(value, digits) {
+    return '$' + Number(value || 0).toFixed(digits == null ? 2 : digits);
+  }
+
+  function roas(value) {
+    return value === null || value === undefined ? 'N/A' : Number(value).toFixed(2);
+  }
+
+  function intText(value) {
+    return Number(value || 0).toLocaleString('en-US');
+  }
+
+  function loadAdData() {
+    var url = '/ad-alerts/api/ad-detail?product_id=' + productId 
+            + '&ad_code=' + encodeURIComponent(adCode) 
+            + '&ad_account_id=' + encodeURIComponent(adAccountId);
+            
+    fetch(url)
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('ad_detail_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        renderTable(data.metrics);
+        // Reverse trend points to draw oldest to newest
+        var points = data.trend || [];
+        points.reverse();
+        chartEl.innerHTML = renderSvg(points);
+        setupJumpLink(data);
+      })
+      .catch(function() {
+        tableBody.innerHTML = '<tr><td colspan="4" class="oc-ad-alert-state">加载失败</td></tr>';
+        chartEl.innerHTML = '<div class="oc-ad-alert-state">图表加载失败</div>';
+      });
+  }
+
+  function renderTable(m) {
+    if (!m) return;
+    
+    var rows = [
+      { label: '今天', key: 'today' },
+      { label: '昨天', key: 'yesterday' },
+      { label: '最近 7 天', key: 'last_7d' },
+      { label: '最近 30 天', key: 'last_30d' },
+      { label: '整体', key: 'overall' }
+    ];
+
+    tableBody.innerHTML = rows.map(function(r) {
+      var item = m[r.key] || {};
+      return ''
+        + '<tr>'
+        + '  <td><strong>' + html(r.label) + '</strong></td>'
+        + '  <td class="oc-ad-alert-num">' + money(item.spend_usd, 2) + '</td>'
+        + '  <td class="oc-ad-alert-num">' + intText(item.purchase_value_usd) + '</td>'
+        + '  <td class="oc-ad-alert-num"><strong>' + roas(item.roas) + '</strong></td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  function renderSvg(points) {
+    if (!points.length) return '<div class="oc-ad-alert-state">暂无趋势数据</div>';
+    var width = Math.max(600, points.length * 24);
+    var height = 220;
+    var pad = { top: 24, right: 20, bottom: 30, left: 20 };
+    var plotW = width - pad.left - pad.right;
+    var plotH = height - pad.top - pad.bottom;
+    var max = 0;
+    points.forEach(function(p) {
+      max = Math.max(max, Number(p.spend_usd || 0), Number(p.purchase_value_usd || 0));
+    });
+    max = Math.max(max, 1);
+    
+    function x(i) { return pad.left + (i / Math.max(points.length - 1, 1)) * plotW; }
+    function y(v) { return pad.top + plotH - (Number(v || 0) / max) * plotH; }
+    
+    function path(key) {
+      return points.map(function(p, i) {
+        return (i ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(p[key]).toFixed(1);
+      }).join(' ');
+    }
+    
+    function areaPath(key) {
+      var linePath = path(key);
+      var lastX = x(points.length - 1).toFixed(1);
+      var firstX = x(0).toFixed(1);
+      var yZero = (pad.top + plotH).toFixed(1);
+      return linePath + ' L' + lastX + ',' + yZero + ' L' + firstX + ',' + yZero + ' Z';
+    }
+    
+    var labels = points.map(function(p, i) {
+      if (i % Math.max(1, Math.ceil(points.length / 8)) !== 0 && i !== points.length - 1) return '';
+      return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + html(String(p.date || '').slice(5)) + '</text>';
+    }).join('');
+
+    var gridLines = '';
+    [0.25, 0.5, 0.75].forEach(function(ratio) {
+      var yVal = y(max * ratio).toFixed(1);
+      gridLines += '<line x1="' + pad.left + '" y1="' + yVal + '" x2="' + (width - pad.right) + '" y2="' + yVal + '" stroke="#1e293b" stroke-dasharray="4,4" stroke-width="1" />';
+    });
+
+    var circles = points.map(function(p, i) {
+      return ''
+        + '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.spend_usd).toFixed(1) + '" r="3" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5" />'
+        + '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.purchase_value_usd).toFixed(1) + '" r="3" fill="#ffffff" stroke="#10b981" stroke-width="1.5" />';
+    }).join('');
+
+    var defs = ''
+      + '<defs>'
+      + '  <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">'
+      + '    <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.15" />'
+      + '    <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.00" />'
+      + '  </linearGradient>'
+      + '  <linearGradient id="purchaseGrad" x1="0" y1="0" x2="0" y2="1">'
+      + '    <stop offset="0%" stop-color="#10b981" stop-opacity="0.15" />'
+      + '    <stop offset="100%" stop-color="#10b981" stop-opacity="0.00" />'
+      + '  </linearGradient>'
+      + '</defs>';
+
+    return ''
+      + '<svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="趋势图" xmlns="http://www.w3.org/2000/svg">'
+      + defs
+      + '<line x1="' + pad.left + '" y1="' + (height - pad.bottom) + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '" stroke="#1e293b" stroke-width="1.5" />'
+      + gridLines
+      + '<path d="' + areaPath('spend_usd') + '" fill="url(#spendGrad)" />'
+      + '<path d="' + areaPath('purchase_value_usd') + '" fill="url(#purchaseGrad)" />'
+      + '<path d="' + path('spend_usd') + '" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />'
+      + '<path d="' + path('purchase_value_usd') + '" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />'
+      + circles
+      + '<text x="' + (width - pad.right) + '" y="14" text-anchor="end" font-size="11" font-weight="700" fill="#3b82f6">花费</text>'
+      + '<text x="' + (width - pad.right - 42) + '" y="14" text-anchor="end" font-size="11" font-weight="700" fill="#10b981">购买</text>'
+      + labels
+      + '</svg>';
+  }
+
+  function setupJumpLink(data) {
+    var params = new URLSearchParams();
+    params.set('tab', 'ads');
+    params.set('ads_level', 'ad');
+    params.set('ads_code', data.ad_code);
+    params.set('ads_name', data.ad_name);
+    params.set('ad_account_id', data.ad_account_id);
+    if (data.first_active_date) {
+      params.set('start_date', data.first_active_date);
+    }
+    params.set('end_date', new Date().toISOString().slice(0, 10));
+
+    jumpBtn.setAttribute('href', '/order-analytics?' + params.toString());
+  }
+
+  loadAdData();
+})();
+</script>
+{% endblock %}

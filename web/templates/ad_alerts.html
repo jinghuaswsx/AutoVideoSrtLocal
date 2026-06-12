@@ -868,14 +868,15 @@
     if (state.threshold) params.set('threshold', state.threshold);
     if (state.severity) params.set('severity', state.severity);
     if (state.search) params.set('search', state.search);
-    fetch('/ad-alerts/api/list?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+    // Legacy endpoint: /ad-alerts/api/list
+    fetch('/ad-alerts/api/products?' + params.toString(), { headers: { 'Accept': 'application/json' } })
       .then(function(resp) {
         if (!resp.ok) throw new Error('list_failed');
         return resp.json();
       })
       .then(function(data) {
         renderList(data.items || []);
-        countEl.textContent = String(data.total || 0) + ' 条';
+        countEl.textContent = String(data.total || 0) + ' 个商品';
       })
       .catch(function() {
         countEl.textContent = '加载失败';
@@ -889,30 +890,32 @@
       return;
     }
     listEl.innerHTML = items.map(function(item) {
-      var severity = item.severity || 'mild';
-      var trendIcon = item.trend === 'worsening' ? '↓' : (item.trend === 'improving' ? '↑' : '→');
+      var maxSeverity = item.max_severity || 'mild';
       var stores = (item.store_codes || []).join(' / ');
+      var langBadges = (item.alert_languages || []).map(function(langObj) {
+        return '<span class="oc-ad-alert-badge oc-ad-alert-' + html(langObj.severity) + '" style="margin-right: 6px; padding: 2px 8px; border-radius: 4px; font-size: 11px; min-height: 20px; display: inline-flex;">' 
+             + html(langObj.lang.toUpperCase()) + ' (' + html(langObj.severity_label) + ')</span>';
+      }).join('');
       return ''
-        + '<button type="button" class="oc-ad-alert-card" data-product-id="' + html(item.product_id) + '" data-lang="' + html(item.lang) + '">'
+        + '<a href="/ad-alerts/product/' + html(item.product_id) + '" class="oc-ad-alert-card" style="text-decoration: none; display: grid; color: inherit;">'
         + '  <span class="oc-ad-alert-card-top">'
         + '    <span class="oc-ad-alert-product">'
-        + '      <span class="oc-ad-alert-lang">' + html(String(item.lang || '').toUpperCase()) + '</span>'
         + '      <span class="oc-ad-alert-name">' + html(item.product_name || item.product_code) + '</span>'
         + '      <span class="oc-ad-alert-code">' + html(item.product_code || '') + '</span>'
         + '      <span class="oc-ad-alert-store">' + html(stores) + '</span>'
         + '    </span>'
-        + '    <span class="oc-ad-alert-badge oc-ad-alert-' + html(severity) + '">' + html(item.severity_label || '') + '</span>'
+        + '    <span class="oc-ad-alert-badge oc-ad-alert-' + html(maxSeverity) + '">最严重: ' + html(item.max_severity_label || '') + '</span>'
         + '  </span>'
+        + '  <div style="margin: 4px 0; display: flex; flex-wrap: wrap; gap: 4px;">' + langBadges + '</div>'
         + '  <span class="oc-ad-alert-metrics">'
-        + '    <span class="oc-ad-alert-metric">ROAS <strong>' + roas(item.ad_roas) + '</strong></span>'
-        + '    <span class="oc-ad-alert-metric">消耗 <strong>' + money(item.ad_spend_usd, 0) + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">聚合ROAS <strong>' + roas(item.ad_roas) + '</strong></span>'
+        + '    <span class="oc-ad-alert-metric">总消耗 <strong>' + money(item.ad_spend_usd, 0) + '</strong></span>'
         + '    <span class="oc-ad-alert-metric">活跃 <strong>' + money(item.active_7d_ad_spend_usd, 0) + '</strong></span>'
-        + '    <span class="oc-ad-alert-metric">运行 <strong>' + Number(item.active_days || 0) + ' 天</strong></span>'
-        + '    <span class="oc-ad-alert-metric">趋势 <strong>' + trendIcon + ' ' + html(item.trend_label || '') + '</strong></span>'
-        + '    <span class="oc-ad-alert-metric">预估盈亏 ' + loss(item.estimated_loss) + '</span>'
+        + '    <span class="oc-ad-alert-metric">最大运行 <strong>' + Number(item.active_days || 0) + ' 天</strong></span>'
+        + '    <span class="oc-ad-alert-metric">预警语言数 <strong>' + Number(item.alert_count || 0) + ' 个</strong></span>'
+        + '    <span class="oc-ad-alert-metric">总预估盈亏 ' + loss(item.estimated_loss) + '</span>'
         + '  </span>'
-        + '  <span class="oc-ad-alert-judgment"><span>⚠</span><span><strong>' + html(item.conclusion || '') + '</strong>' + html(item.reason || '') + '</span></span>'
-        + '</button>';
+        + '</a>';
     }).join('');
   }
 
@@ -1126,11 +1129,7 @@
       + '</svg>';
   }
 
-  listEl.addEventListener('click', function(event) {
-    var card = event.target.closest('.oc-ad-alert-card');
-    if (!card) return;
-    openDetail(card.getAttribute('data-product-id'), card.getAttribute('data-lang'));
-  });
+  // Navigation is handled directly by <a> tags in Level 1.
 
   document.getElementById('adAlertTabs').addEventListener('click', function(event) {
     var btn = event.target.closest('[data-ad-alert-tab]');

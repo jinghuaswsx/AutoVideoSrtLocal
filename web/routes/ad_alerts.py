@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request, abort
 from flask_login import login_required
 
 from appcore import ad_alerts
@@ -228,3 +228,175 @@ def _problem_ad_item_to_dict(item: ad_alerts.ProblemAdItem) -> dict[str, Any]:
             for key, metric in item.metrics.items()
         },
     }
+
+
+def _aggregated_product_to_dict(item: ad_alerts.AggregatedProductAlert) -> dict[str, Any]:
+    return {
+        "product_id": item.product_id,
+        "product_code": item.product_code,
+        "product_name": item.product_name,
+        "store_codes": item.store_codes,
+        "ad_spend_usd": item.ad_spend_usd,
+        "purchase_value_usd": item.purchase_value_usd,
+        "ad_roas": item.ad_roas,
+        "active_7d_ad_spend_usd": item.active_7d_ad_spend_usd,
+        "estimated_loss": item.estimated_loss,
+        "max_severity": item.max_severity,
+        "max_severity_label": item.max_severity_label,
+        "alert_languages": item.alert_languages,
+        "alert_count": item.alert_count,
+        "active_days": item.active_days,
+        "computed_at": item.computed_at,
+    }
+
+
+@bp.route("/product/<int:product_id>")
+@login_required
+@admin_required
+def product_page(product_id: int):
+    """商品详情预警页 (Level 2)。"""
+    threshold = ad_alerts.get_threshold()
+    details = ad_alerts.get_product_alert_details(product_id, threshold=threshold)
+    if not details:
+        abort(404)
+    return render_template(
+        "ad_alerts_product.html",
+        product_id=product_id,
+        product_code=details["product_code"],
+        product_name=details["product_name"],
+        threshold=threshold,
+    )
+
+
+@bp.route("/product/<int:product_id>/country/<lang>")
+@login_required
+@admin_required
+def country_page(product_id: int, lang: str):
+    """国家/语种维度详情页 (Level 3)。"""
+    threshold = ad_alerts.get_threshold()
+    detail = ad_alerts.get_alert_detail(product_id, lang, threshold=threshold)
+    if not detail:
+        abort(404)
+    return render_template(
+        "ad_alerts_country.html",
+        product_id=product_id,
+        lang=lang,
+        detail=detail,
+        threshold=threshold,
+    )
+
+
+@bp.route("/product/<int:product_id>/ad/<ad_code>")
+@login_required
+@admin_required
+def ad_detail_page(product_id: int, ad_code: str):
+    """具体广告维度详情页 (Level 3)。"""
+    threshold = ad_alerts.get_threshold()
+    ad_account_id = request.args.get("ad_account_id", "").strip()
+    if not ad_account_id:
+        abort(400, description="ad_account_id required")
+    detail = ad_alerts.get_ad_detail_and_trend(product_id, ad_code, ad_account_id)
+    if not detail:
+        abort(404)
+    return render_template(
+        "ad_alerts_ad_detail.html",
+        product_id=product_id,
+        ad_code=ad_code,
+        ad_account_id=ad_account_id,
+        detail=detail,
+        threshold=threshold,
+    )
+
+
+@bp.route("/api/products")
+@login_required
+@admin_required
+def api_products():
+    """获取按产品维度聚合的广告预警列表 (Level 1 API)。"""
+    threshold = _parse_threshold(request.args.get("threshold"))
+    lang = (request.args.get("lang") or "").strip().lower() or None
+    severity = _parse_severity(request.args.get("severity"))
+    search = (request.args.get("search") or "").strip() or None
+
+    items = ad_alerts.get_aggregated_products(
+        threshold=threshold,
+        lang=lang,
+        severity=severity,
+        search=search,
+    )
+    return jsonify({
+        "items": [_aggregated_product_to_dict(item) for item in items],
+        "total": len(items),
+        "threshold": threshold or ad_alerts.get_threshold(),
+    })
+
+
+@bp.route("/api/product-detail/<int:product_id>")
+@login_required
+@admin_required
+def api_product_detail(product_id: int):
+    """获取商品下的国家与广告列表数据 (Level 2 API)。"""
+    threshold = _parse_threshold(request.args.get("threshold"))
+    details = ad_alerts.get_product_alert_details(product_id, threshold=threshold)
+    if not details:
+        return jsonify({"error": "not found"}), 404
+
+    serialized_countries = []
+    for detail in details.get("countries", []):
+        serialized_countries.append(_alert_detail_to_dict(detail))
+
+    return jsonify({
+        "product_id": details["product_id"],
+        "product_code": details["product_code"],
+        "product_name": details["product_name"],
+        "countries": serialized_countries,
+        "ads": details.get("ads", []),
+    })
+
+
+@bp.route("/api/ad-detail")
+@login_required
+@admin_required
+def api_ad_detail():
+    """获取单个广告的详细指标和趋势数据 (Level 3 API)。"""
+    try:
+        product_id = int(request.args.get("product_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid product_id"}), 400
+    if product_id <= 0:
+        return jsonify({"error": "invalid product_id"}), 400
+
+    ad_code = (request.args.get("ad_code") or "").strip()
+    if not ad_code:
+        return jsonify({"error": "ad_code required"}), 400
+
+    ad_account_id = (request.args.get("ad_account_id") or "").strip()
+    if not ad_account_id:
+        return jsonify({"error": "ad_account_id required"}), 400
+
+    detail = ad_alerts.get_ad_detail_and_trend(product_id, ad_code, ad_account_id)
+    if not detail:
+        return jsonify({"error": "not found"}), 404
+
+    serialized_trend = [
+        {
+            "date": point.date,
+            "spend_usd": point.spend_usd,
+            "purchase_value_usd": point.purchase_value_usd,
+            "roas": point.roas,
+        }
+        for point in detail.get("trend", [])
+    ]
+
+    return jsonify({
+        "product_id": detail["product_id"],
+        "ad_code": detail["ad_code"],
+        "ad_name": detail["ad_name"],
+        "ad_account_id": detail["ad_account_id"],
+        "ad_account_name": detail["ad_account_name"],
+        "first_active_date": detail["first_active_date"],
+        "last_active_date": detail["last_active_date"],
+        "metrics": detail["metrics"],
+        "trend": serialized_trend,
+    })
+

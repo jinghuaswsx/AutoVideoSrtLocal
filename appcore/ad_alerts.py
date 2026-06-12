@@ -151,6 +151,26 @@ class ProblemAdItem:
     metrics: dict[str, ProblemMetric]
 
 
+@dataclass
+class AggregatedProductAlert:
+    product_id: int
+    product_code: str
+    product_name: str
+    store_codes: list[str]
+    ad_spend_usd: float
+    purchase_value_usd: float
+    ad_roas: float | None
+    active_7d_ad_spend_usd: float
+    estimated_loss: float
+    max_severity: str
+    max_severity_label: str
+    alert_languages: list[dict[str, Any]]
+    alert_count: int
+    active_days: int
+    computed_at: str | None
+
+
+
 _LANG_LABELS: dict[str, str] = {
     "en": "英语",
     "de": "德语",
@@ -601,6 +621,391 @@ def judge_alert(
         conclusion=conclusion,
         reason=reason,
     )
+
+
+def get_aggregated_products(
+    threshold: float | None = None,
+    lang: str | None = None,
+    severity: Severity | None = None,
+    search: str | None = None,
+) -> list[AggregatedProductAlert]:
+    """查询按产品维度聚合的广告预警列表。"""
+    items = get_alerts(threshold=threshold, lang=lang, severity=None, search=search)
+
+    # Group by product_id
+    grouped: dict[int, list[AlertItem]] = {}
+    for item in items:
+        grouped.setdefault(item.product_id, []).append(item)
+
+    res: list[AggregatedProductAlert] = []
+    for pid, p_items in grouped.items():
+        if severity and not any(it.severity == severity for it in p_items):
+            continue
+
+        first = p_items[0]
+        total_spend = sum(it.ad_spend_usd for it in p_items)
+        total_purchase = sum(it.purchase_value_usd for it in p_items)
+        avg_roas = round(total_purchase / total_spend, 4) if total_spend > 0.01 else None
+        total_active_7d_spend = sum(it.active_7d_ad_spend_usd for it in p_items)
+
+        # Max severity ordering: severe > moderate > mild
+        sev_order = {Severity.SEVERE: 3, Severity.MODERATE: 2, Severity.MILD: 1}
+        max_item = max(p_items, key=lambda it: sev_order.get(it.severity, 0))
+
+        stores_set = set()
+        for it in p_items:
+            for sc in it.store_codes:
+                if sc:
+                    stores_set.add(sc)
+
+        alert_languages = [
+            {
+                "lang": it.lang,
+                "lang_label": _lang_label(it.lang),
+                "severity": it.severity.value,
+                "severity_label": SEVERITY_LABELS.get(it.severity, ""),
+                "roas": it.ad_roas,
+            }
+            for it in p_items
+        ]
+
+        res.append(
+            AggregatedProductAlert(
+                product_id=pid,
+                product_code=first.product_code,
+                product_name=first.product_name,
+                store_codes=sorted(list(stores_set)),
+                ad_spend_usd=round(total_spend, 2),
+                purchase_value_usd=round(total_purchase, 2),
+                ad_roas=avg_roas,
+                active_7d_ad_spend_usd=round(total_active_7d_spend, 2),
+                estimated_loss=round(total_purchase - total_spend, 2),
+                max_severity=max_item.severity.value,
+                max_severity_label=SEVERITY_LABELS.get(max_item.severity, ""),
+                alert_languages=alert_languages,
+                alert_count=len(p_items),
+                active_days=max(it.active_days for it in p_items),
+                computed_at=max_item.computed_at,
+            )
+        )
+
+    # Sort by max_severity desc (severe first), then active_7d_ad_spend_usd desc
+    sev_rank = {"severe": 3, "moderate": 2, "mild": 1}
+    res.sort(key=lambda x: (sev_rank.get(x.max_severity, 0), x.active_7d_ad_spend_usd), reverse=True)
+    return res
+
+
+def get_product_alert_details(product_id: int, threshold: float | None = None) -> dict[str, Any]:
+    """查询商品下的国家与广告预警列表。"""
+    p_row = query_one(
+        "SELECT id, product_code, name FROM media_products WHERE id = %(product_id)s AND deleted_at IS NULL",
+        {"product_id": product_id}
+    )
+    if not p_row:
+        return {}
+
+    rows = query(
+        """
+        SELECT c.product_id, c.lang, c.ad_spend_usd, c.purchase_value_usd,
+               c.ad_roas, c.active_7d_ad_spend_usd, c.computed_at,
+               p.product_code, p.name AS product_name
+        FROM media_product_lang_ad_summary_cache c
+        JOIN media_products p ON p.id = c.product_id AND p.deleted_at IS NULL
+        WHERE c.product_id = %(product_id)s
+        ORDER BY c.ad_roas ASC, c.active_7d_ad_spend_usd DESC
+        """,
+        {"product_id": product_id}
+    )
+
+    countries = []
+    for row in rows:
+        lang = _safe_str(row.get("lang"))
+        detail = get_alert_detail(product_id, lang, threshold=threshold)
+        if detail:
+            countries.append(detail)
+
+    ads_rows = query(
+        """
+        SELECT
+          m.normalized_ad_code AS ad_code,
+          MAX(m.ad_name) AS ad_name,
+          m.ad_account_id,
+          MAX(m.ad_account_name) AS ad_account_name,
+          MIN(DATE(COALESCE(m.meta_business_date, m.report_date))) AS first_active_date,
+          MAX(DATE(COALESCE(m.meta_business_date, m.report_date))) AS last_active_date,
+          SUM(COALESCE(m.spend_usd, 0)) AS ad_spend_usd,
+          SUM(COALESCE(m.purchase_value_usd, 0)) AS purchase_value_usd,
+          COUNT(DISTINCT DATE(COALESCE(m.meta_business_date, m.report_date))) AS active_days
+        FROM meta_ad_daily_ad_metrics m
+        WHERE m.product_id = %(product_id)s
+        GROUP BY m.normalized_ad_code, m.ad_account_id
+        ORDER BY ad_spend_usd DESC
+        """,
+        {"product_id": product_id}
+    )
+
+    today_map = {}
+    prod_code = _safe_str(p_row.get("product_code"))
+    if prod_code:
+        try:
+            today_rows = query(
+                """
+                SELECT 
+                  m.normalized_ad_code AS ad_code, 
+                  m.ad_account_id, 
+                  MAX(m.ad_name) AS ad_name,
+                  MAX(m.ad_account_name) AS ad_account_name,
+                  SUM(COALESCE(m.spend_usd, 0)) AS today_spend, 
+                  SUM(COALESCE(m.purchase_value_usd, 0)) AS today_purchase
+                FROM meta_ad_realtime_daily_ad_metrics m
+                INNER JOIN (
+                  SELECT business_date, ad_account_id, MAX(snapshot_at) AS max_snapshot_at
+                  FROM meta_ad_realtime_daily_ad_metrics
+                  WHERE business_date = CURDATE()
+                  GROUP BY business_date, ad_account_id
+                ) latest
+                  ON latest.business_date = m.business_date
+                 AND latest.ad_account_id = m.ad_account_id
+                 AND latest.max_snapshot_at = m.snapshot_at
+                WHERE m.business_date = CURDATE()
+                  AND (
+                    LOWER(m.normalized_campaign_code) LIKE CONCAT(LOWER(%(prod_code)s), '%%')
+                    OR LOWER(m.campaign_name) LIKE CONCAT(LOWER(%(prod_code)s), '%%')
+                    OR LOWER(m.normalized_ad_code) LIKE CONCAT(LOWER(%(prod_code)s), '%%')
+                    OR LOWER(m.ad_name) LIKE CONCAT(LOWER(%(prod_code)s), '%%')
+                  )
+                GROUP BY m.normalized_ad_code, m.ad_account_id
+                """,
+                {"prod_code": prod_code}
+            )
+            for r in today_rows:
+                key = (_safe_str(r.get("ad_code")), _safe_str(r.get("ad_account_id")))
+                today_map[key] = {
+                    "ad_name": _safe_str(r.get("ad_name")),
+                    "ad_account_name": _safe_str(r.get("ad_account_name")),
+                    "spend": _safe_float(r.get("today_spend")),
+                    "purchase": _safe_float(r.get("today_purchase")),
+                }
+        except Exception as e:
+            log.warning(f"Failed to query realtime ads for product {product_id}: {e}")
+
+    ads_dict = {}
+    for r in ads_rows:
+        code = _safe_str(r.get("ad_code"))
+        acc_id = _safe_str(r.get("ad_account_id"))
+        key = (code, acc_id)
+        
+        spend = _safe_float(r.get("ad_spend_usd"))
+        purchase = _safe_float(r.get("purchase_value_usd"))
+        
+        ads_dict[key] = {
+            "ad_code": code,
+            "ad_name": _safe_str(r.get("ad_name")),
+            "ad_account_id": acc_id,
+            "ad_account_name": _safe_str(r.get("ad_account_name")),
+            "first_active_date": _iso_date(r.get("first_active_date")),
+            "last_active_date": _iso_date(r.get("last_active_date")),
+            "ad_spend_usd": spend,
+            "purchase_value_usd": purchase,
+            "active_days": int(r.get("active_days") or 0),
+        }
+
+    for key, today_val in today_map.items():
+        if key in ads_dict:
+            ads_dict[key]["ad_spend_usd"] += today_val["spend"]
+            ads_dict[key]["purchase_value_usd"] += today_val["purchase"]
+            ads_dict[key]["last_active_date"] = date.today().isoformat()
+        else:
+            ads_dict[key] = {
+                "ad_code": key[0],
+                "ad_name": today_val["ad_name"] or key[0],
+                "ad_account_id": key[1],
+                "ad_account_name": today_val["ad_account_name"],
+                "first_active_date": date.today().isoformat(),
+                "last_active_date": date.today().isoformat(),
+                "ad_spend_usd": today_val["spend"],
+                "purchase_value_usd": today_val["purchase"],
+                "active_days": 1,
+            }
+
+    ads_list = []
+    for item in ads_dict.values():
+        spend = round(item["ad_spend_usd"], 2)
+        purchase = round(item["purchase_value_usd"], 2)
+        roas = round(purchase / spend, 4) if spend > 0.01 else None
+        item["ad_spend_usd"] = spend
+        item["purchase_value_usd"] = purchase
+        item["ad_roas"] = roas
+        ads_list.append(item)
+
+    ads_list.sort(key=lambda x: x["ad_spend_usd"], reverse=True)
+
+    return {
+        "product_id": product_id,
+        "product_code": prod_code,
+        "product_name": _safe_str(p_row.get("name")),
+        "countries": countries,
+        "ads": ads_list,
+    }
+
+
+def get_ad_detail_and_trend(
+    product_id: int,
+    ad_code: str,
+    ad_account_id: str,
+) -> dict[str, Any] | None:
+    """查询单个广告的多时间窗口数据和近 30 天趋势。"""
+    cfg = _problem_level_config("ad")
+    source_sql = _problem_ads_source_sql(cfg)
+
+    business_date = current_meta_business_date()
+    yesterday = business_date - timedelta(days=1)
+    last_7d_start = business_date - timedelta(days=6)
+    last_30d_start = business_date - timedelta(days=29)
+
+    params = {
+        "ad_code": ad_code,
+        "ad_account_id": ad_account_id,
+        "today": business_date,
+        "yesterday": yesterday,
+        "last_7d_start": last_7d_start,
+        "last_30d_start": last_30d_start,
+    }
+
+    row = query_one(
+        f"""
+        SELECT
+          MIN(s.metric_date) AS first_active_date,
+          MAX(s.metric_date) AS last_active_date,
+          MAX(s.name) AS ad_name,
+          MAX(s.ad_account_name) AS ad_account_name,
+          SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS today_spend_usd,
+          SUM(CASE WHEN s.metric_date = %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS today_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date = %(yesterday)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS yesterday_spend_usd,
+          SUM(CASE WHEN s.metric_date = %(yesterday)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS yesterday_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_7d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS last_7d_spend_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_7d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS last_7d_purchase_value_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_30d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.spend_usd, 0) ELSE 0 END) AS last_30d_spend_usd,
+          SUM(CASE WHEN s.metric_date >= %(last_30d_start)s AND s.metric_date <= %(today)s THEN COALESCE(s.purchase_value_usd, 0) ELSE 0 END) AS last_30d_purchase_value_usd,
+          SUM(COALESCE(s.spend_usd, 0)) AS overall_spend_usd,
+          SUM(COALESCE(s.purchase_value_usd, 0)) AS overall_purchase_value_usd
+        FROM {source_sql} s
+        WHERE s.code = %(ad_code)s
+          AND s.ad_account_id = %(ad_account_id)s
+        """,
+        params
+    )
+
+    if not row or not row.get("ad_name"):
+        fallback = query_one(
+            """
+            SELECT MIN(DATE(COALESCE(m.meta_business_date, m.report_date))) AS first_active_date,
+                   MAX(DATE(COALESCE(m.meta_business_date, m.report_date))) AS last_active_date,
+                   MAX(m.ad_name) AS ad_name,
+                   MAX(m.ad_account_name) AS ad_account_name,
+                   SUM(COALESCE(m.spend_usd, 0)) AS overall_spend_usd,
+                   SUM(COALESCE(m.purchase_value_usd, 0)) AS overall_purchase_value_usd
+            FROM meta_ad_daily_ad_metrics m
+            WHERE m.normalized_ad_code = %(ad_code)s
+              AND m.ad_account_id = %(ad_account_id)s
+            """,
+            {"ad_code": ad_code, "ad_account_id": ad_account_id}
+        )
+        if not fallback or not fallback.get("ad_name"):
+            return None
+        row = {
+            "first_active_date": fallback.get("first_active_date"),
+            "last_active_date": fallback.get("last_active_date"),
+            "ad_name": fallback.get("ad_name"),
+            "ad_account_name": fallback.get("ad_account_name"),
+            "today_spend_usd": 0.0,
+            "today_purchase_value_usd": 0.0,
+            "yesterday_spend_usd": 0.0,
+            "yesterday_purchase_value_usd": 0.0,
+            "last_7d_spend_usd": 0.0,
+            "last_7d_purchase_value_usd": 0.0,
+            "last_30d_spend_usd": 0.0,
+            "last_30d_purchase_value_usd": 0.0,
+            "overall_spend_usd": fallback.get("overall_spend_usd"),
+            "overall_purchase_value_usd": fallback.get("overall_purchase_value_usd"),
+        }
+
+    def _metric(prefix: str) -> dict[str, Any]:
+        spend = round(_safe_float(row.get(f"{prefix}_spend_usd")), 2)
+        purchase = _safe_float(row.get(f"{prefix}_purchase_value_usd"))
+        roas = round(purchase / spend, 4) if spend > 0.01 else None
+        return {
+            "spend_usd": spend,
+            "purchase_value_usd": round(purchase, 2),
+            "roas": roas,
+        }
+
+    metrics = {
+        "today": _metric("today"),
+        "yesterday": _metric("yesterday"),
+        "last_7d": _metric("last_7d"),
+        "last_30d": _metric("last_30d"),
+        "overall": _metric("overall"),
+    }
+
+    trend_rows = query(
+        """
+        SELECT
+          DATE(COALESCE(m.meta_business_date, m.report_date)) AS ad_date,
+          COALESCE(SUM(COALESCE(m.spend_usd, 0)), 0) AS spend_usd,
+          COALESCE(SUM(COALESCE(m.purchase_value_usd, 0)), 0) AS purchase_value_usd
+        FROM meta_ad_daily_ad_metrics m
+        WHERE m.product_id = %(product_id)s
+          AND m.normalized_ad_code = %(ad_code)s
+          AND m.ad_account_id = %(ad_account_id)s
+          AND DATE(COALESCE(m.meta_business_date, m.report_date)) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+          AND DATE(COALESCE(m.meta_business_date, m.report_date)) < CURDATE()
+        GROUP BY ad_date
+        ORDER BY ad_date DESC
+        """,
+        {"product_id": product_id, "ad_code": ad_code, "ad_account_id": ad_account_id}
+    )
+
+    trend_series: list[DailyPoint] = []
+    for r in trend_rows:
+        ad_date = _iso_date(r["ad_date"])
+        if ad_date:
+            spend = _safe_float(r["spend_usd"])
+            purchase = _safe_float(r["purchase_value_usd"])
+            trend_series.append(
+                DailyPoint(
+                    date=ad_date,
+                    spend_usd=round(spend, 2),
+                    purchase_value_usd=round(purchase, 2),
+                    roas=round(purchase / spend, 4) if spend > 0.01 else None
+                )
+            )
+
+    today_spend = metrics["today"]["spend_usd"]
+    today_purchase = metrics["today"]["purchase_value_usd"]
+    if today_spend > 0.01:
+        trend_series.insert(
+            0,
+            DailyPoint(
+                date=business_date.isoformat(),
+                spend_usd=today_spend,
+                purchase_value_usd=today_purchase,
+                roas=metrics["today"]["roas"]
+            )
+        )
+
+    return {
+        "product_id": product_id,
+        "ad_code": ad_code,
+        "ad_name": _safe_str(row.get("ad_name")),
+        "ad_account_id": ad_account_id,
+        "ad_account_name": _safe_str(row.get("ad_account_name")),
+        "first_active_date": _iso_date(row.get("first_active_date")),
+        "last_active_date": _iso_date(row.get("last_active_date")),
+        "metrics": metrics,
+        "trend": trend_series,
+    }
+
 
 
 def _alert_trend_inputs(product_id: int, lang: str) -> tuple[float | None, float | None]:

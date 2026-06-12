@@ -1,0 +1,363 @@
+{% extends "layout.html" %}
+{% block title %}{{ detail.lang_label }} - {{ detail.product_code }} 广告预警国家详情{% endblock %}
+{% block extra_style %}
+<style>
+.oc-ad-alert-page {
+  --oc-ad-alert-fg: #f8fafc;
+  --oc-ad-alert-muted: #94a3b8;
+  --oc-ad-alert-border: #1e3a8a;
+  --oc-ad-alert-card: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  --oc-ad-alert-subtle: #0f172a;
+  --oc-ad-alert-blue: #38bdf8;
+  --oc-ad-alert-cyan: #06b6d4;
+  --oc-ad-alert-green: #34d399;
+  --oc-ad-alert-red: #f87171;
+  --oc-ad-alert-orange: #fb923c;
+  --oc-ad-alert-amber: #fbbf24;
+  display: grid;
+  gap: 20px;
+  max-width: 1280px;
+  padding: 24px;
+  background: #0b1329;
+  border-radius: 16px;
+  border: 1px solid #1e293b;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 0.4s ease-out;
+  color: var(--oc-ad-alert-fg);
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.oc-ad-alert-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--oc-ad-alert-border);
+  padding-bottom: 16px;
+}
+.oc-ad-alert-title {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.oc-ad-alert-back-btn {
+  color: var(--oc-ad-alert-blue);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  transition: opacity 0.2s;
+}
+.oc-ad-alert-back-btn:hover {
+  opacity: 0.8;
+}
+.oc-ad-alert-title h1 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+.oc-ad-alert-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.oc-ad-alert-store {
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
+  font-weight: 600;
+  background: #1e293b;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--oc-ad-alert-border);
+}
+.oc-ad-alert-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.oc-ad-alert-detail-cell {
+  padding: 12px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 10px;
+  background: #1e293b;
+}
+.oc-ad-alert-detail-label {
+  margin-bottom: 6px;
+  color: var(--oc-ad-alert-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.oc-ad-alert-detail-value {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.oc-ad-alert-chart {
+  width: 100%;
+  overflow-x: auto;
+  margin-bottom: 18px;
+  border: 1px solid var(--oc-ad-alert-border);
+  border-radius: 12px;
+  background: #0a0f1c;
+  padding: 16px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.oc-ad-alert-judgment {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 20px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.4);
+  color: #e2e8f0;
+  font-size: 14px;
+  line-height: 1.6;
+  border-left: 6px solid #64748b;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.oc-ad-alert-judgment span:first-child {
+  color: var(--oc-ad-alert-muted);
+  font-size: 18px;
+}
+.oc-ad-alert-judgment strong {
+  color: #ffffff;
+  margin-right: 8px;
+  font-weight: 800;
+}
+.oc-ad-alert-severe.oc-ad-alert-judgment {
+  border-left-color: var(--oc-ad-alert-red);
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+.oc-ad-alert-moderate.oc-ad-alert-judgment {
+  border-left-color: var(--oc-ad-alert-orange);
+  background: rgba(249, 115, 22, 0.1);
+  border-color: rgba(249, 115, 22, 0.2);
+}
+.oc-ad-alert-mild.oc-ad-alert-judgment {
+  border-left-color: var(--oc-ad-alert-amber);
+  background: rgba(234, 179, 8, 0.1);
+  border-color: rgba(234, 179, 8, 0.2);
+}
+.oc-ad-alert-loss {
+  color: var(--oc-ad-alert-red);
+  font-weight: 800;
+}
+.oc-ad-alert-profit {
+  color: var(--oc-ad-alert-green);
+  font-weight: 800;
+}
+.oc-ad-alert-state {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--oc-ad-alert-muted);
+}
+@media (max-width: 760px) {
+  .oc-ad-alert-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .oc-ad-alert-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="oc-ad-alert-page" id="countryPage">
+  <div class="oc-ad-alert-head">
+    <div class="oc-ad-alert-title">
+      <a href="/ad-alerts/product/{{ product_id }}" class="oc-ad-alert-back-btn">← 返回商品列表</a>
+      <h1>{{ detail.product_name or detail.product_code }} - {{ detail.lang_label }} 预警国家详情</h1>
+    </div>
+    <div class="oc-ad-alert-tools">
+      <span class="oc-ad-alert-store">ROAS 阈值: <strong>{{ "%.2f"|format(threshold) }}</strong></span>
+    </div>
+  </div>
+
+  <div class="oc-ad-alert-detail-grid">
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">商品</div>
+      <div class="oc-ad-alert-detail-value">{{ detail.product_name or detail.product_code }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">国家/语言</div>
+      <div class="oc-ad-alert-detail-value">{{ detail.lang_label }} ({{ detail.lang|upper }})</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">ROAS</div>
+      <div class="oc-ad-alert-detail-value" style="color: {% if detail.ad_roas is not none and detail.ad_roas < threshold %}var(--oc-ad-alert-red){% else %}var(--oc-ad-alert-green){% endif %}; font-weight: 800;">
+        {{ "%.2f"|format(detail.ad_roas) if detail.ad_roas is not none else 'N/A' }}
+      </div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">运行天数</div>
+      <div class="oc-ad-alert-detail-value">{{ detail.active_days }} 天</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">总消耗</div>
+      <div class="oc-ad-alert-detail-value">${{ "%.2f"|format(detail.ad_spend_usd) }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">购买价值</div>
+      <div class="oc-ad-alert-detail-value">${{ "%.2f"|format(detail.purchase_value_usd) }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">近 7 天活跃消耗</div>
+      <div class="oc-ad-alert-detail-value">${{ "%.2f"|format(detail.active_7d_ad_spend_usd) }}</div>
+    </div>
+    <div class="oc-ad-alert-detail-cell">
+      <div class="oc-ad-alert-detail-label">预估盈亏</div>
+      <div class="oc-ad-alert-detail-value">
+        {% if detail.estimated_loss < 0 %}
+          <span class="oc-ad-alert-loss">-${{ "%.2f"|format(detail.estimated_loss|abs) }}</span>
+        {% else %}
+          <span class="oc-ad-alert-profit">+${{ "%.2f"|format(detail.estimated_loss) }}</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <h2 style="margin-top: 10px; font-size: 18px; color: #ffffff;">近 14 天趋势图 (Spend vs Purchase)</h2>
+  <div class="oc-ad-alert-chart" id="trendChart">
+    <div class="oc-ad-alert-state">图表加载中...</div>
+  </div>
+
+  <div class="oc-ad-alert-judgment oc-ad-alert-{{ detail.judgment.severity.value }}">
+    <span>⚠</span>
+    <span>
+      <strong>{{ detail.judgment.conclusion }}</strong>
+      {{ detail.judgment.reason }}
+    </span>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  var productId = "{{ product_id }}";
+  var lang = "{{ lang }}";
+  var chartEl = document.getElementById('trendChart');
+
+  function html(value) {
+    var div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+  }
+
+  function renderSvg(points) {
+    if (!points.length) return '<div class="oc-ad-alert-state">暂无趋势数据</div>';
+    var width = Math.max(600, points.length * 36);
+    var height = 220;
+    var pad = { top: 24, right: 20, bottom: 30, left: 20 };
+    var plotW = width - pad.left - pad.right;
+    var plotH = height - pad.top - pad.bottom;
+    var max = 0;
+    points.forEach(function(p) {
+      max = Math.max(max, Number(p.spend_usd || 0), Number(p.purchase_value_usd || 0));
+    });
+    max = Math.max(max, 1);
+    
+    function x(i) { return pad.left + (i / Math.max(points.length - 1, 1)) * plotW; }
+    function y(v) { return pad.top + plotH - (Number(v || 0) / max) * plotH; }
+    
+    function path(key) {
+      return points.map(function(p, i) {
+        return (i ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(p[key]).toFixed(1);
+      }).join(' ');
+    }
+    
+    function areaPath(key) {
+      var linePath = path(key);
+      var lastX = x(points.length - 1).toFixed(1);
+      var firstX = x(0).toFixed(1);
+      var yZero = (pad.top + plotH).toFixed(1);
+      return linePath + ' L' + lastX + ',' + yZero + ' L' + firstX + ',' + yZero + ' Z';
+    }
+    
+    var labels = points.map(function(p, i) {
+      if (i % Math.max(1, Math.ceil(points.length / 6)) !== 0 && i !== points.length - 1) return '';
+      return '<text x="' + x(i).toFixed(1) + '" y="' + (height - 8) + '" text-anchor="middle" font-size="10" fill="#64748b">' + html(String(p.date || '').slice(5)) + '</text>';
+    }).join('');
+
+    var gridLines = '';
+    [0.25, 0.5, 0.75].forEach(function(ratio) {
+      var yVal = y(max * ratio).toFixed(1);
+      gridLines += '<line x1="' + pad.left + '" y1="' + yVal + '" x2="' + (width - pad.right) + '" y2="' + yVal + '" stroke="#1e293b" stroke-dasharray="4,4" stroke-width="1" />';
+    });
+
+    var circles = points.map(function(p, i) {
+      return ''
+        + '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.spend_usd).toFixed(1) + '" r="3.5" fill="#ffffff" stroke="#3b82f6" stroke-width="2" />'
+        + '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p.purchase_value_usd).toFixed(1) + '" r="3.5" fill="#ffffff" stroke="#10b981" stroke-width="2" />';
+    }).join('');
+
+    var defs = ''
+      + '<defs>'
+      + '  <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">'
+      + '    <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.15" />'
+      + '    <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.00" />'
+      + '  </linearGradient>'
+      + '  <linearGradient id="purchaseGrad" x1="0" y1="0" x2="0" y2="1">'
+      + '    <stop offset="0%" stop-color="#10b981" stop-opacity="0.15" />'
+      + '    <stop offset="100%" stop-color="#10b981" stop-opacity="0.00" />'
+      + '  </linearGradient>'
+      + '</defs>';
+
+    return ''
+      + '<svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="趋势图" xmlns="http://www.w3.org/2000/svg">'
+      + defs
+      + '<line x1="' + pad.left + '" y1="' + (height - pad.bottom) + '" x2="' + (width - pad.right) + '" y2="' + (height - pad.bottom) + '" stroke="#1e293b" stroke-width="1.5" />'
+      + gridLines
+      + '<path d="' + areaPath('spend_usd') + '" fill="url(#spendGrad)" />'
+      + '<path d="' + areaPath('purchase_value_usd') + '" fill="url(#purchaseGrad)" />'
+      + '<path d="' + path('spend_usd') + '" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />'
+      + '<path d="' + path('purchase_value_usd') + '" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />'
+      + circles
+      + '<text x="' + (width - pad.right) + '" y="14" text-anchor="end" font-size="11" font-weight="700" fill="#3b82f6">花费</text>'
+      + '<text x="' + (width - pad.right - 42) + '" y="14" text-anchor="end" font-size="11" font-weight="700" fill="#10b981">购买</text>'
+      + labels
+      + '</svg>';
+  }
+
+  function loadChartData() {
+    fetch('/ad-alerts/api/detail?product_id=' + productId + '&lang=' + encodeURIComponent(lang))
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('chart_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        var points = data.detail.trend || [];
+        // The API returns points in newest-first order, let's reverse to draw chronologically from left to right
+        points.reverse();
+        chartEl.innerHTML = renderSvg(points);
+      })
+      .catch(function() {
+        chartEl.innerHTML = '<div class="oc-ad-alert-state">图表加载失败</div>';
+      });
+  }
+
+  loadChartData();
+})();
+</script>
+{% endblock %}
