@@ -1813,6 +1813,7 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "展开步骤" in html
     assert "收起步骤" in html
     assert ".vcd-progress-toolbar { display:none;" in html
+    assert ".vcd-top-card { position:static; top:auto; z-index:auto; box-shadow:none; margin-bottom:12px; }" in html
     assert ".vcd-top-card.vcd-mobile-progress-collapsed .vcd-progress-steps { display:none; }" in html
     assert "function toggleProgressSteps()" in html
     assert "progressToggle.setAttribute('aria-expanded', String(!collapsed));" in html
