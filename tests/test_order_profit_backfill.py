@@ -152,6 +152,16 @@ def test_backfill_uses_daily_exchange_rate_per_business_date(monkeypatch):
     ]
 
     monkeypatch.setattr(opb, "query", lambda sql, params=(): lines)
+    monkeypatch.setattr(opb, "_should_skip_for_dynamic_fee_boundary", lambda line: False)
+    monkeypatch.setattr(
+        opb,
+        "resolve_shopify_fee_for_order",
+        lambda **kwargs: {
+            "shopify_fee_usd": 0.0,
+            "shopify_fee_source": "dynamic_region_rate",
+            "shopify_fee_basis": {"order_total_revenue_usd": kwargs["amount"]},
+        },
+    )
     monkeypatch.setattr(opb, "get_sku_daily_units", lambda **kwargs: 1)
     monkeypatch.setattr(opb, "get_sku_daily_ad_spend", lambda **kwargs: 0)
     monkeypatch.setattr(opb, "get_unallocated_ad_spend", lambda **kwargs: 0)
