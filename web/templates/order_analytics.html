@@ -512,9 +512,21 @@
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
+.oar-scope-metric--profit-formula {
+  grid-column: 1 / -1;
+}
 .oar-scope-metric .oa-stat-value {
   font-size: var(--text-xl);
   line-height: 1.15;
+}
+.oar-profit-formula-line {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.oar-profit-formula-values {
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: var(--text-xs);
 }
 .oar-summary-row {
   display: grid;
@@ -2383,12 +2395,13 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimePurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimePurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimePurchaseEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeShopifyFeeRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">退款/预留扣减</div><div class="oa-stat-value" id="realtimeProfitDeduction">$0.00</div><div class="oa-stat-sub" id="realtimeProfitDeductionRatio">占总销售额 -</div><div class="oa-stat-sub" id="realtimeProfitDeductionSources">计入扣减: -</div><div class="oa-stat-sub" id="realtimeRefundReserveBreakdown">退款记录 - / 预留记录 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeRoas">-</div><div class="oa-stat-sub" id="realtimeWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeMetaRoas">-</div><div class="oa-stat-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">盈亏平衡点</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeOrderCount">0</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeProfit">$0.00</div><div class="oa-stat-sub" id="realtimeProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="realtimeProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric oar-scope-metric--profit-formula"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeProfit">$0.00</div><div class="oa-stat-sub" id="realtimeProfitSub">按订单盈亏口径</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeProfitFormula">公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeProfitFormulaTerms">明细: -</div><div class="oa-stat-sub oar-profit-formula-line oar-profit-formula-values" id="realtimeProfitFormulaValues">代入: -</div><div class="oa-stat-sub" id="realtimeProfitMargin">利润率 -</div></div>
         </div>
       </section>
       <section class="oar-scope-card oar-scope-card--new" data-realtime-scope-card="new" aria-labelledby="realtimeNewScopeTitle">
@@ -2412,12 +2425,13 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeNewPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeNewPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeNewPurchaseEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeNewLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeNewLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeNewLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeNewShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeNewShopifyFeeRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">退款/预留扣减</div><div class="oa-stat-value" id="realtimeNewProfitDeduction">$0.00</div><div class="oa-stat-sub" id="realtimeNewProfitDeductionRatio">占总销售额 -</div><div class="oa-stat-sub" id="realtimeNewProfitDeductionSources">计入扣减: -</div><div class="oa-stat-sub" id="realtimeNewRefundReserveBreakdown">退款记录 - / 预留记录 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeNewRoas">-</div><div class="oa-stat-sub" id="realtimeNewWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeNewMetaRoas">-</div><div class="oa-stat-sub" id="realtimeNewMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeNewGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">盈亏平衡点</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeNewOrderCount">0</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeNewUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeNewProfit">$0.00</div><div class="oa-stat-sub" id="realtimeNewProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="realtimeNewProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric oar-scope-metric--profit-formula"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeNewProfit">$0.00</div><div class="oa-stat-sub" id="realtimeNewProfitSub">按订单盈亏口径</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeNewProfitFormula">公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeNewProfitFormulaTerms">明细: -</div><div class="oa-stat-sub oar-profit-formula-line oar-profit-formula-values" id="realtimeNewProfitFormulaValues">代入: -</div><div class="oa-stat-sub" id="realtimeNewProfitMargin">利润率 -</div></div>
         </div>
       </section>
       <section class="oar-scope-card oar-scope-card--old" data-realtime-scope-card="old" aria-labelledby="realtimeOldScopeTitle">
@@ -2441,12 +2455,13 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeOldPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeOldPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeOldPurchaseEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeOldLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeOldLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeOldLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeOldShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeOldShopifyFeeRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">退款/预留扣减</div><div class="oa-stat-value" id="realtimeOldProfitDeduction">$0.00</div><div class="oa-stat-sub" id="realtimeOldProfitDeductionRatio">占总销售额 -</div><div class="oa-stat-sub" id="realtimeOldProfitDeductionSources">计入扣减: -</div><div class="oa-stat-sub" id="realtimeOldRefundReserveBreakdown">退款记录 - / 预留记录 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeOldRoas">-</div><div class="oa-stat-sub" id="realtimeOldWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeOldMetaRoas">-</div><div class="oa-stat-sub" id="realtimeOldMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeOldGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">盈亏平衡点</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeOldOrderCount">0</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeOldUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeOldProfit">$0.00</div><div class="oa-stat-sub" id="realtimeOldProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="realtimeOldProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric oar-scope-metric--profit-formula"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeOldProfit">$0.00</div><div class="oa-stat-sub" id="realtimeOldProfitSub">按订单盈亏口径</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeOldProfitFormula">公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeOldProfitFormulaTerms">明细: -</div><div class="oa-stat-sub oar-profit-formula-line oar-profit-formula-values" id="realtimeOldProfitFormulaValues">代入: -</div><div class="oa-stat-sub" id="realtimeOldProfitMargin">利润率 -</div></div>
         </div>
       </section>
       <section class="oar-scope-card oar-scope-card--unmatched" data-realtime-scope-card="unmatched" aria-labelledby="realtimeUnmatchedScopeTitle">
@@ -2472,12 +2487,13 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeUnmatchedPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeUnmatchedPurchaseEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeUnmatchedLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeUnmatchedLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeUnmatchedShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedShopifyFeeRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">退款/预留扣减</div><div class="oa-stat-value" id="realtimeUnmatchedProfitDeduction">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitDeductionRatio">占总销售额 -</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitDeductionSources">计入扣减: -</div><div class="oa-stat-sub" id="realtimeUnmatchedRefundReserveBreakdown">退款记录 - / 预留记录 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeUnmatchedRoas">-</div><div class="oa-stat-sub" id="realtimeUnmatchedWindow">未匹配订单销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeUnmatchedMetaRoas">-</div><div class="oa-stat-sub" id="realtimeUnmatchedMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeUnmatchedGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">随未匹配订单收入计算</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeUnmatchedOrderCount">0</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeUnmatchedUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeUnmatchedProfit">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitSub">未匹配广告和订单核算口径</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric oar-scope-metric--profit-formula"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeUnmatchedProfit">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitSub">未匹配广告和订单核算口径</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeUnmatchedProfitFormula">公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeUnmatchedProfitFormulaTerms">明细: -</div><div class="oa-stat-sub oar-profit-formula-line oar-profit-formula-values" id="realtimeUnmatchedProfitFormulaValues">代入: -</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitMargin">利润率 -</div></div>
         </div>
       </section>
     </div>
@@ -8004,12 +8020,13 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
       [
         'Revenue', 'Shipping', 'RevenueWithShipping', 'Spend', 'Roas', 'MetaRoas',
         'PurchaseCost', 'LogisticsCost', 'ShopifyFee', 'GlobalBreakEvenRoas',
-        'OrderCount', 'Units', 'Profit'
+        'ProfitDeduction', 'OrderCount', 'Units', 'Profit'
       ].forEach(function(suffix) {
         setRealtimeProfitText(prefix + suffix, suffix === 'OrderCount' || suffix === 'Units' ? '...' : '加载中...');
       });
       [
-        'SpendRatio', 'PurchaseCostRatio', 'LogisticsCostRatio', 'ShopifyFeeRatio'
+        'SpendRatio', 'PurchaseCostRatio', 'LogisticsCostRatio', 'ShopifyFeeRatio',
+        'ProfitDeductionRatio'
       ].forEach(function(suffix) {
         setRealtimeProfitText(prefix + suffix, '占总销售额 -');
       });
@@ -8019,8 +8036,13 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
         if (estimateEl) estimateEl.classList.remove('is-active');
       });
       setRealtimeProfitText(prefix + 'SpendUnallocated', '未分摊: -');
+      setRealtimeProfitText(prefix + 'ProfitDeductionSources', '计入扣减: -');
+      setRealtimeProfitText(prefix + 'RefundReserveBreakdown', '退款记录 - / 预留记录 -');
       setRealtimeProfitText(prefix + 'RevenueSub', '订单 ... 单');
       setRealtimeProfitText(prefix + 'ProfitSub', '加载利润数据');
+      setRealtimeProfitText(prefix + 'ProfitFormula', '公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费');
+      setRealtimeProfitText(prefix + 'ProfitFormulaTerms', '明细: -');
+      setRealtimeProfitText(prefix + 'ProfitFormulaValues', '代入: -');
       setRealtimeProfitText(prefix + 'ProfitMargin', '利润率 -');
       setRealtimeProfitText(prefix + 'Window', '总销售额 / 广告费');
     });
@@ -8035,10 +8057,11 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
       [
         'Revenue', 'Shipping', 'RevenueWithShipping', 'Spend', 'Roas', 'MetaRoas',
         'PurchaseCost', 'LogisticsCost', 'ShopifyFee', 'GlobalBreakEvenRoas',
-        'OrderCount', 'Units', 'Profit'
+        'ProfitDeduction', 'OrderCount', 'Units', 'Profit'
       ].forEach(function(suffix) { setRealtimeProfitText(prefix + suffix, '-'); });
       [
-        'SpendRatio', 'PurchaseCostRatio', 'LogisticsCostRatio', 'ShopifyFeeRatio'
+        'SpendRatio', 'PurchaseCostRatio', 'LogisticsCostRatio', 'ShopifyFeeRatio',
+        'ProfitDeductionRatio'
       ].forEach(function(suffix) {
         setRealtimeProfitText(prefix + suffix, '占总销售额 -');
       });
@@ -8048,8 +8071,13 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
         if (estimateEl) estimateEl.classList.remove('is-active');
       });
       setRealtimeProfitText(prefix + 'SpendUnallocated', '未分摊: -');
+      setRealtimeProfitText(prefix + 'ProfitDeductionSources', '计入扣减: -');
+      setRealtimeProfitText(prefix + 'RefundReserveBreakdown', '退款记录 - / 预留记录 -');
       setRealtimeProfitText(prefix + 'RevenueSub', '加载失败');
       setRealtimeProfitText(prefix + 'ProfitSub', message || '加载失败');
+      setRealtimeProfitText(prefix + 'ProfitFormula', '公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费');
+      setRealtimeProfitText(prefix + 'ProfitFormulaTerms', '明细: -');
+      setRealtimeProfitText(prefix + 'ProfitFormulaValues', '代入: -');
       setRealtimeProfitText(prefix + 'ProfitMargin', '利润率 -');
       setRealtimeProfitText(prefix + 'Window', '总销售额 / 广告费');
       setRealtimeProfitText(realtimeScopeSourceId(scope), '加载失败：' + (message || '查询失败'));
@@ -8073,6 +8101,99 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
   function renderRealtimeCostMetric(prefix, suffix, amount, ratioPct, denominator) {
     setRealtimeProfitText(prefix + suffix, fmtMoney(amount));
     setRealtimeProfitText(prefix + suffix + 'Ratio', formatRealtimeCostRatio(ratioPct, amount, denominator));
+  }
+
+  function realtimeNumeric(value, fallback) {
+    var number = Number(value);
+    if (Number.isFinite(number)) return number;
+    return fallback === undefined ? 0 : fallback;
+  }
+
+  function formatRealtimeInlinePct(value, amount, denominator) {
+    var pct = Number(value);
+    if (!Number.isFinite(pct)) {
+      var amountValue = Number(amount);
+      var totalValue = Number(denominator);
+      if (Number.isFinite(amountValue) && Number.isFinite(totalValue) && totalValue > 0) {
+        pct = amountValue / totalValue * 100;
+      } else if (Number.isFinite(amountValue) && amountValue <= 0) {
+        pct = 0;
+      }
+    }
+    return Number.isFinite(pct) ? pct.toFixed(2) + '%' : '-';
+  }
+
+  function renderRealtimeProfitDeductionMetric(prefix, summary, denominator) {
+    var s = summary || {};
+    var profitDeduction = realtimeNumeric(s.profit_deduction_usd);
+    var appliedReserve = realtimeNumeric(s.profit_deduction_from_return_reserve_usd);
+    var appliedRefund = realtimeNumeric(s.profit_deduction_from_refund_usd);
+    var appliedOther = realtimeNumeric(s.profit_deduction_other_usd);
+    var refundRecord = realtimeNumeric(s.refund_deduction_usd);
+    var reserveRecord = realtimeNumeric(s.return_reserve_usd);
+    setRealtimeProfitText(prefix + 'ProfitDeduction', fmtMoney(profitDeduction));
+    setRealtimeProfitText(
+      prefix + 'ProfitDeductionRatio',
+      formatRealtimeCostRatio(s.profit_deduction_ratio_pct, profitDeduction, denominator)
+    );
+    var sourceText = '计入扣减: 预留 ' + fmtMoney(appliedReserve) + ' / 退款兜底 ' + fmtMoney(appliedRefund);
+    if (appliedOther > 0) sourceText += ' / 其他 ' + fmtMoney(appliedOther);
+    setRealtimeProfitText(prefix + 'ProfitDeductionSources', sourceText);
+    setRealtimeProfitText(
+      prefix + 'RefundReserveBreakdown',
+      '退款记录 ' + fmtMoney(refundRecord) + ' (' +
+        formatRealtimeInlinePct(s.refund_deduction_ratio_pct, refundRecord, denominator) +
+        ') / 预留记录 ' + fmtMoney(reserveRecord) + ' (' +
+        formatRealtimeInlinePct(s.return_reserve_ratio_pct, reserveRecord, denominator) + ')'
+    );
+  }
+
+  function realtimeProfitFormulaTerms(summary) {
+    var s = summary || {};
+    var purchase = s.purchase_cost_with_estimate_usd;
+    if (purchase === null || purchase === undefined) purchase = s.purchase_cost_usd;
+    var logistics = s.logistics_cost_with_estimate_usd;
+    if (logistics === null || logistics === undefined) logistics = s.logistics_cost_usd;
+    var adSpend = s.total_ad_spend_usd;
+    if (adSpend === null || adSpend === undefined) {
+      adSpend = realtimeNumeric(s.ad_cost_usd) + realtimeNumeric(s.unallocated_ad_spend_usd);
+    }
+    return {
+      revenue: realtimeNumeric(s.total_revenue_usd),
+      deduction: realtimeNumeric(s.profit_deduction_usd),
+      purchase: realtimeNumeric(purchase),
+      logistics: realtimeNumeric(logistics),
+      fee: realtimeNumeric(s.shopify_fee_total_usd),
+      ad: realtimeNumeric(adSpend),
+      profit: realtimeNumeric(s.profit_with_estimate_usd)
+    };
+  }
+
+  function renderRealtimeScopeProfitFormula(prefix, summary) {
+    var terms = realtimeProfitFormulaTerms(summary);
+    setRealtimeProfitText(
+      prefix + 'ProfitFormula',
+      '公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费'
+    );
+    setRealtimeProfitText(
+      prefix + 'ProfitFormulaTerms',
+      '明细: 总销售额 ' + fmtMoney(terms.revenue) +
+        '；退款/预留 ' + fmtMoney(terms.deduction) +
+        '；采购 ' + fmtMoney(terms.purchase) +
+        '；物流 ' + fmtMoney(terms.logistics) +
+        '；手续费 ' + fmtMoney(terms.fee) +
+        '；广告费 ' + fmtMoney(terms.ad)
+    );
+    setRealtimeProfitText(
+      prefix + 'ProfitFormulaValues',
+      '代入: ' + fmtMoney(terms.revenue) +
+        ' - ' + fmtMoney(terms.deduction) +
+        ' - ' + fmtMoney(terms.purchase) +
+        ' - ' + fmtMoney(terms.logistics) +
+        ' - ' + fmtMoney(terms.fee) +
+        ' - ' + fmtMoney(terms.ad) +
+        ' = ' + fmtMoney(terms.profit)
+    );
   }
 
   function formatRealtimeEstimateRatio(value, estimateAmount, denominator) {
@@ -8221,6 +8342,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
       profitSummary.shopify_fee_ratio_pct,
       costRatioDenominator
     );
+    renderRealtimeProfitDeductionMetric(prefix, profitSummary, costRatioDenominator);
     var globalBreakEvenRoasValue = Number(profitSummary.global_break_even_roas);
     setRealtimeProfitText(
       prefix + 'GlobalBreakEvenRoas',
@@ -8247,6 +8369,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
         ? '利润口径 ' + fmtInt(profitOrders) + ' 单' + (estimatedOrders > 0 ? '，含估算' : '')
         : '暂无利润数据'
     );
+    renderRealtimeScopeProfitFormula(prefix, profitSummary);
     var topMarginPct = profitSummary.profit_with_estimate_margin_pct;
     var topMarginIsNumber = (typeof topMarginPct === 'number') && isFinite(topMarginPct);
     setRealtimeProfitText(

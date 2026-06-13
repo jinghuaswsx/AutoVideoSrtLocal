@@ -2766,6 +2766,18 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert 'class="oar-summary-row oar-summary-row-time"' in summary
     assert 'id="realtimeProfit"' in summary
     assert 'id="realtimeProfitSub"' in summary
+    assert "退款/预留扣减" in summary
+    assert 'id="realtimeProfitDeduction"' in summary
+    assert 'id="realtimeNewProfitDeduction"' in summary
+    assert 'id="realtimeOldProfitDeduction"' in summary
+    assert 'id="realtimeUnmatchedProfitDeduction"' in summary
+    assert 'id="realtimeProfitDeductionSources"' in summary
+    assert 'id="realtimeRefundReserveBreakdown"' in summary
+    assert "公式: 利润 = 总销售额 - 退款/预留扣减" in summary
+    assert 'id="realtimeProfitFormulaTerms"' in summary
+    assert 'id="realtimeProfitFormulaValues"' in summary
+    assert "明细: -" in summary
+    assert "代入: -" in summary
 
     main_row_start = summary.index('class="oar-summary-row oar-summary-row-main"')
     time_row_start = summary.index('class="oar-summary-row oar-summary-row-time"')
@@ -2786,6 +2798,9 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert "params.set('include_profit_summary', '1')" in top_cards_js
     assert "document.getElementById('realtimeProfit')" in top_cards_js
     assert "profitEl.textContent" in top_cards_js
+    assert "renderRealtimeProfitDeductionMetric(prefix, profitSummary" in top_cards_js
+    assert "renderRealtimeScopeProfitFormula(prefix, profitSummary)" in top_cards_js
+    assert "代入: " in top_cards_js
     assert "globalData = reconcileRealtimeGlobalScopeProfit(globalData, newData, oldData, unmatchedData);" in top_cards_js
     assert "if (realtimeState.productId) return globalData;" in top_cards_js
 
