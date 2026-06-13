@@ -134,9 +134,9 @@ USE_CASES: dict[str, UseCase] = {
         "translation_quality",
         "翻译质量评估",
         "对比原始 ASR / 翻译文案 / 二次 ASR 字幕，给出翻译质量分 + TTS 还原度分",
-        "gemini_vertex",
-        "gemini-3.1-flash-lite",
-        "gemini_vertex",
+        "openrouter",
+        "google/gemini-3.5-flash",
+        "openrouter",
         "tokens",
     ),
     # AI 视频分析（手动触发，多模态：视频 + 音频 + 文案 + 产品图）

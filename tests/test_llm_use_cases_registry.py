@@ -92,6 +92,22 @@ def test_omni_av_sync_assess_uses_gemini_3_flash():
     assert assess["usage_log_service"] == "openrouter"
 
 
+def test_translation_quality_judge_upgraded():
+    uc = get_use_case("translation_quality.assess")
+
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.5-flash"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+
+
+def test_translation_quality_red_thresholds_registered():
+    import config
+
+    assert config.TRANSLATION_QUALITY_RED_SCORE == 70
+    assert config.TRANSLATION_QUALITY_ENDING_RED == 60
+
+
 def test_image_and_link_check_defaults():
     assert USE_CASES["image_translate.detect"]["default_provider"] == "gemini_vertex"
     assert USE_CASES["image_translate.detect"]["default_model"] == "gemini-3.1-flash-lite"

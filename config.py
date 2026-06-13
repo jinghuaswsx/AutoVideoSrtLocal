@@ -204,6 +204,14 @@ OMNI_COMPRESS_RETRANSLATE_ENABLED = True
 
 
 # ---------------------------------------------------------------------------
+# Block5: 翻译质量评估阈值
+# docs/superpowers/specs/2026-06-12-omni-quality-block5-eval-loop-design.md
+# ---------------------------------------------------------------------------
+TRANSLATION_QUALITY_RED_SCORE = 70
+TRANSLATION_QUALITY_ENDING_RED = 60
+
+
+# ---------------------------------------------------------------------------
 # 推送（老 env 作为兼容兜底；运行时以 system_settings 为准）
 # ---------------------------------------------------------------------------
 PUSH_TARGET_URL = _env("PUSH_TARGET_URL", "")

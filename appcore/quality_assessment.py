@@ -16,7 +16,7 @@ from pipeline import translation_quality
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "gemini-3.1-flash-lite"
+_DEFAULT_MODEL = "gemini-3.5-flash"
 
 
 class AssessmentInProgressError(RuntimeError):
