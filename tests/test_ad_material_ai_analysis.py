@@ -517,6 +517,147 @@ def test_rank_input_breakeven_missing_yields_null_ratio():
     assert payload["roas_vs_breakeven"] is None
 
 
+def _country_summary(country_code, lang, **overrides):
+    base = {
+        "country_code": country_code,
+        "lang": lang,
+        "item_count": 1,
+        "pushed_video_count": 0,
+        "ad_spend_usd": 0.0,
+        "purchase_value_usd": 0.0,
+        "ad_roas": None,
+        "active_7d_ad_spend_usd": 0.0,
+        "delivery_status": "never",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_market_expansion_excludes_blocked_countries():
+    product = _row(product_id=30, spend_30d=500, orders_30d=50, revenue_30d=1200, purchase_value_30d=1000)
+    product["effective_breakeven_roas"] = 1.5
+    # DE 强（已投放），IT 从未投放但已有进行中任务 → 不应进 expansion target；ES 从未投放且无任务 → 保留
+    country_reviews = {
+        "DE": {"final_decision": "通过", "quality_score": 80, "recommended_action": {"action": "supplement"}},
+        "IT": {"final_decision": "条件通过", "quality_score": 60, "recommended_action": {"action": "expand"}},
+        "ES": {"final_decision": "条件通过", "quality_score": 58, "recommended_action": {"action": "expand"}},
+    }
+    countries = [
+        {"country_code": "DE", "lang": "de", "delivery_status": "active", "blocking_task": None},
+        {"country_code": "IT", "lang": "it", "delivery_status": "never",
+         "blocking_task": {"task_id": 555, "status_group": "in_progress", "status_label": "进行中"}},
+        {"country_code": "ES", "lang": "es", "delivery_status": "never", "blocking_task": None},
+    ]
+
+    recs = svc._build_market_expansion_recommendations(product, country_reviews, countries)
+
+    eu = next((r for r in recs if r["type"] == "eu_cluster_expansion"), None)
+    assert eu is not None
+    assert "IT" not in eu["target_countries"], "已有阻塞任务的国家不应进扩展目标"
+    assert "ES" in eu["target_countries"], "无任务的国家应保留为扩展目标"
+    assert any(b.get("country_code") == "IT" and b.get("task_id") == 555 for b in eu.get("blocked_countries", []))
+
+
+def test_market_expansion_drops_recommendation_when_all_targets_blocked():
+    product = _row(product_id=31, spend_30d=500, orders_30d=50, revenue_30d=1200, purchase_value_30d=1000)
+    product["effective_breakeven_roas"] = 1.5
+    country_reviews = {
+        "DE": {"final_decision": "通过", "quality_score": 80, "recommended_action": {"action": "supplement"}},
+        "IT": {"final_decision": "条件通过", "quality_score": 60, "recommended_action": {"action": "expand"}},
+    }
+    countries = [
+        {"country_code": "DE", "lang": "de", "delivery_status": "active", "blocking_task": None},
+        {"country_code": "IT", "lang": "it", "delivery_status": "never",
+         "blocking_task": {"task_id": 777, "status_group": "in_progress", "status_label": "进行中"}},
+    ]
+
+    recs = svc._build_market_expansion_recommendations(product, country_reviews, countries)
+    # 唯一的扩展目标 IT 被任务拦截 → 不输出 eu_cluster_expansion
+    assert not any(r["type"] == "eu_cluster_expansion" for r in recs)
+
+
+def test_run_country_reviews_single_call_returns_all_countries(monkeypatch):
+    product = _row(product_id=20, product_code="demo-rjc", spend_30d=400, orders_30d=40)
+    countries_by_code = {
+        ec["country_code"]: _country_summary(ec["country_code"], ec["lang"])
+        for ec in svc.TARGET_EVAL_COUNTRIES
+    }
+    calls = []
+
+    def fake_invoke(use_case, **kwargs):
+        calls.append(use_case)
+        return {"json": {"country_reviews": [
+            {"country_code": ec["country_code"], "final_decision": "条件通过",
+             "quality_score": 60, "recommended_action": {"action": "supplement", "reason": "x"}}
+            for ec in svc.TARGET_EVAL_COUNTRIES
+        ]}}
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    reviews = svc._run_country_reviews(
+        product, svc.TARGET_EVAL_COUNTRIES, countries_by_code,
+        local_materials=[], mk_materials=[], task_assignments=[],
+        project_id=1, user_id=1, run_ai=True,
+    )
+
+    assert len(calls) == 1, "5 国应合并为 1 次调用"
+    assert set(reviews.keys()) == {ec["country_code"] for ec in svc.TARGET_EVAL_COUNTRIES}
+    assert all(r.get("mode") == "ai" for r in reviews.values())
+
+
+def test_run_country_reviews_fills_missing_countries_with_fallback(monkeypatch):
+    product = _row(product_id=21, product_code="demo-rjc", spend_30d=400, orders_30d=40)
+    countries_by_code = {
+        ec["country_code"]: _country_summary(ec["country_code"], ec["lang"])
+        for ec in svc.TARGET_EVAL_COUNTRIES
+    }
+
+    def fake_invoke(use_case, **kwargs):
+        # 只返回前 2 个国家
+        return {"json": {"country_reviews": [
+            {"country_code": "DE", "final_decision": "通过", "quality_score": 80,
+             "recommended_action": {"action": "expand", "reason": "x"}},
+            {"country_code": "FR", "final_decision": "条件通过", "quality_score": 55,
+             "recommended_action": {"action": "supplement", "reason": "x"}},
+        ]}}
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    reviews = svc._run_country_reviews(
+        product, svc.TARGET_EVAL_COUNTRIES, countries_by_code,
+        local_materials=[], mk_materials=[], task_assignments=[],
+        project_id=1, user_id=1, run_ai=True,
+    )
+
+    assert set(reviews.keys()) == {ec["country_code"] for ec in svc.TARGET_EVAL_COUNTRIES}
+    assert reviews["DE"].get("mode") == "ai"
+    # 缺失国家由确定性兜底补齐
+    assert reviews["IT"].get("mode") == "deterministic_fallback"
+    assert reviews["JP"].get("mode") == "deterministic_fallback"
+
+
+def test_run_country_reviews_all_fallback_on_error(monkeypatch):
+    product = _row(product_id=22, product_code="demo-rjc", spend_30d=400, orders_30d=40)
+    countries_by_code = {
+        ec["country_code"]: _country_summary(ec["country_code"], ec["lang"])
+        for ec in svc.TARGET_EVAL_COUNTRIES
+    }
+
+    def fake_invoke(use_case, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    reviews = svc._run_country_reviews(
+        product, svc.TARGET_EVAL_COUNTRIES, countries_by_code,
+        local_materials=[], mk_materials=[], task_assignments=[],
+        project_id=1, user_id=1, run_ai=True,
+    )
+
+    assert set(reviews.keys()) == {ec["country_code"] for ec in svc.TARGET_EVAL_COUNTRIES}
+    assert all(r.get("mode") == "deterministic_fallback" for r in reviews.values())
+
+
 def test_derive_product_priority_uses_breakeven_line():
     p0 = _row(product_id=1, spend_30d=400, orders_30d=40, revenue_30d=900, purchase_value_30d=800)
     p0["effective_breakeven_roas"] = 1.6  # true_roas 2.25 >= 1.6 → roas_ok

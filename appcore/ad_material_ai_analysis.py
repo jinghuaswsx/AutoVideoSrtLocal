@@ -8,8 +8,10 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import secrets
+import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -421,6 +423,31 @@ def _placeholders(values: Iterable[Any]) -> str:
 def _chunked(items: list[dict], size: int) -> Iterable[list[dict]]:
     for index in range(0, len(items), size):
         yield items[index:index + size]
+
+
+_LAST_LLM_AT: float = 0.0
+
+
+def _llm_spacing_seconds() -> float:
+    raw = os.getenv("AD_MATERIAL_AI_ANALYSIS_LLM_SPACING_SECONDS", "")
+    try:
+        return float(raw) if raw.strip() else 2.0
+    except ValueError:
+        return 2.0
+
+
+def _pace_llm() -> None:
+    """逐次 LLM 调用之间保持最小间隔，避免 30 产品 × 多调用打爆 GoogleWJ 通道触发 429。"""
+    global _LAST_LLM_AT
+    spacing = _llm_spacing_seconds()
+    if spacing <= 0:
+        _LAST_LLM_AT = time.monotonic()
+        return
+    now = time.monotonic()
+    wait = spacing - (now - _LAST_LLM_AT)
+    if wait > 0:
+        time.sleep(wait)
+    _LAST_LLM_AT = time.monotonic()
 
 
 def _snake_batches(items: list[dict], size: int = 20) -> list[list[dict]]:
@@ -1822,6 +1849,7 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 "rule": "本批最多输出 Top10，剔除高ROAS低量产品。",
                 "products": [_rank_input(row) for row in batch],
             }
+            _pace_llm()
             result = llm_client.invoke_generate(
                 RANK_USE_CASE,
                 prompt=_ranking_prompt(payload),
@@ -1856,6 +1884,7 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
             "rule": "从所有批次候选里输出最终 Top20，仍然坚持有量 + 效率。",
             "products": [_rank_input(row) for row in merged_candidates],
         }
+        _pace_llm()
         final = llm_client.invoke_generate(
             RANK_USE_CASE,
             prompt=_ranking_prompt(final_payload),
@@ -2394,6 +2423,7 @@ def _run_product_analysis(
         fallback["material_review_prompt_debug"] = {**prompt_debug, "mode": "deterministic_fallback"}
         return fallback
     try:
+        _pace_llm()
         result = llm_client.invoke_generate(
             PRODUCT_ANALYSIS_USE_CASE,
             prompt=_material_review_prompt(review_input),
@@ -3095,30 +3125,24 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
             ai_result = _decorate_ai_result_with_tasks(ai_result, countries, task_assignments)
             action_items = _build_action_items(product, ai_result, mk_materials, countries)
 
-            # --- 逐国独立评估 ---
+            # --- 逐国独立评估（5 国合并为 1 次调用）---
             countries_by_code = {
                 _normalize_country_code(c.get("country_code"), lang=c.get("lang")): c
                 for c in countries
             }
-            country_reviews: dict[str, dict] = {}
-            for eval_country in TARGET_EVAL_COUNTRIES:
-                cc = eval_country["country_code"]
-                country_data = countries_by_code.get(cc, {})
-                country_lang = eval_country.get("lang", "")
-                country_materials_for_lang = [
-                    m for m in local_materials
-                    if str(m.get("lang") or "").lower() == country_lang
-                ]
-                country_tasks_for_cc = [
-                    t for t in task_assignments
-                    if _normalize_country_code(t.get("country_code"), lang=t.get("lang")) == cc
-                ]
-                review = _run_country_review(
-                    product, eval_country, country_data,
-                    country_materials_for_lang, mk_materials, country_tasks_for_cc,
-                    project_id=project_id, user_id=user_id, run_ai=run_ai,
-                )
-                country_reviews[cc] = review
+            checkpoint(
+                "product_analysis",
+                "running",
+                start_percent + (0.5 / max(total_products, 1)) * 30,
+                f"第 {rank_no}/{total_products} 个产品：评估 DE/FR/IT/ES/JP 国家素材补充价值",
+                product_progress=product_progress,
+            )
+            country_reviews = _run_country_reviews(
+                product, TARGET_EVAL_COUNTRIES, countries_by_code,
+                local_materials=local_materials, mk_materials=mk_materials,
+                task_assignments=task_assignments,
+                project_id=project_id, user_id=user_id, run_ai=run_ai,
+            )
             market_expansion = _build_market_expansion_recommendations(
                 product, country_reviews, countries,
             )
@@ -3986,61 +4010,187 @@ def _fallback_country_review(
     }
 
 
-def _run_country_review(
+COMBINED_COUNTRY_REVIEW_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "country_reviews": {
+            "type": "array",
+            "items": COUNTRY_REVIEW_RESPONSE_SCHEMA,
+        },
+    },
+    "required": ["country_reviews"],
+}
+
+
+def _build_combined_country_review_input(
     product: Mapping[str, Any],
-    country_info: Mapping[str, Any],
-    country_summary: Mapping[str, Any],
-    country_materials: list[dict],
+    eval_countries: tuple[dict[str, str], ...],
+    countries_by_code: Mapping[str, dict],
+    local_materials: list[dict],
     mk_materials: list[dict],
-    country_tasks: list[dict],
+    task_assignments: list[dict],
+) -> dict[str, Any]:
+    """一次性构造 5 国评估输入：product_global 共享一份，每国只带各自维度。"""
+    product_global: dict[str, Any] = {}
+    countries_payload: list[dict[str, Any]] = []
+    for country_info in eval_countries:
+        cc = country_info.get("country_code", "")
+        lang = country_info.get("lang", "")
+        country_summary = countries_by_code.get(cc, {})
+        country_materials = [
+            m for m in local_materials if str(m.get("lang") or "").lower() == lang
+        ]
+        country_tasks = [
+            t for t in task_assignments
+            if _normalize_country_code(t.get("country_code"), lang=t.get("lang")) == cc
+        ]
+        single = _build_country_review_input(
+            product, country_info, country_summary, country_materials, mk_materials, country_tasks,
+        )
+        if not product_global:
+            product_global = single.get("product_global") or {}
+        countries_payload.append({
+            "target_country": single.get("target_country") or {},
+            "country_performance": single.get("country_performance") or {},
+            "available_materials": single.get("available_materials") or {},
+            "existing_tasks": single.get("existing_tasks") or {},
+        })
+    return {
+        "current_date": date.today().isoformat(),
+        "product_global": product_global,
+        "countries": countries_payload,
+    }
+
+
+def _combined_country_review_prompt(payload: dict) -> str:
+    """5 国合并评估提示词：沿用单国 40/40/20 规则，要求一次输出全部国家数组。"""
+    rules = """你是 Facebook 信息流广告投放的业务评审员，一次性评估同一个产品在多个欧洲/日本市场的素材补充价值。
+
+输入 JSON：
+- `current_date`：评审当天日期
+- `product_global`：产品全局投放数据（所有国家汇总，所有国家共用同一份）
+- `countries`：数组，每个元素是一个目标国家，含 target_country、country_performance、available_materials、existing_tasks
+
+对 countries 数组里的每一个国家，独立给出一份评估，合并成 country_reviews 数组输出。
+
+评估维度和权重（每国相同）：
+1. 商品全局历史（40 分）— 产品整体投放验证程度；同一产品的这部分各国应当一致
+2. 该国投放表现（40 分）— 拆为该国消耗和 ROAS（25 分）+ 该国素材覆盖（15 分）
+3. 素材补充空间（20 分）— 该国可执行的素材补充机会
+
+判分规则：
+- 商品全局：累计消耗高、overall_roas 高于保本、近 7 天仍有消耗 → 35-40；中等 → 25-34；偏少 → 15-24；几乎无验证 → 0-14。
+- 该国表现：delivery_status=active 且 ad_roas>=effective_breakeven_roas → 高分；active 但低于保本 → 中等；stopped → 看历史消耗；never → country_spend_and_roas 给 0 且 included=false，但 country_material_coverage 正常评分，不要把从未投放当作表现差。
+- 素材补充：该国本地素材少（item_count<=2）且明空有可用 → 15-20；中等 → 10-14；充足 → 5-9；有阻塞任务降低评分；无可用素材来源 → 0-4。
+
+final_decision 只能是：通过、条件通过、不通过。不要因为单个风险或单个缺失字段直接判死。
+recommended_action：expand（该国从未投放但全局强）/ supplement（已投放可补素材）/ retest（曾投放已停值得重试）/ hold（有阻塞任务或需等待）/ skip（条件不足）。
+
+输出必须是严格 JSON，不要 Markdown、不要代码块、不要自然语言说明。
+quality_score 为 0-100 整数；analysis_reason 各字段用中文；final_judgment_reason 只解释判断原因，不写上线/投放/测试/预算建议。
+
+输出结构：
+{
+  "country_reviews": [
+    {
+      "country_code": "DE",
+      "final_decision": "通过 | 条件通过 | 不通过",
+      "quality_score": 0,
+      "score_breakdown": {
+        "global_product_history": {"score": 0, "max_score": 40, "included": true, "reason": ""},
+        "country_performance": {"score": 0, "max_score": 40, "included": true, "reason": "",
+          "sub_scores": {"country_spend_and_roas": 0, "country_material_coverage": 0}},
+        "material_supplement_opportunity": {"score": 0, "max_score": 20, "included": true, "reason": ""}
+      },
+      "analysis_reason": {"global_history_analysis": "", "country_performance_analysis": "",
+        "material_opportunity_analysis": "", "final_judgment_reason": ""},
+      "recommended_action": {"action": "expand | supplement | retest | hold | skip", "reason": ""}
+    }
+  ]
+}
+country_reviews 的元素顺序和数量必须与输入 countries 一致，country_code 必须回填对应国家。""".strip()
+    return f"{rules}\n\n输入 JSON：\n{_json_dumps(payload)}"
+
+
+def _run_country_reviews(
+    product: Mapping[str, Any],
+    eval_countries: tuple[dict[str, str], ...],
+    countries_by_code: Mapping[str, dict],
     *,
+    local_materials: list[dict],
+    mk_materials: list[dict],
+    task_assignments: list[dict],
     project_id: int,
     user_id: int | None,
     run_ai: bool,
-) -> dict[str, Any]:
-    """对单个产品×单个国家执行 LLM 评估。"""
-    country_code = country_info.get("country_code", "")
-    fallback = _fallback_country_review(product, country_info, country_summary, country_tasks)
+) -> dict[str, dict]:
+    """一次 LLM 调用评估全部目标国家；缺国/坏国/异常用确定性兜底补齐。"""
+    def _fallback_for(cc: str, lang: str) -> dict:
+        country_info = next((ec for ec in eval_countries if ec["country_code"] == cc), {"country_code": cc, "lang": lang})
+        country_summary = countries_by_code.get(cc, {})
+        country_tasks = [
+            t for t in task_assignments
+            if _normalize_country_code(t.get("country_code"), lang=t.get("lang")) == cc
+        ]
+        return _fallback_country_review(product, country_info, country_summary, country_tasks)
 
+    fallback_reviews = {
+        ec["country_code"]: _fallback_for(ec["country_code"], ec.get("lang", ""))
+        for ec in eval_countries
+    }
     if not run_ai:
-        return fallback
+        return fallback_reviews
 
-    review_input = _build_country_review_input(
-        product, country_info, country_summary, country_materials, mk_materials, country_tasks,
+    review_input = _build_combined_country_review_input(
+        product, eval_countries, countries_by_code, local_materials, mk_materials, task_assignments,
     )
-
     try:
+        _pace_llm()
         result = llm_client.invoke_generate(
             COUNTRY_REVIEW_USE_CASE,
-            prompt=_country_review_prompt(review_input, country_info),
+            prompt=_combined_country_review_prompt(review_input),
             user_id=user_id,
             project_id=str(project_id),
-            response_schema=COUNTRY_REVIEW_RESPONSE_SCHEMA,
+            response_schema=COMBINED_COUNTRY_REVIEW_RESPONSE_SCHEMA,
             temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
             provider_override=PROVIDER_CODE,
             model_override=MODEL_ID,
             billing_extra={
-                "stage": "country_review",
+                "stage": "country_review_combined",
                 "product_id": product.get("product_id"),
-                "country_code": country_code,
+                "country_count": len(eval_countries),
             },
-            timeout_seconds=120,
+            timeout_seconds=180,
         )
         parsed = _llm_json(result)
-        if not parsed:
-            fallback["ai_error"] = "empty model response"
-            return fallback
-        parsed["mode"] = "ai"
-        parsed.setdefault("country_code", country_code)
-        return parsed
+        items = parsed.get("country_reviews") if isinstance(parsed, Mapping) else None
+        if not isinstance(items, list) or not items:
+            for review in fallback_reviews.values():
+                review["ai_error"] = "empty model response"
+            return fallback_reviews
+        by_code: dict[str, dict] = {}
+        usage_log_id = result.get("usage_log_id")
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            cc = _normalize_country_code(item.get("country_code"))
+            if cc not in fallback_reviews:
+                continue
+            entry = dict(item)
+            entry["mode"] = "ai"
+            entry["country_code"] = cc
+            entry["usage_log_id"] = usage_log_id
+            by_code[cc] = entry
+        # 缺失国家用兜底补齐
+        for cc, review in fallback_reviews.items():
+            by_code.setdefault(cc, review)
+        return by_code
     except Exception as exc:
-        log.exception(
-            "Country review failed product_id=%s country=%s",
-            product.get("product_id"), country_code,
-        )
-        fallback["ai_error"] = str(exc)
-        return fallback
+        log.exception("Combined country review failed product_id=%s", product.get("product_id"))
+        for review in fallback_reviews.values():
+            review["ai_error"] = str(exc)
+        return fallback_reviews
 
 
 def _build_market_expansion_recommendations(
@@ -4076,41 +4226,63 @@ def _build_market_expansion_recommendations(
 
     recommendations: list[dict] = []
 
+    def _split_blocked(codes: list[str]) -> tuple[list[str], list[dict]]:
+        """从扩展目标里剔除已有阻塞任务的国家，避免与「不重复排程」硬规则冲突。"""
+        allowed: list[str] = []
+        blocked: list[dict] = []
+        for code in codes:
+            task = (countries_by_code.get(code) or {}).get("blocking_task")
+            if _task_blocks_recommendation(task):
+                blocked.append({
+                    "country_code": code,
+                    "task_id": _safe_int(task.get("task_id")),
+                    "status_label": task.get("status_label") or "",
+                })
+            else:
+                allowed.append(code)
+        return allowed, blocked
+
     # European cluster: DE, FR → IT, ES
     eu_strong = [c for c in strong_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
     eu_never = [c for c in never_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
     eu_weak = [c for c in weak_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
 
     if eu_strong and (eu_never or eu_weak):
-        strong_names = "、".join(
-            (_TARGET_BY_COUNTRY.get(c["code"]) or {}).get("country_name", c["code"])
-            for c in eu_strong
-        )
-        target_list = eu_never + eu_weak
-        target_names = "、".join(
-            (_TARGET_BY_COUNTRY.get(c["code"]) or {}).get("country_name", c["code"])
-            for c in target_list
-        )
-        recommendations.append({
-            "type": "eu_cluster_expansion",
-            "source_countries": [c["code"] for c in eu_strong],
-            "target_countries": [c["code"] for c in target_list],
-            "priority": "P1" if len(eu_strong) >= 2 else "P2",
-            "reason": f"{strong_names}表现强劲，建议将同素材扩展投放到{target_names}。欧洲市场用户偏好相近，跨国扩展成功率较高。",
-        })
+        target_codes, eu_blocked = _split_blocked([c["code"] for c in (eu_never + eu_weak)])
+        if target_codes:
+            strong_names = "、".join(
+                (_TARGET_BY_COUNTRY.get(c["code"]) or {}).get("country_name", c["code"])
+                for c in eu_strong
+            )
+            target_names = "、".join(
+                (_TARGET_BY_COUNTRY.get(code) or {}).get("country_name", code)
+                for code in target_codes
+            )
+            recommendations.append({
+                "type": "eu_cluster_expansion",
+                "source_countries": [c["code"] for c in eu_strong],
+                "target_countries": target_codes,
+                "blocked_countries": eu_blocked,
+                "priority": "P1" if len(eu_strong) >= 2 else "P2",
+                "reason": f"{strong_names}表现强劲，建议将同素材扩展投放到{target_names}。欧洲市场用户偏好相近，跨国扩展成功率较高。",
+            })
 
     # JP as independent market
     jp_review = country_reviews.get("JP")
     if jp_review:
         jp_data = countries_by_code.get("JP", {})
         jp_delivery = jp_data.get("delivery_status") or "never"
+        jp_blocked = _task_blocks_recommendation(jp_data.get("blocking_task"))
         global_spend = _safe_float(product.get("spend_30d"))
 
-        if jp_delivery == "never" and global_spend >= 200 and _safe_float(product.get("true_roas_30d")) >= (base_roas or 1.0):
+        if jp_blocked:
+            pass  # 日本已有排程任务，不再生成扩展/重试建议
+        elif jp_delivery == "never" and global_spend >= 200 and _safe_float(product.get("true_roas_30d")) >= (base_roas or 1.0):
             recommendations.append({
                 "type": "jp_market_entry",
                 "source_countries": [c["code"] for c in strong_countries] or ["EN"],
                 "target_countries": ["JP"],
+                "blocked_countries": [],
                 "priority": "P2",
                 "reason": "产品全局表现强，日本市场尚未投放。日本市场独立性强，建议小规模测试。",
             })
@@ -4119,6 +4291,7 @@ def _build_market_expansion_recommendations(
                 "type": "jp_market_retest",
                 "source_countries": [c["code"] for c in strong_countries] or ["EN"],
                 "target_countries": ["JP"],
+                "blocked_countries": [],
                 "priority": "P3",
                 "reason": "产品全局有量，日本市场曾投放已停。可用新素材重试日本市场。",
             })
