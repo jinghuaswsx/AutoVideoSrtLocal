@@ -64,14 +64,26 @@ _LINE_QUERY = (
     "       d.attribution_time_at, d.order_created_at, "
     "       d.logistic_fee, "
     # 采购价：优先用订单上的 snapshot（订单付款时点冻结的值），
-    # 没有就 fallback 到 media_products.purchase_price（当前值）。
-    "       COALESCE(d.purchase_price_cny, m.purchase_price) AS purchase_price, "
+    # 没有就 fallback 到 SKU 手工价、店小秘云仓 SKU 价、产品级采购价。
+    "       COALESCE(d.purchase_price_cny, mps_cost.manual_unit_price_rmb, "
+    "                y.unit_price, m.purchase_price) AS purchase_price, "
     "       d.purchase_price_cny AS purchase_price_snapshot_cny, "
     "       d.purchase_price_at  AS purchase_price_snapshot_at, "
+    "       mps_cost.manual_unit_price_rmb AS purchase_price_manual_cny, "
+    "       y.unit_price AS purchase_price_yuncang_cny, "
     "       m.packet_cost_actual, m.packet_cost_estimated, "
+    "       y.packet_cost_actual_sku, "
     "       p.id AS existing_profit_line_id "
     "FROM dianxiaomi_order_lines d "
     "LEFT JOIN media_products m ON m.id = d.product_id "
+    "LEFT JOIN ("
+    "  SELECT product_id, dianxiaomi_sku, MAX(manual_unit_price_rmb) AS manual_unit_price_rmb "
+    "  FROM media_product_skus "
+    "  WHERE dianxiaomi_sku IS NOT NULL AND dianxiaomi_sku <> '' "
+    "  GROUP BY product_id, dianxiaomi_sku"
+    ") mps_cost ON mps_cost.product_id = d.product_id "
+    "AND mps_cost.dianxiaomi_sku = d.product_display_sku "
+    "LEFT JOIN dianxiaomi_yuncang_skus y ON y.sku = d.product_display_sku "
     "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
     "WHERE d.meta_business_date BETWEEN %s AND %s "
     "ORDER BY d.id"
@@ -83,6 +95,10 @@ def _purchase_price_source(line: dict[str, Any], purchase_price: float | None) -
         return None
     if _safe_positive(line.get("purchase_price_snapshot_cny")) is not None:
         return "order_snapshot"
+    if _safe_positive(line.get("purchase_price_manual_cny")) is not None:
+        return "manual_sku"
+    if _safe_positive(line.get("purchase_price_yuncang_cny")) is not None:
+        return "yuncang_sku"
     return "media_product"
 
 
@@ -271,9 +287,13 @@ def _process_line(
             shipping_cost_source = "order_logistic_fee"
 
     if shipping_cost_cny is None:
+        sku_actual = _safe_positive(line.get("packet_cost_actual_sku"))
         actual = _safe_positive(line.get("packet_cost_actual"))
         estimated = _safe_positive(line.get("packet_cost_estimated"))
-        if actual is not None:
+        if sku_actual is not None:
+            shipping_cost_cny = sku_actual * quantity
+            shipping_cost_source = "yuncang_sku_actual"
+        elif actual is not None:
             shipping_cost_cny = actual * quantity
             shipping_cost_source = "product_actual"
         elif estimated is not None:

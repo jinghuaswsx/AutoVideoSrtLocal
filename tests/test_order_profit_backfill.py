@@ -16,6 +16,15 @@ def test_line_query_filters_by_meta_business_date():
     assert "WHERE DATE(d.order_paid_at) BETWEEN %s AND %s" not in opb._LINE_QUERY
 
 
+def test_line_query_uses_sku_cost_sources():
+    """实时利润行应先接入 SKU 维度采购价和物流成本。"""
+    assert "media_product_skus" in opb._LINE_QUERY
+    assert "dianxiaomi_yuncang_skus y ON y.sku = d.product_display_sku" in opb._LINE_QUERY
+    assert "mps_cost.manual_unit_price_rmb" in opb._LINE_QUERY
+    assert "y.unit_price AS purchase_price_yuncang_cny" in opb._LINE_QUERY
+    assert "y.packet_cost_actual_sku" in opb._LINE_QUERY
+
+
 def test_process_line_uses_meta_business_date_for_ad_allocation(monkeypatch):
     """16:00 切日后的订单行，广告分摊也必须按同一个 Meta 业务日查 spend/units。"""
     seen: dict[str, date] = {}
@@ -107,6 +116,86 @@ def test_process_line_downgrades_purchase_snapshot_that_exceeds_revenue(monkeypa
     sanity = result["cost_basis"]["purchase_price_sanity"]
     assert sanity["reason"] == "purchase_usd_exceeds_line_revenue"
     assert sanity["source"] == "order_snapshot"
+
+
+def test_process_line_marks_manual_sku_purchase_source(monkeypatch):
+    monkeypatch.setattr(opb, "get_sku_daily_units", lambda **kwargs: 1)
+    monkeypatch.setattr(opb, "get_sku_daily_ad_spend", lambda **kwargs: 0)
+
+    line = {
+        "dxm_order_line_id": 401,
+        "product_id": 77,
+        "quantity": 1,
+        "line_amount": Decimal("100.00"),
+        "order_amount": Decimal("100.00"),
+        "ship_amount": Decimal("0.00"),
+        "buyer_country": "US",
+        "order_paid_at": datetime(2026, 6, 13, 18, 30, 0),
+        "paid_at": datetime(2026, 6, 13, 18, 30, 0),
+        "meta_business_date": date(2026, 6, 13),
+        "dxm_package_id": "PKG-MANUAL",
+        "logistic_fee": None,
+        "purchase_price": Decimal("12.00"),
+        "purchase_price_manual_cny": Decimal("12.00"),
+        "purchase_price_yuncang_cny": Decimal("10.00"),
+        "packet_cost_actual_sku": Decimal("8.00"),
+        "packet_cost_actual": Decimal("5.00"),
+        "packet_cost_estimated": None,
+    }
+
+    result, _business_date = opb._process_line(
+        line,
+        order_total_amount=100.0,
+        order_shipping=0.0,
+        sku_units_cache={},
+        sku_spend_cache={},
+        rmb_per_usd=Decimal("6.00"),
+        return_reserve_rate=Decimal("0.01"),
+    )
+
+    assert result["status"] == "ok"
+    assert result["cost_basis"]["purchase_price_source"] == "manual_sku"
+    assert result["purchase_usd"] == pytest.approx(2.0)
+
+
+def test_process_line_uses_yuncang_sku_packet_before_product_packet(monkeypatch):
+    monkeypatch.setattr(opb, "get_sku_daily_units", lambda **kwargs: 1)
+    monkeypatch.setattr(opb, "get_sku_daily_ad_spend", lambda **kwargs: 0)
+
+    line = {
+        "dxm_order_line_id": 402,
+        "product_id": 78,
+        "quantity": 2,
+        "line_amount": Decimal("100.00"),
+        "order_amount": Decimal("100.00"),
+        "ship_amount": Decimal("0.00"),
+        "buyer_country": "US",
+        "order_paid_at": datetime(2026, 6, 13, 18, 30, 0),
+        "paid_at": datetime(2026, 6, 13, 18, 30, 0),
+        "meta_business_date": date(2026, 6, 13),
+        "dxm_package_id": "PKG-SKU-PACKET",
+        "logistic_fee": None,
+        "purchase_price": Decimal("12.00"),
+        "purchase_price_yuncang_cny": Decimal("12.00"),
+        "packet_cost_actual_sku": Decimal("9.00"),
+        "packet_cost_actual": Decimal("30.00"),
+        "packet_cost_estimated": Decimal("20.00"),
+    }
+
+    result, _business_date = opb._process_line(
+        line,
+        order_total_amount=100.0,
+        order_shipping=0.0,
+        sku_units_cache={},
+        sku_spend_cache={},
+        rmb_per_usd=Decimal("6.00"),
+        return_reserve_rate=Decimal("0.01"),
+    )
+
+    assert result["status"] == "ok"
+    assert result["cost_basis"]["purchase_price_source"] == "yuncang_sku"
+    assert result["cost_basis"]["shipping_cost_source"] == "yuncang_sku_actual"
+    assert result["shipping_cost_usd"] == pytest.approx(3.0)
 
 
 def test_backfill_uses_daily_exchange_rate_per_business_date(monkeypatch):

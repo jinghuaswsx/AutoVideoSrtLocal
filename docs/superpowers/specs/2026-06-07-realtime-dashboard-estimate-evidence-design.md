@@ -50,6 +50,12 @@
 
 关闭日范围、未请求利润汇总/明细的轻量请求不触发刷新。
 
+open-day backfill 的成本来源必须与素材/选品 SKU 成本口径一致：
+
+- 采购成本优先级：订单行快照 `dianxiaomi_order_lines.purchase_price_cny` → SKU 手工价 `media_product_skus.manual_unit_price_rmb` → 店小秘云仓 SKU 采购价 `dianxiaomi_yuncang_skus.unit_price` → 产品级 `media_products.purchase_price`。
+- 物流成本优先级：订单行 `dianxiaomi_order_lines.logistic_fee` 按包裹行销售额摊分 → 店小秘云仓 SKU 小包成本 `dianxiaomi_yuncang_skus.packet_cost_actual_sku` → 产品级 `media_products.packet_cost_actual` → 产品级 `media_products.packet_cost_estimated`。
+- 以上实际/产品维度成本都缺失时，才进入实时大盘 10% / 20% 估算。
+
 ## 字段定义
 
 后端 `order_profit_summary` 新增：
