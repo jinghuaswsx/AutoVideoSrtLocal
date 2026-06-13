@@ -1594,6 +1594,89 @@ def test_video_cover_background_chain_uses_project_model_default_snapshot(monkey
     ]
 
 
+def test_video_cover_restart_recovers_model_defaults_from_historical_models(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(tmp_path / "lamp.mp4"),
+        "video_filename": "lamp.mp4",
+        "image_count": 4,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "models": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
+            "product_analysis": {"provider": "google_wj", "model_id": "gemini-3.5-flash"},
+            "ad_copy": {"provider": "openrouter", "model_id": "anthropic/claude-sonnet-4.6"},
+            "cover_generation": {
+                "provider": "googlewj",
+                "model_id": "gemini-3-pro-image-preview",
+                "execution_mode": "serial",
+            },
+        },
+        "result": {"covers": [{"index": 1}]},
+    }
+    row = {"id": "task-1", "user_id": 8, "state_json": json.dumps(state, ensure_ascii=False)}
+    saved = []
+    started = []
+    global_defaults = {
+        "video_analysis": {"provider": "gemini_aistudio", "model_id": "gemini-3.5-flash"},
+        "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+        "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+        "cover_generation": {"provider": "local_image_2", "model_id": "gpt-image-2", "execution_mode": "parallel"},
+    }
+
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: global_defaults)
+    monkeypatch.setattr(
+        video_cover,
+        "_save_state",
+        lambda task_id, next_state, *, status: saved.append(
+            {"task_id": task_id, "status": status, "state": json.loads(json.dumps(next_state, ensure_ascii=False))}
+        ),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post("/video-cover/api/task-1/restart", json={"image_count": 2})
+
+    assert resp.status_code == 202
+    next_state = saved[0]["state"]
+    assert next_state["model_defaults"] == {
+        "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
+        "product_analysis": {"provider": "google_wj", "model_id": "gemini-3.5-flash"},
+        "ad_copy": {"provider": "openrouter", "model_id": "anthropic/claude-sonnet-4.6"},
+        "cover_generation": {
+            "provider": "googlewj",
+            "model_id": "gemini-3-pro-image-preview",
+            "execution_mode": "serial",
+        },
+    }
+    assert next_state["model_defaults"] != global_defaults
+    assert "models" not in next_state
+    assert "result" not in next_state
+    assert next_state["image_count"] == 2
+    assert started == [("task-1", "video_analysis", 2)]
+
+
 def test_video_cover_regenerate_cover_with_model_updates_snapshot_and_restarts_fourth_step(
     authed_client_no_db,
     monkeypatch,
@@ -1804,14 +1887,16 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "selectedRestartCount()" in html
     assert "image_count: selectedRestartCount()" in html
     assert "重选模型后生成" in html
-    assert 'id="vcdCoverRegenerateModal"' in html
-    assert 'id="vcdCoverProvider"' in html
-    assert 'id="vcdCoverModel"' in html
-    assert 'data-regenerate-cover-open' in html
+    assert "重选模型后运行" in html
+    assert 'id="vcdStepModelModal"' in html
+    assert 'id="vcdStepModelProvider"' in html
+    assert 'id="vcdStepModelValue"' in html
+    for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
+        assert f'data-step-model-run="{step}"' in html
     assert "GOOGLEWJ" in html
-    assert "function refreshCoverModelSelect" in html
-    assert "/regenerate-cover" in html
-    assert "model_id: coverModelSelect.value" in html
+    assert "function refreshStepModelSelect" in html
+    assert "/run/${encodeURIComponent(activeModelStep)}" in html
+    assert "model_id: stepModelSelect.value" in html
     assert "全部报文预览" in html
     assert 'id="vcdAllPayloadModal"' in html
     assert 'id="vcdAllPayloadBody"' in html
@@ -2211,6 +2296,136 @@ def test_video_cover_step_run_updates_project_state(authed_client_no_db, monkeyp
     payload = resp.get_json()
     assert payload["ok"] is True
     assert started == [("task-1", "video_analysis", None)]
+
+
+def test_video_cover_step_run_with_model_updates_step_snapshot_and_restarts_from_step(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "task_dir": str(tmp_path),
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "step_messages": {
+            "video_analysis": "已完成",
+            "product_analysis": "已完成",
+            "ad_copy": "已完成",
+            "cover_generation": "已完成",
+        },
+        "model_defaults": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
+            "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {
+                "provider": "local_image_2",
+                "model_id": "gpt-image-2",
+                "execution_mode": "parallel",
+            },
+        },
+        "models": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
+            "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {"provider": "local_image_2", "model_id": "gpt-image-2"},
+        },
+        "product_analysis": "old product analysis",
+        "ad_copy_sets": {"ad_copy_sets": [{"id": 1}]},
+        "result": {"covers": [{"index": 1}]},
+        "step_requests": {
+            "product_analysis": {"prompt": "old product prompt"},
+            "ad_copy": {"prompt": "old copy prompt"},
+            "cover_generation": {"prompt": "old cover prompt"},
+        },
+        "step_results": {
+            "product_analysis": {"structured_result": {"old": True}},
+            "ad_copy": {"structured_result": {"old": True}},
+            "cover_generation": {"structured_result": {"covers": [{"index": 1}]}},
+        },
+        "step_timing": {
+            "product_analysis": {"elapsed_seconds": 2},
+            "ad_copy": {"elapsed_seconds": 3},
+            "cover_generation": {"elapsed_seconds": 4},
+        },
+    }
+    row = {
+        "id": "task-1",
+        "user_id": 8,
+        "state_json": json.dumps(state, ensure_ascii=False),
+        "display_name": "Lamp",
+    }
+    saved = []
+    started = []
+
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_save_state",
+        lambda task_id, next_state, *, status: saved.append(
+            {"task_id": task_id, "status": status, "state": json.loads(json.dumps(next_state, ensure_ascii=False))}
+        ),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "try_register_active_task",
+        lambda project_type, task_id, **metadata: started.append(("register", project_type, task_id, metadata)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "start_background_task",
+        lambda fn, *args: started.append(("start", args)),
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/task-1/run/product_analysis",
+        json={"provider": "google_wj", "model_id": "gemini-3.5-flash"},
+    )
+
+    assert resp.status_code == 202
+    next_state = saved[0]["state"]
+    assert next_state["model_defaults"]["product_analysis"] == {
+        "provider": "google_wj",
+        "model_id": "gemini-3.5-flash",
+    }
+    assert next_state["steps"]["video_analysis"] == "done"
+    assert next_state["steps"]["product_analysis"] == "running"
+    assert next_state["steps"]["ad_copy"] == "pending"
+    assert next_state["steps"]["cover_generation"] == "pending"
+    assert "product_analysis" not in next_state
+    assert "ad_copy_sets" not in next_state
+    assert "result" not in next_state
+    assert "product_analysis" not in next_state["step_requests"]
+    assert "ad_copy" not in next_state["step_results"]
+    assert "cover_generation" not in next_state["step_timing"]
+    assert next_state["models"] == {
+        "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"}
+    }
+    assert started[0][0] == "register"
+    assert started[0][3]["stage"] == "product_analysis"
+    assert started[0][3]["details"] == {
+        "model_provider": "google_wj",
+        "model_id": "gemini-3.5-flash",
+    }
+    assert started[1] == ("start", ("task-1", "product_analysis", None))
 
 
 def test_cover_generation_step_stores_actual_image_prompts(monkeypatch, tmp_path):

@@ -272,9 +272,7 @@
               {% if status == 'running' %}<span class="vcd-timer-spinner spinner"></span><span>已运行 <b>{{ timing.get('running_seconds', 0) }}</b> 秒</span>{% elif timing.get('elapsed_seconds') is not none %}<span>耗时 <b>{{ timing.get('elapsed_seconds') }}</b> 秒</span>{% elif status == 'waiting' %}<span>等待确认</span>{% else %}<span>等待开始</span>{% endif %}
             </span>
             <button class="vcd-prompt-pill llm-prompt-pill" type="button" data-prompt-step="{{ step }}">提示词</button>
-            {% if step == 'cover_generation' %}
-            <button class="vcd-retry-btn resume-btn" type="button" data-regenerate-cover-open {% if status == 'running' %}disabled{% endif %}>重选模型后生成</button>
-            {% endif %}
+            <button class="vcd-retry-btn resume-btn" type="button" data-step-model-run="{{ step }}" {% if status == 'running' %}disabled{% endif %}>{{ '重选模型后生成' if step == 'cover_generation' else '重选模型后运行' }}</button>
             <button class="vcd-retry-btn resume-btn" type="button" data-retry-step="{{ step }}" {% if status == 'running' %}disabled{% endif %}>从此步继续</button>
           </div>
           <div class="vcd-step-message step-msg" data-step-message="{{ step }}">{{ state.get('step_messages', {}).get(step, '') or '等待中...' }}</div>
@@ -304,34 +302,29 @@
   </div>
 </div>
 
-<div class="vcd-modal-backdrop" id="vcdCoverRegenerateModal">
+<div class="vcd-modal-backdrop" id="vcdStepModelModal">
   <div class="vcd-modal vcd-model-modal">
     <div class="vcd-modal-head">
-      <div class="vcd-modal-title">重选模型后生成</div>
-      <button class="btn btn-ghost btn-sm" type="button" id="vcdCoverRegenerateClose">关闭</button>
+      <div class="vcd-modal-title" id="vcdStepModelTitle">重选模型后运行</div>
+      <button class="btn btn-ghost btn-sm" type="button" id="vcdStepModelClose">关闭</button>
     </div>
     <div class="vcd-modal-body">
-      <form class="vcd-model-form" id="vcdCoverRegenerateForm">
+      <form class="vcd-model-form" id="vcdStepModelForm">
         <div class="vcd-model-grid">
           <div class="vcd-model-field">
-            <label for="vcdCoverProvider">供应商</label>
-            <select id="vcdCoverProvider" name="provider">
-              {% set cover_cfg = model_options.steps.get('cover_generation', {}) %}
-              {% for code, label in cover_cfg.providers.items() %}
-              <option value="{{ code }}">{{ label }}</option>
-              {% endfor %}
-            </select>
+            <label for="vcdStepModelProvider">供应商</label>
+            <select id="vcdStepModelProvider" name="provider"></select>
           </div>
           <div class="vcd-model-field">
-            <label for="vcdCoverModel">模型 ID</label>
-            <select id="vcdCoverModel" name="model_id"></select>
+            <label for="vcdStepModelValue">模型 ID</label>
+            <select id="vcdStepModelValue" name="model_id"></select>
           </div>
         </div>
-        <div class="vcd-error" id="vcdCoverRegenerateError"></div>
-        <div class="vcd-model-status" id="vcdCoverRegenerateStatus"></div>
+        <div class="vcd-error" id="vcdStepModelError"></div>
+        <div class="vcd-model-status" id="vcdStepModelStatus"></div>
         <div class="vcd-model-actions">
-          <button class="btn btn-ghost" type="button" id="vcdCoverRegenerateCancel">取消</button>
-          <button class="btn btn-primary" type="submit" id="vcdCoverRegenerateSubmit">生成</button>
+          <button class="btn btn-ghost" type="button" id="vcdStepModelCancel">取消</button>
+          <button class="btn btn-primary" type="submit" id="vcdStepModelSubmit">运行</button>
         </div>
       </form>
     </div>
@@ -412,13 +405,15 @@
   const debugReplayResult = document.getElementById('vcdDebugReplayResult');
   const allPayloadModal = document.getElementById('vcdAllPayloadModal');
   const allPayloadBody = document.getElementById('vcdAllPayloadBody');
-  const coverRegenerateModal = document.getElementById('vcdCoverRegenerateModal');
-  const coverRegenerateForm = document.getElementById('vcdCoverRegenerateForm');
-  const coverProviderSelect = document.getElementById('vcdCoverProvider');
-  const coverModelSelect = document.getElementById('vcdCoverModel');
-  const coverRegenerateSubmit = document.getElementById('vcdCoverRegenerateSubmit');
-  const coverRegenerateError = document.getElementById('vcdCoverRegenerateError');
-  const coverRegenerateStatus = document.getElementById('vcdCoverRegenerateStatus');
+  const stepModelModal = document.getElementById('vcdStepModelModal');
+  const stepModelForm = document.getElementById('vcdStepModelForm');
+  const stepModelTitle = document.getElementById('vcdStepModelTitle');
+  const stepProviderSelect = document.getElementById('vcdStepModelProvider');
+  const stepModelSelect = document.getElementById('vcdStepModelValue');
+  const stepModelSubmit = document.getElementById('vcdStepModelSubmit');
+  const stepModelError = document.getElementById('vcdStepModelError');
+  const stepModelStatus = document.getElementById('vcdStepModelStatus');
+  let activeModelStep = '';
   let currentPromptStep = '';
   let currentDebugPayload = null;
 
@@ -497,29 +492,49 @@
     }
     return parts.join(' · ');
   }
-  function coverOptions() {
-    return ((MODEL_OPTIONS.steps || {}).cover_generation) || {};
+  function stepOptions(step) {
+    return ((MODEL_OPTIONS.steps || {})[step]) || {};
   }
-  function coverModelRows(providerCode) {
-    const cfg = coverOptions();
-    const models = ((cfg.models || {})[providerCode]) || {};
-    const labels = cfg.model_labels || {};
+  function stepProviderRows(step) {
+    const cfg = stepOptions(step);
+    const providers = cfg.providers || {};
+    return Object.keys(providers).map(code => {
+      const row = providers[code];
+      return {
+        value: code,
+        label: typeof row === 'string' ? row : ((row || {}).label || code)
+      };
+    });
+  }
+  function stepModelRows(step, providerCode) {
+    const cfg = stepOptions(step);
+    if (step === 'cover_generation') {
+      const models = ((cfg.models || {})[providerCode]) || {};
+      const labels = cfg.model_labels || {};
+      return Object.keys(models).map(alias => ({
+        alias,
+        value: models[alias],
+        label: (labels[alias] || alias) + ' · ' + models[alias]
+      }));
+    }
+    const provider = ((cfg.providers || {})[providerCode]) || {};
+    const models = provider.models || {};
     return Object.keys(models).map(alias => ({
       alias,
-      value: models[alias],
-      label: (labels[alias] || alias) + ' · ' + models[alias]
+      value: (models[alias] || {}).model || alias,
+      label: (((models[alias] || {}).label) || alias) + ' · ' + (((models[alias] || {}).model) || alias)
     }));
   }
-  function currentCoverSelection() {
-    const defaults = ((currentState.model_defaults || {}).cover_generation) || {};
-    const actual = ((currentState.models || {}).cover_generation) || {};
+  function currentStepSelection(step) {
+    const defaults = ((currentState.model_defaults || {})[step]) || {};
+    const actual = ((currentState.models || {})[step]) || {};
     return {...defaults, ...actual};
   }
-  function refreshCoverModelSelect(preferredValue) {
-    if (!coverProviderSelect || !coverModelSelect) return;
-    const rows = coverModelRows(coverProviderSelect.value);
+  function refreshStepModelSelect(preferredValue) {
+    if (!stepProviderSelect || !stepModelSelect || !activeModelStep) return;
+    const rows = stepModelRows(activeModelStep, stepProviderSelect.value);
     const preferred = String(preferredValue || '').trim();
-    coverModelSelect.innerHTML = '';
+    stepModelSelect.innerHTML = '';
     let matched = false;
     rows.forEach(row => {
       const option = document.createElement('option');
@@ -529,37 +544,60 @@
         option.selected = true;
         matched = true;
       }
-      coverModelSelect.appendChild(option);
+      stepModelSelect.appendChild(option);
     });
     if (preferred && !matched) {
       const option = document.createElement('option');
       option.value = preferred;
       option.textContent = '当前历史值 · ' + preferred;
       option.selected = true;
-      coverModelSelect.appendChild(option);
-    } else if (!preferred && coverModelSelect.options.length) {
-      coverModelSelect.options[0].selected = true;
+      stepModelSelect.appendChild(option);
+    } else if (!preferred && stepModelSelect.options.length) {
+      stepModelSelect.options[0].selected = true;
     }
   }
-  function openCoverRegenerateModal() {
-    const selection = currentCoverSelection();
-    const cfg = coverOptions();
-    const providers = cfg.providers || {};
-    const firstProvider = Object.keys(providers)[0] || '';
-    if (coverProviderSelect) coverProviderSelect.value = selection.provider || cfg.default_provider || firstProvider;
-    refreshCoverModelSelect(selection.model_id || selection.model || '');
-    if (coverRegenerateError) coverRegenerateError.textContent = '';
-    if (coverRegenerateStatus) coverRegenerateStatus.textContent = '';
-    if (coverRegenerateModal) coverRegenerateModal.classList.add('show');
-  }
-  function closeCoverRegenerateModal() {
-    if (coverRegenerateModal) coverRegenerateModal.classList.remove('show');
-    if (coverRegenerateError) coverRegenerateError.textContent = '';
-    if (coverRegenerateStatus) coverRegenerateStatus.textContent = '';
-    if (coverRegenerateSubmit) {
-      coverRegenerateSubmit.disabled = false;
-      coverRegenerateSubmit.textContent = '生成';
+  function openStepModelModal(step) {
+    activeModelStep = step;
+    const selection = currentStepSelection(step);
+    const cfg = stepOptions(step);
+    const providers = stepProviderRows(step);
+    if (stepModelTitle) {
+      const action = step === 'cover_generation' ? '重选模型后生成' : '重选模型后运行';
+      stepModelTitle.textContent = `${action} · ${STEP_LABELS[step] || step}`;
     }
+    if (stepProviderSelect) {
+      stepProviderSelect.innerHTML = '';
+      providers.forEach(row => {
+        const option = document.createElement('option');
+        option.value = row.value;
+        option.textContent = row.label;
+        stepProviderSelect.appendChild(option);
+      });
+      const firstProvider = providers[0] ? providers[0].value : '';
+      const selectedProvider = selection.provider || cfg.default_provider || firstProvider;
+      if (selectedProvider && !providers.some(row => row.value === selectedProvider)) {
+        const option = document.createElement('option');
+        option.value = selectedProvider;
+        option.textContent = '当前历史供应商 · ' + selectedProvider;
+        stepProviderSelect.appendChild(option);
+      }
+      stepProviderSelect.value = selectedProvider;
+    }
+    refreshStepModelSelect(selection.model_id || selection.model || '');
+    if (stepModelError) stepModelError.textContent = '';
+    if (stepModelStatus) stepModelStatus.textContent = '';
+    if (stepModelSubmit) stepModelSubmit.textContent = step === 'cover_generation' ? '生成' : '运行';
+    if (stepModelModal) stepModelModal.classList.add('show');
+  }
+  function closeStepModelModal() {
+    if (stepModelModal) stepModelModal.classList.remove('show');
+    if (stepModelError) stepModelError.textContent = '';
+    if (stepModelStatus) stepModelStatus.textContent = '';
+    if (stepModelSubmit) {
+      stepModelSubmit.disabled = false;
+      stepModelSubmit.textContent = activeModelStep === 'cover_generation' ? '生成' : '运行';
+    }
+    activeModelStep = '';
   }
   function visualStatus(status) {
     if (['failed', 'interrupted', 'cancelled'].includes(status)) return 'error';
@@ -850,12 +888,13 @@
         }
       }
     });
-    const regen = document.querySelector('[data-regenerate-cover-open]');
-    if (regen) {
-      const coverStatus = steps.cover_generation || 'pending';
-      regen.disabled = coverStatus === 'running';
-      regen.textContent = coverStatus === 'running' ? '生成中...' : '重选模型后生成';
-    }
+    document.querySelectorAll('[data-step-model-run]').forEach(btn => {
+      const step = btn.dataset.stepModelRun;
+      const status = steps[step] || 'pending';
+      const actionText = step === 'cover_generation' ? '重选模型后生成' : '重选模型后运行';
+      btn.disabled = status === 'running';
+      btn.textContent = status === 'running' ? '运行中...' : actionText;
+    });
   }
   async function loadState() {
     const response = await fetch(`/video-cover/api/${encodeURIComponent(TASK_ID)}/state`, {cache: 'no-store'});
@@ -887,24 +926,24 @@
     try { await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {image_count: selectedRestartCount()}); }
     catch (e) { errorBox.textContent = e.message || '强制重新开始失败'; }
   }
-  async function regenerateCoverWithModel() {
-    if (!coverProviderSelect || !coverModelSelect) return;
-    coverRegenerateSubmit.disabled = true;
-    coverRegenerateSubmit.textContent = '提交中...';
-    coverRegenerateError.textContent = '';
-    coverRegenerateStatus.textContent = '';
+  async function runStepWithSelectedModel() {
+    if (!stepProviderSelect || !stepModelSelect || !activeModelStep) return;
+    stepModelSubmit.disabled = true;
+    stepModelSubmit.textContent = '提交中...';
+    stepModelError.textContent = '';
+    stepModelStatus.textContent = '';
     try {
-      await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/regenerate-cover`, {
-        provider: coverProviderSelect.value,
-        model_id: coverModelSelect.value
+      await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/run/${encodeURIComponent(activeModelStep)}`, {
+        provider: stepProviderSelect.value,
+        model_id: stepModelSelect.value
       });
-      coverRegenerateStatus.textContent = '已提交';
-      closeCoverRegenerateModal();
+      stepModelStatus.textContent = '已提交';
+      closeStepModelModal();
     } catch (e) {
-      coverRegenerateError.textContent = e.message || '提交失败';
+      stepModelError.textContent = e.message || '提交失败';
     } finally {
-      coverRegenerateSubmit.disabled = false;
-      coverRegenerateSubmit.textContent = '生成';
+      stepModelSubmit.disabled = false;
+      stepModelSubmit.textContent = activeModelStep === 'cover_generation' ? '生成' : '运行';
     }
   }
   async function openPrompt(step) {
@@ -1017,18 +1056,22 @@
 
     // 强制重新开始按钮
     document.getElementById('vcdRestartBtn').addEventListener('click', restart);
-    const regenerateOpenBtn = document.querySelector('[data-regenerate-cover-open]');
-    if (regenerateOpenBtn) regenerateOpenBtn.addEventListener('click', openCoverRegenerateModal);
-    if (coverProviderSelect) coverProviderSelect.addEventListener('change', () => refreshCoverModelSelect(''));
-    if (coverRegenerateForm) {
-      coverRegenerateForm.addEventListener('submit', event => {
+    document.addEventListener('click', (e) => {
+      const modelBtn = e.target.closest('[data-step-model-run]');
+      if (modelBtn && !modelBtn.disabled) {
+        openStepModelModal(modelBtn.dataset.stepModelRun);
+      }
+    });
+    if (stepProviderSelect) stepProviderSelect.addEventListener('change', () => refreshStepModelSelect(''));
+    if (stepModelForm) {
+      stepModelForm.addEventListener('submit', event => {
         event.preventDefault();
-        regenerateCoverWithModel();
+        runStepWithSelectedModel();
       });
     }
-    document.getElementById('vcdCoverRegenerateClose').addEventListener('click', closeCoverRegenerateModal);
-    document.getElementById('vcdCoverRegenerateCancel').addEventListener('click', closeCoverRegenerateModal);
-    coverRegenerateModal.addEventListener('click', event => { if (event.target === coverRegenerateModal) closeCoverRegenerateModal(); });
+    document.getElementById('vcdStepModelClose').addEventListener('click', closeStepModelModal);
+    document.getElementById('vcdStepModelCancel').addEventListener('click', closeStepModelModal);
+    stepModelModal.addEventListener('click', event => { if (event.target === stepModelModal) closeStepModelModal(); });
 
     // 复制产品链接按钮
     document.querySelectorAll('[data-copy-product-url]').forEach(btn => btn.addEventListener('click', async () => {
@@ -1071,7 +1114,7 @@
       if (event.key === 'Escape') {
         modal.classList.remove('show');
         allPayloadModal.classList.remove('show');
-        closeCoverRegenerateModal();
+        closeStepModelModal();
       }
     });
 

@@ -27,6 +27,19 @@
 - 不新增单张封面重试；仍按项目当前 `image_count` 重新生成全部封面。
 - 不新增新的凭据存储行；`GOOGLEWJ` 复用现有 `google_wj_image` / `google_wj_text` 配置。
 
+## 2026-06-13 步骤级模型重选与项目快照保留修订
+
+用户要求把第四步「重选模型后生成」推广到四步卡片，并修复「强制重新开始」误读全局默认配置的问题。
+
+- 步骤级模型重选是单个步骤自己的运行配置：详情页四张步骤卡片都必须提供「重选模型后运行」入口；第四步仍可显示为「重选模型后生成」。
+- 点击步骤级入口后只选择当前步骤的供应商和模型 ID，可选范围复用默认配置弹窗中该步骤的模型池。
+- 提交后服务端必须把新选择写回当前项目 `state_json.model_defaults[step]`，再从该步骤启动后台链路。
+- 从上游步骤重跑时，服务端必须清空该步骤及所有下游步骤的结果、报文、耗时和实际模型记录；上游已完成步骤保持不变。
+- 文本步骤重跑按所选文本模型执行；第四步重选模型入口继续强制 `execution_mode="serial"`，避免一次重选触发并发图片请求。
+- 「强制重新开始」是项目级重新执行：必须保留当前项目已有的 `state_json.model_defaults` 作为项目基础模型快照，不能重新读取 `system_settings.video_cover_model_defaults`。
+- 历史项目如果缺少 `model_defaults`，但已有 `state_json.models` 实际运行记录，强制重新开始和后续后台链路应先从这些历史实际模型恢复项目快照；只有项目内完全没有历史模型记录时，才允许回退到当前全局默认配置。
+- 第四步旧接口 `POST /video-cover/api/<task_id>/regenerate-cover` 保留兼容，但前端可统一使用通用步骤运行接口。
+
 ## 后端设计
 
 - `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。
@@ -40,6 +53,11 @@
   - 写回 `state_json.model_defaults.cover_generation`
   - 启动后台链路从 `cover_generation` 开始
 - 若任务正在运行，返回 409；若前三步未完成，返回 400。
+- 通用步骤级入口：
+  - `POST /video-cover/api/<task_id>/run/<step>`
+  - 入参可为空；为空时沿用项目快照从该步骤继续。
+  - 入参包含 `provider` / `model_id` 时，服务端归一该步骤模型选择，写回 `state_json.model_defaults[step]`，清空该步骤及下游输出后从该步骤开始。
+  - 若任务正在运行，返回 409；若前序步骤未完成，返回 400。
 
 ## 前端设计
 
@@ -51,6 +69,8 @@
 - 弹窗初始值优先取当前实际第四步模型，其次取项目级默认配置。
 - 提交时带 `X-CSRFToken`。
 - 提交成功后关闭弹窗并进入轮询；第四步状态显示为运行中。
+- 四张步骤卡片复用同一个模型选择弹窗；弹窗标题、供应商列表和模型下拉随步骤切换。
+- 文本步骤按钮文案为「重选模型后运行」，第四步按钮文案为「重选模型后生成」。
 
 ## 验收
 
@@ -66,4 +86,3 @@
   - 覆盖 `GOOGLEWJ` 模型池和 `generate_cover_image(channel="googlewj")`。
   - 覆盖详情页渲染按钮和弹窗 JS。
   - 覆盖 `POST /video-cover/api/<task_id>/regenerate-cover` 写回串行配置并从第四步启动。
-

@@ -275,7 +275,7 @@ def _clear_step_outputs(state: dict, step: str) -> None:
             state.setdefault("step_messages", {})[affected] = ""
         for key in STEP_OUTPUT_KEYS.get(affected, ()):
             state.pop(key, None)
-        for container in ("step_requests", "step_results", "step_timing"):
+        for container in ("step_requests", "step_results", "step_timing", "models"):
             if isinstance(state.get(container), dict):
                 state[container].pop(affected, None)
 
@@ -494,8 +494,18 @@ def _ensure_product_assets(state: dict, *, fetch_product: bool = False) -> tuple
 
 
 def _project_model_defaults(state: dict) -> dict[str, dict[str, str]]:
-    defaults = state.get("model_defaults")
-    if not isinstance(defaults, dict):
+    defaults = {}
+    raw_defaults = state.get("model_defaults")
+    if isinstance(raw_defaults, dict):
+        defaults.update(raw_defaults)
+
+    historical_models = state.get("models")
+    if isinstance(historical_models, dict):
+        for step in STEP_ORDER:
+            if step not in defaults and isinstance(historical_models.get(step), dict):
+                defaults[step] = historical_models[step]
+
+    if not defaults:
         defaults = video_cover_settings.get_model_defaults()
     normalized = video_cover_settings.normalize_model_defaults(defaults)
     state["model_defaults"] = normalized
@@ -504,6 +514,43 @@ def _project_model_defaults(state: dict) -> dict[str, dict[str, str]]:
 
 def _step_model_default(state: dict, step: str) -> dict[str, str]:
     return _project_model_defaults(state).get(step) or {}
+
+
+def _apply_step_model_default(
+    state: dict,
+    step: str,
+    *,
+    provider: str | None,
+    model: str | None,
+    execution_mode: str | None = None,
+    force_serial_cover: bool = False,
+) -> dict[str, str]:
+    _step_index(step)
+    model_defaults = _project_model_defaults(state)
+    if step == "cover_generation":
+        selection = resolve_cover_model_selection(provider, model)
+        current = model_defaults.get(step) or {}
+        selected_execution_mode = (
+            "serial"
+            if force_serial_cover
+            else normalize_cover_execution_mode(
+                selection.provider,
+                execution_mode or current.get("execution_mode"),
+            )
+        )
+        model_defaults[step] = {
+            "provider": selection.provider,
+            "model_id": selection.model,
+            "execution_mode": selected_execution_mode,
+        }
+    else:
+        selection = resolve_text_model_selection(step, provider, model)
+        model_defaults[step] = {
+            "provider": selection.provider,
+            "model_id": selection.model,
+        }
+    state["model_defaults"] = model_defaults
+    return model_defaults[step]
 
 
 def _cover_by_platform(state: dict, platform: str) -> dict | None:
@@ -816,6 +863,37 @@ def _run_video_cover_chain_with_tracking(task_id: str, start_step: str, image_co
         return _run_video_cover_chain(task_id, start_step=start_step, image_count=image_count)
     finally:
         unregister_active_task(video_cover_project_store.VIDEO_COVER_TYPE, task_id)
+
+
+def _start_video_cover_step_from_state(
+    task_id: str,
+    state: dict,
+    step: str,
+    *,
+    entrypoint: str,
+    details: dict | None = None,
+    image_count: int | None = None,
+) -> bool:
+    if not try_register_active_task(
+        video_cover_project_store.VIDEO_COVER_TYPE,
+        task_id,
+        runner="web.routes.video_cover._run_video_cover_chain_with_tracking",
+        entrypoint=entrypoint,
+        stage=step,
+        details=details or {},
+    ):
+        return False
+    try:
+        if image_count is not None:
+            state["image_count"] = normalize_image_count(image_count)
+        _clear_step_outputs(state, step)
+        _mark_step_running(state, step)
+        _save_state(task_id, state, status="running")
+        start_background_task(_run_video_cover_chain_with_tracking, task_id, step, image_count)
+    except BaseException:
+        unregister_active_task(video_cover_project_store.VIDEO_COVER_TYPE, task_id)
+        raise
+    return True
 
 
 def _load_project_for_background(task_id: str) -> tuple[dict | None, dict]:
@@ -1476,6 +1554,43 @@ def _request_json_payload() -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _request_first_value(payload: dict, *names: str) -> str:
+    for name in names:
+        value = payload.get(name)
+        if value is None:
+            value = request.form.get(name)
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _step_model_request_values(step: str) -> tuple[str, str, str, bool]:
+    payload = _request_json_payload()
+    provider = _request_first_value(
+        payload,
+        "provider",
+        f"{step}_provider",
+        "cover_provider" if step == "cover_generation" else f"{step}_provider",
+    )
+    model = _request_first_value(
+        payload,
+        "model_id",
+        "model",
+        f"{step}_model_id",
+        f"{step}_model",
+        "cover_model" if step == "cover_generation" else f"{step}_model",
+    )
+    execution_mode = _request_first_value(
+        payload,
+        "execution_mode",
+        f"{step}_execution_mode",
+        "cover_execution_mode" if step == "cover_generation" else f"{step}_execution_mode",
+    )
+    has_selection = bool(provider or model or execution_mode)
+    return provider, model, execution_mode, has_selection
+
+
 def _cover_reference_image_bytes(state: dict) -> tuple[bytes, str, str]:
     object_key = _cover_reference_object_key(state)
     if not object_key:
@@ -1590,6 +1705,36 @@ def api_run_project_step(task_id: str, step: str):
         _ensure_previous_steps_done(state, step)
     except VideoCoverGenerationError as exc:
         return _json_response({"ok": False, "error": str(exc)}, 400)
+
+    provider, model, execution_mode, has_model_selection = _step_model_request_values(step)
+    if has_model_selection:
+        try:
+            selected = _apply_step_model_default(
+                state,
+                step,
+                provider=provider,
+                model=model,
+                execution_mode=execution_mode,
+                force_serial_cover=step == "cover_generation",
+            )
+        except VideoCoverGenerationError as exc:
+            return _json_response({"ok": False, "error": str(exc)}, 400)
+        details = {
+            "model_provider": selected.get("provider"),
+            "model_id": selected.get("model_id"),
+        }
+        if step == "cover_generation":
+            details["execution_mode"] = selected.get("execution_mode")
+        if not _start_video_cover_step_from_state(
+            task_id,
+            state,
+            step,
+            entrypoint="video_cover.run_step_with_model",
+            details=details,
+        ):
+            return _json_response({"ok": False, "error": "任务正在运行中"}, 409)
+        return _json_response({"ok": True, "state": _state_with_urls(task_id, state)}, 202)
+
     if not _start_video_cover_background(task_id, step):
         return _json_response({"ok": False, "error": "任务正在运行中"}, 409)
     return _json_response({"ok": True, "state": _state_with_urls(task_id, state)}, 202)
@@ -1624,37 +1769,24 @@ def api_regenerate_cover_with_model(task_id: str):
     state.setdefault("step_messages", {name: "" for name in STEP_ORDER})
     try:
         _ensure_previous_steps_done(state, "cover_generation")
-        selection = resolve_cover_model_selection(provider, model)
+        selected = _apply_step_model_default(
+            state,
+            "cover_generation",
+            provider=provider,
+            model=model,
+            force_serial_cover=True,
+        )
     except VideoCoverGenerationError as exc:
         return _json_response({"ok": False, "error": str(exc)}, 400)
 
-    if not try_register_active_task(
-        video_cover_project_store.VIDEO_COVER_TYPE,
+    if not _start_video_cover_step_from_state(
         task_id,
-        runner="web.routes.video_cover._run_video_cover_chain_with_tracking",
+        state,
+        "cover_generation",
         entrypoint="video_cover.regenerate_cover",
-        stage="cover_generation",
-        details={"model_provider": selection.provider, "model_id": selection.model},
+        details={"model_provider": selected.get("provider"), "model_id": selected.get("model_id")},
     ):
         return _json_response({"ok": False, "error": "任务正在运行中"}, 409)
-
-    model_defaults = _project_model_defaults(state)
-    model_defaults["cover_generation"] = {
-        "provider": selection.provider,
-        "model_id": selection.model,
-        "execution_mode": "serial",
-    }
-    state["model_defaults"] = model_defaults
-    if isinstance(state.get("models"), dict):
-        state["models"].pop("cover_generation", None)
-    _clear_step_outputs(state, "cover_generation")
-    _mark_step_running(state, "cover_generation")
-    try:
-        _save_state(task_id, state, status="running")
-        start_background_task(_run_video_cover_chain_with_tracking, task_id, "cover_generation", None)
-    except BaseException:
-        unregister_active_task(video_cover_project_store.VIDEO_COVER_TYPE, task_id)
-        raise
     return _json_response({"ok": True, "state": _state_with_urls(task_id, state)}, 202)
 
 
@@ -1686,6 +1818,7 @@ def api_restart_project(task_id: str):
     )
     state.setdefault("id", task_id)
     state.setdefault("type", video_cover_project_store.VIDEO_COVER_TYPE)
+    _project_model_defaults(state)
     _clear_all_outputs(state)
     state["image_count"] = image_count
     _save_state(task_id, state, status="running")
