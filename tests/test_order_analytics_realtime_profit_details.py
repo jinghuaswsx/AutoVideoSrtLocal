@@ -774,6 +774,40 @@ def test_build_order_profit_summary_counts_shopify_fee_sources():
         "actual_payment": 1.95,
     }
     assert summary["shopify_fee_rate_watermark"] == "2026-06-05"
+    assert summary["data_quality"] == {"warnings": [], "errors": []}
+
+
+def test_order_profit_summary_marks_strategy_c_fallback_warning():
+    summary = _build_order_profit_summary(
+        [
+            {
+                "total_revenue": 20.0,
+                "refund_deduction_usd": 0.0,
+                "return_reserve_usd": 0.2,
+                "profit_deduction_usd": 0.0,
+                "purchase_cost_usd": 5.0,
+                "purchase_estimate_usd": 0.0,
+                "purchase_cost_missing": False,
+                "logistics_cost_usd": 1.0,
+                "logistics_estimate_usd": 0.0,
+                "logistics_cost_missing": False,
+                "shopify_fee_total_usd": 1.0,
+                "shopify_fee_source": "strategy_c_fallback",
+                "shopify_fee_rate_window_end": None,
+                "ad_cost_usd": 2.0,
+            }
+        ],
+        total_ad_spend_usd=2.0,
+    )
+
+    assert summary["data_quality"]["warnings"] == [
+        {
+            "code": "shopify_fee_strategy_c_fallback_present",
+            "status": "warning",
+            "message": "shopify_fee_strategy_c_fallback_present",
+        }
+    ]
+    assert summary["data_quality"]["errors"] == []
 
 
 def test_build_order_profit_summary_normalizes_mixed_shopify_fee_sources():
@@ -782,7 +816,7 @@ def test_build_order_profit_summary_normalizes_mixed_shopify_fee_sources():
             {
                 "total_revenue": 100.0,
                 "shopify_fee_total_usd": 6.72,
-                "shopify_fee_source": "actual_payment,dynamic_region_rate",
+                "shopify_fee_source": "strategy_c_fallback,dynamic_region_rate",
                 "ad_cost_usd": 0.0,
             }
         ],
@@ -791,7 +825,8 @@ def test_build_order_profit_summary_normalizes_mixed_shopify_fee_sources():
 
     assert summary["shopify_fee_source_counts"] == {"mixed": 1}
     assert summary["shopify_fee_source_amounts"] == {"mixed": 6.72}
-    assert "actual_payment,dynamic_region_rate" not in summary["shopify_fee_source_counts"]
+    assert "strategy_c_fallback,dynamic_region_rate" not in summary["shopify_fee_source_counts"]
+    assert summary["data_quality"]["warnings"] == []
 
 
 def test_build_order_profit_summary_subtracts_unallocated_ad_spend():

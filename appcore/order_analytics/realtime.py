@@ -357,6 +357,7 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "shopify_fee_source_counts": {},
         "shopify_fee_source_amounts": {},
         "shopify_fee_rate_watermark": None,
+        "data_quality": {"warnings": [], "errors": []},
         "ad_cost_usd": Decimal("0"),
         "unallocated_ad_spend_usd": Decimal("0"),
         "total_ad_spend_usd": Decimal("0"),
@@ -496,6 +497,12 @@ def _build_order_profit_summary(
         for key, value in fee_source_amounts.items()
     }
     summary["shopify_fee_rate_watermark"] = fee_rate_watermark
+    if fee_source_counts.get("strategy_c_fallback", 0) > 0:
+        summary["data_quality"]["warnings"].append({
+            "code": "shopify_fee_strategy_c_fallback_present",
+            "status": "warning",
+            "message": "shopify_fee_strategy_c_fallback_present",
+        })
     summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
