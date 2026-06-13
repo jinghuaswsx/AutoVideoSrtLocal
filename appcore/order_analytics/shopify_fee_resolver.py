@@ -14,9 +14,9 @@ from .shopify_fee import (
 )
 from .shopify_fee_dynamic import (
     FIXED_FEE_PER_ORDER,
-    STORE_SOURCE_PREFIXES,
     load_best_fee_rate_snapshot,
     region_for_presentment_currency,
+    source_prefix_for_store_code,
 )
 
 
@@ -75,21 +75,11 @@ def is_dynamic_fee_effective(order_time: datetime | None) -> bool:
     return comparable >= effective_at
 
 
-def _normalize_store_code(site_code: str | None) -> str:
-    normalized = str(site_code or "").strip().lower()
-    if normalized in STORE_SOURCE_PREFIXES:
-        if normalized == "newjoyloo":
-            return "newjoy"
-        return normalized
-    return ""
-
-
 def _source_csv_filter_for_store(site_code: str | None) -> tuple[str | None, tuple[Any, ...]]:
-    store_code = _normalize_store_code(site_code)
-    if not store_code:
+    prefix = source_prefix_for_store_code(site_code)
+    if not prefix:
         return None, ()
-    prefix = STORE_SOURCE_PREFIXES[store_code]
-    return " AND LOWER(source_csv) LIKE %s", (f"{prefix}%",)
+    return " AND LEFT(LOWER(source_csv), %s) = %s", (len(prefix), prefix)
 
 
 def _preferred_order_names(order_names: Iterable[str | None]) -> list[str]:

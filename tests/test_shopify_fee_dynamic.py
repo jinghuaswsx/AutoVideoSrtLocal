@@ -419,6 +419,28 @@ def test_load_window_aggregates_normalizes_order_name_for_order_count(monkeypatc
     ) in normalized_sql
 
 
+def test_load_window_aggregates_classifies_cozywint_source_csv(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_dynamic.query", fake_query)
+
+    fee_dynamic._load_window_aggregates(
+        window_end_date=date(2026, 6, 6),
+        window_days=7,
+        source_csvs=["cozywint__payments.csv"],
+    )
+
+    normalized_sql = " ".join(captured["sql"].lower().split())
+    assert "left(lower(source_csv), 10) = 'cozywint__' then 'cozywint'" in normalized_sql
+    assert "left(lower(source_csv), 11) = 'newjoyloo__' then 'newjoy'" in normalized_sql
+    assert "left(lower(source_csv), 8) = 'omurio__' then 'omurio'" in normalized_sql
+
+
 def test_save_fee_rate_snapshots_rolls_back_and_closes_on_insert_error(monkeypatch):
     class FakeCursor:
         def executemany(self, sql, params_list):
@@ -638,8 +660,8 @@ def test_resolver_prefers_actual_payment(monkeypatch):
     assert result["shopify_fee_source"] == FEE_SOURCE_ACTUAL_PAYMENT
     assert result["shopify_fee_usd"] == 1.19
     assert result["shopify_fee_basis"]["matched_payment_transaction_ids"] == ["11", "12"]
-    assert "lower(source_csv) like %s" in captured["sql"].lower()
-    assert captured["params"] == ("#2001", "2001", "newjoyloo__%")
+    assert "left(lower(source_csv), %s) = %s" in captured["sql"].lower()
+    assert captured["params"] == ("#2001", "2001", 11, "newjoyloo__")
 
 
 def test_resolver_filters_actual_payment_by_site_code(monkeypatch):
@@ -663,8 +685,8 @@ def test_resolver_filters_actual_payment_by_site_code(monkeypatch):
 
     assert result["shopify_fee_source"] == FEE_SOURCE_ACTUAL_PAYMENT
     assert result["shopify_fee_basis"]["matched_payment_transaction_ids"] == ["omurio-11"]
-    assert "lower(source_csv) like %s" in captured["sql"].lower()
-    assert captured["params"] == ("#2001", "2001", "omurio__%")
+    assert "left(lower(source_csv), %s) = %s" in captured["sql"].lower()
+    assert captured["params"] == ("#2001", "2001", 8, "omurio__")
 
 
 def test_resolver_filters_actual_payment_for_cozywint(monkeypatch):
@@ -688,7 +710,8 @@ def test_resolver_filters_actual_payment_for_cozywint(monkeypatch):
 
     assert result["shopify_fee_source"] == FEE_SOURCE_ACTUAL_PAYMENT
     assert result["shopify_fee_basis"]["matched_payment_transaction_ids"] == ["cozy-11"]
-    assert captured["params"] == ("#2001", "2001", "cozywint__%")
+    assert "left(lower(source_csv), %s) = %s" in captured["sql"].lower()
+    assert captured["params"] == ("#2001", "2001", 10, "cozywint__")
 
 
 def test_resolver_does_not_query_actual_payment_for_unknown_site(monkeypatch):

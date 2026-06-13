@@ -80,6 +80,24 @@ def infer_store_code_from_source_csv(source_csv: str | None) -> str:
     return "all"
 
 
+def source_prefix_for_store_code(site_code: str | None) -> str | None:
+    normalized = str(site_code or "").strip().lower()
+    if normalized == "newjoyloo":
+        normalized = "newjoy"
+    return STORE_SOURCE_PREFIXES.get(normalized)
+
+
+def _store_code_case_sql() -> str:
+    clauses = []
+    for store_code in ("newjoy", "omurio", "cozywint"):
+        prefix = STORE_SOURCE_PREFIXES[store_code]
+        clauses.append(
+            f"WHEN LEFT(LOWER(source_csv), {len(prefix)}) = '{prefix}' "
+            f"THEN '{store_code}'"
+        )
+    return "\n                ".join(clauses)
+
+
 def select_snapshot_window(
     *,
     seven_day: Mapping[str, Any],
@@ -267,6 +285,7 @@ def _load_window_aggregates(
     europe_currency_list = ", ".join(
         f"'{currency}'" for currency in sorted(EUROPE_PRESENTMENT_CURRENCIES)
     )
+    store_case_sql = _store_code_case_sql()
     params: list[Any] = [
         window_end_date,
         int(window_days) - 1,
@@ -277,8 +296,7 @@ def _load_window_aggregates(
         f"""
         SELECT
             CASE
-                WHEN LOWER(source_csv) LIKE 'newjoyloo__%%' THEN 'newjoy'
-                WHEN LOWER(source_csv) LIKE 'omurio__%%' THEN 'omurio'
+                {store_case_sql}
                 ELSE 'all'
             END AS store_code,
             CASE

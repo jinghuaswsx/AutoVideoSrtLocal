@@ -131,7 +131,7 @@ computed_at
 
 1. `actual_payment`
    - 能按 Shopify order name 匹配到 `shopify_payments_transactions` 的正向 charge。
-   - 匹配必须按店铺隔离，不能让不同店铺相同 Shopify order name 的交易互相命中；当前 Payments CSV 前缀映射为 `newjoy/newjoyloo -> newjoyloo__`、`omurio -> omurio__`、`cozywint -> cozywint__`，未知店铺不得放开全表匹配。
+   - 匹配必须按店铺隔离，不能让不同店铺相同 Shopify order name 的交易互相命中；当前 Payments CSV 前缀映射为 `newjoy/newjoyloo -> newjoyloo__`、`omurio -> omurio__`、`cozywint -> cozywint__`，前缀按字面字符串比较，未知店铺不得放开全表匹配。
    - 使用真实 `fee_usd`，多 SKU 订单按行收入比例摊回。
 
 2. `dynamic_region_rate`
