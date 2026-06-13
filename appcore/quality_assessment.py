@@ -104,6 +104,28 @@ def _tts_recognition_from_variants(task: dict) -> str:
     return _tts_recognition_from_result(task.get("tts_result"))
 
 
+def _tail_truncation_note(task: dict) -> str:
+    warnings = task.get("quality_warnings")
+    if not isinstance(warnings, list):
+        return ""
+    for item in reversed(warnings):
+        if not isinstance(item, dict) or item.get("type") != "tail_truncated":
+            continue
+        removed_count = item.get("removed_count")
+        if removed_count is None:
+            removed_texts = item.get("removed_texts")
+            removed_count = len(removed_texts) if isinstance(removed_texts, list) else 0
+        try:
+            removed_count_int = int(removed_count)
+        except (TypeError, ValueError):
+            removed_count_int = 0
+        return (
+            "NOTE: the final audio was tail-truncated, "
+            f"{removed_count_int} sentences removed before export."
+        )
+    return ""
+
+
 def _load_json_file(task_dir: str, filename: str) -> Any | None:
     if not task_dir:
         return None
@@ -190,13 +212,17 @@ def _build_inputs(task: dict) -> dict:
         or ""
     )
 
-    return {
+    inputs = {
         "original_asr": original_asr,
         "translation": translation,
         "tts_recognition": tts_recognition,
         "source_language": source_language,
         "target_language": task.get("target_lang") or "",
     }
+    notes = _tail_truncation_note(task)
+    if notes:
+        inputs["notes"] = notes
+    return inputs
 
 
 def get_project_for_assessment(task_id: str, project_type: str) -> dict | None:
@@ -311,6 +337,7 @@ def _run_assessment_job(
             source_language=inputs["source_language"],
             target_language=inputs["target_language"],
             task_id=task_id, user_id=user_id,
+            notes=inputs.get("notes", ""),
         )
         debug_call = result.get("_llm_debug_call")
         if isinstance(debug_call, dict) and task.get("task_dir"):
