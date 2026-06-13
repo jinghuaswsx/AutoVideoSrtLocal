@@ -14,6 +14,7 @@ from .shopify_fee import (
 )
 from .shopify_fee_dynamic import (
     FIXED_FEE_PER_ORDER,
+    STORE_SOURCE_PREFIXES,
     load_best_fee_rate_snapshot,
     region_for_presentment_currency,
 )
@@ -76,18 +77,19 @@ def is_dynamic_fee_effective(order_time: datetime | None) -> bool:
 
 def _normalize_store_code(site_code: str | None) -> str:
     normalized = str(site_code or "").strip().lower()
-    if normalized in {"newjoy", "omurio"}:
+    if normalized in STORE_SOURCE_PREFIXES:
+        if normalized == "newjoyloo":
+            return "newjoy"
         return normalized
     return ""
 
 
-def _source_csv_filter_for_store(site_code: str | None) -> tuple[str, tuple[Any, ...]]:
+def _source_csv_filter_for_store(site_code: str | None) -> tuple[str | None, tuple[Any, ...]]:
     store_code = _normalize_store_code(site_code)
-    if store_code == "newjoy":
-        return " AND LOWER(source_csv) LIKE %s", ("newjoyloo__%",)
-    if store_code == "omurio":
-        return " AND LOWER(source_csv) LIKE %s", ("omurio__%",)
-    return "", ()
+    if not store_code:
+        return None, ()
+    prefix = STORE_SOURCE_PREFIXES[store_code]
+    return " AND LOWER(source_csv) LIKE %s", (f"{prefix}%",)
 
 
 def _preferred_order_names(order_names: Iterable[str | None]) -> list[str]:
@@ -116,6 +118,8 @@ def _load_actual_payment_fee(
 
     placeholders = ", ".join(["%s"] * len(names))
     source_filter, source_params = _source_csv_filter_for_store(site_code)
+    if source_filter is None:
+        return None
     rows = query(
         f"""
         SELECT

@@ -33,6 +33,12 @@ EUROPE_PRESENTMENT_CURRENCIES = {
 MIN_7D_ORDERS = 100
 MIN_30D_ORDERS = 300
 FIXED_FEE_PER_ORDER = Decimal("0.30")
+STORE_SOURCE_PREFIXES = {
+    "newjoy": "newjoyloo__",
+    "newjoyloo": "newjoyloo__",
+    "omurio": "omurio__",
+    "cozywint": "cozywint__",
+}
 
 
 def _facade():
@@ -68,10 +74,9 @@ def region_for_presentment_currency(currency: str | None) -> str:
 
 def infer_store_code_from_source_csv(source_csv: str | None) -> str:
     name = Path(source_csv or "").name.lower()
-    if name.startswith("newjoyloo__"):
-        return "newjoy"
-    if name.startswith("omurio__"):
-        return "omurio"
+    for store_code, prefix in STORE_SOURCE_PREFIXES.items():
+        if name.startswith(prefix):
+            return "newjoy" if store_code == "newjoyloo" else store_code
     return "all"
 
 

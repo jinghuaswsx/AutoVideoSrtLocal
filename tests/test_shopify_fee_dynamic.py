@@ -36,6 +36,7 @@ def test_region_for_presentment_currency():
 def test_infer_store_code_from_source_csv():
     assert infer_store_code_from_source_csv("newjoyloo__newjoyloo0606.csv") == "newjoy"
     assert infer_store_code_from_source_csv("Omurio__omurio0606.csv") == "omurio"
+    assert infer_store_code_from_source_csv("Cozywint__payments.csv") == "cozywint"
     assert infer_store_code_from_source_csv("") == "all"
 
 
@@ -664,6 +665,54 @@ def test_resolver_filters_actual_payment_by_site_code(monkeypatch):
     assert result["shopify_fee_basis"]["matched_payment_transaction_ids"] == ["omurio-11"]
     assert "lower(source_csv) like %s" in captured["sql"].lower()
     assert captured["params"] == ("#2001", "2001", "omurio__%")
+
+
+def test_resolver_filters_actual_payment_for_cozywint(monkeypatch):
+    monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T00:00:00+00:00")
+    captured = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{"order_name": "#2001", "fee_usd": 1.08, "transaction_ids": "cozy-11"}]
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_resolver.query", fake_query)
+
+    result = resolve_shopify_fee_for_order(
+        amount=22.13,
+        buyer_country="US",
+        site_code="cozywint",
+        order_names=["#2001"],
+        order_time=datetime(2026, 6, 13, 10, 0, 0),
+    )
+
+    assert result["shopify_fee_source"] == FEE_SOURCE_ACTUAL_PAYMENT
+    assert result["shopify_fee_basis"]["matched_payment_transaction_ids"] == ["cozy-11"]
+    assert captured["params"] == ("#2001", "2001", "cozywint__%")
+
+
+def test_resolver_does_not_query_actual_payment_for_unknown_site(monkeypatch):
+    monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T00:00:00+00:00")
+
+    def fail_query(*args, **kwargs):
+        raise AssertionError("unknown site_code must not query payments across all stores")
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_resolver.query", fail_query)
+    monkeypatch.setattr(
+        "appcore.order_analytics.shopify_fee_resolver.load_best_fee_rate_snapshot",
+        lambda store_code, region: None,
+    )
+
+    result = resolve_shopify_fee_for_order(
+        amount=100,
+        buyer_country="US",
+        site_code="unknown_store",
+        order_names=["#2001"],
+        order_time=datetime(2026, 6, 13, 10, 0, 0),
+    )
+
+    assert result["shopify_fee_source"] == FEE_SOURCE_STRATEGY_C_FALLBACK
+    assert result["shopify_fee_basis"]["fallback_reason"] == "no_actual_payment_or_dynamic_snapshot"
 
 
 def test_resolver_actual_payment_does_not_sum_hash_and_plain_variants(monkeypatch):
