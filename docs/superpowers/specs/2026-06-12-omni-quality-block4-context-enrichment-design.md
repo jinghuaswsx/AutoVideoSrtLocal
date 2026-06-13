@@ -59,7 +59,7 @@ When the script mentions the product, use the official target-language name
 verbatim. Never translate brand terms.
 ```
 
-- rewrite 链路：`appcore/runtime_omni.py::OmniLocalizationAdapter.build_localized_rewrite_messages` 的 user content 在 ORIGINAL VIDEO TRANSCRIPT 段之前追加同样的 PRODUCT CONTEXT 段（adapter 构造时从 task 取 `product_context` 传入，仿 `original_asr_text` 的传递方式）。压缩重译终轮（Block 3）走同一 builder 自动受益。
+- rewrite 链路：`appcore/runtime_omni.py::OmniLocalizationAdapter.build_localized_rewrite_messages` 的 user content 在 ORIGINAL VIDEO TRANSCRIPT 段之前追加同样的 PRODUCT CONTEXT 段（adapter 构造时从 task 取 `product_context` 传入，仿 `original_asr_text` 的传递方式）。压缩重译终轮（Block 3）走同一 builder 自动受益。语言定制 rewrite 入口（例如日语字符预算 rewrite）也必须等价携带 PRODUCT CONTEXT，不能因绕过通用 builder 而丢失产品名 / 品牌词约束。
 - 注入文本统一由新函数 `pipeline/localization.py::build_product_context_block(product_context: dict) -> str` 生成（空 dict / 全空字段 → 返回 ""），两处调用，禁止复制粘贴模板。
 
 ### R4 批间上下文
@@ -81,6 +81,6 @@ and tone consistent):
 
 ## 验收标准
 
-1. 单测：`build_product_context_block` 空/部分/全字段三态；`step_translate_standard` 注入后 system prompt 含 PRODUCT CONTEXT（mock task）；批 2+ 的 user content 含 GLOBAL CONTEXT 且第 1 批不含；无 `product_context` 任务的 messages 与现状逐字节一致（回归保护）。
+1. 单测：`build_product_context_block` 空/部分/全字段三态；`step_translate_standard` 注入后 system prompt 含 PRODUCT CONTEXT（mock task）；通用 rewrite 与日语定制 duration rewrite 均携带 PRODUCT CONTEXT；批 2+ 的 user content 含 GLOBAL CONTEXT 且第 1 批不含；无 `product_context` 任务的 messages 与现状逐字节一致（回归保护）。
 2. `python3 scripts/pytest_related.py --base origin/master --run` 通过。
 3. 人工验收：从任务中心发起一条批量翻译，任务详情的"初始翻译 prompt"artifact（`localized_translate_messages.json`）可见 PRODUCT CONTEXT 段且产品名正确。

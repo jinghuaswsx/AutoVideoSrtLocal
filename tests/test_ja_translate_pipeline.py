@@ -145,6 +145,31 @@ def test_rewrite_ja_localized_translation_accepts_retry_feedback_and_temperature
     assert result["full_text"] == "帽子をすっきり収納できます。"
 
 
+def test_rewrite_ja_messages_include_product_context_when_provided():
+    localized = {
+        "sentences": [
+            {"asr_index": 0, "text": "帽子収納に便利です。", "source_segment_indices": [0]},
+        ]
+    }
+    segments = [
+        {"index": 0, "start_time": 0.0, "end_time": 2.0, "text": "Great for hats."},
+    ]
+
+    messages, _ = ja_translate.build_rewrite_messages(
+        localized,
+        segments,
+        target_total_chars=16,
+        direction="expand",
+        last_audio_duration=1.2,
+        video_duration=2.0,
+        product_context={"name": "Hat Keeper", "name_target_lang": "帽子キーパー"},
+    )
+
+    user_payload = json.loads(messages[1]["content"])
+    assert "PRODUCT CONTEXT" in user_payload["product_context"]
+    assert "帽子キーパー" in user_payload["product_context"]
+
+
 def test_split_ja_subtitle_chunks_respects_length_and_particle_boundary():
     chunks = ja_translate.split_ja_subtitle_chunks(
         "帽子をまとめて収納できて、ほこりから守れて省スペースです。",

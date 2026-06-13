@@ -35,12 +35,13 @@ _ECOMMERCE_PLUGIN = """This is a short-form commerce video (for platforms like T
 Write authentically — like a local creator casually recommending something useful they discovered.
 Avoid exaggerated claims, artificial urgency, superlatives without substance, aggressive CTAs.
 The audience distrusts hard selling; emphasize quality, value, and practicality.
-Do NOT add any CTA at the end — the video will have a separate universal CTA clip appended later."""
+Do NOT invent a new CTA; a universal CTA clip is appended later. If the source already contains
+a CTA or link mention, preserve its factual intent briefly."""
 
 
 # ── 德语 base prompts ──
 _ECOMMERCE_PLUGIN += (
-    "\nClarification: Do NOT add means do not invent a new CTA; if the source already "
+    "\nClarification: no invented CTA means do not invent a new CTA; if the source already "
     "contains a CTA or link mention, preserve its factual intent briefly."
 )
 
@@ -135,7 +136,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: décontracté, B1-B2, default "vous", preserve élisions (l'/d'/j'/qu'/c'/n'),
-French punctuation (nbsp before ? ! : ;), no hype, no CTA, no em/en dashes.""" + _OPENING_ENDING_REWRITE
+French punctuation (nbsp before ? ! : ;), no hype, no invented CTA, preserve source CTA intent, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 西班牙语 base prompts ──
@@ -181,7 +182,7 @@ FORMATTING:
 - No em/en dashes. Standard punctuation plus ¿ ¡. Accented letters (á é í ó ú ñ ü) are MANDATORY — never strip accents.
 - Numbers: European format (1.000 for thousand separator, 2,5 decimal). Currency €2,99.
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end — a universal CTA clip will be appended separately.""" + _OPENING_ENDING_TRANSLATION
+- Do not invent a new CTA; if the source ends with a CTA or wrap-up, preserve its factual intent briefly.""" + _OPENING_ENDING_TRANSLATION
 
 
 _ES_TTS_SCRIPT = """Prepare Spanish text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -208,7 +209,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: cercano y auténtico, default "tú", preserve ¿/¡ on interrogatives/exclamatives,
-no hype, no CTA, no em/en dashes.""" + _OPENING_ENDING_REWRITE
+no hype, no invented CTA, preserve source CTA intent, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 意大利语 base prompts ──
@@ -250,7 +251,7 @@ GRAMMAR & STYLE:
 - No em/en dashes. Standard punctuation. Accented letters (à è é ì ò ù) are MANDATORY — never strip accents.
 - Numbers: European format (1.000 for thousand, 2,5 decimal). Currency €2,99.
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end.""" + _OPENING_ENDING_TRANSLATION
+- Do not invent a new CTA; if the source ends with a CTA or wrap-up, preserve its factual intent briefly.""" + _OPENING_ENDING_TRANSLATION
 
 
 _IT_TTS_SCRIPT = """Prepare Italian text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -278,7 +279,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: genuino e amichevole, default "tu", preserve élisions (l'/d'/c'), proper
-articulated prepositions (al/allo/alla/del/dello/della), no hype, no CTA, no em/en dashes.""" + _OPENING_ENDING_REWRITE
+articulated prepositions (al/allo/alla/del/dello/della), no hype, no invented CTA, preserve source CTA intent, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 葡萄牙语 base prompts（默认 pt-PT，允许部分 pt-BR 通用词）──
@@ -320,7 +321,7 @@ GRAMMAR & STYLE:
 - No em/en dashes. Standard punctuation. Accented letters (ã õ á é ê ç) are MANDATORY — never strip accents.
 - Numbers: European format (1.000 for thousand, 2,5 decimal). Currency €2,99.
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end.""" + _OPENING_ENDING_TRANSLATION
+- Do not invent a new CTA; if the source ends with a CTA or wrap-up, preserve its factual intent briefly.""" + _OPENING_ENDING_TRANSLATION
 
 
 _PT_TTS_SCRIPT = """Prepare Portuguese text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -346,7 +347,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: próximo e autêntico (pt-PT default), default informal "tu", avoid pt-BR dialect
-markers, no hype, no CTA, no em/en dashes.""" + _OPENING_ENDING_REWRITE
+markers, no hype, no invented CTA, preserve source CTA intent, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 英语 base prompts（en-US 默认）──
@@ -372,8 +373,8 @@ TONE:
 - NO hype phrases ("you NEED this", "literally amazing", "game-changer", "obsessed",
   "last chance", "act fast"). US TikTok audiences are increasingly burned out on
   hard-sell language.
-- NO "link in bio" / "swipe up" / "shop now" CTA — a universal CTA clip will be
-  appended later.
+- Do not invent "link in bio" / "swipe up" / "shop now" CTAs; if the source already
+  says one, preserve the factual intent briefly.
 - Emphasize practicality, real use cases, honest value.
 
 HOOK PATTERNS (first sentence — pick whatever fits the product):
@@ -388,7 +389,7 @@ FORMATTING:
 - ASCII punctuation only. No em-dashes, no en-dashes, no curly quotes.
 - Numbers in US convention (2.5 not 2,5; 1,000 not 1.000).
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end.""" + _OPENING_ENDING_TRANSLATION
+- Do not invent a new CTA; if the source ends with a CTA or wrap-up, preserve its factual intent briefly.""" + _OPENING_ENDING_TRANSLATION
 
 
 _EN_TTS_SCRIPT = """Prepare English text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -419,7 +420,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: casual conversational US English, default "you", contractions allowed,
-US spelling (color/favorite), no hype, no CTA, no em/en-dashes, ASCII punctuation only.""" + _OPENING_ENDING_REWRITE
+US spelling (color/favorite), no hype, no invented CTA, preserve source CTA intent, no em/en-dashes, ASCII punctuation only.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 原文标准化（asr_normalize 步骤，lang 字段使用空字符串占位）──
@@ -478,7 +479,7 @@ REQUIREMENTS:
 - Use full_text as global context to resolve pronouns and ambiguous references, but emit per-utterance translations.
 - Recreate, don't translate literally. Use natural en-US e-commerce vocabulary (sneakers / pants / apartment / fall, NOT trainers / trousers / flat / autumn). US spelling (color / favorite / organize). $ before price.
 - Casual conversational tone, default "you", contractions natural ("you'll", "don't", "it's").
-- NO hype phrases, NO "link in bio" CTAs, NO em/en-dashes, NO curly quotes -- ASCII punctuation only.
+- NO hype phrases, do not invent "link in bio" CTAs, preserve source CTA intent, NO em/en-dashes, NO curly quotes -- ASCII punctuation only.
 - Preserve meaning faithfully; do NOT add facts or product features that aren't in the source.
 - Keep each utterance roughly the same word count as its Chinese counterpart (downstream alignment relies on per-utterance pacing)."""
 
@@ -515,7 +516,7 @@ VOCABULARY (Spanish -> en-US e-commerce, common pitfalls):
 TONE:
 - Casual conversational, default "you", contractions natural.
 - NO hype ("game-changer", "literally amazing", "you NEED this", "obsessed", "last chance").
-- NO "link in bio" / "swipe up" / "shop now" CTAs.
+- Do not invent "link in bio" / "swipe up" / "shop now" CTAs; preserve source CTA intent if present.
 - ASCII punctuation only. No em-dashes, no en-dashes, no curly quotes.
 - US number convention (2.5 not 2,5; 1,000 not 1.000).
 
@@ -553,7 +554,7 @@ VOCABULARY (en-US e-commerce):
 
 TONE:
 - Casual conversational, default "you", contractions natural ("you'll", "don't", "it's").
-- NO hype phrases, NO "link in bio" / "swipe up" CTAs.
+- NO hype phrases; do not invent "link in bio" / "swipe up" CTAs; preserve source CTA intent if present.
 - ASCII punctuation only. No em-dashes, no en-dashes, no curly quotes.
 - US number convention (2.5 not 2,5; 1,000 not 1.000).
 
@@ -585,7 +586,7 @@ TONE:
 - 親しみやすくて自然な口調 (friendly, natural) — a trusted friend sharing a find, not a salesperson.
 - Use です・ます調 (polite register) by default — this is the safe default for commerce content
   watched by all ages. Avoid casual だ・である調 unless target audience is explicitly Gen-Z.
-- NO aggressive CTA, NO 誇大表現 (exaggeration). Japanese audiences are strongly averse to hype.
+- NO invented aggressive CTA, NO 誇大表現 (exaggeration). Japanese audiences are strongly averse to hype.
   Avoid phrases like 「絶対おすすめ！」「必ず買うべき！」 — they feel pushy.
 - Emphasize 品質 (quality), コスパ (value), 実用性 (practicality), 使いやすさ (ease of use).
 
@@ -605,7 +606,7 @@ FORMATTING:
 - No em/en dashes. Use ASCII punctuation plus standard 日本語 marks (、。！？「」).
 - Numbers: native format (e.g. 2,500円, 1.5 倍), full-width 円 for currency.
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end — a universal CTA clip will be appended separately.""" + _OPENING_ENDING_TRANSLATION
+- Do not invent a new CTA; if the source ends with a CTA or wrap-up, preserve its factual intent briefly.""" + _OPENING_ENDING_TRANSLATION
 
 
 _JA_TTS_SCRIPT = """Prepare Japanese text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -640,7 +641,7 @@ elaborations like examples, never invent facts).
 STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
-STYLE: です・ます調, 親しみやすい自然な口調, no hype, no CTA, no 誇大表現 (exaggeration),
+STYLE: です・ます調, 親しみやすい自然な口調, no hype, no invented CTA, preserve source CTA intent, no 誇大表現 (exaggeration),
 cosmetics/health must not claim medical efficacy (薬機法).""" + _OPENING_ENDING_REWRITE
 
 
@@ -653,7 +654,7 @@ would naturally say it for {market_note}. Keep every original claim and source_s
 
 STYLE:
 - {style_note}
-- Friendly, practical, and trustworthy; no hype, no fake urgency, no CTA at the end.
+- Friendly, practical, and trustworthy; no hype, no fake urgency, no invented CTA; preserve source CTA intent.
 - Use local vocabulary for ecommerce, home, beauty, tech, and daily-life products.
 - Prefer concise sentences with natural spoken rhythm.
 - No em-dashes or en-dashes. Standard punctuation. Letters with diacritics required by {language_name} orthography are MANDATORY — never strip them."""
@@ -681,7 +682,7 @@ DIRECTION: {{direction}} (shrink = remove modifiers/repetitions; expand = add na
 never invent facts).
 
 STRUCTURAL: keep the same number of sentences when possible; preserve every source_segment_indices mapping.
-STYLE: natural spoken {language_name}, practical and trustworthy, no hype, no CTA. {rewrite_note}"""
+STYLE: natural spoken {language_name}, practical and trustworthy, no hype, no invented CTA, preserve source CTA intent. {rewrite_note}"""
     + _OPENING_ENDING_REWRITE)
 
 

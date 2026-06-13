@@ -12,6 +12,7 @@ from typing import Any
 
 from appcore import llm_client
 from appcore.cancellation import cancellable_sleep
+from pipeline.localization import build_product_context_block
 from pipeline import speech_rate_model
 from pipeline.languages import ja as ja_rules
 
@@ -296,6 +297,7 @@ def build_rewrite_messages(
     last_audio_duration: float,
     video_duration: float,
     feedback_notes: str | None = None,
+    product_context: dict | None = None,
 ) -> tuple[list[dict], list[dict]]:
     sentence_inputs = build_rewrite_sentence_inputs(
         localized_translation,
@@ -312,6 +314,9 @@ def build_rewrite_messages(
     }
     if feedback_notes:
         payload["retry_feedback"] = feedback_notes
+    product_block = build_product_context_block(product_context)
+    if product_block:
+        payload["product_context"] = product_block
     return (
         [
             {"role": "system", "content": REWRITE_SYSTEM_PROMPT},
@@ -371,6 +376,7 @@ def rewrite_ja_localized_translation(
     project_id: str | None = None,
     temperature: float = 0.2,
     feedback_notes: str | None = None,
+    product_context: dict | None = None,
 ) -> dict:
     messages, sentence_inputs = build_rewrite_messages(
         localized_translation,
@@ -380,6 +386,7 @@ def rewrite_ja_localized_translation(
         last_audio_duration=last_audio_duration,
         video_duration=video_duration,
         feedback_notes=feedback_notes,
+        product_context=product_context,
     )
     response = llm_client.invoke_chat(
         "ja_translate.rewrite",

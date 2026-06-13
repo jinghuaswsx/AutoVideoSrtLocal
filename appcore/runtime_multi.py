@@ -257,6 +257,7 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
         project_id: str,
         temperature: float,
         feedback_notes: str | None = None,
+        product_context: dict | None = None,
     ) -> dict:
         del source_full_text, source_language
         return self.module.rewrite_ja_localized_translation(
@@ -270,6 +271,7 @@ class _JapaneseMultiTranslateAdapter(_PromptLocalizationAdapter):
             project_id=project_id,
             temperature=temperature,
             feedback_notes=feedback_notes,
+            product_context=product_context,
         )
 
     def run_translate(self, runner: "MultiTranslateRunner", task_id: str) -> None:

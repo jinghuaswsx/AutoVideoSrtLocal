@@ -886,7 +886,9 @@
     {# 翻译质量评估：异步评估，不阻塞主流水线，呈现在「字幕生成」之后、「视频合成」之前 #}
     {% set _has_project_context = project is defined and project %}
     {% set _quality_project_type = '' %}
-    {% if request.path.startswith('/omni-translate') %}
+    {% if request.path.startswith('/omni-translate-v2') %}
+      {% set _quality_project_type = 'omni_translate_v2' %}
+    {% elif request.path.startswith('/omni-translate') %}
       {% set _quality_project_type = 'omni_translate' %}
     {% elif request.path.startswith('/multi-translate') %}
       {% set _quality_project_type = 'multi_translate' %}

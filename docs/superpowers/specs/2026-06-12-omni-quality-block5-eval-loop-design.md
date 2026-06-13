@@ -47,6 +47,7 @@
 - 阈值进 `config.py`：`TRANSLATION_QUALITY_RED_SCORE = 70`（translation_score 低于即红）、`TRANSLATION_QUALITY_ENDING_RED = 60`（ending_integrity 低于即红）。
 - 任务详情页：评估卡片（已有展示区）对触红的分项加红色高亮 + 文案「⚠️ 低于质量线」。
 - 任务列表页（omni / omni_v2）：行内已展示评估分则对触红任务加红色 badge；**若列表当前不展示评估分**，则实施时调研列表数据接口，最小代价补一个 verdict/score 字段 + 红点（不做大改版）。
+- V2 必须走独立项目类型 `omni_translate_v2`：自动评估、列表聚合、详情页卡片、手动重跑 API 都要使用 `/api/omni-translate-v2/.../quality-assessments`，不能被 `/omni-translate` 前缀误判成旧全能模块。
 
 ### R4 聚合视图
 
@@ -59,3 +60,4 @@
 2. `python3 scripts/pytest_related.py --base origin/master --run` 通过。
 3. 人工验收：跑一条任务，评估完成后详情页可见 hook_strength / ending_integrity 两个新分项；构造一条触红任务确认红色标识；后台聚合页有数据。
 4. 验收说明含：现网 DB `llm_use_case_bindings` 中 `translation_quality.assess` 需管理员同步改为 `openrouter / google/gemini-3.5-flash`。
+5. V2 回归：`/api/omni-translate-v2/<task_id>/quality-assessments` 可列出 `project_type='omni_translate_v2'` 的评估，详情模板输出 `data-project-type="omni_translate_v2"`。

@@ -70,6 +70,8 @@ OPENING & ENDING (mandatory):
 
 （ja 版词数说法可改为「最初の文＝冒頭3秒のフック」语义等价表述，或直接用英文指令——实施者二选一，测试只断言标题行存在。）
 
+已有语言 prompt 中的 `No CTA at the end` / `NO "link in bio"` 类表述必须统一解释为“不发明新 CTA”。若源视频已包含 CTA、链接提示或 wrap-up，必须保留其事实意图，避免和 `OPENING & ENDING` 的尾句职责相互冲突。
+
 **base_rewrite**（11 语种 + generic builder）统一追加：
 
 ```

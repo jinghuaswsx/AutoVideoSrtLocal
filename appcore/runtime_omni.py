@@ -142,6 +142,7 @@ class OmniJapaneseLocalizationAdapter(OmniLocalizationAdapter):
         return self._ja_adapter.build_tts_script_from_localized(localized_translation)
 
     def generate_duration_rewrite(self, **kwargs) -> dict:
+        kwargs.setdefault("product_context", self.product_context)
         return self._ja_adapter.generate_duration_rewrite(**kwargs)
 
 

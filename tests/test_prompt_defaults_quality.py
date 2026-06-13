@@ -42,3 +42,17 @@ def test_all_rewrite_prompts_have_protection_section():
 def test_generic_template_is_source_language_neutral():
     for lang in ["nl", "sv", "fi"]:
         assert "English script" not in _content("base_translation", lang), lang
+
+
+def test_cta_guidance_preserves_source_cta_intent():
+    for lang in ALL_LANGS:
+        for slot in ("base_translation", "base_rewrite"):
+            content = _content(slot, lang)
+            lowered = content.lower()
+            collapsed = " ".join(lowered.split())
+            assert "no cta" not in lowered, (slot, lang)
+            assert "no cta at the end" not in lowered, (slot, lang)
+            assert "source cta" in collapsed or "source ends with a cta" in collapsed, (
+                slot,
+                lang,
+            )

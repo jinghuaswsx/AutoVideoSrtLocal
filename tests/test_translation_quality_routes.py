@@ -89,6 +89,32 @@ def test_quality_assessment_list_route_supports_dialogue_project_type(
     assert captured == {"task_id": "task-quality", "project_type": "dialogue_translate"}
 
 
+def test_quality_assessment_list_route_supports_omni_v2_project_type(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import translation_quality as route
+
+    captured = {}
+
+    def fake_get_project_for_assessment(task_id, project_type):
+        captured["task_id"] = task_id
+        captured["project_type"] = project_type
+        return {"id": task_id, "user_id": 1, "type": project_type}
+
+    monkeypatch.setattr(route.svc, "get_project_for_assessment", fake_get_project_for_assessment)
+    monkeypatch.setattr(route.svc, "list_assessment_rows", lambda task_id: [])
+    monkeypatch.setattr(route.task_state, "get", lambda task_id: {})
+
+    resp = authed_client_no_db.get(
+        "/api/omni-translate-v2/task-quality/quality-assessments"
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json()["assessments"] == []
+    assert captured == {"task_id": "task-quality", "project_type": "omni_translate_v2"}
+
+
 def test_quality_assessment_run_route_rejects_non_admin(authed_user_client_no_db):
     resp = authed_user_client_no_db.post(
         "/api/multi-translate/task-quality/quality-assessments/run"
@@ -165,6 +191,42 @@ def test_quality_assessment_run_route_supports_dialogue_project_type(
     assert resp.get_json() == {"ok": True, "run_id": 9}
     assert captured["task_id"] == "task-quality"
     assert captured["project_type"] == "dialogue_translate"
+    assert captured["triggered_by"] == "manual"
+    assert captured["user_id"] == 1
+    assert captured["run_in_thread"] is True
+
+
+def test_quality_assessment_run_route_supports_omni_v2_project_type(
+    authed_client_no_db,
+    monkeypatch,
+):
+    from web.routes import translation_quality as route
+
+    captured = {}
+    monkeypatch.setattr(
+        route.svc,
+        "get_project_for_assessment",
+        lambda task_id, project_type: {
+            "id": task_id,
+            "user_id": 1,
+            "type": project_type,
+        },
+    )
+
+    def fake_trigger_assessment(**kwargs):
+        captured.update(kwargs)
+        return 10
+
+    monkeypatch.setattr(route.svc, "trigger_assessment", fake_trigger_assessment)
+
+    resp = authed_client_no_db.post(
+        "/api/omni-translate-v2/task-quality/quality-assessments/run"
+    )
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True, "run_id": 10}
+    assert captured["task_id"] == "task-quality"
+    assert captured["project_type"] == "omni_translate_v2"
     assert captured["triggered_by"] == "manual"
     assert captured["user_id"] == 1
     assert captured["run_in_thread"] is True

@@ -190,3 +190,47 @@ def test_runner_passes_product_context_to_module_backed_rewrite_adapter(monkeypa
     assert "PRODUCT CONTEXT" in user_content
     assert "Molde de hielo" in user_content
     assert user_content.index("PRODUCT CONTEXT") < user_content.index("ORIGINAL VIDEO TRANSCRIPT")
+
+
+def test_japanese_duration_rewrite_receives_product_context(monkeypatch):
+    from appcore import runtime_omni
+    from pipeline import ja_translate
+
+    captured = {}
+
+    def fake_rewrite_ja_localized_translation(**kwargs):
+        captured.update(kwargs)
+        return {"full_text": "帽子キーパーです。", "sentences": []}
+
+    monkeypatch.setattr(
+        ja_translate,
+        "rewrite_ja_localized_translation",
+        fake_rewrite_ja_localized_translation,
+    )
+    adapter = runtime_omni.OmniJapaneseLocalizationAdapter(
+        source_language="en",
+        original_asr_text="This hat keeper saves space.",
+        product_context={"name": "Hat Keeper", "name_target_lang": "帽子キーパー"},
+    )
+
+    adapter.generate_duration_rewrite(
+        source_full_text="This hat keeper saves space.",
+        prev_localized_translation={"full_text": "帽子収納に便利です。", "sentences": []},
+        target_units=16,
+        direction="expand",
+        source_language="en",
+        script_segments=[
+            {"index": 0, "start_time": 0.0, "end_time": 2.0, "text": "Great for hats."},
+        ],
+        last_audio_duration=1.2,
+        video_duration=2.0,
+        user_id=1,
+        project_id="task-ja",
+        temperature=0.2,
+        feedback_notes=None,
+    )
+
+    assert captured["product_context"] == {
+        "name": "Hat Keeper",
+        "name_target_lang": "帽子キーパー",
+    }

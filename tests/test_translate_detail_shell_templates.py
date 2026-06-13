@@ -261,9 +261,13 @@ def test_quality_assessment_shared_modules_include_dialogue_translate():
 
     assert "dialogue_translate" in workbench
     assert "/dialogue-translate" in workbench
+    assert "omni_translate_v2" in workbench
+    assert "request.path.startswith('/omni-translate-v2')" in workbench
+    assert workbench.index("request.path.startswith('/omni-translate-v2')") < workbench.index("request.path.startswith('/omni-translate')")
     assert "quality_assessment_card.js" in scripts
     assert "request.path.startswith('/dialogue-translate')" in scripts
     assert 'projectType === "dialogue_translate"' in js
+    assert 'projectType === "omni_translate_v2"' in js
 
 
 def test_quality_assessment_card_flags_low_scores():
