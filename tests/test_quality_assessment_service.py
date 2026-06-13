@@ -168,6 +168,62 @@ def test_list_assessment_rows_orders_newest_first(monkeypatch):
     assert captured["args"] == ("task-quality",)
 
 
+def test_is_red_assessment_checks_score_and_ending_dimension():
+    assert svc.is_red_assessment({"translation_score": 69}) is True
+    assert svc.is_red_assessment({
+        "translation_score": 88,
+        "translation_dimensions": {"ending_integrity": 59},
+    }) is True
+    assert svc.is_red_assessment({
+        "translation_score": 88,
+        "translation_dimensions": '{"ending_integrity": 60}',
+    }) is False
+    assert svc.is_red_assessment({
+        "translation_score": "not-a-number",
+        "translation_dimensions": "not-json",
+    }) is False
+
+
+def test_decorate_project_rows_with_latest_assessments_marks_red(monkeypatch):
+    from appcore import quality_assessment as qa
+
+    rows = [{"id": "task-red"}, {"id": "task-ok"}]
+    captured = {}
+
+    def fake_query(sql, args=None):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "task_id": "task-red",
+                "run_id": 3,
+                "translation_score": 88,
+                "tts_score": 90,
+                "translation_dimensions": '{"ending_integrity": 55}',
+            },
+            {
+                "task_id": "task-ok",
+                "run_id": 2,
+                "translation_score": 91,
+                "tts_score": 93,
+                "translation_dimensions": '{"ending_integrity": 85}',
+            },
+        ]
+
+    qa.decorate_project_rows_with_latest_assessments(
+        rows,
+        project_type="omni_translate",
+        query_func=fake_query,
+    )
+
+    assert "translation_quality_assessments" in captured["sql"]
+    assert captured["args"] == ("omni_translate", "task-red", "task-ok")
+    assert rows[0]["quality_assessment_score"] == 88
+    assert rows[0]["quality_assessment_is_red"] is True
+    assert rows[1]["quality_assessment_score"] == 91
+    assert rows[1]["quality_assessment_is_red"] is False
+
+
 def test_trigger_inserts_pending_row(db_clean):
     with patch("web.services.quality_assessment._run_assessment_job"):
         run_id = svc.trigger_assessment(

@@ -241,6 +241,95 @@ def list_assessment_rows(task_id: str) -> list[dict]:
     )
 
 
+def _parse_translation_dimensions(value: Any) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _coerce_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def red_flags_for_assessment(row: dict) -> dict[str, bool]:
+    import config
+
+    score = _coerce_int(row.get("translation_score"))
+    dims = _parse_translation_dimensions(row.get("translation_dimensions"))
+    ending_score = _coerce_int(dims.get("ending_integrity"))
+
+    return {
+        "translation_score": (
+            score is not None
+            and score < int(getattr(config, "TRANSLATION_QUALITY_RED_SCORE", 70))
+        ),
+        "ending_integrity": (
+            ending_score is not None
+            and ending_score < int(getattr(config, "TRANSLATION_QUALITY_ENDING_RED", 60))
+        ),
+    }
+
+
+def is_red_assessment(row: dict) -> bool:
+    try:
+        flags = red_flags_for_assessment(row)
+    except Exception:
+        return False
+    return bool(flags.get("translation_score") or flags.get("ending_integrity"))
+
+
+def decorate_project_rows_with_latest_assessments(
+    rows: list[dict],
+    *,
+    project_type: str,
+    query_func=db_query,
+) -> list[dict]:
+    task_ids = [str(row.get("id") or "").strip() for row in rows]
+    task_ids = [task_id for task_id in task_ids if task_id]
+    for row in rows:
+        row.setdefault("quality_assessment_score", None)
+        row.setdefault("quality_assessment_is_red", False)
+        row.setdefault("quality_assessment", None)
+    if not task_ids:
+        return rows
+
+    placeholders = ", ".join(["%s"] * len(task_ids))
+    assessments = query_func(
+        "SELECT a.task_id, a.run_id, a.translation_score, a.tts_score, "
+        "       a.translation_dimensions, a.completed_at "
+        "FROM translation_quality_assessments a "
+        "JOIN ("
+        "  SELECT task_id, MAX(run_id) AS run_id "
+        "  FROM translation_quality_assessments "
+        f"  WHERE status='done' AND project_type=%s AND task_id IN ({placeholders}) "
+        "  GROUP BY task_id"
+        ") latest ON latest.task_id = a.task_id AND latest.run_id = a.run_id",
+        (project_type, *task_ids),
+    )
+    by_task = {str(row.get("task_id")): row for row in assessments or []}
+    for row in rows:
+        assessment = by_task.get(str(row.get("id")))
+        if not assessment:
+            continue
+        assessment = dict(assessment)
+        assessment["translation_dimensions"] = _parse_translation_dimensions(
+            assessment.get("translation_dimensions")
+        )
+        row["quality_assessment"] = assessment
+        row["quality_assessment_score"] = assessment.get("translation_score")
+        row["quality_assessment_is_red"] = is_red_assessment(assessment)
+    return rows
+
+
 def _next_run_id(task_id: str) -> int:
     row = db_query_one(
         "SELECT MAX(run_id) AS max_run FROM translation_quality_assessments WHERE task_id=%s",
