@@ -841,6 +841,22 @@ def _compute_next_target(
     return target_duration, target_words, direction
 
 
+def compute_compress_round_target(
+    last_audio_duration: float, wps: float, video_duration: float,
+) -> tuple[float, int, str]:
+    """压缩重译终轮的 target：瞄准 final 窗中部 video−0.5s（窗为 [video−1, video]）。
+
+    Spec: docs/superpowers/specs/2026-06-12-omni-quality-block3-convergence-guard-design.md
+
+    这是 _compute_next_target 之外的旁路计算（不改该函数的既有 round 2/3+ 公式），
+    仅在 compress 终轮调用。产物仍走与普通轮完全相同的实测时长判定。
+    """
+    target_duration = max(0.5, video_duration - 0.5)
+    target_words = max(3, round(target_duration * wps))
+    direction = "shrink" if last_audio_duration > video_duration else "expand"
+    return target_duration, target_words, direction
+
+
 def resolve_guarded_candidate(
     in_window: list,
 ) -> tuple[int | None, bool]:

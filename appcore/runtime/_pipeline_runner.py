@@ -98,6 +98,7 @@ from ._helpers import (
     _select_segment_candidate_assembly,
     _DEFAULT_WPS,
     _compute_next_target,
+    compute_compress_round_target,
     resolve_guarded_candidate,
     _distance_to_duration_range,
     _fit_tts_segments_to_duration,
@@ -333,6 +334,9 @@ class PipelineRunner:
         EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS = 1
         max_rounds_allowed = MAX_ROUNDS
         stage1_speedup_fallback_used = False
+        # Block3: 压缩重译终轮（bestpick 前最后一搏，瞄准 video−0.5s）。
+        compress_round_used = False
+        compress_round_pending = False
         # Final target range (shown to the user, used for final success judgement):
         final_target_lo, final_target_hi = _tts_final_target_range(video_duration)
         # Stage-1 convergence range (rewrite手段; approximate via ±10% of video):
@@ -897,19 +901,41 @@ class PipelineRunner:
                     wps = last_word_count / last_audio_duration
                 else:
                     wps = default_wps
-                target_duration, target_words, direction = _compute_next_target(
-                    round_index, last_audio_duration, wps, video_duration,
-                )
+                if compress_round_pending:
+                    # Block3 压缩重译终轮：旁路 _compute_next_target，瞄准 video−0.5s，
+                    # 其余（守门、tts_script、TTS、实测、final 窗判定、变速）与普通轮一致。
+                    compress_round_pending = False
+                    target_duration, target_words, direction = (
+                        compute_compress_round_target(
+                            last_audio_duration, wps, video_duration,
+                        )
+                    )
+                    round_record["compress_round"] = True
+                else:
+                    target_duration, target_words, direction = _compute_next_target(
+                        round_index, last_audio_duration, wps, video_duration,
+                    )
                 round_record["target_duration"] = target_duration
                 round_record["target_words"] = target_words
                 round_record["target_units"] = target_words
                 round_record["wps_used"] = wps
                 round_record["direction"] = direction
-                round_record["message"] = (
-                    f"第 {round_index} 轮：重译{_lang_display(target_language_label)}文案"
-                    f"（目标 {target_words} {unit_label}，{direction}）"
-                )
+                if round_record.get("compress_round"):
+                    round_record["message"] = (
+                        f"第 {round_index} 轮（压缩重译终轮）：重译"
+                        f"{_lang_display(target_language_label)}文案"
+                        f"（目标 {target_words} {unit_label}，{direction}）"
+                    )
+                else:
+                    round_record["message"] = (
+                        f"第 {round_index} 轮：重译{_lang_display(target_language_label)}文案"
+                        f"（目标 {target_words} {unit_label}，{direction}）"
+                    )
                 _substep("准备重写译文")
+                if round_record.get("compress_round"):
+                    self._emit_duration_round(
+                        task_id, round_index, "compress_round", round_record,
+                    )
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
 
                 # ========= 字数收敛内循环（最多 5 次 rewrite）=========
@@ -948,6 +974,15 @@ class PipelineRunner:
                 # (attempt, candidate, guard_result) for in-window-but-guard-rejected candidates.
                 in_window_rejected: list[tuple[int, dict, dict]] = []
                 guard_feedback: str | None = None
+                # Block3 压缩重译终轮的强制保首尾反馈（每个 attempt 都注入）。
+                compress_feedback: str | None = None
+                if round_record.get("compress_round"):
+                    compress_feedback = (
+                        "FINAL LENGTH-CRITICAL REWRITE: this is the last chance before "
+                        "hard audio truncation. Land inside the window. You MUST keep "
+                        "sentence 1 as the hook and keep the final sentence's closing/CTA "
+                        "intent; cut or expand only in the middle."
+                    )
                 for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
                     attempt_temperature = 0.6 if attempt == 1 else 1.0
                     _substep(
@@ -980,6 +1015,12 @@ class PipelineRunner:
                         feedback_notes = (
                             f"{feedback_notes}\n\n{guard_feedback}"
                             if feedback_notes else guard_feedback
+                        )
+                    # Block3: 压缩重译终轮的强制保首尾反馈前置（每个 attempt 都带）。
+                    if compress_feedback:
+                        feedback_notes = (
+                            f"{compress_feedback}\n\n{feedback_notes}"
+                            if feedback_notes else compress_feedback
                         )
 
                     custom_rewrite = getattr(loc_mod, "generate_duration_rewrite", None)
@@ -1245,6 +1286,15 @@ class PipelineRunner:
                     round_products.append(None)
                     task_state.update(task_id, tts_duration_rounds=rounds)
                     self._emit_duration_round(task_id, round_index, "rewrite_rejected", round_record)
+                    # Block3: 末轮文案被拒也给一次压缩重译终轮的机会（旁路 target）。
+                    if (
+                        round_index >= max_rounds_allowed
+                        and not compress_round_used
+                        and bool(getattr(config, "OMNI_COMPRESS_RETRANSLATE_ENABLED", True))
+                    ):
+                        compress_round_used = True
+                        compress_round_pending = True
+                        max_rounds_allowed += 1
                     round_index += 1
                     continue
                 else:
@@ -1707,6 +1757,17 @@ class PipelineRunner:
             # Note: do NOT update `prev_localized` — every rewrite uses the initial.
             last_audio_duration = audio_duration
             last_word_count = word_count
+            # Block3: 最后一轮仍未收敛即将走 bestpick → 动态扩一轮压缩重译终轮，
+            # 仿 EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS 先例（两个标志位各只触发一次，
+            # 总上限自然为 MAX_ROUNDS + EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS + 1）。
+            if (
+                round_index >= max_rounds_allowed
+                and not compress_round_used
+                and bool(getattr(config, "OMNI_COMPRESS_RETRANSLATE_ENABLED", True))
+            ):
+                compress_round_used = True
+                compress_round_pending = True
+                max_rounds_allowed += 1
             round_index += 1
 
         # All allowed rounds completed without landing in a final stage-1 result.
