@@ -426,6 +426,7 @@ def build_localized_translation_messages(
     variant: str = "normal",
     custom_system_prompt: str | None = None,
     source_language: str = "zh",
+    batch_context: str | None = None,
 ) -> list[dict]:
     items = [{"index": seg["index"], "text": seg["text"]} for seg in script_segments]
     if custom_system_prompt:
@@ -436,16 +437,19 @@ def build_localized_translation_messages(
         prompt = LOCALIZED_TRANSLATION_SYSTEM_PROMPT
     _lang_key = (source_language or "zh").strip().lower()
     label = SOURCE_LANG_PROMPT_LABEL.get(_lang_key, _lang_key.upper() if _lang_key else "Chinese")
+    user_content = (
+        f"Source {label} full text:\n"
+        f"{source_full_text_zh}\n\n"
+        f"Source {label} segments:\n"
+        f"{json.dumps(items, ensure_ascii=False, indent=2)}"
+    )
+    if batch_context:
+        user_content = f"{user_content}\n\n{batch_context}"
     return [
         {"role": "system", "content": prompt},
         {
             "role": "user",
-            "content": (
-                f"Source {label} full text:\n"
-                f"{source_full_text_zh}\n\n"
-                f"Source {label} segments:\n"
-                f"{json.dumps(items, ensure_ascii=False, indent=2)}"
-            ),
+            "content": user_content,
         },
     ]
 
