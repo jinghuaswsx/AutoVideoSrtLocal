@@ -72,3 +72,4 @@ Post-merge acceptance notes:
 
 - After merging `origin/master`, realtime order-profit tests follow the calibrated Shopify fee forward-estimate multiplier from `docs/superpowers/specs/2026-05-04-shopify-payments-fee-rules.md`.
 - Stored Shopify fee totals remain authoritative; component display values are ratio-allocated from the calibrated computed split, so rounding may move one cent between platform and currency-conversion components while total fee and profit stay unchanged.
+- 2026-06-13 release gate: `tests/test_weekly_ai_screenshot.py` was moved to `tests/manual/test_weekly_ai_screenshot.py` as an external Playwright screenshot helper. It requires a deployed server, browser binaries, `AUTOVIDEOSRT_SMOKE_ADMIN_PASSWORD`, and a local artifact path, so default pytest collection and runtime hard-coded IP scans exclude it.

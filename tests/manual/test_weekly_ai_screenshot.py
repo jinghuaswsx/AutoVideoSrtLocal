@@ -1,40 +1,50 @@
 import os
 import time
+
+import pytest
 from playwright.sync_api import sync_playwright
+
 
 def test_capture_weekly_ai_screenshot():
     print("Starting Playwright screenshot capture via pytest...")
-    
+    admin_password = os.getenv("AUTOVIDEOSRT_SMOKE_ADMIN_PASSWORD")
+    if not admin_password:
+        pytest.skip("requires AUTOVIDEOSRT_SMOKE_ADMIN_PASSWORD")
+
     # Target screenshot path in the Gemini artifact directory
-    output_dir = r"C:\Users\admin\.gemini\antigravity\brain\3675f998-26c7-46a4-bb1c-b77e48649d57"
+    output_dir = os.getenv(
+        "AUTOVIDEOSRT_SCREENSHOT_OUTPUT_DIR",
+        r"C:\Users\admin\.gemini\antigravity\brain\3675f998-26c7-46a4-bb1c-b77e48649d57",
+    )
     screenshot_path = os.path.join(output_dir, "ui_changes_validation.png")
-    
+    base_url = os.getenv("AUTOVIDEOSRT_SCREENSHOT_BASE_URL", "http://172.16.254.106").rstrip("/")
+
     with sync_playwright() as p:
         # Launch headless Chromium
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1920, "height": 1080})
         page = context.new_page()
-        
+
         # 1. Log in
         print("Navigating to login page...")
-        page.goto("http://172.16.254.106/login")
+        page.goto(f"{base_url}/login")
         page.fill("input[name='username']", "admin")
-        page.fill("input[name='password']", "709709@")
-        
+        page.fill("input[name='password']", admin_password)
+
         print("Submitting login credentials...")
         page.click("button[type='submit']")
         page.wait_for_load_state("networkidle", timeout=10000)
-        
+
         # 2. Navigate to Weekly AI report page
-        target_url = "http://172.16.254.106/order-analytics/weekly-ai-analysis-view"
+        target_url = f"{base_url}/order-analytics/weekly-ai-analysis-view"
         print(f"Navigating to: {target_url}")
         page.goto(target_url)
-        
+
         # Wait for data and async charts to fully load
         print("Waiting for page resources to load...")
         page.wait_for_load_state("networkidle", timeout=15000)
         time.sleep(5)  # Wait an extra 5 seconds for chart/JS rendering
-        
+
         # 3. Inject visual highlights for changes
         print("Injecting styles to highlight changes...")
         page.evaluate("""() => {
@@ -71,11 +81,11 @@ def test_capture_weekly_ai_screenshot():
                 }
             });
         }""")
-        
+
         # 4. Save the screenshot
         print(f"Saving screenshot to: {screenshot_path}")
         page.screenshot(path=screenshot_path, full_page=True)
         print("Playwright screenshot capture complete.")
         browser.close()
-        
+
     assert os.path.exists(screenshot_path), f"Screenshot was not generated at {screenshot_path}"
