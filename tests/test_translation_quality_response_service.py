@@ -44,6 +44,36 @@ def test_translation_quality_list_response_serializes_rows_and_task_state():
     }
 
 
+def test_translation_quality_list_response_includes_red_flags():
+    result = build_translation_quality_list_response(
+        rows=[
+            {
+                "run_id": 3,
+                "status": "done",
+                "translation_score": 68,
+                "translation_dimensions": '{"ending_integrity": 80}',
+                "created_at": None,
+                "completed_at": None,
+            },
+            {
+                "run_id": 4,
+                "status": "done",
+                "translation_score": 88,
+                "translation_dimensions": '{"ending_integrity": 55}',
+                "created_at": None,
+                "completed_at": None,
+            },
+        ],
+        task_evals_invalidated_at=None,
+    )
+
+    first, second = result.payload["assessments"]
+    assert first["is_red"] is True
+    assert first["red_flags"] == {"translation_score": True, "ending_integrity": False}
+    assert second["is_red"] is True
+    assert second["red_flags"] == {"translation_score": False, "ending_integrity": True}
+
+
 def test_translation_quality_error_responses_are_stable():
     not_found = build_translation_quality_not_found_response()
     admin_only = build_translation_quality_admin_only_response()

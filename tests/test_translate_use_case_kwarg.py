@@ -31,22 +31,25 @@ def _fake_invoke_chat_localize(*args, **kwargs):
 
 
 def _fake_invoke_chat_tts(*args, **kwargs):
+    # Block 2: mock must return wording that matches input sentences ("hi") so
+    # ensure_tts_script_wording passes on the first attempt.
     return {
         "json": {
-            "full_text": "hello world",
+            "full_text": "hi",
             "blocks": [
                 {
                     "index": 0,
-                    "text": "hello world",
-                    "char_count": 11,
+                    "text": "hi",
+                    "sentence_indices": [0],
                     "source_segment_indices": [0],
                 }
             ],
             "subtitle_chunks": [
                 {
                     "index": 0,
-                    "text": "hello world",
-                    "char_count": 11,
+                    "text": "hi",
+                    "block_indices": [0],
+                    "sentence_indices": [0],
                     "source_segment_indices": [0],
                 }
             ],

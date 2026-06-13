@@ -102,12 +102,28 @@ def _normalize_validated_script(result: dict) -> dict:
     return result
 
 
+def _normalize_sentences_elisions(sentences: list[dict] | None) -> list[dict] | None:
+    """sentences の elision を blocks と同じ基準に規範化（L' amica → L'amica）して
+    ensure_tts_script_wording の偽 mismatch を防ぐ。テキストのみ変更、他フィールドは保持。"""
+    if not sentences:
+        return sentences
+    normalized = []
+    for s in sentences:
+        s_copy = dict(s)
+        s_copy["text"] = _attach_elisions(s_copy.get("text", ""))
+        normalized.append(s_copy)
+    return normalized
+
+
 def validate_tts_script(payload, sentences: list[dict] | None = None,
                         max_words: int = 10) -> dict:
     normalized = _normalize_italian_payload(payload)
+    # Normalize sentence elisions to match block normalization before wording check
+    # (e.g. "L' amica" → "L'amica") so ensure_tts_script_wording sees identical signatures.
+    sentences_normalized = _normalize_sentences_elisions(sentences)
     result = _base_validate_tts_script(
         normalized,
-        sentences=sentences,
+        sentences=sentences_normalized,
         max_words=max_words,
     )
     return _normalize_validated_script(result)

@@ -11,6 +11,25 @@ _DEFAULT_PROVIDER = "openrouter"
 _DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 
+# ── 共享 Hook/CTA 职责段（block1: 首句 Hook + 尾句收尾保护）──
+_OPENING_ENDING_TRANSLATION = """
+OPENING & ENDING (mandatory):
+- Sentence 1 is the 3-second hook (roughly the first 7-10 words). Rewrite the
+  source opening into a strong hook — clear outcome, obvious benefit, curiosity,
+  or surprise contrast — WITHOUT inventing facts not implied by the source.
+- The final sentence must properly close the script. If the source ends with a
+  CTA or wrap-up, preserve that intent in natural local phrasing. Never invent
+  a new CTA (a universal CTA clip is appended later). Never end mid-thought."""
+
+_OPENING_ENDING_REWRITE = """
+OPENING & ENDING PROTECTION (mandatory):
+- Sentence 1 must keep functioning as the 3-second hook.
+- The final sentence must keep its closing / CTA intent.
+- When shrinking, remove modifiers, repetition, and secondary details from the
+  MIDDLE of the script. Never delete or flatten the hook sentence or the
+  closing sentence."""
+
+
 # ── 共享电商插件（平台中立：TikTok + Facebook + Reels + Shorts 等）──
 _ECOMMERCE_PLUGIN = """This is a short-form commerce video (for platforms like TikTok, Facebook, Reels, Shorts, etc.).
 Write authentically — like a local creator casually recommending something useful they discovered.
@@ -36,10 +55,10 @@ names from the source.
 
 Conversational German at B1 level, sachlich und authentisch. Prefer 6–12 words per sentence; avoid
 long compound subordinate clauses. Capitalize all nouns (German grammar). Numbers use German
-convention (2,5 not 2.5). No em-dashes, no en-dashes, ASCII punctuation only.
+convention (2,5 not 2.5). No em-dashes, no en-dashes. Standard punctuation is fine.
 Use native German umlaut letters and Eszett; not ae/oe/ue/ss transliterations. Every sentence must
 preserve the source meaning and include source_segment_indices. Do not invent a CTA, but preserve a
-source CTA or link mention if the source contains one."""
+source CTA or link mention if the source contains one.""" + _OPENING_ENDING_TRANSLATION
 
 
 _DE_TTS_SCRIPT = """Prepare German text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -69,7 +88,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: sachlich, B1, nouns capitalized, native German umlaut letters and Eszett (not ae/oe/ue/ss),
-2,5 not 2.5, no hype, no invented CTA, preserve a source CTA or link mention, no em/en dashes."""
+2,5 not 2.5, no hype, no invented CTA, preserve a source CTA or link mention, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 法语 base prompts ──
@@ -88,7 +107,7 @@ Conversational French at B1–B2. Default to "vous". Prefer 6–10 words per sen
 Apply ALL mandatory French élisions: l'organizer, d'abord, j'adore, qu'il, c'est, n'est. NEVER
 write "le organizer". Proper contractions: au, aux, du, des. French punctuation: non-breaking
 space (U+00A0) before ? ! : ; and inside «  ». Preserve accents on uppercase: É, È, À, Ç, Ô.
-No em/en dashes. Every sentence must preserve source meaning and include source_segment_indices."""
+No em/en dashes. Every sentence must preserve source meaning and include source_segment_indices.""" + _OPENING_ENDING_TRANSLATION
 
 
 _FR_TTS_SCRIPT = """Prepare French text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -116,7 +135,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: décontracté, B1-B2, default "vous", preserve élisions (l'/d'/j'/qu'/c'/n'),
-French punctuation (nbsp before ? ! : ;), no hype, no CTA, no em/en dashes."""
+French punctuation (nbsp before ? ! : ;), no hype, no CTA, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 西班牙语 base prompts ──
@@ -159,10 +178,10 @@ PUNCTUATION (critical for Spanish):
 
 FORMATTING:
 - Prefer 6–10 words per sentence. Avoid subordinate clause chains.
-- No em/en dashes. ASCII punctuation plus ¿ ¡ only.
+- No em/en dashes. Standard punctuation plus ¿ ¡. Accented letters (á é í ó ú ñ ü) are MANDATORY — never strip accents.
 - Numbers: European format (1.000 for thousand separator, 2,5 decimal). Currency €2,99.
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end — a universal CTA clip will be appended separately."""
+- No CTA at the end — a universal CTA clip will be appended separately.""" + _OPENING_ENDING_TRANSLATION
 
 
 _ES_TTS_SCRIPT = """Prepare Spanish text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -189,7 +208,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: cercano y auténtico, default "tú", preserve ¿/¡ on interrogatives/exclamatives,
-no hype, no CTA, no em/en dashes."""
+no hype, no CTA, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 意大利语 base prompts ──
@@ -228,10 +247,10 @@ GRAMMAR & STYLE:
   "la amica" when "l'amica" is required.
 - Proper articulated prepositions: al, allo, alla, ai, agli, alle; del/dello/della/dei/degli/delle.
 - Prefer 6–10 words per sentence. Avoid long subordinate chains.
-- No em/en dashes. ASCII punctuation only.
+- No em/en dashes. Standard punctuation. Accented letters (à è é ì ò ù) are MANDATORY — never strip accents.
 - Numbers: European format (1.000 for thousand, 2,5 decimal). Currency €2,99.
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end."""
+- No CTA at the end.""" + _OPENING_ENDING_TRANSLATION
 
 
 _IT_TTS_SCRIPT = """Prepare Italian text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -259,7 +278,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: genuino e amichevole, default "tu", preserve élisions (l'/d'/c'), proper
-articulated prepositions (al/allo/alla/del/dello/della), no hype, no CTA, no em/en dashes."""
+articulated prepositions (al/allo/alla/del/dello/della), no hype, no CTA, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 葡萄牙语 base prompts（默认 pt-PT，允许部分 pt-BR 通用词）──
@@ -298,10 +317,10 @@ HOOK PATTERNS:
 
 GRAMMAR & STYLE:
 - Prefer 6–10 words per sentence.
-- No em/en dashes. ASCII punctuation only.
+- No em/en dashes. Standard punctuation. Accented letters (ã õ á é ê ç) are MANDATORY — never strip accents.
 - Numbers: European format (1.000 for thousand, 2,5 decimal). Currency €2,99.
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end."""
+- No CTA at the end.""" + _OPENING_ENDING_TRANSLATION
 
 
 _PT_TTS_SCRIPT = """Prepare Portuguese text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -327,7 +346,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: próximo e autêntico (pt-PT default), default informal "tu", avoid pt-BR dialect
-markers, no hype, no CTA, no em/en dashes."""
+markers, no hype, no CTA, no em/en dashes.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 英语 base prompts（en-US 默认）──
@@ -369,7 +388,7 @@ FORMATTING:
 - ASCII punctuation only. No em-dashes, no en-dashes, no curly quotes.
 - Numbers in US convention (2.5 not 2,5; 1,000 not 1.000).
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end."""
+- No CTA at the end.""" + _OPENING_ENDING_TRANSLATION
 
 
 _EN_TTS_SCRIPT = """Prepare English text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -400,7 +419,7 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: casual conversational US English, default "you", contractions allowed,
-US spelling (color/favorite), no hype, no CTA, no em/en-dashes, ASCII punctuation only."""
+US spelling (color/favorite), no hype, no CTA, no em/en-dashes, ASCII punctuation only.""" + _OPENING_ENDING_REWRITE
 
 
 # ── 原文标准化（asr_normalize 步骤，lang 字段使用空字符串占位）──
@@ -586,7 +605,7 @@ FORMATTING:
 - No em/en dashes. Use ASCII punctuation plus standard 日本語 marks (、。！？「」).
 - Numbers: native format (e.g. 2,500円, 1.5 倍), full-width 円 for currency.
 - Every sentence must preserve source meaning and include source_segment_indices.
-- No CTA at the end — a universal CTA clip will be appended separately."""
+- No CTA at the end — a universal CTA clip will be appended separately.""" + _OPENING_ENDING_TRANSLATION
 
 
 _JA_TTS_SCRIPT = """Prepare Japanese text for ElevenLabs TTS and on-screen subtitles. Return valid JSON only:
@@ -622,14 +641,14 @@ STRUCTURAL: keep the same number of sentences when possible; preserve every
 source_segment_indices mapping.
 
 STYLE: です・ます調, 親しみやすい自然な口調, no hype, no CTA, no 誇大表現 (exaggeration),
-cosmetics/health must not claim medical efficacy (薬機法)."""
+cosmetics/health must not claim medical efficacy (薬機法).""" + _OPENING_ENDING_REWRITE
 
 
 def _build_generic_translation(language_name: str, market_note: str, style_note: str) -> str:
-    return f"""You are a native {language_name} short-form commerce video creator.
+    return (f"""You are a native {language_name} short-form commerce video creator.
 Return valid JSON only, shaped as {{"full_text": "...", "sentences": [{{"index": 0, "text": "...", "source_segment_indices": [...]}}]}}.
 
-You are NOT translating word-for-word. Recreate the English script so it sounds like a local creator
+You are NOT translating word-for-word. Recreate the source script (it may be in any language) so it sounds like a local creator
 would naturally say it for {market_note}. Keep every original claim and source_segment_indices.
 
 STYLE:
@@ -637,7 +656,8 @@ STYLE:
 - Friendly, practical, and trustworthy; no hype, no fake urgency, no CTA at the end.
 - Use local vocabulary for ecommerce, home, beauty, tech, and daily-life products.
 - Prefer concise sentences with natural spoken rhythm.
-- No em-dashes or en-dashes; use plain punctuation only."""
+- No em-dashes or en-dashes. Standard punctuation. Letters with diacritics required by {language_name} orthography are MANDATORY — never strip them."""
+    + _OPENING_ENDING_TRANSLATION)
 
 
 def _build_generic_tts_script(language_name: str, subtitle_note: str) -> str:
@@ -650,7 +670,7 @@ No trailing punctuation in subtitle_chunks. No em-dashes or en-dashes."""
 
 
 def _build_generic_rewrite(language_name: str, rewrite_note: str) -> str:
-    return f"""You are a native {language_name} content creator REWRITING an existing localization.
+    return (f"""You are a native {language_name} content creator REWRITING an existing localization.
 Return valid JSON only with the same schema as the original translation.
 
 HARD WORD COUNT CONSTRAINT:
@@ -662,6 +682,7 @@ never invent facts).
 
 STRUCTURAL: keep the same number of sentences when possible; preserve every source_segment_indices mapping.
 STYLE: natural spoken {language_name}, practical and trustworthy, no hype, no CTA. {rewrite_note}"""
+    + _OPENING_ENDING_REWRITE)
 
 
 _NL_TRANSLATION = _build_generic_translation(

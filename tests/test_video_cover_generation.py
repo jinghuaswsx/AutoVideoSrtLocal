@@ -567,6 +567,10 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert resolve_text_model_selection("ad_copy", "openrouter", "").model == "google/gemini-3-flash-preview"
     assert resolve_text_model_selection("ad_copy", "openrouter", "claude_sonnet").model == "anthropic/claude-sonnet-4.6"
     assert resolve_text_model_selection("ad_copy", "openrouter", "openai/gpt-5.5").alias == "gpt_5_5"
+    assert resolve_text_model_selection("video_analysis", "google_wj", "gemini_3_flash").provider == "google_wj"
+    assert resolve_text_model_selection("video_analysis", "google_wj", "gemini_3_flash").model == "gemini-3-flash-preview"
+    assert resolve_text_model_selection("product_analysis", "googlewj", "").provider == "google_wj"
+    assert resolve_text_model_selection("product_analysis", "googlewj", "").model == "gemini-3-flash-preview"
 
     local = resolve_cover_model_selection("local_image_2", "gpt_image_2")
     assert local.provider == "local_image_2"
@@ -608,6 +612,10 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_aistudio"]["models"]
     assert "claude_sonnet" in options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]
     assert options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]["gpt_5_5"]["model"] == "openai/gpt-5.5"
+    for step in ("video_analysis", "product_analysis", "ad_copy"):
+        providers = options["steps"][step]["providers"]
+        assert providers["google_wj"]["label"] == "GOOGLEWJ"
+        assert providers["google_wj"]["models"] == providers["gemini_vertex"]["models"]
     assert options["steps"]["cover_generation"]["default_provider"] == "local_image_2"
     assert options["steps"]["cover_generation"]["providers"]["local_image_2"] == "本地 Image 2"
     assert options["steps"]["cover_generation"]["providers"]["gemini_aistudio"] == "GOOGLE AI STUDIO"
@@ -1236,12 +1244,20 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
     }
 
     googlewj = video_cover_settings.normalize_model_defaults({
+        "video_analysis": {
+            "provider": "googlewj",
+            "model_id": "gemini-3-flash-preview",
+        },
         "cover_generation": {
             "provider": "googlewj",
             "model_id": "gemini-3-pro-image-preview",
             "execution_mode": "parallel",
         }
     })
+    assert googlewj["video_analysis"] == {
+        "provider": "google_wj",
+        "model_id": "gemini-3-flash-preview",
+    }
     assert googlewj["cover_generation"] == {
         "provider": "googlewj",
         "model_id": "gemini-3-pro-image-preview",
@@ -1797,6 +1813,7 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert "展开步骤" in html
     assert "收起步骤" in html
     assert ".vcd-progress-toolbar { display:none;" in html
+    assert ".vcd-top-card { position:static; top:auto; z-index:auto; box-shadow:none; margin-bottom:12px; }" in html
     assert ".vcd-top-card.vcd-mobile-progress-collapsed .vcd-progress-steps { display:none; }" in html
     assert "function toggleProgressSteps()" in html
     assert "progressToggle.setAttribute('aria-expanded', String(!collapsed));" in html

@@ -24,6 +24,8 @@ from appcore.llm_models import (
 from pipeline.localization import (
     LOCALIZED_TRANSLATION_RESPONSE_FORMAT,
     TTS_SCRIPT_RESPONSE_FORMAT,
+    TtsScriptWordingMismatchError,
+    _rebuild_subtitle_chunks,
     _split_segments_into_batches,
     build_localized_translation_messages,
     build_tts_script_messages,
@@ -206,6 +208,7 @@ def _generate_localized_translation_single(
     project_id: str | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
+    source_language: str = "zh",
 ) -> dict:
     """Single-shot translation: original logic, no batching. Used directly for
     short videos and as the per-batch primitive for long-video batching."""
@@ -215,6 +218,7 @@ def _generate_localized_translation_single(
         script_segments,
         variant=variant,
         custom_system_prompt=custom_system_prompt,
+        source_language=source_language,
     )
 
     payload, usage = _invoke_chat_for_use_case(
@@ -250,6 +254,7 @@ def _generate_localized_translation_batched(
     provider_override: str | None = None,
     model_override: str | None = None,
     checkpoint_key: str | None = None,
+    source_language: str = "zh",
 ) -> dict:
     """Long-video translation: split source segments into ~batch_size batches,
     call _single per batch, normalize per-batch indices to global, then merge.
@@ -287,6 +292,7 @@ def _generate_localized_translation_batched(
             use_case=use_case, user_id=user_id, project_id=project_id,
             provider_override=provider_override,
             model_override=model_override,
+            source_language=source_language,
         )
         batch_indices = [int(s["index"]) for s in batch]
         _normalize_batch_source_indices(batch_result.get("sentences") or [], batch_indices)
@@ -331,6 +337,7 @@ def generate_localized_translation(
     provider_override: str | None = None,
     model_override: str | None = None,
     checkpoint_key: str | None = None,
+    source_language: str = "zh",
     # 已废弃；仅保留以避免老调用方 TypeError，值被忽略。
     provider: str | None = None,
     openrouter_api_key: str | None = None,
@@ -343,6 +350,7 @@ def generate_localized_translation(
     use_case 必传，走 appcore.llm_client.invoke_chat（adapter 解析 binding）。
     provider= / openrouter_api_key= 仅作为废弃 kwargs 保留以避免老调用方崩溃，
     实际值被忽略；如果要切 provider/model 用 provider_override / model_override。
+    source_language 默认 "zh"，保持 multi_translate 等旧调用方行为完全不变。
     """
     del provider, openrouter_api_key  # noqa: F841 — 兼容签名但忽略
     use_case = _require_use_case(use_case, fn="generate_localized_translation")
@@ -360,6 +368,7 @@ def generate_localized_translation(
             provider_override=provider_override,
             model_override=model_override,
             checkpoint_key=checkpoint_key,
+            source_language=source_language,
         )
     return _generate_localized_translation_single(
         source_full_text_zh, script_segments,
@@ -367,7 +376,38 @@ def generate_localized_translation(
         use_case=use_case, user_id=user_id, project_id=project_id,
         provider_override=provider_override,
         model_override=model_override,
+        source_language=source_language,
     )
+
+
+def _deterministic_tts_script_from_sentences(
+    sentences: list[dict], validate_fn, max_words_kw: int = 10,
+) -> dict:
+    """确定性回退：一句一块，不再信任 LLM 切分。
+
+    blocks = 输入 sentences 一句一块；subtitle_chunks 通过 _rebuild_subtitle_chunks
+    确定性重建；结果标记 _wording_fallback=True。
+    """
+    blocks = [
+        {
+            "index": i,
+            "text": s.get("text", ""),
+            "sentence_indices": [i],
+            "source_segment_indices": list(s.get("source_segment_indices") or [i]),
+        }
+        for i, s in enumerate(sentences)
+    ]
+    payload = {
+        "full_text": " ".join(b["text"] for b in blocks if b["text"]),
+        "blocks": blocks,
+        "subtitle_chunks": [],
+    }
+    try:
+        result = validate_fn(payload, sentences=sentences)
+    except TypeError:
+        result = validate_fn(payload)
+    result["_wording_fallback"] = True
+    return result
 
 
 def _generate_tts_script_single(
@@ -382,28 +422,61 @@ def _generate_tts_script_single(
     provider_override: str | None = None,
     model_override: str | None = None,
 ) -> dict:
-    """Single-shot tts_script generation: original logic, no batching."""
+    """Single-shot tts_script generation with wording-mismatch retry + deterministic fallback.
+
+    首次 mismatch → 追加反馈消息重试一次；
+    二次 mismatch → 确定性回退（_wording_fallback=True）。
+    其他 ValueError（schema 缺 blocks 等）保持原样向上抛。
+    """
     use_case = _require_use_case(use_case, fn="_generate_tts_script_single")
     builder = messages_builder or build_tts_script_messages
     messages = builder(localized_translation)
     rf = response_format_override or TTS_SCRIPT_RESPONSE_FORMAT
-
-    payload, usage = _invoke_chat_for_use_case(
-        use_case, messages, rf,
-        user_id=user_id, project_id=project_id,
-        provider_override=provider_override,
-        model_override=model_override,
-    )
-
-    log.info("tts_script parsed payload type=%s keys=%s",
-             type(payload).__name__,
-             list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
     validate_fn = validator or validate_tts_script
     sentences = (localized_translation or {}).get("sentences") or []
+
+    def _attempt(msgs):
+        payload, usage = _invoke_chat_for_use_case(
+            use_case, msgs, rf,
+            user_id=user_id, project_id=project_id,
+            provider_override=provider_override,
+            model_override=model_override,
+        )
+        log.info("tts_script parsed payload type=%s keys=%s",
+                 type(payload).__name__,
+                 list(payload.keys()) if isinstance(payload, dict) else f"list[{len(payload)}]")
+        try:
+            result = validate_fn(payload, sentences=sentences)
+        except TypeError:
+            result = validate_fn(payload)
+        return result, usage
+
     try:
-        result = validate_fn(payload, sentences=sentences)
-    except TypeError:
-        result = validate_fn(payload)
+        result, usage = _attempt(messages)
+    except TtsScriptWordingMismatchError as first_err:
+        log.warning("tts_script wording mismatch (attempt 1), retrying: %s", first_err)
+        retry_messages = list(messages) + [
+            {
+                "role": "user",
+                "content": (
+                    "Your previous attempt changed the wording. "
+                    "Reproduce the input sentences with EXACT wording — "
+                    "same words in the same order. "
+                    "Only regroup them into blocks and subtitle_chunks."
+                ),
+            }
+        ]
+        try:
+            result, usage = _attempt(retry_messages)
+        except TtsScriptWordingMismatchError as second_err:
+            log.warning(
+                "tts_script wording mismatch (attempt 2), falling back deterministic: %s",
+                second_err,
+            )
+            result = _deterministic_tts_script_from_sentences(sentences, validate_fn)
+            result["_messages"] = messages
+            return result
+
     if usage:
         result["_usage"] = usage
         log.info("tts_script token usage: input=%s, output=%s",
@@ -494,9 +567,17 @@ def _generate_tts_script_batched(
     merged = {"full_text": full_text, "blocks": all_blocks, "subtitle_chunks": all_chunks}
     validate_fn = validator or validate_tts_script
     try:
-        final = validate_fn(merged, sentences=sentences)
-    except TypeError:
-        final = validate_fn(merged)
+        try:
+            final = validate_fn(merged, sentences=sentences)
+        except TypeError:
+            final = validate_fn(merged)
+    except TtsScriptWordingMismatchError as merge_err:
+        # 批边界可能引入整体 mismatch，整体走确定性回退
+        log.warning(
+            "tts_script batched merge wording mismatch, falling back deterministic: %s",
+            merge_err,
+        )
+        final = _deterministic_tts_script_from_sentences(sentences, validate_fn)
     if all_messages:
         final["_messages"] = all_messages
     if total_input or total_output:

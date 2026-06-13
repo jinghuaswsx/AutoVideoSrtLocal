@@ -58,6 +58,7 @@
 - Shopify Image Localizer：发布规范与定时发布见 [specs/2026-05-24-shopify-image-localizer-release-standard-fix.md](docs/superpowers/specs/2026-05-24-shopify-image-localizer-release-standard-fix.md)；开发与打包门禁读 [tools/shopify_image_localizer/CLAUDE.md](tools/shopify_image_localizer/CLAUDE.md)；配置门禁见 `2026-05-11-shopify-image-localizer-runtime-config-release-guard.md`
 - 详情图与链接质检：详情图免检见 [specs/2026-05-25-detail-image-quality-tolerance-design.md](docs/superpowers/specs/2026-05-25-detail-image-quality-tolerance-design.md)；链接见 `2026-05-25-link-check-prompt-localization-tolerance-design.md`
 - 任务中心/流程闭环：`2026-05-16-task-center-e2e-flow-design.md`（选品→任务→素材→推送）；按语言指派见 `2026-05-20-task-center-per-language-assignment-design.md`；翻译任务 ID 语种守卫见 `2026-05-29-task-center-translation-task-id-language-guard.md`
+- 全能翻译质量提升系列（5 块分批实施，音画对齐红线必读）：总览 [specs/2026-06-12-omni-quality-overview.md](docs/superpowers/specs/2026-06-12-omni-quality-overview.md)，含各块 spec + plan 链接
 ## 发布（Windows 开发机直连 root；Ubuntu 服务器本地目录操作）
 ```bash
 git push origin HEAD:master

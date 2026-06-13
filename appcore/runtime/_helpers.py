@@ -841,6 +841,50 @@ def _compute_next_target(
     return target_duration, target_words, direction
 
 
+def compute_compress_round_target(
+    last_audio_duration: float, wps: float, video_duration: float,
+) -> tuple[float, int, str]:
+    """压缩重译终轮的 target：瞄准 final 窗中部 video−0.5s（窗为 [video−1, video]）。
+
+    Spec: docs/superpowers/specs/2026-06-12-omni-quality-block3-convergence-guard-design.md
+
+    这是 _compute_next_target 之外的旁路计算（不改该函数的既有 round 2/3+ 公式），
+    仅在 compress 终轮调用。产物仍走与普通轮完全相同的实测时长判定。
+    """
+    target_duration = max(0.5, video_duration - 0.5)
+    target_words = max(3, round(target_duration * wps))
+    direction = "shrink" if last_audio_duration > video_duration else "expand"
+    return target_duration, target_words, direction
+
+
+def resolve_guarded_candidate(
+    in_window: list,
+) -> tuple[int | None, bool]:
+    """从"字数已落窗"的候选集合里挑选送 TTS 的那一个（Block3 质量守门降级决策）。
+
+    Spec: docs/superpowers/specs/2026-06-12-omni-quality-block3-convergence-guard-design.md
+
+    Args:
+        in_window: list of (attempt, candidate, guard_result|None)，按 attempt 顺序。
+            guard_result is None 表示该候选未过守门（守门关闭/超额/被跳过），按现状
+            视为"接受"；guard_result["passed"] is True 表示守门通过。
+
+    Returns:
+        (chosen_attempt | None, degraded)
+        - 第一个"被接受"（guard None 或 passed=True）的候选 → 返回其 attempt，degraded=False；
+        - 全部被守门拒绝 → 取 fidelity 最高者，degraded=True（R1.4 降级采纳）；
+        - 没有任何落窗候选 → (None, False)。
+    """
+    if not in_window:
+        return None, False
+    for attempt, _candidate, guard in in_window:
+        if guard is None or guard.get("passed"):
+            return attempt, False
+    # 全部被守门拒绝：取 fidelity 最高者降级采纳。
+    best = max(in_window, key=lambda row: (row[2] or {}).get("fidelity", -1))
+    return best[0], True
+
+
 def _distance_to_duration_range(duration: float, lower: float, upper: float) -> float:
     """Return the distance from duration to the inclusive [lower, upper] range."""
     if lower <= duration <= upper:
