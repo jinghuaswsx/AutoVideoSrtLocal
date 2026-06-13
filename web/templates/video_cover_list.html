@@ -32,12 +32,15 @@
 .card-menu button.danger { color:#dc2626; }
 .card-menu button.danger:hover { background:#fef2f2; color:#b91c1c; }
 .vc-empty { padding:56px 20px; text-align:center; border:1px dashed var(--border-main); border-radius:8px; color:#9ca3af; background:var(--bg-card); }
-.vc-modal-backdrop { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; background:rgba(15,23,42,.42); padding:20px; }
+.vc-modal-backdrop { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; background:rgba(15,23,42,.42); padding:20px; padding-bottom:calc(20px + env(safe-area-inset-bottom)); }
 .vc-modal-backdrop.show { display:flex; }
 .vc-modal { width:min(560px, 100%); border-radius:8px; border:1px solid var(--border-main); background:var(--bg-card); padding:22px; box-shadow:0 18px 48px rgba(15,23,42,.22); }
-.vc-config-modal { width:min(920px, 100%); }
+.vc-config-modal { width:min(920px, 100%); max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px - env(safe-area-inset-bottom)); display:flex; flex-direction:column; padding:0; overflow:hidden; }
 .vc-modal h2 { margin:0 0 16px; font-size:17px; color:var(--text-main); }
 .vc-form { display:grid; gap:14px; }
+.vc-config-modal h2 { flex:0 0 auto; margin:0; padding:22px 22px 16px; border-bottom:1px solid var(--border-main); }
+.vc-config-form { flex:1 1 auto; display:flex; flex-direction:column; min-height:0; gap:0; }
+.vc-config-body { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; display:grid; gap:14px; padding:16px 22px 0; }
 .vc-field { display:grid; gap:7px; }
 .vc-label { font-size:13px; font-weight:700; color:var(--text-main); }
 .vc-input { width:100%; min-height:38px; border:1px solid var(--border-main); border-radius:8px; padding:8px 10px; background:var(--bg-card); color:var(--text-main); font:inherit; }
@@ -63,12 +66,20 @@
 .video-clear { position:absolute; top:10px; right:10px; }
 .preview-hidden { display:none !important; }
 .vc-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:6px; }
+.vc-config-actions { flex:0 0 auto; margin-top:0; padding:14px 22px calc(22px + env(safe-area-inset-bottom)); border-top:1px solid var(--border-main); background:var(--bg-card); }
 .vc-error { min-height:20px; color:#dc2626; font-size:13px; }
 @media (max-width:720px) {
   .vc-header { align-items:stretch; flex-direction:column; }
   .vc-header-actions { width:100%; flex-direction:column; align-items:stretch; }
   .vc-header .btn { width:100%; }
+  .vc-modal-backdrop { align-items:flex-start; padding:10px; padding-bottom:calc(10px + env(safe-area-inset-bottom)); }
+  .vc-config-modal { width:100%; max-height:calc(100vh - 20px); max-height:calc(100dvh - 20px - env(safe-area-inset-bottom)); }
+  .vc-config-modal h2 { padding:16px; }
+  .vc-config-body { padding:12px 16px 0; }
   .vc-config-row { grid-template-columns:1fr; }
+  .vc-config-modal .vc-input { min-height:44px; font-size:16px; }
+  .vc-config-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:12px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .vc-config-actions .btn { width:100%; min-height:44px; }
 }
 {% endblock %}
 
@@ -124,48 +135,50 @@
 <div class="vc-modal-backdrop" id="vcConfigBackdrop">
   <div class="vc-modal vc-config-modal">
     <h2>默认配置</h2>
-    <form class="vc-form" id="vcConfigForm">
-      <div class="vc-config-grid">
-        {% for step in step_order %}
-        {% set defaults = model_defaults.get(step, {}) %}
-        {% set cfg = model_options.steps.get(step, {}) %}
-        <div class="vc-config-row">
-          <div class="vc-config-step">{{ step_labels.get(step, step) }}</div>
-          <label class="vc-config-field">
-            <span>供应商</span>
-            <select class="vc-input" name="{{ step }}_provider">
-              {% if step == 'cover_generation' %}
-                {% for code, label in cfg.providers.items() %}
-                <option value="{{ code }}" {% if defaults.get('provider') == code %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              {% else %}
-                {% for code, item in cfg.providers.items() %}
-                <option value="{{ code }}" {% if defaults.get('provider') == code %}selected{% endif %}>{{ item.label }}</option>
-                {% endfor %}
-              {% endif %}
-            </select>
-          </label>
-          <label class="vc-config-field">
-            <span>模型 ID</span>
-            <select class="vc-input" name="{{ step }}_model_id"
-                    data-model-select="{{ step }}"
-                    data-current-model="{{ defaults.get('model_id', '') }}"></select>
-          </label>
-          {% if step == 'cover_generation' %}
-          <label class="vc-config-field" data-cover-execution-field>
-            <span>执行方式</span>
-            <select class="vc-input" name="cover_generation_execution_mode" data-cover-execution-select>
-              <option value="parallel" {% if defaults.get('execution_mode', 'parallel') != 'serial' %}selected{% endif %}>并发执行</option>
-              <option value="serial" {% if defaults.get('execution_mode') == 'serial' %}selected{% endif %}>串行执行</option>
-            </select>
-          </label>
-          {% endif %}
+    <form class="vc-form vc-config-form" id="vcConfigForm">
+      <div class="vc-config-body">
+        <div class="vc-config-grid">
+          {% for step in step_order %}
+          {% set defaults = model_defaults.get(step, {}) %}
+          {% set cfg = model_options.steps.get(step, {}) %}
+          <div class="vc-config-row">
+            <div class="vc-config-step">{{ step_labels.get(step, step) }}</div>
+            <label class="vc-config-field">
+              <span>供应商</span>
+              <select class="vc-input" name="{{ step }}_provider">
+                {% if step == 'cover_generation' %}
+                  {% for code, label in cfg.providers.items() %}
+                  <option value="{{ code }}" {% if defaults.get('provider') == code %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                {% else %}
+                  {% for code, item in cfg.providers.items() %}
+                  <option value="{{ code }}" {% if defaults.get('provider') == code %}selected{% endif %}>{{ item.label }}</option>
+                  {% endfor %}
+                {% endif %}
+              </select>
+            </label>
+            <label class="vc-config-field">
+              <span>模型 ID</span>
+              <select class="vc-input" name="{{ step }}_model_id"
+                      data-model-select="{{ step }}"
+                      data-current-model="{{ defaults.get('model_id', '') }}"></select>
+            </label>
+            {% if step == 'cover_generation' %}
+            <label class="vc-config-field" data-cover-execution-field>
+              <span>执行方式</span>
+              <select class="vc-input" name="cover_generation_execution_mode" data-cover-execution-select>
+                <option value="parallel" {% if defaults.get('execution_mode', 'parallel') != 'serial' %}selected{% endif %}>并发执行</option>
+                <option value="serial" {% if defaults.get('execution_mode') == 'serial' %}selected{% endif %}>串行执行</option>
+              </select>
+            </label>
+            {% endif %}
+          </div>
+          {% endfor %}
         </div>
-        {% endfor %}
+        <div class="vc-error" id="vcConfigError"></div>
+        <div class="vc-config-status" id="vcConfigStatus"></div>
       </div>
-      <div class="vc-error" id="vcConfigError"></div>
-      <div class="vc-config-status" id="vcConfigStatus"></div>
-      <div class="vc-actions">
+      <div class="vc-actions vc-config-actions">
         <button class="btn btn-ghost" type="button" id="vcCancelConfig">取消</button>
         <button class="btn btn-primary" type="submit" id="vcConfigSubmit">保存配置</button>
       </div>
