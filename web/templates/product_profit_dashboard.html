@@ -1281,12 +1281,14 @@
           未分摊 campaign <span id="ppd-ads-unmatched-count" style="color:var(--text-user-badge);font-weight:400;">(0)</span>
           <span style="font-size:11px; color:var(--text-user-badge); font-weight:400; margin-left:8px;">广告费未进入产品利润分摊，原因见“分摊原因”。</span>
         </summary>
+        <div class="ppd-list-summary" id="ppd-ads-unmatched-launch-summary" style="display:none; margin-top:10px;"></div>
         <div class="ppd-table-wrap" id="ppd-ads-unmatched-wrap" style="margin-top:10px; display:none">
           <table class="ppd-table" id="ppd-ads-unmatched-table">
             <thead>
               <tr>
                 <th>Campaign code</th>
                 <th>Campaign name</th>
+                <th>新品标签</th>
                 <th>账户</th>
                 <th class="ppd-num">花费<span class="col-unit">USD</span></th>
                 <th class="ppd-num">结果</th>
@@ -2844,6 +2846,7 @@
     renderAdsAccounts(data.accounts || []);
     renderAdsCampaigns(data.campaigns || []);
     renderAdsDaily(data.daily || []);
+    renderUnallocatedLaunchSegmentSummary(data.unallocated_launch_segment_summary || null);
     renderAdsUnmatched(data.unmatched || []);
   }
 
@@ -2980,6 +2983,37 @@
     };
   }
 
+  function renderUnallocatedLaunchSegmentSummary(summary) {
+    var el = $('ppd-ads-unmatched-launch-summary');
+    if (!el) return;
+    if (!summary || !summary.total_spend_usd) {
+      el.style.display = 'none';
+      el.innerHTML = '';
+      return;
+    }
+    var newItem = summary.new_product || {};
+    var nonNewItem = summary.non_new_product || {};
+    function segmentHtml(item, fallbackLabel) {
+      var label = item.label || fallbackLabel;
+      var spend = Number(item.spend_usd || 0);
+      var share = Number(item.share_pct || 0);
+      var count = Number(item.campaign_count || 0);
+      return '<span class="ppd-summary-item"><span class="ppd-summary-label">' + escHtml(label) + '</span>'
+        + '<span class="ppd-summary-value">' + money(spend) + '</span>'
+        + '<span style="font-size:12px;color:var(--text-user-badge);">' + share.toFixed(2) + '% · ' + count.toLocaleString() + ' 个</span></span>';
+    }
+    el.innerHTML = segmentHtml(newItem, '新品') + segmentHtml(nonNewItem, '非新品');
+    el.style.display = 'flex';
+  }
+
+  function formatLaunchSegmentLabel(row) {
+    var label = row.launch_segment_label || (row.is_new_product ? '新品' : '非新品');
+    if (row.allocation_reason === 'unmatched_product' && label === '非新品') {
+      return '非新品 · 未匹配产品';
+    }
+    return label;
+  }
+
   function renderAdsUnmatched(unmatched) {
     var wrap = $('ppd-ads-unmatched-wrap');
     var emptyEl = $('ppd-ads-unmatched-empty');
@@ -3005,6 +3039,7 @@
       tr.innerHTML =
           '<td style="text-align:left; font-family:var(--font-sans, sans-serif);">' + escHtml(code) + '</td>'
         + '<td style="text-align:left; max-width:300px; white-space:normal;">' + escHtml(u.campaign_name || '') + '</td>'
+        + '<td>' + escHtml(formatLaunchSegmentLabel(u)) + '</td>'
         + '<td style="text-align:left;">' + escHtml(accountText) + '</td>'
         + '<td class="ppd-num">' + money(u.spend_usd) + '</td>'
         + '<td class="ppd-num">' + (u.result_count || 0).toLocaleString() + '</td>'
