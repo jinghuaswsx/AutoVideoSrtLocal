@@ -126,6 +126,17 @@ def run_av_localize(*args, **kwargs):
     return _run_av_localize(*args, **kwargs)
 
 
+def _truncation_segment_text(segment: dict) -> str:
+    """从被截断的 TTS 段取可读文本：tts_text → translated → text。"""
+    if not isinstance(segment, dict):
+        return ""
+    for key in ("tts_text", "translated", "text"):
+        value = segment.get(key)
+        if value and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
 def _save_llm_prompt_debug(
     *,
     task_id: str,
@@ -812,6 +823,10 @@ class PipelineRunner:
                 round_record["segment_assembly_removed_duration"] = trim_result[
                     "removed_duration"
                 ]
+                # Block3 R3: 段级拼装兜底里的物理截断同样升级为任务级质量告警。
+                self._record_tail_truncation_warning(
+                    task_id, round_record, trim_result,
+                )
                 round_record["segment_assembly_duration"] = final_duration
                 round_record["segment_assembly_gap"] = round(
                     video_duration - final_duration, 6,
@@ -1933,6 +1948,10 @@ class PipelineRunner:
                 best_record["speedup_final_audio_choice"] = "truncated"
                 best_record["final_reason"] = "best_pick_hard_truncated"
                 best_record["final_distance"] = 0.0
+                # Block3 R3: 物理截断升级为任务级质量告警（含被删句预览）。
+                self._record_tail_truncation_warning(
+                    task_id, best_record, trim_result,
+                )
         rounds[best_i] = best_record
         self._emit_duration_round(task_id, best_i + 1, "best_pick", best_record)
         final_reason = best_record.get("final_reason") or "best_pick"
@@ -2048,6 +2067,10 @@ class PipelineRunner:
             0.0,
             sum(float(segment.get("tts_duration", 0.0) or 0.0) for segment in tts_segments) - float(duration),
         )
+        # Block3: 被截掉的尾部句段文本（按移除顺序），供任务级质量告警展示。
+        removed_segments = tts_segments[len(fitted_segments):] if removed_count else []
+        removed_texts = [_truncation_segment_text(s) for s in removed_segments]
+        removed_texts = [t for t in removed_texts if t]
         return {
             "skipped": False,
             "audio_path": output_audio_path,
@@ -2056,8 +2079,33 @@ class PipelineRunner:
             "localized_translation": fitted_localized_translation,
             "removed_count": removed_count,
             "removed_duration": round(removed_duration, 3),
+            "removed_texts": removed_texts,
             "final_duration": round(float(duration), 3),
         }
+
+    def _record_tail_truncation_warning(
+        self, task_id: str, round_record: dict, trim_result: dict,
+    ) -> None:
+        """物理尾部截断真发生时，追加任务级质量告警 + 轮记录被删句预览（Block3 R3）。
+
+        - removed_count == 0 时不做任何事（与现状逐字节一致）。
+        - quality_warnings 不存在时初始化为空 list；append tail_truncated 告警。
+        """
+        removed_count = int(trim_result.get("removed_count") or 0)
+        if removed_count <= 0:
+            return
+        removed_texts = list(trim_result.get("removed_texts") or [])
+        warnings = list((task_state.get(task_id) or {}).get("quality_warnings") or [])
+        warnings.append({
+            "type": "tail_truncated",
+            "removed_count": removed_count,
+            "removed_texts": removed_texts,
+            "message": (
+                f"配音尾部被截断 {removed_count} 句，可能丢失收尾/CTA 完整性"
+            ),
+        })
+        task_state.update(task_id, quality_warnings=warnings)
+        round_record["removed_texts_preview"] = removed_texts[:3]
 
     def _trim_tail_segments(
         self, *, task_dir: str, round_variant: str,
@@ -2149,6 +2197,11 @@ class PipelineRunner:
 
         new_tts_script, new_loc = _trim_tts_metadata_to_segments(tts_script, localized_translation, kept)
 
+        # Block3: removed 是按出栈顺序（尾→前）收集的，恢复成原文档顺序再取文本。
+        removed_texts = [
+            _truncation_segment_text(s) for s in reversed(removed)
+        ]
+        removed_texts = [t for t in removed_texts if t]
         return {
             "skipped": False,
             "audio_path": out_path,
@@ -2157,6 +2210,7 @@ class PipelineRunner:
             "tts_segments": kept,
             "removed_count": len(removed),
             "removed_duration": total - current,
+            "removed_texts": removed_texts,
             "final_duration": current,
         }
 
@@ -3766,6 +3820,10 @@ class PipelineRunner:
                             f"目标上限 {loop_target_hi:.1f}s"
                         ),
                     }
+                    # Block3 R3: 物理截断升级为任务级质量告警（含被删句预览）。
+                    self._record_tail_truncation_warning(
+                        task_id, trimmed_record, trim_result,
+                    )
                     self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
 
             if gap_analysis.get("enabled") and loop_result.get("tts_segments"):
