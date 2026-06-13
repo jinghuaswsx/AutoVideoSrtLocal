@@ -23,7 +23,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from .cost_allocation import allocate_ad_cost_to_line
-from .shopify_fee import estimate_fee_for_buyer_country
+from .shopify_fee import estimate_fee_for_buyer_country, infer_presentment_currency_from_country
 
 
 _DEFAULT_RETURN_RESERVE_RATE = Decimal("0.01")
@@ -66,6 +66,18 @@ def _to_decimal(value: Any) -> Decimal:
     if isinstance(value, Decimal):
         return value
     return Decimal(str(value))
+
+
+def _json_scalar(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_scalar(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_scalar(item) for item in value]
+    return value
 
 
 def calculate_line_profit(
@@ -112,23 +124,84 @@ def calculate_line_profit(
     # 调用方传入 order_total_revenue_usd → 算出整单 fee → 按 line revenue 比例摊回本行。
     # 缺省（单 SKU 订单）→ 退化为按本行 revenue 算 fee（结果一致）。
     order_total_revenue_usd = line.get("order_total_revenue_usd")
-    if order_total_revenue_usd is not None and float(order_total_revenue_usd) > 0:
-        order_revenue = _to_decimal(order_total_revenue_usd)
-        fee_result = estimate_fee_for_buyer_country(
-            amount=float(order_revenue),
-            buyer_country=line.get("buyer_country"),
-        )
-        order_fee = _to_decimal(fee_result["fee"])
-        # 按本行 revenue / 订单 revenue 比例摊
-        shopify_fee = order_fee * (revenue / order_revenue) if order_revenue > 0 else _to_decimal(0)
+    raw_order_total = _to_decimal(order_total_revenue_usd) if order_total_revenue_usd is not None else None
+    order_revenue = raw_order_total if raw_order_total is not None else Decimal("0")
+    fee_result = line.get("shopify_fee_result") or {}
+    allocation_reason = None
+    if fee_result:
+        resolver_basis = dict(fee_result.get("shopify_fee_basis") or {})
+        resolver_order_total = _to_decimal(resolver_basis.get("order_total_revenue_usd"))
+        if order_revenue > 0:
+            allocation_base = order_revenue
+        elif resolver_order_total > 0:
+            allocation_base = resolver_order_total
+        else:
+            allocation_base = revenue
+        order_fee = _to_decimal(fee_result.get("shopify_fee_usd"))
+        if allocation_base > 0:
+            allocation_ratio = revenue / allocation_base
+            shopify_fee = order_fee * allocation_ratio
+        elif order_fee > 0:
+            allocation_ratio = Decimal("1")
+            shopify_fee = order_fee
+            allocation_reason = "no_positive_allocation_base_full_fee"
+        else:
+            allocation_ratio = Decimal("0")
+            shopify_fee = Decimal("0")
+        presentment_currency = _json_scalar(fee_result.get("presentment_currency"))
+        shopify_tier = _json_scalar(fee_result.get("shopify_tier"))
+        shopify_fee_source = _json_scalar(fee_result.get("shopify_fee_source"))
+        shopify_fee_rate = _json_scalar(fee_result.get("shopify_fee_rate"))
+        shopify_fee_rate_region = _json_scalar(fee_result.get("shopify_fee_rate_region"))
+        shopify_fee_rate_window_start = _json_scalar(fee_result.get("shopify_fee_rate_window_start"))
+        shopify_fee_rate_window_end = _json_scalar(fee_result.get("shopify_fee_rate_window_end"))
+        shopify_fee_basis = _json_scalar(resolver_basis)
     else:
-        # 单 SKU 订单：等价于按本行 revenue 算 fee
-        fee_result = estimate_fee_for_buyer_country(
-            amount=float(revenue),
-            buyer_country=line.get("buyer_country"),
-        )
-        shopify_fee = _to_decimal(fee_result["fee"])
-    shopify_tier = fee_result["tier"]
+        if order_revenue > 0:
+            estimated_fee = estimate_fee_for_buyer_country(
+                amount=float(order_revenue),
+                buyer_country=line.get("buyer_country"),
+            )
+            order_fee = _to_decimal(estimated_fee["fee"])
+            allocation_base = order_revenue
+            allocation_ratio = revenue / allocation_base if allocation_base > 0 else Decimal("0")
+            shopify_fee = order_fee * allocation_ratio
+        else:
+            estimated_fee = estimate_fee_for_buyer_country(
+                amount=float(revenue),
+                buyer_country=line.get("buyer_country"),
+            )
+            order_fee = _to_decimal(estimated_fee["fee"])
+            allocation_base = revenue
+            if allocation_base > 0:
+                allocation_ratio = Decimal("1")
+                shopify_fee = order_fee
+            elif order_fee > 0:
+                allocation_ratio = Decimal("1")
+                shopify_fee = order_fee
+                allocation_reason = "no_positive_allocation_base_full_fee"
+            else:
+                allocation_ratio = Decimal("0")
+                shopify_fee = Decimal("0")
+        presentment_currency = infer_presentment_currency_from_country(line.get("buyer_country"))
+        shopify_tier = estimated_fee["tier"]
+        shopify_fee_source = "strategy_c_fallback"
+        shopify_fee_rate = None
+        shopify_fee_rate_region = None
+        shopify_fee_rate_window_start = None
+        shopify_fee_rate_window_end = None
+        shopify_fee_basis = {
+            "strategy_version": "strategy_c_legacy",
+            "order_total_revenue_usd": float(raw_order_total) if raw_order_total is not None else None,
+            "fee_allocation_base_usd": float(allocation_base),
+            "order_fee_usd": float(order_fee),
+        }
+    shopify_fee_basis["line_allocation_ratio"] = float(
+        allocation_ratio.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+    )
+    shopify_fee_basis["fee_allocation_base_usd"] = float(allocation_base)
+    if allocation_reason:
+        shopify_fee_basis["fee_allocation_reason"] = allocation_reason
 
     # 4. 广告费摊到行
     ad_cost = _to_decimal(allocate_ad_cost_to_line(
@@ -167,8 +240,13 @@ def calculate_line_profit(
         "dxm_order_line_id": line.get("dxm_order_line_id"),
         "product_id": line.get("product_id"),
         "buyer_country": line.get("buyer_country"),
-        "presentment_currency": fee_result.get("rate_breakdown", {}) and None,
+        "presentment_currency": presentment_currency,
         "shopify_tier": shopify_tier,
+        "shopify_fee_source": shopify_fee_source,
+        "shopify_fee_rate": shopify_fee_rate,
+        "shopify_fee_rate_region": shopify_fee_rate_region,
+        "shopify_fee_rate_window_start": shopify_fee_rate_window_start,
+        "shopify_fee_rate_window_end": shopify_fee_rate_window_end,
         "line_amount_usd": _q4(line_amount),
         "shipping_allocated_usd": _q4(shipping_allocated),
         "revenue_usd": _q4(revenue),
@@ -190,6 +268,8 @@ def calculate_line_profit(
             "purchase_price_sanity": line.get("purchase_price_sanity"),
             "shipping_cost_cny": float(shipping_cost_cny),
             "shipping_cost_source": line.get("shipping_cost_source"),
+            "shopify_fee_source": shopify_fee_source,
+            "shopify_fee_basis": shopify_fee_basis,
             "sku_daily_units": int(line.get("sku_daily_units") or 0),
             "sku_daily_ad_spend_usd": float(line.get("sku_daily_ad_spend_usd") or 0),
             "estimated_fields": estimated_fields,

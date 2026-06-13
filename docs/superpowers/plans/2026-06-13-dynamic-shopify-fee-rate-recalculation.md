@@ -1033,7 +1033,7 @@ git commit -m "feat: resolve dynamic shopify fees for new orders" -m "Docs-ancho
 - Modify: `appcore/order_analytics/profit_calculation.py`
 - Modify: `tests/test_profit_calculation.py`
 
-- [ ] **Step 4.1: Add failing tests for allocated resolved fee**
+- [x] **Step 4.1: Add failing tests for allocated resolved fee**
 
 Append to `tests/test_profit_calculation.py`:
 
@@ -1081,7 +1081,7 @@ def test_calculate_line_profit_uses_resolved_order_shopify_fee_with_allocation()
     assert result["cost_basis"]["shopify_fee_basis"]["snapshot_id"] == 9
 ```
 
-- [ ] **Step 4.2: Run the focused test and confirm failure**
+- [x] **Step 4.2: Run the focused test and confirm failure**
 
 Run:
 
@@ -1091,7 +1091,7 @@ pytest tests/test_profit_calculation.py::test_calculate_line_profit_uses_resolve
 
 Expected: FAIL because `calculate_line_profit` ignores `shopify_fee_result`.
 
-- [ ] **Step 4.3: Modify `calculate_line_profit` fee block**
+- [x] **Step 4.3: Modify `calculate_line_profit` fee block**
 
 In `appcore/order_analytics/profit_calculation.py`, keep existing strategy C behavior as fallback, but before calling `estimate_fee_for_buyer_country`, add:
 
@@ -1134,7 +1134,7 @@ In `appcore/order_analytics/profit_calculation.py`, keep existing strategy C beh
 
 Use the existing variable names in the file. If the existing code already has a fee block with different names, replace that block with this structure and keep later profit math unchanged.
 
-- [ ] **Step 4.4: Add trace fields to returned dict**
+- [x] **Step 4.4: Add trace fields to returned dict**
 
 In the returned result dict from `calculate_line_profit`, add:
 
@@ -1153,7 +1153,7 @@ Inside `cost_basis`, add:
             "shopify_fee_basis": shopify_fee_basis,
 ```
 
-- [ ] **Step 4.5: Run profit calculation tests**
+- [x] **Step 4.5: Run profit calculation tests**
 
 Run:
 
@@ -1163,7 +1163,7 @@ pytest tests/test_profit_calculation.py -q
 
 Expected: PASS.
 
-- [ ] **Step 4.6: Commit**
+- [x] **Step 4.6: Commit**
 
 ```bash
 git add appcore/order_analytics/profit_calculation.py tests/test_profit_calculation.py

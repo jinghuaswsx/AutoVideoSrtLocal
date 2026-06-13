@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+import json
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -236,6 +238,207 @@ def test_calculate_line_profit_multi_sku_fee_split_by_order_amount():
     assert abs(total_fee - 1.11) <= 0.02
     # 大行摊得多
     assert r1["shopify_fee_usd"] > r2["shopify_fee_usd"]
+
+
+def test_calculate_line_profit_uses_resolved_order_shopify_fee_with_allocation():
+    result = calculate_line_profit(
+        _complete_line_input(
+            dxm_order_line_id="L-dynamic-1",
+            product_id=10,
+            buyer_country="DE",
+            line_amount_usd=40.0,
+            shipping_allocated_usd=0.0,
+            order_total_revenue_usd=100.0,
+            product_purchase_price_cny=70.0,
+            shipping_cost_cny=0.0,
+            sku_daily_units=0,
+            sku_daily_ad_spend_usd=0.0,
+            quantity=1,
+            shopify_fee_result={
+                "shopify_fee_usd": 6.72,
+                "shopify_tier": "dynamic_region_rate",
+                "presentment_currency": "EUR",
+                "shopify_fee_source": "dynamic_region_rate",
+                "shopify_fee_rate": 0.07542,
+                "shopify_fee_rate_region": "europe",
+                "shopify_fee_rate_window_start": "2026-05-30",
+                "shopify_fee_rate_window_end": "2026-06-05",
+                "shopify_fee_basis": {
+                    "strategy_version": "dynamic_shopify_fee_v1",
+                    "order_total_revenue_usd": 100.0,
+                    "order_fee_usd": 6.72,
+                    "snapshot_id": 9,
+                },
+            },
+        ),
+        rmb_per_usd=Decimal("7.0"),
+    )
+
+    assert result["status"] == "ok"
+    assert result["shopify_fee_usd"] == pytest.approx(2.6880)
+    assert result["shopify_fee_source"] == "dynamic_region_rate"
+    assert result["shopify_fee_rate"] == 0.07542
+    assert result["shopify_fee_rate_region"] == "europe"
+    assert result["shopify_fee_rate_window_start"] == "2026-05-30"
+    assert result["shopify_fee_rate_window_end"] == "2026-06-05"
+    assert result["presentment_currency"] == "EUR"
+    assert result["shopify_tier"] == "dynamic_region_rate"
+    assert result["cost_basis"]["shopify_fee_source"] == "dynamic_region_rate"
+    assert result["cost_basis"]["shopify_fee_basis"]["line_allocation_ratio"] == 0.4
+    assert result["cost_basis"]["shopify_fee_basis"]["snapshot_id"] == 9
+
+
+def test_calculate_line_profit_resolved_fee_uses_resolver_order_total_when_line_total_missing():
+    result = calculate_line_profit(
+        _complete_line_input(
+            line_amount_usd=40.0,
+            shipping_allocated_usd=0.0,
+            order_total_revenue_usd=None,
+            product_purchase_price_cny=70.0,
+            shipping_cost_cny=0.0,
+            sku_daily_units=0,
+            sku_daily_ad_spend_usd=0.0,
+            quantity=1,
+            shopify_fee_result={
+                "shopify_fee_usd": 6.72,
+                "shopify_tier": "dynamic_region_rate",
+                "presentment_currency": "EUR",
+                "shopify_fee_source": "dynamic_region_rate",
+                "shopify_fee_rate": Decimal("0.07542"),
+                "shopify_fee_rate_region": "europe",
+                "shopify_fee_basis": {
+                    "strategy_version": "dynamic_shopify_fee_v1",
+                    "order_total_revenue_usd": Decimal("100.0"),
+                    "order_fee_usd": Decimal("6.72"),
+                    "snapshot_id": 9,
+                },
+            },
+        ),
+        rmb_per_usd=Decimal("7.0"),
+    )
+
+    assert result["shopify_fee_usd"] == pytest.approx(2.6880)
+    assert isinstance(result["shopify_fee_rate"], float)
+    assert result["cost_basis"]["shopify_fee_basis"]["fee_allocation_base_usd"] == 100.0
+    assert isinstance(result["cost_basis"]["shopify_fee_basis"]["order_fee_usd"], float)
+    json.dumps(result)
+
+
+def test_calculate_line_profit_strategy_c_fallback_records_fee_trace():
+    result = calculate_line_profit(
+        _complete_line_input(
+            line_amount_usd=20.0,
+            shipping_allocated_usd=0.0,
+            buyer_country="US",
+            order_total_revenue_usd=30.0,
+        ),
+        rmb_per_usd=Decimal("6.83"),
+    )
+
+    assert result["shopify_fee_source"] == "strategy_c_fallback"
+    assert result["presentment_currency"] == "USD"
+    assert result["cost_basis"]["shopify_fee_source"] == "strategy_c_fallback"
+    assert result["cost_basis"]["shopify_fee_basis"]["order_total_revenue_usd"] == 30.0
+    assert result["cost_basis"]["shopify_fee_basis"]["fee_allocation_base_usd"] == 30.0
+    assert result["cost_basis"]["shopify_fee_basis"]["line_allocation_ratio"] == pytest.approx(20 / 30)
+
+
+def test_calculate_line_profit_strategy_c_zero_revenue_preserves_fixed_fee():
+    result = calculate_line_profit(
+        _complete_line_input(
+            line_amount_usd=0.0,
+            shipping_allocated_usd=0.0,
+            buyer_country="US",
+            product_purchase_price_cny=0.0,
+            shipping_cost_cny=0.0,
+            sku_daily_units=0,
+            sku_daily_ad_spend_usd=0.0,
+            quantity=1,
+        ),
+        rmb_per_usd=Decimal("6.83"),
+    )
+
+    assert result["shopify_fee_usd"] == pytest.approx(0.30)
+    assert result["shopify_fee_source"] == "strategy_c_fallback"
+    assert result["cost_basis"]["shopify_fee_basis"]["line_allocation_ratio"] == 1.0
+    assert (
+        result["cost_basis"]["shopify_fee_basis"]["fee_allocation_reason"]
+        == "no_positive_allocation_base_full_fee"
+    )
+
+
+def test_calculate_line_profit_resolved_zero_revenue_preserves_order_fee_trace():
+    result = calculate_line_profit(
+        _complete_line_input(
+            line_amount_usd=0.0,
+            shipping_allocated_usd=0.0,
+            order_total_revenue_usd=None,
+            product_purchase_price_cny=0.0,
+            shipping_cost_cny=0.0,
+            sku_daily_units=0,
+            sku_daily_ad_spend_usd=0.0,
+            quantity=1,
+            shopify_fee_result={
+                "shopify_fee_usd": Decimal("0.30"),
+                "shopify_tier": "actual_payment",
+                "presentment_currency": "USD",
+                "shopify_fee_source": "actual_payment",
+                "shopify_fee_basis": {
+                    "strategy_version": "dynamic_shopify_fee_v1",
+                    "order_total_revenue_usd": Decimal("0"),
+                    "nested": {"fee": Decimal("0.30")},
+                },
+            },
+        ),
+        rmb_per_usd=Decimal("6.83"),
+    )
+
+    assert result["shopify_fee_usd"] == pytest.approx(0.30)
+    basis = result["cost_basis"]["shopify_fee_basis"]
+    assert basis["line_allocation_ratio"] == 1.0
+    assert basis["fee_allocation_reason"] == "no_positive_allocation_base_full_fee"
+    assert isinstance(basis["nested"]["fee"], float)
+    json.dumps(result)
+
+
+def test_calculate_line_profit_resolved_fee_normalizes_window_dates():
+    result = calculate_line_profit(
+        _complete_line_input(
+            line_amount_usd=40.0,
+            shipping_allocated_usd=0.0,
+            order_total_revenue_usd=100.0,
+            product_purchase_price_cny=70.0,
+            shipping_cost_cny=0.0,
+            sku_daily_units=0,
+            sku_daily_ad_spend_usd=0.0,
+            quantity=1,
+            shopify_fee_result={
+                "shopify_fee_usd": 6.72,
+                "shopify_tier": "dynamic_region_rate",
+                "presentment_currency": "EUR",
+                "shopify_fee_source": "dynamic_region_rate",
+                "shopify_fee_rate": 0.07542,
+                "shopify_fee_rate_region": "europe",
+                "shopify_fee_rate_window_start": date(2026, 5, 30),
+                "shopify_fee_rate_window_end": date(2026, 6, 5),
+                "shopify_fee_basis": {
+                    "strategy_version": "dynamic_shopify_fee_v1",
+                    "order_total_revenue_usd": 100.0,
+                    "order_fee_usd": 6.72,
+                    "snapshot_id": 9,
+                    "shopify_fee_rate_window_start": date(2026, 5, 30),
+                    "shopify_fee_rate_window_end": date(2026, 6, 5),
+                },
+            },
+        ),
+        rmb_per_usd=Decimal("7.0"),
+    )
+
+    assert result["shopify_fee_rate_window_start"] == "2026-05-30"
+    assert result["shopify_fee_rate_window_end"] == "2026-06-05"
+    assert result["cost_basis"]["shopify_fee_basis"]["shopify_fee_rate_window_start"] == "2026-05-30"
+    assert result["cost_basis"]["shopify_fee_basis"]["shopify_fee_rate_window_end"] == "2026-06-05"
+    json.dumps(result)
 
 
 def test_get_configured_return_reserve_rate_default(monkeypatch):
