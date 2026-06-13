@@ -53,6 +53,16 @@ def test_ad_alert_template_contract():
     assert "purple" not in source.lower()
 
 
+def test_ad_alert_lang_badge_does_not_trigger_card_navigation():
+    """语言 badge 点击只开详情弹窗，不能被卡片整体跳转劫持。
+
+    回归保护：listEl 上卡片跳转处理器必须排除 .oc-ad-alert-lang-btn，
+    否则点 badge 会先跳到 /ad-alerts/product/<id> 而详情弹窗永远打不开。
+    """
+    source = Path("web/templates/ad_alerts.html").read_text(encoding="utf-8")
+    assert source.count("event.target.closest('.oc-ad-alert-lang-btn')) return;") >= 2
+
+
 def test_ad_alert_problem_mobile_table_contract():
     template = Path("web/templates/ad_alerts.html")
     source = template.read_text(encoding="utf-8")
