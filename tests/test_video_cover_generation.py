@@ -1142,6 +1142,14 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     html = resp.get_data(as_text=True)
     assert "默认配置" in html
     assert 'id="vcShowDefaultConfig"' in html
+    assert 'class="vc-form vc-config-form" id="vcConfigForm"' in html
+    assert '<div class="vc-config-body">' in html
+    assert '<div class="vc-actions vc-config-actions">' in html
+    assert ".vc-config-modal { width:min(920px, 100%); max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px - env(safe-area-inset-bottom));" in html
+    assert ".vc-config-body { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;" in html
+    assert ".vc-config-actions { flex:0 0 auto; margin-top:0; padding:14px 22px calc(22px + env(safe-area-inset-bottom));" in html
+    assert ".vc-config-modal .vc-input { min-height:44px; font-size:16px; }" in html
+    assert ".vc-config-actions { display:grid; grid-template-columns:1fr 1fr;" in html
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'name="{step}_provider"' in html
         assert f'<select class="vc-input" name="{step}_model_id"' in html
