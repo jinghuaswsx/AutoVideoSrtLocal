@@ -76,6 +76,10 @@ AD_ALERT_PUBLIC_SHARE_BASE_URL = _env(
 SCHEDULED_TASKS_ENABLED = _env_bool("SCHEDULED_TASKS_ENABLED", True)
 
 
+class Config:
+    SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT = os.getenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "")
+
+
 # ---------------------------------------------------------------------------
 # 火山 TOS：对象存储（非 LLM 供应商，继续走 env）
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ import sys
 from typing import Any, IO
 
 from .shopify_fee import classify_tier, verify_fee
+from .shopify_fee_dynamic import refresh_fee_rate_snapshots
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ def parse_payments_csv(stream: IO[str], *, source_csv: str = "") -> list[dict[st
 
         row = {
             "transaction_id": norm.get("Transaction ID") or _row_id(norm),
+            "transaction_date": norm.get("Transaction Date"),
             "payout_id": norm.get("Payout ID") or norm.get("Payout"),
             "type": txn_type,
             "order_name": norm.get("Order"),
@@ -115,13 +117,13 @@ def import_payments_csv(stream: IO[str], *, source_csv: str = "") -> dict[str, A
 
     sql = (
         "INSERT INTO shopify_payments_transactions ("
-        "  transaction_id, payout_id, type, order_name, presentment_currency, "
+        "  transaction_id, transaction_date, payout_id, type, order_name, presentment_currency, "
         "  amount_usd, fee_usd, net_usd, card_brand, "
         "  inferred_card_origin, inferred_tier, matches_standard, "
         "  source_csv, raw_row_json"
-        ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
         "ON DUPLICATE KEY UPDATE "
-        "  payout_id=VALUES(payout_id), type=VALUES(type), "
+        "  transaction_date=VALUES(transaction_date), payout_id=VALUES(payout_id), type=VALUES(type), "
         "  order_name=VALUES(order_name), presentment_currency=VALUES(presentment_currency), "
         "  amount_usd=VALUES(amount_usd), fee_usd=VALUES(fee_usd), net_usd=VALUES(net_usd), "
         "  card_brand=VALUES(card_brand), "
@@ -136,7 +138,7 @@ def import_payments_csv(stream: IO[str], *, source_csv: str = "") -> dict[str, A
             stats["skipped"] += 1
             continue
         execute(sql, (
-            row["transaction_id"], row["payout_id"], row["type"],
+            row["transaction_id"], row["transaction_date"], row["payout_id"], row["type"],
             row["order_name"], row["presentment_currency"],
             row["amount_usd"], row["fee_usd"], row["net_usd"],
             row["card_brand"],
@@ -149,6 +151,15 @@ def import_payments_csv(stream: IO[str], *, source_csv: str = "") -> dict[str, A
         elif row.get("matches_standard") == 0:
             stats["anomalies"] += 1
 
+    try:
+        stats["fee_rate_snapshots"] = refresh_fee_rate_snapshots(source_csvs=None)
+    except Exception as exc:
+        log.exception("Failed to refresh Shopify fee rate snapshots after payments import")
+        stats["fee_rate_snapshots"] = {
+            "saved": 0,
+            "refresh_failed": True,
+            "error": str(exc),
+        }
     return stats
 
 

@@ -288,6 +288,19 @@
   border-color: #2563eb !important;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
 }
+.oc-ad-alert-date-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.oc-ad-alert-date-input {
+  width: 140px;
+  padding: 0 10px;
+}
+.oc-ad-alert-date-separator {
+  color: var(--oc-ad-alert-muted);
+}
 
 /* Dark theme overrides for filters and search */
 [data-theme='dark'] .oc-ad-alert-filter-set {
@@ -398,6 +411,43 @@
 }
 .oc-ad-alert-highloss-link:hover {
   text-decoration: underline;
+}
+.oc-ad-alert-handled-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--oc-ad-alert-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.oc-ad-alert-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.oc-ad-alert-btn-mark {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.oc-ad-alert-action-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: var(--oc-ad-alert-green);
+  font-size: 12px;
+  font-weight: 800;
+}
+.oc-ad-alert-action-note {
+  color: var(--oc-ad-alert-muted);
+  font-size: 12px;
 }
 .oc-ad-alert-share-result {
   display: grid;
@@ -821,6 +871,8 @@
 .oc-modal-mask { position:fixed; inset:0; background:oklch(22% 0.02 235 / 0.48); display:flex; align-items:center; justify-content:center; padding:var(--oc-sp-5); z-index:200; animation:oc-fade var(--oc-dur) var(--oc-ease-out); }
 @keyframes oc-fade { from{opacity:0;} to{opacity:1;} }
 .oc-modal { width:960px; max-width:100%; max-height:94vh; display:flex; flex-direction:column; background:var(--oc-bg); border:1px solid var(--oc-border); border-radius:var(--oc-r-xl); overflow:hidden; box-shadow:var(--oc-shadow-lg); animation:oc-rise var(--oc-dur-slow) var(--oc-ease); }
+.oc-ad-alert-detail-modal { width: min(840px, calc(100vw - 48px)); }
+.oc-ad-alert-threshold-modal { width: min(440px, calc(100vw - 48px)); }
 @keyframes oc-rise { from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
 
 .oc-modal-head { display:flex; align-items:center; justify-content:space-between; padding:var(--oc-sp-4) var(--oc-sp-5); border-bottom:1px solid var(--oc-border); }
@@ -1160,6 +1212,22 @@
   .oc-ad-alert-share-input {
     width: 100%;
   }
+  .oc-ad-alert-date-filters {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+    margin-left: 0;
+  }
+  .oc-ad-alert-date-input {
+    width: 100%;
+    min-width: 0;
+  }
+  .oc-ad-alert-date-filters .oc-ad-alert-btn {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
   .oc-ad-alert-share-row {
     display: grid;
   }
@@ -1261,6 +1329,12 @@
   .oc-ad-alert-problem-table .oc-ad-alert-col-hidden {
     display: none !important;
   }
+  .oc-ad-alert-detail-modal,
+  .oc-ad-alert-threshold-modal {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    border-radius: 12px;
+  }
   .oc-ad-alert-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1283,6 +1357,12 @@
   .oc-ad-alert-tab,
   .oc-ad-alert-level-tab {
     flex: 1;
+  }
+  .oc-ad-alert-date-filters {
+    grid-template-columns: 1fr;
+  }
+  .oc-ad-alert-date-separator {
+    display: none;
   }
 }
 </style>
@@ -1321,6 +1401,7 @@
       <div class="oc-ad-alert-business-date" id="adAlertHighLossDate">Meta 业务日：加载中</div>
       <div class="oc-ad-alert-problem-actions">
         <input class="oc-ad-alert-search" id="adAlertHighLossSearch" type="search" placeholder="搜索广告、商品名称或 product code">
+        <label class="oc-ad-alert-handled-toggle"><input type="checkbox" id="adAlertShowHandled"> 显示已处理</label>
         <button class="oc-ad-alert-btn" type="button" id="adAlertHighLossRefresh">查询</button>
         <button class="oc-ad-alert-btn oc-ad-alert-btn-primary" type="button" id="adAlertHighLossShare">生成分享链接</button>
       </div>
@@ -1347,11 +1428,11 @@
         <button class="oc-ad-alert-filter" type="button" data-value="mild">轻度</button>
       </div>
       <input class="oc-ad-alert-search" id="adAlertSearch" type="search" placeholder="搜索商品名称或编码">
-      <div style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto;">
-        <input class="oc-ad-alert-search" id="adAlertStartDate" type="date" style="width: 140px; padding: 0 10px;" title="开始日期">
-        <span style="color: var(--oc-ad-alert-muted);">至</span>
-        <input class="oc-ad-alert-search" id="adAlertEndDate" type="date" style="width: 140px; padding: 0 10px;" title="结束日期">
-        <button class="oc-ad-alert-btn" type="button" id="adAlertDateClear" style="min-height: 36px; padding: 0 12px;">清除</button>
+      <div class="oc-ad-alert-date-filters">
+        <input class="oc-ad-alert-search oc-ad-alert-date-input" id="adAlertStartDate" type="date" title="开始日期">
+        <span class="oc-ad-alert-date-separator">至</span>
+        <input class="oc-ad-alert-search oc-ad-alert-date-input" id="adAlertEndDate" type="date" title="结束日期">
+        <button class="oc-ad-alert-btn" type="button" id="adAlertDateClear">清除</button>
       </div>
     </div>
 
@@ -1426,7 +1507,7 @@
 </div>
 
 <div class="oc-modal-mask oc" id="adAlertDetailMask" hidden>
-  <div class="oc-modal" style="width: min(840px, 100vw - 48px);" role="dialog" aria-modal="true" aria-labelledby="adAlertDetailTitle">
+  <div class="oc-modal oc-ad-alert-detail-modal" role="dialog" aria-modal="true" aria-labelledby="adAlertDetailTitle">
     <div class="oc-modal-head">
       <h3 id="adAlertDetailTitle">广告预警详情</h3>
       <button type="button" id="adAlertDetailClose" class="oc-icon-btn" aria-label="关闭">
@@ -1440,7 +1521,7 @@
 </div>
 
 <div class="oc-modal-mask oc" id="adAlertThresholdMask" hidden>
-  <div class="oc-modal" style="width: min(440px, 100vw - 48px);" role="dialog" aria-modal="true" aria-labelledby="adAlertThresholdTitle">
+  <div class="oc-modal oc-ad-alert-threshold-modal" role="dialog" aria-modal="true" aria-labelledby="adAlertThresholdTitle">
     <div class="oc-modal-head">
       <h3 id="adAlertThresholdTitle">修改 ROAS 阈值</h3>
       <button type="button" id="adAlertThresholdClose" class="oc-icon-btn" aria-label="关闭">
@@ -1475,6 +1556,7 @@
     activeTab: {{ active_tab|tojson }},
     highLossLoaded: false,
     highLossSearch: '',
+    showHandled: false,
     problemLoaded: false,
     problemLevel: 'campaign',
     problemSearch: '',
@@ -1747,6 +1829,7 @@
     var params = new URLSearchParams();
     params.set('limit', '30');
     if (state.highLossSearch) params.set('q', state.highLossSearch);
+    if (state.showHandled) params.set('include_handled', '1');
     fetch('/ad-alerts/api/high-loss-ads?' + params.toString(), { headers: { 'Accept': 'application/json' } })
       .then(function(resp) {
         if (!resp.ok) throw new Error('high_loss_failed');
@@ -1810,9 +1893,55 @@
         + highLossMetricBlock('整体', metrics.overall)
         + '    </div>'
         + '    <a class="oc-ad-alert-highloss-link" href="' + html(item.detail_url || '#') + '" target="_blank" rel="noopener noreferrer" data-stop-card>打开广告分析详情</a>'
+        + renderHighLossActionRow(item)
         + '  </div>'
         + '</article>';
     }).join('');
+  }
+
+  function renderHighLossActionRow(item) {
+    var key = item.action_target_key || '';
+    if (!key) return '';
+    if (item.action) {
+      return ''
+        + '<div class="oc-ad-alert-action-row" data-stop-card>'
+        + '  <span class="oc-ad-alert-action-badge">' + html(item.action.action_label || item.action.action || '') + '</span>'
+        + (item.action.note ? '<span class="oc-ad-alert-action-note">' + html(item.action.note) + '</span>' : '')
+        + '  <button class="oc-ad-alert-btn oc-ad-alert-btn-mark" type="button" data-mark-action="clear" data-target-key="' + html(key) + '">取消标记</button>'
+        + '</div>';
+    }
+    return ''
+      + '<div class="oc-ad-alert-action-row" data-stop-card>'
+      + '  <button class="oc-ad-alert-btn oc-ad-alert-btn-mark" type="button" data-mark-action="resolved" data-target-key="' + html(key) + '">标记已处理</button>'
+      + '  <button class="oc-ad-alert-btn oc-ad-alert-btn-mark" type="button" data-mark-action="ignored" data-target-key="' + html(key) + '">忽略</button>'
+      + '</div>';
+  }
+
+  function markHighLossAction(targetKey, action, btn) {
+    if (btn) btn.disabled = true;
+    fetch('/ad-alerts/api/actions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRFToken': csrfToken()
+      },
+      body: JSON.stringify({ scope: 'high_loss', target_key: targetKey, action: action })
+    })
+      .then(function(resp) {
+        return resp.json().then(function(data) {
+          if (!resp.ok) throw new Error(data.error || 'action_failed');
+          return data;
+        });
+      })
+      .then(function() {
+        showToast(action === 'clear' ? '已取消标记' : '已标记，列表已刷新', 'success');
+        loadHighLossAds();
+      })
+      .catch(function(error) {
+        if (btn) btn.disabled = false;
+        showToast('操作失败：' + (error.message || '未知错误'), 'error');
+      });
   }
 
   function highLossMetricBlock(label, metric) {
@@ -2431,12 +2560,31 @@
   });
 
   highLossList.addEventListener('click', function(event) {
+    var markBtn = event.target.closest('[data-mark-action]');
+    if (markBtn) {
+      event.preventDefault();
+      event.stopPropagation();
+      markHighLossAction(
+        markBtn.getAttribute('data-target-key'),
+        markBtn.getAttribute('data-mark-action'),
+        markBtn
+      );
+      return;
+    }
     if (event.target.closest('[data-stop-card]')) return;
     var card = event.target.closest('.oc-ad-alert-card');
     if (!card) return;
     var url = card.getAttribute('data-detail-url');
     if (url) window.location.href = url;
   });
+
+  var showHandledToggle = document.getElementById('adAlertShowHandled');
+  if (showHandledToggle) {
+    showHandledToggle.addEventListener('change', function() {
+      state.showHandled = !!this.checked;
+      loadHighLossAds();
+    });
+  }
 
   highLossList.addEventListener('keydown', function(event) {
     if (event.key !== 'Enter' && event.key !== ' ') return;

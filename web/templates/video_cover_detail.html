@@ -31,6 +31,9 @@
 .vcd-progress-step.error .vcd-progress-index { color:#b91c1c; border-color:#fca5a5; background:#fef2f2; }
 .vcd-progress-name { min-width:0; font-size:13px; font-weight:900; color:var(--text-main); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vcd-progress-msg { margin-top:6px; font-size:12px; color:#64748b; min-height:18px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vcd-progress-toolbar { display:none; margin:0 0 10px; }
+.vcd-progress-toggle { display:inline-flex; align-items:center; justify-content:center; width:auto; min-height:34px; padding:0 14px; border:1px solid var(--border-main); border-radius:999px; background:var(--bg-card); color:var(--text-main); font-family:inherit; font-size:12px; font-weight:900; line-height:1; cursor:pointer; white-space:nowrap; }
+.vcd-progress-toggle:hover { border-color:var(--primary-color); color:var(--primary-color); background:rgba(59,130,246,.06); }
 .vcd-project-grid { display:grid; grid-template-columns:minmax(240px, 320px) minmax(0, 1fr); gap:16px; align-items:start; }
 .vcd-panel { border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); padding:16px; min-width:0; }
 .vcd-input-panel { position:sticky; top:calc(var(--header-h, 56px) + 128px); max-height:calc(100vh - var(--header-h, 56px) - 144px); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
@@ -160,6 +163,10 @@
   .vcd-project-heading { grid-template-columns:1fr; }
   .vcd-project-title { justify-content:flex-start; text-align:left; }
   .vcd-top-actions { align-items:stretch; flex-direction:column; }
+  .vcd-progress-toolbar { display:flex; margin-bottom:0; }
+  .vcd-progress-toggle { width:100%; }
+  .vcd-top-card:not(.vcd-mobile-progress-collapsed) .vcd-progress-toolbar { margin-bottom:10px; }
+  .vcd-top-card.vcd-mobile-progress-collapsed .vcd-progress-steps { display:none; }
   .vcd-progress-steps, .vcd-field-grid { grid-template-columns:1fr; }
   .vcd-cover-results-grid { grid-template-columns:minmax(0, 280px); justify-content:center; }
   .vcd-prompt-debug-modal { width:min(96vw, 100%); }
@@ -175,7 +182,7 @@
   <h1 class="vcd-project-title">{{ detail_project_name }}</h1>
 </div>
 
-<section class="vcd-top-card" id="vcdTopCard">
+<section class="vcd-top-card vcd-mobile-progress-collapsed" id="vcdTopCard">
   <div class="vcd-top-actions">
     <div class="vcd-count-wrap">
       <span class="vcd-count-label">重新生成张数</span>
@@ -189,6 +196,9 @@
       <button class="btn btn-ghost" type="button" data-all-payload-preview>全部报文预览</button>
       <button class="btn btn-danger vcd-restart-btn" type="button" id="vcdRestartBtn">强制重新开始</button>
     </div>
+  </div>
+  <div class="vcd-progress-toolbar">
+    <button class="vcd-progress-toggle" type="button" data-progress-toggle aria-controls="vcdProgressSteps" aria-expanded="false">展开步骤</button>
   </div>
   <div class="vcd-progress-steps" id="vcdProgressSteps">
     {% for step in step_order %}
@@ -386,6 +396,8 @@
   const MODEL_OPTIONS = {{ model_options|tojson }};
   let currentState = {{ state|tojson }};
   let restartCount = Number(currentState.image_count || 4);
+  const topCard = document.getElementById('vcdTopCard');
+  const progressToggle = document.querySelector('[data-progress-toggle]');
   const errorBox = document.getElementById('vcdError');
   const modal = document.getElementById('vcdPromptModal');
   const modalTitle = document.getElementById('vcdPromptTitle');
@@ -450,6 +462,20 @@
     if (status === 'waiting') return '等待确认';
     if (status === 'error') return '失败';
     return '等待中';
+  }
+  function isProgressCollapsed() {
+    return topCard ? topCard.classList.contains('vcd-mobile-progress-collapsed') : false;
+  }
+  function syncProgressToggleLabel() {
+    if (!progressToggle) return;
+    const collapsed = isProgressCollapsed();
+    progressToggle.setAttribute('aria-expanded', String(!collapsed));
+    progressToggle.textContent = collapsed ? '展开步骤' : '收起步骤';
+  }
+  function toggleProgressSteps() {
+    if (!topCard) return;
+    topCard.classList.toggle('vcd-mobile-progress-collapsed');
+    syncProgressToggleLabel();
   }
   function executionModeText(mode) {
     if (mode === 'parallel') return '并行';
@@ -986,6 +1012,7 @@
     document.querySelectorAll('[data-restart-count]').forEach(btn => btn.addEventListener('click', () => {
       setRestartCount(btn.dataset.restartCount);
     }));
+    if (progressToggle) progressToggle.addEventListener('click', toggleProgressSteps);
 
     // 强制重新开始按钮
     document.getElementById('vcdRestartBtn').addEventListener('click', restart);
@@ -1061,6 +1088,7 @@
   }
 
   bindEventListeners();
+  syncProgressToggleLabel();
   render();
   setInterval(() => { loadState().catch(() => {}); }, 2500);
 })();

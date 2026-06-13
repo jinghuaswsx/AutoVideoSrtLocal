@@ -856,6 +856,11 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert "当前日期：2026-05-14" in prompt
     assert "ad_copy_sets" in prompt
     assert "title、message、description" in prompt
+    assert "5 组中默认 2 到 4 组带 emoji" in prompt
+    assert "每组最多 1 个 emoji" in prompt
+    assert "产品品类、使用场景或具体利益点匹配" in prompt
+    assert "english.message 的自然短语前后" in prompt
+    assert "如果会触发 Meta 风险，则不用 emoji" in prompt
     assert "headline" not in prompt
 
 
@@ -1787,6 +1792,14 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert 'id="vcdAllPayloadModal"' in html
     assert 'id="vcdAllPayloadBody"' in html
     assert 'data-all-payload-preview' in html
+    assert '<section class="vcd-top-card vcd-mobile-progress-collapsed" id="vcdTopCard">' in html
+    assert 'data-progress-toggle aria-controls="vcdProgressSteps" aria-expanded="false"' in html
+    assert "展开步骤" in html
+    assert "收起步骤" in html
+    assert ".vcd-progress-toolbar { display:none;" in html
+    assert ".vcd-top-card.vcd-mobile-progress-collapsed .vcd-progress-steps { display:none; }" in html
+    assert "function toggleProgressSteps()" in html
+    assert "progressToggle.setAttribute('aria-expanded', String(!collapsed));" in html
     assert "normalizeCopyTextFields" in html
     assert "formattedCopyText" in html
     assert "`标题: ${en.title}`" in html

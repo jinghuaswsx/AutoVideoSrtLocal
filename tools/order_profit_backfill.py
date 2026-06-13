@@ -46,13 +46,22 @@ from appcore.order_analytics.profit_repository import (
     start_profit_run,
     upsert_profit_line,
 )
+from appcore.order_analytics.shopify_fee_resolver import (
+    _parse_effective_at as _parse_dynamic_fee_effective_at,
+    is_dynamic_fee_effective,
+    resolve_shopify_fee_for_order,
+)
 log = logging.getLogger(__name__)
+
+PURCHASE_SANITY_MAX_REVENUE_RATIO = Decimal("1.0")
 
 
 _LINE_QUERY = (
     "SELECT d.id AS dxm_order_line_id, d.product_id, d.quantity, "
     "       d.line_amount, d.order_amount, d.ship_amount, d.buyer_country, "
     "       d.order_paid_at, d.paid_at, d.meta_business_date, d.dxm_package_id, "
+    "       d.site_code, d.dxm_order_id, d.extended_order_id, d.package_number, "
+    "       d.attribution_time_at, d.order_created_at, "
     "       d.logistic_fee, "
     # 采购价：优先用订单上的 snapshot（订单付款时点冻结的值），
     # 没有就 fallback 到 media_products.purchase_price（当前值）。
@@ -65,6 +74,42 @@ _LINE_QUERY = (
     "WHERE d.meta_business_date BETWEEN %s AND %s "
     "ORDER BY d.id"
 )
+
+
+def _purchase_price_source(line: dict[str, Any], purchase_price: float | None) -> str | None:
+    if purchase_price is None:
+        return None
+    if _safe_positive(line.get("purchase_price_snapshot_cny")) is not None:
+        return "order_snapshot"
+    return "media_product"
+
+
+def _purchase_price_sanity(
+    *,
+    purchase_price_cny: float | None,
+    quantity: int,
+    rmb_per_usd: Decimal,
+    line_revenue_usd: float,
+    source: str | None,
+) -> dict[str, Any] | None:
+    if purchase_price_cny is None or quantity <= 0 or rmb_per_usd <= 0:
+        return None
+    revenue = Decimal(str(line_revenue_usd or 0))
+    if revenue <= 0:
+        return None
+    purchase = Decimal(str(purchase_price_cny)) * Decimal(quantity) / rmb_per_usd
+    max_allowed = revenue * PURCHASE_SANITY_MAX_REVENUE_RATIO
+    if purchase <= max_allowed:
+        return None
+    return {
+        "reason": "purchase_usd_exceeds_line_revenue",
+        "source": source,
+        "purchase_price_cny": float(Decimal(str(purchase_price_cny))),
+        "quantity": int(quantity),
+        "purchase_usd": float(purchase.quantize(Decimal("0.0001"))),
+        "line_revenue_usd": float(revenue.quantize(Decimal("0.0001"))),
+        "max_revenue_ratio": float(PURCHASE_SANITY_MAX_REVENUE_RATIO),
+    }
 
 
 def _iter_months(date_from: date, date_to: date):
@@ -80,25 +125,68 @@ def _iter_months(date_from: date, date_to: date):
         cur = next_first
 
 
-def _compute_order_total_line_amount(lines: list[dict]) -> dict[str, float]:
-    """按 dxm_package_id 聚合每订单的 line_amount 总和（用于运费按比例摊到行）。"""
+def _resolve_package_group_key(line: dict) -> str:
+    site_code = str(line.get("site_code") or "").strip()
+    values = [
+        str(line.get("dxm_package_id") or "").strip(),
+        str(line.get("dxm_order_id") or "").strip(),
+        str(line.get("package_number") or "").strip(),
+    ]
+    if any(values):
+        return "package:" + "|".join([site_code, *values])
+    return f"line:{line.get('dxm_order_line_id')}"
+
+
+def _resolve_shopify_fee_group_key(line: dict) -> str:
+    site_code = str(line.get("site_code") or "").strip()
+    for field in ("extended_order_id", "package_number"):
+        value = str(line.get(field) or "").strip()
+        if value:
+            return f"shopify:{site_code}|{field}:{value}"
+    return _resolve_package_group_key(line)
+
+
+def _shopify_order_names(line: dict) -> list[str | None]:
+    return [line.get("extended_order_id"), line.get("package_number")]
+
+
+def _compute_group_total_line_amount(lines: list[dict], key_func) -> dict[str, float]:
     totals: dict[str, float] = defaultdict(float)
     for line in lines:
-        pkg = line.get("dxm_package_id") or ""
+        order_key = key_func(line)
         amt = line.get("line_amount") or 0
-        totals[pkg] += float(amt)
+        totals[order_key] += float(amt)
     return totals
 
 
-def _compute_order_shipping(lines: list[dict]) -> dict[str, float]:
-    """按 dxm_package_id 取一次 ship_amount（订单级运费，重复行取首个非 None）。"""
+def _compute_order_total_line_amount(lines: list[dict]) -> dict[str, float]:
+    """按包裹级 key 聚合 line_amount 总和（用于运费按比例摊到行）。"""
+    return _compute_group_total_line_amount(lines, _resolve_package_group_key)
+
+
+def _compute_package_shipping(lines: list[dict]) -> dict[str, float]:
+    """按包裹级 key 取一次 ship_amount（订单级运费，重复行取首个非 None）。"""
     shipping: dict[str, float] = {}
     for line in lines:
-        pkg = line.get("dxm_package_id") or ""
-        if pkg in shipping:
+        package_key = _resolve_package_group_key(line)
+        if package_key in shipping:
             continue
         amt = line.get("ship_amount")
-        shipping[pkg] = float(amt) if amt is not None else 0.0
+        shipping[package_key] = float(amt) if amt is not None else 0.0
+    return shipping
+
+
+def _compute_shopify_fee_shipping(lines: list[dict], package_shipping: dict[str, float]) -> dict[str, float]:
+    shipping: dict[str, float] = defaultdict(float)
+    seen: set[tuple[str, str]] = set()
+    for line in lines:
+        fee_key = _resolve_shopify_fee_group_key(line)
+        package_key = _resolve_package_group_key(line)
+        marker = (fee_key, package_key)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        shipping[fee_key] += package_shipping.get(package_key, 0)
     return shipping
 
 
@@ -107,6 +195,23 @@ def _resolve_business_date(line: dict) -> date | None:
     if business_date is None and line.get("order_paid_at"):
         business_date = line["order_paid_at"].date()
     return business_date
+
+
+def _resolve_order_time(line: dict) -> datetime | None:
+    return (
+        line.get("order_paid_at")
+        or line.get("attribution_time_at")
+        or line.get("order_created_at")
+    )
+
+
+def _should_skip_for_dynamic_fee_boundary(line: dict) -> bool:
+    if _parse_dynamic_fee_effective_at() is None:
+        return True
+    order_time = _resolve_order_time(line)
+    if order_time is None:
+        return True
+    return not is_dynamic_fee_effective(order_time)
 
 
 def _process_line(
@@ -119,6 +224,8 @@ def _process_line(
     rmb_per_usd: Decimal,
     return_reserve_rate: Decimal,
     exchange_rate_basis: dict[str, Any] | None = None,
+    shopify_fee_result: dict[str, Any] | None = None,
+    fee_total_revenue_usd: float | None = None,
 ) -> dict:
     """单行核算。返回 calculate_line_profit 结果（含 status, profit_usd 等）。"""
     business_date = _resolve_business_date(line)
@@ -126,8 +233,24 @@ def _process_line(
     line_amount = float(line.get("line_amount") or 0)
     quantity = int(line.get("quantity") or 1)
 
+    shipping_alloc = allocate_shipping_to_line(
+        line_amount=line_amount,
+        order_total_line_amount=order_total_amount,
+        order_shipping_usd=order_shipping,
+    )
+
     # 采购价完备性
     purchase_price = _safe_positive(line.get("purchase_price"))
+    purchase_source = _purchase_price_source(line, purchase_price)
+    purchase_sanity = _purchase_price_sanity(
+        purchase_price_cny=purchase_price,
+        quantity=quantity,
+        rmb_per_usd=rmb_per_usd,
+        line_revenue_usd=line_amount + float(shipping_alloc or 0),
+        source=purchase_source,
+    )
+    if purchase_sanity is not None:
+        purchase_price = None
     missing: list[str] = []
     if purchase_price is None:
         missing.append("purchase_price")
@@ -179,19 +302,28 @@ def _process_line(
     )
 
     # H1 修复用：订单总营收（line_amount 之和 + 订单运费）→ profit_calculation 按订单算 fee 一次再摊回
-    order_total_revenue_usd = float(order_total_amount or 0) + float(order_shipping or 0)
+    if fee_total_revenue_usd is None:
+        order_total_revenue_usd = float(order_total_amount or 0) + float(order_shipping or 0)
+    else:
+        order_total_revenue_usd = float(fee_total_revenue_usd or 0)
 
     line_input = {
         "dxm_order_line_id": line["dxm_order_line_id"],
         "product_id": product_id,
+        "site_code": line.get("site_code"),
+        "extended_order_id": line.get("extended_order_id"),
+        "package_number": line.get("package_number"),
         "buyer_country": line.get("buyer_country"),
         "line_amount_usd": line_amount,
         "quantity": quantity,
         "shipping_allocated_usd": shipping_alloc,
         "order_total_revenue_usd": order_total_revenue_usd,  # H1 修复用
+        "shopify_fee_result": shopify_fee_result,
         "sku_daily_units": sku_units_cache[cache_key],
         "sku_daily_ad_spend_usd": sku_spend_cache[cache_key],
         "product_purchase_price_cny": purchase_price,
+        "purchase_price_source": purchase_source,
+        "purchase_price_sanity": purchase_sanity,
         "shipping_cost_cny": shipping_cost_cny,
         "shipping_cost_source": shipping_cost_source,
         **(exchange_rate_basis or {}),
@@ -232,7 +364,14 @@ def backfill(
     else:
         run_id = None
 
-    totals = {"lines_total": 0, "lines_ok": 0, "lines_incomplete": 0, "lines_error": 0}
+    totals = {
+        "lines_total": 0,
+        "lines_ok": 0,
+        "lines_incomplete": 0,
+        "lines_error": 0,
+        "legacy_fee_boundary_skipped": 0,
+        "shopify_fee_source_counts": {},
+    }
     exchange_rate_stats = {
         "mode": exchange_rate_mode,
         "fallback_lines": 0,
@@ -240,6 +379,8 @@ def backfill(
     }
     sku_units_cache: dict = {}
     sku_spend_cache: dict = {}
+    fee_source_counts: defaultdict[str, int] = defaultdict(int)
+    legacy_skipped_orders: set[str] = set()
     samples: list[dict] = []  # dry_run 用，前 5 行预览
 
     try:
@@ -247,7 +388,10 @@ def backfill(
             log.info("processing month: %s ~ %s", m_start, m_end)
             lines = query(_LINE_QUERY, (m_start, m_end))
             order_totals = _compute_order_total_line_amount(lines)
-            order_shipping = _compute_order_shipping(lines)
+            order_shipping = _compute_package_shipping(lines)
+            fee_totals = _compute_group_total_line_amount(lines, _resolve_shopify_fee_group_key)
+            fee_shipping = _compute_shopify_fee_shipping(lines, order_shipping)
+            fee_result_cache: dict[str, dict[str, Any]] = {}
             if manual_rate is None:
                 business_dates = [
                     d for d in (_resolve_business_date(line) for line in lines)
@@ -261,8 +405,29 @@ def backfill(
                 manual_lookup = exchange_rates.manual_rate_lookup(manual_rate)
 
             for line in lines:
-                pkg = line.get("dxm_package_id") or ""
+                package_key = _resolve_package_group_key(line)
+                fee_key = _resolve_shopify_fee_group_key(line)
                 try:
+                    if _should_skip_for_dynamic_fee_boundary(line):
+                        if fee_key not in legacy_skipped_orders:
+                            legacy_skipped_orders.add(fee_key)
+                            totals["legacy_fee_boundary_skipped"] += 1
+                        continue
+
+                    if fee_key not in fee_result_cache:
+                        fee_result_cache[fee_key] = resolve_shopify_fee_for_order(
+                            amount=(
+                                fee_totals.get(fee_key, 0)
+                                + fee_shipping.get(fee_key, 0)
+                            ),
+                            buyer_country=line.get("buyer_country"),
+                            site_code=line.get("site_code"),
+                            order_names=_shopify_order_names(line),
+                            order_time=_resolve_order_time(line),
+                        )
+                        source = fee_result_cache[fee_key].get("shopify_fee_source") or "unknown"
+                        fee_source_counts[source] += 1
+
                     biz_for_rate = _resolve_business_date(line)
                     if manual_rate is not None:
                         rate_lookup = manual_lookup
@@ -275,13 +440,18 @@ def backfill(
                         exchange_rate_stats["fallback_lines"] += 1
                     result, biz_date = _process_line(
                         line,
-                        order_total_amount=order_totals.get(pkg, 0),
-                        order_shipping=order_shipping.get(pkg, 0),
+                        order_total_amount=order_totals.get(package_key, 0),
+                        order_shipping=order_shipping.get(package_key, 0),
                         sku_units_cache=sku_units_cache,
                         sku_spend_cache=sku_spend_cache,
                         rmb_per_usd=rate_lookup.rate,
                         return_reserve_rate=return_reserve_rate,
                         exchange_rate_basis=rate_lookup.cost_basis(),
+                        shopify_fee_result=fee_result_cache[fee_key],
+                        fee_total_revenue_usd=(
+                            fee_totals.get(fee_key, 0)
+                            + fee_shipping.get(fee_key, 0)
+                        ),
                     )
                     totals["lines_total"] += 1
                     if result["status"] == "ok":
@@ -320,6 +490,7 @@ def backfill(
             d += timedelta(days=1)
         totals["unallocated_ad_spend_usd"] = round(unalloc, 4)
         totals["exchange_rate"] = exchange_rate_stats
+        totals["shopify_fee_source_counts"] = dict(fee_source_counts)
 
         if not dry_run:
             finish_profit_run(

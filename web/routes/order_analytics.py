@@ -188,6 +188,27 @@ def _coerce_business_date(value):
     return None
 
 
+def _append_realtime_quality_warning(data_quality: dict, check: dict) -> None:
+    code = check.get("code")
+    if not code:
+        return
+
+    checks = data_quality.setdefault("checks", [])
+    if not any(existing.get("code") == code for existing in checks if isinstance(existing, dict)):
+        checks.append(check)
+
+    warnings = data_quality.setdefault("warnings", [])
+    if not any(existing.get("code") == code for existing in warnings if isinstance(existing, dict)):
+        warnings.append({
+            "code": code,
+            "status": check.get("status", dq.STATUS_WARNING),
+            "message": check.get("message", code),
+        })
+
+    if data_quality.get("status") == dq.STATUS_OK:
+        data_quality["status"] = dq.STATUS_WARNING
+
+
 def _attach_realtime_data_quality(result):
     """给 ``realtime-overview`` 响应顶层加 ``data_quality``。
 
@@ -243,14 +264,23 @@ def _attach_realtime_data_quality(result):
                     "修复账户 column_preset 后会回到 Meta 真值。"
                 ),
             }
-            result["data_quality"].setdefault("checks", []).append(check)
-            result["data_quality"].setdefault("warnings", []).append({
-                "code": check["code"],
-                "status": check["status"],
-                "message": check["message"],
-            })
-            if result["data_quality"].get("status") == dq.STATUS_OK:
-                result["data_quality"]["status"] = dq.STATUS_WARNING
+            _append_realtime_quality_warning(result["data_quality"], check)
+        order_profit_summary = result.get("order_profit_summary") or {}
+        order_profit_quality = order_profit_summary.get("data_quality") or {}
+        fee_source_counts = order_profit_summary.get("shopify_fee_source_counts") or {}
+        fee_source_amounts = order_profit_summary.get("shopify_fee_source_amounts") or {}
+        for warning in order_profit_quality.get("warnings") or []:
+            if not isinstance(warning, dict):
+                continue
+            check = dict(warning)
+            if check.get("code") == "shopify_fee_strategy_c_fallback_present":
+                check["strategy_c_fallback_order_count"] = int(
+                    fee_source_counts.get("strategy_c_fallback") or 0
+                )
+                check["strategy_c_fallback_amount_usd"] = float(
+                    fee_source_amounts.get("strategy_c_fallback") or 0
+                )
+            _append_realtime_quality_warning(result["data_quality"], check)
         launch_scope = scope.get("product_launch_scope")
         if launch_scope:
             launch_check = {
@@ -264,15 +294,10 @@ def _attach_realtime_data_quality(result):
                 "product_count": scope.get("product_launch_product_count", 0),
             }
             result["data_quality"]["product_launch_scope"] = launch_scope
-            result["data_quality"].setdefault("checks", []).append(launch_check)
             if launch_scope == "unmatched":
-                result["data_quality"].setdefault("warnings", []).append({
-                    "code": launch_check["code"],
-                    "status": launch_check["status"],
-                    "message": launch_check["message"],
-                })
-                if result["data_quality"].get("status") == dq.STATUS_OK:
-                    result["data_quality"]["status"] = dq.STATUS_WARNING
+                _append_realtime_quality_warning(result["data_quality"], launch_check)
+            else:
+                result["data_quality"].setdefault("checks", []).append(launch_check)
     except Exception as exc:  # noqa: BLE001
         log.warning("attach realtime data_quality failed: %s", exc)
         result.setdefault(

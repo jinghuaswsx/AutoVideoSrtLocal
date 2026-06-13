@@ -71,6 +71,19 @@ def test_ad_alert_problem_mobile_table_contract():
     assert ".oc-ad-alert-problem-table .oc-ad-alert-col-hidden" in source
 
 
+def test_ad_alert_filters_and_modals_mobile_contract():
+    template = Path("web/templates/ad_alerts.html")
+    source = template.read_text(encoding="utf-8")
+
+    assert 'class="oc-ad-alert-date-filters"' in source
+    assert "oc-ad-alert-date-input" in source
+    assert ".oc-ad-alert-date-filters {" in source
+    assert ".oc-ad-alert-date-filters .oc-ad-alert-btn" in source
+    assert ".oc-ad-alert-detail-modal" in source
+    assert ".oc-ad-alert-threshold-modal" in source
+    assert "width: calc(100vw - 24px)" in source
+
+
 def test_ad_alert_high_loss_share_public_template_contract():
     template = Path("web/templates/ad_alerts_high_loss_share.html")
     assert template.exists()
