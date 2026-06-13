@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -200,6 +200,194 @@ def save_fee_rate_snapshots(rows: Iterable[Mapping[str, Any]]) -> int:
         if callable(autocommit):
             autocommit(True)
         conn.close()
+
+
+def _normalize_source_csvs(source_csvs: Iterable[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in source_csvs or []:
+        value = str(item or "").strip()
+        if not value or value in seen:
+            continue
+        normalized.append(value)
+        seen.add(value)
+    return normalized
+
+
+def _coerce_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    return date.fromisoformat(text[:10])
+
+
+def _source_csv_filter(source_csvs: list[str]) -> tuple[str, list[Any]]:
+    if not source_csvs:
+        return "", []
+    placeholders = ", ".join(["%s"] * len(source_csvs))
+    return f"AND source_csv IN ({placeholders})", list(source_csvs)
+
+
+def _load_max_transaction_date(source_csvs: Iterable[str] | None = None) -> date | None:
+    source_list = _normalize_source_csvs(source_csvs)
+    source_filter, source_params = _source_csv_filter(source_list)
+    rows = query(
+        f"""
+        SELECT MAX(DATE(transaction_date)) AS max_date
+        FROM shopify_payments_transactions
+        WHERE type = 'charge'
+          {source_filter}
+        """,
+        tuple(source_params),
+    )
+    if not rows:
+        return None
+    return _coerce_date(rows[0].get("max_date"))
+
+
+def _load_window_aggregates(
+    *,
+    window_end_date: date,
+    window_days: int,
+    source_csvs: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
+    source_list = _normalize_source_csvs(source_csvs)
+    source_filter, source_params = _source_csv_filter(source_list)
+    europe_currency_list = ", ".join(
+        f"'{currency}'" for currency in sorted(EUROPE_PRESENTMENT_CURRENCIES)
+    )
+    params: list[Any] = [
+        window_end_date,
+        int(window_days) - 1,
+        window_end_date,
+        *source_params,
+    ]
+    rows = query(
+        f"""
+        SELECT
+            CASE
+                WHEN LOWER(source_csv) LIKE 'newjoyloo__%%' THEN 'newjoy'
+                WHEN LOWER(source_csv) LIKE 'omurio__%%' THEN 'omurio'
+                ELSE 'all'
+            END AS store_code,
+            CASE
+                WHEN UPPER(presentment_currency) = 'USD' THEN 'us'
+                WHEN UPPER(presentment_currency) IN ({europe_currency_list}) THEN 'europe'
+                ELSE 'other'
+            END AS region,
+            COUNT(DISTINCT COALESCE(NULLIF(TRIM(order_name), ''), transaction_id)) AS orders_count,
+            SUM(ABS(amount_usd)) AS amount_usd,
+            SUM(ABS(fee_usd)) AS fee_usd
+        FROM shopify_payments_transactions
+        WHERE type = 'charge'
+          AND DATE(transaction_date) BETWEEN DATE_SUB(%s, INTERVAL %s DAY) AND %s
+          {source_filter}
+        GROUP BY store_code, region
+        """,
+        tuple(params),
+    )
+    return [dict(row) for row in rows]
+
+
+def _add_all_store_aggregates(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    normalized_rows = [dict(row) for row in rows]
+    aggregates: dict[str, dict[str, Any]] = {}
+    for row in normalized_rows:
+        region = str(row.get("region") or "").strip()
+        if not region:
+            continue
+        aggregate = aggregates.setdefault(
+            region,
+            {
+                "store_code": "all",
+                "region": region,
+                "orders_count": 0,
+                "amount_usd": Decimal("0"),
+                "fee_usd": Decimal("0"),
+            },
+        )
+        aggregate["orders_count"] += int(row.get("orders_count") or 0)
+        aggregate["amount_usd"] += _to_decimal(row.get("amount_usd"))
+        aggregate["fee_usd"] += _to_decimal(row.get("fee_usd"))
+
+    store_rows = [
+        row for row in normalized_rows
+        if str(row.get("store_code") or "").strip().lower() != "all"
+    ]
+    all_rows = [
+        {
+            "store_code": "all",
+            "region": row["region"],
+            "orders_count": row["orders_count"],
+            "amount_usd": float(row["amount_usd"]),
+            "fee_usd": float(row["fee_usd"]),
+        }
+        for _region, row in sorted(aggregates.items())
+    ]
+    return store_rows + all_rows
+
+
+def refresh_fee_rate_snapshots(source_csvs: Iterable[str] | None = None) -> dict[str, Any]:
+    source_list = _normalize_source_csvs(source_csvs)
+    window_end_date = _load_max_transaction_date(source_list)
+    if window_end_date is None:
+        return {"saved": 0, "reason": "no_charge_transactions"}
+
+    seven_day_rows = {
+        (row["store_code"], row["region"]): row
+        for row in _add_all_store_aggregates(
+            _load_window_aggregates(
+                window_end_date=window_end_date,
+                window_days=7,
+                source_csvs=source_list,
+            )
+        )
+    }
+    thirty_day_rows = {
+        (row["store_code"], row["region"]): row
+        for row in _add_all_store_aggregates(
+            _load_window_aggregates(
+                window_end_date=window_end_date,
+                window_days=30,
+                source_csvs=source_list,
+            )
+        )
+    }
+
+    snapshot_rows: list[dict[str, Any]] = []
+    for store_code, region in sorted(set(seven_day_rows) | set(thirty_day_rows)):
+        selected = select_snapshot_window(
+            seven_day=seven_day_rows.get((store_code, region), {}),
+            thirty_day=thirty_day_rows.get((store_code, region), {}),
+        )
+        window_days = int(selected["window_days"])
+        snapshot_rows.append(
+            build_snapshot_row(
+                store_code=store_code,
+                region=region,
+                window_start_date=window_end_date - timedelta(days=window_days - 1),
+                window_end_date=window_end_date,
+                window_days=window_days,
+                orders_count=selected.get("orders_count") or 0,
+                amount_usd=selected.get("amount_usd") or 0,
+                fee_usd=selected.get("fee_usd") or 0,
+                source_csvs=source_list,
+                sample_status=selected["sample_status"],
+            )
+        )
+
+    saved = save_fee_rate_snapshots(snapshot_rows)
+    return {
+        "saved": saved,
+        "window_end_date": window_end_date,
+        "source_csvs": source_list,
+    }
 
 
 def _load_snapshot_for_store_region(store_code: str, region: str) -> dict[str, Any] | None:

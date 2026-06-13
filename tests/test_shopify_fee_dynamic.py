@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import appcore.order_analytics.shopify_fee_dynamic as fee_dynamic
 from appcore.order_analytics.shopify_fee_dynamic import (
     SAMPLE_STATUS_INSUFFICIENT,
     SAMPLE_STATUS_OK_30D,
@@ -10,6 +11,7 @@ from appcore.order_analytics.shopify_fee_dynamic import (
     infer_store_code_from_source_csv,
     load_best_fee_rate_snapshot,
     region_for_presentment_currency,
+    refresh_fee_rate_snapshots,
     save_fee_rate_snapshots,
     select_snapshot_window,
 )
@@ -157,6 +159,262 @@ def test_save_fee_rate_snapshots_returns_zero_without_connection(monkeypatch):
     monkeypatch.setattr("appcore.order_analytics.shopify_fee_dynamic.get_conn", fail_get_conn)
 
     assert save_fee_rate_snapshots([]) == 0
+
+
+def test_refresh_fee_rate_snapshots_uses_max_transaction_date_and_7d_window(monkeypatch):
+    saved_rows = []
+    query_calls = []
+
+    def fake_query(sql, params=None):
+        query_calls.append((sql, params))
+        normalized_sql = sql.lower()
+        if "max(date(transaction_date))" in normalized_sql:
+            return [{"max_date": "2026-06-06"}]
+        if "date_sub" in normalized_sql and params[1] == 6:
+            return [
+                {
+                    "store_code": "newjoy",
+                    "region": "europe",
+                    "orders_count": 3290,
+                    "amount_usd": 88165.45,
+                    "fee_usd": 6649.36,
+                }
+            ]
+        if "date_sub" in normalized_sql and params[1] == 29:
+            return [
+                {
+                    "store_code": "newjoy",
+                    "region": "europe",
+                    "orders_count": 9000,
+                    "amount_usd": 240000.0,
+                    "fee_usd": 18000.0,
+                }
+            ]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    def fake_save(rows):
+        saved_rows.extend(rows)
+        return len(rows)
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_dynamic.query", fake_query)
+    monkeypatch.setattr(
+        "appcore.order_analytics.shopify_fee_dynamic.save_fee_rate_snapshots",
+        fake_save,
+    )
+
+    result = refresh_fee_rate_snapshots(source_csvs=["newjoyloo__newjoyloo0606.csv"])
+
+    assert result == {
+        "saved": 2,
+        "window_end_date": date(2026, 6, 6),
+        "source_csvs": ["newjoyloo__newjoyloo0606.csv"],
+    }
+    assert len(saved_rows) == 2
+    rows_by_store = {row["store_code"]: row for row in saved_rows}
+    assert set(rows_by_store) == {"newjoy", "all"}
+    assert rows_by_store["newjoy"]["region"] == "europe"
+    assert rows_by_store["newjoy"]["window_start_date"] == date(2026, 5, 31)
+    assert rows_by_store["newjoy"]["window_end_date"] == date(2026, 6, 6)
+    assert rows_by_store["newjoy"]["window_days"] == 7
+    assert rows_by_store["newjoy"]["orders_count"] == 3290
+    assert rows_by_store["newjoy"]["sample_status"] == SAMPLE_STATUS_OK_7D
+    assert rows_by_store["newjoy"]["source_csvs_json"] == ["newjoyloo__newjoyloo0606.csv"]
+    assert rows_by_store["all"]["region"] == "europe"
+    assert rows_by_store["all"]["orders_count"] == 3290
+    assert rows_by_store["all"]["amount_usd"] == 88165.45
+    assert rows_by_store["all"]["fee_usd"] == 6649.36
+    assert rows_by_store["all"]["sample_status"] == SAMPLE_STATUS_OK_7D
+    assert "source_csv in (%s)" in query_calls[0][0].lower()
+    assert query_calls[0][1] == ("newjoyloo__newjoyloo0606.csv",)
+    assert query_calls[1][1] == (
+        date(2026, 6, 6),
+        6,
+        date(2026, 6, 6),
+        "newjoyloo__newjoyloo0606.csv",
+    )
+
+
+def test_refresh_fee_rate_snapshots_uses_30d_when_7d_is_insufficient(monkeypatch):
+    saved_rows = []
+
+    def fake_query(sql, params=None):
+        normalized_sql = sql.lower()
+        if "max(date(transaction_date))" in normalized_sql:
+            return [{"max_date": date(2026, 6, 6)}]
+        if "date_sub" in normalized_sql and params[1] == 6:
+            return [
+                {
+                    "store_code": "omurio",
+                    "region": "us",
+                    "orders_count": 99,
+                    "amount_usd": 990.0,
+                    "fee_usd": 39.0,
+                }
+            ]
+        if "date_sub" in normalized_sql and params[1] == 29:
+            return [
+                {
+                    "store_code": "omurio",
+                    "region": "us",
+                    "orders_count": 300,
+                    "amount_usd": 3000.0,
+                    "fee_usd": 120.0,
+                }
+            ]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_dynamic.query", fake_query)
+    monkeypatch.setattr(
+        "appcore.order_analytics.shopify_fee_dynamic.save_fee_rate_snapshots",
+        lambda rows: saved_rows.extend(rows) or len(rows),
+    )
+
+    result = refresh_fee_rate_snapshots(source_csvs=["omurio__payments.csv"])
+
+    assert result["saved"] == 2
+    rows_by_store = {row["store_code"]: row for row in saved_rows}
+    assert set(rows_by_store) == {"omurio", "all"}
+    assert rows_by_store["omurio"]["region"] == "us"
+    assert rows_by_store["omurio"]["window_start_date"] == date(2026, 5, 8)
+    assert rows_by_store["omurio"]["window_days"] == 30
+    assert rows_by_store["omurio"]["orders_count"] == 300
+    assert rows_by_store["omurio"]["sample_status"] == SAMPLE_STATUS_OK_30D
+    assert rows_by_store["all"]["orders_count"] == 300
+    assert rows_by_store["all"]["sample_status"] == SAMPLE_STATUS_OK_30D
+
+
+def test_refresh_fee_rate_snapshots_saves_all_store_region_aggregate(monkeypatch):
+    saved_rows = []
+
+    def fake_query(sql, params=None):
+        normalized_sql = sql.lower()
+        if "max(date(transaction_date))" in normalized_sql:
+            return [{"max_date": date(2026, 6, 6)}]
+        if "date_sub" in normalized_sql and params[1] == 6:
+            return [
+                {
+                    "store_code": "newjoy",
+                    "region": "europe",
+                    "orders_count": 70,
+                    "amount_usd": 700.0,
+                    "fee_usd": 35.0,
+                },
+                {
+                    "store_code": "omurio",
+                    "region": "europe",
+                    "orders_count": 50,
+                    "amount_usd": 500.0,
+                    "fee_usd": 25.0,
+                },
+            ]
+        if "date_sub" in normalized_sql and params[1] == 29:
+            return [
+                {
+                    "store_code": "newjoy",
+                    "region": "europe",
+                    "orders_count": 70,
+                    "amount_usd": 700.0,
+                    "fee_usd": 35.0,
+                },
+                {
+                    "store_code": "omurio",
+                    "region": "europe",
+                    "orders_count": 50,
+                    "amount_usd": 500.0,
+                    "fee_usd": 25.0,
+                },
+            ]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_dynamic.query", fake_query)
+    monkeypatch.setattr(
+        "appcore.order_analytics.shopify_fee_dynamic.save_fee_rate_snapshots",
+        lambda rows: saved_rows.extend(rows) or len(rows),
+    )
+
+    result = refresh_fee_rate_snapshots(
+        source_csvs=["newjoyloo__payments.csv", "omurio__payments.csv"]
+    )
+
+    assert result["saved"] == 3
+    rows_by_store = {row["store_code"]: row for row in saved_rows}
+    assert set(rows_by_store) == {"newjoy", "omurio", "all"}
+    assert rows_by_store["newjoy"]["orders_count"] == 70
+    assert rows_by_store["omurio"]["orders_count"] == 50
+    all_row = rows_by_store["all"]
+    assert all_row["region"] == "europe"
+    assert all_row["orders_count"] == 120
+    assert all_row["amount_usd"] == 1200.0
+    assert all_row["fee_usd"] == 60.0
+    assert all_row["window_days"] == 7
+    assert all_row["sample_status"] == SAMPLE_STATUS_OK_7D
+
+
+def test_refresh_fee_rate_snapshots_saves_insufficient_sample(monkeypatch):
+    saved_rows = []
+
+    def fake_query(sql, params=None):
+        normalized_sql = sql.lower()
+        if "max(date(transaction_date))" in normalized_sql:
+            return [{"max_date": date(2026, 6, 6)}]
+        if "date_sub" in normalized_sql and params[1] == 6:
+            return [
+                {
+                    "store_code": "all",
+                    "region": "other",
+                    "orders_count": 40,
+                    "amount_usd": 400.0,
+                    "fee_usd": 28.0,
+                }
+            ]
+        if "date_sub" in normalized_sql and params[1] == 29:
+            return [
+                {
+                    "store_code": "all",
+                    "region": "other",
+                    "orders_count": 299,
+                    "amount_usd": 2990.0,
+                    "fee_usd": 209.3,
+                }
+            ]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_dynamic.query", fake_query)
+    monkeypatch.setattr(
+        "appcore.order_analytics.shopify_fee_dynamic.save_fee_rate_snapshots",
+        lambda rows: saved_rows.extend(rows) or len(rows),
+    )
+
+    result = refresh_fee_rate_snapshots(source_csvs=None)
+
+    assert result["saved"] == 1
+    assert saved_rows[0]["window_days"] == 30
+    assert saved_rows[0]["orders_count"] == 299
+    assert saved_rows[0]["sample_status"] == SAMPLE_STATUS_INSUFFICIENT
+    assert saved_rows[0]["source_csvs_json"] == []
+
+
+def test_load_window_aggregates_counts_blank_order_name_by_transaction_id(monkeypatch):
+    captured = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_dynamic.query", fake_query)
+
+    fee_dynamic._load_window_aggregates(
+        window_end_date=date(2026, 6, 6),
+        window_days=7,
+        source_csvs=["newjoyloo__payments.csv"],
+    )
+
+    normalized_sql = " ".join(captured["sql"].lower().split())
+    assert (
+        "count(distinct coalesce(nullif(trim(order_name), ''), transaction_id)) "
+        "as orders_count"
+    ) in normalized_sql
 
 
 def test_save_fee_rate_snapshots_rolls_back_and_closes_on_insert_error(monkeypatch):
