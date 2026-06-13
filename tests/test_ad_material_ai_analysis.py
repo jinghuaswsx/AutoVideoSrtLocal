@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 from appcore import ad_material_ai_analysis as svc
 
@@ -511,6 +512,70 @@ def test_rank_input_breakeven_missing_yields_null_ratio():
 
     assert payload["effective_breakeven_roas"] is None
     assert payload["roas_vs_breakeven"] is None
+
+
+def test_load_ad_rows_realtime_floor_excludes_daily_covered_days(monkeypatch):
+    calls = []
+
+    def fake_query(sql, args=None):
+        calls.append((sql, args))
+        return []
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+    monkeypatch.setattr(
+        svc.db, "query_one",
+        lambda sql, args=None: {"value": date(2026, 6, 11)},
+    )
+
+    svc._load_ad_rows(date(2026, 5, 14), date(2026, 6, 12))
+
+    realtime_calls = [(sql, args) for sql, args in calls if "realtime" in sql]
+    assert realtime_calls, "realtime 查询应存在"
+    _, args = realtime_calls[0]
+    # realtime 窗口下限 = daily 已覆盖最大业务日 + 1，避免同业务日双计
+    assert date(2026, 6, 12) in tuple(args)
+    assert date(2026, 5, 14) not in tuple(args)
+
+
+def test_load_ad_rows_skips_realtime_when_daily_covers_current_day(monkeypatch):
+    calls = []
+
+    def fake_query(sql, args=None):
+        calls.append((sql, args))
+        return []
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+    monkeypatch.setattr(
+        svc.db, "query_one",
+        lambda sql, args=None: {"value": date(2026, 6, 12)},
+    )
+
+    svc._load_ad_rows(date(2026, 5, 14), date(2026, 6, 12))
+
+    realtime_calls = [(sql, args) for sql, args in calls if "realtime" in sql]
+    assert not realtime_calls, "daily 已覆盖开放业务日时不应再叠加 realtime"
+
+
+def test_material_ad_rows_realtime_floor_uses_product_daily_max(monkeypatch):
+    calls = []
+
+    def fake_query(sql, args=None):
+        calls.append((sql, args))
+        return []
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+    monkeypatch.setattr(
+        svc.db, "query_one",
+        lambda sql, args=None: {"value": date(2026, 6, 10)},
+    )
+
+    svc._load_product_ad_rows_for_materials(5)
+
+    realtime_calls = [(sql, args) for sql, args in calls if "realtime" in sql]
+    assert realtime_calls
+    sql, args = realtime_calls[0]
+    assert "business_date > %s" in sql
+    assert date(2026, 6, 10) in tuple(args)
 
 
 def test_snake_batches_mix_strong_and_weak_candidates():

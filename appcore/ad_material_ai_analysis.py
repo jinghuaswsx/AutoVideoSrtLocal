@@ -496,6 +496,7 @@ def _load_products() -> list[dict]:
 def _load_ad_rows(date_from: date, current_day: date) -> list[dict]:
     rows: list[dict] = []
     daily_to = current_day - timedelta(days=1)
+    daily_max: date | None = None
     if daily_to >= date_from:
         rows.extend(db.query(
             """
@@ -513,6 +514,18 @@ def _load_ad_rows(date_from: date, current_day: date) -> list[dict]:
             """,
             (date_from, daily_to),
         ))
+        daily_max_row = _query_one_safe(
+            "SELECT MAX(DATE(COALESCE(meta_business_date, report_date))) AS value "
+            "FROM meta_ad_daily_campaign_metrics WHERE product_id IS NOT NULL",
+        )
+        daily_max = _to_date((daily_max_row or {}).get("value"))
+
+    # realtime 只允许补 daily 尚未覆盖的业务日，避免同业务日 daily+realtime 双计
+    realtime_from = date_from
+    if daily_max is not None and daily_max + timedelta(days=1) > realtime_from:
+        realtime_from = daily_max + timedelta(days=1)
+    if realtime_from > current_day:
+        return rows
 
     rows.extend(db.query(
         """
@@ -556,7 +569,7 @@ def _load_ad_rows(date_from: date, current_day: date) -> list[dict]:
          )
         GROUP BY p.id, m.business_date
         """,
-        (date_from, current_day),
+        (realtime_from, current_day),
     ))
     return rows
 
@@ -1080,6 +1093,13 @@ def _load_product_ad_rows_for_materials(product_id: int) -> list[dict]:
     )
     for row in rows:
         row["metric_source"] = "daily"
+    # realtime 下限 = 该产品 daily 已覆盖的最大业务日；只补 daily 之后的开放业务日，避免同业务日双计
+    daily_max_row = _query_one_safe(
+        "SELECT MAX(DATE(COALESCE(meta_business_date, report_date))) AS value "
+        "FROM meta_ad_daily_ad_metrics WHERE product_id = %s AND COALESCE(spend_usd, 0) > 0",
+        (product_id,),
+    )
+    daily_floor = _to_date((daily_max_row or {}).get("value")) or date(1970, 1, 1)
     realtime_rows = db.query(
         """
         SELECT
@@ -1099,6 +1119,7 @@ def _load_product_ad_rows_for_materials(product_id: int) -> list[dict]:
               SELECT ad_account_id, MAX(business_date) AS business_date
               FROM meta_ad_realtime_daily_ad_metrics
               WHERE data_completeness = 'realtime_partial'
+                AND business_date > %s
               GROUP BY ad_account_id
             ) latest_day
               ON rt.business_date = latest_day.business_date
@@ -1126,7 +1147,7 @@ def _load_product_ad_rows_for_materials(product_id: int) -> list[dict]:
          )
         ORDER BY m.business_date, m.id
         """,
-        (product_id,),
+        (daily_floor, product_id),
     )
     for row in realtime_rows:
         row["metric_source"] = "realtime"
