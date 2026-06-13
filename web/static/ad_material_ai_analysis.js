@@ -960,7 +960,7 @@
     const rows = plan.map((row) => {
       const material = esc(row.material_name || sourceLabel(row.material_source));
       const entry = (!isPublic && row.entry_url)
-        ? `<a class="aims-plan-entry" href="${esc(row.entry_url)}" target="_blank" rel="noopener">去创建</a>`
+        ? `<a class="aims-plan-entry" href="${esc(row.entry_url)}" target="_blank" rel="noopener noreferrer">去创建</a>`
         : '<span class="aims-plan-entry muted">仅查看</span>';
       return `
         <tr>
