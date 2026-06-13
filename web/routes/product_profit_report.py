@@ -110,6 +110,18 @@ def _extract_allocated_ad_spend(payload: dict) -> float | None:
                     candidates.append(float(value))
                 except (TypeError, ValueError):
                     continue
+    campaigns = payload.get("campaigns")
+    if isinstance(campaigns, list):
+        campaign_total = 0.0
+        for item in campaigns:
+            if not isinstance(item, dict):
+                continue
+            try:
+                campaign_total += float(item.get("spend_usd") or 0)
+            except (TypeError, ValueError):
+                continue
+        if campaign_total > 0:
+            candidates.append(campaign_total)
     return max(candidates) if candidates else None
 
 
@@ -375,6 +387,15 @@ def api_download_xlsx():
         country=country,
         site_code=site_code,
     )
+    if isinstance(report, dict):
+        report["data_quality"] = dq.build_for_product_profit(
+            date_from=date_from,
+            date_to=date_to,
+            allocated_ad_spend_usd=_extract_allocated_ad_spend(report),
+            unallocated_ad_spend_usd=_extract_unallocated_ad_spend(report),
+            country=country,
+            product_id=product_id,
+        )
     xlsx_bytes = ppr.generate_xlsx(report)
 
     code = report["total"].get("product_code") or f"product-{product_id}"
@@ -454,6 +475,7 @@ def api_report_json():
             allocated_ad_spend_usd=_extract_allocated_ad_spend(payload),
             unallocated_ad_spend_usd=_extract_unallocated_ad_spend(payload),
             country=country,
+            product_id=product_id,
         )
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(payload)
@@ -514,6 +536,14 @@ def api_list_xlsx():
 
     country = (request.args.get("country") or "").strip() or None
     report = ppl.generate_list(date_from=date_from, date_to=date_to, country=country)
+    if isinstance(report, dict):
+        report["data_quality"] = dq.build_for_product_profit(
+            date_from=date_from,
+            date_to=date_to,
+            allocated_ad_spend_usd=_extract_allocated_ad_spend(report),
+            unallocated_ad_spend_usd=_extract_unallocated_ad_spend(report),
+            country=country,
+        )
     xlsx_bytes = ppl.generate_list_xlsx(
         report, date_from=date_from, date_to=date_to, country=country,
     )
@@ -616,6 +646,7 @@ def api_ads_json():
             allocated_ad_spend_usd=_extract_allocated_ad_spend(report),
             unallocated_ad_spend_usd=_extract_unallocated_ad_spend(report),
             country=country,
+            product_id=product_id,
         )
     return product_profit_report_flask_response(
         build_product_profit_report_payload_response(report)

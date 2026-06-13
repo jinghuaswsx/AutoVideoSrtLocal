@@ -152,10 +152,9 @@ def api_orders_list():
             "data_quality": dq.build_for_order_profit(
                 date_from=date_from,
                 date_to=date_to,
-                allocated_ad_spend_usd=sum(
-                    float(o.get("ad_cost_total_usd") or 0) for o in orders
-                ),
+                allocated_ad_spend_usd=summary.get("allocated_ad_spend_usd"),
                 unallocated_ad_spend_usd=summary.get("unallocated_ad_spend_usd"),
+                product_id=product_id,
             ),
         })
     )
@@ -174,6 +173,23 @@ def api_order_detail(dxm_package_id):
                 404,
                 dxm_package_id=dxm_package_id,
             )
+        )
+    business_date = detail.get("business_date")
+    if isinstance(business_date, str):
+        try:
+            business_date = date.fromisoformat(business_date[:10])
+        except ValueError:
+            business_date = None
+    if isinstance(business_date, date):
+        summary = get_order_profit_summary_for_window(
+            date_from=business_date,
+            date_to=business_date,
+        )
+        detail["data_quality"] = dq.build_for_order_profit(
+            date_from=business_date,
+            date_to=business_date,
+            allocated_ad_spend_usd=summary.get("allocated_ad_spend_usd"),
+            unallocated_ad_spend_usd=summary.get("unallocated_ad_spend_usd"),
         )
     return order_profit_flask_response(build_order_profit_payload_response(detail))
 
@@ -196,6 +212,10 @@ def api_lines():
         limit=limit,
         offset=offset,
     )
+    summary = get_order_profit_summary_for_window(
+        date_from=date_from,
+        date_to=date_to,
+    )
     return order_profit_flask_response(
         build_order_profit_payload_response(
             {
@@ -205,6 +225,8 @@ def api_lines():
                 "data_quality": dq.build_for_order_profit(
                     date_from=date_from,
                     date_to=date_to,
+                    allocated_ad_spend_usd=summary.get("allocated_ad_spend_usd"),
+                    unallocated_ad_spend_usd=summary.get("unallocated_ad_spend_usd"),
                 ),
             }
         )
@@ -221,13 +243,24 @@ def api_loss_alerts():
     date_to = _parse_date_param("to", today)
     limit = min(int(request.args.get("limit", "50") or 50), 200)
 
+    payload = get_order_profit_loss_alerts(
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+    summary = get_order_profit_summary_for_window(
+        date_from=date_from,
+        date_to=date_to,
+    )
+    payload["data_quality"] = dq.build_for_order_profit(
+        date_from=date_from,
+        date_to=date_to,
+        allocated_ad_spend_usd=summary.get("allocated_ad_spend_usd"),
+        unallocated_ad_spend_usd=summary.get("unallocated_ad_spend_usd"),
+    )
     return order_profit_flask_response(
         build_order_profit_payload_response(
-            get_order_profit_loss_alerts(
-                date_from=date_from,
-                date_to=date_to,
-                limit=limit,
-            )
+            payload
         )
     )
 

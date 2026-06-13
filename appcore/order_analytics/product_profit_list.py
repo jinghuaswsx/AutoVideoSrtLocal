@@ -179,10 +179,12 @@ def _load_ad_spend_and_value(date_from: date, date_to: date, country: str | None
         out[pid_int]["spend"] += Decimal(str(r.get("spend") or 0))
         out[pid_int]["purchase_value"] += Decimal(str(r.get("purchase_value") or 0))
 
-    if open_dates and not is_single_market_country(market_country):
+    if open_dates:
         from .order_profit_aggregation import _load_realtime_ad_snapshot_fallback
         rt = _load_realtime_ad_snapshot_fallback(
-            date_from=min(open_dates), date_to=max(open_dates),
+            date_from=min(open_dates),
+            date_to=max(open_dates),
+            country=market_country,
         )
         for (_business_date, product_id), spend in rt.get("spend_by_product", {}).items():
             pid_int = int(product_id)
@@ -256,8 +258,7 @@ def _load_unallocated_ad_spend(date_from: date, date_to: date, country: str | No
     这部分不属于任何产品行，但属于窗口总利润，必须在 summary 中扣减。
 
     open BJ business day：daily 表跳过该日，改用 realtime fallback 的
-    ``unallocated_spend`` 字段（来自未匹配 product 的 campaign 行）。单国家口径
-    open day 仍返回 0（与 _load_ad_spend 保持口径一致）。
+    ``unallocated_spend`` 字段；单国家口径走 ad 层 realtime country_code。
     """
     from datetime import timedelta
 
@@ -286,11 +287,12 @@ def _load_unallocated_ad_spend(date_from: date, date_to: date, country: str | No
                 or int(units_by_product.get((business_date, int(product_id))) or 0) <= 0
             ):
                 total += spend
-    if open_dates and not is_single_market_country(market_country):
+    if open_dates:
         from .order_profit_aggregation import _load_realtime_ad_snapshot_fallback
 
         rt = _load_realtime_ad_snapshot_fallback(
             date_from=min(open_dates), date_to=max(open_dates),
+            country=market_country,
         )
         total += Decimal(str(rt.get("unallocated_spend") or 0))
     return total
@@ -567,6 +569,42 @@ def generate_list_xlsx(
             ws1.write(idx, 1, val)
     ws1.set_column(0, 0, 20)
     ws1.set_column(1, 1, 32)
+
+    data_quality = report.get("data_quality") if isinstance(report, dict) else None
+    if isinstance(data_quality, dict):
+        wsq = book.add_worksheet("data_quality")
+        wsq.write(0, 0, "字段", fmt_header)
+        wsq.write(0, 1, "值", fmt_header)
+        quality_rows: list[tuple[str, Any]] = [
+            ("状态", data_quality.get("status")),
+            ("来源模式", data_quality.get("source_mode")),
+            ("业务日开始", data_quality.get("business_date_from")),
+            ("业务日结束", data_quality.get("business_date_to")),
+            ("生成时间", data_quality.get("generated_at")),
+        ]
+        checks = data_quality.get("checks")
+        if isinstance(checks, list):
+            for check in checks:
+                if not isinstance(check, dict):
+                    continue
+                prefix = str(check.get("code") or "check")
+                quality_rows.extend([
+                    (f"{prefix}.status", check.get("status")),
+                    (f"{prefix}.expected", check.get("expected")),
+                    (f"{prefix}.actual", check.get("actual")),
+                    (f"{prefix}.diff", check.get("diff")),
+                    (f"{prefix}.allocated_ad_spend_usd", check.get("allocated_ad_spend_usd")),
+                    (f"{prefix}.unallocated_ad_spend_usd", check.get("unallocated_ad_spend_usd")),
+                    (f"{prefix}.message", check.get("message")),
+                ])
+        for row_idx, (label, value) in enumerate(quality_rows, start=1):
+            wsq.write(row_idx, 0, label, fmt_bold)
+            if isinstance(value, (int, float)):
+                wsq.write_number(row_idx, 1, float(value), fmt_money)
+            else:
+                wsq.write(row_idx, 1, "" if value is None else str(value))
+        wsq.set_column(0, 0, 34)
+        wsq.set_column(1, 1, 80)
 
     # Sheet 2: products
     ws2 = book.add_worksheet("products")

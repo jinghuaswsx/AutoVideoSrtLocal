@@ -4832,7 +4832,9 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
 
     orders_by_day = {row["meta_business_date"]: row for row in order_rows}
     ads_by_day = {row["meta_business_date"]: row for row in ad_rows}
-    today_business = current_meta_business_date()
+    from tools.meta_daily_final_sync import completed_meta_business_date
+
+    closed_through = completed_meta_business_date()
     rows: list[dict[str, Any]] = []
     totals = {
         "order_count": 0,
@@ -4850,8 +4852,8 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     while current <= end:
         order = orders_by_day.get(current, {})
         ad = ads_by_day.get(current, {})
-        # 当天行：daily report 还没出，从 Meta 实时抓取表覆盖
-        if current == today_business:
+        # 未日终完成的业务日：daily report 还没出，从 Meta 实时快照覆盖。
+        if current > closed_through:
             realtime = _get_today_realtime_meta_totals(current)
             if realtime:
                 ad = realtime

@@ -75,6 +75,42 @@ def _json_safe(value):
     return value
 
 
+def _coerce_quality_date(value) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _attach_period_data_quality(
+    payload: dict,
+    *,
+    date_from,
+    date_to,
+    allocated_ad_spend_usd: float | None = None,
+    unallocated_ad_spend_usd: float | None = None,
+    country: str | None = None,
+) -> dict:
+    start = _coerce_quality_date(date_from)
+    end = _coerce_quality_date(date_to)
+    if not start or not end:
+        return payload
+    payload["data_quality"] = dq.build_for_product_profit(
+        date_from=start,
+        date_to=end,
+        allocated_ad_spend_usd=allocated_ad_spend_usd,
+        unallocated_ad_spend_usd=unallocated_ad_spend_usd,
+        country=country,
+    )
+    return payload
+
+
 def _parse_positive_int_arg(name: str, default: int, *, max_value: int | None = None) -> int:
     raw = (request.args.get(name) or "").strip()
     if not raw:
@@ -1402,7 +1438,20 @@ def true_roas():
     if not start_date or not end_date:
         return _json_response(error="missing_date", detail="start_date and end_date are required"), 400
     try:
-        return _json_response(_json_safe(oa.get_true_roas_summary(start_date, end_date)))
+        result = oa.get_true_roas_summary(start_date, end_date)
+        summary = result.get("summary") if isinstance(result, dict) else {}
+        if isinstance(result, dict):
+            _attach_period_data_quality(
+                result,
+                date_from=start_date,
+                date_to=end_date,
+                allocated_ad_spend_usd=(
+                    float(summary.get("ad_spend") or 0)
+                    if isinstance(summary, dict) else None
+                ),
+                unallocated_ad_spend_usd=0.0,
+            )
+        return _json_response(_json_safe(result))
     except ValueError as exc:
         return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
@@ -1603,12 +1652,25 @@ def country_dashboard():
     product_code = (request.args.get("product_code") or "").strip() or None
     if start_date or end_date:
         try:
-            return _json_response(_json_safe(oa.get_country_dashboard(
+            result = oa.get_country_dashboard(
                 period="range",
                 start_date=start_date,
                 end_date=end_date,
                 product_code=product_code,
-            )))
+            )
+            summary = result.get("summary") if isinstance(result, dict) else {}
+            if isinstance(result, dict):
+                _attach_period_data_quality(
+                    result,
+                    date_from=(result.get("period") or {}).get("start"),
+                    date_to=(result.get("period") or {}).get("end"),
+                    allocated_ad_spend_usd=(
+                        float(summary.get("total_spend") or 0)
+                        if isinstance(summary, dict) else None
+                    ),
+                    unallocated_ad_spend_usd=0.0,
+                )
+            return _json_response(_json_safe(result))
         except ValueError as exc:
             return _json_response(error="invalid_param", detail=str(exc)), 400
         except Exception as exc:
@@ -1617,14 +1679,27 @@ def country_dashboard():
     if period not in ("day", "week", "month"):
         return _json_response(error="invalid_period", detail="period must be one of day/week/month"), 400
     try:
-        return _json_response(_json_safe(oa.get_country_dashboard(
+        result = oa.get_country_dashboard(
             period=period,
             year=request.args.get("year", type=int),
             month=request.args.get("month", type=int),
             week=request.args.get("week", type=int),
             date_str=request.args.get("date") or None,
             product_code=product_code,
-        )))
+        )
+        summary = result.get("summary") if isinstance(result, dict) else {}
+        if isinstance(result, dict):
+            _attach_period_data_quality(
+                result,
+                date_from=(result.get("period") or {}).get("start"),
+                date_to=(result.get("period") or {}).get("end"),
+                allocated_ad_spend_usd=(
+                    float(summary.get("total_spend") or 0)
+                    if isinstance(summary, dict) else None
+                ),
+                unallocated_ad_spend_usd=0.0,
+            )
+        return _json_response(_json_safe(result))
     except ValueError as exc:
         return _json_response(error="invalid_param", detail=str(exc)), 400
     except Exception as exc:
@@ -1929,6 +2004,19 @@ def dashboard():
         log.exception("dashboard query failed: %s", exc)
         return _json_response(error="internal_error", detail=str(exc)), 500
 
+    summary = data.get("summary") if isinstance(data, dict) else {}
+    total_spend = None
+    if isinstance(summary, dict) and summary.get("total_spend") is not None:
+        total_spend = float(summary.get("total_spend") or 0)
+    if isinstance(data, dict):
+        _attach_period_data_quality(
+            data,
+            date_from=(data.get("period") or {}).get("start"),
+            date_to=(data.get("period") or {}).get("end"),
+            allocated_ad_spend_usd=total_spend,
+            unallocated_ad_spend_usd=0.0 if total_spend is not None else None,
+            country=(request.args.get("country") or "").strip() or None,
+        )
     return _json_response(_json_safe(data))
 
 
