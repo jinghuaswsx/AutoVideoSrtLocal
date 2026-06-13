@@ -17,6 +17,8 @@
 
 这与 `docs/superpowers/specs/2026-04-21-push-english-texts-design.md` 已定义的推送文案合同一致：`title / message / description` 三个字段必须非空。
 
+Emoji 生成规则见 `docs/superpowers/specs/2026-06-13-video-cover-ad-copy-emoji-design.md`；该规则只影响英文文案内容风格，不改变 `ad_copy_sets` 字段合同。
+
 ## 目标
 
 1. 第 3 步输出和保存 5 组 `ad_copy_sets`，每组英文文案字段为 `title / message / description`。
