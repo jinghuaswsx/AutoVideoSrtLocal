@@ -1792,6 +1792,14 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert 'id="vcdAllPayloadModal"' in html
     assert 'id="vcdAllPayloadBody"' in html
     assert 'data-all-payload-preview' in html
+    assert '<section class="vcd-top-card vcd-mobile-progress-collapsed" id="vcdTopCard">' in html
+    assert 'data-progress-toggle aria-controls="vcdProgressSteps" aria-expanded="false"' in html
+    assert "展开步骤" in html
+    assert "收起步骤" in html
+    assert ".vcd-progress-toolbar { display:none;" in html
+    assert ".vcd-top-card.vcd-mobile-progress-collapsed .vcd-progress-steps { display:none; }" in html
+    assert "function toggleProgressSteps()" in html
+    assert "progressToggle.setAttribute('aria-expanded', String(!collapsed));" in html
     assert "normalizeCopyTextFields" in html
     assert "formattedCopyText" in html
     assert "`标题: ${en.title}`" in html
