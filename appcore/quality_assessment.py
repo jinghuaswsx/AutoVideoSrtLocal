@@ -330,6 +330,67 @@ def decorate_project_rows_with_latest_assessments(
     return rows
 
 
+def summarize_recent(
+    days: int = 30,
+    *,
+    query_func=db_query,
+) -> list[dict]:
+    try:
+        days_int = int(days)
+    except (TypeError, ValueError):
+        days_int = 30
+    days_int = max(1, min(days_int, 365))
+
+    rows = query_func(
+        "SELECT a.project_type, a.translation_score, a.tts_score, "
+        "       a.translation_dimensions, "
+        "       COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.target_lang')), 'null'), '') "
+        "         AS target_lang "
+        "FROM translation_quality_assessments a "
+        "LEFT JOIN projects p ON p.id = a.task_id "
+        "WHERE a.status='done' "
+        "  AND a.completed_at >= DATE_SUB(NOW(), INTERVAL %s DAY)",
+        (days_int,),
+    )
+
+    groups: dict[tuple[str, str], dict] = {}
+    for row in rows or []:
+        project_type = str(row.get("project_type") or "unknown").strip() or "unknown"
+        target_lang = str(row.get("target_lang") or "unknown").strip() or "unknown"
+        key = (project_type, target_lang)
+        item = groups.setdefault(
+            key,
+            {
+                "project_type": project_type,
+                "target_lang": target_lang,
+                "n": 0,
+                "_translation_total": 0,
+                "_tts_total": 0,
+                "red_count": 0,
+            },
+        )
+        item["n"] += 1
+        item["_translation_total"] += _coerce_int(row.get("translation_score")) or 0
+        item["_tts_total"] += _coerce_int(row.get("tts_score")) or 0
+        if is_red_assessment(row):
+            item["red_count"] += 1
+
+    result: list[dict] = []
+    for item in groups.values():
+        n = item["n"] or 1
+        result.append({
+            "project_type": item["project_type"],
+            "target_lang": item["target_lang"],
+            "n": item["n"],
+            "avg_translation": round(item["_translation_total"] / n, 1),
+            "avg_tts": round(item["_tts_total"] / n, 1),
+            "red_count": item["red_count"],
+            "red_rate": round(item["red_count"] * 100 / n, 1),
+        })
+    result.sort(key=lambda item: (-int(item["n"]), item["project_type"], item["target_lang"]))
+    return result
+
+
 def _next_run_id(task_id: str) -> int:
     row = db_query_one(
         "SELECT MAX(run_id) AS max_run FROM translation_quality_assessments WHERE task_id=%s",
