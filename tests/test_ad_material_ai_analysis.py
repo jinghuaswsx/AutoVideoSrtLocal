@@ -546,6 +546,90 @@ def _plan_result(rank_no, product_id, code, priority, country_reviews, country_s
     }
 
 
+def test_public_payload_whitelist_strips_sensitive_fields():
+    project = {
+        "id": 7,
+        "project_name": "shared",
+        "status": "success",
+        "started_at": "2026-06-12 10:00:00",
+        "finished_at": "2026-06-12 11:00:00",
+        "user_id": 1,
+        "error_message": "internal trace",
+        "data_snapshot": {"products": [{"product_id": 1, "profit_30d": 999}]},
+        "ranking_prompt": {"prompt": "internal ranking prompt"},
+        "ranking_result": {"batch_results": [{"prompt": "60 products data", "input": {"x": 1}}]},
+        "summary": {
+            "top_product_count": 1,
+            "priority_counts": {"P0": 1},
+            "supplement_plan": [{
+                "product_code": "demo-rjc", "country_code": "DE", "action": "supplement",
+                "material_source": "mingkong", "material_name": "v", "reason": "补 DE",
+                "priority": "P1", "country_quality_score": 70,
+                "entry_url": "/medias/product/video_workbench/1?target_lang=de",
+                "entry_type": "create_translation_task",
+            }],
+        },
+        "products": [{
+            "rank_no": 1,
+            "product_code": "demo-rjc",
+            "product_name": "Demo",
+            "metrics": {"spend_30d": 500, "orders_30d": 40, "true_roas_30d": 2.0,
+                        "profit_30d": 1234, "revenue_30d": 5678, "effective_breakeven_roas": 1.6},
+            "country_summary": [{"country_code": "DE", "ad_spend_usd": 100, "ad_roas": 2.0,
+                                 "blocking_task": {"task_id": 44, "status_label": "进行中",
+                                                   "task_url": "/tasks/detail/44"}}],
+            "local_materials": [{"id": 1, "lang": "en", "display_name": "src",
+                                 "object_key": "tasks/12/medias/test.mp4", "push_count": 3}],
+            "mingkong_materials": [{"material_key": "MK-1", "video_name": "demo.mp4",
+                                    "video_path": "p/demo.mp4",
+                                    "video_url": "/medias/api/mk-video?path=p/demo.mp4",
+                                    "cumulative_90_spend": 5000}],
+            "ai_result": {
+                "priority": "P1", "primary_action": "same_country_new_material",
+                "overall_judgement": "judgement",
+                "material_review_input": {"product_brief": {"data": {"matrix": {"base_roas": 1.6}}}},
+                "material_review_prompt_debug": {"prompt": "FULL PROMPT", "response_text": "raw"},
+                "material_review_result": {"final_decision": "条件通过", "quality_score": 70},
+                "country_actions": [{"country_code": "DE", "action": "scale", "reason": "ok"}],
+            },
+            "country_reviews": {"DE": {"final_decision": "通过", "quality_score": 75,
+                                       "usage_log_id": 999, "recommended_action": {"action": "supplement"}}},
+            "action_items": [{"type": "supplement_workbench", "label": "素材工作台",
+                              "url": "/medias/product/video_workbench/1", "method": "POST",
+                              "payload": {"secret": 1}}],
+        }],
+    }
+
+    payload = svc.build_public_project_payload(project, "share_token_demo")
+    text = json.dumps(payload, ensure_ascii=False)
+
+    # 1. 内部报文/快照/排名细节绝不出现
+    assert "material_review_prompt_debug" not in text
+    assert "material_review_input" not in text
+    assert "ranking_result" not in text
+    assert "data_snapshot" not in text
+    assert "FULL PROMPT" not in text
+    assert "60 products data" not in text
+    # 2. 成本/利润/保本线不暴露
+    assert "profit_30d" not in text
+    assert "revenue_30d" not in text
+    assert "base_roas" not in text
+    assert "effective_breakeven_roas" not in text
+    assert "internal trace" not in text
+    # 3. 保留展示必需内容
+    assert payload["public"] is True
+    assert payload["products"][0]["metrics"]["true_roas_30d"] == 2.0
+    assert payload["products"][0]["ai_result"]["material_review_result"]["final_decision"] == "条件通过"
+    assert payload["summary"]["supplement_plan"][0]["product_code"] == "demo-rjc"
+    # 4. supplement_plan 去掉内部入口
+    assert "entry_url" not in payload["summary"]["supplement_plan"][0]
+    # 5. 视频链接：明空带 token，本地转公开格式
+    assert "share_token=share_token_demo" in payload["products"][0]["mingkong_materials"][0]["video_url"]
+    assert payload["products"][0]["local_materials"][0]["video_url"] == "/medias/obj/tasks/12/medias/test.mp4"
+    # 6. blocking_task 去掉内部跳转
+    assert "task_url" not in payload["products"][0]["country_summary"][0]["blocking_task"]
+
+
 def test_resume_checkpoint_state_detects_stale_and_interrupted():
     from datetime import datetime, timedelta
 

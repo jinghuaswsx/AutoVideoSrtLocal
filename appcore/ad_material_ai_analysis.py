@@ -3702,6 +3702,193 @@ def get_project_by_share_token(share_token: str) -> dict | None:
     return project
 
 
+# 公开分享只透出展示必需字段（白名单）；任何成本/利润/保本线/原始报文/排名细节都不出现。
+_PUBLIC_METRIC_KEYS = (
+    "spend_today", "spend_yesterday", "spend_7d", "spend_30d",
+    "orders_today", "orders_yesterday", "orders_7d", "orders_30d",
+    "true_roas_30d", "meta_roas_30d", "ad_count_30d", "results_30d",
+    "local_material_count",
+)
+_PUBLIC_COUNTRY_KEYS = (
+    "country_code", "country_name", "lang", "lang_name", "tier",
+    "item_count", "pushed_video_count", "ad_spend_usd", "ad_roas",
+    "active_7d_ad_spend_usd", "delivery_status",
+)
+_PUBLIC_AI_RESULT_KEYS = (
+    "overall_judgement", "priority", "primary_action", "next_check",
+    "material_review_result", "task_summary",
+)
+_PUBLIC_REVIEW_KEYS = (
+    "country_code", "final_decision", "quality_score",
+    "score_breakdown", "analysis_reason", "recommended_action", "mode",
+)
+_PUBLIC_MK_KEYS = (
+    "material_key", "video_name", "cover_url", "cumulative_90_spend",
+    "video_ads_count", "yesterday_spend_delta", "video_duration_seconds",
+    "top100_display_position",
+)
+_PUBLIC_PLAN_KEYS = (
+    "rank_no", "product_id", "product_code", "product_name", "priority",
+    "country_code", "country_name", "lang", "action", "action_label",
+    "country_quality_score", "decision", "reason", "material_source",
+    "material_name",
+)
+_PUBLIC_EXPANSION_KEYS = (
+    "type", "source_countries", "target_countries", "blocked_countries",
+    "priority", "reason",
+)
+
+
+def _public_blocking_task(task: Any) -> dict | None:
+    if not isinstance(task, Mapping):
+        return None
+    return {
+        "task_id": _safe_int(task.get("task_id")),
+        "status_label": task.get("status_label") or "",
+        "status_group": task.get("status_group") or "",
+    }
+
+
+def _public_country_action(action: Mapping[str, Any]) -> dict:
+    out = {
+        "country_code": action.get("country_code") or "",
+        "lang": action.get("lang") or "",
+        "action": action.get("action") or "",
+        "reason": action.get("reason") or "",
+        "duplicate_suppressed": bool(action.get("duplicate_suppressed")),
+    }
+    existing = action.get("existing_task")
+    if isinstance(existing, Mapping):
+        out["existing_task"] = {
+            "task_id": _safe_int(existing.get("task_id")),
+            "status_label": existing.get("status_label") or "",
+        }
+    return out
+
+
+def _public_ai_result(ai_result: Mapping[str, Any]) -> dict:
+    out = {key: ai_result.get(key) for key in _PUBLIC_AI_RESULT_KEYS if key in ai_result}
+    review = ai_result.get("material_review_result")
+    if isinstance(review, Mapping):
+        out["material_review_result"] = {
+            "final_decision": review.get("final_decision") or "",
+            "quality_score": review.get("quality_score"),
+            "reviewed_material_key": review.get("reviewed_material_key") or "",
+            "score_breakdown": review.get("score_breakdown") or {},
+            "analysis_reason": review.get("analysis_reason") or {},
+            "material_plan": review.get("material_plan") or {},
+        }
+    out["country_actions"] = [
+        _public_country_action(a) for a in ai_result.get("country_actions") or []
+        if isinstance(a, Mapping)
+    ]
+    return out
+
+
+def _public_product(product: Mapping[str, Any], share_token: str) -> dict:
+    metrics = product.get("metrics") or {}
+    countries = []
+    for country in product.get("country_summary") or []:
+        if not isinstance(country, Mapping):
+            continue
+        item = {key: country.get(key) for key in _PUBLIC_COUNTRY_KEYS if key in country}
+        blocking = _public_blocking_task(country.get("blocking_task"))
+        if blocking:
+            item["blocking_task"] = blocking
+        countries.append(item)
+    local_materials = []
+    for lm in product.get("local_materials") or []:
+        if not isinstance(lm, Mapping):
+            continue
+        object_key = str(lm.get("object_key") or "")
+        local_materials.append({
+            "id": lm.get("id"),
+            "lang": lm.get("lang") or "",
+            "display_name": lm.get("display_name") or lm.get("filename") or "",
+            "duration_seconds": lm.get("duration_seconds"),
+            "push_count": _safe_int(lm.get("push_count")),
+            "video_url": f"/medias/obj/{object_key}" if object_key else "",
+        })
+    mk_materials = []
+    for mk in product.get("mingkong_materials") or []:
+        if not isinstance(mk, Mapping):
+            continue
+        item = {key: mk.get(key) for key in _PUBLIC_MK_KEYS if key in mk}
+        orig_video_url = str(mk.get("video_url") or "")
+        if orig_video_url:
+            sep = "&" if "?" in orig_video_url else "?"
+            item["video_url"] = f"{orig_video_url}{sep}share_token={share_token}"
+        mk_materials.append(item)
+    country_reviews = {}
+    for cc, review in (product.get("country_reviews") or {}).items():
+        if isinstance(review, Mapping):
+            country_reviews[cc] = {key: review.get(key) for key in _PUBLIC_REVIEW_KEYS if key in review}
+    market_expansion = [
+        {key: rec.get(key) for key in _PUBLIC_EXPANSION_KEYS if key in rec}
+        for rec in product.get("market_expansion") or []
+        if isinstance(rec, Mapping)
+    ]
+    # 公开页只做文本展示：保留动作类型与文案，剥掉 url / method / payload / task_url 等可执行入口
+    action_items = [
+        {"type": a.get("type") or "", "label": a.get("label") or ""}
+        for a in product.get("action_items") or []
+        if isinstance(a, Mapping)
+    ]
+    return {
+        "rank_no": _safe_int(product.get("rank_no")),
+        "product_code": product.get("product_code") or "",
+        "product_name": product.get("product_name") or "",
+        "metrics": {key: metrics.get(key) for key in _PUBLIC_METRIC_KEYS if key in metrics},
+        "country_summary": countries,
+        "local_materials": local_materials,
+        "mingkong_materials": mk_materials,
+        "ai_result": _public_ai_result(product.get("ai_result") or {}),
+        "country_reviews": country_reviews,
+        "market_expansion": market_expansion,
+        "action_items": action_items,
+    }
+
+
+def build_public_project_payload(project: Mapping[str, Any], share_token: str) -> dict:
+    """把项目报告收敛成可安全公开的白名单 payload（黑名单删字段不可靠，改为只挑安全字段）。"""
+    summary = project.get("summary") or {}
+    public_summary = {
+        "top_product_count": summary.get("top_product_count"),
+        "priority_counts": summary.get("priority_counts") or {},
+        "action_counts": summary.get("action_counts") or {},
+        "data_window": summary.get("data_window") or {},
+        "data_quality": summary.get("data_quality") or {},
+        "ranking_mode": summary.get("ranking_mode") or "",
+        "supplement_plan_total": summary.get("supplement_plan_total"),
+        "supplement_plan_country_counts": summary.get("supplement_plan_country_counts") or {},
+        "supplement_plan": [
+            {key: row.get(key) for key in _PUBLIC_PLAN_KEYS if key in row}
+            for row in summary.get("supplement_plan") or []
+            if isinstance(row, Mapping)
+        ],
+    }
+    progress = project.get("progress") or {}
+    public_progress = {
+        "percent": progress.get("percent"),
+        "current_step_label": progress.get("current_step_label") or "",
+        "message": progress.get("message") or "",
+    }
+    return {
+        "public": True,
+        "id": _safe_int(project.get("id")),
+        "project_name": project.get("project_name") or "",
+        "status": project.get("status") or "success",
+        "started_at": project.get("started_at"),
+        "finished_at": project.get("finished_at"),
+        "summary": public_summary,
+        "progress": public_progress,
+        "products": [
+            _public_product(p, share_token) for p in project.get("products") or []
+            if isinstance(p, Mapping)
+        ],
+    }
+
+
 def _serialize_project_row(row: Mapping[str, Any], *, include_products: bool) -> dict:
     status = row.get("status") or "running"
     progress = _json_loads(row.get("progress_json"), {}) or {}
