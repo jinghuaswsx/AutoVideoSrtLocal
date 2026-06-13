@@ -668,7 +668,7 @@ git commit -m "feat: add dynamic shopify fee snapshots" -m "Docs-anchor: docs/su
 - Create: `appcore/order_analytics/shopify_fee_resolver.py`
 - Modify: `tests/test_shopify_fee_dynamic.py`
 
-- [ ] **Step 3.1: Add resolver tests for priority and effective boundary**
+- [x] **Step 3.1: Add resolver tests for priority and effective boundary**
 
 Append to `tests/test_shopify_fee_dynamic.py`:
 
@@ -785,7 +785,7 @@ def test_resolver_falls_back_to_strategy_c(monkeypatch):
     assert result["shopify_fee_basis"]["fallback_reason"] == "no_actual_payment_or_dynamic_snapshot"
 ```
 
-- [ ] **Step 3.2: Run resolver tests and confirm failure**
+- [x] **Step 3.2: Run resolver tests and confirm failure**
 
 Run:
 
@@ -795,7 +795,7 @@ pytest tests/test_shopify_fee_dynamic.py -q
 
 Expected: FAIL with `ModuleNotFoundError` for `appcore.order_analytics.shopify_fee_resolver`.
 
-- [ ] **Step 3.3: Implement resolver**
+- [x] **Step 3.3: Implement resolver**
 
 Create `appcore/order_analytics/shopify_fee_resolver.py`:
 
@@ -1000,7 +1000,7 @@ def resolve_shopify_fee_for_order(
     )
 ```
 
-- [ ] **Step 3.4: Add Config attribute**
+- [x] **Step 3.4: Add Config attribute**
 
 Modify `config.py` inside `class Config`:
 
@@ -1008,7 +1008,7 @@ Modify `config.py` inside `class Config`:
     SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT = os.getenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "")
 ```
 
-- [ ] **Step 3.5: Run resolver tests**
+- [x] **Step 3.5: Run resolver tests**
 
 Run:
 
@@ -1018,7 +1018,7 @@ pytest tests/test_shopify_fee_dynamic.py -q
 
 Expected: PASS.
 
-- [ ] **Step 3.6: Commit**
+- [x] **Step 3.6: Commit**
 
 ```bash
 git add appcore/order_analytics/shopify_fee_resolver.py appcore/order_analytics/shopify_fee_dynamic.py tests/test_shopify_fee_dynamic.py config.py
