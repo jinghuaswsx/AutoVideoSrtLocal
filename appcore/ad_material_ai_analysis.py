@@ -2621,6 +2621,123 @@ def _build_action_items(
     return actions
 
 
+_SUPPLEMENT_ACTIONS = {"expand", "supplement", "retest"}
+_ACTION_LABELS = {"expand": "扩展国家", "supplement": "补新素材", "retest": "二次验证"}
+_PRIORITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+
+
+def _build_supplement_plan(
+    results: list[dict],
+    *,
+    limit_per_product: int = 3,
+    limit_total: int = 40,
+) -> list[dict]:
+    """把逐产品逐国评审收敛成一张可执行的「素材补充计划」。
+
+    这是运营每天真正要的东西：哪个产品、补哪个国家、用哪条素材、从哪进去做。
+    只收录评审通过/条件通过、且该国没有阻塞任务的行；按 P0→P3、再按国家评分排序。
+    """
+    rows: list[dict] = []
+    for item in results:
+        product = item.get("product") or {}
+        pid = _safe_int(product.get("product_id"))
+        code = str(product.get("product_code") or "")
+        name = str(product.get("product_name") or "")
+        priority = str((item.get("ai_result") or {}).get("priority") or "P3")
+        country_reviews = item.get("country_reviews") or {}
+        country_summary = item.get("country_summary") or []
+        summary_by_code = {
+            _normalize_country_code(c.get("country_code"), lang=c.get("lang")): c
+            for c in country_summary
+        }
+        mk_materials = item.get("mingkong_materials") or []
+        local_materials = item.get("local_materials") or []
+        rejected_keys = {
+            str(a.get("material_key") or "")
+            for a in (item.get("ai_result") or {}).get("material_actions") or []
+            if a.get("candidate_rejected")
+        }
+
+        product_rows: list[dict] = []
+        for cc, review in country_reviews.items():
+            if not isinstance(review, Mapping):
+                continue
+            action = str((review.get("recommended_action") or {}).get("action") or "")
+            decision = str(review.get("final_decision") or "")
+            if action not in _SUPPLEMENT_ACTIONS or decision == "不通过":
+                continue
+            summary = summary_by_code.get(cc) or {}
+            if _task_blocks_recommendation(summary.get("blocking_task")):
+                continue
+            target = _TARGET_BY_COUNTRY.get(cc) or {}
+            lang = str(summary.get("lang") or target.get("lang") or "").lower()
+            cancelled = summary.get("cancelled_task") or {}
+
+            source, material_key, material_name, video_path = _pick_plan_material(
+                action, mk_materials, local_materials, rejected_keys,
+            )
+            entry_url = (
+                f"/medias/product/video_workbench/{pid}?target_lang={quote(lang)}" if lang else ""
+            )
+            product_rows.append({
+                "rank_no": _safe_int(item.get("rank_no")),
+                "product_id": pid,
+                "product_code": code,
+                "product_name": name,
+                "priority": priority,
+                "country_code": cc,
+                "country_name": target.get("country_name") or cc,
+                "lang": lang,
+                "action": action,
+                "action_label": _ACTION_LABELS.get(action, action),
+                "country_quality_score": _safe_int(review.get("quality_score")),
+                "decision": decision,
+                "reason": str((review.get("recommended_action") or {}).get("reason") or ""),
+                "material_source": source,
+                "material_key": material_key,
+                "material_name": material_name,
+                "video_path": video_path,
+                "cancelled_task_id": _safe_int(cancelled.get("task_id")) or None,
+                "entry_type": "create_translation_task" if lang else "",
+                "entry_url": entry_url,
+            })
+
+        product_rows.sort(key=lambda r: -r["country_quality_score"])
+        rows.extend(product_rows[:limit_per_product])
+
+    rows.sort(key=lambda r: (_PRIORITY_RANK.get(r["priority"], 9), -r["country_quality_score"]))
+    return rows[:limit_total]
+
+
+def _pick_plan_material(
+    action: str,
+    mk_materials: list[dict],
+    local_materials: list[dict],
+    rejected_keys: set[str],
+) -> tuple[str, str, str, str]:
+    """为一条补素材计划挑素材来源：supplement 用明空候选，扩国/重试用已验证的本地 EN 素材。"""
+    if action == "supplement":
+        for mk in mk_materials:
+            key = str(mk.get("material_key") or "")
+            if key and key in rejected_keys:
+                continue
+            return "mingkong", key, str(mk.get("video_name") or ""), str(mk.get("video_path") or "")
+    else:  # expand / retest：优先搬运推送次数最高的英语源素材
+        en_local = sorted(
+            [m for m in local_materials if str(m.get("lang") or "").lower() == "en"],
+            key=lambda m: -_safe_int(m.get("push_count")),
+        )
+        if en_local:
+            top = en_local[0]
+            return "local", str(top.get("id") or ""), str(top.get("display_name") or top.get("filename") or ""), ""
+        for mk in mk_materials:
+            key = str(mk.get("material_key") or "")
+            if key and key in rejected_keys:
+                continue
+            return "mingkong", key, str(mk.get("video_name") or ""), str(mk.get("video_path") or "")
+    return "new", "", "", ""
+
+
 def _summarize_project(products: list[dict], ranking: dict, snapshot: dict) -> dict:
     priority_counts: dict[str, int] = defaultdict(int)
     action_counts: dict[str, int] = defaultdict(int)
@@ -2628,6 +2745,10 @@ def _summarize_project(products: list[dict], ranking: dict, snapshot: dict) -> d
         ai = item.get("ai_result") or {}
         priority_counts[str(ai.get("priority") or "P3")] += 1
         action_counts[str(ai.get("primary_action") or "investigate")] += 1
+    supplement_plan = _build_supplement_plan(products)
+    plan_country_counts: dict[str, int] = defaultdict(int)
+    for row in supplement_plan:
+        plan_country_counts[row["country_code"]] += 1
     return {
         "top_product_count": len(products),
         "priority_counts": dict(priority_counts),
@@ -2635,6 +2756,9 @@ def _summarize_project(products: list[dict], ranking: dict, snapshot: dict) -> d
         "data_window": snapshot.get("window") or {},
         "data_quality": snapshot.get("data_quality") or {},
         "ranking_mode": (ranking.get("ranking_result") or {}).get("mode") or "unknown",
+        "supplement_plan": supplement_plan,
+        "supplement_plan_total": len(supplement_plan),
+        "supplement_plan_country_counts": dict(plan_country_counts),
     }
 
 

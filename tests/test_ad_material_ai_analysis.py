@@ -533,6 +533,90 @@ def _country_summary(country_code, lang, **overrides):
     return base
 
 
+def _plan_result(rank_no, product_id, code, priority, country_reviews, country_summary,
+                 mingkong=None, local=None, material_actions=None):
+    return {
+        "rank_no": rank_no,
+        "product": {"product_id": product_id, "product_code": code, "product_name": code},
+        "country_summary": country_summary,
+        "local_materials": local or [],
+        "mingkong_materials": mingkong or [],
+        "country_reviews": country_reviews,
+        "ai_result": {"priority": priority, "material_actions": material_actions or []},
+    }
+
+
+def test_build_supplement_plan_orders_and_picks_materials():
+    # 产品 A: P1, DE supplement(70) + IT expand(60); 产品 B: P0, FR supplement(85)
+    product_a = _plan_result(
+        rank_no=2, product_id=100, code="aaa-rjc", priority="P1",
+        country_reviews={
+            "DE": {"final_decision": "通过", "quality_score": 70,
+                   "recommended_action": {"action": "supplement", "reason": "DE 可补素材"}},
+            "IT": {"final_decision": "条件通过", "quality_score": 60,
+                   "recommended_action": {"action": "expand", "reason": "IT 可扩展"}},
+        },
+        country_summary=[
+            {"country_code": "DE", "lang": "de", "blocking_task": None},
+            {"country_code": "IT", "lang": "it", "blocking_task": None},
+        ],
+        mingkong=[{"material_key": "MK-9", "video_name": "winner", "video_path": "p/w.mp4"}],
+        local=[{"id": 1, "lang": "en", "display_name": "en-src", "push_count": 5, "object_key": "k1"}],
+    )
+    product_b = _plan_result(
+        rank_no=1, product_id=200, code="bbb-rjc", priority="P0",
+        country_reviews={
+            "FR": {"final_decision": "通过", "quality_score": 85,
+                   "recommended_action": {"action": "supplement", "reason": "FR 强"}},
+        },
+        country_summary=[{"country_code": "FR", "lang": "fr", "blocking_task": None}],
+        mingkong=[{"material_key": "MK-1", "video_name": "fr-cand", "video_path": "p/f.mp4"}],
+    )
+
+    plan = svc._build_supplement_plan([product_a, product_b])
+
+    # P0 在最前
+    assert plan[0]["product_id"] == 200
+    assert plan[0]["country_code"] == "FR"
+    # supplement 取明空候选
+    assert plan[0]["material_source"] == "mingkong"
+    assert plan[0]["material_key"] == "MK-1"
+    # 产品 A 内部按国家评分降序：DE(70) 在 IT(60) 前
+    a_rows = [r for r in plan if r["product_id"] == 100]
+    assert [r["country_code"] for r in a_rows] == ["DE", "IT"]
+    # expand 取本地 en 素材
+    it_row = next(r for r in a_rows if r["country_code"] == "IT")
+    assert it_row["material_source"] == "local"
+    assert it_row["entry_url"].endswith("target_lang=it")
+
+
+def test_build_supplement_plan_skips_blocked_and_rejected_and_failed():
+    product = _plan_result(
+        rank_no=1, product_id=300, code="ccc-rjc", priority="P1",
+        country_reviews={
+            "DE": {"final_decision": "通过", "quality_score": 75,
+                   "recommended_action": {"action": "supplement", "reason": "x"}},
+            "FR": {"final_decision": "不通过", "quality_score": 30,
+                   "recommended_action": {"action": "supplement", "reason": "x"}},
+            "IT": {"final_decision": "通过", "quality_score": 70,
+                   "recommended_action": {"action": "expand", "reason": "x"}},
+        },
+        country_summary=[
+            {"country_code": "DE", "lang": "de",
+             "blocking_task": {"task_id": 9, "status_group": "in_progress", "status_label": "进行中"}},
+            {"country_code": "FR", "lang": "fr", "blocking_task": None},
+            {"country_code": "IT", "lang": "it", "blocking_task": None},
+        ],
+        mingkong=[{"material_key": "MK-2", "video_name": "v", "video_path": "p/v.mp4"}],
+    )
+
+    plan = svc._build_supplement_plan([product])
+    codes = {r["country_code"] for r in plan}
+    assert "DE" not in codes, "有阻塞任务的国家应跳过"
+    assert "FR" not in codes, "评审不通过的国家应跳过"
+    assert "IT" in codes, "通过且无任务的国家应保留"
+
+
 def test_market_expansion_excludes_blocked_countries():
     product = _row(product_id=30, spend_30d=500, orders_30d=50, revenue_30d=1200, purchase_value_30d=1000)
     product["effective_breakeven_roas"] = 1.5
