@@ -2075,6 +2075,76 @@ def test_realtime_overview_endpoint_marks_meta_purchase_fallback_warning(
     assert payload["data_quality"]["warnings"][0]["code"] == "meta_purchase_value_order_fallback"
 
 
+def test_realtime_overview_endpoint_marks_shopify_fee_strategy_c_warning(
+    authed_client_no_db,
+    monkeypatch,
+):
+    """手续费策略 C 兜底必须进入 realtime-overview 顶层 data_quality。"""
+    from appcore.order_analytics import realtime_cache
+
+    realtime_cache.invalidate_all()
+
+    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
+        return {
+            "period": {"date": "2026-06-13"},
+            "scope": {"ad_source": "meta_ad_realtime_daily_campaign_metrics"},
+            "summary": {"order_revenue": 100, "ad_spend": 20, "true_roas": 5.0},
+            "order_profit_summary": {
+                "shopify_fee_source_counts": {"strategy_c_fallback": 2},
+                "shopify_fee_source_amounts": {"strategy_c_fallback": 3.45},
+                "data_quality": {
+                    "warnings": [
+                        {
+                            "code": "shopify_fee_strategy_c_fallback_present",
+                            "status": "warning",
+                            "message": "shopify_fee_strategy_c_fallback_present",
+                        }
+                    ],
+                    "errors": [],
+                },
+            },
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [],
+            "order_details": [],
+            "campaigns": [],
+            "roas_points": [],
+        }
+
+    def fake_build_for_realtime_overview(**kwargs):
+        return {
+            "status": "ok",
+            "source_mode": "realtime_snapshot",
+            "business_date_from": "2026-06-13",
+            "business_date_to": "2026-06-13",
+            "checks": [],
+            "warnings": [],
+            "errors": [],
+            "watermarks": {},
+            "generated_at": "2026-06-13T18:00:00",
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr(
+        "web.routes.order_analytics.dq.build_for_realtime_overview",
+        fake_build_for_realtime_overview,
+    )
+
+    response = authed_client_no_db.get("/order-analytics/realtime-overview?date=2026-06-13")
+    payload = response.get_json()
+
+    assert payload["data_quality"]["status"] == "warning"
+    assert payload["data_quality"]["warnings"] == [
+        {
+            "code": "shopify_fee_strategy_c_fallback_present",
+            "status": "warning",
+            "message": "shopify_fee_strategy_c_fallback_present",
+        }
+    ]
+    assert payload["data_quality"]["checks"][0]["code"] == "shopify_fee_strategy_c_fallback_present"
+    assert payload["data_quality"]["checks"][0]["strategy_c_fallback_order_count"] == 2
+    assert payload["data_quality"]["checks"][0]["strategy_c_fallback_amount_usd"] == 3.45
+
+
 def test_realtime_overview_endpoint_attaches_range_data_quality(
     authed_client_no_db,
     monkeypatch,

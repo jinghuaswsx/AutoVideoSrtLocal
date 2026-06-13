@@ -394,7 +394,7 @@ def test_refresh_fee_rate_snapshots_saves_insufficient_sample(monkeypatch):
     assert saved_rows[0]["source_csvs_json"] == []
 
 
-def test_load_window_aggregates_counts_blank_order_name_by_transaction_id(monkeypatch):
+def test_load_window_aggregates_normalizes_order_name_for_order_count(monkeypatch):
     captured = {}
 
     def fake_query(sql, params=None):
@@ -412,8 +412,9 @@ def test_load_window_aggregates_counts_blank_order_name_by_transaction_id(monkey
 
     normalized_sql = " ".join(captured["sql"].lower().split())
     assert (
-        "count(distinct coalesce(nullif(trim(order_name), ''), transaction_id)) "
-        "as orders_count"
+        "count(distinct coalesce( nullif( case when left(trim(order_name), 1) = '#' "
+        "then substring(trim(order_name), 2) else trim(order_name) end, '' ), "
+        "transaction_id )) as orders_count"
     ) in normalized_sql
 
 
@@ -559,10 +560,23 @@ def test_is_dynamic_fee_effective_reads_current_env_before_config(monkeypatch):
     assert is_dynamic_fee_effective(datetime(2026, 6, 13, 1, 0, 0))
 
 
-def test_is_dynamic_fee_effective_ignores_invalid_boundary(monkeypatch):
+def test_is_dynamic_fee_effective_disables_invalid_boundary(monkeypatch):
     monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "not-a-date")
 
-    assert is_dynamic_fee_effective(datetime(2026, 6, 12, 0, 0, 0))
+    assert not is_dynamic_fee_effective(datetime(2026, 6, 12, 0, 0, 0))
+
+
+def test_is_dynamic_fee_effective_disables_empty_boundary(monkeypatch):
+    monkeypatch.delenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", raising=False)
+    monkeypatch.setattr("config.Config.SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "", raising=False)
+
+    assert not is_dynamic_fee_effective(datetime(2026, 6, 13, 10, 0, 0))
+
+
+def test_is_dynamic_fee_effective_disables_missing_order_time(monkeypatch):
+    monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T09:00:00+08:00")
+
+    assert not is_dynamic_fee_effective(None)
 
 
 def test_resolver_returns_legacy_strategy_for_pre_effective_order(monkeypatch):
@@ -578,13 +592,36 @@ def test_resolver_returns_legacy_strategy_for_pre_effective_order(monkeypatch):
 
     assert result["shopify_fee_source"] == FEE_SOURCE_LEGACY_STRATEGY_C
     assert result["shopify_fee_usd"] > 0
+    assert result["shopify_fee_basis"]["fallback_reason"] == "dynamic_fee_not_effective"
 
 
-def test_resolver_prefers_actual_payment(monkeypatch):
+def test_resolver_returns_legacy_strategy_when_effective_at_unconfigured(monkeypatch):
     monkeypatch.delenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", raising=False)
     monkeypatch.setattr("config.Config.SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "", raising=False)
 
+    def fail_query(*args, **kwargs):
+        raise AssertionError("actual payment query should not run before dynamic fee is effective")
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_resolver.query", fail_query)
+
+    result = resolve_shopify_fee_for_order(
+        amount=100,
+        buyer_country="US",
+        site_code="newjoy",
+        order_names=["#1001"],
+        order_time=datetime(2026, 6, 13, 10, 0, 0),
+    )
+
+    assert result["shopify_fee_source"] == FEE_SOURCE_LEGACY_STRATEGY_C
+
+
+def test_resolver_prefers_actual_payment(monkeypatch):
+    monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T00:00:00+00:00")
+    captured = {}
+
     def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
         return [{"order_name": "#2001", "fee_usd": 1.19, "transaction_ids": "11,12"}]
 
     monkeypatch.setattr("appcore.order_analytics.shopify_fee_resolver.query", fake_query)
@@ -600,11 +637,37 @@ def test_resolver_prefers_actual_payment(monkeypatch):
     assert result["shopify_fee_source"] == FEE_SOURCE_ACTUAL_PAYMENT
     assert result["shopify_fee_usd"] == 1.19
     assert result["shopify_fee_basis"]["matched_payment_transaction_ids"] == ["11", "12"]
+    assert "lower(source_csv) like %s" in captured["sql"].lower()
+    assert captured["params"] == ("#2001", "2001", "newjoyloo__%")
+
+
+def test_resolver_filters_actual_payment_by_site_code(monkeypatch):
+    monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T00:00:00+00:00")
+    captured = {}
+
+    def fake_query(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [{"order_name": "#2001", "fee_usd": 1.08, "transaction_ids": "omurio-11"}]
+
+    monkeypatch.setattr("appcore.order_analytics.shopify_fee_resolver.query", fake_query)
+
+    result = resolve_shopify_fee_for_order(
+        amount=22.13,
+        buyer_country="US",
+        site_code="omurio",
+        order_names=["#2001"],
+        order_time=datetime(2026, 6, 13, 10, 0, 0),
+    )
+
+    assert result["shopify_fee_source"] == FEE_SOURCE_ACTUAL_PAYMENT
+    assert result["shopify_fee_basis"]["matched_payment_transaction_ids"] == ["omurio-11"]
+    assert "lower(source_csv) like %s" in captured["sql"].lower()
+    assert captured["params"] == ("#2001", "2001", "omurio__%")
 
 
 def test_resolver_actual_payment_does_not_sum_hash_and_plain_variants(monkeypatch):
-    monkeypatch.delenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", raising=False)
-    monkeypatch.setattr("config.Config.SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "", raising=False)
+    monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T00:00:00+00:00")
 
     captured = {}
 
@@ -633,8 +696,7 @@ def test_resolver_actual_payment_does_not_sum_hash_and_plain_variants(monkeypatc
 
 
 def test_resolver_uses_dynamic_region_rate_when_no_actual_payment(monkeypatch):
-    monkeypatch.delenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", raising=False)
-    monkeypatch.setattr("config.Config.SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "", raising=False)
+    monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T00:00:00+00:00")
 
     def fake_query(sql, params=None):
         return []
@@ -676,8 +738,7 @@ def test_resolver_uses_dynamic_region_rate_when_no_actual_payment(monkeypatch):
 
 
 def test_resolver_falls_back_to_strategy_c(monkeypatch):
-    monkeypatch.delenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", raising=False)
-    monkeypatch.setattr("config.Config.SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "", raising=False)
+    monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T00:00:00+00:00")
     monkeypatch.setattr(
         "appcore.order_analytics.shopify_fee_resolver.query",
         lambda sql, params=None: [],

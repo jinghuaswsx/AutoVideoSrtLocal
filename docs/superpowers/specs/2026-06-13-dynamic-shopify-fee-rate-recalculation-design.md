@@ -55,6 +55,12 @@ SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT
 
 含义：只有订单支付时间满足 `paid_at >= SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT` 时，利润核算才使用动态手续费逻辑。
 
+`SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT` 为空、非法，或订单没有可比较的订单时间时，动态手续费逻辑视为未启用：
+
+- 实时大盘未核算订单继续使用策略 C，不得静默启用真实 fee 或动态快照。
+- 订单利润增量/回填不得覆盖这些订单的历史手续费口径。
+- 发布时可通过清空或设置未来时间来保证“从现在开始”边界。
+
 订单时间取值顺序沿用当前实时大盘口径：
 
 ```text
@@ -66,6 +72,7 @@ COALESCE(order_paid_at, attribution_time_at, order_created_at)
 - 已有历史 `order_profit_lines` 保持不变。
 - 增量任务再次扫到该订单时，不覆盖其 `shopify_fee_usd` 和利润结果。
 - 查询展示时可把来源视为 `legacy_strategy_c` 或空来源。
+- 新 resolver 返回策略 C 兜底结果，并在 trace 中说明 `dynamic_fee_not_effective`。
 
 ## 6. 区域定义
 
@@ -116,6 +123,7 @@ computed_at
 - 不足时使用最近 30 天，且 `orders_count >= 300`。
 - 店铺级样本不足时回退到全店铺同区域快照。
 - 仍不足时回退策略 C。
+- `orders_count` 统计必须按标准化 Shopify order name 去重：去掉首个前导 `#` 后再计数，空 order name 才回退 `transaction_id`，避免 `#2001` 和 `2001` 被算成两单。
 
 ## 8. 手续费来源优先级
 
@@ -123,6 +131,7 @@ computed_at
 
 1. `actual_payment`
    - 能按 Shopify order name 匹配到 `shopify_payments_transactions` 的正向 charge。
+   - 匹配必须按店铺隔离，不能让不同店铺相同 Shopify order name 的交易互相命中。
    - 使用真实 `fee_usd`，多 SKU 订单按行收入比例摊回。
 
 2. `dynamic_region_rate`
@@ -173,6 +182,7 @@ shopify_fee_basis_json
   - 真实 fee 命中则用 `actual_payment`。
   - 动态快照可用则用 `dynamic_region_rate`。
   - 否则用 `strategy_c_fallback`。
+  - 动态手续费未达到生效时间、配置为空/非法或订单时间缺失时，也只能走策略 C。
 
 接口增加手续费来源汇总：
 
@@ -219,13 +229,18 @@ Payments CSV 导入后：
 - 动态费率是否 stale。
 - 某区域样本是否不足。
 
+手续费来源告警必须同时进入 `order_profit_summary.data_quality` 和 `/order-analytics/realtime-overview` 顶层 `data_quality`，顶层 `status` 至少降级为 `warning`，让页面数据质量条可见。
+
 ## 13. 测试范围
 
 后端单元测试：
 
 - 动态区域映射。
 - 快照生成：7 天足量、7 天不足回退 30 天、30 天不足。
+- 快照订单数去重：`#order_name` 与 `order_name` 算同一单。
 - 手续费 resolver 优先级：真实 fee > 动态费率 > 策略 C。
+- 手续费 resolver 生效边界：空/非法生效时间、缺订单时间、生效前订单都不得启用动态逻辑或真实 fee。
+- 真实 fee 匹配店铺隔离：不同店铺相同 order name 不得串单。
 - 固定费 `$0.30` 不重复摊到 SKU 行。
 - 生效时间之前的历史行不被增量任务覆盖。
 
@@ -234,6 +249,7 @@ Payments CSV 导入后：
 - `calculate_line_profit()` 写入新来源字段。
 - 实时大盘缺利润行时使用动态 resolver。
 - `order_profit_summary` 返回手续费来源汇总和 watermark。
+- `strategy_c_fallback` 同时进入实时大盘顶层 `data_quality.warnings/checks/status`。
 
 验证命令按项目 targeted pytest 规则选择：
 

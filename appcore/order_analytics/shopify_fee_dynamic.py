@@ -281,7 +281,17 @@ def _load_window_aggregates(
                 WHEN UPPER(presentment_currency) IN ({europe_currency_list}) THEN 'europe'
                 ELSE 'other'
             END AS region,
-            COUNT(DISTINCT COALESCE(NULLIF(TRIM(order_name), ''), transaction_id)) AS orders_count,
+            COUNT(DISTINCT COALESCE(
+                NULLIF(
+                    CASE
+                        WHEN LEFT(TRIM(order_name), 1) = '#'
+                        THEN SUBSTRING(TRIM(order_name), 2)
+                        ELSE TRIM(order_name)
+                    END,
+                    ''
+                ),
+                transaction_id
+            )) AS orders_count,
             SUM(ABS(amount_usd)) AS amount_usd,
             SUM(ABS(fee_usd)) AS fee_usd
         FROM shopify_payments_transactions

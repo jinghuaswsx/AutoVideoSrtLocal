@@ -66,12 +66,28 @@ def _parse_effective_at() -> datetime | None:
 def is_dynamic_fee_effective(order_time: datetime | None) -> bool:
     effective_at = _parse_effective_at()
     if effective_at is None or order_time is None:
-        return True
+        return False
 
     comparable = order_time
     if comparable.tzinfo is not None:
         comparable = comparable.astimezone(timezone.utc).replace(tzinfo=None)
     return comparable >= effective_at
+
+
+def _normalize_store_code(site_code: str | None) -> str:
+    normalized = str(site_code or "").strip().lower()
+    if normalized in {"newjoy", "omurio"}:
+        return normalized
+    return ""
+
+
+def _source_csv_filter_for_store(site_code: str | None) -> tuple[str, tuple[Any, ...]]:
+    store_code = _normalize_store_code(site_code)
+    if store_code == "newjoy":
+        return " AND LOWER(source_csv) LIKE %s", ("newjoyloo__%",)
+    if store_code == "omurio":
+        return " AND LOWER(source_csv) LIKE %s", ("omurio__%",)
+    return "", ()
 
 
 def _preferred_order_names(order_names: Iterable[str | None]) -> list[str]:
@@ -89,12 +105,17 @@ def _preferred_order_names(order_names: Iterable[str | None]) -> list[str]:
     return values
 
 
-def _load_actual_payment_fee(order_names: Iterable[str | None]) -> dict[str, Any] | None:
+def _load_actual_payment_fee(
+    order_names: Iterable[str | None],
+    *,
+    site_code: str | None,
+) -> dict[str, Any] | None:
     names = _preferred_order_names(order_names)
     if not names:
         return None
 
     placeholders = ", ".join(["%s"] * len(names))
+    source_filter, source_params = _source_csv_filter_for_store(site_code)
     rows = query(
         f"""
         SELECT
@@ -104,9 +125,10 @@ def _load_actual_payment_fee(order_names: Iterable[str | None]) -> dict[str, Any
         FROM shopify_payments_transactions
         WHERE type = 'charge'
           AND order_name IN ({placeholders})
+          {source_filter}
         GROUP BY order_name
         """,
-        tuple(names),
+        tuple(names) + source_params,
     )
     if not rows:
         return None
@@ -173,14 +195,14 @@ def resolve_shopify_fee_for_order(
             amount=amount,
             buyer_country=buyer_country,
             source=FEE_SOURCE_LEGACY_STRATEGY_C,
-            fallback_reason="before_dynamic_fee_effective_at",
+            fallback_reason="dynamic_fee_not_effective",
         )
 
     presentment_currency = infer_presentment_currency_from_country(buyer_country)
     region = region_for_presentment_currency(presentment_currency)
     amount_d = _to_decimal(amount)
 
-    actual = _load_actual_payment_fee(order_names)
+    actual = _load_actual_payment_fee(order_names, site_code=site_code)
     if actual is not None:
         fee_usd = actual["fee_usd"]
         return {
