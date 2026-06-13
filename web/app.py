@@ -309,6 +309,46 @@ def _run_startup_recovery() -> None:
         _run_ai_material_strategist_startup_recovery()
     except Exception:
         log.warning("AI material strategist startup auto-resume failed", exc_info=True)
+    try:
+        _run_ad_material_ai_analysis_startup_recovery()
+    except Exception:
+        log.warning("Ad material AI analysis startup auto-resume failed", exc_info=True)
+
+
+def _run_ad_material_ai_analysis_startup_recovery() -> dict | None:
+    """Auto-resume the single 投放素材AI分析 project left running by a restart.
+
+    Docs anchor:
+    docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md#2026-06-11-断电续传收口
+    """
+    from appcore import ad_material_ai_analysis
+
+    project = ad_material_ai_analysis.mark_startup_interrupted_project_for_recovery()
+    if not project:
+        return None
+    project_id = int(project.get("id") or 0)
+    if not project_id:
+        return None
+    try:
+        start_background_task(
+            ad_material_ai_analysis.run_project,
+            project_id,
+            user_id=project.get("user_id"),
+        )
+    except Exception:
+        interrupted = ad_material_ai_analysis.mark_project_interrupted(
+            project_id,
+            reason="startup_resume_schedule_failed",
+            message="服务重启后自动恢复未能排队，已标记为中断；请在项目详情点击「继续未完成」。",
+        )
+        log.warning(
+            "Ad material AI analysis startup auto-resume scheduling failed; project marked interrupted: project_id=%s",
+            project_id,
+            exc_info=True,
+        )
+        return interrupted
+    log.warning("Ad material AI analysis startup auto-resume scheduled: project_id=%s", project_id)
+    return project
 
 
 def create_app() -> Flask:

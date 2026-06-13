@@ -609,3 +609,33 @@ node --check web/static/ad_material_ai_analysis.js
 ```
 
 本功能不需要全量 pytest，除非后续实现触碰 pytest fixture、鉴权、部署、LLM provider 基础设施或共享调度逻辑。
+
+## 2026-06-12 投放素材AI分析可用版收口
+
+本轮针对 `投放素材AI分析`（路由 `/video-analyse-ai`，后端 `appcore.ad_material_ai_analysis`）做可用性与正确性收口。以下为后续代码锚点：
+
+### 评估正确性
+- **排名分桶反偏差**：`_run_ai_ranking` 用 `_snake_batches` 蛇形分配候选，不再顺序切批；保证每批强弱混合，全局第 11-20 名不再因与最强 10 名同批而被挤掉。
+- **保本线进排名输入**：`_rank_input` 输出 `effective_breakeven_roas` 和 `roas_vs_breakeven`（true_roas_30d / 保本ROAS）；排名提示词要求按该比值判断效率，禁止只看绝对 ROAS。
+- **daily/realtime 双计修复**：`_load_ad_rows` 和 `_load_product_ad_rows_for_materials` 给 realtime 查询加业务日下限（= daily 已覆盖的最大业务日），realtime 只补 daily 之后的开放业务日。
+- **产品优先级与单素材评审解耦**：产品 priority 由 `_derive_product_priority`（量 + 是否过保本线）确定性给出；`material_review` 只回答「这条候选素材该不该用」——`final_decision='不通过'` 仅给该素材标 `candidate_rejected`，不再劫持 priority 或把 primary_action 降为 hold。`material_review_result.reviewed_material_key` 标明被评审的明空候选。
+
+### 降本与韧性
+- **5 国评审合并 1 次调用**：`_run_country_reviews` 用 `COMBINED_COUNTRY_REVIEW_RESPONSE_SCHEMA` 一次评 DE/FR/IT/ES/JP（原来 5 次）；缺国/坏国/异常用 `_fallback_country_review` 补齐。单产品 LLM 调用从 6 次降到 2 次。
+- **LLM 调用节奏**：`_pace_llm` 在排名、产品评审、国家评审每次调用前保持最小间隔，env `AD_MATERIAL_AI_ANALYSIS_LLM_SPACING_SECONDS`（默认 2 秒，<=0 关闭），避免打爆 GoogleWJ 通道。
+- **市场扩展任务拦截**：`_build_market_expansion_recommendations` 从扩展目标里剔除有阻塞任务的国家，记入推荐项 `blocked_countries`；目标全被拦截则不输出该推荐。
+
+### 新交付物：素材补充计划
+- `_build_supplement_plan` 把逐产品逐国评审收敛成项目级可执行计划，挂在 `summary.supplement_plan`：每行含产品、国家、动作（expand/supplement/retest）、推荐素材来源（明空候选 / 本地 EN / 需新建）、国家评分、理由、创建翻译任务入口。跳过评审不通过和有阻塞任务的国家；按 P0→P3、国家评分排序；每产品 ≤3 行、总量 ≤40。前端 `renderSupplementPlan` 渲染该表，公开页隐藏操作列。
+
+### 断点恢复（P0）
+- **resume 接口**：`POST /video-analyse-ai/api/projects/<id>/resume`（medias 蓝图同名 `/medias/api/ad-material-ai-analysis/projects/<id>/resume` 亦有），调 `resume_project_checkpoint` 复用同一 project_id 从断点重排队；执行器仍在运行时返回 409。
+- **启动自动恢复**：`web/app.py::_run_ad_material_ai_analysis_startup_recovery` 在服务启动时把最新 running 项目标记 `resume_scheduled` 并自动拉起，其余 running 落 `interrupted`；排队失败则 `mark_project_interrupted`。
+- **心跳与可接管判定**：`_progress_update` 在 running 时写 `runner_heartbeat_at`；`_resume_checkpoint_state` 据 `runner_state` / 心跳超 10 分钟 / interrupted 状态判定 `can_resume_checkpoint`，项目详情 API 透出该标志，前端据此显示「继续未完成」按钮。
+
+### 公开分享安全（D2）
+- **白名单序列化**：`build_public_project_payload`（服务层，两个蓝图共用）取代原递归黑名单 `_strip_public_links`。公开 payload 只含展示必需字段，**绝不**包含 `data_snapshot`、`ranking_result`、`ranking_prompt`、`material_review_input`、`material_review_prompt_debug`、产品 `profit/revenue/effective_breakeven_roas` 和 `error_message`。两个路由文件的旧黑名单 `_public_project_payload` / `_strip_public_links` 已删除。
+
+### 不在本轮（下轮候选）
+- 国家维度仍是「素材语言」口径，未引入订单真实买家国家分布；国家投放表现仍是累计值，未加 30d/7d 窗口。
+- 创意疲劳领先指标（frequency / CTR / hook rate）未入参；建议产出与实际采纳的校准回路（advice_outcomes）未建。

@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 from appcore import ad_material_ai_analysis as svc
 
@@ -481,8 +482,531 @@ def test_run_product_analysis_uses_googlewj_material_review(monkeypatch):
     assert captured["kwargs"]["response_schema"] == svc.MATERIAL_REVIEW_RESPONSE_SCHEMA
     assert result["material_review_input"] == review_input
     assert result["material_review_result"]["final_decision"] == "条件通过"
+    # priority 现在由产品量级规则决定（spend 500 ≥ 100 → P1），
+    # 不再被单条素材评审的 quality_score=72 劫持；解耦后即便评审打 72 分，
+    # 也不会把规则判的 P1 改成 quality_score 映射的某档
     assert result["priority"] == "P1"
     assert result["mode"] == "ai"
+
+
+def test_rank_input_includes_breakeven_roas_context():
+    row = _row(
+        product_id=7,
+        spend_30d=400,
+        revenue_30d=800,
+        purchase_value_30d=700,
+        orders_30d=40,
+    )
+    row["effective_breakeven_roas"] = 1.6
+
+    payload = svc._rank_input(row)
+
+    assert payload["effective_breakeven_roas"] == 1.6
+    # true_roas_30d = 2.0 → 2.0 / 1.6 = 1.25
+    assert payload["roas_vs_breakeven"] == 1.25
+    assert "roas_vs_breakeven" in svc._ranking_prompt({"products": [payload]})
+
+
+def test_rank_input_breakeven_missing_yields_null_ratio():
+    row = _row(product_id=8, spend_30d=100, revenue_30d=200, purchase_value_30d=150, orders_30d=10)
+    row["effective_breakeven_roas"] = None
+
+    payload = svc._rank_input(row)
+
+    assert payload["effective_breakeven_roas"] is None
+    assert payload["roas_vs_breakeven"] is None
+
+
+def _country_summary(country_code, lang, **overrides):
+    base = {
+        "country_code": country_code,
+        "lang": lang,
+        "item_count": 1,
+        "pushed_video_count": 0,
+        "ad_spend_usd": 0.0,
+        "purchase_value_usd": 0.0,
+        "ad_roas": None,
+        "active_7d_ad_spend_usd": 0.0,
+        "delivery_status": "never",
+    }
+    base.update(overrides)
+    return base
+
+
+def _plan_result(rank_no, product_id, code, priority, country_reviews, country_summary,
+                 mingkong=None, local=None, material_actions=None):
+    return {
+        "rank_no": rank_no,
+        "product": {"product_id": product_id, "product_code": code, "product_name": code},
+        "country_summary": country_summary,
+        "local_materials": local or [],
+        "mingkong_materials": mingkong or [],
+        "country_reviews": country_reviews,
+        "ai_result": {"priority": priority, "material_actions": material_actions or []},
+    }
+
+
+def test_public_payload_whitelist_strips_sensitive_fields():
+    project = {
+        "id": 7,
+        "project_name": "shared",
+        "status": "success",
+        "started_at": "2026-06-12 10:00:00",
+        "finished_at": "2026-06-12 11:00:00",
+        "user_id": 1,
+        "error_message": "internal trace",
+        "data_snapshot": {"products": [{"product_id": 1, "profit_30d": 999}]},
+        "ranking_prompt": {"prompt": "internal ranking prompt"},
+        "ranking_result": {"batch_results": [{"prompt": "60 products data", "input": {"x": 1}}]},
+        "summary": {
+            "top_product_count": 1,
+            "priority_counts": {"P0": 1},
+            "supplement_plan": [{
+                "product_code": "demo-rjc", "country_code": "DE", "action": "supplement",
+                "material_source": "mingkong", "material_name": "v", "reason": "补 DE",
+                "priority": "P1", "country_quality_score": 70,
+                "entry_url": "/medias/product/video_workbench/1?target_lang=de",
+                "entry_type": "create_translation_task",
+            }],
+        },
+        "products": [{
+            "rank_no": 1,
+            "product_code": "demo-rjc",
+            "product_name": "Demo",
+            "metrics": {"spend_30d": 500, "orders_30d": 40, "true_roas_30d": 2.0,
+                        "profit_30d": 1234, "revenue_30d": 5678, "effective_breakeven_roas": 1.6},
+            "country_summary": [{"country_code": "DE", "ad_spend_usd": 100, "ad_roas": 2.0,
+                                 "blocking_task": {"task_id": 44, "status_label": "进行中",
+                                                   "task_url": "/tasks/detail/44"}}],
+            "local_materials": [{"id": 1, "lang": "en", "display_name": "src",
+                                 "object_key": "tasks/12/medias/test.mp4", "push_count": 3}],
+            "mingkong_materials": [{"material_key": "MK-1", "video_name": "demo.mp4",
+                                    "video_path": "p/demo.mp4",
+                                    "video_url": "/medias/api/mk-video?path=p/demo.mp4",
+                                    "cumulative_90_spend": 5000}],
+            "ai_result": {
+                "priority": "P1", "primary_action": "same_country_new_material",
+                "overall_judgement": "judgement",
+                "material_review_input": {"product_brief": {"data": {"matrix": {"base_roas": 1.6}}}},
+                "material_review_prompt_debug": {"prompt": "FULL PROMPT", "response_text": "raw"},
+                "material_review_result": {"final_decision": "条件通过", "quality_score": 70},
+                "country_actions": [{"country_code": "DE", "action": "scale", "reason": "ok"}],
+            },
+            "country_reviews": {"DE": {"final_decision": "通过", "quality_score": 75,
+                                       "usage_log_id": 999, "recommended_action": {"action": "supplement"}}},
+            "action_items": [{"type": "supplement_workbench", "label": "素材工作台",
+                              "url": "/medias/product/video_workbench/1", "method": "POST",
+                              "payload": {"secret": 1}}],
+        }],
+    }
+
+    payload = svc.build_public_project_payload(project, "share_token_demo")
+    text = json.dumps(payload, ensure_ascii=False)
+
+    # 1. 内部报文/快照/排名细节绝不出现
+    assert "material_review_prompt_debug" not in text
+    assert "material_review_input" not in text
+    assert "ranking_result" not in text
+    assert "data_snapshot" not in text
+    assert "FULL PROMPT" not in text
+    assert "60 products data" not in text
+    # 2. 成本/利润/保本线不暴露
+    assert "profit_30d" not in text
+    assert "revenue_30d" not in text
+    assert "base_roas" not in text
+    assert "effective_breakeven_roas" not in text
+    assert "internal trace" not in text
+    # 3. 保留展示必需内容
+    assert payload["public"] is True
+    assert payload["products"][0]["metrics"]["true_roas_30d"] == 2.0
+    assert payload["products"][0]["ai_result"]["material_review_result"]["final_decision"] == "条件通过"
+    assert payload["summary"]["supplement_plan"][0]["product_code"] == "demo-rjc"
+    # 4. supplement_plan 去掉内部入口
+    assert "entry_url" not in payload["summary"]["supplement_plan"][0]
+    # 5. 视频链接：明空带 token，本地转公开格式
+    assert "share_token=share_token_demo" in payload["products"][0]["mingkong_materials"][0]["video_url"]
+    assert payload["products"][0]["local_materials"][0]["video_url"] == "/medias/obj/tasks/12/medias/test.mp4"
+    # 6. blocking_task 去掉内部跳转
+    assert "task_url" not in payload["products"][0]["country_summary"][0]["blocking_task"]
+
+
+def test_resume_checkpoint_state_detects_stale_and_interrupted():
+    from datetime import datetime, timedelta
+
+    # 1. interrupted 项目可继续
+    can, _ = svc._resume_checkpoint_state({"status": "interrupted", "updated_at": None}, {})
+    assert can is True
+
+    # 2. running + 已排队但未推进 → 可接管
+    can, _ = svc._resume_checkpoint_state(
+        {"status": "running"}, {"runner_state": "resume_scheduled"})
+    assert can is True
+
+    # 3. running + 新鲜心跳 → 不可接管
+    fresh = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    can, _ = svc._resume_checkpoint_state(
+        {"status": "running"}, {"runner_state": "running", "runner_heartbeat_at": fresh})
+    assert can is False
+
+    # 4. running + 心跳超 10 分钟 → 可接管
+    stale = (datetime.now() - timedelta(minutes=11)).strftime("%Y-%m-%d %H:%M:%S")
+    can, _ = svc._resume_checkpoint_state(
+        {"status": "running"}, {"runner_state": "running", "runner_heartbeat_at": stale})
+    assert can is True
+
+    # 5. success 项目不可继续
+    can, _ = svc._resume_checkpoint_state({"status": "success"}, {})
+    assert can is False
+
+
+def test_progress_update_running_writes_heartbeat():
+    progress = svc._initial_progress(message="queued")
+    updated = svc._progress_update(
+        progress, step_key="snapshot", step_status="running",
+        percent=10, message="跑起来了", project_status="running",
+    )
+    assert updated["runner_state"] == "running"
+    assert updated["runner_heartbeat_at"]
+
+
+def test_build_supplement_plan_orders_and_picks_materials():
+    # 产品 A: P1, DE supplement(70) + IT expand(60); 产品 B: P0, FR supplement(85)
+    product_a = _plan_result(
+        rank_no=2, product_id=100, code="aaa-rjc", priority="P1",
+        country_reviews={
+            "DE": {"final_decision": "通过", "quality_score": 70,
+                   "recommended_action": {"action": "supplement", "reason": "DE 可补素材"}},
+            "IT": {"final_decision": "条件通过", "quality_score": 60,
+                   "recommended_action": {"action": "expand", "reason": "IT 可扩展"}},
+        },
+        country_summary=[
+            {"country_code": "DE", "lang": "de", "blocking_task": None},
+            {"country_code": "IT", "lang": "it", "blocking_task": None},
+        ],
+        mingkong=[{"material_key": "MK-9", "video_name": "winner", "video_path": "p/w.mp4"}],
+        local=[{"id": 1, "lang": "en", "display_name": "en-src", "push_count": 5, "object_key": "k1"}],
+    )
+    product_b = _plan_result(
+        rank_no=1, product_id=200, code="bbb-rjc", priority="P0",
+        country_reviews={
+            "FR": {"final_decision": "通过", "quality_score": 85,
+                   "recommended_action": {"action": "supplement", "reason": "FR 强"}},
+        },
+        country_summary=[{"country_code": "FR", "lang": "fr", "blocking_task": None}],
+        mingkong=[{"material_key": "MK-1", "video_name": "fr-cand", "video_path": "p/f.mp4"}],
+    )
+
+    plan = svc._build_supplement_plan([product_a, product_b])
+
+    # P0 在最前
+    assert plan[0]["product_id"] == 200
+    assert plan[0]["country_code"] == "FR"
+    # supplement 取明空候选
+    assert plan[0]["material_source"] == "mingkong"
+    assert plan[0]["material_key"] == "MK-1"
+    # 产品 A 内部按国家评分降序：DE(70) 在 IT(60) 前
+    a_rows = [r for r in plan if r["product_id"] == 100]
+    assert [r["country_code"] for r in a_rows] == ["DE", "IT"]
+    # expand 取本地 en 素材
+    it_row = next(r for r in a_rows if r["country_code"] == "IT")
+    assert it_row["material_source"] == "local"
+    assert it_row["entry_url"].endswith("target_lang=it")
+
+
+def test_build_supplement_plan_skips_blocked_and_rejected_and_failed():
+    product = _plan_result(
+        rank_no=1, product_id=300, code="ccc-rjc", priority="P1",
+        country_reviews={
+            "DE": {"final_decision": "通过", "quality_score": 75,
+                   "recommended_action": {"action": "supplement", "reason": "x"}},
+            "FR": {"final_decision": "不通过", "quality_score": 30,
+                   "recommended_action": {"action": "supplement", "reason": "x"}},
+            "IT": {"final_decision": "通过", "quality_score": 70,
+                   "recommended_action": {"action": "expand", "reason": "x"}},
+        },
+        country_summary=[
+            {"country_code": "DE", "lang": "de",
+             "blocking_task": {"task_id": 9, "status_group": "in_progress", "status_label": "进行中"}},
+            {"country_code": "FR", "lang": "fr", "blocking_task": None},
+            {"country_code": "IT", "lang": "it", "blocking_task": None},
+        ],
+        mingkong=[{"material_key": "MK-2", "video_name": "v", "video_path": "p/v.mp4"}],
+    )
+
+    plan = svc._build_supplement_plan([product])
+    codes = {r["country_code"] for r in plan}
+    assert "DE" not in codes, "有阻塞任务的国家应跳过"
+    assert "FR" not in codes, "评审不通过的国家应跳过"
+    assert "IT" in codes, "通过且无任务的国家应保留"
+
+
+def test_market_expansion_excludes_blocked_countries():
+    product = _row(product_id=30, spend_30d=500, orders_30d=50, revenue_30d=1200, purchase_value_30d=1000)
+    product["effective_breakeven_roas"] = 1.5
+    # DE 强（已投放），IT 从未投放但已有进行中任务 → 不应进 expansion target；ES 从未投放且无任务 → 保留
+    country_reviews = {
+        "DE": {"final_decision": "通过", "quality_score": 80, "recommended_action": {"action": "supplement"}},
+        "IT": {"final_decision": "条件通过", "quality_score": 60, "recommended_action": {"action": "expand"}},
+        "ES": {"final_decision": "条件通过", "quality_score": 58, "recommended_action": {"action": "expand"}},
+    }
+    countries = [
+        {"country_code": "DE", "lang": "de", "delivery_status": "active", "blocking_task": None},
+        {"country_code": "IT", "lang": "it", "delivery_status": "never",
+         "blocking_task": {"task_id": 555, "status_group": "in_progress", "status_label": "进行中"}},
+        {"country_code": "ES", "lang": "es", "delivery_status": "never", "blocking_task": None},
+    ]
+
+    recs = svc._build_market_expansion_recommendations(product, country_reviews, countries)
+
+    eu = next((r for r in recs if r["type"] == "eu_cluster_expansion"), None)
+    assert eu is not None
+    assert "IT" not in eu["target_countries"], "已有阻塞任务的国家不应进扩展目标"
+    assert "ES" in eu["target_countries"], "无任务的国家应保留为扩展目标"
+    assert any(b.get("country_code") == "IT" and b.get("task_id") == 555 for b in eu.get("blocked_countries", []))
+
+
+def test_market_expansion_drops_recommendation_when_all_targets_blocked():
+    product = _row(product_id=31, spend_30d=500, orders_30d=50, revenue_30d=1200, purchase_value_30d=1000)
+    product["effective_breakeven_roas"] = 1.5
+    country_reviews = {
+        "DE": {"final_decision": "通过", "quality_score": 80, "recommended_action": {"action": "supplement"}},
+        "IT": {"final_decision": "条件通过", "quality_score": 60, "recommended_action": {"action": "expand"}},
+    }
+    countries = [
+        {"country_code": "DE", "lang": "de", "delivery_status": "active", "blocking_task": None},
+        {"country_code": "IT", "lang": "it", "delivery_status": "never",
+         "blocking_task": {"task_id": 777, "status_group": "in_progress", "status_label": "进行中"}},
+    ]
+
+    recs = svc._build_market_expansion_recommendations(product, country_reviews, countries)
+    # 唯一的扩展目标 IT 被任务拦截 → 不输出 eu_cluster_expansion
+    assert not any(r["type"] == "eu_cluster_expansion" for r in recs)
+
+
+def test_run_country_reviews_single_call_returns_all_countries(monkeypatch):
+    product = _row(product_id=20, product_code="demo-rjc", spend_30d=400, orders_30d=40)
+    countries_by_code = {
+        ec["country_code"]: _country_summary(ec["country_code"], ec["lang"])
+        for ec in svc.TARGET_EVAL_COUNTRIES
+    }
+    calls = []
+
+    def fake_invoke(use_case, **kwargs):
+        calls.append(use_case)
+        return {"json": {"country_reviews": [
+            {"country_code": ec["country_code"], "final_decision": "条件通过",
+             "quality_score": 60, "recommended_action": {"action": "supplement", "reason": "x"}}
+            for ec in svc.TARGET_EVAL_COUNTRIES
+        ]}}
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    reviews = svc._run_country_reviews(
+        product, svc.TARGET_EVAL_COUNTRIES, countries_by_code,
+        local_materials=[], mk_materials=[], task_assignments=[],
+        project_id=1, user_id=1, run_ai=True,
+    )
+
+    assert len(calls) == 1, "5 国应合并为 1 次调用"
+    assert set(reviews.keys()) == {ec["country_code"] for ec in svc.TARGET_EVAL_COUNTRIES}
+    assert all(r.get("mode") == "ai" for r in reviews.values())
+
+
+def test_run_country_reviews_fills_missing_countries_with_fallback(monkeypatch):
+    product = _row(product_id=21, product_code="demo-rjc", spend_30d=400, orders_30d=40)
+    countries_by_code = {
+        ec["country_code"]: _country_summary(ec["country_code"], ec["lang"])
+        for ec in svc.TARGET_EVAL_COUNTRIES
+    }
+
+    def fake_invoke(use_case, **kwargs):
+        # 只返回前 2 个国家
+        return {"json": {"country_reviews": [
+            {"country_code": "DE", "final_decision": "通过", "quality_score": 80,
+             "recommended_action": {"action": "expand", "reason": "x"}},
+            {"country_code": "FR", "final_decision": "条件通过", "quality_score": 55,
+             "recommended_action": {"action": "supplement", "reason": "x"}},
+        ]}}
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    reviews = svc._run_country_reviews(
+        product, svc.TARGET_EVAL_COUNTRIES, countries_by_code,
+        local_materials=[], mk_materials=[], task_assignments=[],
+        project_id=1, user_id=1, run_ai=True,
+    )
+
+    assert set(reviews.keys()) == {ec["country_code"] for ec in svc.TARGET_EVAL_COUNTRIES}
+    assert reviews["DE"].get("mode") == "ai"
+    # 缺失国家由确定性兜底补齐
+    assert reviews["IT"].get("mode") == "deterministic_fallback"
+    assert reviews["JP"].get("mode") == "deterministic_fallback"
+
+
+def test_run_country_reviews_all_fallback_on_error(monkeypatch):
+    product = _row(product_id=22, product_code="demo-rjc", spend_30d=400, orders_30d=40)
+    countries_by_code = {
+        ec["country_code"]: _country_summary(ec["country_code"], ec["lang"])
+        for ec in svc.TARGET_EVAL_COUNTRIES
+    }
+
+    def fake_invoke(use_case, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    reviews = svc._run_country_reviews(
+        product, svc.TARGET_EVAL_COUNTRIES, countries_by_code,
+        local_materials=[], mk_materials=[], task_assignments=[],
+        project_id=1, user_id=1, run_ai=True,
+    )
+
+    assert set(reviews.keys()) == {ec["country_code"] for ec in svc.TARGET_EVAL_COUNTRIES}
+    assert all(r.get("mode") == "deterministic_fallback" for r in reviews.values())
+
+
+def test_derive_product_priority_uses_breakeven_line():
+    p0 = _row(product_id=1, spend_30d=400, orders_30d=40, revenue_30d=900, purchase_value_30d=800)
+    p0["effective_breakeven_roas"] = 1.6  # true_roas 2.25 >= 1.6 → roas_ok
+    assert svc._derive_product_priority(p0) == "P0"
+
+    # 量达 P0 门槛但 ROAS 未过保本线 → 降级
+    p0_unprofitable = _row(product_id=2, spend_30d=400, orders_30d=40, revenue_30d=500, purchase_value_30d=480)
+    p0_unprofitable["effective_breakeven_roas"] = 1.6  # true_roas 1.25 < 1.6
+    assert svc._derive_product_priority(p0_unprofitable) == "P1"
+
+    p2 = _row(product_id=3, spend_30d=60, orders_30d=8)
+    assert svc._derive_product_priority(p2) == "P2"
+
+    p3 = _row(product_id=4, spend_30d=10, orders_30d=2)
+    assert svc._derive_product_priority(p3) == "P3"
+
+
+def test_run_product_analysis_keeps_rule_priority_when_material_rejected(monkeypatch):
+    product = _row(product_id=10, product_code="demo-rjc", spend_30d=400, orders_30d=40,
+                   revenue_30d=900, purchase_value_30d=800)
+    product["effective_breakeven_roas"] = 1.6  # 规则判定应为 P0
+    review_input = {
+        "current_date": "2026-06-12",
+        "product_brief": {"code": 0, "data": {"matrix": {"product_name": "Demo"}}, "message": ""},
+        "creator_brief": {},
+        "candidate_video": {},
+        "stage1_visual_brief": {},
+        "_adapter_notes": {"missing_modules": ["future_45d_trend"]},
+    }
+    monkeypatch.setattr(svc, "_build_material_review_input", lambda product, local, mk: review_input)
+
+    def fake_invoke(use_case, **kwargs):
+        return {"json": {
+            "final_decision": "不通过",
+            "quality_score": 20,
+            "score_breakdown": {},
+            "analysis_reason": {"final_judgment_reason": "候选素材质量不足，因此判断为不通过。"},
+            "material_plan": {"risk_alerts": [], "editing_plan": [], "hook_suggestions": [],
+                              "highlight_segments_to_move_forward": [],
+                              "copy_extraction": {"original_language": "unknown", "original_copy": "x",
+                                                  "english_translation": "x", "copy_source": "unknown"}},
+        }}
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    mk = [{"material_key": "MK-1", "video_path": "p/v.mp4", "video_name": "v"}]
+    result = svc._run_product_analysis(
+        product, countries=[], local_materials=[], mk_materials=mk,
+        project_id=99, user_id=1, run_ai=True,
+    )
+
+    # 单素材评审不通过，但产品优先级仍由规则决定（不被降级为 P3/hold）
+    assert result["priority"] == "P0"
+    assert result["primary_action"] != "hold"
+    assert result["material_review_result"]["final_decision"] == "不通过"
+    assert result["material_review_result"]["reviewed_material_key"] == "MK-1"
+    rejected = [m for m in result.get("material_actions", []) if m.get("candidate_rejected")]
+    assert rejected, "不通过候选应被标记 candidate_rejected"
+
+
+def test_load_ad_rows_realtime_floor_excludes_daily_covered_days(monkeypatch):
+    calls = []
+
+    def fake_query(sql, args=None):
+        calls.append((sql, args))
+        return []
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+    monkeypatch.setattr(
+        svc.db, "query_one",
+        lambda sql, args=None: {"value": date(2026, 6, 11)},
+    )
+
+    svc._load_ad_rows(date(2026, 5, 14), date(2026, 6, 12))
+
+    realtime_calls = [(sql, args) for sql, args in calls if "realtime" in sql]
+    assert realtime_calls, "realtime 查询应存在"
+    _, args = realtime_calls[0]
+    # realtime 窗口下限 = daily 已覆盖最大业务日 + 1，避免同业务日双计
+    assert date(2026, 6, 12) in tuple(args)
+    assert date(2026, 5, 14) not in tuple(args)
+
+
+def test_load_ad_rows_skips_realtime_when_daily_covers_current_day(monkeypatch):
+    calls = []
+
+    def fake_query(sql, args=None):
+        calls.append((sql, args))
+        return []
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+    monkeypatch.setattr(
+        svc.db, "query_one",
+        lambda sql, args=None: {"value": date(2026, 6, 12)},
+    )
+
+    svc._load_ad_rows(date(2026, 5, 14), date(2026, 6, 12))
+
+    realtime_calls = [(sql, args) for sql, args in calls if "realtime" in sql]
+    assert not realtime_calls, "daily 已覆盖开放业务日时不应再叠加 realtime"
+
+
+def test_material_ad_rows_realtime_floor_uses_product_daily_max(monkeypatch):
+    calls = []
+
+    def fake_query(sql, args=None):
+        calls.append((sql, args))
+        return []
+
+    monkeypatch.setattr(svc.db, "query", fake_query)
+    monkeypatch.setattr(
+        svc.db, "query_one",
+        lambda sql, args=None: {"value": date(2026, 6, 10)},
+    )
+
+    svc._load_product_ad_rows_for_materials(5)
+
+    realtime_calls = [(sql, args) for sql, args in calls if "realtime" in sql]
+    assert realtime_calls
+    sql, args = realtime_calls[0]
+    assert "business_date > %s" in sql
+    assert date(2026, 6, 10) in tuple(args)
+
+
+def test_snake_batches_mix_strong_and_weak_candidates():
+    items = [{"product_id": i, "score": 100 - i} for i in range(60)]
+    batches = svc._snake_batches(items, size=20)
+    assert [len(b) for b in batches] == [20, 20, 20]
+    # 蛇形分配：全局前 3 名必须分散在 3 个不同批次，避免强者同批互斥
+    for batch in batches:
+        ids = {item["product_id"] for item in batch}
+        assert ids & {0, 1, 2}
+    # 不丢不重
+    all_ids = sorted(item["product_id"] for batch in batches for item in batch)
+    assert all_ids == list(range(60))
+
+
+def test_snake_batches_small_input_returns_single_batch():
+    items = [{"product_id": i} for i in range(8)]
+    batches = svc._snake_batches(items, size=20)
+    assert len(batches) == 1
+    assert [item["product_id"] for item in batches[0]] == list(range(8))
 
 
 def test_resolve_billing_user_id_handles_missing_and_fallback(monkeypatch):

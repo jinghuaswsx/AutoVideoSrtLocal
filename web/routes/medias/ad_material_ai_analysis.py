@@ -17,16 +17,6 @@ from web.background import start_background_task
 from . import bp
 
 _SHARE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,100}$")
-_PUBLIC_LINK_KEYS = {
-    "url",
-    "task_url",
-    "video_url",
-    "product_url",
-    "material_url",
-    "detail_url",
-    "payload",
-    "method",
-}
 
 
 def _json(payload: dict, status: int = 200):
@@ -42,45 +32,6 @@ def _current_user_id() -> int | None:
 
 def _valid_share_token(share_token: str) -> bool:
     return bool(_SHARE_TOKEN_RE.fullmatch(str(share_token or "")))
-
-
-def _strip_public_links(value):
-    if isinstance(value, list):
-        return [_strip_public_links(item) for item in value]
-    if isinstance(value, dict):
-        return {
-            key: _strip_public_links(item)
-            for key, item in value.items()
-            if key not in _PUBLIC_LINK_KEYS
-        }
-    return value
-
-
-def _public_project_payload(project: dict, share_token: str) -> dict:
-    payload = _strip_public_links(project)
-    payload.pop("ranking_prompt", None)
-    payload.pop("data_snapshot", None)
-    payload["public"] = True
-
-    if "products" in payload:
-        for p_idx, p in enumerate(payload["products"]):
-            orig_p = project["products"][p_idx]
-            if "mingkong_materials" in p and "mingkong_materials" in orig_p:
-                for m_idx, m in enumerate(p["mingkong_materials"]):
-                    orig_m = orig_p["mingkong_materials"][m_idx]
-                    orig_video_url = orig_m.get("video_url")
-                    if orig_video_url:
-                        if "?" in orig_video_url:
-                            m["video_url"] = f"{orig_video_url}&share_token={share_token}"
-                        else:
-                            m["video_url"] = f"{orig_video_url}?share_token={share_token}"
-            if "local_materials" in p and "local_materials" in orig_p:
-                for lm_idx, lm in enumerate(p["local_materials"]):
-                    orig_lm = orig_p["local_materials"][lm_idx]
-                    object_key = orig_lm.get("object_key")
-                    if object_key:
-                        lm["video_url"] = f"/medias/obj/{object_key}"
-    return payload
 
 
 @bp.route("/ad-material-ai-analysis", methods=["GET"])
@@ -177,6 +128,35 @@ def api_ad_material_ai_analysis_project(project_id: int):
     return _json({"success": True, "project": project})
 
 
+@bp.route("/api/ad-material-ai-analysis/projects/<int:project_id>/resume", methods=["POST"])
+@login_required
+@admin_required
+@permission_required("medias")
+def api_ad_material_ai_analysis_resume_project(project_id: int):
+    """继续未完成项目：复用同一 project_id 从断点重新排队执行。"""
+    try:
+        project = service.resume_project_checkpoint(project_id, user_id=_current_user_id())
+    except service.ProjectAlreadyRunningError as exc:
+        running = exc.project or service.get_running_project() or {}
+        return _json({
+            "success": False,
+            "message": "当前已有执行器在运行该项目，无需重复恢复。",
+            "running_project": running,
+            "project": running,
+        }, 409)
+    except ValueError:
+        abort(404)
+    if not project:
+        abort(404)
+    if str(project.get("status") or "") != "success":
+        start_background_task(
+            service.run_project,
+            int(project["id"]),
+            user_id=_current_user_id(),
+        )
+    return _json({"success": True, "project": project}, 202)
+
+
 @bp.route("/api/ad-material-ai-analysis/projects/<int:project_id>/share", methods=["POST"])
 @login_required
 @admin_required
@@ -200,7 +180,7 @@ def api_ad_material_ai_analysis_public_project(share_token: str):
     project = service.get_project_by_share_token(share_token)
     if not project:
         abort(404)
-    return _json({"success": True, "project": _public_project_payload(project, share_token)})
+    return _json({"success": True, "project": service.build_public_project_payload(project, share_token)})
 
 
 @bp.route("/api/ad-material-ai-analysis/preview", methods=["GET"])

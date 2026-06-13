@@ -8,8 +8,10 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import secrets
+import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -193,6 +195,10 @@ def _progress_update(
         "logs": logs[-_PROGRESS_LOG_LIMIT:],
         "updated_at": now,
     })
+    # 运行中每次 checkpoint 都刷新心跳，供页面判断执行线程是否仍在推进（断电接管依据）
+    if project_status == "running":
+        progress["runner_state"] = "running"
+        progress["runner_heartbeat_at"] = now
     return progress
 
 
@@ -333,6 +339,22 @@ def _to_date(value: Any) -> date | None:
         return None
 
 
+def _to_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw[:26], fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def _iso(value: Any) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat(sep=" ")
@@ -423,6 +445,51 @@ def _chunked(items: list[dict], size: int) -> Iterable[list[dict]]:
         yield items[index:index + size]
 
 
+_LAST_LLM_AT: float = 0.0
+
+
+def _llm_spacing_seconds() -> float:
+    raw = os.getenv("AD_MATERIAL_AI_ANALYSIS_LLM_SPACING_SECONDS", "")
+    try:
+        return float(raw) if raw.strip() else 2.0
+    except ValueError:
+        return 2.0
+
+
+def _pace_llm() -> None:
+    """逐次 LLM 调用之间保持最小间隔，避免 30 产品 × 多调用打爆 GoogleWJ 通道触发 429。"""
+    global _LAST_LLM_AT
+    spacing = _llm_spacing_seconds()
+    if spacing <= 0:
+        _LAST_LLM_AT = time.monotonic()
+        return
+    now = time.monotonic()
+    wait = spacing - (now - _LAST_LLM_AT)
+    if wait > 0:
+        time.sleep(wait)
+    _LAST_LLM_AT = time.monotonic()
+
+
+def _snake_batches(items: list[dict], size: int = 20) -> list[list[dict]]:
+    """按蛇形顺序把已排序候选交错分配到批次。
+
+    顺序切分会让全局第 11-20 名与最强的前 10 名同批互斥出局，而弱批的
+    第 41-60 名却能内部晋级；蛇形分配保证每批强弱混合，批内竞争公平。
+    """
+    items = list(items)
+    if not items:
+        return []
+    batch_count = math.ceil(len(items) / max(size, 1))
+    if batch_count <= 1:
+        return [items]
+    batches: list[list[dict]] = [[] for _ in range(batch_count)]
+    for index, item in enumerate(items):
+        round_no, pos = divmod(index, batch_count)
+        target = pos if round_no % 2 == 0 else batch_count - 1 - pos
+        batches[target].append(item)
+    return batches
+
+
 def _query_one_safe(sql: str, args: tuple[Any, ...] = ()) -> dict | None:
     try:
         return db.query_one(sql, args)
@@ -476,6 +543,7 @@ def _load_products() -> list[dict]:
 def _load_ad_rows(date_from: date, current_day: date) -> list[dict]:
     rows: list[dict] = []
     daily_to = current_day - timedelta(days=1)
+    daily_max: date | None = None
     if daily_to >= date_from:
         rows.extend(db.query(
             """
@@ -493,6 +561,18 @@ def _load_ad_rows(date_from: date, current_day: date) -> list[dict]:
             """,
             (date_from, daily_to),
         ))
+        daily_max_row = _query_one_safe(
+            "SELECT MAX(DATE(COALESCE(meta_business_date, report_date))) AS value "
+            "FROM meta_ad_daily_campaign_metrics WHERE product_id IS NOT NULL",
+        )
+        daily_max = _to_date((daily_max_row or {}).get("value"))
+
+    # realtime 只允许补 daily 尚未覆盖的业务日，避免同业务日 daily+realtime 双计
+    realtime_from = date_from
+    if daily_max is not None and daily_max + timedelta(days=1) > realtime_from:
+        realtime_from = daily_max + timedelta(days=1)
+    if realtime_from > current_day:
+        return rows
 
     rows.extend(db.query(
         """
@@ -536,7 +616,7 @@ def _load_ad_rows(date_from: date, current_day: date) -> list[dict]:
          )
         GROUP BY p.id, m.business_date
         """,
-        (date_from, current_day),
+        (realtime_from, current_day),
     ))
     return rows
 
@@ -790,9 +870,16 @@ def _rank_input(row: Mapping[str, Any]) -> dict[str, Any]:
         "orders_today", "orders_yesterday", "orders_7d", "orders_30d",
         "revenue_30d", "profit_30d", "true_roas_30d", "meta_roas_30d",
         "ad_count_30d", "results_30d", "local_material_count", "local_material_langs",
-        "delivery_status",
+        "delivery_status", "effective_breakeven_roas",
     )
-    return {key: row.get(key) for key in keys}
+    payload = {key: row.get(key) for key in keys}
+    breakeven = _safe_float(row.get("effective_breakeven_roas"))
+    true_roas = row.get("true_roas_30d")
+    if breakeven > 0 and true_roas is not None:
+        payload["roas_vs_breakeven"] = round(_safe_float(true_roas) / breakeven, 4)
+    else:
+        payload["roas_vs_breakeven"] = None
+    return payload
 
 
 MATERIAL_REVIEW_RESPONSE_SCHEMA: dict[str, Any] = {
@@ -1053,6 +1140,13 @@ def _load_product_ad_rows_for_materials(product_id: int) -> list[dict]:
     )
     for row in rows:
         row["metric_source"] = "daily"
+    # realtime 下限 = 该产品 daily 已覆盖的最大业务日；只补 daily 之后的开放业务日，避免同业务日双计
+    daily_max_row = _query_one_safe(
+        "SELECT MAX(DATE(COALESCE(meta_business_date, report_date))) AS value "
+        "FROM meta_ad_daily_ad_metrics WHERE product_id = %s AND COALESCE(spend_usd, 0) > 0",
+        (product_id,),
+    )
+    daily_floor = _to_date((daily_max_row or {}).get("value")) or date(1970, 1, 1)
     realtime_rows = db.query(
         """
         SELECT
@@ -1072,6 +1166,7 @@ def _load_product_ad_rows_for_materials(product_id: int) -> list[dict]:
               SELECT ad_account_id, MAX(business_date) AS business_date
               FROM meta_ad_realtime_daily_ad_metrics
               WHERE data_completeness = 'realtime_partial'
+                AND business_date > %s
               GROUP BY ad_account_id
             ) latest_day
               ON rt.business_date = latest_day.business_date
@@ -1099,7 +1194,7 @@ def _load_product_ad_rows_for_materials(product_id: int) -> list[dict]:
          )
         ORDER BY m.business_date, m.id
         """,
-        (product_id,),
+        (daily_floor, product_id),
     )
     for row in realtime_rows:
         row["metric_source"] = "realtime"
@@ -1721,7 +1816,10 @@ def _ranking_prompt(payload: dict) -> str:
     return (
         "你是跨境电商素材投放军师。只根据输入 JSON 判断，不编造数据。\n"
         "表现好必须同时有量和效率；1-2 单高 ROAS 不得排前。优先选择有持续消耗、订单、广告数、"
-        "并且有可补素材空间的产品。输出严格 JSON，字段符合 response_schema。\n"
+        "并且有可补素材空间的产品。\n"
+        "效率判断必须参照 roas_vs_breakeven（true_roas_30d / 保本ROAS）：>=1 代表已过保本线，"
+        "不同产品保本线不同，禁止只看绝对 ROAS 高低比较产品；该字段为 null 时改看 true_roas_30d 并在理由中注明缺少保本线。\n"
+        "输出严格 JSON，字段符合 response_schema。\n"
         f"输入数据：\n{_json_dumps(payload)}"
     )
 
@@ -1765,12 +1863,13 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
     try:
         batch_results: list[dict[str, Any]] = []
         merged_candidates: list[dict[str, Any]] = []
-        for batch_index, batch in enumerate(_chunked(candidates, 20), start=1):
+        for batch_index, batch in enumerate(_snake_batches(candidates, 20), start=1):
             payload = {
                 "batch_index": batch_index,
                 "rule": "本批最多输出 Top10，剔除高ROAS低量产品。",
                 "products": [_rank_input(row) for row in batch],
             }
+            _pace_llm()
             result = llm_client.invoke_generate(
                 RANK_USE_CASE,
                 prompt=_ranking_prompt(payload),
@@ -1805,6 +1904,7 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
             "rule": "从所有批次候选里输出最终 Top20，仍然坚持有量 + 效率。",
             "products": [_rank_input(row) for row in merged_candidates],
         }
+        _pace_llm()
         final = llm_client.invoke_generate(
             RANK_USE_CASE,
             prompt=_ranking_prompt(final_payload),
@@ -2195,6 +2295,28 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
     return dict(grouped)
 
 
+def _derive_product_priority(product: Mapping[str, Any]) -> str:
+    """产品级优先级：用量 + 是否过保本线判定，与单条候选素材的评审分数无关。
+
+    保本线缺失时退化为绝对 ROAS >= 1.5。这是「这个产品值不值得投入素材产能」的
+    判断，独立于「某条候选素材该不该用」（后者由 material_review 决定）。
+    """
+    spend30 = _safe_float(product.get("spend_30d"))
+    orders30 = _safe_float(product.get("orders_30d"))
+    true_roas = _safe_float(product.get("true_roas_30d"))
+    breakeven = _safe_float(product.get("effective_breakeven_roas"))
+    roas_ok = true_roas >= breakeven if breakeven > 0 else true_roas >= 1.5
+
+    # P0 是「跑通的赚钱品」，必须过保本线；高量但亏损的品退到 P1（仍需重点关注，但动作是修而非扩）。
+    if spend30 >= 300 and orders30 >= 30 and roas_ok:
+        return "P0"
+    if spend30 >= 100 or orders30 >= 15:
+        return "P1"
+    if spend30 >= 50 or orders30 >= 8:
+        return "P2"
+    return "P3"
+
+
 def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict], mk_materials: list[dict]) -> dict:
     active = [c for c in countries if _safe_float(c.get("active_7d_ad_spend_usd")) > 0]
     strong = [c for c in countries if _safe_float(c.get("ad_spend_usd")) >= 30 and _safe_float(c.get("ad_roas")) >= 1.5]
@@ -2208,14 +2330,7 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
     orders30 = _safe_float(product.get("orders_30d"))
     true_roas = _safe_float(product.get("true_roas_30d"))
 
-    if spend30 >= 300 and orders30 >= 30 and true_roas >= 1.5:
-        priority = "P0"
-    elif spend30 >= 100 or orders30 >= 15:
-        priority = "P1"
-    elif spend30 >= 50 or orders30 >= 8:
-        priority = "P2"
-    else:
-        priority = "P3"
+    priority = _derive_product_priority(product)
 
     if strong and actionable_never:
         primary_action = "expand_country"
@@ -2278,6 +2393,31 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
     }
 
 
+def _mark_rejected_candidate(result: dict, reviewed_key: str) -> None:
+    """AI 评审判定首条候选素材「不通过」时，标记该素材建议，引导换候选。
+
+    不改变产品 priority / primary_action：评审否的是这条素材，不是整个产品的补素材动作。
+    """
+    note = "AI评审判定该候选素材不通过，建议改用其它明空候选或自制新素材。"
+    actions = result.get("material_actions") or []
+    marked = False
+    for action in actions:
+        if not reviewed_key or str(action.get("material_key") or "") == reviewed_key:
+            action["candidate_rejected"] = True
+            reason = str(action.get("reason") or "").strip()
+            action["reason"] = f"{reason}；{note}" if reason else note
+            marked = True
+            break
+    if not marked:
+        actions.append({
+            "action": "review_rejected",
+            "material_key": reviewed_key,
+            "candidate_rejected": True,
+            "reason": note,
+        })
+    result["material_actions"] = actions
+
+
 def _run_product_analysis(
     product: dict,
     countries: list[dict],
@@ -2303,6 +2443,7 @@ def _run_product_analysis(
         fallback["material_review_prompt_debug"] = {**prompt_debug, "mode": "deterministic_fallback"}
         return fallback
     try:
+        _pace_llm()
         result = llm_client.invoke_generate(
             PRODUCT_ANALYSIS_USE_CASE,
             prompt=_material_review_prompt(review_input),
@@ -2328,6 +2469,8 @@ def _run_product_analysis(
             fallback["ai_error"] = "empty model response"
             return fallback
         fallback["mode"] = "ai"
+        reviewed_key = str((mk_materials[0] if mk_materials else {}).get("material_key") or "")
+        parsed["reviewed_material_key"] = reviewed_key
         fallback["material_review_input"] = review_input
         fallback["material_review_result"] = parsed
         fallback["material_review_prompt_debug"] = {
@@ -2337,20 +2480,13 @@ def _run_product_analysis(
             "prompt": _material_review_prompt(review_input),
             "response_text": result.get("text"),
         }
-        quality_score = _safe_int(parsed.get("quality_score"))
-        if quality_score >= 80:
-            fallback["priority"] = "P0"
-        elif quality_score >= 65:
-            fallback["priority"] = "P1"
-        elif quality_score >= 45:
-            fallback["priority"] = "P2"
-        else:
-            fallback["priority"] = "P3"
+        # 产品优先级是「产品值不值得补素材」，由 _derive_product_priority 的确定性规则决定；
+        # material_review 只回答「这条候选素材该不该用」，不再劫持 priority / primary_action。
         final_reason = ((parsed.get("analysis_reason") or {}).get("final_judgment_reason") or "").strip()
         if final_reason:
             fallback["overall_judgement"] = final_reason
         if parsed.get("final_decision") == "不通过":
-            fallback["primary_action"] = "hold"
+            _mark_rejected_candidate(fallback, reviewed_key)
         return fallback
     except Exception as exc:
         log.exception("Ad material AI analysis product analysis failed product_id=%s", product.get("product_id"))
@@ -2505,6 +2641,123 @@ def _build_action_items(
     return actions
 
 
+_SUPPLEMENT_ACTIONS = {"expand", "supplement", "retest"}
+_ACTION_LABELS = {"expand": "扩展国家", "supplement": "补新素材", "retest": "二次验证"}
+_PRIORITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+
+
+def _build_supplement_plan(
+    results: list[dict],
+    *,
+    limit_per_product: int = 3,
+    limit_total: int = 40,
+) -> list[dict]:
+    """把逐产品逐国评审收敛成一张可执行的「素材补充计划」。
+
+    这是运营每天真正要的东西：哪个产品、补哪个国家、用哪条素材、从哪进去做。
+    只收录评审通过/条件通过、且该国没有阻塞任务的行；按 P0→P3、再按国家评分排序。
+    """
+    rows: list[dict] = []
+    for item in results:
+        product = item.get("product") or {}
+        pid = _safe_int(product.get("product_id"))
+        code = str(product.get("product_code") or "")
+        name = str(product.get("product_name") or "")
+        priority = str((item.get("ai_result") or {}).get("priority") or "P3")
+        country_reviews = item.get("country_reviews") or {}
+        country_summary = item.get("country_summary") or []
+        summary_by_code = {
+            _normalize_country_code(c.get("country_code"), lang=c.get("lang")): c
+            for c in country_summary
+        }
+        mk_materials = item.get("mingkong_materials") or []
+        local_materials = item.get("local_materials") or []
+        rejected_keys = {
+            str(a.get("material_key") or "")
+            for a in (item.get("ai_result") or {}).get("material_actions") or []
+            if a.get("candidate_rejected")
+        }
+
+        product_rows: list[dict] = []
+        for cc, review in country_reviews.items():
+            if not isinstance(review, Mapping):
+                continue
+            action = str((review.get("recommended_action") or {}).get("action") or "")
+            decision = str(review.get("final_decision") or "")
+            if action not in _SUPPLEMENT_ACTIONS or decision == "不通过":
+                continue
+            summary = summary_by_code.get(cc) or {}
+            if _task_blocks_recommendation(summary.get("blocking_task")):
+                continue
+            target = _TARGET_BY_COUNTRY.get(cc) or {}
+            lang = str(summary.get("lang") or target.get("lang") or "").lower()
+            cancelled = summary.get("cancelled_task") or {}
+
+            source, material_key, material_name, video_path = _pick_plan_material(
+                action, mk_materials, local_materials, rejected_keys,
+            )
+            entry_url = (
+                f"/medias/product/video_workbench/{pid}?target_lang={quote(lang)}" if lang else ""
+            )
+            product_rows.append({
+                "rank_no": _safe_int(item.get("rank_no")),
+                "product_id": pid,
+                "product_code": code,
+                "product_name": name,
+                "priority": priority,
+                "country_code": cc,
+                "country_name": target.get("country_name") or cc,
+                "lang": lang,
+                "action": action,
+                "action_label": _ACTION_LABELS.get(action, action),
+                "country_quality_score": _safe_int(review.get("quality_score")),
+                "decision": decision,
+                "reason": str((review.get("recommended_action") or {}).get("reason") or ""),
+                "material_source": source,
+                "material_key": material_key,
+                "material_name": material_name,
+                "video_path": video_path,
+                "cancelled_task_id": _safe_int(cancelled.get("task_id")) or None,
+                "entry_type": "create_translation_task" if lang else "",
+                "entry_url": entry_url,
+            })
+
+        product_rows.sort(key=lambda r: -r["country_quality_score"])
+        rows.extend(product_rows[:limit_per_product])
+
+    rows.sort(key=lambda r: (_PRIORITY_RANK.get(r["priority"], 9), -r["country_quality_score"]))
+    return rows[:limit_total]
+
+
+def _pick_plan_material(
+    action: str,
+    mk_materials: list[dict],
+    local_materials: list[dict],
+    rejected_keys: set[str],
+) -> tuple[str, str, str, str]:
+    """为一条补素材计划挑素材来源：supplement 用明空候选，扩国/重试用已验证的本地 EN 素材。"""
+    if action == "supplement":
+        for mk in mk_materials:
+            key = str(mk.get("material_key") or "")
+            if key and key in rejected_keys:
+                continue
+            return "mingkong", key, str(mk.get("video_name") or ""), str(mk.get("video_path") or "")
+    else:  # expand / retest：优先搬运推送次数最高的英语源素材
+        en_local = sorted(
+            [m for m in local_materials if str(m.get("lang") or "").lower() == "en"],
+            key=lambda m: -_safe_int(m.get("push_count")),
+        )
+        if en_local:
+            top = en_local[0]
+            return "local", str(top.get("id") or ""), str(top.get("display_name") or top.get("filename") or ""), ""
+        for mk in mk_materials:
+            key = str(mk.get("material_key") or "")
+            if key and key in rejected_keys:
+                continue
+            return "mingkong", key, str(mk.get("video_name") or ""), str(mk.get("video_path") or "")
+    return "new", "", "", ""
+
+
 def _summarize_project(products: list[dict], ranking: dict, snapshot: dict) -> dict:
     priority_counts: dict[str, int] = defaultdict(int)
     action_counts: dict[str, int] = defaultdict(int)
@@ -2512,6 +2765,10 @@ def _summarize_project(products: list[dict], ranking: dict, snapshot: dict) -> d
         ai = item.get("ai_result") or {}
         priority_counts[str(ai.get("priority") or "P3")] += 1
         action_counts[str(ai.get("primary_action") or "investigate")] += 1
+    supplement_plan = _build_supplement_plan(products)
+    plan_country_counts: dict[str, int] = defaultdict(int)
+    for row in supplement_plan:
+        plan_country_counts[row["country_code"]] += 1
     return {
         "top_product_count": len(products),
         "priority_counts": dict(priority_counts),
@@ -2519,6 +2776,9 @@ def _summarize_project(products: list[dict], ranking: dict, snapshot: dict) -> d
         "data_window": snapshot.get("window") or {},
         "data_quality": snapshot.get("data_quality") or {},
         "ranking_mode": (ranking.get("ranking_result") or {}).get("mode") or "unknown",
+        "supplement_plan": supplement_plan,
+        "supplement_plan_total": len(supplement_plan),
+        "supplement_plan_country_counts": dict(plan_country_counts),
     }
 
 
@@ -2853,6 +3113,187 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
         _release_project_lock(lock_conn)
 
 
+_STALE_HEARTBEAT_SECONDS = 600
+
+
+def _resume_checkpoint_state(row: Mapping[str, Any], progress: Mapping[str, Any]) -> tuple[bool, str]:
+    """判断 running 项目是否已无活跃执行器、可被管理员「继续未完成」接管。"""
+    status = str(row.get("status") or "").lower()
+    if status in {"interrupted", "failed"}:
+        return True, "项目已中断，可继续未完成。"
+    if status != "running":
+        return False, ""
+    runner_state = str(progress.get("runner_state") or "").lower()
+    if runner_state in {"resume_scheduled", "checkpoint_resume_scheduled", "manual_resume_scheduled", "queued"}:
+        return True, "已排队恢复但执行线程未推进，可重新接管。"
+    heartbeat = _to_datetime(progress.get("runner_heartbeat_at")) or _to_datetime(row.get("updated_at"))
+    if heartbeat is None:
+        return True, "运行心跳缺失，可继续未完成。"
+    if (datetime.now() - heartbeat).total_seconds() > _STALE_HEARTBEAT_SECONDS:
+        return True, "运行心跳超过 10 分钟未更新，可继续未完成。"
+    return False, ""
+
+
+def mark_project_interrupted(
+    project_id: int,
+    *,
+    reason: str = "startup_resume_failed",
+    message: str = "任务中断，等待人工从项目详情继续未完成。",
+) -> dict | None:
+    """把 stale running 项目落到 interrupted 终态，避免留下没有执行器的假运行中。"""
+    project_id = _safe_int(project_id)
+    if not project_id:
+        return None
+    row = _load_project_row(project_id)
+    if not row:
+        return None
+    progress = _normalize_progress(_json_loads(row.get("progress_json"), {}) or {}, message=message)
+    current_step = str(progress.get("current_step") or "snapshot")
+    progress = _progress_update(
+        progress,
+        step_key=current_step if current_step != "queued" else "snapshot",
+        step_status="failed",
+        percent=_safe_float(progress.get("percent")),
+        message=message,
+        project_status="interrupted",
+        level="error",
+    )
+    progress["runner_state"] = "interrupted"
+    recovery = dict(progress.get("recovery") or {})
+    recovery.update({"reason": reason, "status": "interrupted", "interrupted_at": _now_iso()})
+    progress["recovery"] = recovery
+    db.execute(
+        """
+        UPDATE ad_material_ai_analysis_projects
+        SET status = 'interrupted', error_message = %s, progress_json = %s,
+            finished_at = NOW(), updated_at = NOW()
+        WHERE id = %s AND status = 'running'
+        """,
+        (message, _json_dumps(progress), project_id),
+    )
+    return get_project(project_id)
+
+
+def mark_startup_interrupted_project_for_recovery() -> dict | None:
+    """服务启动时把最新 running 项目标记为待恢复，其余 running 落 interrupted。
+
+    返回待自动恢复的项目（保持 running + runner_state=resume_scheduled）；无 running 返回 None。
+    Docs anchor: docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md#2026-06-11-断电续传收口
+    """
+    lock_conn = _with_project_lock(timeout_seconds=0)
+    if lock_conn is None:
+        log.info("Ad material AI analysis startup recovery skipped; runner lock busy")
+        return None
+    try:
+        row = db.query_one(
+            """
+            SELECT id, user_id, progress_json, updated_at
+            FROM ad_material_ai_analysis_projects
+            WHERE status = 'running'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+            """
+        )
+        if not row:
+            return None
+        project_id = _safe_int(row.get("id"))
+        if not project_id:
+            return None
+        now = _now_iso()
+        progress = _normalize_progress(
+            _json_loads(row.get("progress_json"), {}) or {},
+            message="检测到服务重启，准备从断点自动恢复。",
+        )
+        current_step = str(progress.get("current_step") or "snapshot")
+        progress = _progress_update(
+            progress,
+            step_key=current_step if current_step != "queued" else "snapshot",
+            step_status="running",
+            percent=_safe_float(progress.get("percent")),
+            message="检测到服务重启导致运行线程中断，已加入自动恢复队列。",
+            project_status="running",
+            level="warning",
+        )
+        progress["runner_state"] = "resume_scheduled"
+        recovery = dict(progress.get("recovery") or {})
+        recovery.update({
+            "reason": "service_restart", "status": "scheduled",
+            "detected_at": now, "project_id": project_id, "auto_resume": True,
+        })
+        progress["recovery"] = recovery
+        affected = db.execute(
+            """
+            UPDATE ad_material_ai_analysis_projects
+            SET progress_json = %s, error_message = NULL, finished_at = NULL, updated_at = NOW()
+            WHERE id = %s AND status = 'running'
+            """,
+            (_json_dumps(progress), project_id),
+        )
+        if affected <= 0:
+            return None
+        try:
+            _mark_other_running_projects_interrupted(project_id)
+        except Exception:
+            log.warning("startup recovery failed to interrupt older running projects: project_id=%s",
+                        project_id, exc_info=True)
+        return get_project(project_id)
+    finally:
+        _release_project_lock(lock_conn)
+
+
+def resume_project_checkpoint(project_id: int, *, user_id: int | None = None) -> dict:
+    """「继续未完成」：复用同一 project_id，保留快照/排名/已落库产品结果，从断点重新排队。
+
+    必须先抢单任务锁；锁忙说明真实执行器仍在运行，抛 ProjectAlreadyRunningError。
+    """
+    project_id = _safe_int(project_id)
+    if not project_id:
+        raise ValueError("投放素材AI分析项目不存在：0")
+    lock_conn = _with_project_lock(timeout_seconds=0)
+    if lock_conn is None:
+        raise ProjectAlreadyRunningError(get_project(project_id))
+    try:
+        row = _load_project_row(project_id)
+        if not row:
+            raise ValueError(f"投放素材AI分析项目不存在：{project_id}")
+        if str(row.get("status") or "").lower() == "success":
+            return get_project(project_id) or {"id": project_id, "status": "success"}
+        now = _now_iso()
+        progress = _normalize_progress(
+            _json_loads(row.get("progress_json"), {}) or {},
+            message="已选择继续未完成项目，保留已完成产品结果并重新排队。",
+        )
+        progress["status"] = "running"
+        progress["runner_state"] = "manual_resume_scheduled"
+        progress["runner_heartbeat_at"] = None
+        recovery = dict(progress.get("recovery") or {})
+        recovery.update({
+            "reason": "manual_checkpoint_resume", "status": "scheduled",
+            "scheduled_at": now, "project_id": project_id, "auto_resume": False,
+        })
+        if user_id is not None:
+            recovery["user_id"] = user_id
+        progress["recovery"] = recovery
+        logs = list(progress.get("logs") or [])
+        logs.append({"time": now, "level": "warning",
+                     "message": "已选择继续未完成项目，保留已完成产品结果并重新排队。"})
+        progress["logs"] = logs[-_PROGRESS_LOG_LIMIT:]
+        progress["updated_at"] = now
+        db.execute(
+            """
+            UPDATE ad_material_ai_analysis_projects
+            SET status = 'running', error_message = NULL, finished_at = NULL,
+                progress_json = %s, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (_json_dumps(progress), project_id),
+        )
+        _mark_other_running_projects_interrupted(project_id)
+        return get_project(project_id) or {"id": project_id, "status": "running"}
+    finally:
+        _release_project_lock(lock_conn)
+
+
 def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
     user_id = _resolve_billing_user_id(user_id)
     project_row = _prepare_project_for_run(project_id)
@@ -3009,30 +3450,24 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
             ai_result = _decorate_ai_result_with_tasks(ai_result, countries, task_assignments)
             action_items = _build_action_items(product, ai_result, mk_materials, countries)
 
-            # --- 逐国独立评估 ---
+            # --- 逐国独立评估（5 国合并为 1 次调用）---
             countries_by_code = {
                 _normalize_country_code(c.get("country_code"), lang=c.get("lang")): c
                 for c in countries
             }
-            country_reviews: dict[str, dict] = {}
-            for eval_country in TARGET_EVAL_COUNTRIES:
-                cc = eval_country["country_code"]
-                country_data = countries_by_code.get(cc, {})
-                country_lang = eval_country.get("lang", "")
-                country_materials_for_lang = [
-                    m for m in local_materials
-                    if str(m.get("lang") or "").lower() == country_lang
-                ]
-                country_tasks_for_cc = [
-                    t for t in task_assignments
-                    if _normalize_country_code(t.get("country_code"), lang=t.get("lang")) == cc
-                ]
-                review = _run_country_review(
-                    product, eval_country, country_data,
-                    country_materials_for_lang, mk_materials, country_tasks_for_cc,
-                    project_id=project_id, user_id=user_id, run_ai=run_ai,
-                )
-                country_reviews[cc] = review
+            checkpoint(
+                "product_analysis",
+                "running",
+                start_percent + (0.5 / max(total_products, 1)) * 30,
+                f"第 {rank_no}/{total_products} 个产品：评估 DE/FR/IT/ES/JP 国家素材补充价值",
+                product_progress=product_progress,
+            )
+            country_reviews = _run_country_reviews(
+                product, TARGET_EVAL_COUNTRIES, countries_by_code,
+                local_materials=local_materials, mk_materials=mk_materials,
+                task_assignments=task_assignments,
+                project_id=project_id, user_id=user_id, run_ai=run_ai,
+            )
             market_expansion = _build_market_expansion_recommendations(
                 product, country_reviews, countries,
             )
@@ -3267,11 +3702,199 @@ def get_project_by_share_token(share_token: str) -> dict | None:
     return project
 
 
+# 公开分享只透出展示必需字段（白名单）；任何成本/利润/保本线/原始报文/排名细节都不出现。
+_PUBLIC_METRIC_KEYS = (
+    "spend_today", "spend_yesterday", "spend_7d", "spend_30d",
+    "orders_today", "orders_yesterday", "orders_7d", "orders_30d",
+    "true_roas_30d", "meta_roas_30d", "ad_count_30d", "results_30d",
+    "local_material_count",
+)
+_PUBLIC_COUNTRY_KEYS = (
+    "country_code", "country_name", "lang", "lang_name", "tier",
+    "item_count", "pushed_video_count", "ad_spend_usd", "ad_roas",
+    "active_7d_ad_spend_usd", "delivery_status",
+)
+_PUBLIC_AI_RESULT_KEYS = (
+    "overall_judgement", "priority", "primary_action", "next_check",
+    "material_review_result", "task_summary",
+)
+_PUBLIC_REVIEW_KEYS = (
+    "country_code", "final_decision", "quality_score",
+    "score_breakdown", "analysis_reason", "recommended_action", "mode",
+)
+_PUBLIC_MK_KEYS = (
+    "material_key", "video_name", "cover_url", "cumulative_90_spend",
+    "video_ads_count", "yesterday_spend_delta", "video_duration_seconds",
+    "top100_display_position",
+)
+_PUBLIC_PLAN_KEYS = (
+    "rank_no", "product_id", "product_code", "product_name", "priority",
+    "country_code", "country_name", "lang", "action", "action_label",
+    "country_quality_score", "decision", "reason", "material_source",
+    "material_name",
+)
+_PUBLIC_EXPANSION_KEYS = (
+    "type", "source_countries", "target_countries", "blocked_countries",
+    "priority", "reason",
+)
+
+
+def _public_blocking_task(task: Any) -> dict | None:
+    if not isinstance(task, Mapping):
+        return None
+    return {
+        "task_id": _safe_int(task.get("task_id")),
+        "status_label": task.get("status_label") or "",
+        "status_group": task.get("status_group") or "",
+    }
+
+
+def _public_country_action(action: Mapping[str, Any]) -> dict:
+    out = {
+        "country_code": action.get("country_code") or "",
+        "lang": action.get("lang") or "",
+        "action": action.get("action") or "",
+        "reason": action.get("reason") or "",
+        "duplicate_suppressed": bool(action.get("duplicate_suppressed")),
+    }
+    existing = action.get("existing_task")
+    if isinstance(existing, Mapping):
+        out["existing_task"] = {
+            "task_id": _safe_int(existing.get("task_id")),
+            "status_label": existing.get("status_label") or "",
+        }
+    return out
+
+
+def _public_ai_result(ai_result: Mapping[str, Any]) -> dict:
+    out = {key: ai_result.get(key) for key in _PUBLIC_AI_RESULT_KEYS if key in ai_result}
+    review = ai_result.get("material_review_result")
+    if isinstance(review, Mapping):
+        out["material_review_result"] = {
+            "final_decision": review.get("final_decision") or "",
+            "quality_score": review.get("quality_score"),
+            "reviewed_material_key": review.get("reviewed_material_key") or "",
+            "score_breakdown": review.get("score_breakdown") or {},
+            "analysis_reason": review.get("analysis_reason") or {},
+            "material_plan": review.get("material_plan") or {},
+        }
+    out["country_actions"] = [
+        _public_country_action(a) for a in ai_result.get("country_actions") or []
+        if isinstance(a, Mapping)
+    ]
+    return out
+
+
+def _public_product(product: Mapping[str, Any], share_token: str) -> dict:
+    metrics = product.get("metrics") or {}
+    countries = []
+    for country in product.get("country_summary") or []:
+        if not isinstance(country, Mapping):
+            continue
+        item = {key: country.get(key) for key in _PUBLIC_COUNTRY_KEYS if key in country}
+        blocking = _public_blocking_task(country.get("blocking_task"))
+        if blocking:
+            item["blocking_task"] = blocking
+        countries.append(item)
+    local_materials = []
+    for lm in product.get("local_materials") or []:
+        if not isinstance(lm, Mapping):
+            continue
+        object_key = str(lm.get("object_key") or "")
+        local_materials.append({
+            "id": lm.get("id"),
+            "lang": lm.get("lang") or "",
+            "display_name": lm.get("display_name") or lm.get("filename") or "",
+            "duration_seconds": lm.get("duration_seconds"),
+            "push_count": _safe_int(lm.get("push_count")),
+            "video_url": f"/medias/obj/{object_key}" if object_key else "",
+        })
+    mk_materials = []
+    for mk in product.get("mingkong_materials") or []:
+        if not isinstance(mk, Mapping):
+            continue
+        item = {key: mk.get(key) for key in _PUBLIC_MK_KEYS if key in mk}
+        orig_video_url = str(mk.get("video_url") or "")
+        if orig_video_url:
+            sep = "&" if "?" in orig_video_url else "?"
+            item["video_url"] = f"{orig_video_url}{sep}share_token={share_token}"
+        mk_materials.append(item)
+    country_reviews = {}
+    for cc, review in (product.get("country_reviews") or {}).items():
+        if isinstance(review, Mapping):
+            country_reviews[cc] = {key: review.get(key) for key in _PUBLIC_REVIEW_KEYS if key in review}
+    market_expansion = [
+        {key: rec.get(key) for key in _PUBLIC_EXPANSION_KEYS if key in rec}
+        for rec in product.get("market_expansion") or []
+        if isinstance(rec, Mapping)
+    ]
+    # 公开页只做文本展示：保留动作类型与文案，剥掉 url / method / payload / task_url 等可执行入口
+    action_items = [
+        {"type": a.get("type") or "", "label": a.get("label") or ""}
+        for a in product.get("action_items") or []
+        if isinstance(a, Mapping)
+    ]
+    return {
+        "rank_no": _safe_int(product.get("rank_no")),
+        "product_code": product.get("product_code") or "",
+        "product_name": product.get("product_name") or "",
+        "metrics": {key: metrics.get(key) for key in _PUBLIC_METRIC_KEYS if key in metrics},
+        "country_summary": countries,
+        "local_materials": local_materials,
+        "mingkong_materials": mk_materials,
+        "ai_result": _public_ai_result(product.get("ai_result") or {}),
+        "country_reviews": country_reviews,
+        "market_expansion": market_expansion,
+        "action_items": action_items,
+    }
+
+
+def build_public_project_payload(project: Mapping[str, Any], share_token: str) -> dict:
+    """把项目报告收敛成可安全公开的白名单 payload（黑名单删字段不可靠，改为只挑安全字段）。"""
+    summary = project.get("summary") or {}
+    public_summary = {
+        "top_product_count": summary.get("top_product_count"),
+        "priority_counts": summary.get("priority_counts") or {},
+        "action_counts": summary.get("action_counts") or {},
+        "data_window": summary.get("data_window") or {},
+        "data_quality": summary.get("data_quality") or {},
+        "ranking_mode": summary.get("ranking_mode") or "",
+        "supplement_plan_total": summary.get("supplement_plan_total"),
+        "supplement_plan_country_counts": summary.get("supplement_plan_country_counts") or {},
+        "supplement_plan": [
+            {key: row.get(key) for key in _PUBLIC_PLAN_KEYS if key in row}
+            for row in summary.get("supplement_plan") or []
+            if isinstance(row, Mapping)
+        ],
+    }
+    progress = project.get("progress") or {}
+    public_progress = {
+        "percent": progress.get("percent"),
+        "current_step_label": progress.get("current_step_label") or "",
+        "message": progress.get("message") or "",
+    }
+    return {
+        "public": True,
+        "id": _safe_int(project.get("id")),
+        "project_name": project.get("project_name") or "",
+        "status": project.get("status") or "success",
+        "started_at": project.get("started_at"),
+        "finished_at": project.get("finished_at"),
+        "summary": public_summary,
+        "progress": public_progress,
+        "products": [
+            _public_product(p, share_token) for p in project.get("products") or []
+            if isinstance(p, Mapping)
+        ],
+    }
+
+
 def _serialize_project_row(row: Mapping[str, Any], *, include_products: bool) -> dict:
     status = row.get("status") or "running"
     progress = _json_loads(row.get("progress_json"), {}) or {}
     if not progress and status == "running":
         progress = _initial_progress(message="项目正在运行，等待后台写入详细进度。")
+    can_resume, resume_reason = _resume_checkpoint_state(row, progress)
     out = {
         "id": _safe_int(row.get("id")),
         "project_name": row.get("project_name") or "",
@@ -3284,6 +3907,8 @@ def _serialize_project_row(row: Mapping[str, Any], *, include_products: bool) ->
         "summary": _json_loads(row.get("summary_json"), {}) or {},
         "progress": progress,
         "error_message": row.get("error_message") or "",
+        "can_resume_checkpoint": can_resume,
+        "resume_checkpoint_reason": resume_reason,
         "started_at": _iso(row.get("started_at")),
         "finished_at": _iso(row.get("finished_at")),
         "created_at": _iso(row.get("created_at")),
@@ -3900,61 +4525,187 @@ def _fallback_country_review(
     }
 
 
-def _run_country_review(
+COMBINED_COUNTRY_REVIEW_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "country_reviews": {
+            "type": "array",
+            "items": COUNTRY_REVIEW_RESPONSE_SCHEMA,
+        },
+    },
+    "required": ["country_reviews"],
+}
+
+
+def _build_combined_country_review_input(
     product: Mapping[str, Any],
-    country_info: Mapping[str, Any],
-    country_summary: Mapping[str, Any],
-    country_materials: list[dict],
+    eval_countries: tuple[dict[str, str], ...],
+    countries_by_code: Mapping[str, dict],
+    local_materials: list[dict],
     mk_materials: list[dict],
-    country_tasks: list[dict],
+    task_assignments: list[dict],
+) -> dict[str, Any]:
+    """一次性构造 5 国评估输入：product_global 共享一份，每国只带各自维度。"""
+    product_global: dict[str, Any] = {}
+    countries_payload: list[dict[str, Any]] = []
+    for country_info in eval_countries:
+        cc = country_info.get("country_code", "")
+        lang = country_info.get("lang", "")
+        country_summary = countries_by_code.get(cc, {})
+        country_materials = [
+            m for m in local_materials if str(m.get("lang") or "").lower() == lang
+        ]
+        country_tasks = [
+            t for t in task_assignments
+            if _normalize_country_code(t.get("country_code"), lang=t.get("lang")) == cc
+        ]
+        single = _build_country_review_input(
+            product, country_info, country_summary, country_materials, mk_materials, country_tasks,
+        )
+        if not product_global:
+            product_global = single.get("product_global") or {}
+        countries_payload.append({
+            "target_country": single.get("target_country") or {},
+            "country_performance": single.get("country_performance") or {},
+            "available_materials": single.get("available_materials") or {},
+            "existing_tasks": single.get("existing_tasks") or {},
+        })
+    return {
+        "current_date": date.today().isoformat(),
+        "product_global": product_global,
+        "countries": countries_payload,
+    }
+
+
+def _combined_country_review_prompt(payload: dict) -> str:
+    """5 国合并评估提示词：沿用单国 40/40/20 规则，要求一次输出全部国家数组。"""
+    rules = """你是 Facebook 信息流广告投放的业务评审员，一次性评估同一个产品在多个欧洲/日本市场的素材补充价值。
+
+输入 JSON：
+- `current_date`：评审当天日期
+- `product_global`：产品全局投放数据（所有国家汇总，所有国家共用同一份）
+- `countries`：数组，每个元素是一个目标国家，含 target_country、country_performance、available_materials、existing_tasks
+
+对 countries 数组里的每一个国家，独立给出一份评估，合并成 country_reviews 数组输出。
+
+评估维度和权重（每国相同）：
+1. 商品全局历史（40 分）— 产品整体投放验证程度；同一产品的这部分各国应当一致
+2. 该国投放表现（40 分）— 拆为该国消耗和 ROAS（25 分）+ 该国素材覆盖（15 分）
+3. 素材补充空间（20 分）— 该国可执行的素材补充机会
+
+判分规则：
+- 商品全局：累计消耗高、overall_roas 高于保本、近 7 天仍有消耗 → 35-40；中等 → 25-34；偏少 → 15-24；几乎无验证 → 0-14。
+- 该国表现：delivery_status=active 且 ad_roas>=effective_breakeven_roas → 高分；active 但低于保本 → 中等；stopped → 看历史消耗；never → country_spend_and_roas 给 0 且 included=false，但 country_material_coverage 正常评分，不要把从未投放当作表现差。
+- 素材补充：该国本地素材少（item_count<=2）且明空有可用 → 15-20；中等 → 10-14；充足 → 5-9；有阻塞任务降低评分；无可用素材来源 → 0-4。
+
+final_decision 只能是：通过、条件通过、不通过。不要因为单个风险或单个缺失字段直接判死。
+recommended_action：expand（该国从未投放但全局强）/ supplement（已投放可补素材）/ retest（曾投放已停值得重试）/ hold（有阻塞任务或需等待）/ skip（条件不足）。
+
+输出必须是严格 JSON，不要 Markdown、不要代码块、不要自然语言说明。
+quality_score 为 0-100 整数；analysis_reason 各字段用中文；final_judgment_reason 只解释判断原因，不写上线/投放/测试/预算建议。
+
+输出结构：
+{
+  "country_reviews": [
+    {
+      "country_code": "DE",
+      "final_decision": "通过 | 条件通过 | 不通过",
+      "quality_score": 0,
+      "score_breakdown": {
+        "global_product_history": {"score": 0, "max_score": 40, "included": true, "reason": ""},
+        "country_performance": {"score": 0, "max_score": 40, "included": true, "reason": "",
+          "sub_scores": {"country_spend_and_roas": 0, "country_material_coverage": 0}},
+        "material_supplement_opportunity": {"score": 0, "max_score": 20, "included": true, "reason": ""}
+      },
+      "analysis_reason": {"global_history_analysis": "", "country_performance_analysis": "",
+        "material_opportunity_analysis": "", "final_judgment_reason": ""},
+      "recommended_action": {"action": "expand | supplement | retest | hold | skip", "reason": ""}
+    }
+  ]
+}
+country_reviews 的元素顺序和数量必须与输入 countries 一致，country_code 必须回填对应国家。""".strip()
+    return f"{rules}\n\n输入 JSON：\n{_json_dumps(payload)}"
+
+
+def _run_country_reviews(
+    product: Mapping[str, Any],
+    eval_countries: tuple[dict[str, str], ...],
+    countries_by_code: Mapping[str, dict],
     *,
+    local_materials: list[dict],
+    mk_materials: list[dict],
+    task_assignments: list[dict],
     project_id: int,
     user_id: int | None,
     run_ai: bool,
-) -> dict[str, Any]:
-    """对单个产品×单个国家执行 LLM 评估。"""
-    country_code = country_info.get("country_code", "")
-    fallback = _fallback_country_review(product, country_info, country_summary, country_tasks)
+) -> dict[str, dict]:
+    """一次 LLM 调用评估全部目标国家；缺国/坏国/异常用确定性兜底补齐。"""
+    def _fallback_for(cc: str, lang: str) -> dict:
+        country_info = next((ec for ec in eval_countries if ec["country_code"] == cc), {"country_code": cc, "lang": lang})
+        country_summary = countries_by_code.get(cc, {})
+        country_tasks = [
+            t for t in task_assignments
+            if _normalize_country_code(t.get("country_code"), lang=t.get("lang")) == cc
+        ]
+        return _fallback_country_review(product, country_info, country_summary, country_tasks)
 
+    fallback_reviews = {
+        ec["country_code"]: _fallback_for(ec["country_code"], ec.get("lang", ""))
+        for ec in eval_countries
+    }
     if not run_ai:
-        return fallback
+        return fallback_reviews
 
-    review_input = _build_country_review_input(
-        product, country_info, country_summary, country_materials, mk_materials, country_tasks,
+    review_input = _build_combined_country_review_input(
+        product, eval_countries, countries_by_code, local_materials, mk_materials, task_assignments,
     )
-
     try:
+        _pace_llm()
         result = llm_client.invoke_generate(
             COUNTRY_REVIEW_USE_CASE,
-            prompt=_country_review_prompt(review_input, country_info),
+            prompt=_combined_country_review_prompt(review_input),
             user_id=user_id,
             project_id=str(project_id),
-            response_schema=COUNTRY_REVIEW_RESPONSE_SCHEMA,
+            response_schema=COMBINED_COUNTRY_REVIEW_RESPONSE_SCHEMA,
             temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
             provider_override=PROVIDER_CODE,
             model_override=MODEL_ID,
             billing_extra={
-                "stage": "country_review",
+                "stage": "country_review_combined",
                 "product_id": product.get("product_id"),
-                "country_code": country_code,
+                "country_count": len(eval_countries),
             },
-            timeout_seconds=120,
+            timeout_seconds=180,
         )
         parsed = _llm_json(result)
-        if not parsed:
-            fallback["ai_error"] = "empty model response"
-            return fallback
-        parsed["mode"] = "ai"
-        parsed.setdefault("country_code", country_code)
-        return parsed
+        items = parsed.get("country_reviews") if isinstance(parsed, Mapping) else None
+        if not isinstance(items, list) or not items:
+            for review in fallback_reviews.values():
+                review["ai_error"] = "empty model response"
+            return fallback_reviews
+        by_code: dict[str, dict] = {}
+        usage_log_id = result.get("usage_log_id")
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            cc = _normalize_country_code(item.get("country_code"))
+            if cc not in fallback_reviews:
+                continue
+            entry = dict(item)
+            entry["mode"] = "ai"
+            entry["country_code"] = cc
+            entry["usage_log_id"] = usage_log_id
+            by_code[cc] = entry
+        # 缺失国家用兜底补齐
+        for cc, review in fallback_reviews.items():
+            by_code.setdefault(cc, review)
+        return by_code
     except Exception as exc:
-        log.exception(
-            "Country review failed product_id=%s country=%s",
-            product.get("product_id"), country_code,
-        )
-        fallback["ai_error"] = str(exc)
-        return fallback
+        log.exception("Combined country review failed product_id=%s", product.get("product_id"))
+        for review in fallback_reviews.values():
+            review["ai_error"] = str(exc)
+        return fallback_reviews
 
 
 def _build_market_expansion_recommendations(
@@ -3990,41 +4741,63 @@ def _build_market_expansion_recommendations(
 
     recommendations: list[dict] = []
 
+    def _split_blocked(codes: list[str]) -> tuple[list[str], list[dict]]:
+        """从扩展目标里剔除已有阻塞任务的国家，避免与「不重复排程」硬规则冲突。"""
+        allowed: list[str] = []
+        blocked: list[dict] = []
+        for code in codes:
+            task = (countries_by_code.get(code) or {}).get("blocking_task")
+            if _task_blocks_recommendation(task):
+                blocked.append({
+                    "country_code": code,
+                    "task_id": _safe_int(task.get("task_id")),
+                    "status_label": task.get("status_label") or "",
+                })
+            else:
+                allowed.append(code)
+        return allowed, blocked
+
     # European cluster: DE, FR → IT, ES
     eu_strong = [c for c in strong_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
     eu_never = [c for c in never_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
     eu_weak = [c for c in weak_countries if c["code"] in {"DE", "FR", "IT", "ES"}]
 
     if eu_strong and (eu_never or eu_weak):
-        strong_names = "、".join(
-            (_TARGET_BY_COUNTRY.get(c["code"]) or {}).get("country_name", c["code"])
-            for c in eu_strong
-        )
-        target_list = eu_never + eu_weak
-        target_names = "、".join(
-            (_TARGET_BY_COUNTRY.get(c["code"]) or {}).get("country_name", c["code"])
-            for c in target_list
-        )
-        recommendations.append({
-            "type": "eu_cluster_expansion",
-            "source_countries": [c["code"] for c in eu_strong],
-            "target_countries": [c["code"] for c in target_list],
-            "priority": "P1" if len(eu_strong) >= 2 else "P2",
-            "reason": f"{strong_names}表现强劲，建议将同素材扩展投放到{target_names}。欧洲市场用户偏好相近，跨国扩展成功率较高。",
-        })
+        target_codes, eu_blocked = _split_blocked([c["code"] for c in (eu_never + eu_weak)])
+        if target_codes:
+            strong_names = "、".join(
+                (_TARGET_BY_COUNTRY.get(c["code"]) or {}).get("country_name", c["code"])
+                for c in eu_strong
+            )
+            target_names = "、".join(
+                (_TARGET_BY_COUNTRY.get(code) or {}).get("country_name", code)
+                for code in target_codes
+            )
+            recommendations.append({
+                "type": "eu_cluster_expansion",
+                "source_countries": [c["code"] for c in eu_strong],
+                "target_countries": target_codes,
+                "blocked_countries": eu_blocked,
+                "priority": "P1" if len(eu_strong) >= 2 else "P2",
+                "reason": f"{strong_names}表现强劲，建议将同素材扩展投放到{target_names}。欧洲市场用户偏好相近，跨国扩展成功率较高。",
+            })
 
     # JP as independent market
     jp_review = country_reviews.get("JP")
     if jp_review:
         jp_data = countries_by_code.get("JP", {})
         jp_delivery = jp_data.get("delivery_status") or "never"
+        jp_blocked = _task_blocks_recommendation(jp_data.get("blocking_task"))
         global_spend = _safe_float(product.get("spend_30d"))
 
-        if jp_delivery == "never" and global_spend >= 200 and _safe_float(product.get("true_roas_30d")) >= (base_roas or 1.0):
+        if jp_blocked:
+            pass  # 日本已有排程任务，不再生成扩展/重试建议
+        elif jp_delivery == "never" and global_spend >= 200 and _safe_float(product.get("true_roas_30d")) >= (base_roas or 1.0):
             recommendations.append({
                 "type": "jp_market_entry",
                 "source_countries": [c["code"] for c in strong_countries] or ["EN"],
                 "target_countries": ["JP"],
+                "blocked_countries": [],
                 "priority": "P2",
                 "reason": "产品全局表现强，日本市场尚未投放。日本市场独立性强，建议小规模测试。",
             })
@@ -4033,6 +4806,7 @@ def _build_market_expansion_recommendations(
                 "type": "jp_market_retest",
                 "source_countries": [c["code"] for c in strong_countries] or ["EN"],
                 "target_countries": ["JP"],
+                "blocked_countries": [],
                 "priority": "P3",
                 "reason": "产品全局有量，日本市场曾投放已停。可用新素材重试日本市场。",
             })
