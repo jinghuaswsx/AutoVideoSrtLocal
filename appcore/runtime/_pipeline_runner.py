@@ -98,6 +98,7 @@ from ._helpers import (
     _select_segment_candidate_assembly,
     _DEFAULT_WPS,
     _compute_next_target,
+    resolve_guarded_candidate,
     _distance_to_duration_range,
     _fit_tts_segments_to_duration,
     _trim_tts_metadata_to_segments,
@@ -940,6 +941,13 @@ class PipelineRunner:
                     target_words + tolerance_abs,
                 ]
                 prior_word_counts: list[int] = []
+                # Block3 质量守门（默认开启；fail-open，绝不阻塞收敛）。
+                guard_enabled = bool(getattr(config, "OMNI_REWRITE_GUARD_ENABLED", True))
+                guard_max_calls = int(getattr(config, "OMNI_REWRITE_GUARD_MAX_CALLS_PER_ROUND", 3))
+                guard_calls_this_round = 0
+                # (attempt, candidate, guard_result) for in-window-but-guard-rejected candidates.
+                in_window_rejected: list[tuple[int, dict, dict]] = []
+                guard_feedback: str | None = None
                 for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
                     attempt_temperature = 0.6 if attempt == 1 else 1.0
                     _substep(
@@ -966,6 +974,12 @@ class PipelineRunner:
                             lo=target_words - tolerance_abs,
                             hi=target_words + tolerance_abs,
                             dir=direction,
+                        )
+                    # Block3: 守门拒绝意见与字数反馈共存（拼接，不覆盖）。
+                    if guard_feedback:
+                        feedback_notes = (
+                            f"{feedback_notes}\n\n{guard_feedback}"
+                            if feedback_notes else guard_feedback
                         )
 
                     custom_rewrite = getattr(loc_mod, "generate_duration_rewrite", None)
@@ -1097,12 +1111,100 @@ class PipelineRunner:
                         "preview_text": (candidate.get("full_text") or "")[:200],
                     })
                     if diff <= tolerance_abs:
+                        # Block3: 字数落窗候选先过质量守门（忠实度 + 首句钩子 + 尾句收尾）。
+                        # 守门只在已满足字数窗口的候选内部做选择/拒绝，绝不放宽时长约束。
+                        guard_result = None
+                        if guard_enabled and guard_calls_this_round < guard_max_calls:
+                            from pipeline.rewrite_quality_guard import (
+                                assess_rewrite_candidate,
+                            )
+                            guard_calls_this_round += 1
+                            guard_result = assess_rewrite_candidate(
+                                source_full_text=source_full_text,
+                                reference_translation_text=(
+                                    initial_localized_translation or {}
+                                ).get("full_text", ""),
+                                candidate_text=candidate.get("full_text", ""),
+                                target_lang=str(target_language_label or ""),
+                                task_id=task_id,
+                                user_id=self.user_id,
+                            )
+                            round_record["rewrite_attempts"][-1]["guard"] = {
+                                k: guard_result[k] for k in (
+                                    "fidelity", "hook_ok", "ending_ok",
+                                    "issues", "passed", "guard_error",
+                                )
+                            }
+                            debug_call = guard_result.get("_llm_debug_call") or {}
+                            if debug_call:
+                                _save_llm_prompt_debug(
+                                    task_id=task_id,
+                                    task_dir=task_dir,
+                                    step="tts",
+                                    filename=(
+                                        f"rewrite_guard.round_{round_index}."
+                                        f"attempt_{attempt}.json"
+                                    ),
+                                    label=(
+                                        f"第 {round_index} 轮守门 attempt {attempt}"
+                                    ),
+                                    phase="rewrite_guard",
+                                    use_case_code="video_translate.rewrite_guard",
+                                    provider=debug_call.get("provider"),
+                                    model=debug_call.get("model"),
+                                    messages=debug_call.get("messages") or [],
+                                    request_payload=debug_call.get("request_payload"),
+                                    meta={
+                                        "round": round_index,
+                                        "attempt": attempt,
+                                        "fidelity": guard_result.get("fidelity"),
+                                        "passed": guard_result.get("passed"),
+                                    },
+                                )
+                        else:
+                            round_record["rewrite_attempts"][-1]["guard_skipped"] = True
+                        if guard_result is not None and not guard_result["passed"]:
+                            # 守门拒绝：不采纳，记录候选，注入反馈，继续下一 attempt。
+                            in_window_rejected.append((attempt, candidate, guard_result))
+                            guard_feedback = (
+                                "QUALITY GATE FEEDBACK: the previous in-window candidate "
+                                "was REJECTED for quality: "
+                                + "; ".join(
+                                    guard_result["issues"] or ["quality below threshold"]
+                                )
+                                + ". Fix these while staying inside the word window. "
+                                "Keep sentence 1 as the hook and keep the final "
+                                "sentence's closing/CTA intent."
+                            )
+                            round_record["rewrite_attempts"][-1]["accepted"] = False
+                            self._emit_duration_round(
+                                task_id, round_index,
+                                "quality_gate_rejected", round_record,
+                            )
+                            continue
+                        # 守门通过 / 关闭 / 超额 → 现状采纳路径。
                         localized_translation = candidate
                         chosen_attempt_idx = attempt - 1  # 列表下标
                         round_record["rewrite_attempt_used"] = attempt
                         round_record["rewrite_words_actual"] = cand_words
                         round_record["rewrite_units_actual"] = cand_words
                         break
+                if localized_translation is None and in_window_rejected:
+                    # R1.4 降级采纳：attempt 耗尽但有"落窗但守门未过"的候选，
+                    # 取 fidelity 最高者送 TTS，绝不让守门比现状更容易失败。
+                    chosen_attempt, chosen_candidate, _g = max(
+                        in_window_rejected, key=lambda row: row[2].get("fidelity", -1)
+                    )
+                    localized_translation = chosen_candidate
+                    chosen_attempt_idx = chosen_attempt - 1
+                    round_record["rewrite_attempt_used"] = chosen_attempt
+                    round_record["rewrite_words_actual"] = _count_rewrite_units(
+                        chosen_candidate.get("full_text", "")
+                    )
+                    round_record["rewrite_units_actual"] = round_record[
+                        "rewrite_words_actual"
+                    ]
+                    round_record["guard_degraded"] = True
                 if localized_translation is None:
                     # 5 次都没收敛 → 记录最接近候选，但不进入 TTS。
                     # 一旦 round 1 拿到实测语速，后续文案必须先落在词数置信区间内；
