@@ -109,6 +109,25 @@ def test_build_inputs_reads_sentence_reconcile_variant_outputs():
     assert inputs["tts_recognition"] == "Indispensable. Toute voiture."
 
 
+def test_build_inputs_adds_tail_truncation_note():
+    task = {
+        "utterances": [{"text": "Start strong."}, {"text": "Buy now."}],
+        "localized_translation": {"full_text": "Commencez fort. Achetez maintenant."},
+        "english_asr_result": {"full_text": "Commencez fort."},
+        "source_language": "en",
+        "target_lang": "fr",
+        "quality_warnings": [
+            {"type": "tail_truncated", "removed_count": 2, "removed_texts": ["Buy now."]},
+        ],
+    }
+
+    inputs = svc._build_inputs(task)
+
+    assert inputs["notes"] == (
+        "NOTE: the final audio was tail-truncated, 2 sentences removed before export."
+    )
+
+
 def test_get_project_for_assessment_queries_live_project(monkeypatch):
     from appcore import quality_assessment as qa
 
@@ -147,6 +166,62 @@ def test_list_assessment_rows_orders_newest_first(monkeypatch):
     assert "FROM translation_quality_assessments" in captured["sql"]
     assert "ORDER BY run_id DESC" in captured["sql"]
     assert captured["args"] == ("task-quality",)
+
+
+def test_is_red_assessment_checks_score_and_ending_dimension():
+    assert svc.is_red_assessment({"translation_score": 69}) is True
+    assert svc.is_red_assessment({
+        "translation_score": 88,
+        "translation_dimensions": {"ending_integrity": 59},
+    }) is True
+    assert svc.is_red_assessment({
+        "translation_score": 88,
+        "translation_dimensions": '{"ending_integrity": 60}',
+    }) is False
+    assert svc.is_red_assessment({
+        "translation_score": "not-a-number",
+        "translation_dimensions": "not-json",
+    }) is False
+
+
+def test_decorate_project_rows_with_latest_assessments_marks_red(monkeypatch):
+    from appcore import quality_assessment as qa
+
+    rows = [{"id": "task-red"}, {"id": "task-ok"}]
+    captured = {}
+
+    def fake_query(sql, args=None):
+        captured["sql"] = sql
+        captured["args"] = args
+        return [
+            {
+                "task_id": "task-red",
+                "run_id": 3,
+                "translation_score": 88,
+                "tts_score": 90,
+                "translation_dimensions": '{"ending_integrity": 55}',
+            },
+            {
+                "task_id": "task-ok",
+                "run_id": 2,
+                "translation_score": 91,
+                "tts_score": 93,
+                "translation_dimensions": '{"ending_integrity": 85}',
+            },
+        ]
+
+    qa.decorate_project_rows_with_latest_assessments(
+        rows,
+        project_type="omni_translate",
+        query_func=fake_query,
+    )
+
+    assert "translation_quality_assessments" in captured["sql"]
+    assert captured["args"] == ("omni_translate", "task-red", "task-ok")
+    assert rows[0]["quality_assessment_score"] == 88
+    assert rows[0]["quality_assessment_is_red"] is True
+    assert rows[1]["quality_assessment_score"] == 91
+    assert rows[1]["quality_assessment_is_red"] is False
 
 
 def test_trigger_inserts_pending_row(db_clean):
@@ -311,6 +386,30 @@ def test_run_assessment_writes_done_row(db_clean):
     assert row["translation_score"] == 88
     assert row["tts_score"] == 92
     assert row["verdict"] == "recommend"
+
+
+def test_run_assessment_passes_tail_truncation_note(db_clean):
+    db_clean.execute(
+        "INSERT INTO translation_quality_assessments "
+        "(task_id, project_type, run_id, model, status) "
+        "VALUES (%s, %s, %s, %s, %s)",
+        ("task-note", "omni_translate", 1, "gemini-3.5-flash", "pending"),
+    )
+    fake_task = {
+        "utterances": [{"text": "hook"}, {"text": "cta"}],
+        "localized_translation": {"full_text": "hook cta"},
+        "english_asr_result": {"full_text": "hook"},
+        "source_language": "en",
+        "target_lang": "fr",
+        "quality_warnings": [{"type": "tail_truncated", "removed_count": 1}],
+    }
+    with patch("appcore.task_state.get", return_value=fake_task), \
+         patch("pipeline.translation_quality.assess", return_value=_fake_assessment_result()) as assess:
+        svc._run_assessment_job(task_id="task-note", project_type="omni_translate", run_id=1, user_id=1)
+
+    assert assess.call_args.kwargs["notes"] == (
+        "NOTE: the final audio was tail-truncated, 1 sentences removed before export."
+    )
 
 
 def test_run_assessment_writes_failed_row_on_exception(db_clean):

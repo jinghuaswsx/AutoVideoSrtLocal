@@ -458,6 +458,17 @@
   var countryListEl = document.getElementById('countryList');
   var adListBodyEl = document.getElementById('adListBody');
 
+  function fetchWithTimeout(url, options, timeoutMs) {
+    options = options || {};
+    if (typeof AbortController === 'function' && !options.signal) {
+      var controller = new AbortController();
+      var timer = window.setTimeout(function() { controller.abort(); }, timeoutMs || 30000);
+      options.signal = controller.signal;
+      return fetch(url, options).finally(function() { window.clearTimeout(timer); });
+    }
+    return fetch(url, options);
+  }
+
   function html(value) {
     var div = document.createElement('div');
     div.textContent = value == null ? '' : String(value);
@@ -480,7 +491,7 @@
   }
 
   function loadDetails() {
-    fetch('/ad-alerts/api/product-detail/' + productId + '?threshold=' + threshold)
+    fetchWithTimeout('/ad-alerts/api/product-detail/' + productId + '?threshold=' + threshold)
       .then(function(resp) {
         if (!resp.ok) throw new Error('detail_failed');
         return resp.json();

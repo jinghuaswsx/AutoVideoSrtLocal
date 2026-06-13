@@ -2383,6 +2383,19 @@ def _media_push_owner_exprs() -> tuple[str, str]:
     return owner_id_expr, owner_name_expr
 
 
+def _media_push_task_created_at_expr() -> str:
+    """Return the task-created timestamp expression used by the push list.
+
+    Anchor: docs/superpowers/specs/2026-06-12-pushes-task-created-time-filter-design.md
+    """
+    return (
+        "  (SELECT t_child.created_at FROM tasks t_child "
+        "   WHERE t_child.id = i.task_id "
+        "      OR (i.task_id IS NULL AND t_child.media_product_id = i.product_id AND LOWER(TRIM(COALESCE(t_child.country_code, ''))) = LOWER(TRIM(i.lang)) AND t_child.parent_task_id IS NOT NULL) "
+        "   ORDER BY (t_child.id = i.task_id) DESC, t_child.id DESC LIMIT 1)"
+    )
+
+
 def list_items_for_push(
     langs: list[str] | None = None,
     keyword: str = "",
@@ -2392,6 +2405,8 @@ def list_items_for_push(
     new_product: bool | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    task_created_from: str | None = None,
+    task_created_to: str | None = None,
     sort: str = "created_at_desc",
     offset: int = 0,
     limit: int | None = 20,
@@ -2400,12 +2415,14 @@ def list_items_for_push(
     """不过滤状态（状态在内存里算）。返回 (items join product 的原始行, total)。
 
     `limit=None` 表示不分页，用于需要在内存中先按状态过滤再分页的场景。
-    说明：`media_items` 表没有 `updated_at` 列，排序与日期过滤均使用 `i.created_at`。
+    说明：素材日期排序与 `date_from/date_to` 过滤使用 `i.created_at`；
+    任务日期过滤使用匹配任务的 `tasks.created_at`。
     """
     where = ["i.deleted_at IS NULL", "p.deleted_at IS NULL"]
     args: list[Any] = []
 
     owner_id_expr, owner_name_expr = _media_push_owner_exprs()
+    task_created_at_expr = _media_push_task_created_at_expr()
     product_has_successful_push_sql = (
         "EXISTS ("
         "         SELECT 1 FROM media_items pushed_item "
@@ -2452,6 +2469,20 @@ def list_items_for_push(
             date_to_dt = date_to
         where.append("i.created_at <= %s")
         args.append(date_to_dt)
+    if task_created_from:
+        if len(task_created_from) == 10:
+            task_created_from_dt = f"{task_created_from} 00:00:00"
+        else:
+            task_created_from_dt = task_created_from
+        where.append(f"({task_created_at_expr}) >= %s")
+        args.append(task_created_from_dt)
+    if task_created_to:
+        if len(task_created_to) == 10:
+            task_created_to_dt = f"{task_created_to} 23:59:59"
+        else:
+            task_created_to_dt = task_created_to
+        where.append(f"({task_created_at_expr}) <= %s")
+        args.append(task_created_to_dt)
     
     video_size = (video_size or "").strip().lower()
     if video_size == "large":
@@ -2478,6 +2509,7 @@ def list_items_for_push(
         f"       p.selling_points, p.importance, "
         f"       p.remark, p.ai_score, p.ai_evaluation_result, "
         f"       p.ai_evaluation_detail, p.listing_status, "
+        f"       {task_created_at_expr} AS task_created_at, "
         f"       {owner_name_expr} AS owner_name "
         f"FROM media_items i "
         f"JOIN media_products p ON p.id = i.product_id "

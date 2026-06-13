@@ -41,6 +41,10 @@ def _realtime_estimates_detail_source() -> str:
     return (ROOT / "web" / "templates" / "realtime_estimates_detail.html").read_text(encoding="utf-8")
 
 
+def _logistics_alert_detail_source() -> str:
+    return (ROOT / "web" / "templates" / "logistics_fee_alert_detail.html").read_text(encoding="utf-8")
+
+
 def test_realtime_query_button_is_in_date_toolbar_target_area():
     """查询按钮应紧跟自定义日期范围，产品搜索不占用日期工具栏目标位。"""
     panel = _realtime_panel_source()
@@ -115,6 +119,34 @@ def test_new_product_launch_analysis_tab_is_next_to_realtime():
     assert mobile.index('data-tab="realtime"') < mobile.index('data-tab="newProductLaunch"')
     assert "新品投放分析" in topbar
     assert "新品投放分析" in mobile
+
+
+def test_logistics_fee_alert_tab_and_panel_present():
+    template = _template_source()
+    topbar_start = template.index('<span class="oa-tabs oa-tabs-topbar"')
+    topbar_end = template.index("</span>", topbar_start)
+    topbar = template[topbar_start:topbar_end]
+    mobile_start = template.index('<nav class="oa-mobile-tabs"')
+    mobile_end = template.index("</nav>", mobile_start)
+    mobile = template[mobile_start:mobile_end]
+
+    assert 'data-tab="logisticsAlert"' in topbar
+    assert 'data-tab="logisticsAlert"' in mobile
+    assert "物流费预警" in topbar
+    assert "物流费预警" in mobile
+    assert 'id="panelLogisticsAlert"' in template
+    assert "/order-analytics/logistics-alert/data" in template
+    assert 'id="logisticsAlertThreshold"' in template
+    assert 'id="logisticsAlertProductBody"' in template
+
+
+def test_logistics_fee_alert_detail_template_contains_order_table():
+    template = _logistics_alert_detail_source()
+
+    assert "/order-analytics/logistics-alert/products/" in template
+    assert 'id="logisticsAlertDetailBody"' in template
+    assert "物流费占比" in template
+    assert "返回物流费预警" in template
 
 
 def test_weekly_ai_analysis_tab_and_panel_present():
@@ -565,10 +597,10 @@ def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
         template.index("function renderRealtimeOrders")
     ]
 
-    assert "fetchRealtimeScopeSummary(baseParams, 'global')" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'new')" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'old')" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'unmatched')" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'global', controller)" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'new', controller)" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'old', controller)" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, 'unmatched', controller)" in load_block
     assert "params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');" in load_block
     assert "params.set('product_launch_scope', scope);" in load_block
     assert "renderRealtimeScopeSummary('new'" in load_block

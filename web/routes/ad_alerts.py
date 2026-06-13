@@ -5,16 +5,20 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-12-ad-alert-problem-ads-subtabs-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-ad-level-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-top-losing-ads-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-high-loss-ads-tab-design.md
+- docs/superpowers/specs/2026-06-12-ad-alert-mobile-share-link.md
+- docs/superpowers/specs/2026-06-12-ad-alert-action-workflow-design.md
 """
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from flask import Blueprint, jsonify, render_template, request, abort
+from flask import Blueprint, abort, current_app, jsonify, render_template, request, url_for
 from flask_login import login_required
 
-from appcore import ad_alerts
+from appcore import ad_alert_actions, ad_alerts
+import config
 from web.auth import admin_required
 
 log = logging.getLogger(__name__)
@@ -41,11 +45,32 @@ def _parse_threshold(raw: str | None) -> float | None:
     return value if value > 0 else None
 
 
+def _parse_include_handled(raw: str | None) -> bool:
+    return str(raw or "").strip().lower() in {"1", "true", "yes"}
+
+
 @bp.route("/")
 @login_required
 @admin_required
 def list_page():
-    """预警列表页。"""
+    """广告预警默认页：高额亏损广告。"""
+    threshold = ad_alerts.get_threshold()
+    return render_template(
+        "ad_alerts.html",
+        active_tab="high_loss",
+        threshold=threshold,
+        alert_counts={},
+        SEVERITY_LABELS=ad_alerts.SEVERITY_LABELS,
+        TREND_LABELS=ad_alerts.TREND_LABELS,
+        PHASE_LABELS=ad_alerts.PHASE_LABELS,
+    )
+
+
+@bp.route("/alerts")
+@login_required
+@admin_required
+def alerts_page_route():
+    """商品聚合广告预警页。"""
     threshold = ad_alerts.get_threshold()
     return render_template(
         "ad_alerts.html",
@@ -90,6 +115,7 @@ def api_list():
         lang=lang,
         severity=severity,
         search=search,
+        include_handled=_parse_include_handled(request.args.get("include_handled")),
     )
     return jsonify({
         "items": [_alert_item_to_dict(item) for item in items],
@@ -147,6 +173,125 @@ def api_problem_ads():
     })
 
 
+@bp.route("/api/high-loss-ads")
+@login_required
+@admin_required
+def api_high_loss_ads():
+    """高额亏损 AD Top 30 JSON API。"""
+    search = (request.args.get("q") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit") or 30)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid limit"}), 400
+
+    business_date, items = ad_alerts.get_high_loss_ads(
+        search=search,
+        limit=limit,
+        include_handled=_parse_include_handled(request.args.get("include_handled")),
+    )
+    return jsonify({
+        "business_date": business_date.isoformat(),
+        "items": [_high_loss_ad_item_to_dict(item) for item in items],
+        "total": len(items),
+    })
+
+
+@bp.route("/api/actions", methods=["POST"])
+@login_required
+@admin_required
+def api_set_alert_action():
+    """标记/取消标记一条预警的处理状态。"""
+    body = request.get_json(silent=True) or {}
+    scope = str(body.get("scope") or "").strip()
+    target_key = str(body.get("target_key") or "").strip()
+    action = str(body.get("action") or "").strip()
+    note = str(body.get("note") or "").strip() or None
+
+    if action == "clear":
+        try:
+            ad_alert_actions.clear_action(scope, target_key)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"ok": True, "action": None})
+
+    operator_user_id = None
+    try:
+        from flask_login import current_user
+
+        operator_user_id = getattr(current_user, "id", None)
+    except Exception:
+        operator_user_id = None
+
+    try:
+        saved = ad_alert_actions.set_action(
+            scope,
+            target_key,
+            action,
+            note=note,
+            operator_user_id=operator_user_id,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True, "action": saved})
+
+
+@bp.route("/api/high-loss-ads/share", methods=["POST"])
+@login_required
+@admin_required
+def api_share_high_loss_ads():
+    """生成高额亏损广告公开分享链接。"""
+    body = request.get_json(silent=True) or {}
+    search = (body.get("q") or body.get("search") or "").strip() or None
+    payload = ad_alerts.build_high_loss_share_payload(
+        search=search,
+        limit=body.get("limit", 30),
+        expires_in_hours=body.get("expires_in_hours", 24),
+    )
+    token = ad_alerts.sign_share_token(payload, current_app.config.get("SECRET_KEY", ""))
+    share_path = url_for(
+        "ad_alerts.public_high_loss_share",
+        token=token,
+        expires=payload["expires_at"],
+    )
+    share_url = f"{_public_share_base_url()}{share_path}"
+    return jsonify({
+        "share_url": share_url,
+        "token": token,
+        "expires_at": payload["expires_at"],
+        "expires_in_hours": ad_alerts.normalize_high_loss_share_expires_hours(
+            body.get("expires_in_hours", 24)
+        ),
+        "q": payload["q"],
+        "limit": payload["limit"],
+    })
+
+
+@bp.route("/share/high-loss")
+def public_high_loss_share():
+    """公开只读高额亏损广告分享页。"""
+    try:
+        share = ad_alerts.verify_high_loss_share_token(
+            request.args.get("token"),
+            request.args.get("expires"),
+            current_app.config.get("SECRET_KEY", ""),
+        )
+    except ValueError:
+        abort(403)
+
+    business_date, items = ad_alerts.get_high_loss_ads(
+        search=share.get("q") or None,
+        limit=share.get("limit") or 30,
+        include_handled=False,
+    )
+    return render_template(
+        "ad_alerts_high_loss_share.html",
+        share=share,
+        business_date=business_date.isoformat(),
+        items=[_high_loss_ad_item_to_dict(item) for item in items],
+        total=len(items),
+    )
+
+
 @bp.route("/api/ad-list")
 @login_required
 @admin_required
@@ -168,6 +313,13 @@ def api_ad_list():
         "ads": [_ad_list_item_to_dict(ad) for ad in ads],
         "total": len(ads),
     })
+
+
+def _public_share_base_url() -> str:
+    base = (getattr(config, "AD_ALERT_PUBLIC_SHARE_BASE_URL", "") or "").strip().rstrip("/")
+    if base:
+        return base
+    return request.url_root.rstrip("/")
 
 
 @bp.route("/api/evaluate", methods=["POST"])
@@ -254,6 +406,8 @@ def _alert_item_to_dict(item: ad_alerts.AlertItem) -> dict[str, Any]:
         "top_losing_ads": [
             _ad_list_item_to_dict(ad) for ad in getattr(item, "top_losing_ads", [])
         ],
+        "action": item.action,
+        "action_target_key": ad_alert_actions.language_target_key(item.product_id, item.lang),
     }
 
 
@@ -317,6 +471,43 @@ def _problem_ad_item_to_dict(item: ad_alerts.ProblemAdItem) -> dict[str, Any]:
             }
             for key, metric in item.metrics.items()
         },
+    }
+
+
+def _high_loss_ad_item_to_dict(item: ad_alerts.HighLossAdItem) -> dict[str, Any]:
+    return {
+        "code": item.code,
+        "name": item.name,
+        "ad_account_id": item.ad_account_id,
+        "ad_account_name": item.ad_account_name,
+        "country": item.country,
+        "product_id": item.product_id,
+        "product_code": item.product_code,
+        "product_name": item.product_name,
+        "product_main_image": item.product_main_image,
+        "first_active_date": item.first_active_date,
+        "last_active_date": item.last_active_date,
+        "active_days": item.active_days,
+        "consecutive_loss_days": item.consecutive_loss_days,
+        "detail_url": item.detail_url,
+        "metrics": {
+            key: _high_loss_metric_to_dict(metric)
+            for key, metric in item.metrics.items()
+        },
+        "action": item.action,
+        "action_target_key": ad_alert_actions.high_loss_target_key(
+            item.ad_account_id, item.code
+        ),
+    }
+
+
+def _high_loss_metric_to_dict(metric: ad_alerts.HighLossMetric) -> dict[str, Any]:
+    return {
+        "spend_usd": metric.spend_usd,
+        "purchase_value_usd": metric.purchase_value_usd,
+        "result_count": metric.result_count,
+        "roas": metric.roas,
+        "estimated_loss": metric.estimated_loss,
     }
 
 

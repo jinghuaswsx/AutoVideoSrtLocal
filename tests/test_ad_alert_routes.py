@@ -307,6 +307,174 @@ def test_api_problem_ads_serializes_table_rows(monkeypatch):
     assert response.get_json()["error"] == "invalid_param"
 
 
+def test_api_high_loss_ads_serializes_card_rows(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+    from datetime import date
+
+    item = ad_alerts.HighLossAdItem(
+        code="glow-ad-1",
+        name="Glow Ad 1",
+        ad_account_id="1234",
+        ad_account_name="newjoyloo",
+        country="DE",
+        product_id=10,
+        product_code="glow-rjc",
+        product_name="Glow Product",
+        product_main_image="/medias/obj/covers/glow.jpg",
+        first_active_date="2026-05-01",
+        last_active_date="2026-06-12",
+        active_days=12,
+        consecutive_loss_days=4,
+        detail_url="/order-analytics?tab=ads&ads_level=ad&ads_code=glow-ad-1",
+        metrics={
+            "today": ad_alerts.HighLossMetric(12.0, 0.0, 0, 0.0, -12.0),
+            "last_7d": ad_alerts.HighLossMetric(120.0, 40.0, 1, 0.3333, -80.0),
+            "last_30d": ad_alerts.HighLossMetric(300.0, 100.0, 3, 0.3333, -200.0),
+            "overall": ad_alerts.HighLossMetric(500.0, 180.0, 6, 0.36, -320.0),
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_high_loss_ads(**kwargs):
+        captured.update(kwargs)
+        return date(2026, 6, 12), [item]
+
+    monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", fake_get_high_loss_ads)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context("/ad-alerts/api/high-loss-ads?q=Glow&limit=30"):
+        response = _unwrap(route.api_high_loss_ads)()
+
+    payload = response.get_json()
+    assert captured == {"search": "Glow", "limit": 30, "include_handled": False}
+    assert payload["business_date"] == "2026-06-12"
+    assert payload["total"] == 1
+    assert payload["items"][0]["product_code"] == "glow-rjc"
+    assert payload["items"][0]["consecutive_loss_days"] == 4
+    assert payload["items"][0]["metrics"]["last_7d"] == {
+        "spend_usd": 120.0,
+        "purchase_value_usd": 40.0,
+        "result_count": 1,
+        "roas": 0.3333,
+        "estimated_loss": -80.0,
+    }
+
+    with flask_app.test_request_context("/ad-alerts/api/high-loss-ads?limit=bad"):
+        response, status = _unwrap(route.api_high_loss_ads)()
+    assert status == 400
+    assert response.get_json()["error"] == "invalid limit"
+
+
+def test_api_share_high_loss_ads_returns_public_signed_url(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+
+    monkeypatch.setattr(route.config, "AD_ALERT_PUBLIC_SHARE_BASE_URL", "http://public.example.test")
+
+    flask_app = Flask(__name__)
+    flask_app.config["SECRET_KEY"] = "test-secret"
+    flask_app.register_blueprint(route.bp)
+    with flask_app.test_request_context(
+        "/ad-alerts/api/high-loss-ads/share",
+        method="POST",
+        json={"q": "Glow", "limit": 99, "expires_in_hours": 24},
+    ):
+        response = _unwrap(route.api_share_high_loss_ads)()
+
+    payload = response.get_json()
+    assert payload["share_url"].startswith("http://public.example.test/ad-alerts/share/high-loss?token=")
+    assert "&expires=" in payload["share_url"]
+    assert payload["q"] == "Glow"
+    assert payload["limit"] == 30
+    assert payload["expires_in_hours"] == 24
+    verified = route.ad_alerts.verify_high_loss_share_token(
+        payload["token"],
+        payload["expires_at"],
+        "test-secret",
+    )
+    assert verified["q"] == "Glow"
+    assert verified["limit"] == 30
+
+
+def test_public_high_loss_share_validates_token_and_renders(monkeypatch):
+    from datetime import date, datetime, timezone
+    from flask import Flask
+    from pathlib import Path
+    from urllib.parse import quote
+    from web.routes import ad_alerts as route
+
+    item = ad_alerts.HighLossAdItem(
+        code="glow-ad-1",
+        name="Glow Ad 1",
+        ad_account_id="1234",
+        ad_account_name="newjoyloo",
+        country="DE",
+        product_id=10,
+        product_code="glow-rjc",
+        product_name="Glow Product",
+        product_main_image="/medias/obj/covers/glow.jpg",
+        first_active_date="2026-05-01",
+        last_active_date="2026-06-12",
+        active_days=12,
+        consecutive_loss_days=4,
+        detail_url="/order-analytics?tab=ads&ads_level=ad&ads_code=glow-ad-1",
+        metrics={
+            "today": ad_alerts.HighLossMetric(12.0, 0.0, 0, 0.0, -12.0),
+            "last_7d": ad_alerts.HighLossMetric(120.0, 40.0, 1, 0.3333, -80.0),
+            "last_30d": ad_alerts.HighLossMetric(300.0, 100.0, 3, 0.3333, -200.0),
+            "overall": ad_alerts.HighLossMetric(500.0, 180.0, 6, 0.36, -320.0),
+        },
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_high_loss_ads(**kwargs):
+        captured.update(kwargs)
+        return date(2026, 6, 12), [item]
+
+    monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", fake_get_high_loss_ads)
+
+    # Freeze the wall-clock default so token verification is deterministic
+    # regardless of the day the suite runs (the route verifies against the
+    # real clock; without this the 24h token expires after 2026-06-13T04:00Z).
+    real_share_now = ad_alerts._share_utc_now
+    frozen_now = datetime(2026, 6, 12, 5, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        ad_alerts,
+        "_share_utc_now",
+        lambda value=None: real_share_now(value if value is not None else frozen_now),
+    )
+
+    payload = ad_alerts.build_high_loss_share_payload(
+        search="Glow",
+        limit=30,
+        expires_in_hours=24,
+        now=datetime(2026, 6, 12, 4, 0, 0, tzinfo=timezone.utc),
+    )
+    token = ad_alerts.sign_share_token(payload, "test-secret")
+
+    flask_app = Flask(__name__, template_folder=str(Path("web/templates").resolve()))
+    flask_app.config["SECRET_KEY"] = "test-secret"
+    flask_app.register_blueprint(route.bp)
+    client = flask_app.test_client()
+    response = client.get(
+        "/ad-alerts/share/high-loss?token="
+        + quote(token)
+        + "&expires="
+        + quote(payload["expires_at"])
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "高额亏损广告分享" in html
+    assert "Glow Product" in html
+    assert "2026-06-13T04:00:00Z" in html
+    assert captured == {"search": "Glow", "limit": 30, "include_handled": False}
+
+    invalid = client.get("/ad-alerts/share/high-loss?token=bad&expires=2026-06-13T04:00:00Z")
+    assert invalid.status_code == 403
+
+
 def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypatch):
     from datetime import date
     from web.routes import ad_alerts as route
@@ -316,14 +484,24 @@ def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypa
     # 未登录校验
     unauth_response = raw_client.get("/ad-alerts/")
     assert unauth_response.status_code == 302
+    unauth_response_alerts = raw_client.get("/ad-alerts/alerts")
+    assert unauth_response_alerts.status_code == 302
     unauth_response_prob = raw_client.get("/ad-alerts/problem")
     assert unauth_response_prob.status_code == 302
 
     monkeypatch.setattr(route.ad_alerts, "get_threshold", lambda: 1.4)
     
-    # 广告预警页面
+    # 默认高额亏损广告页面
     page_response = authed_client_no_db.get("/ad-alerts/")
     assert page_response.status_code == 200
+    assert "高额亏损广告" in page_response.get_data(as_text=True)
+
+    # 广告预警页面
+    page_response_alerts = authed_client_no_db.get("/ad-alerts/alerts")
+    assert page_response_alerts.status_code == 200
+    assert "广告预警" in page_response_alerts.get_data(as_text=True)
+
+    # 兼容：默认页仍包含广告预警 Tab
     assert "广告预警" in page_response.get_data(as_text=True)
 
     # 问题广告页面
@@ -335,6 +513,11 @@ def test_ad_alert_page_and_problem_api_route_smoke(authed_client_no_db, monkeypa
     api_response = authed_client_no_db.get("/ad-alerts/api/problem-ads?level=campaign")
     assert api_response.status_code == 200
     assert api_response.get_json()["business_date"] == "2026-06-12"
+
+    monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", lambda *args, **kwargs: (date(2026, 6, 12), []))
+    high_loss_response = authed_client_no_db.get("/ad-alerts/api/high-loss-ads")
+    assert high_loss_response.status_code == 200
+    assert high_loss_response.get_json()["business_date"] == "2026-06-12"
 
 
 def test_ad_alert_detail_pages_render_with_mocked_data(authed_client_no_db, monkeypatch):
@@ -412,3 +595,102 @@ def test_ad_alert_detail_pages_render_with_mocked_data(authed_client_no_db, monk
     assert ad_response.status_code == 200
     assert "adDetailMetricGrid" in ad_html
     assert "/ad-alerts/product/10/country/de" in ad_html
+
+
+def test_api_set_alert_action_validates_and_persists(monkeypatch):
+    from web.routes import ad_alerts as route
+    from appcore import ad_alert_actions
+    from flask import Flask
+
+    captured: dict[str, object] = {}
+
+    def fake_set_action(scope, target_key, action, *, note=None, operator_user_id=None):
+        if scope not in ("high_loss", "language"):
+            raise ValueError("bad scope")
+        captured.update(
+            scope=scope, target_key=target_key, action=action,
+            note=note, operator_user_id=operator_user_id,
+        )
+        return {"scope": scope, "target_key": target_key, "action": action, "note": note}
+
+    monkeypatch.setattr(ad_alert_actions, "set_action", fake_set_action)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context(
+        "/ad-alerts/api/actions",
+        method="POST",
+        json={
+            "scope": "high_loss",
+            "target_key": "123:120210",
+            "action": "resolved",
+            "note": "已关停",
+        },
+    ):
+        response = _unwrap(route.api_set_alert_action)()
+
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["action"]["action"] == "resolved"
+    assert captured["scope"] == "high_loss"
+    assert captured["target_key"] == "123:120210"
+    assert captured["note"] == "已关停"
+
+    with flask_app.test_request_context(
+        "/ad-alerts/api/actions",
+        method="POST",
+        json={"scope": "bad", "target_key": "x", "action": "resolved"},
+    ):
+        response, status = _unwrap(route.api_set_alert_action)()
+    assert status == 400
+
+
+def test_api_clear_alert_action(monkeypatch):
+    from web.routes import ad_alerts as route
+    from appcore import ad_alert_actions
+    from flask import Flask
+
+    cleared: list[tuple] = []
+    monkeypatch.setattr(
+        ad_alert_actions, "clear_action",
+        lambda scope, target_key: cleared.append((scope, target_key)) or True,
+    )
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context(
+        "/ad-alerts/api/actions",
+        method="POST",
+        json={"scope": "language", "target_key": "45:de", "action": "clear"},
+    ):
+        response = _unwrap(route.api_set_alert_action)()
+
+    assert response.get_json()["ok"] is True
+    assert cleared == [("language", "45:de")]
+
+
+def test_list_apis_pass_include_handled(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+    from datetime import date
+
+    captured: dict[str, object] = {}
+
+    def fake_get_alerts(**kwargs):
+        captured["alerts_kwargs"] = kwargs
+        return []
+
+    def fake_get_high_loss_ads(**kwargs):
+        captured["high_loss_kwargs"] = kwargs
+        return date(2026, 6, 12), []
+
+    monkeypatch.setattr(route.ad_alerts, "get_alerts", fake_get_alerts)
+    monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", fake_get_high_loss_ads)
+    monkeypatch.setattr(route.ad_alerts, "get_threshold", lambda: 1.5)
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context("/ad-alerts/api/list?include_handled=1"):
+        _unwrap(route.api_list)()
+    assert captured["alerts_kwargs"]["include_handled"] is True
+
+    with flask_app.test_request_context("/ad-alerts/api/high-loss-ads?include_handled=1"):
+        _unwrap(route.api_high_loss_ads)()
+    assert captured["high_loss_kwargs"]["include_handled"] is True

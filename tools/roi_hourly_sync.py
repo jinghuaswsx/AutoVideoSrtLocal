@@ -1368,7 +1368,12 @@ def _sync_meta_realtime_daily(
     # so per-account observability stays consistent.
     if xhr_accounts:
         try:
-            from appcore.meta_ads_in_page_fetch import open_meta_ads_session
+            from appcore.meta_ads_in_page_fetch import (
+                is_transient_in_page_fetch_error,
+                open_meta_ads_session,
+            )
+
+            retry_accounts: list[tuple[MetaAdAccount, Exception]] = []
 
             with open_meta_ads_session() as session:
                 for account in xhr_accounts:
@@ -1390,11 +1395,71 @@ def _sync_meta_realtime_daily(
                         account_result.update(report)
                         account_result["status"] = "success"
                     except Exception as exc:
+                        if is_transient_in_page_fetch_error(exc):
+                            retry_accounts.append((account, exc))
+                            continue
                         account_result["status"] = "failed"
                         account_result["error"] = str(exc)
                         _record(account_result, error_label=f"[{account.code}] {exc}")
                         continue
                     _record(account_result)
+
+            if retry_accounts:
+                try:
+                    with open_meta_ads_session() as retry_session:
+                        for account, first_exc in retry_accounts:
+                            account_result = {
+                                "code": account.code,
+                                "account_id": account.account_id,
+                                "channel": "xhr_api",
+                                "rows_imported": 0,
+                                "spend_usd": 0.0,
+                                "retried_after_error": str(first_exc),
+                            }
+                            try:
+                                report = _sync_meta_account_in_page_api(
+                                    run_id=run_id,
+                                    business_date=business_date,
+                                    snapshot_at=snapshot_at,
+                                    account=account,
+                                    session=retry_session,
+                                )
+                                account_result.update(report)
+                                account_result["status"] = "success"
+                            except Exception as exc:
+                                account_result["status"] = "failed"
+                                account_result["error"] = (
+                                    f"retry failed after transient fetch error: {exc}"
+                                )
+                                _record(
+                                    account_result,
+                                    error_label=(
+                                        f"[{account.code}] retry failed after "
+                                        f"transient fetch error: {exc}"
+                                    ),
+                                )
+                                continue
+                            _record(account_result)
+                except Exception as retry_session_exc:
+                    for account, first_exc in retry_accounts:
+                        _record(
+                            {
+                                "code": account.code,
+                                "account_id": account.account_id,
+                                "channel": "xhr_api",
+                                "rows_imported": 0,
+                                "spend_usd": 0.0,
+                                "status": "failed",
+                                "error": (
+                                    f"retry session: {retry_session_exc}; "
+                                    f"first error: {first_exc}"
+                                ),
+                            },
+                            error_label=(
+                                f"[{account.code}] retry session: {retry_session_exc}; "
+                                f"first error: {first_exc}"
+                            ),
+                        )
         except Exception as session_exc:
             for account in xhr_accounts:
                 _record(

@@ -2075,6 +2075,76 @@ def test_realtime_overview_endpoint_marks_meta_purchase_fallback_warning(
     assert payload["data_quality"]["warnings"][0]["code"] == "meta_purchase_value_order_fallback"
 
 
+def test_realtime_overview_endpoint_marks_shopify_fee_strategy_c_warning(
+    authed_client_no_db,
+    monkeypatch,
+):
+    """手续费策略 C 兜底必须进入 realtime-overview 顶层 data_quality。"""
+    from appcore.order_analytics import realtime_cache
+
+    realtime_cache.invalidate_all()
+
+    def fake_overview(date_text=None, *, start_date=None, end_date=None, include_details=False, now=None):
+        return {
+            "period": {"date": "2026-06-13"},
+            "scope": {"ad_source": "meta_ad_realtime_daily_campaign_metrics"},
+            "summary": {"order_revenue": 100, "ad_spend": 20, "true_roas": 5.0},
+            "order_profit_summary": {
+                "shopify_fee_source_counts": {"strategy_c_fallback": 2},
+                "shopify_fee_source_amounts": {"strategy_c_fallback": 3.45},
+                "data_quality": {
+                    "warnings": [
+                        {
+                            "code": "shopify_fee_strategy_c_fallback_present",
+                            "status": "warning",
+                            "message": "shopify_fee_strategy_c_fallback_present",
+                        }
+                    ],
+                    "errors": [],
+                },
+            },
+            "freshness": {"last_order_at": None, "last_ad_updated_at": None},
+            "hourly": [],
+            "order_details": [],
+            "campaigns": [],
+            "roas_points": [],
+        }
+
+    def fake_build_for_realtime_overview(**kwargs):
+        return {
+            "status": "ok",
+            "source_mode": "realtime_snapshot",
+            "business_date_from": "2026-06-13",
+            "business_date_to": "2026-06-13",
+            "checks": [],
+            "warnings": [],
+            "errors": [],
+            "watermarks": {},
+            "generated_at": "2026-06-13T18:00:00",
+        }
+
+    monkeypatch.setattr("web.routes.order_analytics.oa.get_realtime_roas_overview", fake_overview)
+    monkeypatch.setattr(
+        "web.routes.order_analytics.dq.build_for_realtime_overview",
+        fake_build_for_realtime_overview,
+    )
+
+    response = authed_client_no_db.get("/order-analytics/realtime-overview?date=2026-06-13")
+    payload = response.get_json()
+
+    assert payload["data_quality"]["status"] == "warning"
+    assert payload["data_quality"]["warnings"] == [
+        {
+            "code": "shopify_fee_strategy_c_fallback_present",
+            "status": "warning",
+            "message": "shopify_fee_strategy_c_fallback_present",
+        }
+    ]
+    assert payload["data_quality"]["checks"][0]["code"] == "shopify_fee_strategy_c_fallback_present"
+    assert payload["data_quality"]["checks"][0]["strategy_c_fallback_order_count"] == 2
+    assert payload["data_quality"]["checks"][0]["strategy_c_fallback_amount_usd"] == 3.45
+
+
 def test_realtime_overview_endpoint_attaches_range_data_quality(
     authed_client_no_db,
     monkeypatch,
@@ -2585,6 +2655,32 @@ def test_realtime_tab_defaults_to_meta_business_date(authed_client_no_db):
     assert "function resolveRealtimeRange(range) {\n    return window.orderAnalyticsMetaCalendar.resolveRange(range);\n  }" in body
 
 
+def test_order_analytics_shared_set_input_value_is_defined_before_dashboard_range(authed_client_no_db):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-realtime-dashboard-range-loading-fix.md"""
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    shared_helper = "window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || function(id, value)"
+    dashboard_range = "function setDashboardRange(range, skipRefresh)"
+    assert shared_helper in body
+    assert dashboard_range in body
+    assert body.index(shared_helper) < body.index(dashboard_range)
+
+    dashboard_script = body[
+        body.index("window.oad = oad;"):
+        body.index(dashboard_range)
+    ]
+    assert "function setInputValue(id, value)" in dashboard_script
+    assert "window.orderAnalyticsSetInputValue(id, value);" in dashboard_script
+
+    main_script_helper = body[
+        body.index("function setInputValue(id, value)", body.index("<script src=\"/static/analytics_date_range_picker.js\"")):
+        body.index("function handleAnalyticsDateRangeApply", body.index("<script src=\"/static/analytics_date_range_picker.js\""))
+    ]
+    assert "window.orderAnalyticsSetInputValue(id, value);" in main_script_helper
+
+
 def test_embedded_product_profit_report_defaults_to_meta_business_date(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
@@ -2670,6 +2766,18 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert 'class="oar-summary-row oar-summary-row-time"' in summary
     assert 'id="realtimeProfit"' in summary
     assert 'id="realtimeProfitSub"' in summary
+    assert "退款/预留扣减" in summary
+    assert 'id="realtimeProfitDeduction"' in summary
+    assert 'id="realtimeNewProfitDeduction"' in summary
+    assert 'id="realtimeOldProfitDeduction"' in summary
+    assert 'id="realtimeUnmatchedProfitDeduction"' in summary
+    assert 'id="realtimeProfitDeductionSources"' in summary
+    assert 'id="realtimeRefundReserveBreakdown"' in summary
+    assert "公式: 利润 = 总销售额 - 退款/预留扣减" in summary
+    assert 'id="realtimeProfitFormulaTerms"' in summary
+    assert 'id="realtimeProfitFormulaValues"' in summary
+    assert "明细: -" in summary
+    assert "代入: -" in summary
 
     main_row_start = summary.index('class="oar-summary-row oar-summary-row-main"')
     time_row_start = summary.index('class="oar-summary-row oar-summary-row-time"')
@@ -2684,12 +2792,15 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert "广告数据更新时间" in time_row
     assert "数据快照时间" in time_row
 
-    top_cards_start = body.index("function loadRealtimeTopCards()")
+    top_cards_start = body.index("function loadRealtimeTopCards(requestSeq)")
     top_cards_end = body.index("// ── 子 tab：跟随当前选择的广告系统日范围", top_cards_start)
     top_cards_js = body[top_cards_start:top_cards_end]
     assert "params.set('include_profit_summary', '1')" in top_cards_js
     assert "document.getElementById('realtimeProfit')" in top_cards_js
     assert "profitEl.textContent" in top_cards_js
+    assert "renderRealtimeProfitDeductionMetric(prefix, profitSummary" in top_cards_js
+    assert "renderRealtimeScopeProfitFormula(prefix, profitSummary)" in top_cards_js
+    assert "代入: " in top_cards_js
     assert "globalData = reconcileRealtimeGlobalScopeProfit(globalData, newData, oldData, unmatchedData);" in top_cards_js
     assert "if (realtimeState.productId) return globalData;" in top_cards_js
 
@@ -2788,7 +2899,7 @@ def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    subtab_start = body.index("function loadRealtimeSubTabs()")
+    subtab_start = body.index("function loadRealtimeSubTabs(requestSeq)")
     subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
     subtab_js = body[subtab_start:subtab_end]
 
@@ -2796,6 +2907,60 @@ def test_realtime_subtabs_fetch_current_range(authed_client_no_db):
     assert "params.set('start_date', range.start)" in subtab_js
     assert "params.set('end_date', range.end)" in subtab_js
     assert "params.set('include_details', '1')" in subtab_js
+
+
+def test_realtime_range_loading_uses_abortable_request_sequence(authed_client_no_db):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-realtime-dashboard-range-loading-fix.md"""
+    response = authed_client_no_db.get("/order-analytics/realtime/trend")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+
+    state_start = body.index("var realtimeState = {")
+    state_end = body.index("var newProductLaunchInited", state_start)
+    state_js = body[state_start:state_end]
+    for snippet in (
+        "requestSeq: 0",
+        "topCardsSeq: 0",
+        "subTabsSeq: 0",
+        "requestTimeoutMs: 30000",
+        "topCardsController: null",
+        "subTabsController: null",
+        "function nextRealtimeRequestSeq()",
+        "function assignRealtimeRequestSeq(kind, seq)",
+        "function createRealtimeController(kind)",
+        "function fetchRealtimeJson(url, controller)",
+        "setTimeout(function()",
+        "controller.__realtimeTimedOut = true",
+        "controller.abort()",
+        "controller && controller.__realtimeTimedOut",
+        "Promise.race([requestPromise, timeoutPromise])",
+    ):
+        assert snippet in state_js
+
+    overview_start = body.index("function loadRealtimeOverview()")
+    overview_end = body.index("function realtimeScopePrefix", overview_start)
+    overview_js = body[overview_start:overview_end]
+    assert "var requestSeq = nextRealtimeRequestSeq();" in overview_js
+    assert "loadRealtimeTopCards(requestSeq);" in overview_js
+    assert "loadRealtimeSubTabs(requestSeq);" in overview_js
+    assert "function loadRealtimeTopCards(requestSeq)" in overview_js
+    assert "requestSeq = assignRealtimeRequestSeq('top', requestSeq);" in overview_js
+    assert "var controller = createRealtimeController('top');" in overview_js
+    assert "fetchRealtimeScopeSummary(baseParams, 'global', controller)" in overview_js
+    assert "if (!isRealtimeRequestCurrent('top', requestSeq)) return;" in overview_js
+    assert "if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('top', requestSeq)) return;" in overview_js
+    assert "clearRealtimeController('top', controller);" in overview_js
+    assert "return fetchRealtimeJson(url, controller);" in overview_js
+
+    subtab_start = body.index("function loadRealtimeSubTabs(requestSeq)")
+    subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
+    subtab_js = body[subtab_start:subtab_end]
+    assert "requestSeq = assignRealtimeRequestSeq('sub', requestSeq);" in subtab_js
+    assert "var controller = createRealtimeController('sub');" in subtab_js
+    assert "fetchRealtimeJson(url, controller)" in subtab_js
+    assert "if (!isRealtimeRequestCurrent('sub', requestSeq)) return;" in subtab_js
+    assert "if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('sub', requestSeq)) return;" in subtab_js
+    assert "clearRealtimeController('sub', controller);" in subtab_js
 
 
 def test_realtime_subtab_click_refreshes_details_without_top_cards(authed_client_no_db):
@@ -2851,7 +3016,7 @@ def test_realtime_subtabs_request_product_and_pagination_params(authed_client_no
     response = authed_client_no_db.get("/order-analytics/realtime/trend")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    subtab_start = body.index("function loadRealtimeSubTabs()")
+    subtab_start = body.index("function loadRealtimeSubTabs(requestSeq)")
     subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
     subtab_js = body[subtab_start:subtab_end]
 

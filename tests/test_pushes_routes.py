@@ -123,6 +123,7 @@ def test_pushes_api_items_list_does_not_load_quality_check(authed_client_no_db, 
         "duration_seconds": 12.0,
         "file_size": 123456,
         "created_at": datetime(2026, 4, 22, 10, 30, 0),
+        "task_created_at": datetime(2026, 4, 20, 9, 0, 0),
         "pushed_at": None,
         "cover_object_key": "covers/demo.jpg",
         "object_key": "videos/demo.mp4",
@@ -176,6 +177,7 @@ def test_pushes_api_items_list_does_not_load_quality_check(authed_client_no_db, 
     assert resp.status_code == 200
     item = resp.get_json()["items"][0]
     assert item["status"] == "pending"
+    assert item["task_created_at"] == "2026-04-20T09:00:00"
     assert "quality_check" not in item
 
 
@@ -649,6 +651,27 @@ def test_pushes_api_items_passes_created_at_sort(authed_client_no_db, monkeypatc
 
     assert resp.status_code == 200
     assert captured["sort"] == "created_at_asc"
+
+
+def test_pushes_api_items_passes_task_created_at_filters(authed_client_no_db, monkeypatch):
+    captured = {}
+
+    def fake_list_items_for_push(**kwargs):
+        captured.update(kwargs)
+        return [], 0
+
+    monkeypatch.setattr(
+        "web.routes.pushes.pushes.list_items_for_push",
+        fake_list_items_for_push,
+    )
+
+    resp = authed_client_no_db.get(
+        "/pushes/api/items?task_created_from=2026-05-01&task_created_to=2026-05-31&page=1"
+    )
+
+    assert resp.status_code == 200
+    assert captured["task_created_from"] == "2026-05-01"
+    assert captured["task_created_to"] == "2026-05-31"
 
 
 def test_pushes_api_items_passes_shopify_image_confirmation_to_status(

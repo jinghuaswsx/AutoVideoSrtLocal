@@ -98,6 +98,8 @@ from ._helpers import (
     _select_segment_candidate_assembly,
     _DEFAULT_WPS,
     _compute_next_target,
+    compute_compress_round_target,
+    resolve_guarded_candidate,
     _distance_to_duration_range,
     _fit_tts_segments_to_duration,
     _trim_tts_metadata_to_segments,
@@ -122,6 +124,17 @@ def run_av_localize(*args, **kwargs):
     from . import run_av_localize as _run_av_localize
 
     return _run_av_localize(*args, **kwargs)
+
+
+def _truncation_segment_text(segment: dict) -> str:
+    """从被截断的 TTS 段取可读文本：tts_text → translated → text。"""
+    if not isinstance(segment, dict):
+        return ""
+    for key in ("tts_text", "translated", "text"):
+        value = segment.get(key)
+        if value and str(value).strip():
+            return str(value).strip()
+    return ""
 
 
 def _save_llm_prompt_debug(
@@ -332,6 +345,9 @@ class PipelineRunner:
         EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS = 1
         max_rounds_allowed = MAX_ROUNDS
         stage1_speedup_fallback_used = False
+        # Block3: 压缩重译终轮（bestpick 前最后一搏，瞄准 video−0.5s）。
+        compress_round_used = False
+        compress_round_pending = False
         # Final target range (shown to the user, used for final success judgement):
         final_target_lo, final_target_hi = _tts_final_target_range(video_duration)
         # Stage-1 convergence range (rewrite手段; approximate via ±10% of video):
@@ -807,6 +823,10 @@ class PipelineRunner:
                 round_record["segment_assembly_removed_duration"] = trim_result[
                     "removed_duration"
                 ]
+                # Block3 R3: 段级拼装兜底里的物理截断同样升级为任务级质量告警。
+                self._record_tail_truncation_warning(
+                    task_id, round_record, trim_result,
+                )
                 round_record["segment_assembly_duration"] = final_duration
                 round_record["segment_assembly_gap"] = round(
                     video_duration - final_duration, 6,
@@ -896,19 +916,41 @@ class PipelineRunner:
                     wps = last_word_count / last_audio_duration
                 else:
                     wps = default_wps
-                target_duration, target_words, direction = _compute_next_target(
-                    round_index, last_audio_duration, wps, video_duration,
-                )
+                if compress_round_pending:
+                    # Block3 压缩重译终轮：旁路 _compute_next_target，瞄准 video−0.5s，
+                    # 其余（守门、tts_script、TTS、实测、final 窗判定、变速）与普通轮一致。
+                    compress_round_pending = False
+                    target_duration, target_words, direction = (
+                        compute_compress_round_target(
+                            last_audio_duration, wps, video_duration,
+                        )
+                    )
+                    round_record["compress_round"] = True
+                else:
+                    target_duration, target_words, direction = _compute_next_target(
+                        round_index, last_audio_duration, wps, video_duration,
+                    )
                 round_record["target_duration"] = target_duration
                 round_record["target_words"] = target_words
                 round_record["target_units"] = target_words
                 round_record["wps_used"] = wps
                 round_record["direction"] = direction
-                round_record["message"] = (
-                    f"第 {round_index} 轮：重译{_lang_display(target_language_label)}文案"
-                    f"（目标 {target_words} {unit_label}，{direction}）"
-                )
+                if round_record.get("compress_round"):
+                    round_record["message"] = (
+                        f"第 {round_index} 轮（压缩重译终轮）：重译"
+                        f"{_lang_display(target_language_label)}文案"
+                        f"（目标 {target_words} {unit_label}，{direction}）"
+                    )
+                else:
+                    round_record["message"] = (
+                        f"第 {round_index} 轮：重译{_lang_display(target_language_label)}文案"
+                        f"（目标 {target_words} {unit_label}，{direction}）"
+                    )
                 _substep("准备重写译文")
+                if round_record.get("compress_round"):
+                    self._emit_duration_round(
+                        task_id, round_index, "compress_round", round_record,
+                    )
                 self._emit_duration_round(task_id, round_index, "translate_rewrite", round_record)
 
                 # ========= 字数收敛内循环（最多 5 次 rewrite）=========
@@ -940,6 +982,22 @@ class PipelineRunner:
                     target_words + tolerance_abs,
                 ]
                 prior_word_counts: list[int] = []
+                # Block3 质量守门（默认开启；fail-open，绝不阻塞收敛）。
+                guard_enabled = bool(getattr(config, "OMNI_REWRITE_GUARD_ENABLED", True))
+                guard_max_calls = int(getattr(config, "OMNI_REWRITE_GUARD_MAX_CALLS_PER_ROUND", 3))
+                guard_calls_this_round = 0
+                # (attempt, candidate, guard_result) for in-window-but-guard-rejected candidates.
+                in_window_rejected: list[tuple[int, dict, dict]] = []
+                guard_feedback: str | None = None
+                # Block3 压缩重译终轮的强制保首尾反馈（每个 attempt 都注入）。
+                compress_feedback: str | None = None
+                if round_record.get("compress_round"):
+                    compress_feedback = (
+                        "FINAL LENGTH-CRITICAL REWRITE: this is the last chance before "
+                        "hard audio truncation. Land inside the window. You MUST keep "
+                        "sentence 1 as the hook and keep the final sentence's closing/CTA "
+                        "intent; cut or expand only in the middle."
+                    )
                 for attempt in range(1, MAX_REWRITE_ATTEMPTS + 1):
                     attempt_temperature = 0.6 if attempt == 1 else 1.0
                     _substep(
@@ -966,6 +1024,18 @@ class PipelineRunner:
                             lo=target_words - tolerance_abs,
                             hi=target_words + tolerance_abs,
                             dir=direction,
+                        )
+                    # Block3: 守门拒绝意见与字数反馈共存（拼接，不覆盖）。
+                    if guard_feedback:
+                        feedback_notes = (
+                            f"{feedback_notes}\n\n{guard_feedback}"
+                            if feedback_notes else guard_feedback
+                        )
+                    # Block3: 压缩重译终轮的强制保首尾反馈前置（每个 attempt 都带）。
+                    if compress_feedback:
+                        feedback_notes = (
+                            f"{compress_feedback}\n\n{feedback_notes}"
+                            if feedback_notes else compress_feedback
                         )
 
                     custom_rewrite = getattr(loc_mod, "generate_duration_rewrite", None)
@@ -1097,12 +1167,100 @@ class PipelineRunner:
                         "preview_text": (candidate.get("full_text") or "")[:200],
                     })
                     if diff <= tolerance_abs:
+                        # Block3: 字数落窗候选先过质量守门（忠实度 + 首句钩子 + 尾句收尾）。
+                        # 守门只在已满足字数窗口的候选内部做选择/拒绝，绝不放宽时长约束。
+                        guard_result = None
+                        if guard_enabled and guard_calls_this_round < guard_max_calls:
+                            from pipeline.rewrite_quality_guard import (
+                                assess_rewrite_candidate,
+                            )
+                            guard_calls_this_round += 1
+                            guard_result = assess_rewrite_candidate(
+                                source_full_text=source_full_text,
+                                reference_translation_text=(
+                                    initial_localized_translation or {}
+                                ).get("full_text", ""),
+                                candidate_text=candidate.get("full_text", ""),
+                                target_lang=str(target_language_label or ""),
+                                task_id=task_id,
+                                user_id=self.user_id,
+                            )
+                            round_record["rewrite_attempts"][-1]["guard"] = {
+                                k: guard_result[k] for k in (
+                                    "fidelity", "hook_ok", "ending_ok",
+                                    "issues", "passed", "guard_error",
+                                )
+                            }
+                            debug_call = guard_result.get("_llm_debug_call") or {}
+                            if debug_call:
+                                _save_llm_prompt_debug(
+                                    task_id=task_id,
+                                    task_dir=task_dir,
+                                    step="tts",
+                                    filename=(
+                                        f"rewrite_guard.round_{round_index}."
+                                        f"attempt_{attempt}.json"
+                                    ),
+                                    label=(
+                                        f"第 {round_index} 轮守门 attempt {attempt}"
+                                    ),
+                                    phase="rewrite_guard",
+                                    use_case_code="video_translate.rewrite_guard",
+                                    provider=debug_call.get("provider"),
+                                    model=debug_call.get("model"),
+                                    messages=debug_call.get("messages") or [],
+                                    request_payload=debug_call.get("request_payload"),
+                                    meta={
+                                        "round": round_index,
+                                        "attempt": attempt,
+                                        "fidelity": guard_result.get("fidelity"),
+                                        "passed": guard_result.get("passed"),
+                                    },
+                                )
+                        else:
+                            round_record["rewrite_attempts"][-1]["guard_skipped"] = True
+                        if guard_result is not None and not guard_result["passed"]:
+                            # 守门拒绝：不采纳，记录候选，注入反馈，继续下一 attempt。
+                            in_window_rejected.append((attempt, candidate, guard_result))
+                            guard_feedback = (
+                                "QUALITY GATE FEEDBACK: the previous in-window candidate "
+                                "was REJECTED for quality: "
+                                + "; ".join(
+                                    guard_result["issues"] or ["quality below threshold"]
+                                )
+                                + ". Fix these while staying inside the word window. "
+                                "Keep sentence 1 as the hook and keep the final "
+                                "sentence's closing/CTA intent."
+                            )
+                            round_record["rewrite_attempts"][-1]["accepted"] = False
+                            self._emit_duration_round(
+                                task_id, round_index,
+                                "quality_gate_rejected", round_record,
+                            )
+                            continue
+                        # 守门通过 / 关闭 / 超额 → 现状采纳路径。
                         localized_translation = candidate
                         chosen_attempt_idx = attempt - 1  # 列表下标
                         round_record["rewrite_attempt_used"] = attempt
                         round_record["rewrite_words_actual"] = cand_words
                         round_record["rewrite_units_actual"] = cand_words
                         break
+                if localized_translation is None and in_window_rejected:
+                    # R1.4 降级采纳：attempt 耗尽但有"落窗但守门未过"的候选，
+                    # 取 fidelity 最高者送 TTS，绝不让守门比现状更容易失败。
+                    chosen_attempt, chosen_candidate, _g = max(
+                        in_window_rejected, key=lambda row: row[2].get("fidelity", -1)
+                    )
+                    localized_translation = chosen_candidate
+                    chosen_attempt_idx = chosen_attempt - 1
+                    round_record["rewrite_attempt_used"] = chosen_attempt
+                    round_record["rewrite_words_actual"] = _count_rewrite_units(
+                        chosen_candidate.get("full_text", "")
+                    )
+                    round_record["rewrite_units_actual"] = round_record[
+                        "rewrite_words_actual"
+                    ]
+                    round_record["guard_degraded"] = True
                 if localized_translation is None:
                     # 5 次都没收敛 → 记录最接近候选，但不进入 TTS。
                     # 一旦 round 1 拿到实测语速，后续文案必须先落在词数置信区间内；
@@ -1143,6 +1301,15 @@ class PipelineRunner:
                     round_products.append(None)
                     task_state.update(task_id, tts_duration_rounds=rounds)
                     self._emit_duration_round(task_id, round_index, "rewrite_rejected", round_record)
+                    # Block3: 末轮文案被拒也给一次压缩重译终轮的机会（旁路 target）。
+                    if (
+                        round_index >= max_rounds_allowed
+                        and not compress_round_used
+                        and bool(getattr(config, "OMNI_COMPRESS_RETRANSLATE_ENABLED", True))
+                    ):
+                        compress_round_used = True
+                        compress_round_pending = True
+                        max_rounds_allowed += 1
                     round_index += 1
                     continue
                 else:
@@ -1228,6 +1395,8 @@ class PipelineRunner:
                     project_id=task_id,
                     checkpoint_key=f"tts_script.{variant}.r{round_index}",
                 )
+                if tts_script.get("_wording_fallback"):
+                    round_record["tts_script_source"] = "wording_fallback"
             tts_script_messages = tts_script.get("_messages") or []
             if tts_script_messages:
                 _save_llm_prompt_debug(
@@ -1603,6 +1772,17 @@ class PipelineRunner:
             # Note: do NOT update `prev_localized` — every rewrite uses the initial.
             last_audio_duration = audio_duration
             last_word_count = word_count
+            # Block3: 最后一轮仍未收敛即将走 bestpick → 动态扩一轮压缩重译终轮，
+            # 仿 EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS 先例（两个标志位各只触发一次，
+            # 总上限自然为 MAX_ROUNDS + EXTRA_STAGE1_SPEEDUP_FALLBACK_ROUNDS + 1）。
+            if (
+                round_index >= max_rounds_allowed
+                and not compress_round_used
+                and bool(getattr(config, "OMNI_COMPRESS_RETRANSLATE_ENABLED", True))
+            ):
+                compress_round_used = True
+                compress_round_pending = True
+                max_rounds_allowed += 1
             round_index += 1
 
         # All allowed rounds completed without landing in a final stage-1 result.
@@ -1768,6 +1948,10 @@ class PipelineRunner:
                 best_record["speedup_final_audio_choice"] = "truncated"
                 best_record["final_reason"] = "best_pick_hard_truncated"
                 best_record["final_distance"] = 0.0
+                # Block3 R3: 物理截断升级为任务级质量告警（含被删句预览）。
+                self._record_tail_truncation_warning(
+                    task_id, best_record, trim_result,
+                )
         rounds[best_i] = best_record
         self._emit_duration_round(task_id, best_i + 1, "best_pick", best_record)
         final_reason = best_record.get("final_reason") or "best_pick"
@@ -1883,6 +2067,10 @@ class PipelineRunner:
             0.0,
             sum(float(segment.get("tts_duration", 0.0) or 0.0) for segment in tts_segments) - float(duration),
         )
+        # Block3: 被截掉的尾部句段文本（按移除顺序），供任务级质量告警展示。
+        removed_segments = tts_segments[len(fitted_segments):] if removed_count else []
+        removed_texts = [_truncation_segment_text(s) for s in removed_segments]
+        removed_texts = [t for t in removed_texts if t]
         return {
             "skipped": False,
             "audio_path": output_audio_path,
@@ -1891,8 +2079,33 @@ class PipelineRunner:
             "localized_translation": fitted_localized_translation,
             "removed_count": removed_count,
             "removed_duration": round(removed_duration, 3),
+            "removed_texts": removed_texts,
             "final_duration": round(float(duration), 3),
         }
+
+    def _record_tail_truncation_warning(
+        self, task_id: str, round_record: dict, trim_result: dict,
+    ) -> None:
+        """物理尾部截断真发生时，追加任务级质量告警 + 轮记录被删句预览（Block3 R3）。
+
+        - removed_count == 0 时不做任何事（与现状逐字节一致）。
+        - quality_warnings 不存在时初始化为空 list；append tail_truncated 告警。
+        """
+        removed_count = int(trim_result.get("removed_count") or 0)
+        if removed_count <= 0:
+            return
+        removed_texts = list(trim_result.get("removed_texts") or [])
+        warnings = list((task_state.get(task_id) or {}).get("quality_warnings") or [])
+        warnings.append({
+            "type": "tail_truncated",
+            "removed_count": removed_count,
+            "removed_texts": removed_texts,
+            "message": (
+                f"配音尾部被截断 {removed_count} 句，可能丢失收尾/CTA 完整性"
+            ),
+        })
+        task_state.update(task_id, quality_warnings=warnings)
+        round_record["removed_texts_preview"] = removed_texts[:3]
 
     def _trim_tail_segments(
         self, *, task_dir: str, round_variant: str,
@@ -1984,6 +2197,11 @@ class PipelineRunner:
 
         new_tts_script, new_loc = _trim_tts_metadata_to_segments(tts_script, localized_translation, kept)
 
+        # Block3: removed 是按出栈顺序（尾→前）收集的，恢复成原文档顺序再取文本。
+        removed_texts = [
+            _truncation_segment_text(s) for s in reversed(removed)
+        ]
+        removed_texts = [t for t in removed_texts if t]
         return {
             "skipped": False,
             "audio_path": out_path,
@@ -1992,6 +2210,7 @@ class PipelineRunner:
             "tts_segments": kept,
             "removed_count": len(removed),
             "removed_duration": total - current,
+            "removed_texts": removed_texts,
             "final_duration": current,
         }
 
@@ -3601,6 +3820,10 @@ class PipelineRunner:
                             f"目标上限 {loop_target_hi:.1f}s"
                         ),
                     }
+                    # Block3 R3: 物理截断升级为任务级质量告警（含被删句预览）。
+                    self._record_tail_truncation_warning(
+                        task_id, trimmed_record, trim_result,
+                    )
                     self._emit_duration_round(task_id, final_round, "truncated", trimmed_record)
 
             if gap_analysis.get("enabled") and loop_result.get("tts_segments"):

@@ -260,13 +260,14 @@ def _load_account_daily_spend(
         acc = r.get("ad_account_id") or ""
         out[(d, acc)] = float(r["spend"] or 0)
 
-    if open_dates and not is_single_market_country(market_country):
+    if open_dates:
         from .order_profit_aggregation import _load_realtime_ad_snapshot_fallback
 
         rt = _load_realtime_ad_snapshot_fallback(
             date_from=min(open_dates),
             date_to=max(open_dates),
             product_id=product_id,
+            country=market_country,
         )
         for (business_date, pid), spend in rt.get("spend_by_product", {}).items():
             if int(pid) == int(product_id):
@@ -763,7 +764,7 @@ COUNTRY_COLUMNS: list[tuple[str, str]] = [
 
 
 def generate_xlsx(report: dict[str, Any]) -> bytes:
-    """生成 4-sheet xlsx：订单明细 / 每日 / 按国家 / 总账。"""
+    """生成 xlsx：订单明细 / 每日 / 按国家 / 总账 / 数据质量。"""
     import xlsxwriter
 
     buf = io.BytesIO()
@@ -840,7 +841,9 @@ def generate_xlsx(report: dict[str, Any]) -> bytes:
         ("总件数", total.get("units", 0)),
         ("总收入 (USD)", total.get("revenue_usd", 0)),
         ("Shopify 手续费", total.get("shopify_fee_usd", 0)),
-        ("广告费（修正）", total.get("ad_cost_usd", 0)),
+        ("已分摊广告费", total.get("allocated_ad_spend_usd", 0)),
+        ("未分摊广告费", total.get("unallocated_ad_spend_usd", 0)),
+        ("总广告费", total.get("ad_cost_usd", 0)),
         ("ROAS", total.get("roas")),
         ("采购成本", total.get("purchase_usd", 0)),
         ("物流成本", total.get("shipping_cost_usd", 0)),
@@ -880,6 +883,42 @@ def generate_xlsx(report: dict[str, Any]) -> bytes:
                     sh.write_number(r_idx, c_idx, float(val), fmt_money if isinstance(val, float) else fmt_int)
                 else:
                     sh.write(r_idx, c_idx, val)
+
+    data_quality = report.get("data_quality") if isinstance(report, dict) else None
+    if isinstance(data_quality, dict):
+        q = book.add_worksheet("data_quality")
+        q.write(0, 0, "字段", fmt_header)
+        q.write(0, 1, "值", fmt_header)
+        quality_rows: list[tuple[str, Any]] = [
+            ("状态", data_quality.get("status")),
+            ("来源模式", data_quality.get("source_mode")),
+            ("业务日开始", data_quality.get("business_date_from")),
+            ("业务日结束", data_quality.get("business_date_to")),
+            ("生成时间", data_quality.get("generated_at")),
+        ]
+        checks = data_quality.get("checks")
+        if isinstance(checks, list):
+            for check in checks:
+                if not isinstance(check, dict):
+                    continue
+                prefix = str(check.get("code") or "check")
+                quality_rows.extend([
+                    (f"{prefix}.status", check.get("status")),
+                    (f"{prefix}.expected", check.get("expected")),
+                    (f"{prefix}.actual", check.get("actual")),
+                    (f"{prefix}.diff", check.get("diff")),
+                    (f"{prefix}.allocated_ad_spend_usd", check.get("allocated_ad_spend_usd")),
+                    (f"{prefix}.unallocated_ad_spend_usd", check.get("unallocated_ad_spend_usd")),
+                    (f"{prefix}.message", check.get("message")),
+                ])
+        for row_idx, (label, val) in enumerate(quality_rows, start=1):
+            q.write(row_idx, 0, label, fmt_bold)
+            if isinstance(val, (int, float)):
+                q.write_number(row_idx, 1, float(val), fmt_money)
+            else:
+                q.write(row_idx, 1, "" if val is None else str(val))
+        q.set_column(0, 0, 34)
+        q.set_column(1, 1, 80)
 
     book.close()
     buf.seek(0)

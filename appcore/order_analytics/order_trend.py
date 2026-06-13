@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any
 
 from appcore.db import query, query_one
+from appcore.order_analytics._helpers import current_meta_business_date
 
 log = logging.getLogger(__name__)
 
@@ -45,11 +46,8 @@ def get_product_order_trend_data(product_code: str) -> dict[str, Any] | None:
         if order_pid_row:
             product_id = order_pid_row.get("product_id")
 
-    # Current date in CST (Beijing time)
-    # Using the timezone-aware date logic consistent with other modules
-    # (Since we are in appcore/order_analytics, we can calculate current date relative to now)
-    # Beijing is UTC+8
-    today = (datetime.utcnow() + timedelta(hours=8)).date()
+    # Use Meta business date (BJ 16:00 cutover), not natural Beijing date.
+    today = current_meta_business_date()
 
     # 2. Query daily sales for the last 12 months (to aggregate weeks/months in Python)
     # Start of 11 months ago

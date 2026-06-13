@@ -69,7 +69,15 @@ def _optional_path(name: str) -> str:
 # ---------------------------------------------------------------------------
 SERVER_ENV = _env("SERVER_ENV", "local").lower() or "local"
 LOCAL_SERVER_BASE_URL = _env("LOCAL_SERVER_BASE_URL", SERVER_BASE_URL).rstrip("/")
+AD_ALERT_PUBLIC_SHARE_BASE_URL = _env(
+    "AD_ALERT_PUBLIC_SHARE_BASE_URL",
+    "http://14.103.60.217",
+).rstrip("/")
 SCHEDULED_TASKS_ENABLED = _env_bool("SCHEDULED_TASKS_ENABLED", True)
+
+
+class Config:
+    SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT = os.getenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "")
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +199,24 @@ JIANYING_PROJECT_DIR = _optional_path("JIANYING_PROJECT_DIR")
 # ---------------------------------------------------------------------------
 SUBTITLE_MAX_CHARS_PER_LINE = int(_env("SUBTITLE_MAX_CHARS_PER_LINE", "42"))
 SUBTITLE_MAX_LINES = int(_env("SUBTITLE_MAX_LINES", "2"))
+
+
+# ---------------------------------------------------------------------------
+# Block3: rewrite 质量守门 + 压缩重译兜底
+# docs/superpowers/specs/2026-06-12-omni-quality-block3-convergence-guard-design.md
+# ---------------------------------------------------------------------------
+OMNI_REWRITE_GUARD_ENABLED = True
+OMNI_REWRITE_GUARD_MIN_FIDELITY = 75
+OMNI_REWRITE_GUARD_MAX_CALLS_PER_ROUND = 3
+OMNI_COMPRESS_RETRANSLATE_ENABLED = True
+
+
+# ---------------------------------------------------------------------------
+# Block5: 翻译质量评估阈值
+# docs/superpowers/specs/2026-06-12-omni-quality-block5-eval-loop-design.md
+# ---------------------------------------------------------------------------
+TRANSLATION_QUALITY_RED_SCORE = 70
+TRANSLATION_QUALITY_ENDING_RED = 60
 
 
 # ---------------------------------------------------------------------------

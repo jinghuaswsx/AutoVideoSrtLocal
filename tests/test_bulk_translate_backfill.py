@@ -304,10 +304,10 @@ def test_sync_video_result_reuses_existing_item_for_same_object_key(monkeypatch)
     assert target_id == 701
     assert executed == [
         (
-            """
+                    """
                     UPDATE media_items 
                        SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
-                           duration_seconds=%s, file_size=%s, source_raw_id=%s, updated_at=NOW()
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s
                      WHERE id=%s
                     """,
             (
@@ -408,10 +408,10 @@ def test_sync_video_result_binds_existing_item_to_task_center_task(monkeypatch):
     assert target_id == 701
     assert executed == [
         (
-            """
+                    """
                     UPDATE media_items 
                        SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
-                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s, updated_at=NOW()
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s
                      WHERE id=%s
                     """,
             (
@@ -479,10 +479,10 @@ def test_sync_video_result_rebinds_unified_output_to_latest_task_center_task(mon
     assert created == {}
     assert executed == [
         (
-            """
+                    """
                     UPDATE media_items 
                        SET filename=%s, display_name=%s, object_key=%s, cover_object_key=%s,
-                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s, updated_at=NOW()
+                           duration_seconds=%s, file_size=%s, source_raw_id=%s, task_id=%s
                      WHERE id=%s
                     """,
             (

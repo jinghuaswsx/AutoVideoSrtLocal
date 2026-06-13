@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import logging
 import sys
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
@@ -30,9 +31,14 @@ from .order_profit_aggregation import (
 )
 from .product_ad_launch import normalize_product_launch_scope, normalize_product_launch_window_days
 from .shopify_fee import split_shopify_fee_for_order
+from .shopify_fee_resolver import (
+    FEE_SOURCE_STRATEGY_C_FALLBACK,
+    resolve_shopify_fee_for_order,
+)
 from .profit_calculation import _to_decimal
 
 
+log = logging.getLogger(__name__)
 ORDER_DETAIL_PAGE_SIZE = 30
 ORDER_DETAIL_MAX_PAGE_SIZE = 100
 ORDER_PROFIT_PAGE_SIZE = 100
@@ -291,6 +297,15 @@ def _estimate_ratio_pct(amount: Any, total: Any) -> float | None:
 
 def _attach_order_profit_cost_ratios(summary: dict[str, Any]) -> None:
     revenue = summary.get("total_revenue_usd")
+    summary["refund_deduction_ratio_pct"] = _ratio_pct(
+        summary.get("refund_deduction_usd"),
+        revenue,
+    )
+    summary["return_reserve_ratio_pct"] = _ratio_pct(summary.get("return_reserve_usd"), revenue)
+    summary["profit_deduction_ratio_pct"] = _ratio_pct(
+        summary.get("profit_deduction_usd"),
+        revenue,
+    )
     summary["total_ad_spend_ratio_pct"] = _ratio_pct(summary.get("total_ad_spend_usd"), revenue)
     summary["purchase_cost_ratio_pct"] = _ratio_pct(
         summary.get("purchase_cost_with_estimate_usd"),
@@ -319,6 +334,17 @@ def _attach_order_profit_estimate_ratios(summary: dict[str, Any]) -> None:
     summary["has_estimated_costs"] = estimate_total > 0
 
 
+def _normalize_shopify_fee_source(value: Any) -> str:
+    sources = [
+        part.strip()
+        for part in str(value or "").split(",")
+        if part and part.strip()
+    ]
+    if not sources:
+        return "unknown"
+    return sources[0] if len(set(sources)) == 1 else "mixed"
+
+
 def _empty_order_profit_summary() -> dict[str, Any]:
     return {
         "order_count": 0,
@@ -326,6 +352,9 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "refund_deduction_usd": Decimal("0"),
         "return_reserve_usd": Decimal("0"),
         "profit_deduction_usd": Decimal("0"),
+        "profit_deduction_from_return_reserve_usd": Decimal("0"),
+        "profit_deduction_from_refund_usd": Decimal("0"),
+        "profit_deduction_other_usd": Decimal("0"),
         "purchase_cost_usd": Decimal("0"),
         "purchase_estimate_usd": Decimal("0"),
         "purchase_cost_with_estimate_usd": Decimal("0"),
@@ -337,9 +366,16 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "logistics_missing_order_count": 0,
         "logistics_missing_order_ratio": 0.0,
         "shopify_fee_total_usd": Decimal("0"),
+        "shopify_fee_source_counts": {},
+        "shopify_fee_source_amounts": {},
+        "shopify_fee_rate_watermark": None,
+        "data_quality": {"warnings": [], "errors": []},
         "ad_cost_usd": Decimal("0"),
         "unallocated_ad_spend_usd": Decimal("0"),
         "total_ad_spend_usd": Decimal("0"),
+        "refund_deduction_ratio_pct": None,
+        "return_reserve_ratio_pct": None,
+        "profit_deduction_ratio_pct": None,
         "total_ad_spend_ratio_pct": None,
         "purchase_cost_ratio_pct": None,
         "logistics_cost_ratio_pct": None,
@@ -364,6 +400,9 @@ def _build_order_profit_summary(
     summary = _empty_order_profit_summary()
     order_count = len(rows or [])
     summary["order_count"] = order_count
+    fee_source_counts: dict[str, int] = {}
+    fee_source_amounts: dict[str, Decimal] = {}
+    fee_rate_watermark: str | None = None
 
     for row in rows or []:
         total_revenue = _to_decimal(row.get("total_revenue"))
@@ -387,6 +426,31 @@ def _build_order_profit_summary(
         summary["logistics_estimate_usd"] += logistics_estimate
         summary["shopify_fee_total_usd"] += shopify_fee
         summary["ad_cost_usd"] += ad_cost
+        fee_source = _normalize_shopify_fee_source(row.get("shopify_fee_source"))
+        fee_source_counts[fee_source] = fee_source_counts.get(fee_source, 0) + 1
+        fee_source_amounts[fee_source] = (
+            fee_source_amounts.get(fee_source, Decimal("0")) + shopify_fee
+        )
+        watermark = row.get("shopify_fee_rate_window_end")
+        if watermark:
+            watermark_value = (
+                watermark.isoformat()
+                if hasattr(watermark, "isoformat")
+                else str(watermark)
+            )
+            if fee_rate_watermark is None or watermark_value > fee_rate_watermark:
+                fee_rate_watermark = watermark_value
+        source = str(row.get("profit_deduction_source") or "").strip()
+        if source == "return_reserve":
+            summary["profit_deduction_from_return_reserve_usd"] += profit_deduction
+        elif source == "refund":
+            summary["profit_deduction_from_refund_usd"] += profit_deduction
+        elif profit_deduction == return_reserve and return_reserve > 0:
+            summary["profit_deduction_from_return_reserve_usd"] += profit_deduction
+        elif profit_deduction == refund and refund > 0:
+            summary["profit_deduction_from_refund_usd"] += profit_deduction
+        elif profit_deduction > 0:
+            summary["profit_deduction_other_usd"] += profit_deduction
         if row.get("purchase_cost_missing"):
             summary["purchase_missing_order_count"] += 1
         if row.get("logistics_cost_missing"):
@@ -444,6 +508,8 @@ def _build_order_profit_summary(
             continue
         if isinstance(value, bool):
             summary[key] = value
+        elif isinstance(value, dict):
+            summary[key] = value
         elif key.endswith("_count") or key == "order_count":
             summary[key] = int(value)
         elif key.endswith("_ratio"):
@@ -451,6 +517,18 @@ def _build_order_profit_summary(
         else:
             summary[key] = round(float(value), 2)
 
+    summary["shopify_fee_source_counts"] = fee_source_counts
+    summary["shopify_fee_source_amounts"] = {
+        key: round(float(value), 2)
+        for key, value in fee_source_amounts.items()
+    }
+    summary["shopify_fee_rate_watermark"] = fee_rate_watermark
+    if fee_source_counts.get("strategy_c_fallback", 0) > 0:
+        summary["data_quality"]["warnings"].append({
+            "code": "shopify_fee_strategy_c_fallback_present",
+            "status": "warning",
+            "message": "shopify_fee_strategy_c_fallback_present",
+        })
     summary["global_break_even_roas"] = _global_break_even_roas(summary)
     return summary
 
@@ -480,6 +558,9 @@ def _build_order_profit_summary_from_status(
         "refund_deduction_usd": Decimal("0"),
         "return_reserve_usd": total("return_reserve"),
         "profit_deduction_usd": total("return_reserve"),
+        "profit_deduction_from_return_reserve_usd": total("return_reserve"),
+        "profit_deduction_from_refund_usd": Decimal("0"),
+        "profit_deduction_other_usd": Decimal("0"),
         "purchase_cost_usd": total("purchase_actual"),
         "purchase_estimate_usd": total("purchase_estimate"),
         "purchase_cost_with_estimate_usd": _to_decimal(status_summary.get("purchase_cost_with_estimate_usd")),
@@ -512,6 +593,8 @@ def _build_order_profit_summary_from_status(
         if value is None:
             continue
         if isinstance(value, bool):
+            summary[key] = value
+        elif isinstance(value, dict):
             summary[key] = value
         elif key.endswith("_count") or key == "order_count":
             summary[key] = int(value)
@@ -979,7 +1062,7 @@ def _get_realtime_order_profit_details(
         limit_sql = " LIMIT %s OFFSET %s"
         limit_args = [normalized_size, (normalized_page - 1) * normalized_size]
     rows = query(
-        "SELECT d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "SELECT d.site_code, d.dxm_package_id, d.dxm_order_id, d.extended_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
         "COUNT(*) AS line_count, "
         "SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) AS profit_line_count, "
@@ -998,6 +1081,10 @@ def _get_realtime_order_profit_details(
         "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN " + _CANONICAL_REVENUE_SQL + " * 0.20 ELSE 0 END) AS logistics_estimate, "
         "SUM(COALESCE(p.ad_cost_usd, 0)) AS ad_cost, "
         "SUM(COALESCE(p.shopify_fee_usd, 0)) AS stored_shopify_fee_total, "
+        "GROUP_CONCAT(DISTINCT NULLIF(p.shopify_fee_source, '') ORDER BY p.shopify_fee_source SEPARATOR ',') AS stored_shopify_fee_sources, "
+        "MAX(p.shopify_fee_rate_region) AS stored_shopify_fee_rate_region, "
+        "MAX(p.shopify_fee_rate_window_start) AS stored_shopify_fee_rate_window_start, "
+        "MAX(p.shopify_fee_rate_window_end) AS stored_shopify_fee_rate_window_end, "
         "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS purchase_missing_count, "
         "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
@@ -1011,7 +1098,7 @@ def _get_realtime_order_profit_details(
         "AND d.meta_business_date=%s "
         "AND " + order_time_expr + " <= %s "
         + product_sql +
-        "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "GROUP BY d.site_code, d.dxm_package_id, d.dxm_order_id, d.extended_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         "ORDER BY order_time DESC, d.dxm_package_id DESC"
         + limit_sql,
@@ -1212,7 +1299,7 @@ def _get_realtime_order_profit_details_for_range(
         limit_sql = " LIMIT %s OFFSET %s"
         limit_args = [normalized_size, (normalized_page - 1) * normalized_size]
     rows = query(
-        "SELECT d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "SELECT d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.extended_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " AS order_time, "
         "COUNT(*) AS line_count, "
         "SUM(CASE WHEN p.id IS NOT NULL THEN 1 ELSE 0 END) AS profit_line_count, "
@@ -1231,6 +1318,10 @@ def _get_realtime_order_profit_details_for_range(
         "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN " + _CANONICAL_REVENUE_SQL + " * 0.20 ELSE 0 END) AS logistics_estimate, "
         "SUM(COALESCE(p.ad_cost_usd, 0)) AS ad_cost, "
         "SUM(COALESCE(p.shopify_fee_usd, 0)) AS stored_shopify_fee_total, "
+        "GROUP_CONCAT(DISTINCT NULLIF(p.shopify_fee_source, '') ORDER BY p.shopify_fee_source SEPARATOR ',') AS stored_shopify_fee_sources, "
+        "MAX(p.shopify_fee_rate_region) AS stored_shopify_fee_rate_region, "
+        "MAX(p.shopify_fee_rate_window_start) AS stored_shopify_fee_rate_window_start, "
+        "MAX(p.shopify_fee_rate_window_end) AS stored_shopify_fee_rate_window_end, "
         "SUM(CASE WHEN " + _PURCHASE_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS purchase_missing_count, "
         "SUM(CASE WHEN " + _LOGISTICS_MISSING_CONDITION_SQL + " THEN 1 ELSE 0 END) AS logistics_missing_count, "
         "GROUP_CONCAT(DISTINCT NULLIF(d.product_sku, '') ORDER BY d.product_sku SEPARATOR ' / ') AS skus, "
@@ -1243,7 +1334,7 @@ def _get_realtime_order_profit_details_for_range(
         "WHERE " + _site_codes_in_sql(sites, "d.site_code") +
         "AND d.meta_business_date >= %s AND d.meta_business_date <= %s "
         + product_sql +
-        "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.package_number, d.order_state, "
+        "GROUP BY d.meta_business_date, d.site_code, d.dxm_package_id, d.dxm_order_id, d.extended_order_id, d.package_number, d.order_state, "
         "d.buyer_country, d.buyer_country_name, " + order_time_expr + " "
         "ORDER BY order_time DESC, d.dxm_package_id DESC"
         + limit_sql,
@@ -1660,6 +1751,7 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
         )
         return_reserve = _money(row.get("return_reserve_usd"))
         profit_deduction = return_reserve if has_package_profit_lines else refund_deduction
+        profit_deduction_source = "return_reserve" if has_package_profit_lines else "refund"
         purchase_cost = _money(row.get("purchase_cost"))
         purchase_estimate = _money(row.get("purchase_estimate"))
         logistics_cost = _money(row.get("logistics_cost"))
@@ -1670,11 +1762,53 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             amount=total_revenue,
             buyer_country=row.get("buyer_country"),
         )
-        shopify_fee_total = (
-            stored_shopify_fee_total
-            if has_profit_lines
-            else _money(shopify_fee.get("shopify_fee_total_usd"))
-        )
+        shopify_tier = shopify_fee.get("shopify_tier")
+        presentment_currency = shopify_fee.get("presentment_currency")
+        if has_profit_lines:
+            shopify_fee_total = stored_shopify_fee_total
+            shopify_fee_source = _normalize_shopify_fee_source(
+                row.get("stored_shopify_fee_sources") or "stored_profit_line"
+            )
+            shopify_fee_rate_region = row.get("stored_shopify_fee_rate_region")
+            shopify_fee_rate_window_start = row.get("stored_shopify_fee_rate_window_start")
+            shopify_fee_rate_window_end = row.get("stored_shopify_fee_rate_window_end")
+        else:
+            try:
+                fee_result = resolve_shopify_fee_for_order(
+                    amount=total_revenue,
+                    buyer_country=row.get("buyer_country"),
+                    site_code=row.get("site_code"),
+                    order_names=[
+                        row.get("extended_order_id"),
+                        row.get("package_number"),
+                    ],
+                    order_time=(
+                        row.get("order_time")
+                        or row.get("order_paid_at")
+                        or row.get("attribution_time_at")
+                        or row.get("order_created_at")
+                    ),
+                )
+            except Exception:
+                log.exception(
+                    "realtime Shopify fee resolver failed; falling back to strategy C estimate"
+                )
+                fee_result = {
+                    "shopify_fee_usd": shopify_fee.get("shopify_fee_total_usd"),
+                    "shopify_tier": shopify_tier,
+                    "presentment_currency": presentment_currency,
+                    "shopify_fee_source": FEE_SOURCE_STRATEGY_C_FALLBACK,
+                    "shopify_fee_rate_region": None,
+                    "shopify_fee_rate_window_start": None,
+                    "shopify_fee_rate_window_end": None,
+                }
+            shopify_fee_total = _money(fee_result.get("shopify_fee_usd"))
+            shopify_tier = fee_result.get("shopify_tier") or shopify_tier
+            presentment_currency = fee_result.get("presentment_currency") or presentment_currency
+            shopify_fee_source = fee_result.get("shopify_fee_source") or FEE_SOURCE_STRATEGY_C_FALLBACK
+            shopify_fee_rate_region = fee_result.get("shopify_fee_rate_region")
+            shopify_fee_rate_window_start = fee_result.get("shopify_fee_rate_window_start")
+            shopify_fee_rate_window_end = fee_result.get("shopify_fee_rate_window_end")
         shopify_platform_fee, international_card_fee, currency_conversion_fee = (
             _allocate_shopify_fee_components(shopify_fee_total, shopify_fee)
         )
@@ -1743,6 +1877,7 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             "refund_deduction_usd": refund_deduction,
             "return_reserve_usd": return_reserve,
             "profit_deduction_usd": profit_deduction,
+            "profit_deduction_source": profit_deduction_source,
             "purchase_cost_usd": purchase_cost,
             "purchase_cost_missing": purchase_cost_missing,
             "purchase_estimate_usd": purchase_estimate,
@@ -1754,11 +1889,15 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             "currency_conversion_fee_usd": currency_conversion_fee,
             "shopify_fee_total_usd": shopify_fee_total,
             "stored_shopify_fee_total_usd": stored_shopify_fee_total,
+            "shopify_fee_source": shopify_fee_source,
+            "shopify_fee_rate_region": shopify_fee_rate_region,
+            "shopify_fee_rate_window_start": shopify_fee_rate_window_start,
+            "shopify_fee_rate_window_end": shopify_fee_rate_window_end,
             "ad_cost_usd": ad_cost,
             "order_profit_usd": order_profit,
             "order_profit_with_estimate_usd": order_profit_with_estimate,
-            "shopify_tier": shopify_fee.get("shopify_tier"),
-            "presentment_currency": shopify_fee.get("presentment_currency"),
+            "shopify_tier": shopify_tier,
+            "presentment_currency": presentment_currency,
             "profit_status": profit_status,
             "refund_status": refund_status,
             "status_label": _build_order_profit_status_label(profit_status, refund_status),
@@ -4693,7 +4832,9 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
 
     orders_by_day = {row["meta_business_date"]: row for row in order_rows}
     ads_by_day = {row["meta_business_date"]: row for row in ad_rows}
-    today_business = current_meta_business_date()
+    from tools.meta_daily_final_sync import completed_meta_business_date
+
+    closed_through = completed_meta_business_date()
     rows: list[dict[str, Any]] = []
     totals = {
         "order_count": 0,
@@ -4711,8 +4852,8 @@ def get_true_roas_summary(start_date: str, end_date: str) -> dict:
     while current <= end:
         order = orders_by_day.get(current, {})
         ad = ads_by_day.get(current, {})
-        # 当天行：daily report 还没出，从 Meta 实时抓取表覆盖
-        if current == today_business:
+        # 未日终完成的业务日：daily report 还没出，从 Meta 实时快照覆盖。
+        if current > closed_through:
             realtime = _get_today_realtime_meta_totals(current)
             if realtime:
                 ad = realtime

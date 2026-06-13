@@ -7,6 +7,7 @@ import pytest
 
 from appcore import order_analytics as oa
 from appcore.order_analytics.profit_repository import (
+    _PROFIT_LINE_COLUMNS,
     finish_profit_run,
     start_profit_run,
     upsert_profit_line,
@@ -118,6 +119,62 @@ def test_upsert_profit_line_incomplete_row_with_estimates(monkeypatch):
     assert 2.15 in captured["args"]    # shopify_fee
     assert 22.0 in captured["args"]    # profit
     assert "incomplete" in captured["args"]
+
+
+def test_upsert_profit_line_persists_shopify_fee_trace_columns(monkeypatch):
+    executed = {}
+
+    def fake_execute(sql, values):
+        executed["sql"] = sql
+        executed["values"] = values
+
+    monkeypatch.setattr("appcore.order_analytics.profit_repository.execute", fake_execute)
+
+    upsert_profit_line(
+        {
+            "dxm_order_line_id": "L-trace-1",
+            "product_id": 1,
+            "buyer_country": "DE",
+            "presentment_currency": "EUR",
+            "shopify_tier": "dynamic_region_rate",
+            "line_amount_usd": 40.0,
+            "shipping_allocated_usd": 0.0,
+            "revenue_usd": 40.0,
+            "shopify_fee_usd": 2.688,
+            "ad_cost_usd": 0.0,
+            "purchase_usd": 10.0,
+            "shipping_cost_usd": 0.0,
+            "return_reserve_usd": 0.4,
+            "profit_usd": 26.912,
+            "status": "ok",
+            "missing_fields": [],
+            "cost_basis": {"shopify_fee_basis": {"snapshot_id": 9}},
+            "shopify_fee_source": "dynamic_region_rate",
+            "shopify_fee_rate": 0.07542,
+            "shopify_fee_rate_region": "europe",
+            "shopify_fee_rate_window_start": "2026-05-30",
+            "shopify_fee_rate_window_end": "2026-06-05",
+        },
+        business_date=date(2026, 6, 13),
+        paid_at=None,
+        source_run_id=88,
+    )
+
+    sql = executed["sql"].lower()
+    assert "shopify_fee_source" in sql
+    assert "shopify_fee_rate" in sql
+    assert "shopify_fee_basis_json" in sql
+    assert "shopify_fee_rate_region" in sql
+    assert "shopify_fee_rate_window_start" in sql
+    assert "shopify_fee_rate_window_end" in sql
+    assert executed["sql"].count("%s") == len(_PROFIT_LINE_COLUMNS)
+    values_by_column = dict(zip(_PROFIT_LINE_COLUMNS, executed["values"], strict=True))
+    assert values_by_column["shopify_fee_source"] == "dynamic_region_rate"
+    assert values_by_column["shopify_fee_rate"] == 0.07542
+    assert values_by_column["shopify_fee_rate_region"] == "europe"
+    assert values_by_column["shopify_fee_rate_window_start"] == "2026-05-30"
+    assert values_by_column["shopify_fee_rate_window_end"] == "2026-06-05"
+    assert '"snapshot_id": 9' in values_by_column["shopify_fee_basis_json"]
 
 
 def test_start_profit_run_returns_run_id(monkeypatch):

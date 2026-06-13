@@ -75,6 +75,42 @@ def _json_safe(value):
     return value
 
 
+def _coerce_quality_date(value) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _attach_period_data_quality(
+    payload: dict,
+    *,
+    date_from,
+    date_to,
+    allocated_ad_spend_usd: float | None = None,
+    unallocated_ad_spend_usd: float | None = None,
+    country: str | None = None,
+) -> dict:
+    start = _coerce_quality_date(date_from)
+    end = _coerce_quality_date(date_to)
+    if not start or not end:
+        return payload
+    payload["data_quality"] = dq.build_for_product_profit(
+        date_from=start,
+        date_to=end,
+        allocated_ad_spend_usd=allocated_ad_spend_usd,
+        unallocated_ad_spend_usd=unallocated_ad_spend_usd,
+        country=country,
+    )
+    return payload
+
+
 def _parse_positive_int_arg(name: str, default: int, *, max_value: int | None = None) -> int:
     raw = (request.args.get(name) or "").strip()
     if not raw:
@@ -188,6 +224,27 @@ def _coerce_business_date(value):
     return None
 
 
+def _append_realtime_quality_warning(data_quality: dict, check: dict) -> None:
+    code = check.get("code")
+    if not code:
+        return
+
+    checks = data_quality.setdefault("checks", [])
+    if not any(existing.get("code") == code for existing in checks if isinstance(existing, dict)):
+        checks.append(check)
+
+    warnings = data_quality.setdefault("warnings", [])
+    if not any(existing.get("code") == code for existing in warnings if isinstance(existing, dict)):
+        warnings.append({
+            "code": code,
+            "status": check.get("status", dq.STATUS_WARNING),
+            "message": check.get("message", code),
+        })
+
+    if data_quality.get("status") == dq.STATUS_OK:
+        data_quality["status"] = dq.STATUS_WARNING
+
+
 def _attach_realtime_data_quality(result):
     """给 ``realtime-overview`` 响应顶层加 ``data_quality``。
 
@@ -243,14 +300,23 @@ def _attach_realtime_data_quality(result):
                     "修复账户 column_preset 后会回到 Meta 真值。"
                 ),
             }
-            result["data_quality"].setdefault("checks", []).append(check)
-            result["data_quality"].setdefault("warnings", []).append({
-                "code": check["code"],
-                "status": check["status"],
-                "message": check["message"],
-            })
-            if result["data_quality"].get("status") == dq.STATUS_OK:
-                result["data_quality"]["status"] = dq.STATUS_WARNING
+            _append_realtime_quality_warning(result["data_quality"], check)
+        order_profit_summary = result.get("order_profit_summary") or {}
+        order_profit_quality = order_profit_summary.get("data_quality") or {}
+        fee_source_counts = order_profit_summary.get("shopify_fee_source_counts") or {}
+        fee_source_amounts = order_profit_summary.get("shopify_fee_source_amounts") or {}
+        for warning in order_profit_quality.get("warnings") or []:
+            if not isinstance(warning, dict):
+                continue
+            check = dict(warning)
+            if check.get("code") == "shopify_fee_strategy_c_fallback_present":
+                check["strategy_c_fallback_order_count"] = int(
+                    fee_source_counts.get("strategy_c_fallback") or 0
+                )
+                check["strategy_c_fallback_amount_usd"] = float(
+                    fee_source_amounts.get("strategy_c_fallback") or 0
+                )
+            _append_realtime_quality_warning(result["data_quality"], check)
         launch_scope = scope.get("product_launch_scope")
         if launch_scope:
             launch_check = {
@@ -264,15 +330,10 @@ def _attach_realtime_data_quality(result):
                 "product_count": scope.get("product_launch_product_count", 0),
             }
             result["data_quality"]["product_launch_scope"] = launch_scope
-            result["data_quality"].setdefault("checks", []).append(launch_check)
             if launch_scope == "unmatched":
-                result["data_quality"].setdefault("warnings", []).append({
-                    "code": launch_check["code"],
-                    "status": launch_check["status"],
-                    "message": launch_check["message"],
-                })
-                if result["data_quality"].get("status") == dq.STATUS_OK:
-                    result["data_quality"]["status"] = dq.STATUS_WARNING
+                _append_realtime_quality_warning(result["data_quality"], launch_check)
+            else:
+                result["data_quality"].setdefault("checks", []).append(launch_check)
     except Exception as exc:  # noqa: BLE001
         log.warning("attach realtime data_quality failed: %s", exc)
         result.setdefault(
@@ -594,6 +655,46 @@ def realtime_estimates_page():
     )
 
 
+@bp.route("/order-analytics/logistics-alert")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def logistics_alert_page():
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md"""
+    resp = make_response(render_template(
+        "order_analytics.html",
+        realtime_store_options=_realtime_store_options(),
+        active_tab="logisticsAlert",
+        active_subtab="trend",
+    ))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
+
+
+@bp.route("/order-analytics/logistics-alert/products/<int:product_id>")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def logistics_alert_product_page(product_id: int):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md"""
+    return render_template(
+        "logistics_fee_alert_detail.html",
+        page_title="物流费预警订单明细",
+        product_id=product_id,
+    )
+
+
+def _logistics_alert_args() -> dict:
+    today = _today_in_cst().isoformat()
+    return {
+        "start_date": (request.args.get("start_date") or today).strip(),
+        "end_date": (request.args.get("end_date") or today).strip(),
+        "threshold_pct": float((request.args.get("threshold_pct") or "20").strip()),
+        "page": _parse_positive_int_arg("page", 1),
+        "page_size": _parse_positive_int_arg("page_size", 100, max_value=500),
+    }
+
+
 # ── API ───────────────────────────────────────────────
 
 @bp.route("/order-analytics/realtime-unmatched-orders/data")
@@ -735,6 +836,41 @@ def realtime_estimates_data():
         "products": result.get("estimate_products") or [],
         "rules": result.get("estimate_rules") or {},
     }))
+
+
+@bp.route("/order-analytics/logistics-alert/data")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def logistics_alert_data():
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md"""
+    try:
+        result = oa.list_logistics_fee_alert_products(**_logistics_alert_args())
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:  # noqa: BLE001
+        log.exception("logistics fee alert query failed: %s", exc)
+        return _json_response(error="internal_error", detail="logistics alert query failed"), 500
+    return _json_response(_json_safe({"ok": True, **result}))
+
+
+@bp.route("/order-analytics/logistics-alert/products/<int:product_id>/data")
+@login_required
+@admin_required
+@permission_required("data_analytics")
+def logistics_alert_product_data(product_id: int):
+    """Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md"""
+    try:
+        result = oa.list_logistics_fee_alert_order_details(
+            product_id=product_id,
+            **_logistics_alert_args(),
+        )
+    except ValueError as exc:
+        return _json_response(error="invalid_param", detail=str(exc)), 400
+    except Exception as exc:  # noqa: BLE001
+        log.exception("logistics fee alert product query failed: %s", exc)
+        return _json_response(error="internal_error", detail="logistics alert product query failed"), 500
+    return _json_response(_json_safe({"ok": True, **result}))
 
 
 @bp.route("/order-analytics/upload", methods=["POST"])
@@ -1302,7 +1438,20 @@ def true_roas():
     if not start_date or not end_date:
         return _json_response(error="missing_date", detail="start_date and end_date are required"), 400
     try:
-        return _json_response(_json_safe(oa.get_true_roas_summary(start_date, end_date)))
+        result = oa.get_true_roas_summary(start_date, end_date)
+        summary = result.get("summary") if isinstance(result, dict) else {}
+        if isinstance(result, dict):
+            _attach_period_data_quality(
+                result,
+                date_from=start_date,
+                date_to=end_date,
+                allocated_ad_spend_usd=(
+                    float(summary.get("ad_spend") or 0)
+                    if isinstance(summary, dict) else None
+                ),
+                unallocated_ad_spend_usd=0.0,
+            )
+        return _json_response(_json_safe(result))
     except ValueError as exc:
         return _json_response(error="invalid_date", detail=str(exc)), 400
     except Exception as exc:
@@ -1503,12 +1652,25 @@ def country_dashboard():
     product_code = (request.args.get("product_code") or "").strip() or None
     if start_date or end_date:
         try:
-            return _json_response(_json_safe(oa.get_country_dashboard(
+            result = oa.get_country_dashboard(
                 period="range",
                 start_date=start_date,
                 end_date=end_date,
                 product_code=product_code,
-            )))
+            )
+            summary = result.get("summary") if isinstance(result, dict) else {}
+            if isinstance(result, dict):
+                _attach_period_data_quality(
+                    result,
+                    date_from=(result.get("period") or {}).get("start"),
+                    date_to=(result.get("period") or {}).get("end"),
+                    allocated_ad_spend_usd=(
+                        float(summary.get("total_spend") or 0)
+                        if isinstance(summary, dict) else None
+                    ),
+                    unallocated_ad_spend_usd=0.0,
+                )
+            return _json_response(_json_safe(result))
         except ValueError as exc:
             return _json_response(error="invalid_param", detail=str(exc)), 400
         except Exception as exc:
@@ -1517,14 +1679,27 @@ def country_dashboard():
     if period not in ("day", "week", "month"):
         return _json_response(error="invalid_period", detail="period must be one of day/week/month"), 400
     try:
-        return _json_response(_json_safe(oa.get_country_dashboard(
+        result = oa.get_country_dashboard(
             period=period,
             year=request.args.get("year", type=int),
             month=request.args.get("month", type=int),
             week=request.args.get("week", type=int),
             date_str=request.args.get("date") or None,
             product_code=product_code,
-        )))
+        )
+        summary = result.get("summary") if isinstance(result, dict) else {}
+        if isinstance(result, dict):
+            _attach_period_data_quality(
+                result,
+                date_from=(result.get("period") or {}).get("start"),
+                date_to=(result.get("period") or {}).get("end"),
+                allocated_ad_spend_usd=(
+                    float(summary.get("total_spend") or 0)
+                    if isinstance(summary, dict) else None
+                ),
+                unallocated_ad_spend_usd=0.0,
+            )
+        return _json_response(_json_safe(result))
     except ValueError as exc:
         return _json_response(error="invalid_param", detail=str(exc)), 400
     except Exception as exc:
@@ -1829,6 +2004,19 @@ def dashboard():
         log.exception("dashboard query failed: %s", exc)
         return _json_response(error="internal_error", detail=str(exc)), 500
 
+    summary = data.get("summary") if isinstance(data, dict) else {}
+    total_spend = None
+    if isinstance(summary, dict) and summary.get("total_spend") is not None:
+        total_spend = float(summary.get("total_spend") or 0)
+    if isinstance(data, dict):
+        _attach_period_data_quality(
+            data,
+            date_from=(data.get("period") or {}).get("start"),
+            date_to=(data.get("period") or {}).get("end"),
+            allocated_ad_spend_usd=total_spend,
+            unallocated_ad_spend_usd=0.0 if total_spend is not None else None,
+            country=(request.args.get("country") or "").strip() or None,
+        )
     return _json_response(_json_safe(data))
 
 

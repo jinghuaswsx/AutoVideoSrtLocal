@@ -1209,6 +1209,14 @@ def api_product_ad_orders_report(pid: int):
     p = medias.get_product(pid)
     if not routes._can_access_product(p):
         abort(404)
+
+    # Trigger single-product cache refresh so list view cache is immediately in sync
+    try:
+        from appcore.media_product_ad_status_cache import refresh_product
+        refresh_product(pid)
+    except Exception as exc:
+        current_app.logger.warning("Failed to refresh cache for product %s: %s", pid, exc)
+
     from appcore.media_product_ad_orders_report import get_product_ad_orders_report
     return get_product_ad_orders_report(pid)
 

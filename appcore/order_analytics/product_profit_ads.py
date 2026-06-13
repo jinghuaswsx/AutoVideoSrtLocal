@@ -82,7 +82,13 @@ def _load_campaign_metrics(
     ``resolve_ad_product_match`` / override 表做兜底实时解析（覆盖同步流程还没回写
     product_id 的 race condition）。
     """
-    sql = (
+    open_dates = _open_business_dates_in_range(date_from, date_to)
+    daily_to = min(open_dates) - timedelta(days=1) if open_dates else date_to
+    rows: list[dict[str, Any]] = []
+    if daily_to < date_from:
+        daily_rows: list[dict[str, Any]] = []
+    else:
+        sql = (
         "SELECT COALESCE(m.meta_business_date, m.report_date) AS report_date, "
         "       m.ad_account_id, m.ad_account_name, "
         "       m.normalized_campaign_code, m.campaign_name, "
@@ -95,17 +101,28 @@ def _load_campaign_metrics(
         " AND o.product_id = %s "
         "WHERE COALESCE(m.meta_business_date, m.report_date) BETWEEN %s AND %s "
         "  AND (m.product_id = %s OR m.product_id IS NULL) "
-    )
-    params: list[Any] = [product_id, date_from, date_to, product_id]
-    market_country = normalize_market_country(country)
-    if is_single_market_country(market_country):
-        sql += "  AND m.market_country = %s "
-        params.append(market_country)
-    sql += "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC"
-    return query(
-        sql,
-        tuple(params),
-    )
+        )
+        params: list[Any] = [product_id, date_from, daily_to, product_id]
+        market_country = normalize_market_country(country)
+        if is_single_market_country(market_country):
+            sql += "  AND m.market_country = %s "
+            params.append(market_country)
+        sql += "ORDER BY COALESCE(m.meta_business_date, m.report_date) ASC"
+        daily_rows = query(
+            sql,
+            tuple(params),
+        )
+    rows.extend(daily_rows or [])
+    if open_dates:
+        rows.extend(
+            _load_realtime_campaign_metrics(
+                product_id=product_id,
+                date_from=min(open_dates),
+                date_to=max(open_dates),
+                country=country,
+            )
+        )
+    return rows
 
 
 def _date_value(value: Any) -> date | None:
@@ -143,6 +160,64 @@ def _open_business_dates_in_range(date_from: date, date_to: date) -> list[date]:
 
 def _sql_in(values: list[Any]) -> str:
     return ", ".join(["%s"] * len(values))
+
+
+def _load_realtime_campaign_metrics(
+    *,
+    product_id: int,
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> list[dict[str, Any]]:
+    market_country = normalize_market_country(country)
+    single_country = is_single_market_country(market_country)
+    table_name = (
+        "meta_ad_realtime_daily_ad_metrics"
+        if single_country
+        else "meta_ad_realtime_daily_campaign_metrics"
+    )
+    country_select = "m.country_code" if single_country else "NULL"
+    country_filter = ""
+    params: list[Any] = [product_id, date_from, date_to, date_from, date_to]
+    if single_country:
+        country_filter = " AND UPPER(COALESCE(m.country_code, '')) = %s"
+        params.append(market_country)
+    sql = (
+        "SELECT m.business_date AS report_date, "
+        "       m.ad_account_id, MAX(m.ad_account_name) AS ad_account_name, "
+        "       m.normalized_campaign_code, MAX(m.campaign_name) AS campaign_name, "
+        "       NULL AS product_id, NULL AS matched_product_code, "
+        f"       {country_select} AS market_country, "
+        "       o.id AS manual_override_id, "
+        "       SUM(m.spend_usd) AS spend_usd, "
+        "       SUM(m.result_count) AS result_count, "
+        "       SUM(m.purchase_value_usd) AS purchase_value_usd, "
+        "       NULL AS roas_purchase "
+        f"FROM {table_name} m "
+        "LEFT JOIN campaign_product_overrides o "
+        "  ON o.normalized_campaign_code = m.normalized_campaign_code "
+        " AND o.product_id = %s "
+        "INNER JOIN ("
+        "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS snapshot_at "
+        f"  FROM {table_name} "
+        "  WHERE business_date BETWEEN %s AND %s "
+        "    AND data_completeness='realtime_partial' "
+        "  GROUP BY business_date, ad_account_id"
+        ") latest "
+        "ON m.business_date = latest.business_date "
+        "AND (m.ad_account_id = latest.ad_account_id "
+        "     OR (m.ad_account_id IS NULL AND latest.ad_account_id IS NULL)) "
+        "AND m.snapshot_at = latest.snapshot_at "
+        "WHERE m.business_date BETWEEN %s AND %s "
+        "  AND m.data_completeness='realtime_partial'"
+        f"{country_filter} "
+        "GROUP BY m.business_date, m.ad_account_id, m.normalized_campaign_code, "
+        "         o.id"
+    )
+    if single_country:
+        sql += ", m.country_code"
+    sql += " ORDER BY m.business_date ASC"
+    return query(sql, tuple(params)) or []
 
 
 def _load_profit_units_for_products(

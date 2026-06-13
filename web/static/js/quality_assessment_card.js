@@ -24,7 +24,10 @@ window.QualityAssessmentCard = (function () {
     accuracy: "准确度",
     fluency: "流畅度",
     style_match: "风格契合度",
+    hook_strength: "首句钩子强度",
+    ending_integrity: "尾句收口完整性",
   };
+  const LOW_QUALITY_TEXT = "低于质量线";
   const ICON_ISSUE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
   const ICON_HIGHLIGHT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 
@@ -122,20 +125,25 @@ window.QualityAssessmentCard = (function () {
     }
     const ts = Number(latest.translation_score) || 0;
     const ttsS = Number(latest.tts_score) || 0;
+    const redFlags = latest.red_flags || {};
     const verdictClass = VERDICT_CLASS[latest.verdict] || "";
     const verdictText = VERDICT_LABEL[latest.verdict] || latest.verdict || "";
     const reasonText = latest.verdict_reason || "";
+    const lowLineNote = latest.is_red
+      ? `<span class="qa-low-line-note">${LOW_QUALITY_TEXT}</span>`
+      : "";
 
-    const summaryRow = (verdictText || reasonText) ? `
+    const summaryRow = (verdictText || reasonText || lowLineNote) ? `
       <div class="qa-summary-row">
         ${verdictText ? `<span class="qa-verdict-pill ${verdictClass}">${escapeHtml(verdictText)}</span>` : ""}
+        ${lowLineNote}
         ${reasonText ? `<span class="qa-summary-text">${escapeHtml(reasonText)}</span>` : ""}
       </div>` : "";
 
     const scoreGrid = `
       <div class="qa-score-grid">
-        ${renderScoreBlock("翻译质量", ts, latest.translation_dimensions)}
-        ${renderScoreBlock("TTS 还原度", ttsS, latest.tts_dimensions)}
+        ${renderScoreBlock("翻译质量", ts, latest.translation_dimensions, redFlags)}
+        ${renderScoreBlock("TTS 还原度", ttsS, latest.tts_dimensions, {})}
       </div>`;
 
     const lists = [
@@ -153,29 +161,33 @@ window.QualityAssessmentCard = (function () {
     body.innerHTML = summaryRow + scoreGrid + listsGrid + history;
   }
 
-  function renderScoreBlock(name, score, dims) {
+  function renderScoreBlock(name, score, dims, redFlags) {
     const tier = tierByScore(score);
+    const scoreRed = !!(redFlags && redFlags.translation_score);
     return `
-      <div class="qa-score-block ${tier}">
+      <div class="qa-score-block ${tier} ${scoreRed ? "is-red" : ""}">
         <div class="qa-score-head">
           <span class="qa-score-name">${escapeHtml(name)}</span>
           <span class="qa-score-num">${score}<span class="qa-score-max">/100</span></span>
         </div>
-        ${renderDims(dims)}
+        ${scoreRed ? `<div class="qa-score-warning">${LOW_QUALITY_TEXT}</div>` : ""}
+        ${renderDims(dims, redFlags)}
       </div>`;
   }
 
-  function renderDims(dims) {
+  function renderDims(dims, redFlags) {
     if (!dims || typeof dims !== "object") return "";
     const rows = Object.entries(dims).map(([k, v]) => {
       const label = DIM_LABELS[k] || k;
       const val = Math.max(0, Math.min(100, Number(v) || 0));
+      const isRed = !!(redFlags && redFlags[k]);
       return `
-        <div class="qa-dim-row">
+        <div class="qa-dim-row ${isRed ? "is-red" : ""}">
           <div class="qa-dim-head">
             <span class="qa-dim-name">${escapeHtml(label)}</span>
             <span class="qa-dim-val">${val}</span>
           </div>
+          ${isRed ? `<div class="qa-low-line-note">${LOW_QUALITY_TEXT}</div>` : ""}
           <div class="qa-dim-bar"><span style="width:${val}%"></span></div>
         </div>`;
     }).join("");

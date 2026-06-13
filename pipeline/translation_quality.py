@@ -18,6 +18,20 @@ from appcore.llm_debug_payloads import build_chat_request_payload, prompt_file_p
 log = logging.getLogger(__name__)
 
 
+_REQUIRED_TRANSLATION_DIMS = (
+    "semantic_fidelity",
+    "completeness",
+    "naturalness",
+    "hook_strength",
+    "ending_integrity",
+)
+_REQUIRED_TTS_DIMS = (
+    "text_recall",
+    "pronunciation_fidelity",
+    "rhythm_match",
+)
+
+
 _LANG_LABEL: dict[str, str] = {
     "zh": "中文", "en": "English", "es": "español", "pt": "português",
     "fr": "français", "it": "italiano", "ja": "日本語", "de": "Deutsch",
@@ -41,6 +55,11 @@ def _system_prompt() -> str:
         "  - semantic_fidelity: did the translation capture the source video meaning, no hallucinations?\n"
         "  - completeness: are key selling points / information preserved?\n"
         "  - naturalness: does the target language read naturally and conversationally?\n\n"
+        "  - hook_strength: does TRANSLATION's first sentence work as a strong 3-second hook "
+        "(clear outcome / benefit / curiosity / contrast)?\n"
+        "  - ending_integrity: does TRANSLATION's final sentence preserve the closing / CTA intent "
+        "of ORIGINAL_ASR's ending? If the translation ends mid-thought or visibly loses the source's "
+        "wrap-up/CTA, score low (<= 50).\n\n"
         "[TTS_SCORE] compares TRANSLATION vs TTS_RECOGNITION:\n"
         "  - text_recall: did the TTS faithfully recite the script?\n"
         "  - pronunciation_fidelity: are key product/brand terms pronounced correctly?\n"
@@ -69,8 +88,10 @@ def _response_format() -> dict:
                             "semantic_fidelity": {"type": "integer", "minimum": 0, "maximum": 100},
                             "completeness":      {"type": "integer", "minimum": 0, "maximum": 100},
                             "naturalness":       {"type": "integer", "minimum": 0, "maximum": 100},
+                            "hook_strength":     {"type": "integer", "minimum": 0, "maximum": 100},
+                            "ending_integrity":  {"type": "integer", "minimum": 0, "maximum": 100},
                         },
-                        "required": ["semantic_fidelity", "completeness", "naturalness"],
+                        "required": list(_REQUIRED_TRANSLATION_DIMS),
                         "additionalProperties": False,
                     },
                     "tts_dimensions": {
@@ -80,7 +101,7 @@ def _response_format() -> dict:
                             "pronunciation_fidelity":  {"type": "integer", "minimum": 0, "maximum": 100},
                             "rhythm_match":            {"type": "integer", "minimum": 0, "maximum": 100},
                         },
-                        "required": ["text_recall", "pronunciation_fidelity", "rhythm_match"],
+                        "required": list(_REQUIRED_TTS_DIMS),
                         "additionalProperties": False,
                     },
                     "translation_issues":      {"type": "array", "items": {"type": "string"}},
@@ -106,6 +127,23 @@ def _compute_score(dims: dict[str, int]) -> int:
     return int(round(sum(int(v) for v in dims.values()) / len(dims)))
 
 
+def _validate_score_dimensions(
+    dims: dict[str, Any],
+    *,
+    required_keys: tuple[str, ...],
+    label: str,
+) -> None:
+    for key in required_keys:
+        if key not in dims:
+            raise AssessmentResponseInvalidError(f"missing {label}.{key}")
+        try:
+            value = int(dims[key])
+        except (TypeError, ValueError) as exc:
+            raise AssessmentResponseInvalidError(f"invalid {label}.{key}") from exc
+        if value < 0 or value > 100:
+            raise AssessmentResponseInvalidError(f"out-of-range {label}.{key}")
+
+
 def _verdict(translation_score: int, tts_score: int) -> str:
     if translation_score >= 85 and tts_score >= 85:
         return "recommend"
@@ -125,6 +163,7 @@ def assess(
     target_language: str,
     task_id: str,
     user_id: int | None,
+    notes: str = "",
 ) -> dict[str, Any]:
     t0 = time.monotonic()
     src_label = _LANG_LABEL.get(source_language, source_language)
@@ -134,6 +173,9 @@ def assess(
         f"TRANSLATION ({tgt_label}):\n{translation}\n\n"
         f"TTS_RECOGNITION ({tgt_label}, second-pass ASR of generated audio):\n{tts_recognition}\n"
     )
+    notes_text = (notes or "").strip()
+    if notes_text:
+        user_payload += f"\n{notes_text}\n"
     messages = [
         {"role": "system", "content": _system_prompt()},
         {"role": "user", "content": user_payload},
@@ -197,6 +239,16 @@ def assess(
     for required in ("translation_dimensions", "tts_dimensions"):
         if required not in payload or not isinstance(payload[required], dict):
             raise AssessmentResponseInvalidError(f"missing or invalid {required}")
+    _validate_score_dimensions(
+        payload["translation_dimensions"],
+        required_keys=_REQUIRED_TRANSLATION_DIMS,
+        label="translation_dimensions",
+    )
+    _validate_score_dimensions(
+        payload["tts_dimensions"],
+        required_keys=_REQUIRED_TTS_DIMS,
+        label="tts_dimensions",
+    )
 
     translation_score = _compute_score(payload["translation_dimensions"])
     tts_score = _compute_score(payload["tts_dimensions"])

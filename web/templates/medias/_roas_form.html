@@ -50,7 +50,7 @@
                 <div id="roasActualBox" class="oc-roas-result"><div class="label">实际保本 ROAS</div><div id="roasActualValue" class="value">—</div></div>
                 <div id="roasEffectiveBox" class="oc-roas-result active"><div class="label">当前采用值</div><div id="roasEffectiveValue" class="value">—</div></div>
               </div>
-              <p id="roasNote" class="oc-roas-note">采购价格和小包成本按 1 USD = {{ roas_rmb_per_usd or material_roas_rmb_per_usd or 6.83 }} RMB 换算；手续费按独立站售价 + 用户支付运费的 7% 计算。</p>
+              <p id="roasNote" class="oc-roas-note">用户支付运费为空按 $7；预估采购/物流按总收入 10% / 20% 兜底；真实采购价和实际小包成本按 1 USD = {{ roas_rmb_per_usd or material_roas_rmb_per_usd or 6.83 }} RMB 换算后优先采用；手续费按总收入 7% 计算。</p>
             </section>
           </div>
           <div class="oc-roas-column oc-roas-tk-column">

@@ -14,7 +14,7 @@ from flask import Blueprint, render_template, request, send_file, abort
 from flask_login import login_required, current_user
 
 from config import OUTPUT_DIR, UPLOAD_DIR
-from appcore import task_state, medias, translation_route_store
+from appcore import task_state, medias, translation_route_store, quality_assessment
 from appcore.audio_loudness import validate_loudness_profile
 from appcore.subtitle_preview_payload import build_multi_translate_preview_payload
 from appcore.project_state import save_project_state, update_project_state
@@ -383,6 +383,11 @@ def index():
         target_lang=lang,
         filter_user_id=current_user_filter,
         include_visible_to_all=True,
+        query_func=db_query,
+    )
+    quality_assessment.decorate_project_rows_with_latest_assessments(
+        rows,
+        project_type="omni_translate_v2",
         query_func=db_query,
     )
     for row in rows:

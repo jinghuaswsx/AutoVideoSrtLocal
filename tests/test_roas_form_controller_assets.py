@@ -56,6 +56,16 @@ def test_controller_targets_correct_endpoint_and_field_names():
         assert f'"{field}"' in src or f"'{field}'" in src, f"missing field {field}"
 
 
+def test_controller_uses_shipping_and_cost_fallback_constants():
+    src = JS.read_text(encoding="utf-8")
+    assert "FALLBACK_SHIPPING_FEE = 7" in src
+    assert "PURCHASE_FALLBACK_RATE = 0.10" in src
+    assert "PACKET_FALLBACK_RATE = 0.20" in src
+    assert "fallback_7usd" in src
+    assert "fallback_10pct" in src
+    assert "fallback_20pct" in src
+
+
 def test_controller_handles_last_write_wins():
     src = JS.read_text(encoding="utf-8")
     assert "_pendingPayload" in src or "pendingPayload" in src

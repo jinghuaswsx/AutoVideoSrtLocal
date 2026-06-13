@@ -350,24 +350,6 @@
       </div>
     `;
 
-    box.querySelectorAll('[data-retry-idx]').forEach(b => {
-      b.addEventListener('click', async () => {
-        const idx = parseInt(b.dataset.retryIdx, 10);
-        if (!confirm(`将只重跑 #${idx} 这一项，其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。确定继续吗？`)) return;
-        const r = await fetch(apiUrl(`/api/bulk-translate/${taskId}/retry-item`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idx }),
-        });
-        if (!r.ok) {
-          const e = await r.json().catch(() => ({}));
-          alert('失败: ' + (e.error || r.status));
-          return;
-        }
-        await loadTask();
-      });
-    });
-
     box.querySelectorAll('[data-force-backfill-idx]').forEach(b => {
       b.addEventListener('click', async () => {
         const idx = parseInt(b.dataset.forceBackfillIdx, 10);
@@ -386,11 +368,11 @@
       });
     });
 
-    box.querySelectorAll('[data-rebackfill-idx]').forEach(b => {
+    box.querySelectorAll('[data-manual-success-idx]').forEach(b => {
       b.addEventListener('click', async () => {
-        const idx = parseInt(b.dataset.rebackfillIdx, 10);
-        if (!confirm('将重新从该子任务详情中读取最新结果并回填。确定继续吗？')) return;
-        const r = await fetch(apiUrl(`/api/bulk-translate/${taskId}/rebackfill-item`), {
+        const idx = parseInt(b.dataset.manualSuccessIdx, 10);
+        if (!confirm('将先重新回填商品和素材库；只有回填成功后，才把该子项手动标记为成功。确定继续吗？')) return;
+        const r = await fetch(apiUrl(`/api/bulk-translate/${taskId}/manual-confirm-success-item`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idx }),
@@ -433,8 +415,8 @@
     const forceBackfill = item.force_backfillable
       ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-force-backfill-idx="${item.idx}" title="将把该图片任务中已成功的图片立即回填，并忽略失败图片；当前子项会被标记为已完成。">强制回填</button>`
       : '';
-    const retry = isRetryableItem(item)
-      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-retry-idx="${item.idx}" title="只重跑这一项：其他子项保持当前状态；如果这一项是图片翻译，只会补跑其中失败或中断的图片。">重跑此项</button>`
+    const manualSuccess = item.manual_success_backfillable
+      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-manual-success-idx="${item.idx}" title="子任务已成功时，先重新回填商品和素材库，回填成功后再把该项标记为成功。">手动确认成功并回填</button>`
       : '';
     const ref = refHintText(item);
     const childTaskId = item.child_task_id || item.sub_task_id;
@@ -443,13 +425,10 @@
     const openChild = childUrl
       ? `<a class="bt-btn bt-btn--ghost bt-task-card__button" href="${esc(childUrl)}" target="_blank" rel="noopener noreferrer">${status === 'awaiting_voice' ? '去选声音' : '查看详情'}</a>`
       : '';
-    const rebackfill = (childTaskId && !['pending', 'dispatching', 'running', 'syncing_result'].includes(status))
-      ? `<button class="bt-btn bt-btn--ghost bt-task-card__button" data-rebackfill-idx="${item.idx}" title="重新从该子任务详情中读取最新结果并回填">重新回填</button>`
-      : '';
     const error = item.error
       ? `<div class="mtt-item__error">失败原因：${esc(item.error)}</div>`
       : '';
-    const actions = [forceBackfill, rebackfill, openChild, retry].filter(Boolean).join('');
+    const actions = [forceBackfill, manualSuccess, openChild].filter(Boolean).join('');
     const child = childTaskId
       ? `<span>子任务 <code>${esc(String(childTaskId).slice(0, 8))}</code>${esc(childTaskType)}</span>`
       : '';

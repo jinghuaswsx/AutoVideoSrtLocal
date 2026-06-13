@@ -36,6 +36,11 @@ def test_pushes_template_contains_created_at_sort_control():
 
     assert 'for="f-sort"' in template
     assert 'id="f-sort"' in template
+    assert "素材创建时间" in template
+    assert "任务创建时间" in template
+    assert 'id="f-task-created-from"' in template
+    assert 'id="f-task-created-to"' in template
+    assert '<col class="push-col-task-time">' in template
     assert '<option value="created_at_asc">创建时间升序</option>' in template
     assert '<option value="created_at_desc" selected>创建时间降序</option>' in template
 
@@ -56,6 +61,8 @@ def test_pushes_script_renders_product_link_and_copy_button():
     assert "navigator.clipboard" in script
     assert "document.execCommand('copy')" in script
     assert "renderAuditCell" in script
+    assert "task_created_at" in script
+    assert "push-task-time-cell" in script
     assert "listing_status" in script
     assert "ai_evaluation_result" in script
     assert "ai_evaluation_detail" in script
@@ -198,6 +205,8 @@ def test_pushes_script_persists_filters_pagination_and_sort_in_url():
     assert "params.set('new_product', newProductSel ? newProductSel.value : '');" in script
     assert "params.set('date_from', df);" in script
     assert "params.set('date_to', dt);" in script
+    assert "params.set('task_created_from', taskCreatedFrom);" in script
+    assert "params.set('task_created_to', taskCreatedTo);" in script
     assert "params.set('sort', sortSel.value || 'created_at_desc');" in script
     assert "params.set('page', String(state.page));" in script
     assert "history.replaceState" in script
@@ -207,6 +216,8 @@ def test_pushes_script_persists_filters_pagination_and_sort_in_url():
 def test_pushes_css_styles_product_link_and_copy_button():
     css = Path("web/static/pushes.css").read_text(encoding="utf-8")
 
+    assert "--push-col-task-time" in css
+    assert ".push-col-task-time" in css
     assert ".product-link" in css
     assert ".product-name-line" in css
     assert ".product-copy-btn" in css

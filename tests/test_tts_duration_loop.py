@@ -351,6 +351,8 @@ class TestSegmentCandidateAssembly:
 
 import os
 import json
+
+import config
 from unittest.mock import MagicMock, patch
 
 
@@ -881,6 +883,9 @@ class TestDurationLoopRound1Only:
 class TestDurationLoopMultiRound:
     def _setup(self, monkeypatch, tmp_path, audio_durations):
         """audio_durations: list of durations returned in sequence per round."""
+        # 默认关 Block3 守门，保持多轮测试 hermetic（不发真实 LLM 调用）；
+        # 需要测守门/compress 的单测各自显式覆盖。
+        monkeypatch.setattr(config, "OMNI_REWRITE_GUARD_ENABLED", False)
         from appcore import task_state
         task_state.create("tdl-multi", "v.mp4", str(tmp_path),
                           original_filename="v.mp4", user_id=1)
@@ -1081,6 +1086,8 @@ class TestDurationLoopMultiRound:
 
     def test_all_rounds_exhausted_picks_best(self, tmp_path, monkeypatch):
         # 5 rounds all > hi=32 (video=30). Best = last (34.0, closest to [29, 32]).
+        # Block3 压缩重译终轮关掉，专测纯 best_pick 退出路径（开关关 = 现状行为）。
+        monkeypatch.setattr(config, "OMNI_COMPRESS_RETRANSLATE_ENABLED", False)
         runner, loc_mod, initial = self._setup(
             monkeypatch, tmp_path, [40.0, 38.0, 36.0, 35.0, 34.0],
         )
@@ -1109,6 +1116,8 @@ class TestDurationLoopMultiRound:
         # round3 35.0 -> 3.0
         # round4 35.1 -> 3.1
         # round5 35.2 -> 3.2
+        # Block3 压缩重译终轮关掉，专测纯 best_pick 退出路径（开关关 = 现状行为）。
+        monkeypatch.setattr(config, "OMNI_COMPRESS_RETRANSLATE_ENABLED", False)
         runner, loc_mod, initial = self._setup(
             monkeypatch, tmp_path, [33.2, 28.6, 35.0, 35.1, 35.2],
         )
@@ -1126,6 +1135,29 @@ class TestDurationLoopMultiRound:
         assert len(result["rounds"]) == 5
         assert result["rounds"][1]["final_reason"] == "best_pick"
         assert result["tts_audio_path"].endswith("tts_full.round_2.mp3")
+
+    def test_compress_round_added_when_five_rounds_exhausted(self, tmp_path, monkeypatch):
+        # Block3: 5 轮全超窗（video=30, [29,32]）→ 动态扩出第 6 轮压缩重译终轮。
+        # 关守门隔离 LLM 调用，专测 compress 扩轮。
+        monkeypatch.setattr(config, "OMNI_REWRITE_GUARD_ENABLED", False)
+        runner, loc_mod, initial = self._setup(
+            monkeypatch, tmp_path, [40.0, 38.0, 36.0, 35.0, 34.0, 34.0],
+        )
+        result = runner._run_tts_duration_loop(
+            task_id="tdl-multi", task_dir=str(tmp_path), loc_mod=loc_mod,
+            provider="openrouter", video_duration=30.0,
+            voice={"id": 1, "elevenlabs_voice_id": "v"},
+            initial_localized_translation=initial,
+            source_full_text="Source", source_language="zh",
+            elevenlabs_api_key="k",
+            script_segments=[{"index": 0, "text": "x", "start_time": 0, "end_time": 3}],
+            variant="normal",
+        )
+        compress_rounds = [r for r in result["rounds"] if r.get("compress_round")]
+        assert len(compress_rounds) == 1
+        assert compress_rounds[0]["target_duration"] == 29.5
+        # 第 6 轮（compress）后仍未收敛 → best_pick，且总轮数 = 6。
+        assert len(result["rounds"]) == 6
 
     def test_intermediate_files_written(self, tmp_path, monkeypatch):
         runner, loc_mod, initial = self._setup(monkeypatch, tmp_path, [35.0, 29.5])

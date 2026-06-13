@@ -14,6 +14,7 @@
 <span class="oa-page-heading">数据分析</span>
 <span class="oa-tabs oa-tabs-topbar" role="tablist" aria-label="数据分析模块">
   <button type="button" class="oa-tab {% if active_tab == 'realtime' %}active{% endif %}" data-tab="realtime" role="tab" aria-selected="{% if active_tab == 'realtime' %}true{% else %}false{% endif %}">实时大盘</button>
+  <button type="button" class="oa-tab {% if active_tab == 'logisticsAlert' %}active{% endif %}" data-tab="logisticsAlert" role="tab" aria-selected="{% if active_tab == 'logisticsAlert' %}true{% else %}false{% endif %}">物流费预警</button>
   <button type="button" class="oa-tab {% if active_tab == 'newProductLaunch' %}active{% endif %}" data-tab="newProductLaunch" role="tab" aria-selected="{% if active_tab == 'newProductLaunch' %}true{% else %}false{% endif %}">新品投放分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
@@ -511,9 +512,21 @@
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
+.oar-scope-metric--profit-formula {
+  grid-column: 1 / -1;
+}
 .oar-scope-metric .oa-stat-value {
   font-size: var(--text-xl);
   line-height: 1.15;
+}
+.oar-profit-formula-line {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.oar-profit-formula-values {
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: var(--text-xs);
 }
 .oar-summary-row {
   display: grid;
@@ -2278,6 +2291,7 @@
 
 <nav class="oa-mobile-tabs" role="tablist" aria-label="数据分析模块（移动）">
   <button type="button" class="oa-tab {% if active_tab == 'realtime' %}active{% endif %}" data-tab="realtime" role="tab" aria-selected="{% if active_tab == 'realtime' %}true{% else %}false{% endif %}">实时大盘</button>
+  <button type="button" class="oa-tab {% if active_tab == 'logisticsAlert' %}active{% endif %}" data-tab="logisticsAlert" role="tab" aria-selected="{% if active_tab == 'logisticsAlert' %}true{% else %}false{% endif %}">物流费预警</button>
   <button type="button" class="oa-tab {% if active_tab == 'newProductLaunch' %}active{% endif %}" data-tab="newProductLaunch" role="tab" aria-selected="{% if active_tab == 'newProductLaunch' %}true{% else %}false{% endif %}">新品投放分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'dxmOrders' %}active{% endif %}" data-tab="dxmOrders" role="tab" aria-selected="{% if active_tab == 'dxmOrders' %}true{% else %}false{% endif %}">订单分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'ads' %}active{% endif %}" data-tab="ads" role="tab" aria-selected="{% if active_tab == 'ads' %}true{% else %}false{% endif %}">广告分析</button>
@@ -2381,12 +2395,13 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimePurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimePurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimePurchaseEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeShopifyFeeRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">退款/预留扣减</div><div class="oa-stat-value" id="realtimeProfitDeduction">$0.00</div><div class="oa-stat-sub" id="realtimeProfitDeductionRatio">占总销售额 -</div><div class="oa-stat-sub" id="realtimeProfitDeductionSources">计入扣减: -</div><div class="oa-stat-sub" id="realtimeRefundReserveBreakdown">退款记录 - / 预留记录 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeRoas">-</div><div class="oa-stat-sub" id="realtimeWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeMetaRoas">-</div><div class="oa-stat-sub" id="realtimeMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">盈亏平衡点</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeOrderCount">0</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeProfit">$0.00</div><div class="oa-stat-sub" id="realtimeProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="realtimeProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric oar-scope-metric--profit-formula"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeProfit">$0.00</div><div class="oa-stat-sub" id="realtimeProfitSub">按订单盈亏口径</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeProfitFormula">公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeProfitFormulaTerms">明细: -</div><div class="oa-stat-sub oar-profit-formula-line oar-profit-formula-values" id="realtimeProfitFormulaValues">代入: -</div><div class="oa-stat-sub" id="realtimeProfitMargin">利润率 -</div></div>
         </div>
       </section>
       <section class="oar-scope-card oar-scope-card--new" data-realtime-scope-card="new" aria-labelledby="realtimeNewScopeTitle">
@@ -2410,12 +2425,13 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeNewPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeNewPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeNewPurchaseEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeNewLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeNewLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeNewLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeNewShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeNewShopifyFeeRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">退款/预留扣减</div><div class="oa-stat-value" id="realtimeNewProfitDeduction">$0.00</div><div class="oa-stat-sub" id="realtimeNewProfitDeductionRatio">占总销售额 -</div><div class="oa-stat-sub" id="realtimeNewProfitDeductionSources">计入扣减: -</div><div class="oa-stat-sub" id="realtimeNewRefundReserveBreakdown">退款记录 - / 预留记录 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeNewRoas">-</div><div class="oa-stat-sub" id="realtimeNewWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeNewMetaRoas">-</div><div class="oa-stat-sub" id="realtimeNewMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeNewGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">盈亏平衡点</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeNewOrderCount">0</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeNewUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeNewProfit">$0.00</div><div class="oa-stat-sub" id="realtimeNewProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="realtimeNewProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric oar-scope-metric--profit-formula"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeNewProfit">$0.00</div><div class="oa-stat-sub" id="realtimeNewProfitSub">按订单盈亏口径</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeNewProfitFormula">公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeNewProfitFormulaTerms">明细: -</div><div class="oa-stat-sub oar-profit-formula-line oar-profit-formula-values" id="realtimeNewProfitFormulaValues">代入: -</div><div class="oa-stat-sub" id="realtimeNewProfitMargin">利润率 -</div></div>
         </div>
       </section>
       <section class="oar-scope-card oar-scope-card--old" data-realtime-scope-card="old" aria-labelledby="realtimeOldScopeTitle">
@@ -2439,12 +2455,13 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeOldPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeOldPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeOldPurchaseEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeOldLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeOldLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeOldLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeOldShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeOldShopifyFeeRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">退款/预留扣减</div><div class="oa-stat-value" id="realtimeOldProfitDeduction">$0.00</div><div class="oa-stat-sub" id="realtimeOldProfitDeductionRatio">占总销售额 -</div><div class="oa-stat-sub" id="realtimeOldProfitDeductionSources">计入扣减: -</div><div class="oa-stat-sub" id="realtimeOldRefundReserveBreakdown">退款记录 - / 预留记录 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeOldRoas">-</div><div class="oa-stat-sub" id="realtimeOldWindow">总销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeOldMetaRoas">-</div><div class="oa-stat-sub" id="realtimeOldMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeOldGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">盈亏平衡点</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeOldOrderCount">0</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeOldUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeOldProfit">$0.00</div><div class="oa-stat-sub" id="realtimeOldProfitSub">按订单盈亏口径</div><div class="oa-stat-sub" id="realtimeOldProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric oar-scope-metric--profit-formula"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeOldProfit">$0.00</div><div class="oa-stat-sub" id="realtimeOldProfitSub">按订单盈亏口径</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeOldProfitFormula">公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeOldProfitFormulaTerms">明细: -</div><div class="oa-stat-sub oar-profit-formula-line oar-profit-formula-values" id="realtimeOldProfitFormulaValues">代入: -</div><div class="oa-stat-sub" id="realtimeOldProfitMargin">利润率 -</div></div>
         </div>
       </section>
       <section class="oar-scope-card oar-scope-card--unmatched" data-realtime-scope-card="unmatched" aria-labelledby="realtimeUnmatchedScopeTitle">
@@ -2470,12 +2487,13 @@
           <div class="oar-scope-metric"><div class="oa-stat-label">采购成本</div><div class="oa-stat-value" id="realtimeUnmatchedPurchaseCost">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedPurchaseCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeUnmatchedPurchaseEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">物流成本</div><div class="oa-stat-value" id="realtimeUnmatchedLogisticsCost">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedLogisticsCostRatio">占总销售额 -</div><div class="oa-stat-sub oar-estimate-sub" id="realtimeUnmatchedLogisticsEstimateRatio">估算占比 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">手续费</div><div class="oa-stat-value" id="realtimeUnmatchedShopifyFee">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedShopifyFeeRatio">占总销售额 -</div></div>
+          <div class="oar-scope-metric"><div class="oa-stat-label">退款/预留扣减</div><div class="oa-stat-value" id="realtimeUnmatchedProfitDeduction">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitDeductionRatio">占总销售额 -</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitDeductionSources">计入扣减: -</div><div class="oa-stat-sub" id="realtimeUnmatchedRefundReserveBreakdown">退款记录 - / 预留记录 -</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">真实 ROAS</div><div class="oa-stat-value" id="realtimeUnmatchedRoas">-</div><div class="oa-stat-sub" id="realtimeUnmatchedWindow">未匹配订单销售额 / 广告费</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">Meta ROAS</div><div class="oa-stat-value" id="realtimeUnmatchedMetaRoas">-</div><div class="oa-stat-sub" id="realtimeUnmatchedMetaRoasSub">Meta 后台成效口径</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">全局保本 ROAS</div><div class="oa-stat-value" id="realtimeUnmatchedGlobalBreakEvenRoas">-</div><div class="oa-stat-sub">随未匹配订单收入计算</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">订单数</div><div class="oa-stat-value" id="realtimeUnmatchedOrderCount">0</div></div>
           <div class="oar-scope-metric"><div class="oa-stat-label">商品件数</div><div class="oa-stat-value" id="realtimeUnmatchedUnits">0</div></div>
-          <div class="oar-scope-metric"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeUnmatchedProfit">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitSub">未匹配广告和订单核算口径</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitMargin">利润率 -</div></div>
+          <div class="oar-scope-metric oar-scope-metric--profit-formula"><div class="oa-stat-label">利润</div><div class="oa-stat-value" id="realtimeUnmatchedProfit">$0.00</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitSub">未匹配广告和订单核算口径</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeUnmatchedProfitFormula">公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费</div><div class="oa-stat-sub oar-profit-formula-line" id="realtimeUnmatchedProfitFormulaTerms">明细: -</div><div class="oa-stat-sub oar-profit-formula-line oar-profit-formula-values" id="realtimeUnmatchedProfitFormulaValues">代入: -</div><div class="oa-stat-sub" id="realtimeUnmatchedProfitMargin">利润率 -</div></div>
         </div>
       </section>
     </div>
@@ -2701,6 +2719,83 @@
           <tbody id="realtimeHourlyBody"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+</section>
+
+<section class="oa-panel {% if active_tab == 'logisticsAlert' %}active{% endif %}" id="panelLogisticsAlert">
+  <!-- Docs-anchor: docs/superpowers/specs/2026-06-12-logistics-fee-alert-dashboard-design.md -->
+  <div class="oad-toolbar">
+    <div class="oad-toolbar-row">
+      {{ analytics_date_range('物流费预警', 'logisticsAlertStartDate', 'logisticsAlertEndDate', 'aria-label="物流费预警开始日期"', 'aria-label="物流费预警结束日期"') }}
+      <div class="logistics-alert-threshold">
+        <label class="oar-site-filter-label" for="logisticsAlertThreshold">物流费占比超过</label>
+        <input type="number" id="logisticsAlertThreshold" min="0.01" step="0.01" value="20" inputmode="decimal" aria-label="物流费占比阈值">
+        <span class="oar-note">%</span>
+      </div>
+      <div class="oad-segmented" role="group" aria-label="物流费占比快捷筛选">
+        <button type="button" class="oad-seg is-active" data-logistics-alert-threshold="20" aria-pressed="true">超过 20%</button>
+        <button type="button" class="oad-seg" data-logistics-alert-threshold="30" aria-pressed="false">超过 30%</button>
+      </div>
+      <button type="button" class="oad-btn-primary" id="logisticsAlertRefresh">查询</button>
+    </div>
+    <div class="oar-note" id="logisticsAlertNote">按订单盈亏明细统计：物流费 / 订单行总销售额，包含店小秘同步的实际物流费与估算物流费。</div>
+  </div>
+
+  <div class="oa-stats oar-summary-stats" id="logisticsAlertSummary">
+    <div class="oar-summary-row oar-summary-row-main">
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">超标产品数</div>
+        <div class="oa-stat-value" id="logisticsAlertProductCount">0</div>
+        <div class="oa-stat-sub">按产品聚合</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">超标订单行</div>
+        <div class="oa-stat-value" id="logisticsAlertLineCount">0</div>
+        <div class="oa-stat-sub">点击产品看明细</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">超标销售额</div>
+        <div class="oa-stat-value" id="logisticsAlertRevenue">$0.00</div>
+        <div class="oa-stat-sub">订单行总销售额</div>
+      </div>
+      <div class="oa-stat-card">
+        <div class="oa-stat-label">物流费</div>
+        <div class="oa-stat-value" id="logisticsAlertShipping">$0.00</div>
+        <div class="oa-stat-sub" id="logisticsAlertRatio">物流费占比 -</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="oa-table-wrap">
+    <div class="oa-table-header">
+      <div class="oa-table-title">物流费预警产品列表 <span class="oar-page-info" id="logisticsAlertPageInfo">加载中...</span></div>
+      <div class="oar-note">默认展示物流费占比超过 20% 的产品，按超标占比从高到低排序。</div>
+    </div>
+    <div class="oa-table-scroll">
+      <table class="oa-table oar-compact-table">
+        <thead>
+          <tr>
+            <th>产品</th>
+            <th>产品 Code</th>
+            <th>超标订单行</th>
+            <th>包裹数</th>
+            <th>总销售额</th>
+            <th>物流费</th>
+            <th>物流费占比</th>
+            <th>最高单行占比</th>
+            <th>费用口径</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="logisticsAlertProductBody">
+          <tr><td colspan="10" class="oad-loading">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="logistics-alert-actions">
+      <button type="button" class="oad-row-action" id="logisticsAlertPrev">上一页</button>
+      <button type="button" class="oad-row-action" id="logisticsAlertNext">下一页</button>
     </div>
   </div>
 </section>
@@ -3068,6 +3163,54 @@
                     background: var(--bg-card); border-color: var(--border-strong);
                     color: var(--accent); }
   .oad-row-action:hover { background: var(--accent-subtle); border-color: var(--accent); color: var(--accent); }
+  .logistics-alert-threshold {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .logistics-alert-threshold input {
+    width: 88px;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--fg);
+    font-size: var(--text-sm);
+  }
+  .logistics-alert-row {
+    cursor: pointer;
+  }
+  .logistics-alert-row:hover td {
+    background: var(--accent-subtle);
+  }
+  .logistics-alert-source {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-full);
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .logistics-alert-source.is-estimated {
+    background: var(--warning-bg);
+    color: var(--warning-fg);
+  }
+  .logistics-alert-ratio {
+    color: var(--danger-fg);
+    font-weight: 800;
+  }
+  .logistics-alert-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+  }
   .oa-warning-banner {
     margin: 0 0 var(--space-3);
     padding: var(--space-3) var(--space-4);
@@ -3114,6 +3257,13 @@
 <div id="dashboardTable"></div>
 
 <script>
+// Docs-anchor: docs/superpowers/specs/2026-06-12-realtime-dashboard-range-loading-fix.md
+window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || function(id, value) {
+  var el = document.getElementById(id);
+  if (el) el.value = value;
+  if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
+};
+
 (function() {
   var oad = {
     state: {
@@ -3125,6 +3275,10 @@
     },
   };
   window.oad = oad;
+
+  function setInputValue(id, value) {
+    window.orderAnalyticsSetInputValue(id, value);
+  }
 
   function addOadDays(date, days) {
     var next = new Date(date);
@@ -5210,6 +5364,7 @@
   var tabs = document.querySelectorAll('.oa-tab');
   var tabUrls = {
     'realtime': '/order-analytics/realtime',
+    'logisticsAlert': '/order-analytics/logistics-alert',
     'newProductLaunch': '/order-analytics/new-product-launch',
     'dxmOrders': '/order-analytics/dxm-orders-view',
     'ads': '/order-analytics/ads-view',
@@ -6054,9 +6209,7 @@
   }
 
   function setInputValue(id, value) {
-    var el = document.getElementById(id);
-    if (el) el.value = value;
-    if (window.AnalyticsDateRangePicker) window.AnalyticsDateRangePicker.syncAll();
+    window.orderAnalyticsSetInputValue(id, value);
   }
 
   function handleAnalyticsDateRangeApply(event) {
@@ -6091,6 +6244,9 @@
       case 'dxmStartDate':
         syncDxmRangeSelection();
         loadDxmOrders(1);
+        return;
+      case 'logisticsAlertStartDate':
+        loadLogisticsAlertProducts(1);
         return;
       case 'adStartDate':
         syncAdRangeSelection();
@@ -6185,6 +6341,12 @@
     campaignFilter: '',
     unallocatedAd: 0,
     launchWindowDays: '7',
+    requestSeq: 0,
+    topCardsSeq: 0,
+    subTabsSeq: 0,
+    requestTimeoutMs: 30000,
+    topCardsController: null,
+    subTabsController: null,
     estimateAvailability: {
       global: false,
       new: false,
@@ -6194,6 +6356,90 @@
   };
   var realtimeProductSearchTimer = null;
   var realtimeLastCampaignRows = [];
+
+  // Docs-anchor: docs/superpowers/specs/2026-06-12-realtime-dashboard-range-loading-fix.md
+  function nextRealtimeRequestSeq() {
+    realtimeState.requestSeq += 1;
+    return realtimeState.requestSeq;
+  }
+
+  function assignRealtimeRequestSeq(kind, seq) {
+    var nextSeq = seq || nextRealtimeRequestSeq();
+    if (kind === 'top') {
+      realtimeState.topCardsSeq = nextSeq;
+    } else {
+      realtimeState.subTabsSeq = nextSeq;
+    }
+    return nextSeq;
+  }
+
+  function isRealtimeRequestCurrent(kind, seq) {
+    return kind === 'top'
+      ? realtimeState.topCardsSeq === seq
+      : realtimeState.subTabsSeq === seq;
+  }
+
+  function createRealtimeController(kind) {
+    var key = kind === 'top' ? 'topCardsController' : 'subTabsController';
+    if (realtimeState[key] && typeof realtimeState[key].abort === 'function') {
+      realtimeState[key].abort();
+    }
+    if (typeof AbortController === 'undefined') {
+      realtimeState[key] = null;
+      return null;
+    }
+    realtimeState[key] = new AbortController();
+    return realtimeState[key];
+  }
+
+  function clearRealtimeController(kind, controller) {
+    var key = kind === 'top' ? 'topCardsController' : 'subTabsController';
+    if (realtimeState[key] === controller) realtimeState[key] = null;
+  }
+
+  function isRealtimeAbortError(err) {
+    return Boolean(err && (err.name === 'AbortError' || String(err.message || '').toLowerCase() === 'aborted'));
+  }
+
+  function fetchRealtimeJson(url, controller) {
+    var timeoutMs = Number(realtimeState.requestTimeoutMs || 30000);
+    var options = {};
+    if (controller && controller.signal) options.signal = controller.signal;
+    var timeoutId = null;
+    var didTimeout = false;
+    var timeoutPromise = new Promise(function(_, reject) {
+      timeoutId = setTimeout(function() {
+        didTimeout = true;
+        if (controller && typeof controller.abort === 'function') {
+          controller.__realtimeTimedOut = true;
+          controller.abort();
+        }
+        reject(new Error('请求超时，请稍后重试'));
+      }, timeoutMs);
+    });
+    var requestPromise = fetch(url, options)
+      .then(function(r) {
+        if (!r.ok) {
+          return r.json()
+            .catch(function() { return {}; })
+            .then(function(data) {
+              throw new Error(data.detail || data.error || '查询失败');
+            });
+        }
+        return r.json();
+      })
+      .catch(function(err) {
+        if ((didTimeout || (controller && controller.__realtimeTimedOut)) && isRealtimeAbortError(err)) {
+          throw new Error('请求超时，请稍后重试');
+        }
+        throw err;
+      });
+    return Promise.race([requestPromise, timeoutPromise])
+      .finally(function() {
+        if (timeoutId !== null) clearTimeout(timeoutId);
+      });
+  }
+
   var newProductLaunchInited = false;
   var newProductLaunchState = {
     range: 'today',
@@ -6216,6 +6462,11 @@
     unallocatedAd: 0
   };
   var newProductLaunchLastCampaignRows = [];
+  var logisticsAlertState = {
+    page: 1,
+    pageSize: 100,
+    thresholdPct: 20
+  };
 
   function normalizeLaunchWindowDays(value) {
     var allowed = ['3', '7', '15', '30', '60'];
@@ -6412,6 +6663,40 @@
   if (nplCampaignFilterClear) {
     nplCampaignFilterClear.addEventListener('click', clearNewProductLaunchCampaignFilter);
   }
+  var logisticsAlertRefresh = document.getElementById('logisticsAlertRefresh');
+  if (logisticsAlertRefresh) {
+    logisticsAlertRefresh.addEventListener('click', function() {
+      loadLogisticsAlertProducts(1);
+    });
+  }
+  var logisticsAlertThreshold = document.getElementById('logisticsAlertThreshold');
+  if (logisticsAlertThreshold) {
+    logisticsAlertThreshold.addEventListener('change', function() {
+      syncLogisticsAlertThresholdButtons();
+      loadLogisticsAlertProducts(1);
+    });
+  }
+  document.querySelectorAll('[data-logistics-alert-threshold]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var value = btn.dataset.logisticsAlertThreshold || '20';
+      var input = document.getElementById('logisticsAlertThreshold');
+      if (input) input.value = value;
+      syncLogisticsAlertThresholdButtons();
+      loadLogisticsAlertProducts(1);
+    });
+  });
+  var logisticsAlertPrev = document.getElementById('logisticsAlertPrev');
+  if (logisticsAlertPrev) {
+    logisticsAlertPrev.addEventListener('click', function() {
+      if (logisticsAlertState.page > 1) loadLogisticsAlertProducts(logisticsAlertState.page - 1);
+    });
+  }
+  var logisticsAlertNext = document.getElementById('logisticsAlertNext');
+  if (logisticsAlertNext) {
+    logisticsAlertNext.addEventListener('click', function() {
+      loadLogisticsAlertProducts(logisticsAlertState.page + 1);
+    });
+  }
   var initialTab = "{{ active_tab }}";
   function initActiveOrderAnalyticsTab() {
     setRealtimeRange('today', true);  // skipLoad=true 避免重复调用，下面统一触发
@@ -6478,6 +6763,8 @@
       loadRealtimeOverview();
     } else if (initialTab === 'newProductLaunch') {
       initNewProductLaunch();
+    } else if (initialTab === 'logisticsAlert') {
+      initLogisticsAlert();
     } else if (initialTab === 'countryDashboard') {
       initCountryDashboard();
     } else if (initialTab === 'dxmOrders') {
@@ -6485,6 +6772,189 @@
     } else {
       loadRealtimeOverview();
     }
+  }
+
+  function initLogisticsAlert() {
+    var params = new URLSearchParams(window.location.search);
+    var today = localDateString(new Date());
+    setInputValue('logisticsAlertStartDate', params.get('start_date') || today);
+    setInputValue('logisticsAlertEndDate', params.get('end_date') || today);
+    var threshold = params.get('threshold_pct') || '20';
+    var input = document.getElementById('logisticsAlertThreshold');
+    if (input) input.value = threshold;
+    syncLogisticsAlertThresholdButtons();
+    loadLogisticsAlertProducts(parseInt(params.get('page'), 10) || 1);
+  }
+
+  function logisticsAlertThresholdValue() {
+    var input = document.getElementById('logisticsAlertThreshold');
+    var value = input ? parseFloat(input.value) : 20;
+    if (!isFinite(value) || value <= 0) value = 20;
+    logisticsAlertState.thresholdPct = value;
+    if (input) input.value = String(value);
+    return value;
+  }
+
+  function syncLogisticsAlertThresholdButtons() {
+    var value = String(logisticsAlertThresholdValue());
+    document.querySelectorAll('[data-logistics-alert-threshold]').forEach(function(btn) {
+      var active = String(parseFloat(btn.dataset.logisticsAlertThreshold || '0')) === value;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  function logisticsAlertParams(page) {
+    var today = localDateString(new Date());
+    var start = document.getElementById('logisticsAlertStartDate');
+    var end = document.getElementById('logisticsAlertEndDate');
+    var params = new URLSearchParams();
+    params.set('start_date', (start && start.value) || today);
+    params.set('end_date', (end && end.value) || today);
+    params.set('threshold_pct', String(logisticsAlertThresholdValue()));
+    params.set('page', String(page || 1));
+    params.set('page_size', String(logisticsAlertState.pageSize || 100));
+    return params;
+  }
+
+  function updateLogisticsAlertUrl(page) {
+    var params = logisticsAlertParams(page || logisticsAlertState.page || 1);
+    var next = '/order-analytics/logistics-alert?' + params.toString();
+    if (window.location.pathname + window.location.search !== next) {
+      window.history.replaceState(null, '', next);
+    }
+  }
+
+  function formatLogisticsUsd(value, digits) {
+    var n = parseFloat(value);
+    if (!isFinite(n)) n = 0;
+    return '$' + n.toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    });
+  }
+
+  function formatLogisticsPct(value) {
+    var n = parseFloat(value);
+    if (!isFinite(n)) return '-';
+    return n.toFixed(2) + '%';
+  }
+
+  function logisticsAlertSourceLabel(source) {
+    var labels = {
+      order_logistic_fee: '实际物流费',
+      product_actual: '产品实际物流费',
+      product_estimated: '产品估算物流费',
+      estimated: '估算物流费',
+      unknown: '未知口径'
+    };
+    return labels[source] || source || '未知口径';
+  }
+
+  function renderLogisticsAlertSourceCounts(counts) {
+    counts = counts || {};
+    var keys = Object.keys(counts);
+    if (!keys.length) return '<span class="logistics-alert-source">-</span>';
+    return keys.map(function(key) {
+      var cls = key === 'estimated' || key === 'product_estimated' ? ' logistics-alert-source is-estimated' : ' logistics-alert-source';
+      return '<span class="' + cls.trim() + '">' + escapeHtml(logisticsAlertSourceLabel(key)) + ' ' + fmtInt(counts[key]) + '</span>';
+    }).join(' ');
+  }
+
+  function logisticsAlertDetailUrl(productId, page) {
+    var params = logisticsAlertParams(page || 1);
+    params.delete('page_size');
+    return '/order-analytics/logistics-alert/products/' + encodeURIComponent(productId) + '?' + params.toString();
+  }
+
+  function setLogisticsAlertSummary(summary) {
+    summary = summary || {};
+    setRealtimeProfitText('logisticsAlertProductCount', fmtInt(summary.product_count || 0));
+    setRealtimeProfitText('logisticsAlertLineCount', fmtInt(summary.alert_line_count || 0));
+    setRealtimeProfitText('logisticsAlertRevenue', fmtMoney(summary.revenue_usd || 0));
+    setRealtimeProfitText('logisticsAlertShipping', formatLogisticsUsd(summary.shipping_cost_usd || 0, 4));
+    setRealtimeProfitText('logisticsAlertRatio', '物流费占比 ' + formatLogisticsPct(summary.shipping_ratio_pct));
+  }
+
+  function setLogisticsAlertPageControls(pageInfo) {
+    pageInfo = pageInfo || {};
+    var current = parseInt(pageInfo.page, 10) || 1;
+    var pages = parseInt(pageInfo.pages, 10) || 0;
+    var total = parseInt(pageInfo.total, 10) || 0;
+    logisticsAlertState.page = current;
+    var info = document.getElementById('logisticsAlertPageInfo');
+    if (info) {
+      info.textContent = total
+        ? '第 ' + current + ' / ' + pages + ' 页 · 共 ' + fmtInt(total) + ' 个产品'
+        : '暂无超标产品';
+    }
+    var prev = document.getElementById('logisticsAlertPrev');
+    var next = document.getElementById('logisticsAlertNext');
+    if (prev) prev.disabled = current <= 1;
+    if (next) next.disabled = !pages || current >= pages;
+  }
+
+  function renderLogisticsAlertProducts(data) {
+    setLogisticsAlertSummary(data.summary || {});
+    setLogisticsAlertPageControls(data.page || {});
+    var body = document.getElementById('logisticsAlertProductBody');
+    if (!body) return;
+    var rows = data.products || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="10" class="oad-empty">当前日期范围内没有超过阈值的物流费订单</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(row) {
+      var url = logisticsAlertDetailUrl(row.product_id, 1);
+      var productName = row.product_name || ('产品 ID ' + row.product_id);
+      return '<tr class="logistics-alert-row" data-logistics-alert-url="' + escapeHtml(url) + '">' +
+        '<td><strong>' + escapeHtml(productName) + '</strong><div class="oar-note">ID: ' + escapeHtml(row.product_id) + '</div></td>' +
+        '<td>' + escapeHtml(row.product_code || '-') + '</td>' +
+        '<td>' + fmtInt(row.alert_line_count || 0) + '</td>' +
+        '<td>' + fmtInt(row.package_count || 0) + '</td>' +
+        '<td>' + fmtMoney(row.revenue_usd || 0) + '</td>' +
+        '<td>' + formatLogisticsUsd(row.shipping_cost_usd || 0, 4) + '</td>' +
+        '<td class="logistics-alert-ratio">' + formatLogisticsPct(row.shipping_ratio_pct) + '</td>' +
+        '<td>' + formatLogisticsPct(row.max_shipping_ratio_pct) + '</td>' +
+        '<td>' + renderLogisticsAlertSourceCounts(row.shipping_source_counts || {}) + '</td>' +
+        '<td><a class="oad-row-action" href="' + escapeHtml(url) + '">查看订单</a></td>' +
+      '</tr>';
+    }).join('');
+    body.querySelectorAll('[data-logistics-alert-url]').forEach(function(row) {
+      row.addEventListener('click', function(evt) {
+        if (evt.target && evt.target.closest && evt.target.closest('a,button')) return;
+        window.location.href = row.getAttribute('data-logistics-alert-url');
+      });
+    });
+  }
+
+  function loadLogisticsAlertProducts(page) {
+    var targetPage = page || 1;
+    var body = document.getElementById('logisticsAlertProductBody');
+    if (body) body.innerHTML = '<tr><td colspan="10" class="oad-loading">加载中...</td></tr>';
+    var info = document.getElementById('logisticsAlertPageInfo');
+    if (info) info.textContent = '加载中...';
+    updateLogisticsAlertUrl(targetPage);
+    fetch('/order-analytics/logistics-alert/data?' + logisticsAlertParams(targetPage).toString(), {
+      credentials: 'same-origin'
+    })
+      .then(function(resp) {
+        return resp.json().then(function(payload) {
+          if (!resp.ok || payload.ok === false) {
+            throw new Error(payload.detail || payload.error || '物流费预警加载失败');
+          }
+          return payload;
+        });
+      })
+      .then(function(data) {
+        renderLogisticsAlertProducts(data);
+      })
+      .catch(function(err) {
+        if (body) {
+          body.innerHTML = '<tr><td colspan="10" class="oad-error">' + escapeHtml(err.message || '物流费预警加载失败') + '</td></tr>';
+        }
+        setLogisticsAlertPageControls({page: 1, pages: 0, total: 0});
+      });
   }
 
   function localDateString(value) {
@@ -7386,23 +7856,30 @@
 
   // ── 入口：同步刷新顶部卡片 + 子 tab ─────────────────
   function loadRealtimeOverview() {
+    var requestSeq = nextRealtimeRequestSeq();
     updateRealtimeUnmatchedDetailLinks();
-    loadRealtimeTopCards();
-    loadRealtimeSubTabs();
+    loadRealtimeTopCards(requestSeq);
+    loadRealtimeSubTabs(requestSeq);
     updateRealtimeUrlState();
   }
 
   // ── 顶部卡片：按选择的时间范围聚合 ───────────────
-  function loadRealtimeTopCards() {
+  function loadRealtimeTopCards(requestSeq) {
+    requestSeq = assignRealtimeRequestSeq('top', requestSeq);
+    var controller = createRealtimeController('top');
     var range;
     try {
       range = getRealtimeDateRange();
     } catch (err) {
       var note = document.getElementById('realtimeRangeNote');
       if (note) note.textContent = err.message;
+      clearRealtimeController('top', controller);
       return;
     }
-    if (!range) return;
+    if (!range) {
+      clearRealtimeController('top', controller);
+      return;
+    }
     var params = new URLSearchParams();
     params.set('start_date', range.start);
     params.set('end_date', range.end);
@@ -7413,12 +7890,13 @@
     var baseParams = params;
     setRealtimeScopeCardsLoading();
     Promise.all([
-      fetchRealtimeScopeSummary(baseParams, 'global'),
-      fetchRealtimeScopeSummary(baseParams, 'new'),
-      fetchRealtimeScopeSummary(baseParams, 'old'),
-      fetchRealtimeScopeSummary(baseParams, 'unmatched')
+      fetchRealtimeScopeSummary(baseParams, 'global', controller),
+      fetchRealtimeScopeSummary(baseParams, 'new', controller),
+      fetchRealtimeScopeSummary(baseParams, 'old', controller),
+      fetchRealtimeScopeSummary(baseParams, 'unmatched', controller)
     ])
       .then(function(results) {
+        if (!isRealtimeRequestCurrent('top', requestSeq)) return;
         var globalData = results[0] || {};
         var newData = results[1] || {};
         var oldData = results[2] || {};
@@ -7434,9 +7912,13 @@
         renderRealtimeFreshness(globalData);
       })
       .catch(function(err) {
+        if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('top', requestSeq)) return;
         var note = document.getElementById('realtimeRangeNote');
         if (note) note.textContent = '加载失败：' + err.message;
         setRealtimeScopeCardsError(err.message);
+      })
+      .finally(function() {
+        clearRealtimeController('top', controller);
       });
   }
 
@@ -7472,17 +7954,13 @@
     return next;
   }
 
-  function fetchRealtimeScopeSummary(baseParams, scope) {
+  function fetchRealtimeScopeSummary(baseParams, scope, controller) {
     var params = new URLSearchParams(baseParams.toString());
     if (scope && scope !== 'global') {
       params.set('product_launch_scope', scope);
     }
     var url = '/order-analytics/realtime-overview?' + params.toString();
-    return fetch(url)
-      .then(function(r) {
-        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
-        return r.json();
-      });
+    return fetchRealtimeJson(url, controller);
   }
 
   function realtimeScopePrefix(scope) {
@@ -7542,12 +8020,13 @@
       [
         'Revenue', 'Shipping', 'RevenueWithShipping', 'Spend', 'Roas', 'MetaRoas',
         'PurchaseCost', 'LogisticsCost', 'ShopifyFee', 'GlobalBreakEvenRoas',
-        'OrderCount', 'Units', 'Profit'
+        'ProfitDeduction', 'OrderCount', 'Units', 'Profit'
       ].forEach(function(suffix) {
         setRealtimeProfitText(prefix + suffix, suffix === 'OrderCount' || suffix === 'Units' ? '...' : '加载中...');
       });
       [
-        'SpendRatio', 'PurchaseCostRatio', 'LogisticsCostRatio', 'ShopifyFeeRatio'
+        'SpendRatio', 'PurchaseCostRatio', 'LogisticsCostRatio', 'ShopifyFeeRatio',
+        'ProfitDeductionRatio'
       ].forEach(function(suffix) {
         setRealtimeProfitText(prefix + suffix, '占总销售额 -');
       });
@@ -7557,8 +8036,13 @@
         if (estimateEl) estimateEl.classList.remove('is-active');
       });
       setRealtimeProfitText(prefix + 'SpendUnallocated', '未分摊: -');
+      setRealtimeProfitText(prefix + 'ProfitDeductionSources', '计入扣减: -');
+      setRealtimeProfitText(prefix + 'RefundReserveBreakdown', '退款记录 - / 预留记录 -');
       setRealtimeProfitText(prefix + 'RevenueSub', '订单 ... 单');
       setRealtimeProfitText(prefix + 'ProfitSub', '加载利润数据');
+      setRealtimeProfitText(prefix + 'ProfitFormula', '公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费');
+      setRealtimeProfitText(prefix + 'ProfitFormulaTerms', '明细: -');
+      setRealtimeProfitText(prefix + 'ProfitFormulaValues', '代入: -');
       setRealtimeProfitText(prefix + 'ProfitMargin', '利润率 -');
       setRealtimeProfitText(prefix + 'Window', '总销售额 / 广告费');
     });
@@ -7573,10 +8057,11 @@
       [
         'Revenue', 'Shipping', 'RevenueWithShipping', 'Spend', 'Roas', 'MetaRoas',
         'PurchaseCost', 'LogisticsCost', 'ShopifyFee', 'GlobalBreakEvenRoas',
-        'OrderCount', 'Units', 'Profit'
+        'ProfitDeduction', 'OrderCount', 'Units', 'Profit'
       ].forEach(function(suffix) { setRealtimeProfitText(prefix + suffix, '-'); });
       [
-        'SpendRatio', 'PurchaseCostRatio', 'LogisticsCostRatio', 'ShopifyFeeRatio'
+        'SpendRatio', 'PurchaseCostRatio', 'LogisticsCostRatio', 'ShopifyFeeRatio',
+        'ProfitDeductionRatio'
       ].forEach(function(suffix) {
         setRealtimeProfitText(prefix + suffix, '占总销售额 -');
       });
@@ -7586,8 +8071,13 @@
         if (estimateEl) estimateEl.classList.remove('is-active');
       });
       setRealtimeProfitText(prefix + 'SpendUnallocated', '未分摊: -');
+      setRealtimeProfitText(prefix + 'ProfitDeductionSources', '计入扣减: -');
+      setRealtimeProfitText(prefix + 'RefundReserveBreakdown', '退款记录 - / 预留记录 -');
       setRealtimeProfitText(prefix + 'RevenueSub', '加载失败');
       setRealtimeProfitText(prefix + 'ProfitSub', message || '加载失败');
+      setRealtimeProfitText(prefix + 'ProfitFormula', '公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费');
+      setRealtimeProfitText(prefix + 'ProfitFormulaTerms', '明细: -');
+      setRealtimeProfitText(prefix + 'ProfitFormulaValues', '代入: -');
       setRealtimeProfitText(prefix + 'ProfitMargin', '利润率 -');
       setRealtimeProfitText(prefix + 'Window', '总销售额 / 广告费');
       setRealtimeProfitText(realtimeScopeSourceId(scope), '加载失败：' + (message || '查询失败'));
@@ -7611,6 +8101,99 @@
   function renderRealtimeCostMetric(prefix, suffix, amount, ratioPct, denominator) {
     setRealtimeProfitText(prefix + suffix, fmtMoney(amount));
     setRealtimeProfitText(prefix + suffix + 'Ratio', formatRealtimeCostRatio(ratioPct, amount, denominator));
+  }
+
+  function realtimeNumeric(value, fallback) {
+    var number = Number(value);
+    if (Number.isFinite(number)) return number;
+    return fallback === undefined ? 0 : fallback;
+  }
+
+  function formatRealtimeInlinePct(value, amount, denominator) {
+    var pct = Number(value);
+    if (!Number.isFinite(pct)) {
+      var amountValue = Number(amount);
+      var totalValue = Number(denominator);
+      if (Number.isFinite(amountValue) && Number.isFinite(totalValue) && totalValue > 0) {
+        pct = amountValue / totalValue * 100;
+      } else if (Number.isFinite(amountValue) && amountValue <= 0) {
+        pct = 0;
+      }
+    }
+    return Number.isFinite(pct) ? pct.toFixed(2) + '%' : '-';
+  }
+
+  function renderRealtimeProfitDeductionMetric(prefix, summary, denominator) {
+    var s = summary || {};
+    var profitDeduction = realtimeNumeric(s.profit_deduction_usd);
+    var appliedReserve = realtimeNumeric(s.profit_deduction_from_return_reserve_usd);
+    var appliedRefund = realtimeNumeric(s.profit_deduction_from_refund_usd);
+    var appliedOther = realtimeNumeric(s.profit_deduction_other_usd);
+    var refundRecord = realtimeNumeric(s.refund_deduction_usd);
+    var reserveRecord = realtimeNumeric(s.return_reserve_usd);
+    setRealtimeProfitText(prefix + 'ProfitDeduction', fmtMoney(profitDeduction));
+    setRealtimeProfitText(
+      prefix + 'ProfitDeductionRatio',
+      formatRealtimeCostRatio(s.profit_deduction_ratio_pct, profitDeduction, denominator)
+    );
+    var sourceText = '计入扣减: 预留 ' + fmtMoney(appliedReserve) + ' / 退款兜底 ' + fmtMoney(appliedRefund);
+    if (appliedOther > 0) sourceText += ' / 其他 ' + fmtMoney(appliedOther);
+    setRealtimeProfitText(prefix + 'ProfitDeductionSources', sourceText);
+    setRealtimeProfitText(
+      prefix + 'RefundReserveBreakdown',
+      '退款记录 ' + fmtMoney(refundRecord) + ' (' +
+        formatRealtimeInlinePct(s.refund_deduction_ratio_pct, refundRecord, denominator) +
+        ') / 预留记录 ' + fmtMoney(reserveRecord) + ' (' +
+        formatRealtimeInlinePct(s.return_reserve_ratio_pct, reserveRecord, denominator) + ')'
+    );
+  }
+
+  function realtimeProfitFormulaTerms(summary) {
+    var s = summary || {};
+    var purchase = s.purchase_cost_with_estimate_usd;
+    if (purchase === null || purchase === undefined) purchase = s.purchase_cost_usd;
+    var logistics = s.logistics_cost_with_estimate_usd;
+    if (logistics === null || logistics === undefined) logistics = s.logistics_cost_usd;
+    var adSpend = s.total_ad_spend_usd;
+    if (adSpend === null || adSpend === undefined) {
+      adSpend = realtimeNumeric(s.ad_cost_usd) + realtimeNumeric(s.unallocated_ad_spend_usd);
+    }
+    return {
+      revenue: realtimeNumeric(s.total_revenue_usd),
+      deduction: realtimeNumeric(s.profit_deduction_usd),
+      purchase: realtimeNumeric(purchase),
+      logistics: realtimeNumeric(logistics),
+      fee: realtimeNumeric(s.shopify_fee_total_usd),
+      ad: realtimeNumeric(adSpend),
+      profit: realtimeNumeric(s.profit_with_estimate_usd)
+    };
+  }
+
+  function renderRealtimeScopeProfitFormula(prefix, summary) {
+    var terms = realtimeProfitFormulaTerms(summary);
+    setRealtimeProfitText(
+      prefix + 'ProfitFormula',
+      '公式: 利润 = 总销售额 - 退款/预留扣减 - 采购成本(含估算) - 物流成本(含估算) - 手续费 - 广告费'
+    );
+    setRealtimeProfitText(
+      prefix + 'ProfitFormulaTerms',
+      '明细: 总销售额 ' + fmtMoney(terms.revenue) +
+        '；退款/预留 ' + fmtMoney(terms.deduction) +
+        '；采购 ' + fmtMoney(terms.purchase) +
+        '；物流 ' + fmtMoney(terms.logistics) +
+        '；手续费 ' + fmtMoney(terms.fee) +
+        '；广告费 ' + fmtMoney(terms.ad)
+    );
+    setRealtimeProfitText(
+      prefix + 'ProfitFormulaValues',
+      '代入: ' + fmtMoney(terms.revenue) +
+        ' - ' + fmtMoney(terms.deduction) +
+        ' - ' + fmtMoney(terms.purchase) +
+        ' - ' + fmtMoney(terms.logistics) +
+        ' - ' + fmtMoney(terms.fee) +
+        ' - ' + fmtMoney(terms.ad) +
+        ' = ' + fmtMoney(terms.profit)
+    );
   }
 
   function formatRealtimeEstimateRatio(value, estimateAmount, denominator) {
@@ -7759,6 +8342,7 @@
       profitSummary.shopify_fee_ratio_pct,
       costRatioDenominator
     );
+    renderRealtimeProfitDeductionMetric(prefix, profitSummary, costRatioDenominator);
     var globalBreakEvenRoasValue = Number(profitSummary.global_break_even_roas);
     setRealtimeProfitText(
       prefix + 'GlobalBreakEvenRoas',
@@ -7785,6 +8369,7 @@
         ? '利润口径 ' + fmtInt(profitOrders) + ' 单' + (estimatedOrders > 0 ? '，含估算' : '')
         : '暂无利润数据'
     );
+    renderRealtimeScopeProfitFormula(prefix, profitSummary);
     var topMarginPct = profitSummary.profit_with_estimate_margin_pct;
     var topMarginIsNumber = (typeof topMarginPct === 'number') && isFinite(topMarginPct);
     setRealtimeProfitText(
@@ -7827,7 +8412,9 @@
   }
 
   // ── 子 tab：跟随当前选择的广告系统日范围 ──
-  function loadRealtimeSubTabs() {
+  function loadRealtimeSubTabs(requestSeq) {
+    requestSeq = assignRealtimeRequestSeq('sub', requestSeq);
+    var controller = createRealtimeController('sub');
     var hourlyBody = document.getElementById('realtimeHourlyBody');
     var orderBody = document.getElementById('realtimeOrderBody');
     var orderProfitBody = document.getElementById('realtimeOrderProfitBody');
@@ -7852,6 +8439,9 @@
       if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
       if (productSalesBody) productSalesBody.innerHTML = '<tr><td colspan="9">' + escapeHtml(err.message) + '</td></tr>';
       if (campaignBody) campaignBody.innerHTML = '<tr><td colspan="10">' + escapeHtml(err.message) + '</td></tr>';
+      realtimeState.orderLoading = false;
+      realtimeState.profitLoading = false;
+      clearRealtimeController('sub', controller);
       return;
     }
     var params = new URLSearchParams();
@@ -7865,12 +8455,9 @@
     if (realtimeState.productId) params.set('product_id', realtimeState.productId);
     if (realtimeState.siteCode) params.set('site_code', realtimeState.siteCode);
     var url = '/order-analytics/realtime-overview?' + params.toString();
-    fetch(url)
-      .then(function(r) {
-        if (!r.ok) return r.json().then(function(data) { throw new Error(data.detail || data.error || '查询失败'); });
-        return r.json();
-      })
+    fetchRealtimeJson(url, controller)
       .then(function(data) {
+        if (!isRealtimeRequestCurrent('sub', requestSeq)) return;
         var s = data.summary || {};
         document.getElementById('realtimeGranularity').textContent =
           '每 20 分钟同步当天累计订单、商品销售额、运费、广告费和 ROAS；走势图按广告系统日小时节点展示，ROAS=总销售额/广告消耗费用';
@@ -7927,6 +8514,7 @@
         }
       })
       .catch(function(err) {
+        if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('sub', requestSeq)) return;
         if (hourlyBody) hourlyBody.innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
         if (orderBody) orderBody.innerHTML = '<tr><td colspan="11">' + escapeHtml(err.message) + '</td></tr>';
         if (orderProfitBody) orderProfitBody.innerHTML = '<tr><td colspan="18">' + escapeHtml(err.message) + '</td></tr>';
@@ -7936,8 +8524,11 @@
         renderRealtimeOrderProfitPagination(null, 0);
       })
       .finally(function() {
-        realtimeState.orderLoading = false;
-        realtimeState.profitLoading = false;
+        if (isRealtimeRequestCurrent('sub', requestSeq)) {
+          realtimeState.orderLoading = false;
+          realtimeState.profitLoading = false;
+        }
+        clearRealtimeController('sub', controller);
       });
   }
 

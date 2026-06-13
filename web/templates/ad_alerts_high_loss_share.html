@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>高额亏损广告分享</title>
+  <style>
+    :root {
+      --bg: #f2f4f8;
+      --card: #ffffff;
+      --fg: #111827;
+      --muted: #64748b;
+      --border: #e5e7eb;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --danger: #dc2626;
+      --danger-soft: #fef2f2;
+      --success: #047857;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.55;
+    }
+    .page {
+      width: min(1160px, 100%);
+      margin: 0 auto;
+      padding: 22px;
+    }
+    .head {
+      display: grid;
+      gap: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #1e40af;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .list {
+      display: grid;
+      gap: 12px;
+    }
+    .card {
+      display: grid;
+      grid-template-columns: 144px minmax(0, 1fr);
+      gap: 16px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .image {
+      width: 144px;
+      aspect-ratio: 1;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f8fafc;
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+    }
+    .image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .content {
+      min-width: 0;
+      display: grid;
+      gap: 10px;
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .name {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+    .name strong {
+      font-size: 16px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+    .code {
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .loss-days {
+      width: fit-content;
+      height: 28px;
+      padding: 4px 10px;
+      border: 1px solid rgba(220, 38, 38, 0.22);
+      border-radius: 999px;
+      background: var(--danger-soft);
+      color: var(--danger);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .loss-days-recovering {
+      border-color: rgba(245, 158, 11, 0.3);
+      background: #fffbeb;
+      color: #b45309;
+    }
+    .ad-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .ad-meta span {
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 7px;
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .metric {
+      display: grid;
+      gap: 4px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fafc;
+      min-width: 0;
+    }
+    .metric-title {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .metric-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .metric-line strong {
+      color: var(--fg);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .loss { color: var(--danger) !important; }
+    .profit { color: var(--success) !important; }
+    .empty {
+      padding: 48px 16px;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      color: var(--muted);
+      text-align: center;
+      font-weight: 700;
+    }
+    @media (max-width: 720px) {
+      .page { padding: 12px; }
+      .head { padding: 16px; }
+      h1 { font-size: 20px; }
+      .card { grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 12px; }
+      .image { width: 84px; }
+      .metrics { grid-template-columns: 1fr; }
+      .top { display: grid; }
+      .loss-days { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="head">
+      <h1>高额亏损广告分享</h1>
+      <div class="meta">
+        <span class="pill">Meta 业务日：{{ business_date }}</span>
+        <span class="pill">共 {{ total }} 条</span>
+        <span class="pill">过期时间：{{ share.expires_at }}</span>
+        {% if share.q %}<span class="pill">搜索：{{ share.q }}</span>{% endif %}
+      </div>
+      <div class="note">此页面为只读分享结果。入选规则：最近 7 天有消耗，且最近 7 天不出单或 ROAS 低于 1。</div>
+    </header>
+
+    {% macro metric_block(label, metric) -%}
+      {% set estimated_loss = metric.estimated_loss or 0 %}
+      <div class="metric">
+        <div class="metric-title">{{ label }}</div>
+        <div class="metric-line"><span>消耗</span><strong>${{ "%.2f"|format(metric.spend_usd or 0) }}</strong></div>
+        <div class="metric-line"><span>成效</span><strong>{{ metric.result_count or 0 }}</strong></div>
+        <div class="metric-line"><span>ROAS</span><strong>{% if metric.roas is not none %}{{ "%.2f"|format(metric.roas) }}{% else %}N/A{% endif %}</strong></div>
+        <div class="metric-line"><span>盈亏</span><strong class="{% if estimated_loss < 0 %}loss{% elif estimated_loss > 0 %}profit{% endif %}">{{ "%+.2f"|format(estimated_loss) }}</strong></div>
+      </div>
+    {%- endmacro %}
+
+    <section class="list" aria-label="高额亏损广告列表">
+      {% if not items %}
+        <div class="empty">当前没有命中最近 7 天高额亏损规则的 AD。</div>
+      {% endif %}
+      {% for item in items %}
+        <article class="card">
+          <div class="image">
+            {% if item.product_main_image %}
+              <img src="{{ item.product_main_image }}" alt="商品主图">
+            {% else %}
+              <span>暂无主图</span>
+            {% endif %}
+          </div>
+          <div class="content">
+            <div class="top">
+              <div class="name">
+                <strong>{{ item.product_name or item.product_code or "未匹配商品" }}</strong>
+                <span class="code">{{ item.product_code or item.code }}</span>
+              </div>
+              {% if (item.consecutive_loss_days or 0) > 0 %}
+              <span class="loss-days">连续亏损 {{ item.consecutive_loss_days }} 天</span>
+              {% else %}
+              <span class="loss-days loss-days-recovering">7 天亏损 · 今日转好</span>
+              {% endif %}
+            </div>
+            <div class="ad-meta">
+              <span>AD {{ item.name or item.code }}</span>
+              <span>Code {{ item.code }}</span>
+              <span>账户 {{ item.ad_account_name or item.ad_account_id or "—" }}</span>
+              <span>国家 {{ item.country or "—" }}</span>
+              <span>首投 {{ item.first_active_date or "—" }}</span>
+            </div>
+            <div class="metrics">
+              {{ metric_block("今天", item.metrics.today) }}
+              {{ metric_block("7 天", item.metrics.last_7d) }}
+              {{ metric_block("30 天", item.metrics.last_30d) }}
+              {{ metric_block("整体", item.metrics.overall) }}
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>

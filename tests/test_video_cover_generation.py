@@ -567,6 +567,10 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert resolve_text_model_selection("ad_copy", "openrouter", "").model == "google/gemini-3-flash-preview"
     assert resolve_text_model_selection("ad_copy", "openrouter", "claude_sonnet").model == "anthropic/claude-sonnet-4.6"
     assert resolve_text_model_selection("ad_copy", "openrouter", "openai/gpt-5.5").alias == "gpt_5_5"
+    assert resolve_text_model_selection("video_analysis", "google_wj", "gemini_3_flash").provider == "google_wj"
+    assert resolve_text_model_selection("video_analysis", "google_wj", "gemini_3_flash").model == "gemini-3-flash-preview"
+    assert resolve_text_model_selection("product_analysis", "googlewj", "").provider == "google_wj"
+    assert resolve_text_model_selection("product_analysis", "googlewj", "").model == "gemini-3-flash-preview"
 
     local = resolve_cover_model_selection("local_image_2", "gpt_image_2")
     assert local.provider == "local_image_2"
@@ -608,6 +612,10 @@ def test_resolve_video_cover_model_options_matches_requested_mappings():
     assert "gemini_3_flash" in options["steps"]["video_analysis"]["providers"]["gemini_aistudio"]["models"]
     assert "claude_sonnet" in options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]
     assert options["steps"]["ad_copy"]["providers"]["openrouter"]["models"]["gpt_5_5"]["model"] == "openai/gpt-5.5"
+    for step in ("video_analysis", "product_analysis", "ad_copy"):
+        providers = options["steps"][step]["providers"]
+        assert providers["google_wj"]["label"] == "GOOGLEWJ"
+        assert providers["google_wj"]["models"] == providers["gemini_vertex"]["models"]
     assert options["steps"]["cover_generation"]["default_provider"] == "local_image_2"
     assert options["steps"]["cover_generation"]["providers"]["local_image_2"] == "本地 Image 2"
     assert options["steps"]["cover_generation"]["providers"]["gemini_aistudio"] == "GOOGLE AI STUDIO"
@@ -856,6 +864,11 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert "当前日期：2026-05-14" in prompt
     assert "ad_copy_sets" in prompt
     assert "title、message、description" in prompt
+    assert "5 组中默认 2 到 4 组带 emoji" in prompt
+    assert "每组最多 1 个 emoji" in prompt
+    assert "产品品类、使用场景或具体利益点匹配" in prompt
+    assert "english.message 的自然短语前后" in prompt
+    assert "如果会触发 Meta 风险，则不用 emoji" in prompt
     assert "headline" not in prompt
 
 
@@ -1129,6 +1142,14 @@ def test_video_cover_page_renders_default_config_for_superadmin(monkeypatch):
     html = resp.get_data(as_text=True)
     assert "默认配置" in html
     assert 'id="vcShowDefaultConfig"' in html
+    assert 'class="vc-form vc-config-form" id="vcConfigForm"' in html
+    assert '<div class="vc-config-body">' in html
+    assert '<div class="vc-actions vc-config-actions">' in html
+    assert ".vc-config-modal { width:min(920px, 100%); max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px - env(safe-area-inset-bottom));" in html
+    assert ".vc-config-body { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;" in html
+    assert ".vc-config-actions { flex:0 0 auto; margin-top:0; padding:14px 22px calc(22px + env(safe-area-inset-bottom));" in html
+    assert ".vc-config-modal .vc-input { min-height:44px; font-size:16px; }" in html
+    assert ".vc-config-actions { display:grid; grid-template-columns:1fr 1fr;" in html
     for step in ("video_analysis", "product_analysis", "ad_copy", "cover_generation"):
         assert f'name="{step}_provider"' in html
         assert f'<select class="vc-input" name="{step}_model_id"' in html
@@ -1231,12 +1252,20 @@ def test_video_cover_default_config_normalizes_cover_execution_mode():
     }
 
     googlewj = video_cover_settings.normalize_model_defaults({
+        "video_analysis": {
+            "provider": "googlewj",
+            "model_id": "gemini-3-flash-preview",
+        },
         "cover_generation": {
             "provider": "googlewj",
             "model_id": "gemini-3-pro-image-preview",
             "execution_mode": "parallel",
         }
     })
+    assert googlewj["video_analysis"] == {
+        "provider": "google_wj",
+        "model_id": "gemini-3-flash-preview",
+    }
     assert googlewj["cover_generation"] == {
         "provider": "googlewj",
         "model_id": "gemini-3-pro-image-preview",
@@ -1787,6 +1816,15 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert 'id="vcdAllPayloadModal"' in html
     assert 'id="vcdAllPayloadBody"' in html
     assert 'data-all-payload-preview' in html
+    assert '<section class="vcd-top-card vcd-mobile-progress-collapsed" id="vcdTopCard">' in html
+    assert 'data-progress-toggle aria-controls="vcdProgressSteps" aria-expanded="false"' in html
+    assert "展开步骤" in html
+    assert "收起步骤" in html
+    assert ".vcd-progress-toolbar { display:none;" in html
+    assert ".vcd-top-card { position:static; top:auto; z-index:auto; box-shadow:none; margin-bottom:12px; }" in html
+    assert ".vcd-top-card.vcd-mobile-progress-collapsed .vcd-progress-steps { display:none; }" in html
+    assert "function toggleProgressSteps()" in html
+    assert "progressToggle.setAttribute('aria-expanded', String(!collapsed));" in html
     assert "normalizeCopyTextFields" in html
     assert "formattedCopyText" in html
     assert "`标题: ${en.title}`" in html

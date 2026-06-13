@@ -67,6 +67,7 @@ from web.routes.admin_ai_billing import (
     admin_ai_billing_bp,
     user_ai_billing_bp,
 )
+from web.routes.admin_quality_assessment import bp as admin_quality_assessment_bp
 from web.routes.admin_usage import bp as admin_usage_bp, user_usage_bp
 from web.routes.tos_upload import bp as tos_upload_bp
 from web.routes.prompt import bp as prompt_bp
@@ -393,6 +394,7 @@ def create_app() -> Flask:
     app.register_blueprint(user_settings_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(admin_ai_billing_bp)
+    app.register_blueprint(admin_quality_assessment_bp)
     app.register_blueprint(admin_usage_bp)
     app.register_blueprint(user_ai_billing_bp)
     app.register_blueprint(user_usage_bp)

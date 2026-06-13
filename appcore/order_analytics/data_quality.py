@@ -240,28 +240,61 @@ def fetch_watermarks() -> dict:
 # ── 源数据模式判定 ──────────────────────────────────────────
 
 def resolve_source_mode(
-    *, business_date_from: date, business_date_to: date,
+    *,
+    business_date_from: date,
+    business_date_to: date,
+    country: str | None = None,
 ) -> str:
     """根据日期范围内日终 / 实时表的覆盖情况判断数据源模式。"""
+    market_country = normalize_market_country(country)
+    daily_table = (
+        "meta_ad_daily_ad_metrics"
+        if is_single_market_country(market_country)
+        else "meta_ad_daily_campaign_metrics"
+    )
+    realtime_table = (
+        "meta_ad_realtime_daily_ad_metrics"
+        if is_single_market_country(market_country)
+        else "meta_ad_realtime_daily_campaign_metrics"
+    )
+    daily_where = ""
+    realtime_where = ""
+    daily_args: list[Any] = [business_date_from, business_date_to]
+    realtime_args: list[Any] = [business_date_from, business_date_to]
+    if is_single_market_country(market_country):
+        daily_where = " AND market_country = %s"
+        realtime_where = " AND UPPER(COALESCE(country_code, '')) = %s"
+        daily_args.append(market_country)
+        realtime_args.append(market_country)
     try:
         daily_rows = query(
             "SELECT DISTINCT COALESCE(meta_business_date, report_date) AS business_date "
-            "FROM meta_ad_daily_campaign_metrics "
-            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s",
-            (business_date_from, business_date_to),
+            f"FROM {daily_table} "
+            "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s"
+            f"{daily_where}",
+            tuple(daily_args),
         ) or []
         realtime_rows = query(
             "SELECT DISTINCT business_date "
-            "FROM meta_ad_realtime_daily_campaign_metrics "
-            "WHERE business_date BETWEEN %s AND %s",
-            (business_date_from, business_date_to),
+            f"FROM {realtime_table} "
+            "WHERE business_date BETWEEN %s AND %s"
+            f"{realtime_where}",
+            tuple(realtime_args),
         ) or []
     except Exception as exc:  # noqa: BLE001
         log.warning("data_quality resolve_source_mode query failed: %s", exc)
         return SOURCE_MODE_UNKNOWN
 
-    daily_dates = {row.get("business_date") for row in daily_rows if row.get("business_date")}
-    realtime_dates = {row.get("business_date") for row in realtime_rows if row.get("business_date")}
+    daily_dates = {
+        parsed
+        for row in daily_rows
+        if (parsed := _date_from_value(row.get("business_date"))) is not None
+    }
+    realtime_dates = {
+        parsed
+        for row in realtime_rows
+        if (parsed := _date_from_value(row.get("business_date"))) is not None
+    }
 
     expected = _expected_dates(business_date_from, business_date_to)
     if expected and daily_dates >= expected:
@@ -291,31 +324,123 @@ def _expected_dates(date_from: date, date_to: date) -> set[date]:
 
 # ── 跨表对账：广告费 ────────────────────────────────────────
 
-def reconcile_ad_spend(
+def _date_from_value(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if hasattr(value, "date"):
+        return value.date()
+    if isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _source_mode_from_breakdown(daily_total: float, realtime_total: float) -> str:
+    has_daily = abs(float(daily_total or 0)) > 0.0001
+    has_realtime = abs(float(realtime_total or 0)) > 0.0001
+    if has_daily and has_realtime:
+        return SOURCE_MODE_MIXED
+    if has_realtime:
+        return SOURCE_MODE_REALTIME_SNAPSHOT
+    if has_daily:
+        return SOURCE_MODE_DAILY_FINAL
+    return SOURCE_MODE_UNKNOWN
+
+
+def _latest_realtime_totals(
+    *,
+    table_name: str,
+    date_from: date,
+    date_to: date,
+    country: str | None = None,
+) -> tuple[float, float]:
+    """读取开放业务日最新 snapshot 总广告费。
+
+    返回 ``(source_total, product_null_total)``。product_null 只用于调用方未显式传
+    unallocated 时的保守 fallback；完整未分摊口径仍应由业务聚合层传入。
+    """
+
+    country_filter = ""
+    params: list[Any] = [date_from, date_to, date_from, date_to]
+    market_country = normalize_market_country(country)
+    if table_name == "meta_ad_realtime_daily_ad_metrics" and is_single_market_country(market_country):
+        country_filter = " AND UPPER(COALESCE(m.country_code, '')) = %s"
+        params.append(market_country)
+
+    rows = query(
+        "SELECT COALESCE(SUM(m.spend_usd), 0) AS source_total, "
+        "       0 AS unallocated_total "
+        f"FROM {table_name} m "
+        "INNER JOIN ("
+        "  SELECT business_date, ad_account_id, MAX(snapshot_at) AS snapshot_at "
+        f"  FROM {table_name} "
+        "  WHERE business_date BETWEEN %s AND %s "
+        "    AND data_completeness='realtime_partial' "
+        "  GROUP BY business_date, ad_account_id"
+        ") latest "
+        "ON m.business_date = latest.business_date "
+        "AND (m.ad_account_id = latest.ad_account_id "
+        "     OR (m.ad_account_id IS NULL AND latest.ad_account_id IS NULL)) "
+        "AND m.snapshot_at = latest.snapshot_at "
+        "WHERE m.business_date BETWEEN %s AND %s "
+        "  AND m.data_completeness='realtime_partial'"
+        f"{country_filter}",
+        tuple(params),
+    ) or []
+    row = (rows[0] if rows else {}) or {}
+    return float(row.get("source_total") or 0), float(row.get("unallocated_total") or 0)
+
+
+def load_source_ad_spend_totals(
     *,
     business_date_from: date,
     business_date_to: date,
-    allocated_ad_spend_usd: float,
-    unallocated_ad_spend_usd: float | None = None,
     country: str | None = None,
-    tolerance_usd: float = AD_SPEND_RECONCILE_TOLERANCE_USD,
-) -> dict:
-    """校验：``源广告费 = 已分摊 + 未分摊``。
+    product_id: int | None = None,
+) -> dict[str, Any]:
+    """按会计对账口径读取源广告费总账。
 
-    入参 ``allocated_ad_spend_usd`` 是调用方现场重算或从聚合接口拿到的
-    "已分摊到订单/产品的广告费"。本函数自己负责取源表 + 未分摊金额。
+    Docs-anchor:
+    docs/superpowers/specs/2026-06-13-accounting-reconcilable-analytics-profit-remediation.md#t1-统一广告费来源与-data_quality-对账
+
+    历史已收盘业务日读 daily 表；未收盘业务日读最新 realtime snapshot。国家维度
+    使用 ad 层表，全部国家使用 campaign 层表。
     """
+
+    from tools.meta_daily_final_sync import completed_meta_business_date
+
     market_country = normalize_market_country(country)
-    try:
-        if is_single_market_country(market_country):
+    single_country = is_single_market_country(market_country)
+    closed_through = completed_meta_business_date()
+    daily_to = min(business_date_to, closed_through)
+    realtime_from = max(business_date_from, closed_through + timedelta(days=1))
+
+    daily_total = 0.0
+    daily_unallocated = 0.0
+    realtime_total = 0.0
+    realtime_unallocated = 0.0
+    checks: list[dict[str, Any]] = []
+
+    if daily_to >= business_date_from:
+        product_filter = ""
+        product_args: list[Any] = []
+        if product_id is not None:
+            product_filter = " AND product_id = %s"
+            product_args.append(int(product_id))
+        if single_country:
             rows = query(
                 "SELECT COALESCE(SUM(spend_usd), 0) AS source_total, "
                 "       COALESCE(SUM(CASE WHEN product_id IS NULL THEN spend_usd ELSE 0 END), 0) "
                 "         AS unallocated_total "
                 "FROM meta_ad_daily_ad_metrics "
                 "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s "
-                "  AND market_country = %s",
-                (business_date_from, business_date_to, market_country),
+                "  AND market_country = %s"
+                f"{product_filter}",
+                (business_date_from, daily_to, market_country, *product_args),
             ) or []
         else:
             rows = query(
@@ -323,9 +448,87 @@ def reconcile_ad_spend(
                 "       COALESCE(SUM(CASE WHEN product_id IS NULL THEN spend_usd ELSE 0 END), 0) "
                 "         AS unallocated_total "
                 "FROM meta_ad_daily_campaign_metrics "
-                "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s",
-                (business_date_from, business_date_to),
+                "WHERE COALESCE(meta_business_date, report_date) BETWEEN %s AND %s"
+                f"{product_filter}",
+                (business_date_from, daily_to, *product_args),
             ) or []
+        row = (rows[0] if rows else {}) or {}
+        daily_total = float(row.get("source_total") or 0)
+        daily_unallocated = (
+            0.0
+            if product_id is not None
+            else float(row.get("unallocated_total") or 0)
+        )
+
+    if realtime_from <= business_date_to:
+        if product_id is not None:
+            from .order_profit_aggregation import _load_realtime_ad_snapshot_fallback
+
+            rt = _load_realtime_ad_snapshot_fallback(
+                date_from=realtime_from,
+                date_to=business_date_to,
+                product_id=int(product_id),
+                country=market_country,
+            )
+            realtime_total = float(
+                sum(float(v or 0) for v in (rt.get("spend_by_product") or {}).values())
+            ) + float(rt.get("unallocated_spend") or 0)
+            realtime_unallocated = float(rt.get("unallocated_spend") or 0)
+        else:
+            realtime_table = (
+                "meta_ad_realtime_daily_ad_metrics"
+                if single_country
+                else "meta_ad_realtime_daily_campaign_metrics"
+            )
+            realtime_total, realtime_unallocated = _latest_realtime_totals(
+                table_name=realtime_table,
+                date_from=realtime_from,
+                date_to=business_date_to,
+                country=market_country,
+            )
+        if realtime_total <= 0:
+            checks.append({
+                "code": "realtime_ad_source_missing",
+                "status": STATUS_WARNING,
+                "message": "开放业务日尚无可用于广告对账的实时快照",
+            })
+
+    source_total = daily_total + realtime_total
+    source_mode = _source_mode_from_breakdown(daily_total, realtime_total)
+    return {
+        "source_total": source_total,
+        "unallocated_total": daily_unallocated + realtime_unallocated,
+        "source_mode": source_mode,
+        "daily_total": daily_total,
+        "realtime_total": realtime_total,
+        "daily_unallocated_total": daily_unallocated,
+        "realtime_unallocated_total": realtime_unallocated,
+        "checks": checks,
+    }
+
+
+def reconcile_ad_spend(
+    *,
+    business_date_from: date,
+    business_date_to: date,
+    allocated_ad_spend_usd: float,
+    unallocated_ad_spend_usd: float | None = None,
+    country: str | None = None,
+    product_id: int | None = None,
+    tolerance_usd: float = AD_SPEND_RECONCILE_TOLERANCE_USD,
+) -> dict:
+    """校验：``源广告费 = 已分摊 + 未分摊``。
+
+    入参 ``allocated_ad_spend_usd`` 是调用方现场重算或从聚合接口拿到的
+    "已分摊到订单/产品的广告费"。本函数自己负责取源表 + 未分摊金额。
+    """
+    try:
+        source_totals = load_source_ad_spend_totals(
+            business_date_from=business_date_from,
+            business_date_to=business_date_to,
+            country=country,
+            product_id=product_id,
+        )
     except Exception as exc:  # noqa: BLE001
         log.warning("data_quality reconcile_ad_spend query failed: %s", exc)
         return {
@@ -334,15 +537,14 @@ def reconcile_ad_spend(
             "expected": None,
             "actual": None,
             "diff": None,
-            "message": f"广告对账查询失败：{exc}",
+                "message": f"广告对账查询失败：{exc}",
         }
 
-    row = (rows[0] if rows else {}) or {}
-    source_total = float(row.get("source_total") or 0)
+    source_total = float(source_totals.get("source_total") or 0)
     unallocated_total = (
         float(unallocated_ad_spend_usd)
         if unallocated_ad_spend_usd is not None
-        else float(row.get("unallocated_total") or 0)
+        else float(source_totals.get("unallocated_total") or 0)
     )
     allocated = float(allocated_ad_spend_usd or 0)
     actual = round(allocated + unallocated_total, 2)
@@ -356,7 +558,33 @@ def reconcile_ad_spend(
             "expected": expected,
             "actual": actual,
             "diff": diff,
-            "message": "选定业务日尚无 Meta 日终广告费数据",
+            "allocated_ad_spend_usd": round(allocated, 2),
+            "unallocated_ad_spend_usd": round(unallocated_total, 2),
+            "source_mode": source_totals.get("source_mode") or SOURCE_MODE_UNKNOWN,
+            "source_breakdown": {
+                "daily_total_usd": round(float(source_totals.get("daily_total") or 0), 2),
+                "realtime_total_usd": round(float(source_totals.get("realtime_total") or 0), 2),
+            },
+            "message": "选定业务日尚无可用于广告对账的源数据",
+        }
+
+    source_checks = list(source_totals.get("checks") or [])
+    if source_checks and diff <= tolerance_usd:
+        warning = source_checks[0]
+        return {
+            "code": "ad_spend_reconciled",
+            "status": warning.get("status") or STATUS_WARNING,
+            "expected": expected,
+            "actual": actual,
+            "diff": diff,
+            "allocated_ad_spend_usd": round(allocated, 2),
+            "unallocated_ad_spend_usd": round(unallocated_total, 2),
+            "source_mode": source_totals.get("source_mode") or SOURCE_MODE_UNKNOWN,
+            "source_breakdown": {
+                "daily_total_usd": round(float(source_totals.get("daily_total") or 0), 2),
+                "realtime_total_usd": round(float(source_totals.get("realtime_total") or 0), 2),
+            },
+            "message": warning.get("message") or "广告源数据不完整",
         }
 
     if diff <= tolerance_usd:
@@ -366,6 +594,13 @@ def reconcile_ad_spend(
             "expected": expected,
             "actual": actual,
             "diff": diff,
+            "allocated_ad_spend_usd": round(allocated, 2),
+            "unallocated_ad_spend_usd": round(unallocated_total, 2),
+            "source_mode": source_totals.get("source_mode") or SOURCE_MODE_UNKNOWN,
+            "source_breakdown": {
+                "daily_total_usd": round(float(source_totals.get("daily_total") or 0), 2),
+                "realtime_total_usd": round(float(source_totals.get("realtime_total") or 0), 2),
+            },
             "message": "广告源表总额与已分摊+未分摊金额一致",
         }
 
@@ -375,6 +610,13 @@ def reconcile_ad_spend(
         "expected": expected,
         "actual": actual,
         "diff": diff,
+        "allocated_ad_spend_usd": round(allocated, 2),
+        "unallocated_ad_spend_usd": round(unallocated_total, 2),
+        "source_mode": source_totals.get("source_mode") or SOURCE_MODE_UNKNOWN,
+        "source_breakdown": {
+            "daily_total_usd": round(float(source_totals.get("daily_total") or 0), 2),
+            "realtime_total_usd": round(float(source_totals.get("realtime_total") or 0), 2),
+        },
         "message": (
             f"广告对账失败：源表 {expected:.2f} ≠ 已分摊 {allocated:.2f} + 未分摊 "
             f"{unallocated_total:.2f}"
@@ -569,6 +811,7 @@ def build_for_order_profit(
     date_to: date,
     allocated_ad_spend_usd: float | None = None,
     unallocated_ad_spend_usd: float | None = None,
+    product_id: int | None = None,
 ) -> dict:
     """``/order-profit/api/*`` 的统一入口。"""
     checks: list[dict] = []
@@ -579,6 +822,7 @@ def build_for_order_profit(
                 business_date_to=date_to,
                 allocated_ad_spend_usd=allocated_ad_spend_usd,
                 unallocated_ad_spend_usd=unallocated_ad_spend_usd,
+                product_id=product_id,
             )
         )
     checks.append(
@@ -667,6 +911,7 @@ def build_for_product_profit(
     allocated_ad_spend_usd: float | None = None,
     unallocated_ad_spend_usd: float | None = None,
     country: str | None = None,
+    product_id: int | None = None,
 ) -> dict:
     """``/order-analytics/product-profit/*`` 的统一入口。"""
     checks: list[dict] = []
@@ -678,6 +923,7 @@ def build_for_product_profit(
                 allocated_ad_spend_usd=allocated_ad_spend_usd,
                 unallocated_ad_spend_usd=unallocated_ad_spend_usd,
                 country=country,
+                product_id=product_id,
             )
         )
     checks.append(
@@ -692,6 +938,7 @@ def build_for_product_profit(
         source_mode=resolve_source_mode(
             business_date_from=date_from,
             business_date_to=date_to,
+            country=country,
         ),
         checks=checks,
         watermarks=fetch_watermarks(),

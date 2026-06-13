@@ -410,6 +410,7 @@ def _serialize_item(
         else None
     )
     force_backfillable = _is_force_backfillable(item, child_task_type, child_task_id)
+    manual_success_backfillable = _is_manual_success_backfillable(item, child_task_id)
     return {
         "idx": int(item.get("idx") or 0),
         "kind": kind,
@@ -430,9 +431,28 @@ def _serialize_item(
         "retryable": status in _RETRYABLE_ITEM_STATUSES,
         "force_backfillable": force_backfillable,
         "force_backfill_summary": _force_backfill_summary(item),
+        "manual_success_backfillable": manual_success_backfillable,
         "manual_step": manual_step,
         "summary": _item_summary(kind, ref, raw_source_name_map=raw_source_name_map),
         "ref": ref,
+    }
+
+
+def _is_manual_success_backfillable(item: dict, child_task_id: str | None) -> bool:
+    if not child_task_id:
+        return False
+    status = (item.get("status") or "pending").strip()
+    if status == "done":
+        return not bool(item.get("result_synced"))
+    return status not in {
+        "pending",
+        "dispatching",
+        "running",
+        "syncing_result",
+        "awaiting_voice",
+        "waiting_manual",
+        "skipped",
+        "cancelled",
     }
 
 

@@ -33,7 +33,24 @@ def test_medias_js_wires_roas_button_and_calculation():
     assert "packet_cost_actual" in controller_js
     assert "standalone_shipping_fee" in controller_js
     assert "MATERIAL_ROAS_RMB_PER_USD" in controller_js
+    assert "FALLBACK_SHIPPING_FEE = 7" in controller_js
+    assert "PURCHASE_FALLBACK_RATE = 0.10" in controller_js
+    assert "PACKET_FALLBACK_RATE = 0.20" in controller_js
     assert "roas_calculation" in js
+
+
+def test_media_list_breakeven_roas_summary_uses_product_calculation_not_order_snapshot():
+    js = (ROOT / "web" / "static" / "medias.js").read_text(encoding="utf-8")
+    render_fn = js.split("function renderProductLangAdBar", 1)[1].split(
+        "function renderProductOrderStatsBar", 1
+    )[0]
+
+    assert "productObj.roas_calculation" in render_fn
+    assert "actual_breakeven_roas" not in render_fn
+    assert "oc-breakeven-roas-line" in render_fn
+    assert "独立站保底" in render_fn
+    assert "breakevenSource" in render_fn
+    assert "运费 $7 兜底" in js
 
 
 def test_sku_detail_modal_supports_manual_variant_creation():
@@ -108,8 +125,8 @@ def test_sku_detail_modal_renders_order_breakeven_roas_after_estimated_breakeven
     assert html.index("估算保本 ROAS") < html.index("订单保本 ROAS")
     assert "fmtActualBreakevenRoas" in js
     assert "s.actual_breakeven_roas" in js
-    assert "小包实费" in js
-    assert "小包预估" in js
+    assert "部分兜底" in js
+    assert "估算兜底" in js
     assert "手续费真实" in js
     assert "手续费7%估算" in js
     assert "手续费部分真实" in js

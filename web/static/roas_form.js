@@ -17,6 +17,9 @@
   ];
   const DEBOUNCE_MS = 600;
   const FEE_RATE = 0.07;
+  const FALLBACK_SHIPPING_FEE = 7;
+  const PURCHASE_FALLBACK_RATE = 0.10;
+  const PACKET_FALLBACK_RATE = 0.20;
 
   function numberOrNull(value) {
     if (value === null || value === undefined || value === '') return null;
@@ -32,6 +35,26 @@
   function formatRoas(value) {
     if (value === null || value === undefined || !Number.isFinite(value)) return '—';
     return Number(value).toFixed(2);
+  }
+
+  function effectiveBasis(purchase, actualPacket) {
+    if (purchase !== null && actualPacket !== null) return 'actual';
+    if (purchase === null && actualPacket === null) return 'estimated';
+    return 'fallback';
+  }
+
+  function effectiveBasisLabel(value) {
+    if (value === 'actual') return '实际';
+    if (value === 'fallback') return '部分兜底';
+    return '估算兜底';
+  }
+
+  function sourceSummary(result) {
+    const parts = [];
+    parts.push(result.shipping_source === 'fallback_7usd' ? '运费 $7 兜底' : '运费用实际值');
+    parts.push(result.purchase_source === 'fallback_10pct' ? '采购 10% 兜底' : '采购用实际值');
+    parts.push(result.packet_source === 'fallback_20pct' ? '物流 20% 兜底' : '物流用实际值');
+    return parts.join(' / ');
   }
 
   function formatTime(d) {
@@ -278,48 +301,56 @@
     computeRoas() {
       const values = this.collectPayload();
       const price = numberOrNull(values.standalone_price);
-      const shipping = numberOrNull(values.standalone_shipping_fee) || 0;
+      const shippingInput = numberOrNull(values.standalone_shipping_fee);
+      const shipping = shippingInput !== null ? shippingInput : FALLBACK_SHIPPING_FEE;
       const purchase = numberOrNull(values.purchase_price);
-      const estimatedPacket = numberOrNull(values.packet_cost_estimated);
-      const actualPacket = numberOrNull(values.packet_cost_actual);
+      const actualPacketRmb = numberOrNull(values.packet_cost_actual);
       const rmbPerUsd = currentRmbPerUsd();
       const revenue = price === null ? null : price + shipping;
-      const calc = (packet) => {
-        if (revenue === null || purchase === null || packet === null) return null;
-        const available = revenue * (1 - FEE_RATE) - purchase / rmbPerUsd - packet / rmbPerUsd;
+      const fallbackPurchaseUsd = revenue === null ? null : revenue * PURCHASE_FALLBACK_RATE;
+      const fallbackPacketUsd = revenue === null ? null : revenue * PACKET_FALLBACK_RATE;
+      const calc = (purchaseUsd, packetUsd) => {
+        if (revenue === null || purchaseUsd === null || packetUsd === null) return null;
+        const available = revenue * (1 - FEE_RATE) - purchaseUsd - packetUsd;
         if (available <= 0) return null;
         return revenue / available;
       };
-      const estimated = calc(estimatedPacket);
-      const actual = calc(actualPacket);
-      const useActual = actualPacket !== null;
+      const estimated = calc(fallbackPurchaseUsd, fallbackPacketUsd);
+      const actualPurchaseUsd = purchase !== null ? purchase / rmbPerUsd : fallbackPurchaseUsd;
+      const actualPacketUsd = actualPacketRmb !== null ? actualPacketRmb / rmbPerUsd : fallbackPacketUsd;
+      const actual = calc(actualPurchaseUsd, actualPacketUsd);
+      const basis = effectiveBasis(purchase, actualPacketRmb);
       return {
         estimated_roas: estimated,
         actual_roas: actual,
-        effective_basis: useActual ? 'actual' : 'estimated',
-        effective_roas: useActual ? actual : estimated,
+        effective_basis: basis,
+        effective_roas: basis === 'estimated' ? estimated : actual,
+        shipping_fee_used: shipping,
+        shipping_source: shippingInput !== null ? 'actual' : 'fallback_7usd',
+        purchase_source: purchase !== null ? 'actual' : 'fallback_10pct',
+        packet_source: actualPacketRmb !== null ? 'actual' : 'fallback_20pct',
         rmb_per_usd: rmbPerUsd,
       };
     }
 
     renderResult() {
       const result = this.computeRoas();
-      const payload = this.collectPayload();
       const set = (id, text) => {
         const el = this.root.querySelector(id);
         if (el) el.textContent = text;
       };
       set('#roasEstimatedValue', formatRoas(result.estimated_roas));
-      set(
-        '#roasActualValue',
-        numberOrNull(payload.packet_cost_actual) === null ? '待回填' : formatRoas(result.actual_roas)
-      );
+      set('#roasActualValue', formatRoas(result.actual_roas));
       set('#roasEffectiveValue', formatRoas(result.effective_roas));
-      set('#roasEffectiveBasis', result.effective_basis === 'actual' ? '实际' : '预估');
+      const basisEl = this.root.querySelector('#roasEffectiveBasis');
+      if (basisEl) {
+        basisEl.textContent = effectiveBasisLabel(result.effective_basis);
+        basisEl.title = sourceSummary(result);
+      }
       const estBox = this.root.querySelector('#roasEstimatedBox');
       const actBox = this.root.querySelector('#roasActualBox');
       if (estBox) estBox.classList.toggle('active', result.effective_basis === 'estimated');
-      if (actBox) actBox.classList.toggle('active', result.effective_basis === 'actual');
+      if (actBox) actBox.classList.toggle('active', result.effective_basis !== 'estimated');
     }
 
     _scheduleAutoSave() {
