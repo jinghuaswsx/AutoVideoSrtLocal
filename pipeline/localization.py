@@ -381,6 +381,45 @@ def _rebuild_subtitle_chunks(blocks: list[dict], min_words: int = 5, max_words: 
     return _merge_short_subtitle_chunks(rebuilt, min_words=min_words, max_words=max_words)
 
 
+def build_product_context_block(product_context: dict | None) -> str:
+    ctx = product_context or {}
+    name = str(ctx.get("name") or "").strip()
+    name_target = str(ctx.get("name_target_lang") or "").strip()
+    category = str(ctx.get("category") or "").strip()
+    points = [
+        str(point).strip()
+        for point in (ctx.get("selling_points") or [])
+        if str(point).strip()
+    ]
+    brands = [
+        str(term).strip()
+        for term in (ctx.get("brand_terms") or [])
+        if str(term).strip()
+    ]
+    if not any([name, name_target, category, points, brands]):
+        return ""
+
+    lines = [
+        "PRODUCT CONTEXT (authoritative product facts - use them to translate",
+        "product references correctly):",
+    ]
+    if name:
+        lines.append(f"- Product name: {name}")
+    if name_target:
+        lines.append(f"- Official name in target language: {name_target}")
+    if category:
+        lines.append(f"- Category: {category}")
+    if points:
+        lines.append(f"- Key selling points: {'; '.join(points)}")
+    if brands:
+        lines.append(f"- Brand terms to keep verbatim: {', '.join(brands)}")
+    lines.append(
+        "When the script mentions the product, use the official target-language "
+        "name verbatim. Never translate brand terms."
+    )
+    return "\n".join(lines)
+
+
 def build_localized_translation_messages(
     source_full_text_zh: str,
     script_segments: list[dict],
