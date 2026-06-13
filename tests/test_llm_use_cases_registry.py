@@ -92,6 +92,22 @@ def test_omni_av_sync_assess_uses_gemini_3_flash():
     assert assess["usage_log_service"] == "openrouter"
 
 
+def test_translation_quality_judge_upgraded():
+    uc = get_use_case("translation_quality.assess")
+
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-3.5-flash"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
+
+
+def test_translation_quality_red_thresholds_registered():
+    import config
+
+    assert config.TRANSLATION_QUALITY_RED_SCORE == 70
+    assert config.TRANSLATION_QUALITY_ENDING_RED == 60
+
+
 def test_image_and_link_check_defaults():
     assert USE_CASES["image_translate.detect"]["default_provider"] == "gemini_vertex"
     assert USE_CASES["image_translate.detect"]["default_model"] == "gemini-3.1-flash-lite"
@@ -167,7 +183,7 @@ def test_ad_material_ai_analysis_use_cases_use_googlewj_gemini_35_flash():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 76
+    assert len(USE_CASES) == 77
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -479,3 +495,12 @@ def test_list_by_module_groups_correctly():
 
 def test_tts_speedup_quality_review_use_case_removed():
     assert "video_translate.tts_speedup_quality_review" not in USE_CASES
+
+
+def test_rewrite_guard_use_case_registered():
+    uc = get_use_case("video_translate.rewrite_guard")
+    assert uc["module"] == "video_translate"
+    assert uc["default_provider"] == "gemini_vertex"
+    assert uc["default_model"] == "gemini-3.1-flash-lite"
+    assert uc["usage_log_service"] == "gemini_vertex"
+    assert uc["units_type"] == "tokens"

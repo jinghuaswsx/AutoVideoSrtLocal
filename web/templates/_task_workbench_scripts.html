@@ -722,6 +722,28 @@
       optQEl.className = `opt-state ${cls}`;
       optQEl.textContent = txt;
     }
+
+    // 8. Block3 R3: 尾部截断质量告警条（含被删句预览）。
+    const qwEl = document.getElementById("statusQualityWarnings");
+    if (qwEl) {
+      const warnings = Array.isArray(currentTask.quality_warnings)
+        ? currentTask.quality_warnings : [];
+      const tailWarnings = warnings.filter(w => w && w.type === "tail_truncated");
+      if (tailWarnings.length) {
+        qwEl.hidden = false;
+        qwEl.innerHTML = tailWarnings.map(w => {
+          const removed = Array.isArray(w.removed_texts) ? w.removed_texts : [];
+          const preview = removed.slice(0, 2)
+            .map(t => `「${escapeHtml(String(t))}」`).join("、");
+          const count = w.removed_count != null ? w.removed_count : removed.length;
+          const tail = preview ? `：${preview}` : "";
+          return `<div class="quality-warning-banner">⚠️ 配音尾部被截断 ${escapeHtml(String(count))} 句（可能丢失收尾/CTA）${tail}</div>`;
+        }).join("");
+      } else {
+        qwEl.hidden = true;
+        qwEl.innerHTML = "";
+      }
+    }
   }
 
   function handleFile(file) {
@@ -2835,6 +2857,8 @@
     return ({
       translate_rewrite: '正在重写译文',
       rewrite_rejected:  '文案偏离目标，已跳过语音生成',
+      quality_gate_rejected: '质量守门拒绝',
+      compress_round:    '压缩重译终轮',
       tts_script_regen:  '正在切分朗读块',
       audio_gen:         '正在生成 TTS 音频',
       measure:           '测量音频时长',

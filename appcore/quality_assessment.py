@@ -16,7 +16,7 @@ from pipeline import translation_quality
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "gemini-3.1-flash-lite"
+_DEFAULT_MODEL = "gemini-3.5-flash"
 
 
 class AssessmentInProgressError(RuntimeError):
@@ -102,6 +102,28 @@ def _tts_recognition_from_variants(task: dict) -> str:
         if text:
             return text
     return _tts_recognition_from_result(task.get("tts_result"))
+
+
+def _tail_truncation_note(task: dict) -> str:
+    warnings = task.get("quality_warnings")
+    if not isinstance(warnings, list):
+        return ""
+    for item in reversed(warnings):
+        if not isinstance(item, dict) or item.get("type") != "tail_truncated":
+            continue
+        removed_count = item.get("removed_count")
+        if removed_count is None:
+            removed_texts = item.get("removed_texts")
+            removed_count = len(removed_texts) if isinstance(removed_texts, list) else 0
+        try:
+            removed_count_int = int(removed_count)
+        except (TypeError, ValueError):
+            removed_count_int = 0
+        return (
+            "NOTE: the final audio was tail-truncated, "
+            f"{removed_count_int} sentences removed before export."
+        )
+    return ""
 
 
 def _load_json_file(task_dir: str, filename: str) -> Any | None:
@@ -190,13 +212,17 @@ def _build_inputs(task: dict) -> dict:
         or ""
     )
 
-    return {
+    inputs = {
         "original_asr": original_asr,
         "translation": translation,
         "tts_recognition": tts_recognition,
         "source_language": source_language,
         "target_language": task.get("target_lang") or "",
     }
+    notes = _tail_truncation_note(task)
+    if notes:
+        inputs["notes"] = notes
+    return inputs
 
 
 def get_project_for_assessment(task_id: str, project_type: str) -> dict | None:
@@ -213,6 +239,156 @@ def list_assessment_rows(task_id: str) -> list[dict]:
         "WHERE task_id=%s ORDER BY run_id DESC",
         (task_id,),
     )
+
+
+def _parse_translation_dimensions(value: Any) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value:
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _coerce_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def red_flags_for_assessment(row: dict) -> dict[str, bool]:
+    import config
+
+    score = _coerce_int(row.get("translation_score"))
+    dims = _parse_translation_dimensions(row.get("translation_dimensions"))
+    ending_score = _coerce_int(dims.get("ending_integrity"))
+
+    return {
+        "translation_score": (
+            score is not None
+            and score < int(getattr(config, "TRANSLATION_QUALITY_RED_SCORE", 70))
+        ),
+        "ending_integrity": (
+            ending_score is not None
+            and ending_score < int(getattr(config, "TRANSLATION_QUALITY_ENDING_RED", 60))
+        ),
+    }
+
+
+def is_red_assessment(row: dict) -> bool:
+    try:
+        flags = red_flags_for_assessment(row)
+    except Exception:
+        return False
+    return bool(flags.get("translation_score") or flags.get("ending_integrity"))
+
+
+def decorate_project_rows_with_latest_assessments(
+    rows: list[dict],
+    *,
+    project_type: str,
+    query_func=db_query,
+) -> list[dict]:
+    task_ids = [str(row.get("id") or "").strip() for row in rows]
+    task_ids = [task_id for task_id in task_ids if task_id]
+    for row in rows:
+        row.setdefault("quality_assessment_score", None)
+        row.setdefault("quality_assessment_is_red", False)
+        row.setdefault("quality_assessment", None)
+    if not task_ids:
+        return rows
+
+    placeholders = ", ".join(["%s"] * len(task_ids))
+    assessments = query_func(
+        "SELECT a.task_id, a.run_id, a.translation_score, a.tts_score, "
+        "       a.translation_dimensions, a.completed_at "
+        "FROM translation_quality_assessments a "
+        "JOIN ("
+        "  SELECT task_id, MAX(run_id) AS run_id "
+        "  FROM translation_quality_assessments "
+        f"  WHERE status='done' AND project_type=%s AND task_id IN ({placeholders}) "
+        "  GROUP BY task_id"
+        ") latest ON latest.task_id = a.task_id AND latest.run_id = a.run_id",
+        (project_type, *task_ids),
+    )
+    by_task = {str(row.get("task_id")): row for row in assessments or []}
+    for row in rows:
+        assessment = by_task.get(str(row.get("id")))
+        if not assessment:
+            continue
+        assessment = dict(assessment)
+        assessment["translation_dimensions"] = _parse_translation_dimensions(
+            assessment.get("translation_dimensions")
+        )
+        row["quality_assessment"] = assessment
+        row["quality_assessment_score"] = assessment.get("translation_score")
+        row["quality_assessment_is_red"] = is_red_assessment(assessment)
+    return rows
+
+
+def summarize_recent(
+    days: int = 30,
+    *,
+    query_func=db_query,
+) -> list[dict]:
+    try:
+        days_int = int(days)
+    except (TypeError, ValueError):
+        days_int = 30
+    days_int = max(1, min(days_int, 365))
+
+    rows = query_func(
+        "SELECT a.project_type, a.translation_score, a.tts_score, "
+        "       a.translation_dimensions, "
+        "       COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(p.state_json, '$.target_lang')), 'null'), '') "
+        "         AS target_lang "
+        "FROM translation_quality_assessments a "
+        "LEFT JOIN projects p ON p.id = a.task_id "
+        "WHERE a.status='done' "
+        "  AND a.completed_at >= DATE_SUB(NOW(), INTERVAL %s DAY)",
+        (days_int,),
+    )
+
+    groups: dict[tuple[str, str], dict] = {}
+    for row in rows or []:
+        project_type = str(row.get("project_type") or "unknown").strip() or "unknown"
+        target_lang = str(row.get("target_lang") or "unknown").strip() or "unknown"
+        key = (project_type, target_lang)
+        item = groups.setdefault(
+            key,
+            {
+                "project_type": project_type,
+                "target_lang": target_lang,
+                "n": 0,
+                "_translation_total": 0,
+                "_tts_total": 0,
+                "red_count": 0,
+            },
+        )
+        item["n"] += 1
+        item["_translation_total"] += _coerce_int(row.get("translation_score")) or 0
+        item["_tts_total"] += _coerce_int(row.get("tts_score")) or 0
+        if is_red_assessment(row):
+            item["red_count"] += 1
+
+    result: list[dict] = []
+    for item in groups.values():
+        n = item["n"] or 1
+        result.append({
+            "project_type": item["project_type"],
+            "target_lang": item["target_lang"],
+            "n": item["n"],
+            "avg_translation": round(item["_translation_total"] / n, 1),
+            "avg_tts": round(item["_tts_total"] / n, 1),
+            "red_count": item["red_count"],
+            "red_rate": round(item["red_count"] * 100 / n, 1),
+        })
+    result.sort(key=lambda item: (-int(item["n"]), item["project_type"], item["target_lang"]))
+    return result
 
 
 def _next_run_id(task_id: str) -> int:
@@ -311,6 +487,7 @@ def _run_assessment_job(
             source_language=inputs["source_language"],
             target_language=inputs["target_language"],
             task_id=task_id, user_id=user_id,
+            notes=inputs.get("notes", ""),
         )
         debug_call = result.get("_llm_debug_call")
         if isinstance(debug_call, dict) and task.get("task_dir"):

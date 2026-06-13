@@ -8,6 +8,8 @@ from typing import Any
 
 from flask import jsonify
 
+from appcore.quality_assessment import is_red_assessment, red_flags_for_assessment
+
 
 @dataclass(frozen=True)
 class TranslationQualityResponse:
@@ -78,4 +80,7 @@ def _row_to_dict(row: dict) -> dict:
             out[col] = (
                 out[col].isoformat() if hasattr(out[col], "isoformat") else str(out[col])
             )
+    if "translation_score" in out:
+        out["is_red"] = is_red_assessment(out)
+        out["red_flags"] = red_flags_for_assessment(out)
     return out

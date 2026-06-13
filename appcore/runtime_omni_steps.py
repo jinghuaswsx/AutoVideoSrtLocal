@@ -509,6 +509,7 @@ def step_translate_standard(runner, task_id: str, *, source_anchored: bool) -> N
         user_id=runner.user_id,
         use_case=_TRANSLATE_USE_CASE,
         project_id=task_id,
+        source_language=source_language,
     )
 
     initial_messages = localized_translation.pop("_messages", None)

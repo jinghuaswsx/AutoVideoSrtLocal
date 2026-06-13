@@ -266,6 +266,33 @@ def test_quality_assessment_shared_modules_include_dialogue_translate():
     assert 'projectType === "dialogue_translate"' in js
 
 
+def test_quality_assessment_card_flags_low_scores():
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "web" / "static" / "js" / "quality_assessment_card.js").read_text(encoding="utf-8")
+    css = (root / "web" / "static" / "css" / "quality_assessment_card.css").read_text(encoding="utf-8")
+
+    assert "hook_strength" in js
+    assert "ending_integrity" in js
+    assert "latest.red_flags" in js
+    assert "qa-low-line-note" in js
+    assert "低于质量线" in js
+    assert ".qa-dim-row.is-red" in css
+    assert ".qa-low-line-note" in css
+
+
+def test_omni_list_templates_render_quality_red_badges():
+    root = Path(__file__).resolve().parents[1]
+    omni = (root / "web" / "templates" / "omni_translate_list.html").read_text(encoding="utf-8")
+    omni_v2 = (root / "web" / "templates" / "omni_translate_v2_list.html").read_text(encoding="utf-8")
+
+    for template in (omni, omni_v2):
+        assert "quality_assessment_score" in template
+        assert "quality_assessment_is_red" in template
+        assert "quality-score-chip" in template
+        assert "quality-red-badge" in template
+        assert "低于质量线" in template
+
+
 def test_dialogue_subtitle_visual_module_uses_omni_voice_selector_shape():
     root = Path(__file__).resolve().parents[1]
     dialogue = (root / "web" / "templates" / "dialogue_translate_detail.html").read_text(encoding="utf-8")

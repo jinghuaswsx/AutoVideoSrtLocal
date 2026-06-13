@@ -5,6 +5,22 @@ import re
 
 
 VARIANT_KEYS = ("normal", "hook_cta")
+
+# ISO code → English label used in source-text headers sent to LLM.
+# Block1 spec R1: single canonical mapping, referenced by OmniLocalizationAdapter too.
+SOURCE_LANG_PROMPT_LABEL: dict[str, str] = {
+    "zh": "Chinese",
+    "en": "English",
+    "es": "Spanish",
+    "pt": "Portuguese",
+    "fr": "French",
+    "it": "Italian",
+    "ja": "Japanese",
+    "de": "German",
+    "nl": "Dutch",
+    "sv": "Swedish",
+    "fi": "Finnish",
+}
 VARIANT_LABELS = {
     "normal": "普通版",
     "hook_cta": "黄金3秒 + CTA版",
@@ -370,6 +386,7 @@ def build_localized_translation_messages(
     script_segments: list[dict],
     variant: str = "normal",
     custom_system_prompt: str | None = None,
+    source_language: str = "zh",
 ) -> list[dict]:
     items = [{"index": seg["index"], "text": seg["text"]} for seg in script_segments]
     if custom_system_prompt:
@@ -378,14 +395,16 @@ def build_localized_translation_messages(
         prompt = HOOK_CTA_TRANSLATION_SYSTEM_PROMPT
     else:
         prompt = LOCALIZED_TRANSLATION_SYSTEM_PROMPT
+    _lang_key = (source_language or "zh").strip().lower()
+    label = SOURCE_LANG_PROMPT_LABEL.get(_lang_key, _lang_key.upper() if _lang_key else "Chinese")
     return [
         {"role": "system", "content": prompt},
         {
             "role": "user",
             "content": (
-                "Source Chinese full text:\n"
+                f"Source {label} full text:\n"
                 f"{source_full_text_zh}\n\n"
-                "Source Chinese segments:\n"
+                f"Source {label} segments:\n"
                 f"{json.dumps(items, ensure_ascii=False, indent=2)}"
             ),
         },
@@ -566,6 +585,33 @@ def validate_localized_translation(payload) -> dict:
     return {"full_text": full_text, "sentences": sentences}
 
 
+class TtsScriptWordingMismatchError(ValueError):
+    """tts_script blocks 的词序列与输入 sentences 不一致（LLM 静默改写）。"""
+
+
+def ensure_tts_script_wording(blocks: list[dict], sentences: list[dict]) -> None:
+    """校验 blocks 的词序列与 sentences 完全一致（忽略大小写和标点）。
+
+    不一致时 raise TtsScriptWordingMismatchError，错误信息包含首个差异位置
+    附近的两边词序列片段（各 ≤15 词），便于日志定位。
+    """
+    expected = _subtitle_word_signature(_concat_items(sentences, "text"))
+    actual = _subtitle_word_signature(_concat_items(blocks, "text"))
+    if expected == actual:
+        return
+    pos = next(
+        (i for i, (a, b) in enumerate(zip(actual, expected)) if a != b),
+        min(len(actual), len(expected)),
+    )
+    lo = max(0, pos - 5)
+    raise TtsScriptWordingMismatchError(
+        f"tts_script wording mismatch at word {pos}: "
+        f"blocks[...{' '.join(actual[lo:pos + 10])}...] vs "
+        f"sentences[...{' '.join(expected[lo:pos + 10])}...] "
+        f"(blocks {len(actual)} words, sentences {len(expected)} words)"
+    )
+
+
 def validate_tts_script(payload, sentences: list[dict] | None = None,
                         max_words: int = 10) -> dict:
     # 兼容模型直接返回 list（如豆包）
@@ -590,6 +636,10 @@ def validate_tts_script(payload, sentences: list[dict] | None = None,
     if not full_text or concat != full_text:
         full_text = concat
 
+    # Block 2: 词级一致性校验——blocks 词序列必须与输入 sentences 完全一致
+    if sentences:
+        ensure_tts_script_wording(blocks, sentences)
+
     subtitle_chunks = _rebuild_subtitle_chunks(blocks, min_words=5, max_words=max_words)
     if not subtitle_chunks:
         raise ValueError("tts_script could not rebuild subtitle_chunks from blocks")
@@ -612,7 +662,7 @@ LOCALIZED_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文
 将中文原文翻译成自然、地道、具有销售力的美式英语。
 可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
 每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
-不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。"""
+不要使用破折号。使用常规标点；目标语言正字法要求的重音/特殊字母必须保留。"""
 
 HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文案写手。
 仅返回合法 JSON。返回格式必须是如下结构的 JSON 对象：
@@ -620,7 +670,7 @@ HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH = """你是一名美国短视频电商文�
 将中文原文翻译成自然、地道、具有销售力的美式英语。
 可以本土化表达方式，但每句话必须保留原意并包含 source_segment_indices。
 每句保持简洁有力，适合字幕显示。优选 6-10 个单词，避免长复合句。
-不要使用破折号。仅使用纯 ASCII 标点，优选逗号、句号和问号。
+不要使用破折号。使用常规标点；目标语言正字法要求的重音/特殊字母必须保留。
 第 1 句必须作为美国短视频的前 3 秒钩子。
 前 3 秒口播大约对应英文前 7-10 个单词。
 第 1 句应优先使用以下钩子模式之一：强结果、明显好处、好奇心或反差惊喜。
@@ -633,6 +683,9 @@ DEFAULT_PROMPTS = [
     {"name": "黄金3秒+CTA", "prompt_text": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT, "prompt_text_zh": HOOK_CTA_TRANSLATION_SYSTEM_PROMPT_ZH, "is_default": True},
 ]
 
+# DEPRECATED fallback: omni/multi 运行时走 per-language base_rewrite（DB 配置）。
+# 本常量仅作 _PromptLocalizationAdapter.build_localized_rewrite_messages 的 super() 兜底，
+# 不会被 OmniLocalizationAdapter 或各语言 localization_*.py 模块直接使用。
 LOCALIZED_REWRITE_SYSTEM_PROMPT = """You are a short-video commerce copywriter REWRITING an existing translation to match a target word count.
 Return valid JSON only. The response must be a JSON object with this exact structure:
 {"full_text": "all sentences joined by spaces", "sentences": [{"index": 0, "text": "...", "source_segment_indices": [0, 1]}, ...]}
@@ -672,7 +725,7 @@ STRUCTURAL CONSTRAINTS:
 STYLE (inherit from reference):
 - Natural, native, conversational for short-form commerce video.
 - Keep each sentence concise and punchy for subtitles. Prefer 6–10 words per sentence.
-- No em/en dashes. Plain ASCII punctuation only.
+- No em/en dashes. Standard punctuation; accented letters required by the target language are MANDATORY.
 - Preserve meaning — never drop key facts or invent new ones."""
 
 
@@ -683,6 +736,8 @@ def count_words(text: str) -> int:
     return len([w for w in text.strip().split() if w])
 
 
+# DEPRECATED fallback: omni/multi 运行时走 per-language base_rewrite（DB 配置）。
+# 本函数仅作 _PromptLocalizationAdapter 的 super().build_localized_rewrite_messages() 兜底。
 def build_localized_rewrite_messages(
     source_full_text: str,
     prev_localized_translation: dict,

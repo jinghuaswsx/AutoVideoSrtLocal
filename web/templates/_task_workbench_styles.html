@@ -1123,6 +1123,24 @@ video.media-player {
   font-size: var(--text-xs);
 }
 
+/* Block3 R3: 尾部截断质量告警条 */
+.status-quality-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.status-quality-warnings .quality-warning-banner {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--warning-fg) 30%, var(--warning-bg));
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 .duration-round-meta.warning {
   color: var(--warning-fg);
 }

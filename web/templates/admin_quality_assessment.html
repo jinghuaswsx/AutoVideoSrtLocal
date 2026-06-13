@@ -1,0 +1,76 @@
+{% extends "layout.html" %}
+{% block title %}翻译质量评估 - AutoVideoSrt{% endblock %}
+{% block page_title %}翻译质量评估{% endblock %}
+{% block extra_style %}
+.quality-summary-page { max-width: 1100px; margin: 0 auto; }
+.quality-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.quality-summary-head h1 { font-size: 20px; font-weight: 700; color: var(--text-main); margin: 0; }
+.quality-summary-filter { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-main); }
+.quality-summary-filter input {
+  width: 88px; height: 32px; padding: 0 8px;
+  border: 1.5px solid var(--border-main); border-radius: 8px;
+  background: var(--bg-card); color: var(--text-main); font-family: inherit;
+}
+.quality-summary-table {
+  width: 100%; border-collapse: collapse; background: var(--bg-card);
+  border: 1px solid var(--border-main); border-radius: 8px; overflow: hidden;
+  font-size: 13px;
+}
+.quality-summary-table th,
+.quality-summary-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-main); text-align: left; }
+.quality-summary-table th { background: var(--bg-muted); color: var(--text-muted); font-weight: 700; }
+.quality-summary-table tr:last-child td { border-bottom: 0; }
+.quality-summary-num { font-family: var(--font-mono, ui-monospace, Consolas, monospace); font-variant-numeric: tabular-nums; }
+.quality-summary-red { color: #b91c1c; font-weight: 700; }
+.quality-summary-empty {
+  padding: 28px; text-align: center; color: var(--text-muted);
+  border: 1px dashed var(--border-main); border-radius: 8px; background: var(--bg-card);
+}
+@media (max-width: 760px) {
+  .quality-summary-head { align-items: stretch; flex-direction: column; }
+  .quality-summary-table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+{% endblock %}
+{% block content %}
+<div class="quality-summary-page" id="translation-quality-summary">
+  <div class="quality-summary-head">
+    <h1>翻译质量评估</h1>
+    <form class="quality-summary-filter" method="get">
+      <label for="qualityDays">最近天数</label>
+      <input id="qualityDays" name="days" type="number" min="1" max="365" value="{{ days }}">
+      <button class="btn btn-primary" type="submit">查看</button>
+    </form>
+  </div>
+
+  {% if rows %}
+  <table class="quality-summary-table">
+    <thead>
+      <tr>
+        <th>任务类型</th>
+        <th>目标语言</th>
+        <th>任务数</th>
+        <th>平均翻译分</th>
+        <th>平均 TTS 分</th>
+        <th>触红率</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in rows %}
+      <tr>
+        <td>{{ item.project_type }}</td>
+        <td>{{ item.target_lang }}</td>
+        <td class="quality-summary-num">{{ item.n }}</td>
+        <td class="quality-summary-num">{{ '%.1f'|format(item.avg_translation) }}</td>
+        <td class="quality-summary-num">{{ '%.1f'|format(item.avg_tts) }}</td>
+        <td class="quality-summary-num {% if item.red_rate > 0 %}quality-summary-red{% endif %}">
+          {{ '%.1f'|format(item.red_rate) }}%
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="quality-summary-empty">当前范围暂无评估数据</div>
+  {% endif %}
+</div>
+{% endblock %}
