@@ -37,3 +37,21 @@
 - 链路：extract → ASR（豆包 zh/en，Scribe 其他）→ 人声分离 → asr_clean（同语言 LLM 纯净化）→ voice_match → alignment → translate（整段一次性，>18 段分批）→ TTS 5 轮收敛（字数预检 rewrite → tts_script 切分 → ElevenLabs → 实测时长）→ 响度 → 字幕二次 ASR 对齐 → 合成 → 导出 →（异步）质量评估。
 - 产品诉求（用户原话级要求）：**开头前 3 秒必须是钩子（hook），结尾必须保留收尾/CTA 意图，二者在任何改写、压缩、兜底环节都不允许丢失**；同时全程保证音画对齐。
 - 现有策略：译文**不发明新 CTA**（成片会另拼通用 CTA 片尾），但**源里已有的 CTA/收尾意图必须保留**。本系列所有"保 CTA"的表述均指后者，不改变"不发明 CTA"的既有策略。
+
+## 上线运维清单（全部块合并部署后必须执行，否则部分改动不生效）
+
+按顺序执行，每步贴输出留痕：
+
+1. **Prompt DB 重 seed**（Block 1 交付；DB 优先级高于代码默认值，不跑则 runtime 仍读旧 prompt）：
+   - `python3 scripts/reseed_prompt_defaults.py`（dry-run）→ 人工核对 DIFF/MISSING 清单；
+   - 确认无管理员自定义需保留后 `python3 scripts/reseed_prompt_defaults.py --apply --yes`；
+   - 再跑一次 dry-run 确认全部 SAME（退出码 0）。
+2. **模型绑定同步**（`/settings?tab=bindings`，现网 DB 已有绑定行不受代码默认值影响）：
+   - `asr_clean.purify_fallback` → `openrouter / anthropic/claude-sonnet-4.6`（Block 2）；
+   - `translation_quality.assess` → `openrouter / google/gemini-3.5-flash`（Block 5）。
+3. **测试环境真任务冒烟**（对照 Block 3 spec 验收标准 3，三个场景）：
+   - 正常 zh→en omni V2 任务：跑通全程，Duration 面板可见 guard 记录，行为与现状一致；
+   - 难收敛任务（长口播+短视频）：观察压缩重译终轮触发、瞄准 video−0.5s、首尾句保留；
+   - 临时关 `OMNI_COMPRESS_RETRANSLATE_ENABLED` 强制触发截断：详情页出现尾部截断警示条（含被删句预览），验完恢复开关；
+   - 附加检查：任务详情的初始翻译 prompt artifact 含 PRODUCT CONTEXT（批量任务，Block 4）、评估卡含 hook_strength / ending_integrity 分项（Block 5）。
+4. **成本回归**：抽一条任务统计 rewrite_guard 调用次数（应 ≤ 每轮 3 次 × 轮数）。
