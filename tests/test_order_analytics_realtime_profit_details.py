@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 from appcore import order_analytics as oa
 from appcore.order_analytics.realtime import (
+    _build_order_profit_summary,
     _build_order_profit_status_label,
     _derive_order_profit_status,
     _derive_refund_status,
@@ -169,6 +170,10 @@ def test_get_realtime_order_profit_details_aggregates_costs_and_refunds(monkeypa
         assert "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id" in sql
         assert "MAX(COALESCE(d.refund_amount_usd, 0)) AS refund_amount_usd" in sql
         assert "AS package_profit_line_count" in sql
+        assert "AS stored_shopify_fee_sources" in sql
+        assert "AS stored_shopify_fee_rate_region" in sql
+        assert "AS stored_shopify_fee_rate_window_start" in sql
+        assert "AS stored_shopify_fee_rate_window_end" in sql
         assert args[-2:] == (target, data_until)
         return [
             {
@@ -302,11 +307,25 @@ def test_format_order_profit_rows_uses_canonical_profit_fields():
     assert detail["order_profit_with_estimate_usd"] == 7.88
 
 
-def test_format_order_profit_rows_skips_refund_fallback_for_mixed_package_scope():
+def test_format_order_profit_rows_skips_refund_fallback_for_mixed_package_scope(monkeypatch):
     """A scope slice can contain the unmatched line from a package whose other
     lines already have profit rows. In that case the package-level refund must
     not be deducted again in the unmatched scope card.
     """
+    monkeypatch.setattr(
+        "appcore.order_analytics.realtime.resolve_shopify_fee_for_order",
+        lambda **_kwargs: {
+            "shopify_fee_usd": 2.8,
+            "shopify_tier": "D",
+            "presentment_currency": "USD",
+            "shopify_fee_source": "strategy_c_fallback",
+            "shopify_fee_rate_region": "us",
+            "shopify_fee_rate_window_start": None,
+            "shopify_fee_rate_window_end": None,
+        },
+        raising=False,
+    )
+
     row = {
         "site_code": "newjoy",
         "dxm_package_id": "PKG-MIXED",
@@ -542,9 +561,116 @@ def test_format_order_profit_rows_marks_missing_cost_estimates():
     assert detail["order_profit_with_estimate_usd"] == 74.7
 
 
-def test_build_order_profit_summary_uses_estimates_for_missing_costs():
-    from appcore.order_analytics.realtime import _build_order_profit_summary
+def test_format_realtime_order_profit_rows_uses_dynamic_resolver_for_uncomputed_order(monkeypatch):
+    resolved_calls = []
 
+    def fake_resolver(**kwargs):
+        resolved_calls.append(kwargs)
+        return {
+            "shopify_fee_usd": 6.72,
+            "shopify_tier": "dynamic_region_rate",
+            "presentment_currency": "EUR",
+            "shopify_fee_source": "dynamic_region_rate",
+            "shopify_fee_rate": 0.07542,
+            "shopify_fee_rate_region": "europe",
+            "shopify_fee_rate_window_start": "2026-05-30",
+            "shopify_fee_rate_window_end": "2026-06-05",
+            "shopify_fee_basis": {"snapshot_id": 9},
+        }
+
+    monkeypatch.setattr(
+        "appcore.order_analytics.realtime.resolve_shopify_fee_for_order",
+        fake_resolver,
+    )
+
+    rows = _format_realtime_order_profit_rows(
+        [
+            {
+                "site_code": "newjoy",
+                "dxm_package_id": "DXM-PKG-SHOULD-NOT-MATCH",
+                "dxm_order_id": "DXM-RESOLVER",
+                "package_number": "3001",
+                "extended_order_id": "#3001",
+                "order_state": "paid",
+                "buyer_country": "DE",
+                "buyer_country_name": "Germany",
+                "order_paid_at": datetime(2026, 6, 13, 10, 0),
+                "order_time": datetime(2026, 6, 13, 10, 0),
+                "line_count": 1,
+                "profit_line_count": 0,
+                "package_profit_line_count": 0,
+                "profit_ok_count": 0,
+                "profit_incomplete_count": 1,
+                "purchase_missing_count": 0,
+                "logistics_missing_count": 0,
+                "units": 1,
+                "product_revenue": 100.0,
+                "shipping_revenue": 0.0,
+                "total_revenue": 100.0,
+                "refund_amount_usd": 0.0,
+                "return_reserve_usd": 1.0,
+                "purchase_cost": 20.0,
+                "purchase_estimate": 0.0,
+                "logistics_cost": 5.0,
+                "logistics_estimate": 0.0,
+                "ad_cost": 10.0,
+                "stored_shopify_fee_total": None,
+                "skus": "SKU-DYNAMIC",
+                "product_names": "Dynamic Product",
+            }
+        ],
+        day_start=datetime(2026, 6, 13),
+    )
+
+    assert rows[0]["shopify_fee_total_usd"] == 6.72
+    assert rows[0]["shopify_tier"] == "dynamic_region_rate"
+    assert rows[0]["presentment_currency"] == "EUR"
+    assert rows[0]["shopify_fee_source"] == "dynamic_region_rate"
+    assert rows[0]["shopify_fee_rate_region"] == "europe"
+    assert rows[0]["shopify_fee_rate_window_start"] == "2026-05-30"
+    assert rows[0]["shopify_fee_rate_window_end"] == "2026-06-05"
+    assert resolved_calls[0]["site_code"] == "newjoy"
+    assert resolved_calls[0]["order_names"] == ["#3001", "3001"]
+    assert "DXM-PKG-SHOULD-NOT-MATCH" not in resolved_calls[0]["order_names"]
+
+
+def test_format_realtime_order_profit_rows_marks_mixed_stored_fee_source():
+    rows = _format_realtime_order_profit_rows(
+        [
+            {
+                "site_code": "newjoy",
+                "dxm_package_id": "P-MIXED-FEE",
+                "dxm_order_id": "DXM-MIXED-FEE",
+                "package_number": "PN-MIXED-FEE",
+                "order_state": "paid",
+                "buyer_country": "US",
+                "order_time": datetime(2026, 6, 13, 10, 0),
+                "line_count": 2,
+                "profit_line_count": 2,
+                "package_profit_line_count": 2,
+                "profit_ok_count": 2,
+                "profit_incomplete_count": 0,
+                "product_revenue": 100.0,
+                "shipping_revenue": 0.0,
+                "total_revenue": 100.0,
+                "refund_amount_usd": 0.0,
+                "return_reserve_usd": 1.0,
+                "purchase_cost": 20.0,
+                "purchase_estimate": 0.0,
+                "logistics_cost": 5.0,
+                "logistics_estimate": 0.0,
+                "ad_cost": 10.0,
+                "stored_shopify_fee_total": 4.2,
+                "stored_shopify_fee_sources": "actual_payment,dynamic_region_rate",
+            }
+        ],
+        day_start=datetime(2026, 6, 13),
+    )
+
+    assert rows[0]["shopify_fee_source"] == "mixed"
+
+
+def test_build_order_profit_summary_uses_estimates_for_missing_costs():
     rows = [
         {
             "total_revenue": 100.0,
@@ -600,9 +726,75 @@ def test_build_order_profit_summary_uses_estimates_for_missing_costs():
     assert summary["profit_with_estimate_usd"] == 168.0
 
 
-def test_build_order_profit_summary_subtracts_unallocated_ad_spend():
-    from appcore.order_analytics.realtime import _build_order_profit_summary
+def test_build_order_profit_summary_counts_shopify_fee_sources():
+    summary = _build_order_profit_summary(
+        [
+            {
+                "total_revenue": 100.0,
+                "refund_deduction_usd": 0.0,
+                "return_reserve_usd": 1.0,
+                "profit_deduction_usd": 1.0,
+                "purchase_cost_usd": 20.0,
+                "purchase_estimate_usd": 0.0,
+                "purchase_cost_missing": False,
+                "logistics_cost_usd": 5.0,
+                "logistics_estimate_usd": 0.0,
+                "logistics_cost_missing": False,
+                "shopify_fee_total_usd": 6.72,
+                "shopify_fee_source": "dynamic_region_rate",
+                "shopify_fee_rate_window_end": "2026-06-05",
+                "ad_cost_usd": 10.0,
+            },
+            {
+                "total_revenue": 50.0,
+                "refund_deduction_usd": 0.0,
+                "return_reserve_usd": 0.5,
+                "profit_deduction_usd": 0.5,
+                "purchase_cost_usd": 10.0,
+                "purchase_estimate_usd": 0.0,
+                "purchase_cost_missing": False,
+                "logistics_cost_usd": 2.0,
+                "logistics_estimate_usd": 0.0,
+                "logistics_cost_missing": False,
+                "shopify_fee_total_usd": 1.95,
+                "shopify_fee_source": "actual_payment",
+                "shopify_fee_rate_window_end": None,
+                "ad_cost_usd": 5.0,
+            },
+        ],
+        total_ad_spend_usd=15.0,
+    )
 
+    assert summary["shopify_fee_source_counts"] == {
+        "dynamic_region_rate": 1,
+        "actual_payment": 1,
+    }
+    assert summary["shopify_fee_source_amounts"] == {
+        "dynamic_region_rate": 6.72,
+        "actual_payment": 1.95,
+    }
+    assert summary["shopify_fee_rate_watermark"] == "2026-06-05"
+
+
+def test_build_order_profit_summary_normalizes_mixed_shopify_fee_sources():
+    summary = _build_order_profit_summary(
+        [
+            {
+                "total_revenue": 100.0,
+                "shopify_fee_total_usd": 6.72,
+                "shopify_fee_source": "actual_payment,dynamic_region_rate",
+                "ad_cost_usd": 0.0,
+            }
+        ],
+        total_ad_spend_usd=0.0,
+    )
+
+    assert summary["shopify_fee_source_counts"] == {"mixed": 1}
+    assert summary["shopify_fee_source_amounts"] == {"mixed": 6.72}
+    assert "actual_payment,dynamic_region_rate" not in summary["shopify_fee_source_counts"]
+
+
+def test_build_order_profit_summary_subtracts_unallocated_ad_spend():
     rows = [
         {
             "total_revenue": 100.0,
@@ -627,8 +819,6 @@ def test_build_order_profit_summary_subtracts_unallocated_ad_spend():
 
 
 def test_build_order_profit_summary_clamps_unallocated_when_total_below_allocated():
-    from appcore.order_analytics.realtime import _build_order_profit_summary
-
     # 总 spend 比已分摊还小（例如实时快照落后于已写入利润行的日终重算）
     # → 未分摊不能为负，否则会重复计帐放大利润。
     rows = [
@@ -655,8 +845,6 @@ def test_build_order_profit_summary_clamps_unallocated_when_total_below_allocate
 
 
 def test_build_order_profit_summary_handles_empty_rows_with_total_ad_spend():
-    from appcore.order_analytics.realtime import _build_order_profit_summary
-
     summary = _build_order_profit_summary([], total_ad_spend_usd=42.0)
     assert summary["order_count"] == 0
     assert summary["total_revenue_usd"] == 0.0
