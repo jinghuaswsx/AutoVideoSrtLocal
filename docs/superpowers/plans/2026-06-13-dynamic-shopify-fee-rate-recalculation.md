@@ -217,7 +217,7 @@ git commit -m "feat: add dynamic shopify fee schema" -m "Docs-anchor: docs/super
 - Create: `appcore/order_analytics/shopify_fee_dynamic.py`
 - Create/modify: `tests/test_shopify_fee_dynamic.py`
 
-- [ ] **Step 2.1: Write failing tests for region mapping and snapshot math**
+- [x] **Step 2.1: Write failing tests for region mapping and snapshot math**
 
 Create `tests/test_shopify_fee_dynamic.py` with these tests first:
 
@@ -301,7 +301,7 @@ def test_select_snapshot_window_marks_insufficient():
     assert selected["window_days"] == 30
 ```
 
-- [ ] **Step 2.2: Run tests and confirm import failure**
+- [x] **Step 2.2: Run tests and confirm import failure**
 
 Run:
 
@@ -311,7 +311,7 @@ pytest tests/test_shopify_fee_dynamic.py -q
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'appcore.order_analytics.shopify_fee_dynamic'`.
 
-- [ ] **Step 2.3: Implement mapping and pure snapshot helpers**
+- [x] **Step 2.3: Implement mapping and pure snapshot helpers**
 
 Create `appcore/order_analytics/shopify_fee_dynamic.py`:
 
@@ -445,7 +445,7 @@ def build_snapshot_row(
     }
 ```
 
-- [ ] **Step 2.4: Run pure helper tests**
+- [x] **Step 2.4: Run pure helper tests**
 
 Run:
 
@@ -455,7 +455,7 @@ pytest tests/test_shopify_fee_dynamic.py -q
 
 Expected: PASS for the tests added in Step 2.1.
 
-- [ ] **Step 2.5: Add persistence and lookup tests**
+- [x] **Step 2.5: Add persistence and lookup tests**
 
 Append to `tests/test_shopify_fee_dynamic.py`:
 
@@ -554,7 +554,7 @@ def test_load_best_fee_rate_snapshot_falls_back_to_all_store_scope(monkeypatch):
     assert calls == [("newjoy", "other"), ("all", "other")]
 ```
 
-- [ ] **Step 2.6: Implement persistence and lookup**
+- [x] **Step 2.6: Implement persistence and lookup**
 
 Append to `appcore/order_analytics/shopify_fee_dynamic.py`:
 
@@ -643,7 +643,7 @@ def load_best_fee_rate_snapshot(store_code: str | None, region: str) -> dict[str
     return None
 ```
 
-- [ ] **Step 2.7: Run tests**
+- [x] **Step 2.7: Run tests**
 
 Run:
 
@@ -653,7 +653,7 @@ pytest tests/test_shopify_fee_dynamic.py -q
 
 Expected: PASS.
 
-- [ ] **Step 2.8: Commit**
+- [x] **Step 2.8: Commit**
 
 ```bash
 git add appcore/order_analytics/shopify_fee_dynamic.py tests/test_shopify_fee_dynamic.py
