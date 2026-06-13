@@ -194,6 +194,16 @@ SUBTITLE_MAX_LINES = int(_env("SUBTITLE_MAX_LINES", "2"))
 
 
 # ---------------------------------------------------------------------------
+# Block3: rewrite 质量守门 + 压缩重译兜底
+# docs/superpowers/specs/2026-06-12-omni-quality-block3-convergence-guard-design.md
+# ---------------------------------------------------------------------------
+OMNI_REWRITE_GUARD_ENABLED = True
+OMNI_REWRITE_GUARD_MIN_FIDELITY = 75
+OMNI_REWRITE_GUARD_MAX_CALLS_PER_ROUND = 3
+OMNI_COMPRESS_RETRANSLATE_ENABLED = True
+
+
+# ---------------------------------------------------------------------------
 # 推送（老 env 作为兼容兜底；运行时以 system_settings 为准）
 # ---------------------------------------------------------------------------
 PUSH_TARGET_URL = _env("PUSH_TARGET_URL", "")

@@ -167,7 +167,7 @@ def test_ad_material_ai_analysis_use_cases_use_googlewj_gemini_35_flash():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 76
+    assert len(USE_CASES) == 77
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -479,3 +479,12 @@ def test_list_by_module_groups_correctly():
 
 def test_tts_speedup_quality_review_use_case_removed():
     assert "video_translate.tts_speedup_quality_review" not in USE_CASES
+
+
+def test_rewrite_guard_use_case_registered():
+    uc = get_use_case("video_translate.rewrite_guard")
+    assert uc["module"] == "video_translate"
+    assert uc["default_provider"] == "gemini_vertex"
+    assert uc["default_model"] == "gemini-3.1-flash-lite"
+    assert uc["usage_log_service"] == "gemini_vertex"
+    assert uc["units_type"] == "tokens"

@@ -191,6 +191,16 @@ USE_CASES: dict[str, UseCase] = {
         "elevenlabs",
         "chars",
     ),
+    "video_translate.rewrite_guard": _uc(
+        "video_translate.rewrite_guard",
+        "video_translate",
+        "字数收敛重写守门",
+        "对落入字数窗口的 rewrite 候选做忠实度 + 首句钩子 + 尾句收尾三项快评",
+        "gemini_vertex",
+        "gemini-3.1-flash-lite",
+        "gemini_vertex",
+        "tokens",
+    ),
     "video_translate.tts_language_check": _uc(
         "video_translate.tts_language_check",
         "video_translate",
