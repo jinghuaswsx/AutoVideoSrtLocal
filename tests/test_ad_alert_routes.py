@@ -433,6 +433,18 @@ def test_public_high_loss_share_validates_token_and_renders(monkeypatch):
         return date(2026, 6, 12), [item]
 
     monkeypatch.setattr(route.ad_alerts, "get_high_loss_ads", fake_get_high_loss_ads)
+
+    # Freeze the wall-clock default so token verification is deterministic
+    # regardless of the day the suite runs (the route verifies against the
+    # real clock; without this the 24h token expires after 2026-06-13T04:00Z).
+    real_share_now = ad_alerts._share_utc_now
+    frozen_now = datetime(2026, 6, 12, 5, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        ad_alerts,
+        "_share_utc_now",
+        lambda value=None: real_share_now(value if value is not None else frozen_now),
+    )
+
     payload = ad_alerts.build_high_loss_share_payload(
         search="Glow",
         limit=30,
