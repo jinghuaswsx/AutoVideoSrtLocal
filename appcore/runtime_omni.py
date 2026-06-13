@@ -31,7 +31,10 @@ import json as _json_anchor
 from appcore.llm_prompt_configs import resolve_prompt_config as _resolve_prompt_anchor
 from appcore.runtime_multi import _PromptLocalizationAdapter as _BaseAdapter
 from appcore.runtime_multi import _JapaneseMultiTranslateAdapter as _JaAdapter
-from pipeline.localization import SOURCE_LANG_PROMPT_LABEL as _SOURCE_LANG_PROMPT_LABEL
+from pipeline.localization import (
+    SOURCE_LANG_PROMPT_LABEL as _SOURCE_LANG_PROMPT_LABEL,
+    build_product_context_block,
+)
 
 
 class OmniLocalizationAdapter(_BaseAdapter):
@@ -40,11 +43,38 @@ class OmniLocalizationAdapter(_BaseAdapter):
     # Reference the canonical mapping from pipeline.localization to avoid double-maintenance.
     _SOURCE_LANG_LABEL = _SOURCE_LANG_PROMPT_LABEL
 
-    def __init__(self, lang: str, source_language: str, original_asr_text: str):
+    def __init__(
+        self,
+        lang: str,
+        source_language: str,
+        original_asr_text: str,
+        product_context: dict | None = None,
+    ):
         super().__init__(lang)
         self.source_language = source_language
         self.original_asr_text = original_asr_text
+        self.product_context = product_context
         self.__name__ = f"omni_translate.localization.{lang}"
+
+    def _prepend_product_context(self, content: str) -> str:
+        product_block = build_product_context_block(self.product_context)
+        if not product_block:
+            return content
+        return f"{product_block}\n\n{content}"
+
+    def _prepend_product_context_to_messages(self, messages: list[dict]) -> list[dict]:
+        product_block = build_product_context_block(self.product_context)
+        if not product_block:
+            return messages
+        updated: list[dict] = []
+        injected = False
+        for message in messages:
+            item = dict(message)
+            if not injected and item.get("role") == "user" and isinstance(item.get("content"), str):
+                item["content"] = f"{product_block}\n\n{item['content']}"
+                injected = True
+            updated.append(item)
+        return updated
 
     def build_localized_rewrite_messages(
         self,
@@ -72,6 +102,7 @@ class OmniLocalizationAdapter(_BaseAdapter):
             f"STAY ANCHORED in the original transcript. Do NOT fabricate details that "
             f"are not in the transcript above."
         )
+        user_content = self._prepend_product_context(user_content)
         if feedback_notes:
             user_content += f"\n\n{feedback_notes}"
 
@@ -88,11 +119,17 @@ class OmniJapaneseLocalizationAdapter(OmniLocalizationAdapter):
     DEFAULT_TTS_UNITS_PER_SECOND = _JaAdapter.DEFAULT_TTS_UNITS_PER_SECOND
     rewrite_use_case_code = _JaAdapter.rewrite_use_case_code
 
-    def __init__(self, source_language: str, original_asr_text: str):
+    def __init__(
+        self,
+        source_language: str,
+        original_asr_text: str,
+        product_context: dict | None = None,
+    ):
         super().__init__(
             lang="ja",
             source_language=source_language,
             original_asr_text=original_asr_text,
+            product_context=product_context,
         )
         self._ja_adapter = _JaAdapter()
         self.module = self._ja_adapter.module
@@ -118,11 +155,13 @@ class OmniModuleLocalizationAdapter(OmniLocalizationAdapter):
         source_language: str,
         original_asr_text: str,
         module_name: str,
+        product_context: dict | None = None,
     ):
         super().__init__(
             lang=lang,
             source_language=source_language,
             original_asr_text=original_asr_text,
+            product_context=product_context,
         )
         self.module = importlib.import_module(module_name)
         self.__name__ = self.module.__name__
@@ -153,7 +192,7 @@ class OmniModuleLocalizationAdapter(OmniLocalizationAdapter):
     ) -> list[dict]:
         builder = getattr(self.module, "build_omni_localized_rewrite_messages", None)
         if self._use_module_message_builders() and callable(builder):
-            return builder(
+            return self._prepend_product_context_to_messages(builder(
                 source_full_text=source_full_text,
                 prev_localized_translation=prev_localized_translation,
                 target_words=target_words,
@@ -161,7 +200,7 @@ class OmniModuleLocalizationAdapter(OmniLocalizationAdapter):
                 source_language=self.source_language or source_language,
                 original_asr_text=self.original_asr_text,
                 feedback_notes=feedback_notes,
-            )
+            ))
         return super().build_localized_rewrite_messages(
             source_full_text,
             prev_localized_translation,
@@ -659,10 +698,12 @@ class OmniTranslateRunner(MultiTranslateRunner):
         original_asr_text = " ".join(
             (u.get("text") or "").strip() for u in utterances if u.get("text")
         ).strip()
+        product_context = task.get("product_context")
         if lang == "ja":
             return OmniJapaneseLocalizationAdapter(
                 source_language=source_language,
                 original_asr_text=original_asr_text,
+                product_context=product_context,
             )
         if lang in {"es", "it"}:
             return OmniModuleLocalizationAdapter(
@@ -670,9 +711,11 @@ class OmniTranslateRunner(MultiTranslateRunner):
                 source_language=source_language,
                 original_asr_text=original_asr_text,
                 module_name=f"pipeline.localization_{lang}",
+                product_context=product_context,
             )
         return OmniLocalizationAdapter(
             lang=lang,
             source_language=source_language,
             original_asr_text=original_asr_text,
+            product_context=product_context,
         )

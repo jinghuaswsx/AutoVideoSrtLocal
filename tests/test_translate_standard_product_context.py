@@ -100,3 +100,93 @@ def test_no_context_prompt_unchanged(monkeypatch, tmp_path):
 
     assert prompt == "BASE PROMPT de"
     assert "PRODUCT CONTEXT" not in prompt
+
+
+def test_rewrite_messages_carry_product_context(monkeypatch):
+    from appcore import runtime_omni
+
+    monkeypatch.setattr(
+        runtime_omni,
+        "_resolve_prompt_anchor",
+        lambda slot, lang: {"content": "Rewrite to {target_words} words and {direction}."},
+    )
+    adapter = runtime_omni.OmniLocalizationAdapter(
+        lang="de",
+        source_language="en",
+        original_asr_text="This mold makes clear ice.",
+        product_context={"name": "Ice Ball Mold", "name_target_lang": "Eisball-Form"},
+    )
+
+    messages = adapter.build_localized_rewrite_messages(
+        "normalized source",
+        {"full_text": "Localized text", "sentences": []},
+        8,
+        "shrink",
+        source_language="en",
+    )
+    user_content = messages[1]["content"]
+
+    assert "PRODUCT CONTEXT" in user_content
+    assert "Eisball-Form" in user_content
+    assert user_content.index("PRODUCT CONTEXT") < user_content.index("ORIGINAL VIDEO TRANSCRIPT")
+
+
+def test_rewrite_messages_without_context_keep_existing_shape(monkeypatch):
+    from appcore import runtime_omni
+
+    monkeypatch.setattr(
+        runtime_omni,
+        "_resolve_prompt_anchor",
+        lambda slot, lang: {"content": "Rewrite to {target_words} words and {direction}."},
+    )
+    adapter = runtime_omni.OmniLocalizationAdapter(
+        lang="de",
+        source_language="en",
+        original_asr_text="This mold makes clear ice.",
+    )
+
+    messages = adapter.build_localized_rewrite_messages(
+        "normalized source",
+        {"full_text": "Localized text", "sentences": []},
+        8,
+        "shrink",
+        source_language="en",
+    )
+    user_content = messages[1]["content"]
+
+    assert "PRODUCT CONTEXT" not in user_content
+    assert user_content.startswith(
+        "ORIGINAL VIDEO TRANSCRIPT (English, ground truth — what the video actually says):"
+    )
+
+
+def test_runner_passes_product_context_to_module_backed_rewrite_adapter(monkeypatch):
+    from appcore import runtime_omni
+    from appcore.events import EventBus
+    import pipeline.localization_es as loc_es
+
+    monkeypatch.setattr(
+        loc_es,
+        "resolve_prompt_config",
+        lambda slot, lang: {"content": "Rewrite to {target_words} words and {direction}."},
+    )
+    runner = runtime_omni.OmniTranslateRunner(bus=EventBus(), user_id=1)
+    adapter = runner._get_localization_module({
+        "target_lang": "es",
+        "source_language": "en",
+        "utterances": [{"text": "This mold makes clear ice."}],
+        "product_context": {"name": "Ice Ball Mold", "name_target_lang": "Molde de hielo"},
+    })
+
+    messages = adapter.build_localized_rewrite_messages(
+        "normalized source",
+        {"full_text": "Texto localizado", "sentences": []},
+        8,
+        "shrink",
+        source_language="en",
+    )
+    user_content = messages[1]["content"]
+
+    assert "PRODUCT CONTEXT" in user_content
+    assert "Molde de hielo" in user_content
+    assert user_content.index("PRODUCT CONTEXT") < user_content.index("ORIGINAL VIDEO TRANSCRIPT")
