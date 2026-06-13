@@ -503,6 +503,11 @@ def step_translate_standard(runner, task_id: str, *, source_anchored: bool) -> N
     else:
         system_prompt = base_prompt
 
+    from pipeline.localization import build_product_context_block
+    product_block = build_product_context_block(task.get("product_context"))
+    if product_block:
+        system_prompt = f"{system_prompt}\n\n{product_block}"
+
     localized_translation = generate_localized_translation(
         source_full_text, script_segments, variant="normal",
         custom_system_prompt=system_prompt,
