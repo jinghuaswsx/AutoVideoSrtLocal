@@ -482,6 +482,9 @@ def test_run_product_analysis_uses_googlewj_material_review(monkeypatch):
     assert captured["kwargs"]["response_schema"] == svc.MATERIAL_REVIEW_RESPONSE_SCHEMA
     assert result["material_review_input"] == review_input
     assert result["material_review_result"]["final_decision"] == "条件通过"
+    # priority 现在由产品量级规则决定（spend 500 ≥ 100 → P1），
+    # 不再被单条素材评审的 quality_score=72 劫持；解耦后即便评审打 72 分，
+    # 也不会把规则判的 P1 改成 quality_score 映射的某档
     assert result["priority"] == "P1"
     assert result["mode"] == "ai"
 
@@ -512,6 +515,66 @@ def test_rank_input_breakeven_missing_yields_null_ratio():
 
     assert payload["effective_breakeven_roas"] is None
     assert payload["roas_vs_breakeven"] is None
+
+
+def test_derive_product_priority_uses_breakeven_line():
+    p0 = _row(product_id=1, spend_30d=400, orders_30d=40, revenue_30d=900, purchase_value_30d=800)
+    p0["effective_breakeven_roas"] = 1.6  # true_roas 2.25 >= 1.6 → roas_ok
+    assert svc._derive_product_priority(p0) == "P0"
+
+    # 量达 P0 门槛但 ROAS 未过保本线 → 降级
+    p0_unprofitable = _row(product_id=2, spend_30d=400, orders_30d=40, revenue_30d=500, purchase_value_30d=480)
+    p0_unprofitable["effective_breakeven_roas"] = 1.6  # true_roas 1.25 < 1.6
+    assert svc._derive_product_priority(p0_unprofitable) == "P1"
+
+    p2 = _row(product_id=3, spend_30d=60, orders_30d=8)
+    assert svc._derive_product_priority(p2) == "P2"
+
+    p3 = _row(product_id=4, spend_30d=10, orders_30d=2)
+    assert svc._derive_product_priority(p3) == "P3"
+
+
+def test_run_product_analysis_keeps_rule_priority_when_material_rejected(monkeypatch):
+    product = _row(product_id=10, product_code="demo-rjc", spend_30d=400, orders_30d=40,
+                   revenue_30d=900, purchase_value_30d=800)
+    product["effective_breakeven_roas"] = 1.6  # 规则判定应为 P0
+    review_input = {
+        "current_date": "2026-06-12",
+        "product_brief": {"code": 0, "data": {"matrix": {"product_name": "Demo"}}, "message": ""},
+        "creator_brief": {},
+        "candidate_video": {},
+        "stage1_visual_brief": {},
+        "_adapter_notes": {"missing_modules": ["future_45d_trend"]},
+    }
+    monkeypatch.setattr(svc, "_build_material_review_input", lambda product, local, mk: review_input)
+
+    def fake_invoke(use_case, **kwargs):
+        return {"json": {
+            "final_decision": "不通过",
+            "quality_score": 20,
+            "score_breakdown": {},
+            "analysis_reason": {"final_judgment_reason": "候选素材质量不足，因此判断为不通过。"},
+            "material_plan": {"risk_alerts": [], "editing_plan": [], "hook_suggestions": [],
+                              "highlight_segments_to_move_forward": [],
+                              "copy_extraction": {"original_language": "unknown", "original_copy": "x",
+                                                  "english_translation": "x", "copy_source": "unknown"}},
+        }}
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+
+    mk = [{"material_key": "MK-1", "video_path": "p/v.mp4", "video_name": "v"}]
+    result = svc._run_product_analysis(
+        product, countries=[], local_materials=[], mk_materials=mk,
+        project_id=99, user_id=1, run_ai=True,
+    )
+
+    # 单素材评审不通过，但产品优先级仍由规则决定（不被降级为 P3/hold）
+    assert result["priority"] == "P0"
+    assert result["primary_action"] != "hold"
+    assert result["material_review_result"]["final_decision"] == "不通过"
+    assert result["material_review_result"]["reviewed_material_key"] == "MK-1"
+    rejected = [m for m in result.get("material_actions", []) if m.get("candidate_rejected")]
+    assert rejected, "不通过候选应被标记 candidate_rejected"
 
 
 def test_load_ad_rows_realtime_floor_excludes_daily_covered_days(monkeypatch):

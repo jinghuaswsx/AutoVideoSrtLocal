@@ -2246,6 +2246,28 @@ def _load_mingkong_materials(product_codes: list[str], per_product_limit: int = 
     return dict(grouped)
 
 
+def _derive_product_priority(product: Mapping[str, Any]) -> str:
+    """产品级优先级：用量 + 是否过保本线判定，与单条候选素材的评审分数无关。
+
+    保本线缺失时退化为绝对 ROAS >= 1.5。这是「这个产品值不值得投入素材产能」的
+    判断，独立于「某条候选素材该不该用」（后者由 material_review 决定）。
+    """
+    spend30 = _safe_float(product.get("spend_30d"))
+    orders30 = _safe_float(product.get("orders_30d"))
+    true_roas = _safe_float(product.get("true_roas_30d"))
+    breakeven = _safe_float(product.get("effective_breakeven_roas"))
+    roas_ok = true_roas >= breakeven if breakeven > 0 else true_roas >= 1.5
+
+    # P0 是「跑通的赚钱品」，必须过保本线；高量但亏损的品退到 P1（仍需重点关注，但动作是修而非扩）。
+    if spend30 >= 300 and orders30 >= 30 and roas_ok:
+        return "P0"
+    if spend30 >= 100 or orders30 >= 15:
+        return "P1"
+    if spend30 >= 50 or orders30 >= 8:
+        return "P2"
+    return "P3"
+
+
 def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict], mk_materials: list[dict]) -> dict:
     active = [c for c in countries if _safe_float(c.get("active_7d_ad_spend_usd")) > 0]
     strong = [c for c in countries if _safe_float(c.get("ad_spend_usd")) >= 30 and _safe_float(c.get("ad_roas")) >= 1.5]
@@ -2259,14 +2281,7 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
     orders30 = _safe_float(product.get("orders_30d"))
     true_roas = _safe_float(product.get("true_roas_30d"))
 
-    if spend30 >= 300 and orders30 >= 30 and true_roas >= 1.5:
-        priority = "P0"
-    elif spend30 >= 100 or orders30 >= 15:
-        priority = "P1"
-    elif spend30 >= 50 or orders30 >= 8:
-        priority = "P2"
-    else:
-        priority = "P3"
+    priority = _derive_product_priority(product)
 
     if strong and actionable_never:
         primary_action = "expand_country"
@@ -2329,6 +2344,31 @@ def _fallback_product_analysis(product: Mapping[str, Any], countries: list[dict]
     }
 
 
+def _mark_rejected_candidate(result: dict, reviewed_key: str) -> None:
+    """AI 评审判定首条候选素材「不通过」时，标记该素材建议，引导换候选。
+
+    不改变产品 priority / primary_action：评审否的是这条素材，不是整个产品的补素材动作。
+    """
+    note = "AI评审判定该候选素材不通过，建议改用其它明空候选或自制新素材。"
+    actions = result.get("material_actions") or []
+    marked = False
+    for action in actions:
+        if not reviewed_key or str(action.get("material_key") or "") == reviewed_key:
+            action["candidate_rejected"] = True
+            reason = str(action.get("reason") or "").strip()
+            action["reason"] = f"{reason}；{note}" if reason else note
+            marked = True
+            break
+    if not marked:
+        actions.append({
+            "action": "review_rejected",
+            "material_key": reviewed_key,
+            "candidate_rejected": True,
+            "reason": note,
+        })
+    result["material_actions"] = actions
+
+
 def _run_product_analysis(
     product: dict,
     countries: list[dict],
@@ -2379,6 +2419,8 @@ def _run_product_analysis(
             fallback["ai_error"] = "empty model response"
             return fallback
         fallback["mode"] = "ai"
+        reviewed_key = str((mk_materials[0] if mk_materials else {}).get("material_key") or "")
+        parsed["reviewed_material_key"] = reviewed_key
         fallback["material_review_input"] = review_input
         fallback["material_review_result"] = parsed
         fallback["material_review_prompt_debug"] = {
@@ -2388,20 +2430,13 @@ def _run_product_analysis(
             "prompt": _material_review_prompt(review_input),
             "response_text": result.get("text"),
         }
-        quality_score = _safe_int(parsed.get("quality_score"))
-        if quality_score >= 80:
-            fallback["priority"] = "P0"
-        elif quality_score >= 65:
-            fallback["priority"] = "P1"
-        elif quality_score >= 45:
-            fallback["priority"] = "P2"
-        else:
-            fallback["priority"] = "P3"
+        # 产品优先级是「产品值不值得补素材」，由 _derive_product_priority 的确定性规则决定；
+        # material_review 只回答「这条候选素材该不该用」，不再劫持 priority / primary_action。
         final_reason = ((parsed.get("analysis_reason") or {}).get("final_judgment_reason") or "").strip()
         if final_reason:
             fallback["overall_judgement"] = final_reason
         if parsed.get("final_decision") == "不通过":
-            fallback["primary_action"] = "hold"
+            _mark_rejected_candidate(fallback, reviewed_key)
         return fallback
     except Exception as exc:
         log.exception("Ad material AI analysis product analysis failed product_id=%s", product.get("product_id"))
