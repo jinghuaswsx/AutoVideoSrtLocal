@@ -42,6 +42,14 @@
 - 不改变广告费分摊逻辑。
 - 不改变订单利润公式，只增加可解释性字段和页面。
 
+## 实时利润行刷新
+
+实时大盘的采购成本、物流成本和保本 ROAS 必须以 `order_profit_lines` 为实际成本来源；只有订单利润行缺失或对应字段缺失时，才按 10% / 20% 规则估算。
+
+当 `get_realtime_roas_overview()` 请求包含 `include_profit_summary` 或 `include_details`，且日期范围覆盖当前未收盘业务日时，后端在读取利润汇总或利润明细前必须调用 `ensure_open_day_profit_lines_fresh(date_from, date_to)`。该调用复用现有 30 秒限流 open-day backfill，先把当天已进入 `dianxiaomi_order_lines` 且能匹配到实际采购/物流数据的订单刷新进 `order_profit_lines`，避免实时大盘把整天订单误判为 `p.id IS NULL` 并统一走估算。
+
+关闭日范围、未请求利润汇总/明细的轻量请求不触发刷新。
+
 ## 字段定义
 
 后端 `order_profit_summary` 新增：
@@ -156,6 +164,7 @@ pytest tests/test_order_analytics_realtime_profit_details.py \
 新增或扩展：
 
 - `_build_order_profit_summary` 输出估算比例字段。
+- `get_realtime_roas_overview()` 在单日和范围模式读取利润数据前刷新 open-day `order_profit_lines`。
 - 估算详情页登录态 200、未登录 302。
 - 估算详情数据接口正确透传 scope、分页和店铺参数。
 - 估算详情数据接口只返回有估算的订单，并聚合产品情况。

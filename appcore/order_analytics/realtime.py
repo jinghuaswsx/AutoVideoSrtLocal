@@ -3888,6 +3888,24 @@ def _build_realtime_overview_for_range(
     return res
 
 
+def _ensure_open_day_profit_lines_for_realtime(
+    date_from: date,
+    date_to: date,
+    *,
+    include_details: bool,
+    include_profit_summary: bool,
+) -> None:
+    """Keep realtime profit reads aligned with actual-cost backfill."""
+    if not (include_details or include_profit_summary):
+        return
+    try:
+        from ._open_day_freshness import ensure_open_day_profit_lines_fresh
+
+        ensure_open_day_profit_lines_fresh(date_from, date_to)
+    except Exception as exc:  # noqa: BLE001 - never break the dashboard
+        log.warning("realtime open-day profit lines refresh skipped: %s", exc)
+
+
 def get_realtime_roas_overview(
     date_text: str | None = None,
     now: datetime | None = None,
@@ -3939,6 +3957,12 @@ def get_realtime_roas_overview(
         if end < start:
             raise ValueError("end_date must be >= start_date")
         if start != end:
+            _ensure_open_day_profit_lines_for_realtime(
+                start,
+                end,
+                include_details=include_details,
+                include_profit_summary=include_profit_summary,
+            )
             return _attach_disabled_yesterday_same_time_comparison(
                 _build_realtime_overview_for_range(
                     start,
@@ -3963,6 +3987,12 @@ def get_realtime_roas_overview(
     target = _parse_iso_date_param(date_text, "date") if date_text else current_meta_business_date(now)
     day_start, day_end = compute_meta_business_window_bj(target)
     current_business_date = current_meta_business_date(now)
+    _ensure_open_day_profit_lines_for_realtime(
+        target,
+        target,
+        include_details=include_details,
+        include_profit_summary=include_profit_summary,
+    )
     if target == current_business_date:
         data_until = min(now, day_end)
         complete_hour_until = now.replace(minute=0, second=0, microsecond=0)

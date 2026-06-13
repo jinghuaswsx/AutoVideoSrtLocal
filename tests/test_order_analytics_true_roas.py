@@ -809,6 +809,34 @@ def test_get_realtime_roas_overview_range_can_return_profit_summary_without_deta
     ]
 
 
+def test_get_realtime_roas_overview_range_refreshes_open_day_profit_lines(monkeypatch):
+    refresh_calls = []
+
+    def fake_refresh(date_from, date_to, *, include_details, include_profit_summary):
+        refresh_calls.append((date_from, date_to, include_details, include_profit_summary))
+
+    def fake_range_overview(*_args, **_kwargs):
+        return {"summary": {}, "order_profit_summary": {}}
+
+    monkeypatch.setattr(
+        realtime_oa,
+        "_ensure_open_day_profit_lines_for_realtime",
+        fake_refresh,
+    )
+    monkeypatch.setattr(realtime_oa, "_build_realtime_overview_for_range", fake_range_overview)
+
+    oa.get_realtime_roas_overview(
+        start_date="2026-06-12",
+        end_date="2026-06-13",
+        now=datetime(2026, 6, 13, 18, 0),
+        include_details=True,
+    )
+
+    assert refresh_calls == [
+        (date(2026, 6, 12), date(2026, 6, 13), True, False)
+    ]
+
+
 def test_get_realtime_roas_overview_range_subtracts_unallocated_ad_spend(monkeypatch):
     """range 模式：summary.ad_spend 大于已分摊 → 利润扣未分摊。"""
     def fake_query(sql, args=()):
@@ -1113,6 +1141,30 @@ def test_get_realtime_roas_overview_single_day_includes_order_profit_details(mon
 
     assert "order_profit_details" in result
     assert result["order_profit_details"] == []
+
+
+def test_get_realtime_roas_overview_single_day_refreshes_open_day_profit_lines(monkeypatch):
+    refresh_calls = []
+
+    def fake_refresh(date_from, date_to, *, include_details, include_profit_summary):
+        refresh_calls.append((date_from, date_to, include_details, include_profit_summary))
+
+    monkeypatch.setattr(
+        realtime_oa,
+        "_ensure_open_day_profit_lines_for_realtime",
+        fake_refresh,
+    )
+    monkeypatch.setattr(oa, "query", lambda _sql, _args=(): [])
+
+    oa.get_realtime_roas_overview(
+        "2026-06-13",
+        now=datetime(2026, 6, 13, 18, 0),
+        include_profit_summary=True,
+    )
+
+    assert refresh_calls == [
+        (date(2026, 6, 13), date(2026, 6, 13), False, True)
+    ]
 
 
 def test_get_realtime_roas_overview_current_day_ignores_future_roas_nodes(monkeypatch):
