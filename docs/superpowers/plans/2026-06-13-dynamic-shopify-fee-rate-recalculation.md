@@ -1178,7 +1178,7 @@ git commit -m "feat: allocate resolved shopify fees in profit calculation" -m "D
 - Modify: `appcore/order_analytics/profit_repository.py`
 - Modify: `tests/test_profit_repository.py`
 
-- [ ] **Step 5.1: Add repository test for new columns**
+- [x] **Step 5.1: Add repository test for new columns**
 
 Append to `tests/test_profit_repository.py`:
 
@@ -1228,7 +1228,7 @@ def test_upsert_profit_line_persists_shopify_fee_trace_columns(monkeypatch):
     assert "dynamic_region_rate" in executed["values"]
 ```
 
-- [ ] **Step 5.2: Run repository test and confirm failure**
+- [x] **Step 5.2: Run repository test and confirm failure**
 
 Run:
 
@@ -1238,7 +1238,7 @@ pytest tests/test_profit_repository.py::test_upsert_profit_line_persists_shopify
 
 Expected: FAIL because `_PROFIT_LINE_COLUMNS` does not include the new columns.
 
-- [ ] **Step 5.3: Extend `_PROFIT_LINE_COLUMNS`**
+- [x] **Step 5.3: Extend `_PROFIT_LINE_COLUMNS`**
 
 In `appcore/order_analytics/profit_repository.py`, append these columns after `source_run_id`:
 
@@ -1251,7 +1251,7 @@ In `appcore/order_analytics/profit_repository.py`, append these columns after `s
     "shopify_fee_basis_json",
 ```
 
-- [ ] **Step 5.4: Extend `values`**
+- [x] **Step 5.4: Extend `values`**
 
 In `upsert_profit_line`, append:
 
@@ -1268,7 +1268,7 @@ In `upsert_profit_line`, append:
         ),
 ```
 
-- [ ] **Step 5.5: Run repository tests**
+- [x] **Step 5.5: Run repository tests**
 
 Run:
 
@@ -1278,7 +1278,7 @@ pytest tests/test_profit_repository.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5.6: Commit**
+- [x] **Step 5.6: Commit**
 
 ```bash
 git add appcore/order_analytics/profit_repository.py tests/test_profit_repository.py

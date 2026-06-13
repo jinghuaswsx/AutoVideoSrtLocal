@@ -38,6 +38,12 @@ _PROFIT_LINE_COLUMNS = (
     "shipping_cost_usd", "return_reserve_usd",
     "profit_usd", "status", "missing_fields", "cost_basis",
     "source_run_id",
+    "shopify_fee_source",
+    "shopify_fee_rate",
+    "shopify_fee_rate_region",
+    "shopify_fee_rate_window_start",
+    "shopify_fee_rate_window_end",
+    "shopify_fee_basis_json",
 )
 
 
@@ -80,6 +86,16 @@ def upsert_profit_line(
         json.dumps(line_result.get("missing_fields") or [], ensure_ascii=False),
         json.dumps(line_result.get("cost_basis") or {}, ensure_ascii=False, default=str),
         source_run_id,
+        line_result.get("shopify_fee_source"),
+        line_result.get("shopify_fee_rate"),
+        line_result.get("shopify_fee_rate_region"),
+        line_result.get("shopify_fee_rate_window_start"),
+        line_result.get("shopify_fee_rate_window_end"),
+        json.dumps(
+            (line_result.get("cost_basis") or {}).get("shopify_fee_basis") or {},
+            ensure_ascii=False,
+            default=str,
+        ),
     )
 
     placeholders = ", ".join(["%s"] * len(_PROFIT_LINE_COLUMNS))
