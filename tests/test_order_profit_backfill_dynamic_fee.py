@@ -39,12 +39,23 @@ def test_should_skip_line_before_dynamic_effective_at(monkeypatch):
     monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-06-13T09:00:00+08:00")
 
     assert backfill._should_skip_for_dynamic_fee_boundary(
+        {"order_paid_at": datetime(2026, 6, 12, 23, 59, 59), "existing_profit_line_id": 9}
+    )
+    assert not backfill._should_skip_for_dynamic_fee_boundary(
         {"order_paid_at": datetime(2026, 6, 12, 23, 59, 59)}
     )
     assert not backfill._should_skip_for_dynamic_fee_boundary(
-        {"order_paid_at": datetime(2026, 6, 13, 1, 0, 0)}
+        {"order_paid_at": datetime(2026, 6, 13, 1, 0, 0), "existing_profit_line_id": 9}
     )
     assert backfill._should_skip_for_dynamic_fee_boundary(
+        {
+            "order_paid_at": None,
+            "attribution_time_at": None,
+            "order_created_at": None,
+            "existing_profit_line_id": 9,
+        }
+    )
+    assert not backfill._should_skip_for_dynamic_fee_boundary(
         {"order_paid_at": None, "attribution_time_at": None, "order_created_at": None}
     )
 
@@ -138,12 +149,14 @@ def test_backfill_skips_pre_effective_package_once_without_rewriting_history(mon
             dxm_package_id="PKG-LEGACY",
             line_amount=Decimal("40.00"),
             order_paid_at=datetime(2026, 6, 12, 23, 59, 59),
+            existing_profit_line_id=901,
         ),
         _line(
             dxm_order_line_id=3002,
             dxm_package_id="PKG-LEGACY",
             line_amount=Decimal("60.00"),
             order_paid_at=datetime(2026, 6, 12, 23, 59, 59),
+            existing_profit_line_id=902,
         ),
     ]
     upserts: list[dict] = []
@@ -184,6 +197,7 @@ def test_backfill_skips_pre_effective_order_once_when_package_id_missing(monkeyp
             extended_order_id="#LEGACY",
             line_amount=Decimal("40.00"),
             order_paid_at=datetime(2026, 6, 12, 23, 59, 59),
+            existing_profit_line_id=911,
         ),
         _line(
             dxm_order_line_id=3102,
@@ -192,6 +206,7 @@ def test_backfill_skips_pre_effective_order_once_when_package_id_missing(monkeyp
             extended_order_id="#LEGACY",
             line_amount=Decimal("60.00"),
             order_paid_at=datetime(2026, 6, 12, 23, 59, 59),
+            existing_profit_line_id=912,
         ),
     ]
     upserts: list[dict] = []
@@ -220,20 +235,32 @@ def test_backfill_skips_pre_effective_order_once_when_package_id_missing(monkeyp
     assert result["totals"]["legacy_fee_boundary_skipped"] == 1
 
 
-def test_backfill_skips_all_lines_when_dynamic_effective_at_unconfigured(monkeypatch):
+def test_backfill_processes_missing_profit_lines_when_dynamic_effective_at_unconfigured(monkeypatch):
     monkeypatch.delenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", raising=False)
     monkeypatch.setattr("config.Config.SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "", raising=False)
     lines = [_line(order_paid_at=datetime(2026, 6, 13, 10, 0, 0))]
+    upserts: list[dict] = []
+    process_calls: list[int] = []
 
     monkeypatch.setattr(backfill, "query", lambda sql, params=(): lines)
     monkeypatch.setattr(backfill, "start_profit_run", lambda **kwargs: 123)
     monkeypatch.setattr(backfill, "finish_profit_run", lambda **kwargs: None)
     monkeypatch.setattr(backfill, "get_unallocated_ad_spend", lambda **kwargs: 0)
-    monkeypatch.setattr(
-        backfill,
-        "_process_line",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("_process_line called")),
-    )
+    monkeypatch.setattr(backfill, "upsert_profit_line", lambda result, **kwargs: upserts.append(result))
+
+    def fake_process_line(line, **kwargs):
+        process_calls.append(line["dxm_order_line_id"])
+        return (
+            {
+                "status": "ok",
+                "dxm_order_line_id": line["dxm_order_line_id"],
+                "profit_usd": 1,
+                "missing_fields": [],
+            },
+            line["meta_business_date"],
+        )
+
+    monkeypatch.setattr(backfill, "_process_line", fake_process_line)
 
     result = backfill.backfill(
         date(2026, 6, 13),
@@ -243,8 +270,11 @@ def test_backfill_skips_all_lines_when_dynamic_effective_at_unconfigured(monkeyp
         return_reserve_rate=Decimal("0.01"),
     )
 
-    assert result["totals"]["lines_total"] == 0
-    assert result["totals"]["legacy_fee_boundary_skipped"] == 1
+    assert process_calls == [1001]
+    assert len(upserts) == 1
+    assert result["totals"]["lines_total"] == 1
+    assert result["totals"]["lines_ok"] == 1
+    assert result["totals"]["legacy_fee_boundary_skipped"] == 0
 
 
 def test_backfill_resolves_fee_once_per_package_and_reuses_result(monkeypatch):

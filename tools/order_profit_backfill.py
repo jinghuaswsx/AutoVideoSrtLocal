@@ -68,9 +68,11 @@ _LINE_QUERY = (
     "       COALESCE(d.purchase_price_cny, m.purchase_price) AS purchase_price, "
     "       d.purchase_price_cny AS purchase_price_snapshot_cny, "
     "       d.purchase_price_at  AS purchase_price_snapshot_at, "
-    "       m.packet_cost_actual, m.packet_cost_estimated "
+    "       m.packet_cost_actual, m.packet_cost_estimated, "
+    "       p.id AS existing_profit_line_id "
     "FROM dianxiaomi_order_lines d "
     "LEFT JOIN media_products m ON m.id = d.product_id "
+    "LEFT JOIN order_profit_lines p ON p.dxm_order_line_id = d.id "
     "WHERE d.meta_business_date BETWEEN %s AND %s "
     "ORDER BY d.id"
 )
@@ -207,7 +209,9 @@ def _resolve_order_time(line: dict) -> datetime | None:
 
 def _should_skip_for_dynamic_fee_boundary(line: dict) -> bool:
     if _parse_dynamic_fee_effective_at() is None:
-        return True
+        return False
+    if not line.get("existing_profit_line_id"):
+        return False
     order_time = _resolve_order_time(line)
     if order_time is None:
         return True

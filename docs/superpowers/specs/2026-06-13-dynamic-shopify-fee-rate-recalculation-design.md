@@ -58,7 +58,7 @@ SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT
 `SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT` 为空、非法，或订单没有可比较的订单时间时，动态手续费逻辑视为未启用：
 
 - 实时大盘未核算订单继续使用策略 C，不得静默启用真实 fee 或动态快照。
-- 订单利润增量/回填不得覆盖这些订单的历史手续费口径。
+- 订单利润增量/回填不得覆盖这些订单已有的历史手续费口径；如果订单还没有 `order_profit_lines`，仍必须写入利润行并使用策略 C 口径，避免采购/物流实际成本被误判为整单缺失。
 - 发布时可通过清空或设置未来时间来保证“从现在开始”边界。
 
 订单时间取值顺序沿用当前实时大盘口径：
@@ -71,6 +71,7 @@ COALESCE(order_paid_at, attribution_time_at, order_created_at)
 
 - 已有历史 `order_profit_lines` 保持不变。
 - 增量任务再次扫到该订单时，不覆盖其 `shopify_fee_usd` 和利润结果。
+- 没有历史 `order_profit_lines` 的订单仍按旧策略 C 建立利润行，采购成本和物流成本继续按“有实际用实际，缺失才估算”的规则进入 `order_profit_lines`。
 - 查询展示时可把来源视为 `legacy_strategy_c` 或空来源。
 - 新 resolver 返回策略 C 兜底结果，并在 trace 中说明 `dynamic_fee_not_effective`。
 
@@ -210,7 +211,7 @@ Payments CSV 导入后：
 
 订单利润增量任务：
 
-- 对 `paid_at < SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT` 的已有利润行跳过覆盖。
+- 对 `paid_at < SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT` 的已有利润行跳过覆盖；对尚未写入利润行的订单使用策略 C 建立利润行。
 - 对生效后的订单，按新 resolver 写入手续费和来源字段。
 - `order_profit_runs.summary_json` 记录策略版本、快照窗口和来源计数。
 
