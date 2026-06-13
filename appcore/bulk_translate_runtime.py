@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import tempfile
 import time
 import uuid
@@ -63,6 +64,110 @@ def _positive_int_or_none(value) -> int | None:
     except (TypeError, ValueError):
         return None
     return normalized if normalized > 0 else None
+
+
+def _clean_context_value(value) -> str:
+    return str(value or "").strip()
+
+
+def _first_context_value(row: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = _clean_context_value(row.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _split_context_items(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        try:
+            decoded = json.loads(raw)
+        except Exception:
+            decoded = None
+        if isinstance(decoded, (list, tuple, set)):
+            pieces = decoded
+        else:
+            pieces = re.split(r"[\n\r;；,，|]+", raw)
+    elif isinstance(value, dict):
+        pieces = value.values()
+    elif isinstance(value, (list, tuple, set)):
+        pieces = value
+    else:
+        pieces = [value]
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for piece in pieces:
+        text = _clean_context_value(piece)
+        if not text or text in seen:
+            continue
+        result.append(text)
+        seen.add(text)
+    return result
+
+
+def _target_lang_product_name(product_id: int, target_lang: str) -> str:
+    try:
+        rows = medias.list_copywritings(product_id, target_lang) or []
+    except Exception:
+        log.warning(
+            "bulk product_context target copy query failed product_id=%s lang=%s",
+            product_id,
+            target_lang,
+            exc_info=True,
+        )
+        return ""
+    for row in rows:
+        name = _first_context_value(row, ("title", "product_name", "name", "ad_carrier"))
+        if name:
+            return name
+    return ""
+
+
+def _build_product_context(product_id: int, target_lang: str) -> dict | None:
+    if int(product_id or 0) <= 0:
+        return None
+    try:
+        product = medias.get_product(int(product_id)) or {}
+    except Exception:
+        log.warning(
+            "bulk product_context product query failed product_id=%s lang=%s",
+            product_id,
+            target_lang,
+            exc_info=True,
+        )
+        return None
+    if not product:
+        return None
+
+    context: dict[str, object] = {}
+    name = _first_context_value(product, ("name", "product_name", "shopify_title"))
+    if name:
+        context["name"] = name
+    target_name = _target_lang_product_name(int(product_id), target_lang)
+    if target_name:
+        context["name_target_lang"] = target_name
+    category = _first_context_value(
+        product,
+        ("category", "category_name", "category_l1_name_zh", "category_l1_name"),
+    )
+    if category:
+        context["category"] = category
+    selling_points = _split_context_items(product.get("selling_points"))
+    if selling_points:
+        context["selling_points"] = selling_points
+    brand_terms = _split_context_items(
+        product.get("brand_terms") or product.get("brand") or product.get("brand_name")
+    )
+    if brand_terms:
+        context["brand_terms"] = brand_terms
+
+    return context or None
 
 
 def _download_media_source_to(object_key: str, destination: str) -> str:
@@ -1466,6 +1571,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
     ext = Path(source_name).suffix or ".mp4"
     video_path = os.path.join(UPLOAD_DIR, f"{child_task_id}{ext}")
     _download_media_source_to(source_media_object_key, video_path)
+    product_context = _build_product_context(product_id, lang)
 
     store.create(
         child_task_id,
@@ -1509,6 +1615,7 @@ def _create_video_child(parent_id: str, item: dict, parent_state: dict) -> tuple
             "source_media_object_key": source_media_object_key,
             "target_lang": lang,
         },
+        **({"product_context": product_context} if product_context else {}),
     )
     store.set_preview_file(child_task_id, "source_video", video_path)
     runner_dispatch.start_omni_translate_runner(child_task_id, user_id=user_id)

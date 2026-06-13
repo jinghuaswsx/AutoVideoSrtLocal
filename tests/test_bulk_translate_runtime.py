@@ -70,6 +70,8 @@ def runtime_env(monkeypatch):
     monkeypatch.setattr(mod, "execute", fake_db.execute)
     monkeypatch.setattr(mod, "query_one", fake_db.query_one)
     monkeypatch.setattr(mod, "query", lambda *args, **kwargs: [])
+    monkeypatch.setattr(mod.medias, "get_product", lambda product_id: None)
+    monkeypatch.setattr(mod.medias, "list_copywritings", lambda product_id, lang: [])
     monkeypatch.setattr(
         mod,
         "do_estimate",

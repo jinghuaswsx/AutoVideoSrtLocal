@@ -209,6 +209,7 @@ def _generate_localized_translation_single(
     provider_override: str | None = None,
     model_override: str | None = None,
     source_language: str = "zh",
+    batch_context: str | None = None,
 ) -> dict:
     """Single-shot translation: original logic, no batching. Used directly for
     short videos and as the per-batch primitive for long-video batching."""
@@ -219,6 +220,7 @@ def _generate_localized_translation_single(
         variant=variant,
         custom_system_prompt=custom_system_prompt,
         source_language=source_language,
+        batch_context=batch_context,
     )
 
     payload, usage = _invoke_chat_for_use_case(
@@ -283,6 +285,22 @@ def _generate_localized_translation_batched(
             continue
         log.info("localized_translation batch %d/%d (n=%d)",
                  batch_idx + 1, len(batches), len(batch))
+        batch_context = None
+        if batch_idx > 0 and all_sentences:
+            tail = " ".join(
+                (s.get("text") or "").strip()
+                for s in all_sentences[-3:]
+                if (s.get("text") or "").strip()
+            )
+            src = source_full_text_zh or ""
+            if len(src) > 4000:
+                src = src[:2000] + "\n...\n" + src[-1000:]
+            batch_context = (
+                "GLOBAL CONTEXT (for consistency; translate ONLY the segments above):\n"
+                f"Full source script:\n{src}\n\n"
+                "Previous batch translation (continue seamlessly from here, keep "
+                f"terminology and tone consistent):\n{tail}"
+            )
         batch_source_text = "\n".join(
             (s.get("text") or "").strip() for s in batch if (s.get("text") or "").strip()
         )
@@ -293,6 +311,7 @@ def _generate_localized_translation_batched(
             provider_override=provider_override,
             model_override=model_override,
             source_language=source_language,
+            batch_context=batch_context,
         )
         batch_indices = [int(s["index"]) for s in batch]
         _normalize_batch_source_indices(batch_result.get("sentences") or [], batch_indices)
