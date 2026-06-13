@@ -195,6 +195,10 @@ def _progress_update(
         "logs": logs[-_PROGRESS_LOG_LIMIT:],
         "updated_at": now,
     })
+    # 运行中每次 checkpoint 都刷新心跳，供页面判断执行线程是否仍在推进（断电接管依据）
+    if project_status == "running":
+        progress["runner_state"] = "running"
+        progress["runner_heartbeat_at"] = now
     return progress
 
 
@@ -333,6 +337,22 @@ def _to_date(value: Any) -> date | None:
         return datetime.strptime(raw[:10], "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def _to_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw[:26], fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def _iso(value: Any) -> str | None:
@@ -3093,6 +3113,187 @@ def run_project(project_id: int, *, user_id: int | None = None, run_ai: bool = T
         _release_project_lock(lock_conn)
 
 
+_STALE_HEARTBEAT_SECONDS = 600
+
+
+def _resume_checkpoint_state(row: Mapping[str, Any], progress: Mapping[str, Any]) -> tuple[bool, str]:
+    """判断 running 项目是否已无活跃执行器、可被管理员「继续未完成」接管。"""
+    status = str(row.get("status") or "").lower()
+    if status in {"interrupted", "failed"}:
+        return True, "项目已中断，可继续未完成。"
+    if status != "running":
+        return False, ""
+    runner_state = str(progress.get("runner_state") or "").lower()
+    if runner_state in {"resume_scheduled", "checkpoint_resume_scheduled", "manual_resume_scheduled", "queued"}:
+        return True, "已排队恢复但执行线程未推进，可重新接管。"
+    heartbeat = _to_datetime(progress.get("runner_heartbeat_at")) or _to_datetime(row.get("updated_at"))
+    if heartbeat is None:
+        return True, "运行心跳缺失，可继续未完成。"
+    if (datetime.now() - heartbeat).total_seconds() > _STALE_HEARTBEAT_SECONDS:
+        return True, "运行心跳超过 10 分钟未更新，可继续未完成。"
+    return False, ""
+
+
+def mark_project_interrupted(
+    project_id: int,
+    *,
+    reason: str = "startup_resume_failed",
+    message: str = "任务中断，等待人工从项目详情继续未完成。",
+) -> dict | None:
+    """把 stale running 项目落到 interrupted 终态，避免留下没有执行器的假运行中。"""
+    project_id = _safe_int(project_id)
+    if not project_id:
+        return None
+    row = _load_project_row(project_id)
+    if not row:
+        return None
+    progress = _normalize_progress(_json_loads(row.get("progress_json"), {}) or {}, message=message)
+    current_step = str(progress.get("current_step") or "snapshot")
+    progress = _progress_update(
+        progress,
+        step_key=current_step if current_step != "queued" else "snapshot",
+        step_status="failed",
+        percent=_safe_float(progress.get("percent")),
+        message=message,
+        project_status="interrupted",
+        level="error",
+    )
+    progress["runner_state"] = "interrupted"
+    recovery = dict(progress.get("recovery") or {})
+    recovery.update({"reason": reason, "status": "interrupted", "interrupted_at": _now_iso()})
+    progress["recovery"] = recovery
+    db.execute(
+        """
+        UPDATE ad_material_ai_analysis_projects
+        SET status = 'interrupted', error_message = %s, progress_json = %s,
+            finished_at = NOW(), updated_at = NOW()
+        WHERE id = %s AND status = 'running'
+        """,
+        (message, _json_dumps(progress), project_id),
+    )
+    return get_project(project_id)
+
+
+def mark_startup_interrupted_project_for_recovery() -> dict | None:
+    """服务启动时把最新 running 项目标记为待恢复，其余 running 落 interrupted。
+
+    返回待自动恢复的项目（保持 running + runner_state=resume_scheduled）；无 running 返回 None。
+    Docs anchor: docs/superpowers/specs/2026-06-09-ai-material-strategist-project-design.md#2026-06-11-断电续传收口
+    """
+    lock_conn = _with_project_lock(timeout_seconds=0)
+    if lock_conn is None:
+        log.info("Ad material AI analysis startup recovery skipped; runner lock busy")
+        return None
+    try:
+        row = db.query_one(
+            """
+            SELECT id, user_id, progress_json, updated_at
+            FROM ad_material_ai_analysis_projects
+            WHERE status = 'running'
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+            """
+        )
+        if not row:
+            return None
+        project_id = _safe_int(row.get("id"))
+        if not project_id:
+            return None
+        now = _now_iso()
+        progress = _normalize_progress(
+            _json_loads(row.get("progress_json"), {}) or {},
+            message="检测到服务重启，准备从断点自动恢复。",
+        )
+        current_step = str(progress.get("current_step") or "snapshot")
+        progress = _progress_update(
+            progress,
+            step_key=current_step if current_step != "queued" else "snapshot",
+            step_status="running",
+            percent=_safe_float(progress.get("percent")),
+            message="检测到服务重启导致运行线程中断，已加入自动恢复队列。",
+            project_status="running",
+            level="warning",
+        )
+        progress["runner_state"] = "resume_scheduled"
+        recovery = dict(progress.get("recovery") or {})
+        recovery.update({
+            "reason": "service_restart", "status": "scheduled",
+            "detected_at": now, "project_id": project_id, "auto_resume": True,
+        })
+        progress["recovery"] = recovery
+        affected = db.execute(
+            """
+            UPDATE ad_material_ai_analysis_projects
+            SET progress_json = %s, error_message = NULL, finished_at = NULL, updated_at = NOW()
+            WHERE id = %s AND status = 'running'
+            """,
+            (_json_dumps(progress), project_id),
+        )
+        if affected <= 0:
+            return None
+        try:
+            _mark_other_running_projects_interrupted(project_id)
+        except Exception:
+            log.warning("startup recovery failed to interrupt older running projects: project_id=%s",
+                        project_id, exc_info=True)
+        return get_project(project_id)
+    finally:
+        _release_project_lock(lock_conn)
+
+
+def resume_project_checkpoint(project_id: int, *, user_id: int | None = None) -> dict:
+    """「继续未完成」：复用同一 project_id，保留快照/排名/已落库产品结果，从断点重新排队。
+
+    必须先抢单任务锁；锁忙说明真实执行器仍在运行，抛 ProjectAlreadyRunningError。
+    """
+    project_id = _safe_int(project_id)
+    if not project_id:
+        raise ValueError("投放素材AI分析项目不存在：0")
+    lock_conn = _with_project_lock(timeout_seconds=0)
+    if lock_conn is None:
+        raise ProjectAlreadyRunningError(get_project(project_id))
+    try:
+        row = _load_project_row(project_id)
+        if not row:
+            raise ValueError(f"投放素材AI分析项目不存在：{project_id}")
+        if str(row.get("status") or "").lower() == "success":
+            return get_project(project_id) or {"id": project_id, "status": "success"}
+        now = _now_iso()
+        progress = _normalize_progress(
+            _json_loads(row.get("progress_json"), {}) or {},
+            message="已选择继续未完成项目，保留已完成产品结果并重新排队。",
+        )
+        progress["status"] = "running"
+        progress["runner_state"] = "manual_resume_scheduled"
+        progress["runner_heartbeat_at"] = None
+        recovery = dict(progress.get("recovery") or {})
+        recovery.update({
+            "reason": "manual_checkpoint_resume", "status": "scheduled",
+            "scheduled_at": now, "project_id": project_id, "auto_resume": False,
+        })
+        if user_id is not None:
+            recovery["user_id"] = user_id
+        progress["recovery"] = recovery
+        logs = list(progress.get("logs") or [])
+        logs.append({"time": now, "level": "warning",
+                     "message": "已选择继续未完成项目，保留已完成产品结果并重新排队。"})
+        progress["logs"] = logs[-_PROGRESS_LOG_LIMIT:]
+        progress["updated_at"] = now
+        db.execute(
+            """
+            UPDATE ad_material_ai_analysis_projects
+            SET status = 'running', error_message = NULL, finished_at = NULL,
+                progress_json = %s, updated_at = NOW()
+            WHERE id = %s
+            """,
+            (_json_dumps(progress), project_id),
+        )
+        _mark_other_running_projects_interrupted(project_id)
+        return get_project(project_id) or {"id": project_id, "status": "running"}
+    finally:
+        _release_project_lock(lock_conn)
+
+
 def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: bool = True) -> dict:
     user_id = _resolve_billing_user_id(user_id)
     project_row = _prepare_project_for_run(project_id)
@@ -3506,6 +3707,7 @@ def _serialize_project_row(row: Mapping[str, Any], *, include_products: bool) ->
     progress = _json_loads(row.get("progress_json"), {}) or {}
     if not progress and status == "running":
         progress = _initial_progress(message="项目正在运行，等待后台写入详细进度。")
+    can_resume, resume_reason = _resume_checkpoint_state(row, progress)
     out = {
         "id": _safe_int(row.get("id")),
         "project_name": row.get("project_name") or "",
@@ -3518,6 +3720,8 @@ def _serialize_project_row(row: Mapping[str, Any], *, include_products: bool) ->
         "summary": _json_loads(row.get("summary_json"), {}) or {},
         "progress": progress,
         "error_message": row.get("error_message") or "",
+        "can_resume_checkpoint": can_resume,
+        "resume_checkpoint_reason": resume_reason,
         "started_at": _iso(row.get("started_at")),
         "finished_at": _iso(row.get("finished_at")),
         "created_at": _iso(row.get("created_at")),

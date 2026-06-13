@@ -198,6 +198,34 @@ def api_delete_project(project_id: int):
     return _json({"success": False, "message": "删除失败", "reason": reason}, 500)
 
 
+@bp.route("/api/projects/<int:project_id>/resume", methods=["POST"])
+@login_required
+@admin_required
+def api_resume_project(project_id: int):
+    """继续未完成项目：复用同一 project_id 从断点重新排队执行。"""
+    try:
+        project = service.resume_project_checkpoint(project_id, user_id=_current_user_id())
+    except service.ProjectAlreadyRunningError as exc:
+        running = exc.project or service.get_running_project() or {}
+        return _json({
+            "success": False,
+            "message": "当前已有执行器在运行该项目，无需重复恢复。",
+            "running_project": running,
+            "project": running,
+        }, 409)
+    except ValueError:
+        abort(404)
+    if not project:
+        abort(404)
+    if str(project.get("status") or "") != "success":
+        start_background_task(
+            service.run_project,
+            int(project["id"]),
+            user_id=_current_user_id(),
+        )
+    return _json({"success": True, "project": project}, 202)
+
+
 @bp.route("/api/projects/<int:project_id>/share", methods=["POST"])
 @login_required
 @admin_required

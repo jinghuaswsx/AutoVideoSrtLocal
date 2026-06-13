@@ -116,6 +116,53 @@ def test_video_analyse_ai_public_share_api_returns_sanitized_project_without_log
     assert local_video == "/medias/obj/tasks/12/medias/test.mp4"
 
 
+def test_video_analyse_ai_resume_project_requires_login(authed_client_no_db):
+    raw_client = authed_client_no_db.application.test_client()
+    response = raw_client.post("/video-analyse-ai/api/projects/7/resume")
+    assert response.status_code == 302
+
+
+def test_video_analyse_ai_resume_project_starts_background_job(authed_client_no_db, monkeypatch):
+    calls = {}
+    monkeypatch.setattr(
+        "web.routes.video_analyse_ai.service.resume_project_checkpoint",
+        lambda project_id, user_id=None: {"id": project_id, "status": "running"},
+    )
+
+    def fake_start_background_task(target, *args, **kwargs):
+        calls["args"] = args
+        calls["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(
+        "web.routes.video_analyse_ai.start_background_task",
+        fake_start_background_task,
+    )
+
+    response = authed_client_no_db.post("/video-analyse-ai/api/projects/7/resume")
+    assert response.status_code == 202
+    assert response.get_json()["project"]["id"] == 7
+    assert calls["args"] == (7,)
+
+
+def test_video_analyse_ai_resume_project_conflict_when_runner_busy(authed_client_no_db, monkeypatch):
+    running = {"id": 5, "status": "running"}
+
+    def fake_resume(project_id, user_id=None):
+        raise ProjectAlreadyRunningError(running)
+
+    monkeypatch.setattr(
+        "web.routes.video_analyse_ai.service.resume_project_checkpoint",
+        fake_resume,
+    )
+
+    response = authed_client_no_db.post("/video-analyse-ai/api/projects/5/resume")
+    assert response.status_code == 409
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["running_project"]["id"] == 5
+
+
 def test_video_analyse_ai_delete_project(authed_client_no_db, monkeypatch):
     deleted_calls = []
 

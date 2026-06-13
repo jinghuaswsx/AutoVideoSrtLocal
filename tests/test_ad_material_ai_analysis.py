@@ -546,6 +546,45 @@ def _plan_result(rank_no, product_id, code, priority, country_reviews, country_s
     }
 
 
+def test_resume_checkpoint_state_detects_stale_and_interrupted():
+    from datetime import datetime, timedelta
+
+    # 1. interrupted 项目可继续
+    can, _ = svc._resume_checkpoint_state({"status": "interrupted", "updated_at": None}, {})
+    assert can is True
+
+    # 2. running + 已排队但未推进 → 可接管
+    can, _ = svc._resume_checkpoint_state(
+        {"status": "running"}, {"runner_state": "resume_scheduled"})
+    assert can is True
+
+    # 3. running + 新鲜心跳 → 不可接管
+    fresh = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    can, _ = svc._resume_checkpoint_state(
+        {"status": "running"}, {"runner_state": "running", "runner_heartbeat_at": fresh})
+    assert can is False
+
+    # 4. running + 心跳超 10 分钟 → 可接管
+    stale = (datetime.now() - timedelta(minutes=11)).strftime("%Y-%m-%d %H:%M:%S")
+    can, _ = svc._resume_checkpoint_state(
+        {"status": "running"}, {"runner_state": "running", "runner_heartbeat_at": stale})
+    assert can is True
+
+    # 5. success 项目不可继续
+    can, _ = svc._resume_checkpoint_state({"status": "success"}, {})
+    assert can is False
+
+
+def test_progress_update_running_writes_heartbeat():
+    progress = svc._initial_progress(message="queued")
+    updated = svc._progress_update(
+        progress, step_key="snapshot", step_status="running",
+        percent=10, message="跑起来了", project_status="running",
+    )
+    assert updated["runner_state"] == "running"
+    assert updated["runner_heartbeat_at"]
+
+
 def test_build_supplement_plan_orders_and_picks_materials():
     # 产品 A: P1, DE supplement(70) + IT expand(60); 产品 B: P0, FR supplement(85)
     product_a = _plan_result(
