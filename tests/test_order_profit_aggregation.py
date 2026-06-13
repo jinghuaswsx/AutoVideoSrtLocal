@@ -1231,14 +1231,22 @@ def test_list_order_profit_lines_queries_by_filter(monkeypatch):
 
 def test_loss_alerts_sum_negative_profit(monkeypatch):
     def fake_query(sql, args=()):
-        assert "profit_usd < 0" in sql
-        assert args == (date(2026, 5, 1), date(2026, 5, 2), 10)
-        return [
-            {"product_id": 1, "profit_usd": -2.25},
-            {"product_id": 2, "profit_usd": -1.25},
-        ]
+        if "FROM order_profit_lines p" in sql and "p.status='ok'" in sql:
+            assert "profit_usd < 0" not in sql
+            assert args == (date(2026, 5, 1), date(2026, 5, 2))
+            return [
+                {"id": 1, "product_id": 1, "profit_usd": -2.25, "ad_cost_usd": 1.0},
+                {"id": 2, "product_id": 2, "profit_usd": -1.25, "ad_cost_usd": 1.0},
+                {"id": 3, "product_id": 3, "profit_usd": 4.0, "ad_cost_usd": 1.0},
+            ]
+        return []
 
     monkeypatch.setattr(oa, "query", fake_query)
+    monkeypatch.setattr(
+        opa,
+        "_load_realtime_ad_cost_adjustments",
+        lambda **kwargs: {"line_deltas": {}, "package_deltas": {}, "status_deltas": {}},
+    )
 
     payload = get_order_profit_loss_alerts(
         date_from=date(2026, 5, 1),

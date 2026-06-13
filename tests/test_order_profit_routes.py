@@ -9,6 +9,7 @@ def _stub_data_quality(monkeypatch):
         date_to,
         allocated_ad_spend_usd=None,
         unallocated_ad_spend_usd=None,
+        product_id=None,
     ):
         return {
             "status": "ok",
@@ -62,7 +63,9 @@ def test_order_profit_orders_includes_data_quality(authed_client_no_db, monkeypa
         ],
     )
     monkeypatch.setattr(
-        route, "get_order_profit_summary_for_window", lambda **kw: {"total_orders": 2}
+        route,
+        "get_order_profit_summary_for_window",
+        lambda **kw: {"total_orders": 2, "allocated_ad_spend_usd": 50.5},
     )
 
     resp = authed_client_no_db.get(
