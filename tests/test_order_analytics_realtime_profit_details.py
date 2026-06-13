@@ -594,10 +594,70 @@ def test_build_order_profit_summary_uses_estimates_for_missing_costs():
     assert summary["has_estimated_costs"] is True
     assert summary["shopify_fee_total_usd"] == 13.0
     assert summary["ad_cost_usd"] == 19.0
+    assert summary["refund_deduction_usd"] == 10.0
+    assert summary["profit_deduction_usd"] == 10.0
+    assert summary["refund_deduction_ratio_pct"] == 3.33
+    assert summary["profit_deduction_ratio_pct"] == 3.33
+    assert summary["profit_deduction_from_refund_usd"] == 10.0
     # 没传 total_ad_spend_usd 时，未分摊 = 0、利润退化为旧公式。
     assert summary["unallocated_ad_spend_usd"] == 0.0
     assert summary["total_ad_spend_usd"] == 19.0
     assert summary["profit_with_estimate_usd"] == 168.0
+
+
+def test_build_order_profit_summary_exposes_deduction_sources_and_ratios():
+    from appcore.order_analytics.realtime import _build_order_profit_summary
+
+    base_costs = {
+        "purchase_cost_usd": 0.0,
+        "purchase_estimate_usd": 0.0,
+        "purchase_cost_missing": False,
+        "logistics_cost_usd": 0.0,
+        "logistics_estimate_usd": 0.0,
+        "logistics_cost_missing": False,
+        "shopify_fee_total_usd": 0.0,
+        "ad_cost_usd": 0.0,
+    }
+    rows = [
+        {
+            **base_costs,
+            "total_revenue": 100.0,
+            "refund_deduction_usd": 30.0,
+            "return_reserve_usd": 1.0,
+            "profit_deduction_usd": 1.0,
+            "profit_deduction_source": "return_reserve",
+        },
+        {
+            **base_costs,
+            "total_revenue": 50.0,
+            "refund_deduction_usd": 20.0,
+            "return_reserve_usd": 0.0,
+            "profit_deduction_usd": 20.0,
+            "profit_deduction_source": "refund",
+        },
+        {
+            **base_costs,
+            "total_revenue": 50.0,
+            "refund_deduction_usd": 0.0,
+            "return_reserve_usd": 0.0,
+            "profit_deduction_usd": 5.0,
+            "profit_deduction_source": "manual_adjustment",
+        },
+    ]
+
+    summary = _build_order_profit_summary(rows)
+
+    assert summary["total_revenue_usd"] == 200.0
+    assert summary["refund_deduction_usd"] == 50.0
+    assert summary["return_reserve_usd"] == 1.0
+    assert summary["profit_deduction_usd"] == 26.0
+    assert summary["profit_deduction_from_return_reserve_usd"] == 1.0
+    assert summary["profit_deduction_from_refund_usd"] == 20.0
+    assert summary["profit_deduction_other_usd"] == 5.0
+    assert summary["refund_deduction_ratio_pct"] == 25.0
+    assert summary["return_reserve_ratio_pct"] == 0.5
+    assert summary["profit_deduction_ratio_pct"] == 13.0
+    assert summary["profit_with_estimate_usd"] == 174.0
 
 
 def test_build_order_profit_summary_subtracts_unallocated_ad_spend():

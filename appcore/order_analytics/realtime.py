@@ -291,6 +291,15 @@ def _estimate_ratio_pct(amount: Any, total: Any) -> float | None:
 
 def _attach_order_profit_cost_ratios(summary: dict[str, Any]) -> None:
     revenue = summary.get("total_revenue_usd")
+    summary["refund_deduction_ratio_pct"] = _ratio_pct(
+        summary.get("refund_deduction_usd"),
+        revenue,
+    )
+    summary["return_reserve_ratio_pct"] = _ratio_pct(summary.get("return_reserve_usd"), revenue)
+    summary["profit_deduction_ratio_pct"] = _ratio_pct(
+        summary.get("profit_deduction_usd"),
+        revenue,
+    )
     summary["total_ad_spend_ratio_pct"] = _ratio_pct(summary.get("total_ad_spend_usd"), revenue)
     summary["purchase_cost_ratio_pct"] = _ratio_pct(
         summary.get("purchase_cost_with_estimate_usd"),
@@ -326,6 +335,9 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "refund_deduction_usd": Decimal("0"),
         "return_reserve_usd": Decimal("0"),
         "profit_deduction_usd": Decimal("0"),
+        "profit_deduction_from_return_reserve_usd": Decimal("0"),
+        "profit_deduction_from_refund_usd": Decimal("0"),
+        "profit_deduction_other_usd": Decimal("0"),
         "purchase_cost_usd": Decimal("0"),
         "purchase_estimate_usd": Decimal("0"),
         "purchase_cost_with_estimate_usd": Decimal("0"),
@@ -340,6 +352,9 @@ def _empty_order_profit_summary() -> dict[str, Any]:
         "ad_cost_usd": Decimal("0"),
         "unallocated_ad_spend_usd": Decimal("0"),
         "total_ad_spend_usd": Decimal("0"),
+        "refund_deduction_ratio_pct": None,
+        "return_reserve_ratio_pct": None,
+        "profit_deduction_ratio_pct": None,
         "total_ad_spend_ratio_pct": None,
         "purchase_cost_ratio_pct": None,
         "logistics_cost_ratio_pct": None,
@@ -387,6 +402,17 @@ def _build_order_profit_summary(
         summary["logistics_estimate_usd"] += logistics_estimate
         summary["shopify_fee_total_usd"] += shopify_fee
         summary["ad_cost_usd"] += ad_cost
+        source = str(row.get("profit_deduction_source") or "").strip()
+        if source == "return_reserve":
+            summary["profit_deduction_from_return_reserve_usd"] += profit_deduction
+        elif source == "refund":
+            summary["profit_deduction_from_refund_usd"] += profit_deduction
+        elif profit_deduction == return_reserve and return_reserve > 0:
+            summary["profit_deduction_from_return_reserve_usd"] += profit_deduction
+        elif profit_deduction == refund and refund > 0:
+            summary["profit_deduction_from_refund_usd"] += profit_deduction
+        elif profit_deduction > 0:
+            summary["profit_deduction_other_usd"] += profit_deduction
         if row.get("purchase_cost_missing"):
             summary["purchase_missing_order_count"] += 1
         if row.get("logistics_cost_missing"):
@@ -480,6 +506,9 @@ def _build_order_profit_summary_from_status(
         "refund_deduction_usd": Decimal("0"),
         "return_reserve_usd": total("return_reserve"),
         "profit_deduction_usd": total("return_reserve"),
+        "profit_deduction_from_return_reserve_usd": total("return_reserve"),
+        "profit_deduction_from_refund_usd": Decimal("0"),
+        "profit_deduction_other_usd": Decimal("0"),
         "purchase_cost_usd": total("purchase_actual"),
         "purchase_estimate_usd": total("purchase_estimate"),
         "purchase_cost_with_estimate_usd": _to_decimal(status_summary.get("purchase_cost_with_estimate_usd")),
@@ -1660,6 +1689,7 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
         )
         return_reserve = _money(row.get("return_reserve_usd"))
         profit_deduction = return_reserve if has_package_profit_lines else refund_deduction
+        profit_deduction_source = "return_reserve" if has_package_profit_lines else "refund"
         purchase_cost = _money(row.get("purchase_cost"))
         purchase_estimate = _money(row.get("purchase_estimate"))
         logistics_cost = _money(row.get("logistics_cost"))
@@ -1743,6 +1773,7 @@ def _format_realtime_order_profit_rows(rows: list[dict[str, Any]], day_start: da
             "refund_deduction_usd": refund_deduction,
             "return_reserve_usd": return_reserve,
             "profit_deduction_usd": profit_deduction,
+            "profit_deduction_source": profit_deduction_source,
             "purchase_cost_usd": purchase_cost,
             "purchase_cost_missing": purchase_cost_missing,
             "purchase_estimate_usd": purchase_estimate,
