@@ -87,6 +87,13 @@
 - 如果历史配置中存在当前模型池未收录但仍可被后端规范化保留的 `model_id`，弹窗应临时显示“当前历史值”选项，避免打开配置后静默覆盖旧值；用户主动切换供应商或模型后，再回到预设模型池。
 - 保存接口必须使用 `@superadmin_required`；普通管理员直接请求读取或保存接口返回 403。
 
+### 2026-06-13 GOOGLEWJ 默认配置供应商修订
+
+- 文案封面默认配置的文本步骤 `video_analysis`、`product_analysis`、`ad_copy` 必须提供 `GOOGLEWJ` 供应商选项。
+- `GOOGLEWJ` 在文本步骤中的模型池必须与 `GOOGLE VERTEX` 保持一致，使用同一组 Gemini 文本模型别名和实际模型 ID。
+- 文本步骤保存 `GOOGLEWJ` 后，运行时 provider 必须规范化为现有 LLM adapter provider code `google_wj`，以复用 `google_wj_text` 凭据。
+- 第 4 步 `cover_generation` 已有 `GOOGLEWJ` 图片供应商，保持现有模型池、串行执行模式和 `google_wj_image` 凭据映射不变。
+
 ## 模型与平台决策
 
 当前 1.0 按步骤内置默认模型运行；超级管理员可以通过 `/video-cover` 列表页的“默认配置”覆盖全局默认值：

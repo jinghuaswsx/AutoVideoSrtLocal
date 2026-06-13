@@ -114,6 +114,10 @@ def _text_providers(alias_order: tuple[str, ...], *, openrouter_extra: bool = Fa
             "label": "GOOGLE VERTEX",
             "models": _gemini_text_models(alias_order),
         },
+        "google_wj": {
+            "label": "GOOGLEWJ",
+            "models": _gemini_text_models(alias_order),
+        },
     }
 
 TEXT_STEP_MODEL_OPTIONS: dict[str, dict[str, Any]] = {
@@ -228,6 +232,8 @@ def _first_model_alias(models: dict[str, Any]) -> str:
 def _normalize_retired_adc_provider(provider_key: str, providers: dict[str, Any]) -> str:
     if provider_key == "gemini_vertex_adc" and "gemini_aistudio" in providers:
         return "gemini_aistudio"
+    if provider_key == "googlewj" and "google_wj" in providers:
+        return "google_wj"
     return provider_key
 
 
