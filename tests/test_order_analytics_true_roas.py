@@ -2773,11 +2773,25 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert 'id="realtimeUnmatchedProfitDeduction"' in summary
     assert 'id="realtimeProfitDeductionSources"' in summary
     assert 'id="realtimeRefundReserveBreakdown"' in summary
-    assert "公式: 利润 = 总销售额 - 退款/预留扣减" in summary
-    assert 'id="realtimeProfitFormulaTerms"' in summary
-    assert 'id="realtimeProfitFormulaValues"' in summary
-    assert "明细: -" in summary
-    assert "代入: -" in summary
+    assert 'id="realtimeProfitDetailButton"' in summary
+    assert 'id="realtimeNewProfitDetailButton"' in summary
+    assert 'id="realtimeOldProfitDetailButton"' in summary
+    assert 'id="realtimeUnmatchedProfitDetailButton"' in summary
+    assert 'data-realtime-profit-detail-scope="global"' in summary
+    assert 'data-realtime-profit-detail-scope="new"' in summary
+    assert 'data-realtime-profit-detail-scope="old"' in summary
+    assert 'data-realtime-profit-detail-scope="unmatched"' in summary
+    assert summary.count(">计算详情</button>") == 4
+    assert ">详情</button>" not in summary
+    assert 'id="realtimeProfitFormulaModal"' in summary
+    assert 'id="realtimeProfitFormulaModalFormula"' in summary
+    assert 'id="realtimeProfitFormulaModalSubstitution"' in summary
+    assert 'id="realtimeProfitFormulaModalResult"' in summary
+    assert "利润 = 总销售额 - 退款/预留扣减" in summary
+    assert 'id="realtimeProfitFormulaTerms"' not in summary
+    assert 'id="realtimeProfitFormulaValues"' not in summary
+    assert "明细: -" not in summary
+    assert "代入: -" not in summary
 
     main_row_start = summary.index('class="oar-summary-row oar-summary-row-main"')
     time_row_start = summary.index('class="oar-summary-row oar-summary-row-time"')
@@ -2799,8 +2813,10 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert "document.getElementById('realtimeProfit')" in top_cards_js
     assert "profitEl.textContent" in top_cards_js
     assert "renderRealtimeProfitDeductionMetric(prefix, profitSummary" in top_cards_js
-    assert "renderRealtimeScopeProfitFormula(prefix, profitSummary)" in top_cards_js
-    assert "代入: " in top_cards_js
+    assert "renderRealtimeScopeProfitFormula(scope, profitSummary)" in top_cards_js
+    assert "profitFormulaDetails" in top_cards_js
+    assert "openRealtimeProfitFormulaModal" in top_cards_js
+    assert "realtimeProfitFormulaModalSubstitution" in top_cards_js
     assert "globalData = reconcileRealtimeGlobalScopeProfit(globalData, newData, oldData, unmatchedData);" in top_cards_js
     assert "if (realtimeState.productId) return globalData;" in top_cards_js
 
