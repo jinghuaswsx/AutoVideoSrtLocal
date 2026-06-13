@@ -73,6 +73,7 @@
   function statusLabel(status) {
     if (status === 'success') return '完成';
     if (status === 'failed') return '失败';
+    if (status === 'interrupted') return '中断';
     return '运行中';
   }
 
@@ -789,6 +790,31 @@
     }
   }
 
+  async function resumeProject(projectId) {
+    if (state.publicMode || !projectId) return;
+    setBusy(true);
+    try {
+      const data = await fetchJson(API_BASE + '/projects/' + encodeURIComponent(projectId) + '/resume', {
+        method: 'POST',
+        headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({}),
+      });
+      showToast('已继续未完成项目');
+      state.activeProjectId = (data.project && data.project.id) || projectId;
+      await loadProject(state.activeProjectId);
+    } catch (err) {
+      const running = err && err.status === 409 && err.data && (err.data.running_project || err.data.project);
+      if (running && running.id) {
+        showToast(err.message || '执行器仍在运行');
+        await loadProject(running.id);
+        return;
+      }
+      showToast(err.message || '继续未完成失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function shareProject() {
     if (state.publicMode || !state.activeProjectId) return;
     setBusy(true);
@@ -908,8 +934,8 @@
       `;
       return;
     }
-    const failedNotice = project.status === 'failed'
-      ? `<div class="aims-error-box">项目失败：${esc(project.error_message || '')}</div>`
+    const failedNotice = (project.status === 'failed' || project.status === 'interrupted')
+      ? `<div class="aims-error-box">${project.status === 'interrupted' ? '项目中断' : '项目失败'}：${esc(project.error_message || '')}</div>`
       : '';
 
     els.detail.innerHTML = `
@@ -917,10 +943,57 @@
       ${renderRunProgress(project)}
       ${failedNotice}
       ${renderMetrics(project, products)}
+      ${renderSupplementPlan(project)}
       ${renderVisuals(products)}
       ${renderCountryMatrix(products)}
       ${renderProductsTable(products)}
       ${renderProductSections(products)}
+    `;
+  }
+
+  function renderSupplementPlan(project) {
+    const summary = project.summary || {};
+    const plan = summary.supplement_plan || [];
+    if (!plan.length) return '';
+    const isPublic = state.publicMode;
+    const sourceLabel = (s) => (s === 'mingkong' ? '明空候选' : s === 'local' ? '本地EN素材' : '需新建素材');
+    const rows = plan.map((row) => {
+      const material = esc(row.material_name || sourceLabel(row.material_source));
+      const entry = (!isPublic && row.entry_url)
+        ? `<a class="aims-plan-entry" href="${esc(row.entry_url)}" target="_blank" rel="noopener">去创建</a>`
+        : '<span class="aims-plan-entry muted">仅查看</span>';
+      return `
+        <tr>
+          <td><span class="aims-priority ${esc(row.priority || 'P3')}">${esc(row.priority || 'P3')}</span></td>
+          <td><div class="aims-plan-product">${esc(row.product_name || row.product_code)}</div><div class="aims-plan-code">${esc(row.product_code || '')}</div></td>
+          <td>${esc(row.country_name || row.country_code)}<span class="aims-plan-cc">${esc(row.country_code || '')}</span></td>
+          <td><span class="aims-plan-action ${esc(row.action || '')}">${esc(row.action_label || row.action || '')}</span></td>
+          <td><span class="aims-plan-source ${esc(row.material_source || 'new')}">${esc(sourceLabel(row.material_source))}</span><div class="aims-plan-material">${material}</div></td>
+          <td>${esc(row.country_quality_score != null ? row.country_quality_score : '—')}</td>
+          <td class="aims-plan-reason">${esc(row.reason || '')}</td>
+          ${isPublic ? '' : `<td>${entry}</td>`}
+        </tr>`;
+    }).join('');
+    const countryCounts = summary.supplement_plan_country_counts || {};
+    const countryChips = Object.keys(countryCounts).map((cc) =>
+      `<span class="aims-plan-chip">${esc(cc)} · ${esc(countryCounts[cc])}</span>`).join('');
+    return `
+      <section class="aims-card aims-plan-card">
+        <div class="aims-card-head">
+          <h3>素材补充计划</h3>
+          <span class="aims-card-sub">${esc(plan.length)} 条可执行补素材项${countryChips ? ' · ' + countryChips : ''}</span>
+        </div>
+        <div class="aims-table-wrap">
+          <table class="aims-table aims-plan-table">
+            <thead>
+              <tr>
+                <th>优先级</th><th>产品</th><th>国家</th><th>动作</th><th>推荐素材</th><th>国家评分</th><th>理由</th>${isPublic ? '' : '<th>操作</th>'}
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </section>
     `;
   }
 
@@ -934,6 +1007,14 @@
     const productLine = Number(pp.total || 0) > 0
       ? `产品 ${esc(pp.current_index || 0)} / ${esc(pp.total)}${currentProduct ? ` · ${esc(currentProduct)}` : ''}`
       : '产品分析待开始';
+    const canResume = !state.publicMode && Boolean(project.can_resume_checkpoint);
+    const resumeReason = esc(project.resume_checkpoint_reason || '执行线程已中断，可继续未完成。');
+    const resumeBlock = canResume
+      ? `<div class="aims-run-resume">
+           <span class="aims-run-resume-note">${resumeReason}</span>
+           <button type="button" class="aims-btn teal" data-resume-project="${esc(project.id)}">继续未完成</button>
+         </div>`
+      : '';
     return `
       <section class="aims-run-card ${esc(project.status)}">
         <div class="aims-run-head">
@@ -951,6 +1032,7 @@
           <span>${productLine}</span>
           <span>更新 ${esc((progress.updated_at || project.updated_at || '').slice(0, 19))}</span>
         </div>
+        ${resumeBlock}
         ${steps.length ? renderProgressSteps(steps) : ''}
         ${renderProgressLogs(progress.logs || [])}
       </section>
@@ -1437,6 +1519,12 @@
   }
   if (els.detail) {
     els.detail.addEventListener('click', (event) => {
+      const resumeBtn = event.target.closest('[data-resume-project]');
+      if (resumeBtn) {
+        resumeProject(Number(resumeBtn.getAttribute('data-resume-project'))).catch(console.error);
+        return;
+      }
+
       const importBtn = event.target.closest('[data-import-action]');
       if (importBtn) {
         importMaterial(importBtn);
