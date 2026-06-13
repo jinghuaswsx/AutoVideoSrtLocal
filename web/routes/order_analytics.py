@@ -1,6 +1,7 @@
 """订单分析模块：导入 Shopify 订单 CSV/Excel，持久化到数据库，按商品 × 国家统计单量。"""
 from __future__ import annotations
 
+import csv
 import io
 import logging
 import re
@@ -2068,3 +2069,91 @@ def manual_ad_spend_delete():
         detail={"business_date": business_date.isoformat(), "account_code": code, "deleted": deleted},
     )
     return _json_response({"ok": True, "deleted": deleted})
+
+
+# ---------------------------------------------------------------------------
+# 退款核验 endpoints
+# ---------------------------------------------------------------------------
+
+@bp.route("/order-analytics/refund-verify/import", methods=["POST"])
+@login_required
+@permission_required("data_analytics")
+def refund_verify_import():
+    from appcore.order_analytics.shopify_payments_import import parse_payments_csv
+    from appcore.order_analytics import refund_verification as rv
+    pay_file = request.files.get("payments_csv")
+    order_file = request.files.get("orders_csv")
+    if not pay_file:
+        return _json_response(error="invalid_param", detail="payments_csv is required"), 400
+    refunds = rv.aggregate_payment_refunds(
+        parse_payments_csv(io.StringIO(pay_file.read().decode("utf-8-sig")),
+                           source_csv=pay_file.filename or "")
+    )
+    statuses = {}
+    if order_file:
+        reader = csv.DictReader(io.StringIO(order_file.read().decode("utf-8-sig")))
+        order_rows = [{"order_name": r.get("Name") or r.get("Order"),
+                       "financial_status": r.get("Financial Status")} for r in reader]
+        statuses = rv.extract_order_refund_statuses(order_rows)
+    summary = rv.create_batch(
+        refunds=refunds, statuses=statuses,
+        source_files={"payments_csv": pay_file.filename,
+                      "orders_csv": getattr(order_file, "filename", None)},
+        created_by=getattr(current_user, "username", None),
+        site_code=(request.form.get("site_code") or "").strip().lower() or None,
+    )
+    return _json_response(_json_safe(summary))
+
+
+@bp.route("/order-analytics/refund-verify/batches")
+@login_required
+@permission_required("data_analytics")
+def refund_verify_batches():
+    rows = oa.query(
+        "SELECT id, status, source_files, matched_count, unmatched_count, anomaly_count, "
+        "total_refund_usd, current_reserve_usd, delta_usd, created_by, created_at, applied_at "
+        "FROM refund_verification_batches ORDER BY id DESC LIMIT 100") or []
+    return _json_response(_json_safe({"batches": rows, "data_quality": {"status": "ok"}}))
+
+
+@bp.route("/order-analytics/refund-verify/batches/<int:batch_id>")
+@login_required
+@permission_required("data_analytics")
+def refund_verify_batch_detail(batch_id: int):
+    rows = oa.query(
+        "SELECT extended_order_id, site_code, refund_amount_usd, refund_source, "
+        "order_financial_status, matched_package_ids, match_status, note, status "
+        "FROM refund_verifications WHERE batch_id=%s ORDER BY match_status, extended_order_id",
+        (batch_id,)) or []
+    return _json_response(_json_safe({"batch_id": batch_id, "rows": rows, "data_quality": {"status": "ok"}}))
+
+
+@bp.route("/order-analytics/refund-verify/batches/<int:batch_id>/apply", methods=["POST"])
+@login_required
+@permission_required("data_analytics")
+def refund_verify_apply(batch_id: int):
+    from appcore.order_analytics import refund_verification as rv
+    rv.apply_batch(batch_id)
+    from appcore.order_analytics import realtime_cache
+    realtime_cache.invalidate_all()
+    return _json_response({"ok": True, "batch_id": batch_id})
+
+
+@bp.route("/order-analytics/refund-verify/batches/<int:batch_id>/discard", methods=["POST"])
+@login_required
+@permission_required("data_analytics")
+def refund_verify_discard(batch_id: int):
+    from appcore.order_analytics import refund_verification as rv
+    rv.discard_batch(batch_id)
+    return _json_response({"ok": True, "batch_id": batch_id})
+
+
+@bp.route("/order-analytics/refund-verify/batches/<int:batch_id>/revert", methods=["POST"])
+@login_required
+@permission_required("data_analytics")
+def refund_verify_revert(batch_id: int):
+    from appcore.order_analytics import refund_verification as rv
+    rv.revert_batch(batch_id)
+    from appcore.order_analytics import realtime_cache
+    realtime_cache.invalidate_all()
+    return _json_response({"ok": True, "batch_id": batch_id})
