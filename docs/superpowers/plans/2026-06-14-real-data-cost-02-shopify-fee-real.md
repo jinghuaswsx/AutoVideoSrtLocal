@@ -36,14 +36,13 @@ def test_history_lines_recomputed_when_effective_at_predates_all_orders(monkeypa
     # 开关设到 2026-01-01（早于最早订单 2/24）→ 所有历史订单 order_time >= 生效日
     monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-01-01T00:00:00+08:00")
 
-    # 已落库历史行（existing_profit_line_id 有值）、订单时间 2/24 → 不应被跳过
+    # 已落库历史行（existing_profit_line_id 有值）、订单时间 2/24 → 不应被跳过（会重算覆盖）
     assert not backfill._should_skip_for_dynamic_fee_boundary(
         {"order_paid_at": datetime(2026, 2, 24, 10, 0, 0), "existing_profit_line_id": 5}
     )
-    # 边界本身仍保护「真正早于生效日」的订单（设到最早日时不会命中）
-    assert backfill._should_skip_for_dynamic_fee_boundary(
-        {"order_paid_at": datetime(2025, 12, 31, 23, 59, 59), "existing_profit_line_id": 5}
-    )
+    # 注：「真正早于生效日的订单仍跳过」的边界保护已由现成的
+    # test_should_skip_line_before_dynamic_effective_at 覆盖，此处不重复
+    # （避免 naive datetime 被 is_dynamic_fee_effective 当 UTC 比较的时区陷阱）。
 ```
 
 - [ ] **Step 2: 运行确认通过（characterization 直接 PASS）**
