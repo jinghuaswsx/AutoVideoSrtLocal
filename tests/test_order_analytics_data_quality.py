@@ -506,3 +506,22 @@ def test_check_exchange_rate_freshness_stale(monkeypatch):
     assert check["code"] == "exchange_rate_freshness"
     assert check["status"] == dq.STATUS_STALE
     assert check["lag_days"] == 5
+
+
+def test_build_for_order_profit_includes_freshness_checks(monkeypatch):
+    from datetime import date
+    from appcore.order_analytics import data_quality as dq
+
+    monkeypatch.setattr(dq, "reconcile_ad_spend", lambda **k: {"code": "ad_spend_reconciled", "status": dq.STATUS_OK})
+    monkeypatch.setattr(dq, "check_meta_ad_day_uniqueness", lambda **k: {"code": "meta_ad_day_uniqueness", "status": dq.STATUS_OK})
+    monkeypatch.setattr(dq, "check_derived_profit_freshness", lambda **k: {"code": "derived_profit_freshness", "status": dq.STATUS_OK})
+    monkeypatch.setattr(dq, "resolve_source_mode", lambda **k: dq.SOURCE_MODE_DAILY_FINAL)
+    monkeypatch.setattr(dq, "fetch_watermarks", lambda: {})
+    monkeypatch.setattr(dq, "check_payments_freshness", lambda **k: {"code": "payments_freshness", "status": dq.STATUS_STALE, "message": "stale"})
+    monkeypatch.setattr(dq, "check_exchange_rate_freshness", lambda **k: {"code": "exchange_rate_freshness", "status": dq.STATUS_OK})
+
+    result = dq.build_for_order_profit(date_from=date(2026, 6, 1), date_to=date(2026, 6, 13), allocated_ad_spend_usd=0.0)
+    codes = {c["code"] for c in result["checks"]}
+    assert "payments_freshness" in codes
+    assert "exchange_rate_freshness" in codes
+    assert result["status"] == dq.STATUS_STALE  # 断更降级冒泡到顶层

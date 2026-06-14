@@ -885,6 +885,8 @@ def build_for_order_profit(
             business_date_to=date_to,
         )
     )
+    checks.append(check_payments_freshness())
+    checks.append(check_exchange_rate_freshness())
     return build_data_quality(
         business_date_from=date_from,
         business_date_to=date_to,
@@ -1046,11 +1048,18 @@ def run_recent_inspection(*, lookback_days: int = 7, today: date | None = None) 
             "checks": [recon, freshness, uniqueness],
         })
 
+    payments_check = check_payments_freshness(today=today)
+    exchange_check = check_exchange_rate_freshness(today=today)
+    for extra in (payments_check, exchange_check):
+        if _STATUS_RANK.get(extra.get("status"), 0) > _STATUS_RANK.get(overall_status, 0):
+            overall_status = extra["status"]
+
     return {
         "generated_at": _now_iso(),
         "lookback_days": lookback_days,
         "status": overall_status,
         "days": days,
+        "freshness": [payments_check, exchange_check],
     }
 
 
