@@ -357,6 +357,7 @@ def _realtime_store_options() -> list[dict[str, str]]:
 @bp.route("/order-analytics/weekly-ai-analysis-view")
 @bp.route("/order-analytics/import-view")
 @bp.route("/order-analytics/shopify-analytics-view")
+@bp.route("/order-analytics/refund-verify-view")
 @login_required
 @permission_required("data_analytics")
 def page(product_code=None):
@@ -396,6 +397,7 @@ def page(product_code=None):
         "/order-analytics/weekly-ai-analysis-view": "weeklyAiAnalysis",
         "/order-analytics/import-view": "realtime",
         "/order-analytics/shopify-analytics-view": "analytics",
+        "/order-analytics/refund-verify-view": "refundVerify",
     }
     if path.startswith("/order-analytics/country-dashboard-view"):
         active_tab = "countryDashboard"

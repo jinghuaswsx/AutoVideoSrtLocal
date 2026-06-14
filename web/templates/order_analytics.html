@@ -21,6 +21,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'unsettledPayouts' %}active{% endif %}" data-tab="unsettledPayouts" role="tab" aria-selected="{% if active_tab == 'unsettledPayouts' %}true{% else %}false{% endif %}">未结算货款</button>
+  <button type="button" class="oa-tab {% if active_tab == 'refundVerify' %}active{% endif %}" data-tab="refundVerify" role="tab" aria-selected="{% if active_tab == 'refundVerify' %}true{% else %}false{% endif %}">退款核验</button>
 </span>
 {% endblock %}
 {% block topbar_actions %}
@@ -2286,6 +2287,7 @@
   <button type="button" class="oa-tab {% if active_tab == 'countryDashboard' %}active{% endif %}" data-tab="countryDashboard" role="tab" aria-selected="{% if active_tab == 'countryDashboard' %}true{% else %}false{% endif %}">国家看板</button>
   <button type="button" class="oa-tab {% if active_tab == 'weeklyAiAnalysis' %}active{% endif %}" data-tab="weeklyAiAnalysis" role="tab" aria-selected="{% if active_tab == 'weeklyAiAnalysis' %}true{% else %}false{% endif %}">每周 AI 分析</button>
   <button type="button" class="oa-tab {% if active_tab == 'unsettledPayouts' %}active{% endif %}" data-tab="unsettledPayouts" role="tab" aria-selected="{% if active_tab == 'unsettledPayouts' %}true{% else %}false{% endif %}">未结算货款</button>
+  <button type="button" class="oa-tab {% if active_tab == 'refundVerify' %}active{% endif %}" data-tab="refundVerify" role="tab" aria-selected="{% if active_tab == 'refundVerify' %}true{% else %}false{% endif %}">退款核验</button>
 </nav>
 
 
@@ -4409,6 +4411,140 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
   </dialog>
 </section>
 
+<!-- ═══════ 退款核验 ═══════ -->
+<section class="oa-panel {% if active_tab == 'refundVerify' %}active{% endif %}" id="panelRefundVerify">
+  <div class="sup-shell" data-rv-root>
+    <div class="sup-toolbar">
+      <div class="sup-toolbar-main">
+        <div class="sup-title-row">
+          <h2 class="sup-title">退款核验</h2>
+          <span class="sup-chip">冲减营收</span>
+        </div>
+        <div class="sup-note">导入 Shopify Payments 退款交易，核验后冲减对应订单营收，修正 ROAS 与利润。</div>
+      </div>
+      <div class="sup-toolbar-actions">
+        <button type="button" class="ppr-btn" id="rvRefreshBtn">刷新</button>
+        <button type="button" class="ppr-btn ppr-btn-primary" id="rvImportOpenBtn">导入退款数据</button>
+      </div>
+    </div>
+
+    <div class="sup-error" id="rvErrorBox"></div>
+    <div class="oa-loading" id="rvLoadingBox" hidden>
+      <div class="oa-spinner"></div>
+      <div>加载中...</div>
+    </div>
+
+    <!-- 历史批次列表 -->
+    <section class="sup-list-view" id="rvListView">
+      <div class="sup-empty" id="rvEmptyState" hidden>暂无核验批次</div>
+      <div class="oa-table-wrap">
+        <div class="oa-table-scroll">
+          <table class="oa-table" id="rvBatchTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>状态</th>
+                <th>匹配</th>
+                <th>未匹配</th>
+                <th>异常</th>
+                <th>退款总额</th>
+                <th>当前准备金</th>
+                <th>差额</th>
+                <th>操作人</th>
+                <th>创建时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="rvBatchBody">
+              <tr><td colspan="11" class="oad-loading">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 批次详情 -->
+    <section class="sup-detail-view" id="rvDetailView" hidden>
+      <div class="sup-detail-head">
+        <div>
+          <div class="sup-detail-title-row">
+            <button type="button" class="ppr-btn" id="rvBackBtn">返回</button>
+            <h2 class="sup-title" id="rvDetailTitle">批次详情</h2>
+          </div>
+          <div class="sup-note" id="rvDetailMeta"></div>
+        </div>
+      </div>
+      <div class="oa-stats oar-summary-stats" id="rvDetailSummary"></div>
+      <div class="sup-filter-row">
+        <div class="sup-title-row">
+          <h3 class="sup-title">退款明细</h3>
+          <span class="sup-note" id="rvRowsCount">0 行</span>
+        </div>
+        <select id="rvStatusFilter" aria-label="匹配状态">
+          <option value="all">全部</option>
+          <option value="matched">已匹配</option>
+          <option value="unmatched">未匹配</option>
+          <option value="anomaly">异常</option>
+        </select>
+      </div>
+      <div class="oa-table-wrap">
+        <div class="oa-table-scroll">
+          <table class="oa-table">
+            <thead>
+              <tr>
+                <th>订单号</th>
+                <th>店铺</th>
+                <th>退款金额</th>
+                <th>来源</th>
+                <th>Shopify 状态</th>
+                <th>匹配状态</th>
+                <th>备注</th>
+              </tr>
+            </thead>
+            <tbody id="rvDetailBody">
+              <tr><td colspan="7" class="oad-loading">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 导入弹窗 -->
+  <dialog id="rvImportDialog" class="ppr-dialog">
+    <form method="dialog" id="rvImportForm">
+      <div class="ppr-dialog-head">
+        <span>导入退款数据</span>
+        <button type="button" class="ppr-dialog-close" data-rv-close aria-label="关闭">×</button>
+      </div>
+      <div class="ppr-dialog-body">
+        <label>
+          <span>店铺</span>
+          <select name="site_code">
+            <option value="">全部店铺</option>
+            {% for store in realtime_store_options %}
+            <option value="{{ store.code }}">{{ store.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Shopify Payments 明细 (必需)</span>
+          <input type="file" name="payments_csv" accept=".csv,text/csv" required>
+        </label>
+        <label>
+          <span>Shopify 订单导出 (可选，补退款状态)</span>
+          <input type="file" name="orders_csv" accept=".csv,text/csv">
+        </label>
+        <div class="ppr-dialog-result" id="rvImportResult"></div>
+      </div>
+      <div class="ppr-dialog-foot">
+        <button type="button" class="ppr-btn" data-rv-close>取消</button>
+        <button type="submit" class="ppr-btn ppr-btn-primary" id="rvImportSubmitBtn">上传并核对</button>
+      </div>
+    </form>
+  </dialog>
+</section>
+
 <!-- ═══════ Tab 1: 导入文件 ═══════ -->
 <div class="oa-panel {% if active_tab == 'import' %}active{% endif %}" id="panelImport">
   <div class="oa-upload-zone" id="uploadZone">
@@ -5359,6 +5495,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     'weeklyRoas': '/order-analytics/weekly-roas-view',
     'weeklyAiAnalysis': '/order-analytics/weekly-ai-analysis-view',
     'unsettledPayouts': '/order-analytics/unsettled-payouts',
+    'refundVerify': '/order-analytics/refund-verify-view',
     'import': '/order-analytics/import-view',
     'analytics': '/order-analytics/shopify-analytics-view'
   };
@@ -14285,6 +14422,195 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
+  }
+})();
+</script>
+
+<!-- ═══════ 退款核验 JS ═══════ -->
+<script>
+(function() {
+  var csrfToken = document.querySelector('meta[name="csrf-token"]');
+  csrfToken = csrfToken ? csrfToken.getAttribute('content') : '';
+  var $  = function(s) { return document.querySelector(s); };
+  var $$ = function(s) { return document.querySelectorAll(s); };
+
+  var rvListView   = $('#rvListView');
+  var rvDetailView = $('#rvDetailView');
+  var rvLoading    = $('#rvLoadingBox');
+  var rvError      = $('#rvErrorBox');
+  var rvBatchBody  = $('#rvBatchBody');
+  var rvDetailBody = $('#rvDetailBody');
+  var rvDialog     = $('#rvImportDialog');
+
+  function rvShowError(msg) { rvError.textContent = msg; rvError.style.display = ''; }
+  function rvClearError()   { rvError.textContent = ''; rvError.style.display = 'none'; }
+  function rvShowLoading()  { if (rvLoading) rvLoading.hidden = false; }
+  function rvHideLoading()  { if (rvLoading) rvLoading.hidden = true; }
+
+  function rvFmt(v) { return v != null ? '$' + Number(v).toFixed(2) : '-'; }
+  function rvStatusBadge(s) {
+    var map = {pending:'待确认', applied:'已应用', discarded:'已放弃'};
+    return '<span class="sup-chip">' + (map[s]||s) + '</span>';
+  }
+
+  function loadBatches() {
+    rvClearError(); rvShowLoading();
+    fetch('/order-analytics/refund-verify/batches')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        rvHideLoading();
+        var rows = (d.batches || []);
+        if (!rows.length) {
+          rvBatchBody.innerHTML = '<tr><td colspan="11" class="oad-loading">暂无核验批次</td></tr>';
+          return;
+        }
+        rvBatchBody.innerHTML = rows.map(function(b) {
+          var actions = '';
+          if (b.status === 'pending') {
+            actions = '<button class="ppr-btn ppr-btn-primary rv-apply" data-id="'+b.id+'">应用</button> '
+                    + '<button class="ppr-btn rv-discard" data-id="'+b.id+'">放弃</button>';
+          } else if (b.status === 'applied') {
+            actions = '<button class="ppr-btn rv-revert" data-id="'+b.id+'">回滚</button>';
+          }
+          return '<tr>'
+            + '<td><a href="#" class="rv-detail" data-id="'+b.id+'">#'+b.id+'</a></td>'
+            + '<td>'+rvStatusBadge(b.status)+'</td>'
+            + '<td>'+b.matched_count+'</td>'
+            + '<td>'+b.unmatched_count+'</td>'
+            + '<td>'+b.anomaly_count+'</td>'
+            + '<td>'+rvFmt(b.total_refund_usd)+'</td>'
+            + '<td>'+rvFmt(b.current_reserve_usd)+'</td>'
+            + '<td>'+rvFmt(b.delta_usd)+'</td>'
+            + '<td>'+(b.created_by||'-')+'</td>'
+            + '<td>'+(b.created_at||'-')+'</td>'
+            + '<td>'+actions+'</td></tr>';
+        }).join('');
+      })
+      .catch(function(e) { rvHideLoading(); rvShowError('加载失败: '+e.message); });
+  }
+
+  function loadBatchDetail(id) {
+    rvClearError(); rvShowLoading();
+    rvListView.hidden = true;
+    rvDetailView.hidden = false;
+    $('#rvDetailTitle').textContent = '批次 #' + id;
+    fetch('/order-analytics/refund-verify/batches/' + id)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        rvHideLoading();
+        var rows = d.rows || [];
+        $('#rvRowsCount').textContent = rows.length + ' 行';
+        var filter = $('#rvStatusFilter').value;
+        var filtered = filter === 'all' ? rows : rows.filter(function(r) { return r.match_status === filter; });
+        rvDetailBody.innerHTML = filtered.length ? filtered.map(function(r) {
+          return '<tr>'
+            + '<td>' + r.extended_order_id + '</td>'
+            + '<td>' + (r.site_code||'-') + '</td>'
+            + '<td>' + rvFmt(r.refund_amount_usd) + '</td>'
+            + '<td>' + (r.refund_source||'-') + '</td>'
+            + '<td>' + (r.order_financial_status||'-') + '</td>'
+            + '<td>' + (r.match_status||'-') + '</td>'
+            + '<td>' + (r.note||'-') + '</td></tr>';
+        }).join('') : '<tr><td colspan="7">无匹配记录</td></tr>';
+        window._rvDetailRows = rows;
+      })
+      .catch(function(e) { rvHideLoading(); rvShowError('加载详情失败: '+e.message); });
+  }
+
+  function rvAction(url, onDone) {
+    fetch(url, { method: 'POST', headers: {'X-CSRFToken': csrfToken} })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.error) { rvShowError(d.detail||d.error); } else { onDone(d); } })
+      .catch(function(e) { rvShowError('操作失败: '+e.message); });
+  }
+
+  // 事件委托
+  if (rvBatchBody) rvBatchBody.addEventListener('click', function(e) {
+    var t = e.target;
+    if (t.classList.contains('rv-detail')) {
+      e.preventDefault();
+      loadBatchDetail(t.dataset.id);
+    }
+    if (t.classList.contains('rv-apply')) {
+      if (!confirm('确认应用此批次？退款将冲减对应订单营收。')) return;
+      rvAction('/order-analytics/refund-verify/batches/' + t.dataset.id + '/apply', function() {
+        loadBatches();
+        alert('已应用。实时大盘缓存已失效，刷新实时大盘可看到修正后数字。');
+      });
+    }
+    if (t.classList.contains('rv-discard')) {
+      if (!confirm('确认放弃此批次？')) return;
+      rvAction('/order-analytics/refund-verify/batches/' + t.dataset.id + '/discard', function() { loadBatches(); });
+    }
+    if (t.classList.contains('rv-revert')) {
+      if (!confirm('确认回滚？大盘将恢复到该批次之前的退款口径。')) return;
+      rvAction('/order-analytics/refund-verify/batches/' + t.dataset.id + '/revert', function() {
+        loadBatches();
+        alert('已回滚。');
+      });
+    }
+  });
+
+  if ($('#rvBackBtn')) $('#rvBackBtn').addEventListener('click', function() {
+    rvDetailView.hidden = true; rvListView.hidden = false;
+  });
+
+  if ($('#rvStatusFilter')) $('#rvStatusFilter').addEventListener('change', function() {
+    var rows = window._rvDetailRows || [];
+    var f = this.value;
+    var filtered = f === 'all' ? rows : rows.filter(function(r) { return r.match_status === f; });
+    rvDetailBody.innerHTML = filtered.length ? filtered.map(function(r) {
+      return '<tr><td>'+r.extended_order_id+'</td><td>'+(r.site_code||'-')+'</td><td>'+rvFmt(r.refund_amount_usd)+'</td><td>'+(r.refund_source||'-')+'</td><td>'+(r.order_financial_status||'-')+'</td><td>'+(r.match_status||'-')+'</td><td>'+(r.note||'-')+'</td></tr>';
+    }).join('') : '<tr><td colspan="7">无匹配记录</td></tr>';
+  });
+
+  if ($('#rvRefreshBtn')) $('#rvRefreshBtn').addEventListener('click', loadBatches);
+  if ($('#rvImportOpenBtn')) $('#rvImportOpenBtn').addEventListener('click', function() {
+    if (rvDialog) rvDialog.showModal();
+  });
+  $$('[data-rv-close]').forEach(function(b) {
+    b.addEventListener('click', function() { if (rvDialog) rvDialog.close(); });
+  });
+
+  // 导入表单提交
+  var rvForm = $('#rvImportForm');
+  if (rvForm) rvForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var fd = new FormData(rvForm);
+    var result = $('#rvImportResult');
+    var btn = $('#rvImportSubmitBtn');
+    btn.disabled = true;
+    result.textContent = '上传中...';
+    result.className = 'ppr-dialog-result';
+    fetch('/order-analytics/refund-verify/import', {
+      method: 'POST', headers: {'X-CSRFToken': csrfToken}, body: fd
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      if (d.error) {
+        result.textContent = '失败: ' + (d.detail || d.error);
+        result.className = 'ppr-dialog-result ppr-dialog-result-error';
+        return;
+      }
+      result.innerHTML = '批次 #' + d.batch_id + ' 创建成功<br>'
+        + '匹配 ' + d.matched_count + ' 单 / 未匹配 ' + d.unmatched_count
+        + ' / 异常 ' + d.anomaly_count + '<br>'
+        + '退款总额 ' + rvFmt(d.total_refund_usd) + ' / 差额 ' + rvFmt(d.delta_usd);
+      result.className = 'ppr-dialog-result';
+      loadBatches();
+    })
+    .catch(function(e) {
+      btn.disabled = false;
+      result.textContent = '上传失败: ' + e.message;
+      result.className = 'ppr-dialog-result ppr-dialog-result-error';
+    });
+  });
+
+  // 初始化
+  var initialTab2 = "{{ active_tab }}";
+  if (initialTab2 === 'refundVerify') {
+    loadBatches();
   }
 })();
 </script>
