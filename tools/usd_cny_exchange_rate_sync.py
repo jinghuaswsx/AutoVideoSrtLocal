@@ -8,7 +8,7 @@ import argparse
 import json
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -118,6 +118,49 @@ def run_sync(
         raise
 
 
+def _existing_rate_dates(date_from, date_to) -> set:
+    from appcore.db import query
+    rows = query(
+        "SELECT rate_date FROM usd_cny_daily_exchange_rates WHERE rate_date BETWEEN %s AND %s",
+        (date_from, date_to),
+    )
+    out = set()
+    for row in rows or []:
+        value = row.get("rate_date")
+        out.add(value if hasattr(value, "year") else _parse_date(str(value)[:10]))
+    return out
+
+
+def run_backfill(*, date_from, date_to) -> dict:
+    """遍历 [date_from, date_to] 缺失日，单源回填 frankfurter 历史汇率；结束后刷新 30 天 fallback。"""
+    existing = _existing_rate_dates(date_from, date_to)
+    filled, failed, skipped = [], [], []
+    cur = date_from
+    while cur <= date_to:
+        if cur in existing:
+            skipped.append(cur.isoformat())
+        else:
+            try:
+                filled.append(exchange_rates.backfill_usd_cny_daily_rate(rate_date=cur))
+            except Exception as exc:  # noqa: BLE001 - 单日失败不阻断整段回填
+                log.warning("backfill %s failed: %s", cur, exc)
+                failed.append({"rate_date": cur.isoformat(), "error": str(exc)})
+        cur += timedelta(days=1)
+    fallback = exchange_rates.refresh_usd_cny_fallback_rate(fallback_date=date_to)
+    summary = {
+        "task_code": TASK_CODE,
+        "mode": "backfill",
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "filled": filled,
+        "failed": failed,
+        "skipped": skipped,
+        "fallback": fallback,
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
+    return summary
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Sync daily USD/CNY baseline exchange rate with cross validation."
@@ -132,12 +175,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=str(exchange_rates.DEFAULT_TOLERANCE_RATIO),
         help="Max relative difference ratio between primary and validator sources.",
     )
+    parser.add_argument("--backfill-from", help="历史回填起始日 YYYY-MM-DD（与 --backfill-to 同用）。")
+    parser.add_argument("--backfill-to", help="历史回填结束日 YYYY-MM-DD。")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if args.backfill_from or args.backfill_to:
+        if not (args.backfill_from and args.backfill_to):
+            raise SystemExit("--backfill-from 与 --backfill-to 必须同时提供")
+        results = run_backfill(
+            date_from=_parse_date(args.backfill_from),
+            date_to=_parse_date(args.backfill_to),
+        )
+        return 1 if results["failed"] else 0
     summary = run_sync(
         rate_date=_parse_date(args.rate_date),
         tolerance_ratio=Decimal(str(args.tolerance_ratio)),
