@@ -91,6 +91,25 @@ def test_tick_once_skips_when_feishu_disabled(monkeypatch):
     assert finished["summary"] == {"skipped": "feishu_disabled"}
 
 
+def test_build_long_loss_report_text():
+    from datetime import date as _date
+
+    from appcore import ad_alert_daily_report as report
+    from appcore import ad_long_term_loss as ltl
+
+    items = [ltl.LongTermLossItem(
+        product_id=1, product_code="P1", product_name="品1", product_main_image=None,
+        spend_7d=800.0, profit_7d=-200.0, loss_7d=200.0, profit_30d=-50.0, loss_ratio=None,
+        verdict="long_term_net_loss", active_days=28, consecutive_loss_days=3,
+        first_active_date="2026-05-01", has_estimated_cost=True, detail_url="",
+    )]
+    text = report.build_long_loss_report_text(_date(2026, 6, 14), items)
+    assert "长期亏损品" in text
+    assert "品1" in text
+    assert "200" in text
+    assert "连续亏损 3 天" in text
+
+
 def test_tick_once_skips_when_no_ads(monkeypatch):
     from appcore import ad_alert_daily_report, ad_alerts, feishu_alerts, scheduled_tasks
 

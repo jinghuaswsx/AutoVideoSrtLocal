@@ -12,7 +12,7 @@ from datetime import date
 from typing import Any
 from urllib.parse import urlencode
 
-from appcore import ad_alerts, feishu_alerts, scheduled_tasks
+from appcore import ad_alerts, ad_long_term_loss, feishu_alerts, scheduled_tasks
 import config
 
 log = logging.getLogger(__name__)
@@ -46,6 +46,25 @@ def build_report_text(
         lines.append(f"查看明细：{share_url}")
     else:
         lines.append("查看明细：/ad-alerts")
+    return "\n".join(lines)
+
+
+def build_long_loss_report_text(business_date: date, items) -> str:
+    """构建长期亏损品推送文本。"""
+    lines = [f"【长期亏损品】{business_date.strftime('%m-%d')} Top {len(items)}"]
+    for i, it in enumerate(items, start=1):
+        label = "长期净亏" if it.verdict == "long_term_net_loss" else "亏损侵蚀利润"
+        parts = [
+            f"{i}. {it.product_name or it.product_code}（{label}）",
+            f"近7天消耗 ${it.spend_7d:.0f}",
+            f"近7天亏 ${it.loss_7d:.0f}",
+        ]
+        if it.consecutive_loss_days > 0:
+            parts.append(f"连续亏损 {it.consecutive_loss_days} 天")
+        if it.has_estimated_cost:
+            parts.append("含估算")
+        lines.append(" ｜ ".join(parts))
+    lines.append("查看明细：/ad-alerts/long-loss")
     return "\n".join(lines)
 
 
@@ -110,6 +129,16 @@ def tick_once() -> dict[str, Any]:
 
         text = build_report_text(business_date, items, share_url)
         result = feishu_alerts.send_text_message(text, config=feishu_config)
+
+        try:
+            _bd, ll_items = ad_long_term_loss.get_long_term_loss_products(limit=REPORT_LIMIT)
+            if ll_items:
+                feishu_alerts.send_text_message(
+                    build_long_loss_report_text(_bd, ll_items), config=feishu_config
+                )
+        except Exception:
+            log.warning("long term loss feishu push failed", exc_info=True)
+
         summary = {
             "sent": bool(result.get("ok")),
             "ad_count": len(items),
