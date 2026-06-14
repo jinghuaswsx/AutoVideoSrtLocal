@@ -1288,6 +1288,9 @@ def _overview_cache_ttl(cache_params) -> int:
     from appcore.order_analytics._helpers import current_meta_business_date
 
     today = current_meta_business_date()
+    # 新品投放分析（带明细）统一用中等 TTL，由低频预热续期，不挤占今天/昨天的高频刷新窗口
+    if cache_params.get("include_details"):
+        return realtime_cache.TTL_MULTI_DAY_OPEN
     end_text = cache_params.get("end_date") or cache_params.get("date")
     start_text = cache_params.get("start_date")
     if not end_text:
@@ -1307,8 +1310,12 @@ def _overview_cache_ttl(cache_params) -> int:
     return realtime_cache.TTL_MULTI_DAY_OPEN
 
 
-def _compute_realtime_overview_cached(date_text, kwargs, *, cache_params):
+def _compute_realtime_overview_cached(date_text, kwargs, *, cache_params, force_refresh=False):
     """实时大盘 overview 的统一「缓存读→算→写」入口，route 与后台预热共用。
+
+    force_refresh=True（预热专用）：跳过读缓存，强制重算并写回，刷新数据与 expires_at，
+    保证缓存持续新鲜。否则预热命中旧缓存就直接返回、不续期，缓存到 TTL 被动过期，
+    过期窗口用户请求会 MISS 现算（本周/本月十几秒）。
 
     返回 (payload_dict, cache_state)，cache_state in {"HIT","MISS"}。
     """
@@ -1316,9 +1323,10 @@ def _compute_realtime_overview_cached(date_text, kwargs, *, cache_params):
 
     ttl = _overview_cache_ttl(cache_params)
     cache_key = realtime_cache.make_cache_key(cache_params)
-    cached = realtime_cache.get(cache_key, ttl)
-    if cached is not None:
-        return cached, "HIT"
+    if not force_refresh:
+        cached = realtime_cache.get(cache_key, ttl)
+        if cached is not None:
+            return cached, "HIT"
 
     result = oa.get_realtime_roas_overview(date_text, **kwargs)
     result = _attach_realtime_data_quality(result)

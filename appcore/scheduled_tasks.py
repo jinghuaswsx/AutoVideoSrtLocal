@@ -375,21 +375,34 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "线上已启用",
         "log_table": "meta_ad_realtime_import_runs",
     },
-    "realtime_overview_warmup": {
-        "code": "realtime_overview_warmup",
-        "name": "实时大盘 overview 预热",
+    "realtime_overview_warmup_fast": {
+        "code": "realtime_overview_warmup_fast",
+        "name": "实时大盘预热-快线(今天/昨天)",
         "description": (
-            "每 15s tick，按前端 Meta 日历口径预热实时大盘 + 新品投放分析两个模块的 overview，"
-            "使用户首次打开命中缓存秒开。范围 today/yesterday/本周/上周/本月/上月（不含年度）；"
-            "today/yesterday 15s、周/月 600s。实时大盘 4 scope（global/new/old/unmatched）、"
-            "新品投放分析 3 scope（new/old/unmatched，带 details+分页）。"
+            "每 15s 强制刷新今天/昨天实时大盘 overview 的 4 个 scope，独立调度、不被周月/npl 重现算阻塞，"
+            "保证 60s TTL 缓存持续续期、用户秒回。force_refresh 重算 + 续 expires_at。"
             "Spec: docs/superpowers/specs/2026-06-14-realtime-dashboard-load-optimization-design.md"
         ),
-        "schedule": "每 15s tick（today/yesterday 15s；本周/上周/本月/上月 600s；不含年度）",
+        "schedule": "每 15s 强制续期（今天/昨天实时大盘 8 个 scope）",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "appcore/order_analytics/realtime_warmup_scheduler.py",
-        "runner": "appcore/order_analytics/realtime_warmup.py::run_warmup_tick",
+        "runner": "appcore/order_analytics/realtime_warmup.py::run_warmup_fast",
+        "deployment": "随 Web 进程启动",
+        "log_table": "scheduled_task_runs",
+    },
+    "realtime_overview_warmup_slow": {
+        "code": "realtime_overview_warmup_slow",
+        "name": "实时大盘预热-慢线(周月+新品)",
+        "description": (
+            "每 30s tick 强制续期：周/月实时大盘（300s）+ 今昨/周月新品投放分析（带明细，120/300s）。"
+            "Spec: docs/superpowers/specs/2026-06-14-realtime-dashboard-load-optimization-design.md"
+        ),
+        "schedule": "每 30s tick（周/月 300s、npl 今昨 120s 强制续期）",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "appcore/order_analytics/realtime_warmup_scheduler.py",
+        "runner": "appcore/order_analytics/realtime_warmup.py::run_warmup_slow",
         "deployment": "随 Web 进程启动",
         "log_table": "scheduled_task_runs",
     },

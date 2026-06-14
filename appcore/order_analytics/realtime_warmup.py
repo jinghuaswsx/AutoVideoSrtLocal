@@ -1,18 +1,15 @@
-"""实时大盘 + 新品投放分析 overview 后台预热。
+"""实时大盘 + 新品投放分析 overview 后台预热（快/慢双线 + 强制刷新续期）。
 
-range 解析与前端 order_analytics.html 的 orderAnalyticsMetaCalendar 逐字一致
-（**周一起算**；月度同前端 new Date(y, m, 1)..new Date(y, m+1, 0)）。
+两层关键设计（2026-06-14 修复，实测坐实）：
+1. **强制刷新（force_refresh=True）**：预热必须重算并写回、刷新 expires_at；否则命中
+   旧缓存就跳过、不续期，缓存到 TTL 被动过期，过期窗口用户请求 MISS、现算十几秒。
+2. **快/慢分离**：今天/昨天实时大盘（60s TTL）走快线 ``run_warmup_fast``（15s，独立调度），
+   不被周月整月聚合、npl 带明细这些十几秒的重现算串行阻塞；周月 + npl 走慢线
+   ``run_warmup_slow``（300s）。否则单串行轮要几分钟，今天/昨天等不到续期就过期了。
 
-覆盖 6 个范围（today/yesterday/本周/上周/本月/上月，**不含年度**），分两档频率：
-- today / yesterday：15s
-- 本周 / 上周 / 本月 / 上月：600s（10 分钟）
+range 解析与前端 orderAnalyticsMetaCalendar 逐字一致（周一起算；月度同前端）。
 
-两个模块（cache_key 不同，各自预热）：
-- realtime：实时大盘顶部卡片，4 scope（global/new/old/unmatched），无 details / 分页。
-- npl：新品投放分析，3 scope（new/old/unmatched），带 include_details + 分页（window=7）。
-
-预热写入的 kwargs / cache_params 必须与 web.routes.order_analytics 的顶部卡片 /
-新品投放分析默认视图逐字对应，否则 cache_key 不匹配、预热白做。
+Docs-anchor: docs/superpowers/specs/2026-06-14-realtime-dashboard-load-optimization-design.md
 """
 from __future__ import annotations
 
@@ -55,13 +52,12 @@ def resolve_meta_calendar_range(range_name: str, today: date) -> tuple[date, dat
     raise ValueError(f"unsupported warmup range: {range_name}")
 
 
-# ── 预热目标矩阵 ──────────────────────────────────────
-_FAST_RANGES = ("today", "yesterday")
-_SLOW_RANGES = ("thisWeek", "lastWeek", "thisMonth", "lastMonth")
-_FAST_INTERVAL = 15
-_SLOW_INTERVAL = 600
+# ── 预热目标矩阵（分频）────────────────────────────────
 _REALTIME_SCOPES = ("global", "new", "old", "unmatched")
 _NPL_SCOPES = ("new", "old", "unmatched")
+_FAST_INTERVAL = 15       # 今天/昨天实时大盘（TTL 60s）
+_NPL_INTERVAL = 120       # 今天/昨天 npl（带明细，TTL 660s）
+_SLOW_INTERVAL = 300      # 周/月（TTL 660s/1800s）
 
 
 @dataclass(frozen=True)
@@ -74,16 +70,25 @@ class WarmupTarget:
 
 def _build_targets() -> list[WarmupTarget]:
     out: list[WarmupTarget] = []
-    for ranges, interval in ((_FAST_RANGES, _FAST_INTERVAL), (_SLOW_RANGES, _SLOW_INTERVAL)):
-        for r in ranges:
-            for s in _REALTIME_SCOPES:
-                out.append(WarmupTarget(r, "realtime", s, interval))
-            for s in _NPL_SCOPES:
-                out.append(WarmupTarget(r, "npl", s, interval))
+    for r in ("today", "yesterday"):
+        for s in _REALTIME_SCOPES:
+            out.append(WarmupTarget(r, "realtime", s, _FAST_INTERVAL))
+        for s in _NPL_SCOPES:
+            out.append(WarmupTarget(r, "npl", s, _NPL_INTERVAL))
+    for r in ("thisWeek", "lastWeek", "thisMonth", "lastMonth"):
+        for s in _REALTIME_SCOPES:
+            out.append(WarmupTarget(r, "realtime", s, _SLOW_INTERVAL))
+        for s in _NPL_SCOPES:
+            out.append(WarmupTarget(r, "npl", s, _SLOW_INTERVAL))
     return out
 
 
 WARMUP_TARGETS = _build_targets()
+# 快线：今天/昨天实时大盘——必须高频续期、绝不被周月/npl 的重现算阻塞
+FAST_TARGETS = [t for t in WARMUP_TARGETS
+                if t.range_name in ("today", "yesterday") and t.module == "realtime"]
+SLOW_TARGETS = [t for t in WARMUP_TARGETS if t not in FAST_TARGETS]
+
 _last_run: dict[tuple[str, str, str], float] = {}
 _lock = threading.Lock()
 
@@ -92,15 +97,15 @@ def _now() -> float:
     return time.monotonic()
 
 
-def _due_targets(now: float) -> list[WarmupTarget]:
+def _due(targets: list[WarmupTarget], now: float) -> list[WarmupTarget]:
     return [
-        t for t in WARMUP_TARGETS
+        t for t in targets
         if now - _last_run.get((t.range_name, t.module, t.scope), 0.0) >= t.interval_seconds
     ]
 
 
 def _warm_one(target: WarmupTarget) -> None:
-    """对单个目标现算并写入与 route 完全一致的 cache_key。"""
+    """对单个目标强制重算并写入与 route 完全一致的 cache_key（force_refresh）。"""
     from web.routes.order_analytics import _compute_realtime_overview_cached
 
     today = current_meta_business_date()
@@ -139,15 +144,14 @@ def _warm_one(target: WarmupTarget) -> None:
             "product_launch_scope": scope, "product_launch_window_days": window,
             "page": None, "page_size": None, "order_page": None, "order_page_size": None,
         }
-    _compute_realtime_overview_cached(None, kwargs, cache_params=cache_params)
+    _compute_realtime_overview_cached(None, kwargs, cache_params=cache_params, force_refresh=True)
 
 
-def run_warmup_tick() -> None:
-    """APScheduler 每 ~15s 调用；串行预热到期的 (range, module, scope)。"""
+def _run(targets: list[WarmupTarget]) -> None:
     now = _now()
     with _lock:
-        targets = _due_targets(now)
-    for t in targets:
+        due = _due(targets, now)
+    for t in due:
         try:
             _warm_one(t)
         except Exception:
@@ -155,3 +159,13 @@ def run_warmup_tick() -> None:
                         t.range_name, t.module, t.scope, exc_info=True)
         with _lock:
             _last_run[(t.range_name, t.module, t.scope)] = _now()
+
+
+def run_warmup_fast() -> None:
+    """快线：今天/昨天实时大盘高频强制续期（独立调度，不被周月/npl 重活阻塞）。"""
+    _run(FAST_TARGETS)
+
+
+def run_warmup_slow() -> None:
+    """慢线：周/月 + 新品投放分析低频强制续期。"""
+    _run(SLOW_TARGETS)
