@@ -124,6 +124,11 @@ def test_tick_once_skips_when_no_ads(monkeypatch):
         ad_alerts, "get_high_loss_ads",
         lambda **kwargs: (date(2026, 6, 12), []),
     )
+    from appcore import ad_long_term_loss
+    monkeypatch.setattr(
+        ad_long_term_loss, "get_long_term_loss_products",
+        lambda **kwargs: (date(2026, 6, 12), []),
+    )
     sent: list[str] = []
     monkeypatch.setattr(
         feishu_alerts, "send_text_message",
@@ -158,6 +163,11 @@ def test_tick_once_sends_report_with_share_link(monkeypatch):
         return date(2026, 6, 12), [_item("ad-1", spend=120.0, roas=0.33, loss_days=3)]
 
     monkeypatch.setattr(ad_alerts, "get_high_loss_ads", fake_get_high_loss_ads)
+    from appcore import ad_long_term_loss
+    monkeypatch.setattr(
+        ad_long_term_loss, "get_long_term_loss_products",
+        lambda **kwargs: (date(2026, 6, 12), []),
+    )
     monkeypatch.setattr(
         ad_alert_daily_report, "_share_secret_key", lambda: "test-secret"
     )
@@ -179,3 +189,40 @@ def test_tick_once_sends_report_with_share_link(monkeypatch):
     assert "Ad ad-1" in sent[0]
     assert "https://example.com/ad-alerts/share/high-loss?token=" in sent[0]
     assert finished["status"] == "success"
+
+
+def test_tick_once_pushes_long_loss_when_high_loss_empty(monkeypatch):
+    """高额亏损为空时，长期亏损品推送仍独立发出（两者口径不同）。"""
+    from appcore import ad_alert_daily_report, ad_alerts, ad_long_term_loss, feishu_alerts, scheduled_tasks
+
+    monkeypatch.setattr(scheduled_tasks, "start_run", lambda code: 14)
+    monkeypatch.setattr(scheduled_tasks, "finish_run", lambda run_id, **kwargs: None)
+    monkeypatch.setattr(
+        feishu_alerts, "load_config",
+        lambda: feishu_alerts.FeishuAlertConfig(True, "a", "s", "c"),
+    )
+    monkeypatch.setattr(
+        ad_alerts, "get_high_loss_ads", lambda **kwargs: (date(2026, 6, 12), [])
+    )
+    ll_item = ad_long_term_loss.LongTermLossItem(
+        product_id=1, product_code="P1", product_name="品1", product_main_image=None,
+        spend_7d=800.0, profit_7d=-200.0, loss_7d=200.0, profit_30d=-50.0, loss_ratio=None,
+        verdict="long_term_net_loss", active_days=28, consecutive_loss_days=3,
+        first_active_date="2026-05-01", has_estimated_cost=True, detail_url="",
+    )
+    monkeypatch.setattr(
+        ad_long_term_loss, "get_long_term_loss_products",
+        lambda **kwargs: (date(2026, 6, 14), [ll_item]),
+    )
+    sent: list[str] = []
+    monkeypatch.setattr(
+        feishu_alerts, "send_text_message",
+        lambda text, **kwargs: sent.append(text) or {"ok": True},
+    )
+
+    summary = ad_alert_daily_report.tick_once()
+
+    assert summary == {"skipped": "no_high_loss_ads"}
+    assert len(sent) == 1
+    assert "长期亏损品" in sent[0]
+    assert "品1" in sent[0]

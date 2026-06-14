@@ -116,6 +116,17 @@ def tick_once() -> dict[str, Any]:
             return summary
 
         business_date, items = ad_alerts.get_high_loss_ads(limit=REPORT_LIMIT)
+
+        # 长期亏损品推送：独立于高额亏损是否为空（两者口径不同，可能一空一非空）
+        try:
+            _bd, ll_items = ad_long_term_loss.get_long_term_loss_products(limit=REPORT_LIMIT)
+            if ll_items:
+                feishu_alerts.send_text_message(
+                    build_long_loss_report_text(_bd, ll_items), config=feishu_config
+                )
+        except Exception:
+            log.warning("long term loss feishu push failed", exc_info=True)
+
         if not items:
             summary = {"skipped": "no_high_loss_ads"}
             _finish("success", summary)
@@ -129,15 +140,6 @@ def tick_once() -> dict[str, Any]:
 
         text = build_report_text(business_date, items, share_url)
         result = feishu_alerts.send_text_message(text, config=feishu_config)
-
-        try:
-            _bd, ll_items = ad_long_term_loss.get_long_term_loss_products(limit=REPORT_LIMIT)
-            if ll_items:
-                feishu_alerts.send_text_message(
-                    build_long_loss_report_text(_bd, ll_items), config=feishu_config
-                )
-        except Exception:
-            log.warning("long term loss feishu push failed", exc_info=True)
 
         summary = {
             "sent": bool(result.get("ok")),
