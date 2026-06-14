@@ -793,7 +793,7 @@ def test_task_definitions_include_tabcut_video_translation_task():
     assert task["runner"] == "appcore.tabcut_selection.scheduler.video_translation_tick_once"
     assert task["log_table"] == "scheduled_task_runs"
     assert "10 个视频" in task["description"]
-    assert "Gemini 2.5 Flash" in task["description"]
+    assert "Gemini 3.1 Flash Lite" in task["description"]
     assert "2026-06-14-tabcut-video-translation-task-design.md" in task["description"]
 
 

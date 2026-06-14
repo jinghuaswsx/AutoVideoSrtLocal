@@ -24,7 +24,7 @@
 
 1. 每 10 分钟持续运行 Tabcut 视频中文翻译任务。
 2. 每轮最多拉取 10 个未翻译或可重试失败的视频。
-3. 使用 OpenRouter Gemini Flash 翻译视频文案和视频关联商品标题。上线 smoke 确认 OpenRouter 当前没有 Gemini 1.5 Flash 可用 endpoint，因此生产使用 `google/gemini-2.5-flash`。
+3. 使用 OpenRouter Gemini 3.1 Flash Lite 翻译视频文案和视频关联商品标题。用户在 2026-06-14 明确指定生产模型为 `google/gemini-3.1-flash-lite`。
 4. 翻译结果持久化写回 `tabcut_videos`，以后打开视频直接读取缓存结果。
 5. 新抓到的视频和历史未翻译视频都进入同一任务池。
 6. 任务登记到后台“定时任务”模块，运行日志进入 `scheduled_task_runs`。
@@ -64,7 +64,7 @@
 默认绑定：
 
 - provider：`openrouter`
-- model：`google/gemini-2.5-flash`
+- model：`google/gemini-3.1-flash-lite`
 
 输入包含：
 
@@ -100,7 +100,7 @@
 1. 把超过 1 小时的 `running` 视频重置为 `failed`，避免进程中断永久卡住。
 2. 读取 `zh_translation_status IN ('pending','failed')` 且 attempts < 3 的视频。
 3. 标记 running 并 attempts + 1。
-4. 调用 OpenRouter Gemini 2.5 Flash 翻译文本。
+4. 调用 OpenRouter Gemini 3.1 Flash Lite 翻译文本。
 5. 成功写回中文字段并标记 `done`。
 6. 失败写入 `failed + error`，遇到全局 provider 配置/额度错误时停止本轮。
 

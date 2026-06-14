@@ -119,7 +119,7 @@ def test_tabcut_video_openrouter_model_slug_fix_updates_binding_and_pricing():
     ).read_text(encoding="utf-8")
 
     assert "UPDATE llm_use_case_bindings" in sql
-    assert "use_case_code = 'tabcut.translate_video_info'" in sql
+    assert "'tabcut.translate_video_info'" in sql
     assert "model_id = 'google/gemini-2.5-flash'" in sql
     assert "INSERT INTO ai_model_prices" in sql
     assert "'openrouter'" in sql
@@ -134,11 +134,26 @@ def test_tabcut_video_openrouter_runtime_model_fix_updates_binding_and_pricing()
     assert "google/gemini-1.5-flash is invalid" in sql
     assert "google/gemini-flash-1.5 has no endpoints" in sql
     assert "UPDATE llm_use_case_bindings" in sql
-    assert "use_case_code = 'tabcut.translate_video_info'" in sql
+    assert "'tabcut.translate_video_info'" in sql
     assert "model_id = 'google/gemini-2.5-flash'" in sql
     assert "INSERT INTO ai_model_prices" in sql
     assert "'openrouter'" in sql
     assert "'google/gemini-2.5-flash'" in sql
+
+
+def test_tabcut_video_openrouter_user_requested_gemini31_flash_lite_fix_updates_binding_and_pricing():
+    sql = (
+        ROOT / "db" / "migrations" / "2026_06_14_tabcut_video_openrouter_user_requested_gemini31_flash_lite.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "user requested OpenRouter Gemini 3.1 Flash Lite" in sql
+    assert "INSERT INTO llm_use_case_bindings" in sql
+    assert "ON DUPLICATE KEY UPDATE" in sql
+    assert "'tabcut.translate_video_info'" in sql
+    assert "'google/gemini-3.1-flash-lite'" in sql
+    assert "INSERT INTO ai_model_prices" in sql
+    assert "'openrouter'" in sql
+    assert "'google/gemini-3.1-flash-lite'" in sql
 
 
 def test_tabcut_daily_selection_registered():

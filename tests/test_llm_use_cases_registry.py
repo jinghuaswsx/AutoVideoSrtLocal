@@ -200,12 +200,12 @@ def test_registry_count_and_new_units_types():
     assert USE_CASES["tabcut.translate_video_info"]["units_type"] == "tokens"
 
 
-def test_tabcut_video_translation_use_case_uses_openrouter_gemini_15_flash():
+def test_tabcut_video_translation_use_case_uses_openrouter_gemini_31_flash_lite():
     uc = USE_CASES["tabcut.translate_video_info"]
 
     assert uc["module"] == "xuanpin"
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-2.5-flash"
+    assert uc["default_model"] == "google/gemini-3.1-flash-lite"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 

@@ -826,7 +826,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "Tabcut 视频中文信息补全",
         "description": (
             "每 10 分钟批量处理未翻译的 Tabcut 视频，每轮最多 10 个视频，调用 OpenRouter "
-            "Gemini 2.5 Flash 翻译视频文案和视频关联商品标题，写回 tabcut_videos 的 zh 字段；"
+            "Gemini 3.1 Flash Lite 翻译视频文案和视频关联商品标题，写回 tabcut_videos 的 zh 字段；"
             "视频列表、今日新增和详情页直接读取持久化中文结果。Docs-anchor: "
             "docs/superpowers/specs/2026-06-14-tabcut-video-translation-task-design.md"
         ),
