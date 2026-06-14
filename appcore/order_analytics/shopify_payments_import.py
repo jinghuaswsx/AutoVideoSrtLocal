@@ -16,8 +16,10 @@ import csv
 import json
 import logging
 import sys
+import threading
 from typing import Any, IO
 
+from appcore.db import query_one
 from .shopify_fee import classify_tier, verify_fee
 from .shopify_fee_dynamic import refresh_fee_rate_snapshots
 
@@ -109,6 +111,42 @@ def parse_payments_csv(stream: IO[str], *, source_csv: str = "") -> list[dict[st
     return out
 
 
+def _affected_business_dates(order_names):
+    """本次导入的 order_name 映射到店小秘订单的 meta_business_date 范围。"""
+    candidates = set()
+    for raw in order_names or []:
+        name = str(raw or "").strip()
+        if not name:
+            continue
+        candidates.add(name)
+        candidates.add(name[1:] if name.startswith("#") else f"#{name}")
+    if not candidates:
+        return None, None
+    placeholders = ", ".join(["%s"] * len(candidates))
+    row = query_one(
+        f"SELECT MIN(meta_business_date) AS a, MAX(meta_business_date) AS b "
+        f"FROM dianxiaomi_order_lines WHERE extended_order_id IN ({placeholders})",
+        tuple(candidates),
+    )
+    if not row:
+        return None, None
+    return row.get("a"), row.get("b")
+
+
+def _trigger_profit_recompute(date_from, date_to):
+    """后台重算受影响 business_date 范围，让新 payments 的真实手续费替换估算（fire-and-forget）。"""
+    def _run():
+        try:
+            from tools.order_profit_backfill import backfill
+            backfill(date_from, date_to)
+        except Exception:
+            log.exception(
+                "payments-triggered profit recompute failed (%s ~ %s)", date_from, date_to
+            )
+
+    threading.Thread(target=_run, name="payments-profit-recompute", daemon=True).start()
+
+
 def import_payments_csv(stream: IO[str], *, source_csv: str = "") -> dict[str, Any]:
     """解析 + 写入 shopify_payments_transactions 表。返回统计。"""
     rows = parse_payments_csv(stream, source_csv=source_csv)
@@ -160,6 +198,16 @@ def import_payments_csv(stream: IO[str], *, source_csv: str = "") -> dict[str, A
             "refresh_failed": True,
             "error": str(exc),
         }
+
+    order_names = [r.get("order_name") for r in rows if r.get("order_name")]
+    bd_from, bd_to = _affected_business_dates(order_names)
+    stats["affected_business_dates"] = {
+        "from": bd_from.isoformat() if hasattr(bd_from, "isoformat") else bd_from,
+        "to": bd_to.isoformat() if hasattr(bd_to, "isoformat") else bd_to,
+    }
+    if bd_from and bd_to:
+        _trigger_profit_recompute(bd_from, bd_to)
+
     return stats
 
 
