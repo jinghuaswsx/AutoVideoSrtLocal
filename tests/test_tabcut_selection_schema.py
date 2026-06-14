@@ -96,6 +96,23 @@ def test_tabcut_goods_chinese_info_migration_adds_translation_fields_and_binding
     assert "'google/gemini-3.1-flash-lite'" in sql
 
 
+def test_tabcut_video_chinese_info_migration_adds_translation_fields_and_binding():
+    sql = (
+        ROOT / "db" / "migrations" / "2026_06_14_tabcut_video_chinese_info.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "Docs-anchor: docs/superpowers/specs/2026-06-14-tabcut-video-translation-task-design.md" in sql
+    assert "ALTER TABLE tabcut_videos" in sql
+    assert "video_desc_zh MEDIUMTEXT NULL" in sql
+    assert "primary_item_name_zh TEXT NULL" in sql
+    assert "zh_translation_status VARCHAR(16) NOT NULL DEFAULT ''pending''" in sql
+    assert "zh_translation_attempts INT UNSIGNED NOT NULL DEFAULT 0" in sql
+    assert "idx_tabcut_videos_zh_translation_status" in sql
+    assert "'tabcut.translate_video_info'" in sql
+    assert "'openrouter'" in sql
+    assert "'google/gemini-1.5-flash'" in sql
+
+
 def test_tabcut_daily_selection_registered():
     from appcore import scheduled_tasks
 

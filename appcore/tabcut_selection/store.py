@@ -281,6 +281,7 @@ def list_video_candidates(
                c.category_l1_name, c.category_l2_name, c.category_l3_name,
                c.candidate_json, c.crawled_at,
                v.video_cover_url, v.tk_video_url, v.video_desc, v.author_name,
+               v.video_desc_zh,
                v.author_avatar_url, v.video_duration_ms, v.create_time,
                v.first_seen_at,
                v.is_marked, v.mark_status, v.marked_at, v.marked_by,
@@ -297,6 +298,11 @@ def list_video_candidates(
                ) AS new_product_parent_task_id,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
+               v.primary_item_name_zh AS video_primary_item_name_zh,
+               v.zh_translation_status AS video_zh_translation_status,
+               v.zh_translation_attempts AS video_zh_translation_attempts,
+               v.zh_translation_error AS video_zh_translation_error,
+               v.zh_translated_at AS video_zh_translated_at,
                g.item_name_zh AS primary_item_name_zh,
                g.item_name_zh_short AS primary_item_name_zh_short,
                g.category_name_zh AS category_name_zh,
@@ -365,6 +371,7 @@ def get_video_candidate(video_id: str, *, query_fn: QueryFn = query) -> dict[str
                c.category_l1_name, c.category_l2_name, c.category_l3_name,
                c.candidate_json, c.crawled_at,
                v.video_cover_url, v.tk_video_url, v.video_desc, v.author_name,
+               v.video_desc_zh,
                v.author_avatar_url, v.video_duration_ms, v.create_time,
                v.is_marked, v.mark_status, v.marked_at, v.marked_by,
                v.local_video_path, v.local_video_cover_path, v.local_video_status,
@@ -380,6 +387,11 @@ def get_video_candidate(video_id: str, *, query_fn: QueryFn = query) -> dict[str
                ) AS new_product_parent_task_id,
                v.raw_json AS video_raw_json,
                g.item_name AS primary_item_name, g.item_pic_url AS primary_item_pic_url,
+               v.primary_item_name_zh AS video_primary_item_name_zh,
+               v.zh_translation_status AS video_zh_translation_status,
+               v.zh_translation_attempts AS video_zh_translation_attempts,
+               v.zh_translation_error AS video_zh_translation_error,
+               v.zh_translated_at AS video_zh_translated_at,
                g.item_name_zh AS primary_item_name_zh,
                g.item_name_zh_short AS primary_item_name_zh_short,
                g.category_name_zh AS category_name_zh,
@@ -733,6 +745,104 @@ def reset_stale_running_goods_translations(
     )
 
 
+def next_pending_video_translations(
+    *,
+    limit: int = 10,
+    max_attempts: int = 3,
+    query_fn: QueryFn = query,
+) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(100, int(limit)))
+    safe_attempts = max(1, int(max_attempts))
+    return query_fn(
+        """
+        SELECT video_id, region, video_desc, primary_item_id,
+               primary_item_name, author_name, video_desc_zh,
+               primary_item_name_zh, zh_translation_status,
+               zh_translation_attempts
+        FROM tabcut_videos
+        WHERE (
+            (video_desc IS NOT NULL AND TRIM(video_desc) <> '')
+            OR (primary_item_name IS NOT NULL AND TRIM(primary_item_name) <> '')
+          )
+          AND zh_translation_status IN ('pending', 'failed')
+          AND zh_translation_attempts < %s
+        ORDER BY zh_translation_attempts ASC, first_seen_at DESC, video_id ASC
+        LIMIT %s
+        """,
+        [safe_attempts, safe_limit],
+    )
+
+
+def mark_video_translation_running(
+    video_id: str,
+    *,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET zh_translation_status='running',
+            zh_translation_attempts=zh_translation_attempts + 1,
+            zh_translation_error=NULL
+        WHERE video_id=%s
+        """,
+        [str(video_id)],
+    )
+
+
+def finish_video_translation(
+    video_id: str,
+    *,
+    payload: Mapping[str, Any] | None,
+    error_message: str | None,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    if error_message:
+        return execute_fn(
+            """
+            UPDATE tabcut_videos
+            SET zh_translation_status='failed',
+                zh_translation_error=%s
+            WHERE video_id=%s
+            """,
+            [str(error_message)[:1000], str(video_id)],
+        )
+    data = payload or {}
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET video_desc_zh=%s,
+            primary_item_name_zh=%s,
+            zh_translation_status='done',
+            zh_translation_error=NULL,
+            zh_translated_at=NOW()
+        WHERE video_id=%s
+        """,
+        [
+            _text_or_empty(data.get("video_desc_zh")),
+            _text_or_empty(data.get("primary_item_name_zh")),
+            str(video_id),
+        ],
+    )
+
+
+def reset_stale_running_video_translations(
+    *,
+    older_than_seconds: int = 3600,
+    execute_fn: ExecuteFn = execute,
+) -> Any:
+    return execute_fn(
+        """
+        UPDATE tabcut_videos
+        SET zh_translation_status='failed',
+            zh_translation_error='running video translation exceeded stale timeout; reset by scheduler'
+        WHERE zh_translation_status='running'
+          AND TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) >= %s
+        """,
+        [max(1, int(older_than_seconds))],
+    )
+
+
 def _text_or_empty(value: Any) -> str:
     return str(value or "").strip()
 
@@ -760,6 +870,39 @@ def upsert_video(video: Mapping[str, Any], *, execute_fn: ExecuteFn = execute) -
             primary_item_id, primary_item_name, raw_json
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
+            video_desc_zh=CASE
+                WHEN video_desc <=> VALUES(video_desc) THEN video_desc_zh
+                ELSE NULL
+            END,
+            primary_item_name_zh=CASE
+                WHEN primary_item_name <=> VALUES(primary_item_name) THEN primary_item_name_zh
+                ELSE NULL
+            END,
+            zh_translation_status=CASE
+                WHEN video_desc <=> VALUES(video_desc) AND primary_item_name <=> VALUES(primary_item_name)
+                THEN zh_translation_status
+                WHEN (
+                    (VALUES(video_desc) IS NOT NULL AND TRIM(VALUES(video_desc)) <> '')
+                    OR (VALUES(primary_item_name) IS NOT NULL AND TRIM(VALUES(primary_item_name)) <> '')
+                )
+                THEN 'pending'
+                ELSE zh_translation_status
+            END,
+            zh_translation_attempts=CASE
+                WHEN video_desc <=> VALUES(video_desc) AND primary_item_name <=> VALUES(primary_item_name)
+                THEN zh_translation_attempts
+                ELSE 0
+            END,
+            zh_translation_error=CASE
+                WHEN video_desc <=> VALUES(video_desc) AND primary_item_name <=> VALUES(primary_item_name)
+                THEN zh_translation_error
+                ELSE NULL
+            END,
+            zh_translated_at=CASE
+                WHEN video_desc <=> VALUES(video_desc) AND primary_item_name <=> VALUES(primary_item_name)
+                THEN zh_translated_at
+                ELSE NULL
+            END,
             region=VALUES(region),
             author_name=VALUES(author_name),
             author_avatar_url=VALUES(author_avatar_url),
@@ -1252,4 +1395,3 @@ def create_goods_from_candidate(
         ],
     )
     return True
-

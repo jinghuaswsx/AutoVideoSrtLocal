@@ -845,6 +845,16 @@ USE_CASES: dict[str, UseCase] = {
         "openrouter",
         "tokens",
     ),
+    "tabcut.translate_video_info": _uc(
+        "tabcut.translate_video_info",
+        "xuanpin",
+        "Tabcut 视频中文信息",
+        "把 Tabcut 视频文案和视频关联商品标题翻译为中文，供选品视频卡片直接展示",
+        "openrouter",
+        "google/gemini-1.5-flash",
+        "openrouter",
+        "tokens",
+    ),
 }
 
 def get_use_case(code: str) -> UseCase:

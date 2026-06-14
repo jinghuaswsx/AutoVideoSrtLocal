@@ -4,13 +4,14 @@ import logging
 from typing import Any
 
 from appcore import scheduled_tasks
-from appcore.tabcut_selection import goods_translation, video_localization
+from appcore.tabcut_selection import goods_translation, video_localization, video_translation
 
 log = logging.getLogger(__name__)
 
 TASK_CODE = "tabcut_video_localization_tick"
 VIDEO_LOCALIZATION_TASK_CODE = TASK_CODE
 GOODS_TRANSLATION_TASK_CODE = "tabcut_goods_translation_tick"
+VIDEO_TRANSLATION_TASK_CODE = "tabcut_video_translation_tick"
 
 
 def video_localization_tick_once(limit: int = 20, max_attempts: int = 5) -> dict[str, Any]:
@@ -73,6 +74,37 @@ def goods_translation_tick_once(limit: int = 30, user_id: int | None = None) -> 
     return summary
 
 
+def video_translation_tick_once(limit: int = 10, user_id: int | None = None) -> dict[str, Any]:
+    run_id = None
+    try:
+        run_id = scheduled_tasks.start_run(VIDEO_TRANSLATION_TASK_CODE)
+    except Exception:
+        log.debug("Tabcut video translation scheduled run start failed", exc_info=True)
+
+    try:
+        summary = video_translation.translate_pending_videos(limit=limit, user_id=user_id)
+    except Exception as exc:
+        if run_id:
+            scheduled_tasks.finish_run(
+                run_id,
+                status="failed",
+                summary={},
+                error_message=str(exc)[:500],
+            )
+        raise
+
+    if run_id:
+        status = "success" if int(summary.get("failed", 0) or 0) == 0 else "failed"
+        error = None if status == "success" else f"{summary.get('failed')} video translation(s) failed"
+        scheduled_tasks.finish_run(
+            run_id,
+            status=status,
+            summary=summary,
+            error_message=error,
+        )
+    return summary
+
+
 def register(scheduler) -> None:
     scheduled_tasks.add_controlled_job(
         scheduler,
@@ -91,6 +123,16 @@ def register(scheduler) -> None:
         "interval",
         minutes=10,
         id=GOODS_TRANSLATION_TASK_CODE,
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduled_tasks.add_controlled_job(
+        scheduler,
+        VIDEO_TRANSLATION_TASK_CODE,
+        video_translation_tick_once,
+        "interval",
+        minutes=10,
+        id=VIDEO_TRANSLATION_TASK_CODE,
         replace_existing=True,
         max_instances=1,
     )

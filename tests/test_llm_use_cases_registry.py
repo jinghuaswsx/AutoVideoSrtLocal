@@ -183,7 +183,7 @@ def test_ad_material_ai_analysis_use_cases_use_googlewj_gemini_35_flash():
 
 
 def test_registry_count_and_new_units_types():
-    assert len(USE_CASES) == 77
+    assert len(USE_CASES) == 78
     assert "omni_translate.lid" in USE_CASES
     assert "asr_clean.purify_primary" in USE_CASES
     assert "asr_clean.purify_fallback" in USE_CASES
@@ -197,6 +197,17 @@ def test_registry_count_and_new_units_types():
     assert USE_CASES["video_cover.generate"]["units_type"] == "images"
     assert USE_CASES["video_cover.ad_copy"]["units_type"] == "tokens"
     assert USE_CASES["tabcut.translate_goods_info"]["units_type"] == "tokens"
+    assert USE_CASES["tabcut.translate_video_info"]["units_type"] == "tokens"
+
+
+def test_tabcut_video_translation_use_case_uses_openrouter_gemini_15_flash():
+    uc = USE_CASES["tabcut.translate_video_info"]
+
+    assert uc["module"] == "xuanpin"
+    assert uc["default_provider"] == "openrouter"
+    assert uc["default_model"] == "google/gemini-1.5-flash"
+    assert uc["usage_log_service"] == "openrouter"
+    assert uc["units_type"] == "tokens"
 
 
 def test_video_cover_generate_use_case_defaults_to_local_image():

@@ -882,9 +882,14 @@
         </div>
 
         <!-- Description Box -->
-        {% if video.video_desc %}
+        {% if video.video_desc_display %}
           <div class="video-desc-box">
-            {{ video.video_desc }}
+            {{ video.video_desc_display }}
+            {% if video.video_desc_zh and video.video_desc and video.video_desc_zh != video.video_desc %}
+              <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">
+                原文：{{ video.video_desc }}
+              </div>
+            {% endif %}
           </div>
         {% endif %}
 

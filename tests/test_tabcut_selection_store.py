@@ -473,6 +473,95 @@ def test_finish_goods_translation_updates_chinese_fields():
     assert params[-1] == "i1"
 
 
+def test_list_video_candidates_selects_video_translation_fields():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"cnt": 0}] if "COUNT" in sql else []
+
+    store.list_video_candidates({}, query_fn=fake_query)
+
+    data_sql = calls[-1][0]
+    assert "v.video_desc_zh" in data_sql
+    assert "v.primary_item_name_zh AS video_primary_item_name_zh" in data_sql
+    assert "v.zh_translation_status AS video_zh_translation_status" in data_sql
+    assert "v.zh_translation_attempts AS video_zh_translation_attempts" in data_sql
+    assert "v.zh_translation_error AS video_zh_translation_error" in data_sql
+    assert "v.zh_translated_at AS video_zh_translated_at" in data_sql
+
+
+def test_next_pending_video_translations_selects_untranslated_rows():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return [{"video_id": "v1", "video_desc": "English copy"}]
+
+    rows = store.next_pending_video_translations(limit=10, query_fn=fake_query)
+
+    sql, params = calls[0]
+    assert rows[0]["video_id"] == "v1"
+    assert "FROM tabcut_videos" in sql
+    assert "zh_translation_status IN ('pending', 'failed')" in sql
+    assert "zh_translation_attempts < %s" in sql
+    assert "video_desc IS NOT NULL" in sql
+    assert params == [3, 10]
+
+
+def test_mark_video_translation_running_increments_attempts():
+    calls = []
+
+    store.mark_video_translation_running(
+        "v1",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE tabcut_videos" in sql
+    assert "zh_translation_status='running'" in sql
+    assert "zh_translation_attempts=zh_translation_attempts + 1" in sql
+    assert params == ["v1"]
+
+
+def test_finish_video_translation_updates_chinese_fields():
+    calls = []
+
+    store.finish_video_translation(
+        "v1",
+        payload={
+            "video_desc_zh": "中文视频文案",
+            "primary_item_name_zh": "中文商品标题",
+        },
+        error_message=None,
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE tabcut_videos" in sql
+    assert "video_desc_zh=%s" in sql
+    assert "primary_item_name_zh=%s" in sql
+    assert "zh_translation_status='done'" in sql
+    assert params == ["中文视频文案", "中文商品标题", "v1"]
+
+
+def test_finish_video_translation_records_failure():
+    calls = []
+
+    store.finish_video_translation(
+        "v1",
+        payload=None,
+        error_message="provider unavailable",
+        execute_fn=lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    sql, params = calls[0]
+    assert "UPDATE tabcut_videos" in sql
+    assert "zh_translation_status='failed'" in sql
+    assert "zh_translation_error=%s" in sql
+    assert params == ["provider unavailable", "v1"]
+
+
 def test_build_videos_response_hydrates_chinese_product_display_fields(monkeypatch):
     monkeypatch.setattr(
         store,
@@ -483,6 +572,9 @@ def test_build_videos_response_hydrates_chinese_product_display_fields(monkeypat
                     "video_id": "v1",
                     "primary_item_id": "i1",
                     "primary_item_name": "Purple Teeth Whitening Strips",
+                    "video_primary_item_name_zh": "紫色牙齿美白贴套装",
+                    "video_desc_zh": "这是一款紫色牙齿美白贴",
+                    "video_zh_translation_status": "done",
                     "primary_item_name_zh": "紫色牙齿美白贴套装",
                     "primary_item_name_zh_short": "紫色美白牙贴",
                     "category_l1_name": "Beauty & Personal Care",
@@ -503,6 +595,8 @@ def test_build_videos_response_hydrates_chinese_product_display_fields(monkeypat
     assert item["primary_item_display_title"] == "紫色牙齿美白贴套装"
     assert item["primary_item_category_zh"] == "美妆个护"
     assert item["primary_item_is_translated"] is True
+    assert item["video_desc_zh"] == "这是一款紫色牙齿美白贴"
+    assert item["video_primary_item_name_zh"] == "紫色牙齿美白贴套装"
 
 
 def test_build_goods_response_hydrates_source_category_label(monkeypatch):

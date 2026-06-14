@@ -1841,9 +1841,13 @@ function renderTabcutVideoOverlayInfo(item) {
   const category = tabcutCategoryText(row);
   const categoryZh = tabcutCategoryZhText(row);
   const titleZh = row.primary_item_name_zh || row.item_name_zh || "";
+  const videoDescZh = row.video_desc_zh || "";
+  const videoDesc = row.video_desc || "";
   const sourceTitle = tabcutProductSourceTitle(row);
   const score = Number(row.score);
   const details = [
+    tabcutOverlayDetail("视频文案", videoDescZh, "video-desc-zh"),
+    tabcutOverlayDetail("原文文案", videoDescZh ? videoDesc : "", "video-desc"),
     tabcutOverlayDetail("中文标题", titleZh, "title-zh"),
     tabcutOverlayDetail("英文标题", sourceTitle),
     tabcutOverlayDetail("商品ID", productId),

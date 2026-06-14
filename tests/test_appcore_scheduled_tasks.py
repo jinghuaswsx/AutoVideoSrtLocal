@@ -782,6 +782,21 @@ def test_task_definitions_include_tabcut_goods_translation_task():
     assert "2026-06-11-tabcut-product-chinese-info-design.md" in task["description"]
 
 
+def test_task_definitions_include_tabcut_video_translation_task():
+    from appcore import scheduled_tasks
+
+    definitions = {item["code"]: item for item in scheduled_tasks.task_definitions()}
+
+    task = definitions["tabcut_video_translation_tick"]
+    assert task["schedule"] == "每 10 分钟"
+    assert task["source_type"] == "apscheduler"
+    assert task["runner"] == "appcore.tabcut_selection.scheduler.video_translation_tick_once"
+    assert task["log_table"] == "scheduled_task_runs"
+    assert "10 个视频" in task["description"]
+    assert "Gemini 1.5 Flash" in task["description"]
+    assert "2026-06-14-tabcut-video-translation-task-design.md" in task["description"]
+
+
 def test_task_definitions_include_server_and_app_timers():
     from appcore import scheduled_tasks
 

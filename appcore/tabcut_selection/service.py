@@ -336,7 +336,8 @@ def _join_text_parts(*values: Any) -> str:
 
 
 def _hydrate_video_chinese_fields(item: dict[str, Any]) -> None:
-    zh_title = _first_text(item.get("primary_item_name_zh"), item.get("item_name_zh"))
+    video_title_zh = _first_text(item.get("video_primary_item_name_zh"))
+    zh_title = _first_text(item.get("primary_item_name_zh"), item.get("item_name_zh"), video_title_zh)
     zh_short = _first_text(item.get("primary_item_name_zh_short"), item.get("item_name_zh_short"))
     english_title = _first_text(item.get("primary_item_name"), item.get("item_name"), item.get("video_desc"))
     category_zh = _first_text(
@@ -351,6 +352,8 @@ def _hydrate_video_chinese_fields(item: dict[str, Any]) -> None:
     item["primary_item_display_title"] = _first_text(zh_title, english_title, item.get("primary_item_id"))
     item["primary_item_category_zh"] = category_zh
     item["primary_item_is_translated"] = bool(zh_short or zh_title)
+    item["video_desc_display"] = _first_text(item.get("video_desc_zh"), item.get("video_desc"))
+    item["video_is_translated"] = bool(_first_text(item.get("video_desc_zh"), video_title_zh))
 
 
 def _hydrate_goods_chinese_fields(item: dict[str, Any]) -> None:
