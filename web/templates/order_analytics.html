@@ -3199,6 +3199,10 @@
     font-weight: 700; font-size: 1.08rem; color: var(--accent); background: var(--accent-soft, #eaf3ff);
     border-left: 4px solid var(--accent); border-radius: var(--radius); letter-spacing: 0.5px; }
   .oa-loading-indicator.is-active { display: block; }
+  .oa-loading-line1 { display: flex; align-items: baseline; }
+  .oa-loading-dots { display: inline-block; min-width: 1.6em; text-align: left; }
+  .oa-loading-line2 { margin-top: 3px; font-size: 0.9em; font-weight: 600; opacity: 0.85; }
+  .oa-loading-secs { display: inline-block; min-width: 2.6em; text-align: right; font-variant-numeric: tabular-nums; }
   .oad-toolbar-row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
   .oad-segmented { display: inline-flex; align-items: center; gap: var(--space-1);
                    padding: var(--space-1); border: 1px solid var(--border-strong);
@@ -8124,13 +8128,18 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     if (!el) return;
     var t0 = Date.now();
     el.classList.add('is-active');
+    el.innerHTML = '<div class="oa-loading-line1"><span>' + (label || '加载中') +
+      '</span><span class="oa-loading-dots">·</span></div>' +
+      '<div class="oa-loading-line2">已用 <span class="oa-loading-secs">0.0</span> 秒</div>';
+    var dotsEl = el.querySelector('.oa-loading-dots');
+    var secsEl = el.querySelector('.oa-loading-secs');
     function render() {
-      var secs = ((Date.now() - t0) / 1000).toFixed(1);
-      var n = (Math.floor((Date.now() - t0) / 300) % 3) + 1;
-      el.textContent = (label || '加载中') + '…'.repeat(n) + ' 已用 ' + secs + ' 秒';
+      var n = (Math.floor((Date.now() - t0) / 400) % 3) + 1;
+      if (dotsEl) dotsEl.textContent = '·'.repeat(n);
+      if (secsEl) secsEl.textContent = ((Date.now() - t0) / 1000).toFixed(1);
     }
     render();
-    _oaLoadingTimers[elId] = setInterval(render, 100);
+    _oaLoadingTimers[elId] = setInterval(render, 120);
   }
   function stopOaLoadingTimer(elId) {
     if (_oaLoadingTimers[elId]) { clearInterval(_oaLoadingTimers[elId]); delete _oaLoadingTimers[elId]; }
