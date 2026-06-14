@@ -7983,18 +7983,20 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
   // ── 顶部卡片：按选择的时间范围聚合 ───────────────
   function loadRealtimeTopCards(requestSeq) {
     requestSeq = assignRealtimeRequestSeq('top', requestSeq);
-    var controller = createRealtimeController('top');
+    if (realtimeState.topScopeControllers) {
+      realtimeState.topScopeControllers.forEach(function(c) {
+        if (c && typeof c.abort === 'function') c.abort();
+      });
+    }
     var range;
     try {
       range = getRealtimeDateRange();
     } catch (err) {
       var note = document.getElementById('realtimeRangeNote');
       if (note) note.textContent = err.message;
-      clearRealtimeController('top', controller);
       return;
     }
     if (!range) {
-      clearRealtimeController('top', controller);
       return;
     }
     var params = new URLSearchParams();
@@ -8006,37 +8008,40 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');
     var baseParams = params;
     setRealtimeScopeCardsLoading();
-    Promise.all([
-      fetchRealtimeScopeSummary(baseParams, 'global', controller),
-      fetchRealtimeScopeSummary(baseParams, 'new', controller),
-      fetchRealtimeScopeSummary(baseParams, 'old', controller),
-      fetchRealtimeScopeSummary(baseParams, 'unmatched', controller)
-    ])
-      .then(function(results) {
-        if (!isRealtimeRequestCurrent('top', requestSeq)) return;
-        var globalData = results[0] || {};
-        var newData = results[1] || {};
-        var oldData = results[2] || {};
-        var unmatchedData = results[3] || {};
-        globalData = reconcileRealtimeGlobalScopeProfit(globalData, newData, oldData, unmatchedData);
+    var scopes = ['global', 'new', 'old', 'unmatched'];
+    var controllers = [];
+    var jobs = scopes.map(function(scope) {
+      var c = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      controllers.push(c);
+      return fetchRealtimeScopeSummary(baseParams, scope, c)
+        .then(function(data) { return { scope: scope, ok: true, data: data || {} }; })
+        .catch(function(err) { return { scope: scope, ok: false, err: err }; });
+    });
+    realtimeState.topScopeControllers = controllers;
+    Promise.all(jobs).then(function(results) {
+      if (!isRealtimeRequestCurrent('top', requestSeq)) return;
+      var byScope = {};
+      results.forEach(function(r) { byScope[r.scope] = r; });
+      ['new', 'old', 'unmatched'].forEach(function(scope) {
+        var r = byScope[scope];
+        if (r && r.ok) { renderRealtimeScopeSummary(scope, r.data); }
+        else if (r && !isRealtimeAbortError(r.err)) { setRealtimeScopeCardError(scope, r.err.message); }
+      });
+      var g = byScope.global, n = byScope['new'], o = byScope.old, u = byScope.unmatched;
+      if (g && g.ok) {
+        var globalData = g.data;
+        if (n && n.ok && o && o.ok && u && u.ok) {
+          globalData = reconcileRealtimeGlobalScopeProfit(globalData, n.data, o.data, u.data);
+        }
         if (typeof window.renderDataQualityBar === 'function') {
           window.renderDataQualityBar(globalData && globalData.data_quality);
         }
         renderRealtimeScopeSummary('global', globalData);
-        renderRealtimeScopeSummary('new', newData);
-        renderRealtimeScopeSummary('old', oldData);
-        renderRealtimeScopeSummary('unmatched', unmatchedData);
         renderRealtimeFreshness(globalData);
-      })
-      .catch(function(err) {
-        if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('top', requestSeq)) return;
-        var note = document.getElementById('realtimeRangeNote');
-        if (note) note.textContent = '加载失败：' + err.message;
-        setRealtimeScopeCardsError(err.message);
-      })
-      .finally(function() {
-        clearRealtimeController('top', controller);
-      });
+      } else if (g && !isRealtimeAbortError(g.err)) {
+        setRealtimeScopeCardError('global', g.err.message);
+      }
+    });
   }
 
   function realtimeScopeProfitValue(data) {
@@ -8163,6 +8168,16 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     });
     updateRealtimeUnmatchedDetailLinks();
     clearRealtimeSameTimeCompare();
+  }
+
+  function setRealtimeScopeCardError(scope, message) {
+    var prefix = realtimeScopePrefix(scope);
+    ['Revenue','Shipping','RevenueWithShipping','Spend','Roas','MetaRoas','PurchaseCost',
+     'LogisticsCost','ShopifyFee','GlobalBreakEvenRoas','ProfitDeduction','OrderCount','Units','Profit']
+      .forEach(function(s){ setRealtimeProfitText(prefix + s, '-'); });
+    setRealtimeProfitText(prefix + 'RevenueSub', '加载失败');
+    setRealtimeProfitText(prefix + 'ProfitSub', message || '加载失败');
+    setRealtimeProfitText(realtimeScopeSourceId(scope), '加载失败：' + (message || '查询失败'));
   }
 
   function setRealtimeScopeCardsError(message) {
