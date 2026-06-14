@@ -2869,7 +2869,7 @@ def test_realtime_summary_places_time_row_before_scope_cards(authed_client_no_db
     assert "profitFormulaDetails" in top_cards_js
     assert "openRealtimeProfitFormulaModal" in top_cards_js
     assert "realtimeProfitFormulaModalSubstitution" in top_cards_js
-    assert "globalData = reconcileRealtimeGlobalScopeProfit(globalData, newData, oldData, unmatchedData);" in top_cards_js
+    assert "globalData = reconcileRealtimeGlobalScopeProfit(globalData, n.data, o.data, u.data);" in top_cards_js
     assert "if (realtimeState.productId) return globalData;" in top_cards_js
 
 
@@ -3013,11 +3013,11 @@ def test_realtime_range_loading_uses_abortable_request_sequence(authed_client_no
     assert "loadRealtimeSubTabs(requestSeq);" in overview_js
     assert "function loadRealtimeTopCards(requestSeq)" in overview_js
     assert "requestSeq = assignRealtimeRequestSeq('top', requestSeq);" in overview_js
-    assert "var controller = createRealtimeController('top');" in overview_js
-    assert "fetchRealtimeScopeSummary(baseParams, 'global', controller)" in overview_js
+    assert "realtimeState.topScopeControllers = controllers;" in overview_js
+    assert "var c = (typeof AbortController !== 'undefined') ? new AbortController() : null;" in overview_js
+    assert "fetchRealtimeScopeSummary(baseParams, scope, c)" in overview_js
     assert "if (!isRealtimeRequestCurrent('top', requestSeq)) return;" in overview_js
-    assert "if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('top', requestSeq)) return;" in overview_js
-    assert "clearRealtimeController('top', controller);" in overview_js
+    assert "else if (r && !isRealtimeAbortError(r.err)) { setRealtimeScopeCardError(scope, r.err.message); }" in overview_js
     assert "return fetchRealtimeJson(url, controller);" in overview_js
 
     subtab_start = body.index("function loadRealtimeSubTabs(requestSeq)")
