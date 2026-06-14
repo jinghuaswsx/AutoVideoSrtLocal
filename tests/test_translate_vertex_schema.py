@@ -24,3 +24,9 @@ def test_extract_gemini_schema_strips_snake_case_additional_properties():
 
     assert "additional_properties" not in schema
     assert "additional_properties" not in schema["properties"]["language"]
+
+
+def test_extract_gemini_schema_converts_openai_json_object_for_googlewj_rerun():
+    schema = _extract_gemini_schema({"type": "json_object"})
+
+    assert schema == {"type": "object"}

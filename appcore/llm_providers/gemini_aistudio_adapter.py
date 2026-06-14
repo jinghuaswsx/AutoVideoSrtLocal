@@ -15,7 +15,10 @@ from appcore.llm_providers._helpers.gemini_calls import (
     _extract_gemini_tokens,
     _is_retryable,
 )
-from appcore.llm_providers._helpers.vertex_json import parse_json_content
+from appcore.llm_providers._helpers.vertex_json import (
+    _extract_gemini_schema,
+    parse_json_content,
+)
 from appcore.llm_provider_configs import (
     credential_provider_for_adapter,
     require_provider_config,
@@ -115,9 +118,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
                 system = (system + "\n\n" + content) if system else content
             else:
                 user_parts.append(str(content))
-        schema = None
-        if response_format and response_format.get("type") == "json_schema":
-            schema = (response_format.get("json_schema") or {}).get("schema")
+        schema = _extract_gemini_schema(response_format)
         return self.generate(
             model=model, prompt="\n\n".join(user_parts), user_id=user_id,
             system=system, response_schema=schema,
