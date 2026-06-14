@@ -38,3 +38,21 @@ def test_aggregate_refunds_from_db(monkeypatch):
     out = rv.aggregate_refunds_from_db(site_code="newjoy")
     assert out["23863"] == 66.89
     assert out["100"] == 20.0
+
+
+def test_build_verification_rows_classifies_with_site(monkeypatch):
+    def fake_query(sql, args=()):
+        return [
+            {"extended_order_id": "23863", "dxm_package_id": "PKG-A",
+             "site_code": "newjoy", "revenue": 50.0},
+            {"extended_order_id": "301", "dxm_package_id": "PKG-B",
+             "site_code": "newjoy", "revenue": 40.0},
+        ]
+    monkeypatch.setattr(oa, "query", fake_query)
+    refunds = {"23863": 66.89, "999": 12.0}
+    statuses = {"301": "refunded"}
+    rows = rv.build_verification_rows(refunds, statuses, site_code="newjoy")
+    by_order = {r["extended_order_id"]: r for r in rows}
+    assert by_order["23863"]["match_status"] == "anomaly"
+    assert by_order["301"]["match_status"] == "anomaly"
+    assert by_order["999"]["match_status"] == "unmatched"
