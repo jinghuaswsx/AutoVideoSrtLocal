@@ -54,6 +54,8 @@ def get_scheduler() -> BackgroundScheduler:
         ad_alert_daily_report.register(_scheduler)
         from appcore.order_analytics import weekly_ai_report
         weekly_ai_report.register(_scheduler)
+        from appcore.order_analytics import realtime_warmup_scheduler
+        realtime_warmup_scheduler.register(_scheduler)
         from appcore.meta_hot_posts import scheduler as meta_hot_posts_scheduler
         meta_hot_posts_scheduler.register(_scheduler)
         from appcore import tos_file_management

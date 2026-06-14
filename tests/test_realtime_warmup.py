@@ -53,3 +53,11 @@ def test_run_tick_serial_calls_warm_one(monkeypatch):
     m.run_warmup_tick()
     assert ("today", "global") in calls
     assert len(calls) == len(m.WARMUP_TARGETS)
+
+
+def test_task_registered_in_definitions():
+    from appcore import scheduled_tasks
+    assert "realtime_overview_warmup" in scheduled_tasks.TASK_DEFINITIONS
+    t = scheduled_tasks.TASK_DEFINITIONS["realtime_overview_warmup"]
+    assert t["source_type"] == "apscheduler"
+    assert t["runner"].endswith("run_warmup_tick")
