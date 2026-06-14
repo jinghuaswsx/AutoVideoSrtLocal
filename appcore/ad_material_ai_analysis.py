@@ -8,10 +8,8 @@ from __future__ import annotations
 import json
 import logging
 import math
-import os
 import re
 import secrets
-import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -444,31 +442,6 @@ def _placeholders(values: Iterable[Any]) -> str:
 def _chunked(items: list[dict], size: int) -> Iterable[list[dict]]:
     for index in range(0, len(items), size):
         yield items[index:index + size]
-
-
-_LAST_LLM_AT: float = 0.0
-
-
-def _llm_spacing_seconds() -> float:
-    raw = os.getenv("AD_MATERIAL_AI_ANALYSIS_LLM_SPACING_SECONDS", "")
-    try:
-        return float(raw) if raw.strip() else 2.0
-    except ValueError:
-        return 2.0
-
-
-def _pace_llm() -> None:
-    """逐次 LLM 调用之间保持最小间隔，避免 30 产品 × 多调用打爆 GoogleWJ 通道触发 429。"""
-    global _LAST_LLM_AT
-    spacing = _llm_spacing_seconds()
-    if spacing <= 0:
-        _LAST_LLM_AT = time.monotonic()
-        return
-    now = time.monotonic()
-    wait = spacing - (now - _LAST_LLM_AT)
-    if wait > 0:
-        time.sleep(wait)
-    _LAST_LLM_AT = time.monotonic()
 
 
 def _invoke_via_throttle(throttle, *, stage: str, product_id=None, **invoke_kwargs):
@@ -1878,9 +1851,9 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
                 "rule": "本批最多输出 Top14，剔除高ROAS低量产品。",
                 "products": [_rank_input(row) for row in batch],
             }
-            _pace_llm()
-            result = llm_client.invoke_generate(
-                RANK_USE_CASE,
+            result = _invoke_via_throttle(
+                throttle, stage="batch_rank",
+                use_case_code=RANK_USE_CASE,
                 prompt=_ranking_prompt(payload),
                 user_id=user_id,
                 project_id=str(project_id),
@@ -1913,9 +1886,9 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
             "rule": "从所有批次候选里输出最终 Top40，仍然坚持有量 + 效率。",
             "products": [_rank_input(row) for row in merged_candidates],
         }
-        _pace_llm()
-        final = llm_client.invoke_generate(
-            RANK_USE_CASE,
+        final = _invoke_via_throttle(
+            throttle, stage="final_rank",
+            use_case_code=RANK_USE_CASE,
             prompt=_ranking_prompt(final_payload),
             user_id=user_id,
             project_id=str(project_id),
@@ -2453,9 +2426,9 @@ def _run_product_analysis(
         fallback["material_review_prompt_debug"] = {**prompt_debug, "mode": "deterministic_fallback"}
         return fallback
     try:
-        _pace_llm()
-        result = llm_client.invoke_generate(
-            PRODUCT_ANALYSIS_USE_CASE,
+        result = _invoke_via_throttle(
+            throttle, stage="material_review", product_id=product.get("product_id"),
+            use_case_code=PRODUCT_ANALYSIS_USE_CASE,
             prompt=_material_review_prompt(review_input),
             user_id=user_id,
             project_id=str(project_id),
@@ -4671,9 +4644,9 @@ def _run_country_reviews(
         product, eval_countries, countries_by_code, local_materials, mk_materials, task_assignments,
     )
     try:
-        _pace_llm()
-        result = llm_client.invoke_generate(
-            COUNTRY_REVIEW_USE_CASE,
+        result = _invoke_via_throttle(
+            throttle, stage="country_review", product_id=product.get("product_id"),
+            use_case_code=COUNTRY_REVIEW_USE_CASE,
             prompt=_combined_country_review_prompt(review_input),
             user_id=user_id,
             project_id=str(project_id),
