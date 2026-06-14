@@ -92,6 +92,7 @@ def _run_route(project_type: str):
 _PROJECT_TYPE_API_PREFIX = {
     "omni_translate": "/api/omni-translate",
     "omni_translate_v2": "/api/omni-translate-v2",
+    "omni_translate_0615": "/api/omni-translate-0615",
     "multi_translate": "/api/multi-translate",
     "dialogue_translate": "/api/dialogue-translate",
 }

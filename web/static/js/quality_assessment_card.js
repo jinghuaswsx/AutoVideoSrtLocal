@@ -46,6 +46,7 @@ window.QualityAssessmentCard = (function () {
   function apiBaseForProjectType(projectType) {
     if (projectType === "omni_translate") return "/api/omni-translate";
     if (projectType === "omni_translate_v2") return "/api/omni-translate-v2";
+    if (projectType === "omni_translate_0615") return "/api/omni-translate-0615";
     if (projectType === "dialogue_translate") return "/api/dialogue-translate";
     return "/api/multi-translate";
   }

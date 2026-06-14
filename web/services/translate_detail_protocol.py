@@ -72,7 +72,7 @@ def _ensure_candidates_in_items(items: list, candidates: list, language: str | N
 def resolve_voice_ai_auto_select_enabled(state: dict | None) -> bool:
     state = state or {}
     project_type = str(state.get("type") or state.get("project_type") or "").strip()
-    if project_type not in {"omni_translate", "omni_translate_v2"}:
+    if project_type not in {"omni_translate", "omni_translate_v2", "omni_translate_0615"}:
         return False
     try:
         from appcore.omni_plugin_config import validate_plugin_config

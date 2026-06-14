@@ -917,6 +917,8 @@
         {% set video_translate_href = "/multi-translate" %}
       {% elif has_permission('omni_translate_v2') %}
         {% set video_translate_href = "/omni-translate-v2" %}
+      {% elif has_permission('omni_translate_0615') %}
+        {% set video_translate_href = "/omni-translate-0615" %}
       {% elif has_permission('dialogue_translate') %}
         {% set video_translate_href = "/dialogue-translate" %}
       {% elif has_permission('english_redub') %}
@@ -967,6 +969,11 @@
           {% if has_permission('omni_translate_v2') %}
           <a href="/omni-translate-v2" {% if request.path.startswith('/omni-translate-v2') %}class="active"{% endif %}>
             <span class="nav-icon">⚡</span> 全能视频翻译V2
+          </a>
+          {% endif %}
+          {% if has_permission('omni_translate_0615') %}
+          <a href="/omni-translate-0615" {% if request.path.startswith('/omni-translate-0615') %}class="active"{% endif %}>
+            <span class="nav-icon">🧪</span> 全能视频翻译0615
           </a>
           {% endif %}
         </div>

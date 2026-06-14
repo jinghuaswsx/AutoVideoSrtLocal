@@ -517,7 +517,7 @@
 
 <div class="card hidden" id="pipelineCard">
   {% set pipeline_steps = pipeline_main_steps|default([]) %}
-  {% set is_omni_pipeline = api_base == '/api/omni-translate' %}
+  {% set is_omni_pipeline = api_base == '/api/omni-translate' or api_base == '/api/omni-translate-0615' %}
   {% set is_dialogue_pipeline = pipeline_kind == 'dialogue_translate' %}
   {% set extended_pipeline = pipeline_kind == 'multi_translate' or is_omni_pipeline or is_dialogue_pipeline %}
   {% set show_separate_step = (extended_pipeline and not pipeline_steps) or ('separate' in pipeline_steps) %}
@@ -888,6 +888,8 @@
     {% set _quality_project_type = '' %}
     {% if request.path.startswith('/omni-translate-v2') %}
       {% set _quality_project_type = 'omni_translate_v2' %}
+    {% elif request.path.startswith('/omni-translate-0615') %}
+      {% set _quality_project_type = 'omni_translate_0615' %}
     {% elif request.path.startswith('/omni-translate') %}
       {% set _quality_project_type = 'omni_translate' %}
     {% elif request.path.startswith('/multi-translate') %}
@@ -977,7 +979,7 @@
     <div class="step" id="step-analysis"
          data-task-id="{{ project.id if project is defined and project else '' }}"
          data-is-admin="{{ '1' if current_user.is_admin else '0' }}"
-         data-project-type="{% if request.path.startswith('/omni-translate') %}omni_translate{% elif request.path.startswith('/multi-translate') %}multi_translate{% elif request.path.startswith('/dialogue-translate') %}dialogue_translate{% else %}av_sync{% endif %}">
+         data-project-type="{% if request.path.startswith('/omni-translate-0615') %}omni_translate_0615{% elif request.path.startswith('/omni-translate') %}omni_translate{% elif request.path.startswith('/multi-translate') %}multi_translate{% elif request.path.startswith('/dialogue-translate') %}dialogue_translate{% else %}av_sync{% endif %}">
       <div class="step-main">
         <div class="step-icon" id="icon-analysis">9</div>
         <div style="flex:1">

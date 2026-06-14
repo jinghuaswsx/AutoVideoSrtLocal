@@ -68,6 +68,7 @@ PERMISSIONS: tuple[tuple[str, str, str, bool, bool], ...] = (
     ("user_settings",         GROUP_BUSINESS,   "用户设置",         True,  True),
     ("omni_translate",        GROUP_BUSINESS,   "全能视频翻译",     True,  True),
     ("omni_translate_v2",     GROUP_BUSINESS,   "全能视频翻译V2",   True,  True),
+    ("omni_translate_0615",   GROUP_BUSINESS,   "全能视频翻译0615", True,  True),
     ("dialogue_translate",    GROUP_BUSINESS,   "对话式视频翻译",   True,  True),
     ("drawing_studio",        GROUP_BUSINESS,   "画图工作室",       True,  True),
     # B. 管理类
@@ -139,6 +140,7 @@ HOME_REDIRECT_ORDER = [
     ("raw_video_pool",   "/tasks/"),
     ("bulk_translate_admin", "/bulk-translate/admin"),
     ("omni_translate_v2", "/omni-translate-v2"),
+    ("omni_translate_0615", "/omni-translate-0615"),
     ("api_config",       "/settings"),
     ("ai_billing",       "/my-ai-usage"),
     ("user_settings",    "/user-settings"),
@@ -152,6 +154,7 @@ HOME_REDIRECT_ORDER = [
 _TRANSLATOR_TRUE_PERMISSIONS = {
     "omni_translate",
     "omni_translate_v2",
+    "omni_translate_0615",
     "dialogue_translate",
     "english_redub",
     "user_settings",
