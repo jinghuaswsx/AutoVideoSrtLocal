@@ -22,6 +22,8 @@ _omni_translate_start: OmniStartFunc | None = None
 _omni_translate_resume: OmniResumeFunc | None = None
 _omni_translate_v2_start: OmniStartFunc | None = None
 _omni_translate_v2_resume: OmniResumeFunc | None = None
+_omni_translate_0615_start: OmniStartFunc | None = None
+_omni_translate_0615_resume: OmniResumeFunc | None = None
 _dialogue_translate_start: DialogueStartFunc | None = None
 _dialogue_translate_resume: DialogueResumeFunc | None = None
 _ja_translate_start: JaStartFunc | None = None
@@ -34,6 +36,7 @@ def clear_runner_registry() -> None:
     global _multi_translate_start, _multi_translate_resume
     global _omni_translate_start, _omni_translate_resume
     global _omni_translate_v2_start, _omni_translate_v2_resume
+    global _omni_translate_0615_start, _omni_translate_0615_resume
     global _dialogue_translate_start, _dialogue_translate_resume
     global _ja_translate_start, _ja_translate_resume
     global _link_check_start
@@ -45,6 +48,8 @@ def clear_runner_registry() -> None:
     _omni_translate_resume = None
     _omni_translate_v2_start = None
     _omni_translate_v2_resume = None
+    _omni_translate_0615_start = None
+    _omni_translate_0615_resume = None
     _dialogue_translate_start = None
     _dialogue_translate_resume = None
     _ja_translate_start = None
@@ -90,6 +95,16 @@ def register_omni_v2_translate_runner(
     global _omni_translate_v2_start, _omni_translate_v2_resume
     _omni_translate_v2_start = start
     _omni_translate_v2_resume = resume
+
+
+def register_omni_translate_0615_runner(
+    *,
+    start: OmniStartFunc,
+    resume: OmniResumeFunc | None = None,
+) -> None:
+    global _omni_translate_0615_start, _omni_translate_0615_resume
+    _omni_translate_0615_start = start
+    _omni_translate_0615_resume = resume
 
 
 def register_dialogue_translate_runner(
@@ -170,6 +185,22 @@ def resume_omni_translate_v2_runner(
     if _omni_translate_v2_resume is None:
         raise RuntimeError("omni_translate_v2 resume runner is not registered")
     return _omni_translate_v2_resume(task_id, start_step, user_id)
+
+
+def start_omni_translate_0615_runner(task_id: str, user_id: int | None = None) -> object:
+    if _omni_translate_0615_start is None:
+        raise RuntimeError("omni_translate_0615 runner is not registered")
+    return _omni_translate_0615_start(task_id, user_id)
+
+
+def resume_omni_translate_0615_runner(
+    task_id: str,
+    start_step: str,
+    user_id: int | None = None,
+) -> object:
+    if _omni_translate_0615_resume is None:
+        raise RuntimeError("omni_translate_0615 resume runner is not registered")
+    return _omni_translate_0615_resume(task_id, start_step, user_id)
 
 
 def start_dialogue_translate_runner(task_id: str, user_id: int | None = None) -> object:
