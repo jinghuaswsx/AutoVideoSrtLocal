@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CC-X7（美国 GCP 公网开发机，Claude Code 所在）→ 线上服务器 autovideosrt 发布脚本
-# 与 deploy/publish.sh 的区别：publish.sh 走 `ssh -i CC.pem root@172.16.254.106` 直连，
+# 与 deploy/publish.sh 的区别：publish.sh 走 Windows 内网直连 + root，
 # 是 Windows 内网开发机用的；CC-X7 在公网、只能走反向隧道、登录 cjh，故另立此脚本。
 #
 # 用法:
@@ -41,6 +41,14 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SSH_ALIAS="avsl"
 GIT_PUSH_SSH="ssh -i $HOME/.ssh/id_ed25519_autovideosrtlocal -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+SERVER_HOST="${AUTOVIDEOSRT_SERVER_HOST:-}"
+if [[ -z "$SERVER_HOST" ]]; then
+  SERVER_HOST="$(python3 - <<'PY'
+from server_config import SERVER_HOST
+print(SERVER_HOST)
+PY
+)"
+fi
 
 log() { echo -e "\n\033[1;36m[publish_ccx7]\033[0m $*"; }
 
@@ -123,4 +131,4 @@ if ! deploy_remote "/opt/autovideosrt" "autovideosrt" "http://127.0.0.1/" "deplo
   log "❌ 生产发布失败。回滚参考: ssh avsl 'sudo git -C /opt/autovideosrt reset --hard HEAD~1 && sudo systemctl restart autovideosrt'"
   exit 1
 fi
-log "✅ 生产上线完成：http://172.16.254.106/"
+log "✅ 生产上线完成：http://$SERVER_HOST/"

@@ -742,7 +742,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "name": "广告预警每日飞书推送",
         "description": (
             "每天北京时间 17:00 推送高亏损广告 Top 榜到飞书，"
-            "附 24 小时公开分享链接；feishu_alerts.enabled 未启用时记录跳过不发送。"
+            "附 24 小时公开分享链接；默认停用，避免进入系统报警群。"
             "Docs-anchor: docs/superpowers/specs/2026-06-12-ad-alert-action-workflow-design.md"
         ),
         "schedule": "每天 17:00",
@@ -752,7 +752,7 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "runner": "appcore.ad_alert_daily_report.tick_once",
         "deployment": "Web 服务启动时注册",
         "log_table": "scheduled_task_runs",
-        "default_enabled": True,
+        "default_enabled": False,
     },
     "weekly_ai_analysis_report": {
         "code": "weekly_ai_analysis_report",

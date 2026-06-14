@@ -597,16 +597,16 @@ def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
         template.index("function renderRealtimeOrders")
     ]
 
-    assert "fetchRealtimeScopeSummary(baseParams, 'global', controller)" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'new', controller)" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'old', controller)" in load_block
-    assert "fetchRealtimeScopeSummary(baseParams, 'unmatched', controller)" in load_block
+    assert "var scopes = ['global', 'new', 'old', 'unmatched'];" in load_block
+    assert "scopes.map(function(scope)" in load_block
+    assert "fetchRealtimeScopeSummary(baseParams, scope, c)" in load_block
+    assert "return { scope: scope, ok: true, data: data || {} };" in load_block
+    assert "return { scope: scope, ok: false, err: err };" in load_block
+    assert "Promise.all(jobs).then(function(results)" in load_block
     assert "params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');" in load_block
     assert "params.set('product_launch_scope', scope);" in load_block
-    assert "renderRealtimeScopeSummary('new'" in load_block
-    assert "renderRealtimeScopeSummary('old'" in load_block
-    assert "renderRealtimeScopeSummary('unmatched'" in load_block
-    assert "product_id 为空订单同口径核算" in load_block
+    assert "['new', 'old', 'unmatched'].forEach(function(scope)" in load_block
+    assert "renderRealtimeScopeSummary(scope, r.data);" in load_block
 
 
 def test_new_product_launch_request_includes_launch_window_days():

@@ -65,7 +65,7 @@ def test_daily_report_task_registered_for_scheduled_tasks_ui():
     assert definition["source_ref"] == ad_alert_daily_report.TASK_CODE
     assert definition["runner"] == "appcore.ad_alert_daily_report.tick_once"
     assert definition["log_table"] == "scheduled_task_runs"
-    assert definition["default_enabled"] is True
+    assert definition["default_enabled"] is False
 
 
 def test_tick_once_skips_when_feishu_disabled(monkeypatch):
