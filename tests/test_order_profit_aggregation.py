@@ -584,6 +584,8 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
             return [{"unallocated_ad_spend_usd": 12.5}]
         if "FROM meta_ad_daily_campaign_metrics" in sql:
             return [{"business_date": date(2026, 5, 1), "n": 1}]
+        if "shopify_fee_source" in sql:
+            return []
         raise AssertionError(f"unexpected query: {sql}")
 
     monkeypatch.setattr(oa, "query", fake_query)
@@ -611,12 +613,14 @@ def test_status_summary_aggregates_line_statuses_and_date_range_unallocated_spen
         "total_profit_usd": 20.5,
         "total_margin_pct": 13.67,
     }
-    assert payload["estimate_marks"]["shopify_fee"] == {
-        "estimated": True,
-        "amount_usd": 5.0,
-        "lines": 3,
-        "label": "策略 C 估算",
-    }
+    shopify_fee_mark = payload["estimate_marks"]["shopify_fee"]
+    assert shopify_fee_mark["estimated"] is False  # no estimated lines returned
+    assert shopify_fee_mark["amount_usd"] == 5.0
+    assert shopify_fee_mark["lines"] == 3
+    assert shopify_fee_mark["label"] == "手续费（真实优先）"
+    assert shopify_fee_mark["actual_payment"] == {"lines": 0, "amount_usd": 0.0}
+    assert shopify_fee_mark["estimated_breakdown"] == {"lines": 0, "amount_usd": 0.0}
+    assert shopify_fee_mark["by_source"] == {}
     assert payload["estimate_marks"]["purchase_fallback"]["amount_usd"] == 5.0
     assert payload["estimate_marks"]["purchase_fallback"]["lines"] == 1
     assert payload["estimate_marks"]["shipping_product_estimated"]["amount_usd"] == 2.0
@@ -1181,6 +1185,8 @@ def test_status_summary_returns_complete_profit_with_missing_cost_estimates(monk
             ]
         if "FROM meta_ad_daily_campaign_metrics" in sql:
             return [{"unallocated_ad_spend_usd": 0}]
+        if "shopify_fee_source" in sql:
+            return []
         raise AssertionError(f"unexpected query: {sql}")
 
     monkeypatch.setattr(oa, "query", fake_query)
@@ -1612,3 +1618,24 @@ def test_supplement_filtered_by_query_range(_seed_meta_accounts, _manual_ad_spen
         date_from=_date_5(2026, 5, 8), date_to=_date_5(2026, 5, 8),
     )
     assert summary["manual_unallocated_supplement_usd"] == _Decimal_5("300.0000")
+
+
+def test_shopify_fee_source_breakdown_splits_actual_and_estimate(monkeypatch):
+    from datetime import date
+    from appcore.order_analytics import order_profit_aggregation as agg
+
+    def fake_query(sql, args=()):
+        assert "shopify_fee_source" in sql
+        return [
+            {"src": "actual_payment", "n": 60, "fee": 1200.0},
+            {"src": "dynamic_region_rate", "n": 20, "fee": 500.0},
+            {"src": "strategy_c_fallback", "n": 15, "fee": 300.0},
+            {"src": "legacy", "n": 5, "fee": 80.0},
+        ]
+
+    monkeypatch.setattr(agg, "query", fake_query)
+    bd = agg._query_shopify_fee_source_breakdown(date(2026, 6, 1), date(2026, 6, 13))
+
+    assert bd["actual_payment"] == {"lines": 60, "amount_usd": 1200.0}
+    assert bd["estimated"]["lines"] == 40  # dynamic + strategy_c + legacy
+    assert bd["estimated"]["amount_usd"] == 880.0
