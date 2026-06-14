@@ -75,11 +75,13 @@ def _build_targets() -> list[WarmupTarget]:
             out.append(WarmupTarget(r, "realtime", s, _FAST_INTERVAL))
         for s in _NPL_SCOPES:
             out.append(WarmupTarget(r, "npl", s, _NPL_INTERVAL))
+        out.append(WarmupTarget(r, "subtab", "global", _NPL_INTERVAL))
     for r in ("thisWeek", "lastWeek", "thisMonth", "lastMonth"):
         for s in _REALTIME_SCOPES:
             out.append(WarmupTarget(r, "realtime", s, _SLOW_INTERVAL))
         for s in _NPL_SCOPES:
             out.append(WarmupTarget(r, "npl", s, _SLOW_INTERVAL))
+        out.append(WarmupTarget(r, "subtab", "global", _SLOW_INTERVAL))
     return out
 
 
@@ -127,6 +129,21 @@ def _warm_one(target: WarmupTarget) -> None:
             "include_details": True, "include_profit_summary": True,
             "product_id": None, "site_code": "",
             "product_launch_scope": scope, "product_launch_window_days": window,
+            "page": 1, "page_size": 30, "order_page": 1, "order_page_size": 30,
+        }
+    elif target.module == "subtab":
+        # 实时大盘子 Tab（ROAS走势/订单明细/产品销量/广告计划）：
+        # include_details + 分页，无 scope / 无 window / 无 profit_summary，逐字匹配前端 loadRealtimeSubTabs
+        kwargs = {
+            "start_date": si, "end_date": ei,
+            "include_details": True,
+            "order_page": 1, "order_page_size": 30, "page": 1, "page_size": 30,
+        }
+        cache_params = {
+            "date": None, "start_date": si, "end_date": ei,
+            "include_details": True, "include_profit_summary": False,
+            "product_id": None, "site_code": "",
+            "product_launch_scope": None, "product_launch_window_days": None,
             "page": 1, "page_size": 30, "order_page": 1, "order_page_size": 30,
         }
     else:

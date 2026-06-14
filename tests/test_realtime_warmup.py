@@ -41,7 +41,8 @@ def test_slow_targets_exclude_fast_cover_rest():
     # 慢线含 npl 今昨 + 周月
     assert any(t.module == "npl" and t.range_name == "today" for t in rw.SLOW_TARGETS)
     assert any(t.range_name == "thisWeek" and t.module == "realtime" for t in rw.SLOW_TARGETS)
-    assert len(rw.FAST_TARGETS) + len(rw.SLOW_TARGETS) == len(rw.WARMUP_TARGETS) == 42
+    assert len(rw.FAST_TARGETS) + len(rw.SLOW_TARGETS) == len(rw.WARMUP_TARGETS) == 48
+    assert any(t.module == "subtab" for t in rw.SLOW_TARGETS)
 
 
 def test_no_year_ranges():
