@@ -343,6 +343,36 @@ def sync_usd_cny_daily_rate(
     }
 
 
+def backfill_usd_cny_daily_rate(
+    *,
+    rate_date: date,
+    fetcher: Callable[[date], RateQuote] | None = None,
+    source_run_id: int | None = None,
+) -> dict[str, Any]:
+    """单源历史回填：open_er_api / floatrates 无历史端点，三源交叉校验不适用于历史日期，
+    故仅用 frankfurter 历史值写入，validators 置空、max_diff=0，标注 single_source_historical。
+    写入同一张 usd_cny_daily_exchange_rates，下游按 daily_archive 读取。
+    """
+    fetch = fetcher or (lambda d: fetch_frankfurter_usd_cny(rate_date=d))
+    primary = fetch(rate_date)
+    row_id = _upsert_validated_rate(
+        rate_date=rate_date,
+        primary=primary,
+        validators=[],
+        max_relative_diff=Decimal("0"),
+        tolerance_ratio=DEFAULT_TOLERANCE_RATIO,
+        source_run_id=source_run_id,
+    )
+    return {
+        "rate_date": rate_date.isoformat(),
+        "usd_to_cny": float(_q6(primary.rate)),
+        "primary": primary.as_summary(),
+        "validators": [],
+        "sample_status": "single_source_historical",
+        "row_id": row_id,
+    }
+
+
 def manual_rate_lookup(rate: Any) -> ExchangeRateLookup:
     return ExchangeRateLookup(
         rate=_positive_decimal(rate, label="manual rmb_per_usd"),
