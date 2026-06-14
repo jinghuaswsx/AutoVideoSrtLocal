@@ -1,5 +1,5 @@
 {% extends "layout.html" %}
-{% block title %}{% if active_tab == 'problem' %}问题广告{% elif active_tab == 'high_loss' %}高额亏损广告{% else %}广告预警{% endif %}{% endblock %}
+{% block title %}{% if active_tab == 'problem' %}问题广告{% elif active_tab == 'high_loss' %}高额亏损广告{% elif active_tab == 'long_loss' %}长期亏损品{% else %}广告预警{% endif %}{% endblock %}
 {% block extra_style %}
 <style>
 {% include "medias/_roas_styles.html" %}
@@ -1395,7 +1395,7 @@
 <div class="oc oc-ad-alert-page" data-threshold="{{ threshold }}">
   <div class="oc-ad-alert-head">
     <div class="oc-ad-alert-title">
-      <h1>{% if active_tab == 'problem' %}问题广告{% elif active_tab == 'high_loss' %}高额亏损广告{% else %}广告预警{% endif %}</h1>
+      <h1>{% if active_tab == 'problem' %}问题广告{% elif active_tab == 'high_loss' %}高额亏损广告{% elif active_tab == 'long_loss' %}长期亏损品{% else %}广告预警{% endif %}</h1>
       <span class="oc-ad-alert-count" id="adAlertCount">加载中</span>
     </div>
     <div class="oc-ad-alert-tools">
@@ -1411,6 +1411,7 @@
     <a class="oc-ad-alert-tab {% if active_tab == 'high_loss' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/" role="tab" data-ad-alert-tab="high_loss" aria-selected="{% if active_tab == 'high_loss' %}true{% else %}false{% endif %}">高额亏损广告</a>
     <a class="oc-ad-alert-tab {% if active_tab == 'alerts' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/alerts" role="tab" data-ad-alert-tab="alerts" aria-selected="{% if active_tab == 'alerts' %}true{% else %}false{% endif %}">广告预警</a>
     <a class="oc-ad-alert-tab {% if active_tab == 'problem' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/problem" role="tab" data-ad-alert-tab="problem" aria-selected="{% if active_tab == 'problem' %}true{% else %}false{% endif %}">问题广告</a>
+    <a class="oc-ad-alert-tab {% if active_tab == 'long_loss' %}oc-ad-alert-active{% endif %}" href="/ad-alerts/long-loss" role="tab" data-ad-alert-tab="long_loss" aria-selected="{% if active_tab == 'long_loss' %}true{% else %}false{% endif %}">长期亏损品</a>
   </div>
 
   <section class="oc-ad-alert-panel" data-ad-alert-panel="high_loss" {% if active_tab != 'high_loss' %}hidden{% endif %}>
@@ -1432,6 +1433,21 @@
       <div class="oc-ad-alert-share-meta" id="adAlertHighLossShareMeta"></div>
     </div>
     <div class="oc-ad-alert-list" id="adAlertHighLossList">
+      <div class="oc-ad-alert-state loading">加载中</div>
+    </div>
+  </section>
+
+  <section class="oc-ad-alert-panel" data-ad-alert-panel="long_loss" {% if active_tab != 'long_loss' %}hidden{% endif %}>
+    <div class="oc-ad-alert-highloss-toolbar">
+      <div class="oc-ad-alert-business-date" id="adAlertLongLossDate">业务日：加载中</div>
+      <div class="oc-ad-alert-problem-actions">
+        <input class="oc-ad-alert-search" id="adAlertLongLossSearch" type="search" placeholder="搜索商品名称或 product code">
+        <button class="oc-ad-alert-btn" type="button" id="adAlertLongLossRefresh">查询</button>
+      </div>
+    </div>
+    <div class="oc-ad-alert-highloss-note">长期亏损品定义：近 30 天投放 ≥ 10 天，且近 7 天在亏、吃掉近 30 天利润 10% 以上（亏损侵蚀利润），或近 30 天累计净亏（长期净亏）。含估算成本的品已标注「含估算」。</div>
+    <div class="oc-ad-alert-highloss-note" id="adAlertLongLossEstimateHint" hidden>⚠ 部分商品含估算成本，数据仅供参考，建议核实实际成本后再决策。</div>
+    <div class="oc-ad-alert-list" id="adAlertLongLossList">
       <div class="oc-ad-alert-state loading">加载中</div>
     </div>
   </section>
@@ -1574,6 +1590,8 @@
     highLossLoaded: false,
     highLossSearch: '',
     showHandled: false,
+    longLossSearch: '',
+    longLossLoaded: false,
     problemLoaded: false,
     problemLevel: 'campaign',
     problemSearch: '',
@@ -1592,6 +1610,9 @@
   var highLossShareMeta = document.getElementById('adAlertHighLossShareMeta');
   var problemBody = document.getElementById('adAlertProblemBody');
   var problemDate = document.getElementById('adAlertProblemDate');
+  var longLossList = document.getElementById('adAlertLongLossList');
+  var longLossDate = document.getElementById('adAlertLongLossDate');
+  var longLossEstimateHint = document.getElementById('adAlertLongLossEstimateHint');
 
   function fetchWithTimeout(url, options, timeoutMs) {
     options = options || {};
@@ -2034,6 +2055,88 @@
         btn.disabled = false;
         btn.textContent = '生成分享链接';
       });
+  }
+
+  function loadLongLossAds() {
+    if (!longLossList) return;
+    longLossList.innerHTML = '<div class="oc-ad-alert-state loading">加载中</div>';
+    var params = new URLSearchParams();
+    params.set('limit', '50');
+    if (state.longLossSearch) params.set('q', state.longLossSearch);
+    fetchWithTimeout('/ad-alerts/api/long-term-loss?' + params.toString(), { headers: { 'Accept': 'application/json' } })
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('long_loss_failed');
+        return resp.json();
+      })
+      .then(function(data) {
+        state.longLossLoaded = true;
+        if (longLossDate) {
+          longLossDate.textContent = '业务日：' + (data.business_date || '—') + ' · ' + String(data.total || 0) + ' 条';
+        }
+        if (longLossEstimateHint) {
+          longLossEstimateHint.hidden = !(Number(data.estimated_product_count || 0) > 0);
+        }
+        renderLongLossAds(data.items || []);
+      })
+      .catch(function() {
+        if (longLossDate) longLossDate.textContent = '业务日：加载失败';
+        longLossList.innerHTML = '<div class="oc-ad-alert-state">加载失败</div>';
+      });
+  }
+
+  function renderLongLossAds(items) {
+    if (!longLossList) return;
+    if (!items.length) {
+      longLossList.innerHTML = '<div class="oc-ad-alert-state">当前没有命中长期亏损规则的品</div>';
+      return;
+    }
+    longLossList.innerHTML = items.map(function(item) {
+      var productName = item.product_name || item.product_code || '未匹配商品';
+      var productCode = item.product_code || '';
+      var verdictLabel = item.verdict === 'long_term_net_loss' ? '长期净亏' : '亏损侵蚀利润';
+      var verdictBadge = '<span class="oc-ad-alert-badge oc-ad-alert-severe">' + html(verdictLabel) + '</span>';
+      var lossDays = Number(item.consecutive_loss_days || 0);
+      var lossDaysBadge = lossDays > 0
+        ? '<span class="oc-ad-alert-badge oc-ad-alert-severe">连续亏损 ' + lossDays + ' 天</span>'
+        : '';
+      var estimatedBadge = item.has_estimated_cost
+        ? '<span class="oc-ad-alert-badge oc-ad-alert-mild">含估算</span>'
+        : '';
+      var lossRatio = item.loss_ratio != null
+        ? (Number(item.loss_ratio) * 100).toFixed(1) + '%'
+        : '—';
+      var imgHtml = '';
+      if (item.product_main_image) {
+        imgHtml = '  <div class="oc-ad-alert-card-image-wrapper"><img src="' + html(item.product_main_image) + '" class="oc-ad-alert-card-image" alt="商品主图"></div>';
+      } else {
+        imgHtml = '  <div class="oc-ad-alert-card-image-wrapper" style="background: #f3f4f6; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 14px;">暂无主图</div>';
+      }
+      return ''
+        + '<article class="oc-ad-alert-card oc-ad-alert-highloss-card" role="button" tabindex="0" data-detail-url="' + html(item.detail_url || '') + '">'
+        + imgHtml
+        + '  <div class="oc-ad-alert-card-content">'
+        + '    <span class="oc-ad-alert-card-top">'
+        + '      <span class="oc-ad-alert-product">'
+        + '        <span class="oc-ad-alert-name">' + html(productName) + '</span>'
+        + '        <span class="oc-ad-alert-code">' + html(productCode) + '</span>'
+        + '      </span>'
+        + '      ' + verdictBadge
+        + '      ' + lossDaysBadge
+        + '      ' + estimatedBadge
+        + '    </span>'
+        + '    <div class="oc-ad-alert-highloss-metrics">'
+        + '      <span>'
+        + '近 7 天消耗 <strong>' + money(item.spend_7d, 0) + '</strong>'
+        + '近 7 天亏损 <strong style="color:var(--oc-ad-alert-red,#ef4444)">' + money(item.loss_7d, 0) + '</strong>'
+        + '近 30 天利润 <strong>' + money(item.profit_30d, 0) + '</strong>'
+        + '亏损占比 <strong>' + html(lossRatio) + '</strong>'
+        + '在投 <strong>' + html(String(item.active_days || 0)) + '</strong> 天'
+        + '首投 <strong>' + html(item.first_active_date || '—') + '</strong>'
+        + '      </span>'
+        + '    </div>'
+        + '  </div>'
+        + '</article>';
+    }).join('');
   }
 
   function loadProblemAds() {
@@ -2566,6 +2669,10 @@
       loadProblemAds();
       return;
     }
+    if (state.activeTab === 'long_loss') {
+      loadLongLossAds();
+      return;
+    }
     loadList();
   }
 
@@ -2590,6 +2697,37 @@
     state.highLossSearch = this.value.trim();
     loadHighLossAds();
   });
+
+  document.getElementById('adAlertLongLossRefresh').addEventListener('click', function() {
+    state.longLossSearch = (document.getElementById('adAlertLongLossSearch').value || '').trim();
+    loadLongLossAds();
+  });
+
+  document.getElementById('adAlertLongLossSearch').addEventListener('keydown', function(event) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    state.longLossSearch = this.value.trim();
+    loadLongLossAds();
+  });
+
+  if (longLossList) {
+    longLossList.addEventListener('click', function(event) {
+      if (event.target.closest('[data-stop-card]')) return;
+      var card = event.target.closest('.oc-ad-alert-card');
+      if (!card) return;
+      var url = card.getAttribute('data-detail-url');
+      if (url) window.location.href = url;
+    });
+
+    longLossList.addEventListener('keydown', function(event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      var card = event.target.closest('.oc-ad-alert-card');
+      if (!card) return;
+      event.preventDefault();
+      var url = card.getAttribute('data-detail-url');
+      if (url) window.location.href = url;
+    });
+  }
 
   highLossList.addEventListener('click', function(event) {
     var markBtn = event.target.closest('[data-mark-action]');
@@ -2849,6 +2987,8 @@
     loadHighLossAds();
   } else if (state.activeTab === 'problem') {
     loadProblemAds();
+  } else if (state.activeTab === 'long_loss') {
+    loadLongLossAds();
   } else {
     restoreUrlParams();
     loadList();

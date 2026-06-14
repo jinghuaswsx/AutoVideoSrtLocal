@@ -51,6 +51,40 @@ def test_ad_alert_template_contract():
     assert ".alert-" not in source
     assert "#8b5cf6" not in source.lower()
     assert "purple" not in source.lower()
+    assert 'href="/ad-alerts/long-loss"' in source
+    assert "长期亏损品" in source
+    assert "function loadLongLossAds" in source
+    assert "function renderLongLossAds" in source
+    assert 'data-ad-alert-panel="long_loss"' in source
+    assert "/ad-alerts/api/long-term-loss" in source
+
+
+def test_ad_alert_long_loss_tab_renders_correctly():
+    """长期亏损品 tab 渲染时能包含正确的文字和结构。"""
+    source = Path("web/templates/ad_alerts.html").read_text(encoding="utf-8")
+
+    assert 'data-ad-alert-panel="long_loss"' in source
+    assert 'href="/ad-alerts/long-loss"' in source
+    assert 'id="adAlertLongLossList"' in source
+    assert 'id="adAlertLongLossDate"' in source
+    assert 'id="adAlertLongLossEstimateHint"' in source
+    assert 'id="adAlertLongLossSearch"' in source
+    assert 'id="adAlertLongLossRefresh"' in source
+    assert "近 30 天投放" in source
+    assert "长期净亏" in source
+    assert "亏损侵蚀利润" in source
+    assert "含估算" in source
+
+
+def test_ad_alert_long_loss_route_exists():
+    """long_loss 路由函数注册在 ad_alerts 蓝图中。"""
+    from web.routes.ad_alerts import bp
+
+    route_map = {rule.endpoint for rule in bp.deferred_functions
+                 if hasattr(rule, 'endpoint')}
+    # 通过检查路由模块包含 long_loss_page_route 函数定义来验证
+    from web.routes import ad_alerts as route_mod
+    assert hasattr(route_mod, 'long_loss_page_route'), "long_loss_page_route 未定义"
 
 
 def test_ad_alert_lang_badge_does_not_trigger_card_navigation():
@@ -138,7 +172,7 @@ def test_ad_alert_template_url_persistence_contract():
     assert "state.severity = params.get('severity') || ''" in source
     assert "state.search = params.get('search') || ''" in source
     assert "restoreUrlParams();" in source
-    assert "  } else if (state.activeTab === 'problem') {\n    loadProblemAds();\n  } else {\n    restoreUrlParams();\n    loadList();\n  }" in source
+    assert "  } else if (state.activeTab === 'problem') {\n    loadProblemAds();\n  } else if (state.activeTab === 'long_loss') {\n    loadLongLossAds();\n  } else {\n    restoreUrlParams();\n    loadList();\n  }" in source
     assert "syncUrlParams();" in source
     assert source.index("renderList(data.items || []);") < source.index("syncUrlParams();")
 

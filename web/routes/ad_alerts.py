@@ -100,6 +100,23 @@ def problem_page_route():
     )
 
 
+@bp.route("/long-loss")
+@login_required
+@admin_required
+def long_loss_page_route():
+    """长期亏损品独立页面。"""
+    threshold = ad_alerts.get_threshold()
+    return render_template(
+        "ad_alerts.html",
+        active_tab="long_loss",
+        threshold=threshold,
+        alert_counts={},
+        SEVERITY_LABELS=ad_alerts.SEVERITY_LABELS,
+        TREND_LABELS=ad_alerts.TREND_LABELS,
+        PHASE_LABELS=ad_alerts.PHASE_LABELS,
+    )
+
+
 @bp.route("/api/list")
 @login_required
 @admin_required
