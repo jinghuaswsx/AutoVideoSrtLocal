@@ -24,3 +24,17 @@ def test_extract_order_refund_statuses():
     ]
     out = rv.extract_order_refund_statuses(orders)
     assert out == {"300": "refunded", "301": "partially_refunded"}
+
+
+def test_aggregate_refunds_from_db(monkeypatch):
+    def fake_query(sql, args=()):
+        if "shopify_payments_transactions" in sql:
+            return [
+                {"order_name": "#23863", "total_refund": 66.89},
+                {"order_name": "#100",   "total_refund": 20.0},
+            ]
+        return []
+    monkeypatch.setattr(oa, "query", fake_query)
+    out = rv.aggregate_refunds_from_db(site_code="newjoy")
+    assert out["23863"] == 66.89
+    assert out["100"] == 20.0

@@ -56,3 +56,20 @@ def extract_order_refund_statuses(rows: list[dict[str, Any]]) -> dict[str, str]:
         if order:
             out[order] = status
     return out
+
+
+def aggregate_refunds_from_db(*, site_code: str | None = None) -> dict[str, float]:
+    """从 shopify_payments_transactions 查询累计退款总额（按订单号聚合）。"""
+    where = "WHERE type IN ('refund','chargeback') AND order_name IS NOT NULL"
+    args: tuple = ()
+    if site_code:
+        where += " AND source_csv LIKE %s"
+        args = (f"%{site_code}%",)
+    rows = query(
+        "SELECT order_name, SUM(ABS(COALESCE(amount_usd, 0))) AS total_refund "
+        f"FROM shopify_payments_transactions {where} "
+        "GROUP BY order_name",
+        args,
+    ) or []
+    return {_normalize_order_name(r["order_name"]): round(float(r["total_refund"]), 4)
+            for r in rows if r.get("order_name")}
