@@ -27,6 +27,23 @@ def test_vertex_chat_delegates_to_translate_vertex_call():
     assert m.call_args[0][1] == "gemini-3.1-flash-lite-preview"
 
 
+def test_vertex_chat_passes_thinking_budget_to_vertex_json_call():
+    adapter = GeminiVertexAdapter()
+    with patch("appcore.llm_providers._helpers.vertex_json._call_vertex_json",
+               return_value=({"ok": True},
+                             {"input_tokens": 5, "output_tokens": 3},
+                             '{"ok":true}')) as m:
+        result = adapter.chat(
+            model="gemini-3.5-flash",
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=8192,
+            thinking_budget=0,
+        )
+    assert result["json"] == {"ok": True}
+    assert m.call_args.kwargs["max_output_tokens"] == 8192
+    assert m.call_args.kwargs["thinking_budget"] == 0
+
+
 def test_googlewj_adapter_registered_and_uses_dedicated_text_credentials():
     adapter = get_adapter("google_wj")
     with patch("appcore.llm_providers._helpers.vertex_json._call_vertex_json",
@@ -214,5 +231,4 @@ def test_vertex_generate_composes_messages_with_system():
     messages = m.call_args[0][0]
     assert messages[0] == {"role": "system", "content": "sys-turn"}
     assert messages[1] == {"role": "user", "content": "user-turn"}
-
 

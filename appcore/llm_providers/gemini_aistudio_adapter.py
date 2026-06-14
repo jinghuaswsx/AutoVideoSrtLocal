@@ -109,7 +109,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
              max_tokens=None, response_format=None, extra_body=None,
-             timeout_seconds=None):
+             thinking_budget=None, timeout_seconds=None):
         system, user_parts = None, []
         for m in messages:
             role, content = m.get("role"), m.get("content", "")
@@ -124,5 +124,6 @@ class GeminiAIStudioAdapter(LLMAdapter):
             model=model, prompt="\n\n".join(user_parts), user_id=user_id,
             system=system, response_schema=schema,
             temperature=temperature, max_output_tokens=max_tokens,
+            thinking_budget=thinking_budget,
             timeout_seconds=timeout_seconds,
         )

@@ -40,6 +40,7 @@ LOCAL_TIKTOK_COVER_2K_SIZE = "1152x2048"
 LOCAL_IMAGE_2_QUALITY = "low"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mpeg", ".mpg", ".avi", ".webm", ".m4v"}
 PRODUCT_ANALYSIS_MAX_OUTPUT_TOKENS = 8192
+AD_COPY_MAX_TOKENS = 8192
 GEMINI_TEXT_PROVIDERS = {"gemini_aistudio", "gemini_vertex", "google_wj"}
 
 
@@ -1186,8 +1187,9 @@ def generate_ad_copy_sets(
             provider_override=selection.provider,
             model_override=selection.model,
             temperature=0.4,
-            max_tokens=4000,
+            max_tokens=AD_COPY_MAX_TOKENS,
             response_format={"type": "json_object"},
+            thinking_budget=0 if selection.provider in GEMINI_TEXT_PROVIDERS else None,
             billing_extra={"source": "video_cover"},
         )
     except VideoCoverGenerationError:

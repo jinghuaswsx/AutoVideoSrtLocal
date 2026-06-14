@@ -185,6 +185,7 @@ def invoke_chat(
     max_tokens: int | None = None,
     response_format: dict | None = None,
     extra_body: dict | None = None,
+    thinking_budget: int | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
     billing_extra: dict | None = None,
@@ -207,12 +208,15 @@ def invoke_chat(
         req_payload["max_tokens"] = max_tokens
     if response_format:
         req_payload["response_format"] = response_format
+    if thinking_budget is not None:
+        req_payload["thinking_budget"] = thinking_budget
 
     try:
         result = adapter.chat(
             model=model, messages=messages, user_id=user_id,
             temperature=temperature, max_tokens=max_tokens,
             response_format=response_format, extra_body=extra_body,
+            thinking_budget=thinking_budget,
             timeout_seconds=timeout_seconds,
         )
     except Exception as e:

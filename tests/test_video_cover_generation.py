@@ -857,6 +857,8 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert captured["provider_override"] == "gemini_aistudio"
     assert captured["model_override"] == "gemini-3-flash-preview"
     assert captured["response_format"] == {"type": "json_object"}
+    assert captured["max_tokens"] == 8192
+    assert captured["thinking_budget"] == 0
     prompt = captured["messages"][1]["content"]
     assert "资深 Facebook / Instagram Reels 视频广告文案专家" in prompt
     assert "产品分析：<使用方式解析>" in prompt
@@ -870,6 +872,53 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert "english.message 的自然短语前后" in prompt
     assert "如果会触发 Meta 风险，则不用 emoji" in prompt
     assert "headline" not in prompt
+
+
+def test_generate_ad_copy_sets_disables_googlewj_thinking_for_gemini_35():
+    from appcore.video_cover_generation import generate_ad_copy_sets
+
+    captured = {}
+
+    def fake_invoke(use_case_code: str, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured.update(kwargs)
+        return {
+            "json": {
+                "ad_copy_sets": [
+                    {
+                        "id": idx,
+                        "angle": "痛点解决型",
+                        "english": {
+                            "title": "Cooler Backseat",
+                            "message": "Keep kids and pets comfortable on hot drives.",
+                            "description": "A simple summer car upgrade",
+                        },
+                        "chinese_translation": {
+                            "title": "后排更凉爽",
+                            "message": "让孩子和宠物在炎热车程中更舒服。",
+                            "description": "简单的夏季车内升级",
+                        },
+                        "usage_note": "适合后排降温场景。",
+                    }
+                    for idx in range(1, 6)
+                ]
+            }
+        }
+
+    result = generate_ad_copy_sets(
+        product_analysis='{"product_definition":"headrest car fan"}',
+        video_analysis='{"cover_reference":"backseat cooling"}',
+        current_date="2026-06-14",
+        provider="googlewj",
+        model="gemini-3.5-flash",
+        invoke_chat_fn=fake_invoke,
+    )
+
+    assert result["ad_copy_sets"][0]["english"]["title"] == "Cooler Backseat"
+    assert captured["provider_override"] == "google_wj"
+    assert captured["model_override"] == "gemini-3.5-flash"
+    assert captured["max_tokens"] == 8192
+    assert captured["thinking_budget"] == 0
 
 
 def test_generate_video_analysis_optimizes_video_before_llm(tmp_path, monkeypatch):

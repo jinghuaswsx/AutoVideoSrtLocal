@@ -123,7 +123,8 @@ class GeminiVertexAdapter(LLMAdapter):
             "location": location,
         }
 
-    def _call(self, *, model, messages, response_format, temperature, max_output_tokens):
+    def _call(self, *, model, messages, response_format, temperature, max_output_tokens,
+              thinking_budget=None):
         # Keep text-only behavior aligned with the legacy translation path.
         from appcore.llm_providers._helpers.vertex_json import _call_vertex_json
 
@@ -131,6 +132,7 @@ class GeminiVertexAdapter(LLMAdapter):
             messages, model, response_format,
             temperature=temperature if temperature is not None else 0.2,
             max_output_tokens=max_output_tokens or 4096,
+            thinking_budget=thinking_budget,
             provider_config_code=self.credential_provider_code(
                 media_kind="text",
                 model_id=model,
@@ -139,11 +141,12 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
              max_tokens=None, response_format=None, extra_body=None,
-             timeout_seconds=None):
+             thinking_budget=None, timeout_seconds=None):
         payload, usage, raw = self._call(
             model=model, messages=messages,
             response_format=response_format,
             temperature=temperature, max_output_tokens=max_tokens,
+            thinking_budget=thinking_budget,
         )
         text_out = raw if isinstance(raw, str) else json.dumps(payload, ensure_ascii=False)
         return {
@@ -260,4 +263,3 @@ class GeminiVertexAdapter(LLMAdapter):
 
 class GoogleWJVertexAdapter(GeminiVertexAdapter):
     provider_code = "google_wj"
-

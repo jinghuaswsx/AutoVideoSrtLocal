@@ -89,6 +89,16 @@
 - 第四步不得用汇总 `result.models.product_analysis`、`result.models.video_analysis` 或 `result.models.ad_copy` 覆盖前三步已经在本轮成功时写入的实际模型记录；这些上游模型记录必须保持与对应 `step_requests` 一致。
 - 回归测试必须覆盖：当封面生成结果携带旧的上游 `models` 时，`_run_cover_generation_step()` 只刷新 `cover_generation`，并保留前三步已有模型记录。
 
+## 2026-06-14 Gemini 文案创作 thinking 预算修订
+
+生产项目在第三步 `ad_copy` 切换为 `GOOGLEWJ / gemini-3.5-flash` 后，Vertex chat JSON 路径返回空 `resp.text`，adapter 在解析空字符串时抛出 `JSONDecodeError: Expecting value: line 1 column 1 (char 0)`；前端错误详情只能看到空 `response_text` 和 `{}` raw response。该模式与产品分析中 Gemini hidden thinking 挤占输出预算的问题一致，且同一任务上游 `video_analysis`、`product_analysis` 使用同一模型成功。
+
+- 统一 LLM `invoke_chat()` 必须支持业务传入 `thinking_budget`，并记录在请求日志中。
+- Google AI Studio / Google Vertex / GOOGLEWJ 的 chat 路径必须把 `thinking_budget` 传入 Gemini SDK `GenerateContentConfig.thinking_config.thinking_budget`；非 Gemini provider 可接受但忽略该参数。
+- `video_cover.ad_copy` 使用 Gemini 系供应商（`gemini_aistudio`、`gemini_vertex`、`google_wj`）时，必须显式传入 `thinking_budget=0`，避免 hidden thinking 挤占 JSON 正文输出。
+- `video_cover.ad_copy` 的输出预算必须从 4000 提高到 8192；OpenRouter 保持兼容该更高预算，Gemini 系模型必须能在该预算下输出完整 5 组 `ad_copy_sets` JSON。
+- 回归测试必须覆盖 `generate_ad_copy_sets()` 对 `google_wj / gemini-3.5-flash` 传入 `max_tokens=8192` 和 `thinking_budget=0`，以及 Vertex chat config 写入 `thinking_config.thinking_budget`。
+
 ## 后端设计
 
 - `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。

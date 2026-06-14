@@ -333,7 +333,7 @@ class OpenRouterAdapter(LLMAdapter):
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
              max_tokens=None, response_format=None, extra_body=None,
-             timeout_seconds=None):
+             thinking_budget=None, timeout_seconds=None):
         media_kind = "image" if _has_media(messages) else "text"
         creds = self.resolve_credentials(user_id, media_kind=media_kind)
         client = _openrouter_client(creds)
@@ -461,7 +461,7 @@ class DoubaoAdapter(LLMAdapter):
 
     def chat(self, *, model, messages, user_id=None, temperature=None,
              max_tokens=None, response_format=None, extra_body=None,
-             timeout_seconds=None):
+             thinking_budget=None, timeout_seconds=None):
         creds = self.resolve_credentials(user_id, model_id=model)
         client = OpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
         # 豆包不支持 response_format / OpenRouter plugins；一律忽略

@@ -86,6 +86,7 @@ def _call_vertex_json(
     response_format: dict | None,
     temperature: float = 0.2,
     max_output_tokens: int = 4096,
+    thinking_budget: int | None = None,
     provider_config_code: str = "gemini_cloud_text",
 ):
     """走 Vertex AI 返回 (parsed_payload, usage_dict, raw_text)。
@@ -117,6 +118,10 @@ def _call_vertex_json(
     cfg_kwargs: dict[str, Any] = {"temperature": temperature, "max_output_tokens": max_output_tokens}
     if system_prompt:
         cfg_kwargs["system_instruction"] = system_prompt
+    if thinking_budget is not None:
+        cfg_kwargs["thinking_config"] = genai_types.ThinkingConfig(
+            thinking_budget=thinking_budget,
+        )
     if schema:
         cfg_kwargs["response_mime_type"] = "application/json"
         cfg_kwargs["response_schema"] = schema
