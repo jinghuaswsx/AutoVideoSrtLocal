@@ -1,14 +1,12 @@
-"""实时大盘数据缓存层。
+"""实时大盘数据缓存层（per-range 纯时间 TTL 模型）。
 
-实时大盘数据约每 20 分钟更新一次（Meta 广告快照 + 店小秘订单同步周期），
-在数据未更新期间，所有请求直接命中缓存，避免重复执行昂贵的聚合查询。
+每个缓存条目带自己的 TTL（由调用方按日期范围决定）：
+- 单日含今天（today）：``TTL_SINGLE_DAY_OPEN`` 60s（配 15s 高频预热，数据旧 ≤1 分钟）。
+- 多日含今天（本周/本月）：``TTL_MULTI_DAY_OPEN`` ~10 分钟（配 10 分钟预热）。
+- 历史已收盘区间：``TTL_CLOSED`` 30 分钟。
 
-缓存失效策略（两层）：
-1. **短窗口保护**（60 秒）：60 秒内重复请求直接返回缓存，不做任何检查。
-   ─ 覆盖场景：切 Tab、刷新、多卡片并发。
-2. **新鲜度检查**（60–1800 秒）：超 60 秒后，用轻量 MAX(id) 查询判断
-   ``roi_realtime_daily_snapshots`` 是否有新快照；未变则继续复用缓存。
-3. **硬 TTL**（1800 秒 / 30 分钟）：超过 30 分钟一律重新计算。
+不再用全局 freshness marker 失效——预热主动刷新缓存，TTL 控制新鲜度上限，
+历史区间也不会被「今天的新订单」误伤（旧模型的根因）。
 
 Docs-anchor: 本文件即为规范，无单独 spec。
 """
@@ -23,27 +21,24 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-# ── 可调参数 ──────────────────────────────────────────
-_MIN_RECHECK_SECONDS = 60      # 60 秒内不检查新鲜度
-_MAX_AGE_SECONDS = 1800        # 30 分钟硬过期
-_CLOSED_TTL_SECONDS = 1800     # 收盘区间纯时间 TTL（30 分钟），不受全局 marker 影响
-_MAX_ENTRIES = 200             # 最多缓存条目数，防内存膨胀
+# ── 可调 TTL（秒）──────────────────────────────────────
+TTL_SINGLE_DAY_OPEN = 60       # 单日含今天（today）：配 15s 预热
+TTL_MULTI_DAY_OPEN = 660       # 多日含今天（本周/本月）：配 10min 预热，留余量
+TTL_CLOSED = 1800             # 历史已收盘区间：30 分钟
+_DEFAULT_TTL = 60
+_MAX_ENTRIES = 200            # 最多缓存条目数，防内存膨胀
 
-# ── 内部存储 ──────────────────────────────────────────
-# key → (store_time, freshness_marker, result)
-_store: dict[str, tuple[float, str, Any]] = {}
+# key → (store_time, ttl_seconds, result)
+_store: dict[str, tuple[float, float, Any]] = {}
 _lock = threading.Lock()
 
-# 新鲜度标记缓存：避免每次都查 DB
+# 新鲜度标记仍保留（仅供 stats 调试接口展示，不参与失效判定）
 _freshness_cache: tuple[float, str] = (0.0, "")
-_FRESHNESS_TTL = 10  # 新鲜度标记自身缓存 10 秒
+_FRESHNESS_TTL = 10
 
 
 def make_cache_key(params: dict[str, Any]) -> str:
-    """将请求参数归一化为稳定缓存键。
-
-    忽略 None / 空字符串的参数，确保不同顺序产生相同的 key。
-    """
+    """将请求参数归一化为稳定缓存键（忽略 None / 空字符串）。"""
     filtered = sorted(
         (k, str(v))
         for k, v in params.items()
@@ -54,21 +49,14 @@ def make_cache_key(params: dict[str, Any]) -> str:
 
 
 def get_freshness_marker() -> str:
-    """获取最新数据版本标记（轻量 DB 查询）。
-
-    查 ``roi_realtime_daily_snapshots`` 的 ``MAX(id)`` + ``MAX(snapshot_at)``，
-    以及 ``dianxiaomi_order_lines`` 的 ``MAX(id)`` 作为联合新鲜度标记。
-    这两个 MAX 查询走索引，耗时 < 1ms。
-    """
+    """最新数据版本标记（轻量 DB 查询）。仅供 stats 调试展示，不再参与失效。"""
     global _freshness_cache
     now = time.time()
     cached_time, cached_marker = _freshness_cache
     if now - cached_time < _FRESHNESS_TTL and cached_marker:
         return cached_marker
-
     try:
         from appcore.order_analytics import query as oa_query
-        # 快照新鲜度
         snap_rows = oa_query(
             "SELECT MAX(id) AS max_id, MAX(snapshot_at) AS max_snap "
             "FROM roi_realtime_daily_snapshots"
@@ -76,90 +64,42 @@ def get_freshness_marker() -> str:
         snap_part = ""
         if snap_rows and snap_rows[0]:
             snap_part = f"{snap_rows[0].get('max_id')}:{snap_rows[0].get('max_snap')}"
-
-        # 订单新鲜度
-        order_rows = oa_query(
-            "SELECT MAX(id) AS max_id FROM dianxiaomi_order_lines"
-        )
+        order_rows = oa_query("SELECT MAX(id) AS max_id FROM dianxiaomi_order_lines")
         order_part = ""
         if order_rows and order_rows[0]:
             order_part = f"{order_rows[0].get('max_id')}"
-
-        profit_rows = oa_query(
-            "SELECT MAX(id) AS max_id, MAX(updated_at) AS max_updated "
-            "FROM order_profit_lines"
-        )
-        profit_part = ""
-        if profit_rows and profit_rows[0]:
-            profit_part = (
-                f"{profit_rows[0].get('max_id')}:"
-                f"{profit_rows[0].get('max_updated')}"
-            )
-
-        product_rows = oa_query(
-            "SELECT MAX(updated_at) AS max_updated FROM media_products"
-        )
-        product_part = ""
-        if product_rows and product_rows[0]:
-            product_part = f"{product_rows[0].get('max_updated')}"
-
-        marker = f"s:{snap_part}|o:{order_part}|p:{profit_part}|m:{product_part}"
+        marker = f"s:{snap_part}|o:{order_part}"
     except Exception:
         log.debug("freshness marker query failed, using empty", exc_info=True)
         marker = ""
-
     _freshness_cache = (now, marker)
     return marker
 
 
-def get(key: str, freshness_marker: str, is_open_day: bool = True) -> Any | None:
-    """从缓存读取结果。
-
-    is_open_day=False（收盘区间）：纯时间 TTL，不与全局 marker 比较，
-    避免历史缓存被「今天的新订单」误伤。
-    is_open_day=True（含今天）：60s 短窗口 + marker 新鲜度检查。
-    返回 None 表示未命中或已过期。
-    """
+def get(key: str, ttl_seconds: float | None = None) -> Any | None:
+    """从缓存读取结果。age 超过条目自身 TTL（或显式传入的 ttl）即失效。"""
     with _lock:
         entry = _store.get(key)
         if entry is None:
             return None
-        store_time, stored_marker, result = entry
+        store_time, stored_ttl, result = entry
         age = time.time() - store_time
-
-        if not is_open_day:
-            if age > _CLOSED_TTL_SECONDS:
-                del _store[key]
-                log.debug("cache EXPIRED (closed TTL) key=%s age=%.0fs", key, age)
-                return None
-            log.debug("cache HIT (closed) key=%s age=%.0fs", key, age)
-            return result
-
-        # open day：硬 TTL
-        if age > _MAX_AGE_SECONDS:
+        effective_ttl = ttl_seconds if ttl_seconds is not None else stored_ttl
+        if age > effective_ttl:
             del _store[key]
-            log.debug("cache EXPIRED (hard TTL) key=%s age=%.0fs", key, age)
+            log.debug("cache EXPIRED key=%s age=%.0fs ttl=%.0fs", key, age, effective_ttl)
             return None
-        # 短窗口保护
-        if age <= _MIN_RECHECK_SECONDS:
-            log.debug("cache HIT (fast path) key=%s age=%.0fs", key, age)
-            return result
-        # 新鲜度检查
-        if stored_marker and stored_marker == freshness_marker:
-            log.debug("cache HIT (freshness ok) key=%s age=%.0fs", key, age)
-            return result
-        del _store[key]
-        log.debug("cache INVALIDATED (data changed) key=%s age=%.0fs", key, age)
-        return None
+        log.debug("cache HIT key=%s age=%.0fs ttl=%.0fs", key, age, effective_ttl)
+        return result
 
 
-def put(key: str, result: Any, freshness_marker: str, is_open_day: bool = True) -> None:
-    """将计算结果写入缓存。is_open_day 仅由读取方使用，此处只存储。"""
+def put(key: str, result: Any, ttl_seconds: float = _DEFAULT_TTL) -> None:
+    """将计算结果写入缓存，带该条目的 TTL。"""
     with _lock:
-        _store[key] = (time.time(), freshness_marker, result)
+        _store[key] = (time.time(), float(ttl_seconds), result)
         if len(_store) > _MAX_ENTRIES:
             _prune_oldest_locked()
-        log.debug("cache PUT key=%s entries=%d open=%s", key, len(_store), is_open_day)
+        log.debug("cache PUT key=%s entries=%d ttl=%.0fs", key, len(_store), ttl_seconds)
 
 
 def invalidate_all() -> None:
@@ -180,11 +120,9 @@ def stats() -> dict[str, Any]:
         return {
             "entries": len(_store),
             "keys": list(_store.keys()),
-            "ages_seconds": {
-                k: round(now - t, 1) for k, (t, _, _) in _store.items()
-            },
-            "max_age_seconds": _MAX_AGE_SECONDS,
-            "min_recheck_seconds": _MIN_RECHECK_SECONDS,
+            "ages_seconds": {k: round(now - t, 1) for k, (t, _, _) in _store.items()},
+            "ttls_seconds": {k: ttl for k, (_, ttl, _) in _store.items()},
+            "max_entries": _MAX_ENTRIES,
         }
 
 
@@ -192,7 +130,6 @@ def _prune_oldest_locked() -> None:
     """在锁内淘汰最旧的条目，保持容量在 MAX_ENTRIES 以内。"""
     if len(_store) <= _MAX_ENTRIES:
         return
-    # 按 store_time 排序，删除最旧的 20%
     by_age = sorted(_store.items(), key=lambda kv: kv[1][0])
     to_remove = max(1, len(by_age) // 5)
     for k, _ in by_age[:to_remove]:

@@ -2387,6 +2387,7 @@
       </div>
     </div>
     <div class="oar-note" id="realtimeRangeNote">NewJoy + Omurio · 按 Meta 广告系统日聚合 · 北京时间 16:00 切日</div>
+    <div class="oa-loading-indicator" id="realtimeLoadingIndicator" role="status" aria-live="polite"></div>
     <div class="oar-product-search-row">
       <div class="oa-search-box oar-product-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -2915,6 +2916,7 @@
       </div>
     </div>
     <div class="oar-note" id="nplRangeNote">新品投放分析 · 沿用实时大盘 Meta 广告系统日口径</div>
+    <div class="oa-loading-indicator" id="nplLoadingIndicator" role="status" aria-live="polite"></div>
     <div class="oar-filter-row">
       <div class="oar-site-filter">
         <label class="oar-site-filter-label" for="nplSiteFilter">店铺：</label>
@@ -3193,6 +3195,10 @@
 <section class="oa-panel {% if active_tab == 'dashboard' %}active{% endif %}" id="panelDashboard">
 <style>
   .oad-toolbar { padding: var(--space-4) 0; border-bottom: 1px solid var(--border); }
+  .oa-loading-indicator { display: none; margin: var(--space-2) 0; padding: 8px 14px;
+    font-weight: 700; font-size: 1.08rem; color: var(--accent); background: var(--accent-soft, #eaf3ff);
+    border-left: 4px solid var(--accent); border-radius: var(--radius); letter-spacing: 0.5px; }
+  .oa-loading-indicator.is-active { display: block; }
   .oad-toolbar-row { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
   .oad-segmented { display: inline-flex; align-items: center; gap: var(--space-1);
                    padding: var(--space-1); border: 1px solid var(--border-strong);
@@ -7532,6 +7538,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     params.set('page_size', newProductLaunchState.profitPageSize || 30);
     if (newProductLaunchState.siteCode) params.set('site_code', newProductLaunchState.siteCode);
     setNewProductLaunchLoading();
+    startOaLoadingTimer('nplLoadingIndicator', '新品投放分析加载中');
     newProductLaunchState.orderLoading = true;
     newProductLaunchState.profitLoading = true;
     fetch('/order-analytics/realtime-overview?' + params.toString())
@@ -7548,6 +7555,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
       .finally(function() {
         newProductLaunchState.orderLoading = false;
         newProductLaunchState.profitLoading = false;
+        stopOaLoadingTimer('nplLoadingIndicator');
       });
   }
 
@@ -8109,6 +8117,27 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
   }
 
   // ── 入口：同步刷新顶部卡片 + 子 tab ─────────────────
+  var _oaLoadingTimers = {};
+  function startOaLoadingTimer(elId, label) {
+    stopOaLoadingTimer(elId);
+    var el = document.getElementById(elId);
+    if (!el) return;
+    var t0 = Date.now();
+    el.classList.add('is-active');
+    function render() {
+      var secs = ((Date.now() - t0) / 1000).toFixed(1);
+      var n = (Math.floor((Date.now() - t0) / 300) % 3) + 1;
+      el.textContent = (label || '加载中') + '…'.repeat(n) + ' 已用 ' + secs + ' 秒';
+    }
+    render();
+    _oaLoadingTimers[elId] = setInterval(render, 100);
+  }
+  function stopOaLoadingTimer(elId) {
+    if (_oaLoadingTimers[elId]) { clearInterval(_oaLoadingTimers[elId]); delete _oaLoadingTimers[elId]; }
+    var el = document.getElementById(elId);
+    if (el) { el.classList.remove('is-active'); el.textContent = ''; }
+  }
+
   function loadRealtimeOverview() {
     var requestSeq = nextRealtimeRequestSeq();
     updateRealtimeUnmatchedDetailLinks();
@@ -8145,6 +8174,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     params.set('product_launch_window_days', realtimeState.launchWindowDays || '7');
     var baseParams = params;
     setRealtimeScopeCardsLoading();
+    startOaLoadingTimer('realtimeLoadingIndicator', '实时大盘加载中');
     var scopes = ['global', 'new', 'old', 'unmatched'];
     var controllers = [];
     var jobs = scopes.map(function(scope) {
@@ -8178,6 +8208,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
       } else if (g && !isRealtimeAbortError(g.err)) {
         setRealtimeScopeCardError('global', g.err.message);
       }
+      stopOaLoadingTimer('realtimeLoadingIndicator');
     });
   }
 
