@@ -56,7 +56,7 @@
 - **启用真实链路**：
   1. 设 `SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT` ≤ 最早订单日，让**全历史订单**都进入真实优先链路（`is_dynamic_fee_effective` 恒 True）。
   2. 导入最新 payments CSV，生成 `shopify_fee_rate_snapshots`（沿用 dynamic-shopify-fee spec §7 样本门槛）。
-- **全量重算（覆盖既有「不回刷」）**：调整 `tools/order_profit_backfill.py::_should_skip_for_dynamic_fee_boundary`——当前它对「已有 `existing_profit_line_id` 的历史行」跳过覆盖（即「不回刷」的实现），改为**允许全量重算覆盖历史 `shopify_fee_usd` 及来源字段**。每行优先级：真实 payment(`actual_payment`) → 动态区域费率(`dynamic_region_rate`) → 策略C(`strategy_c_fallback`)，写 `shopify_fee_source`。
+- **全量重算（覆盖既有「不回刷」）**：实测 `tools/order_profit_backfill.py::_should_skip_for_dynamic_fee_boundary` **无需改代码**——把开关 `SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT` 设到 ≤ 最早订单日后，所有历史订单 `order_time` 都 ≥ 生效时间，该函数自然放行（不跳过），backfill 的 `upsert_profit_line` 覆盖历史 `shopify_fee_usd` 及来源字段（已用 characterization 测试锁定）。每行优先级：真实 payment(`actual_payment`) → 动态区域费率(`dynamic_region_rate`) → 策略C(`strategy_c_fallback`)，写 `shopify_fee_source`。
 - **渐进替换**：未结算/未导入订单先走估算并标「待对账」；每周导入新 payments 后，对新匹配到真实 fee 的订单重算替换（经 `order_profit_recompute_queue` 或定期重算窗口）。
 - **影响**：历史手续费回刷为真实值（总体偏低）→ 历史利润上升约 $2 万。
 
