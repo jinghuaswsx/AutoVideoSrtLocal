@@ -201,6 +201,22 @@ def _progress_update(
     return progress
 
 
+def _apply_throttle_event(progress: dict[str, Any], event: Mapping[str, Any]) -> dict[str, Any]:
+    """把 throttle 事件写入 progress：刷新 throttle 状态块，关键事件追加一条日志。"""
+    progress["throttle"] = dict(event.get("throttle") or {})
+    kind = str(event.get("kind") or "")
+    if kind in {"retry", "degraded", "recover"}:
+        logs = list(progress.get("logs") or [])
+        logs.append({
+            "time": _now_iso(),
+            "level": str(event.get("level") or "info"),
+            "message": str(event.get("message") or ""),
+        })
+        progress["logs"] = logs[-_PROGRESS_LOG_LIMIT:]
+    progress["updated_at"] = _now_iso()
+    return progress
+
+
 def _save_progress(project_id: int, progress: Mapping[str, Any]) -> None:
     db.execute(
         "UPDATE ad_material_ai_analysis_projects SET progress_json=%s, updated_at=NOW() WHERE id=%s",
@@ -3313,6 +3329,14 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
         )
         _save_progress(project_id, progress)
 
+    def _throttle_event(event: dict) -> None:
+        nonlocal progress
+        progress = _apply_throttle_event(progress, event)
+        _save_progress(project_id, progress)
+
+    provider_code = str(project_row.get("provider_code") or PROVIDER_CODE)
+    throttle = GoogleWjThrottle(provider_code=provider_code, on_event=_throttle_event)
+
     try:
         checkpoint(
             str(progress.get("current_step") or "snapshot") if progress.get("current_step") != "queued" else "snapshot",
@@ -3361,7 +3385,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
             )
         else:
             checkpoint("ai_ranking", "running", 32, "调用 GoogleWJ Gemini 分批复评 Top 40。")
-            ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
+            ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai, throttle=throttle)
             _save_project_ranking(project_id, ranking)
         selected = _select_products(candidates, ranking)
         checkpoint("ai_ranking", "done", 42, f"Top 产品选择完成，进入逐产品分析 {len(selected)} 个。")
@@ -3378,6 +3402,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
         existing_results = _load_existing_product_results(project_id)
         total_products = len(selected)
         for rank_no, product in enumerate(selected, start=1):
+            throttle.mark_product_boundary()
             code_key = str(product.get("product_code") or "").strip().lower()
             product_id = _safe_int(product.get("product_id"))
             product_progress = {
@@ -3429,6 +3454,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 project_id=project_id,
                 user_id=user_id,
                 run_ai=run_ai,
+                throttle=throttle,
             )
             ai_result = _decorate_ai_result_with_tasks(ai_result, countries, task_assignments)
             action_items = _build_action_items(product, ai_result, mk_materials, countries)
@@ -3450,6 +3476,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 local_materials=local_materials, mk_materials=mk_materials,
                 task_assignments=task_assignments,
                 project_id=project_id, user_id=user_id, run_ai=run_ai,
+                throttle=throttle,
             )
             market_expansion = _build_market_expansion_recommendations(
                 product, country_reviews, countries,
@@ -3483,6 +3510,12 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
         checkpoint("persist", "done", 94, "产品结果保存完成，开始汇总结论。")
         checkpoint("summary", "running", 96, "汇总 P0/P1、主动作和数据质量。")
         summary = _summarize_project(results, ranking, snapshot)
+        summary["throttle"] = throttle.snapshot()
+        summary["degraded_list"] = throttle.degraded_events
+        if throttle.degraded_events:
+            checkpoint("summary", "running", 97,
+                       f"完成，但 {len(throttle.degraded_events)} 个评估环节因限流降级兜底。",
+                       level="warning")
         progress = _progress_update(
             progress,
             step_key="summary",

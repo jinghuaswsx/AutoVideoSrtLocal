@@ -52,3 +52,28 @@ def test_ranking_selects_40_when_ai_covers(monkeypatch):
     selected = svc._select_products(candidates, ranking)
     assert len(ranking["selected_product_ids"]) == 40
     assert len(selected) == 40
+
+
+def test_ranking_via_throttle_passes_kwargs(monkeypatch):
+    # throttle 非 None 路径：经 guarded_invoke 调用，验证 use_case_code 正确传递且产出 40
+    from appcore import ad_material_throttle as thr
+    candidates = _synthetic_candidates(80)
+    seen = {"use_cases": []}
+
+    def fake_invoke(use_case_code=None, **kw):
+        seen["use_cases"].append(use_case_code)
+        import re
+        ids = [int(x) for x in re.findall(r'"product_id":(\d+)', kw["prompt"])]
+        stage = (kw.get("billing_extra") or {}).get("stage")
+        take = 40 if stage == "final_rank" else 14
+        ranked = [{"product_id": pid, "rank": i + 1} for i, pid in enumerate(ids[:take])]
+        return {"json": {"ranked_products": ranked}, "text": "", "usage_log_id": None}
+
+    monkeypatch.setattr(svc.llm_client, "invoke_generate", fake_invoke)
+    cfg = thr.ThrottleConfig(product_spacing=0, call_spacing=0, max_retries=4,
+                             backoff_base=0, backoff_max=0, factor=2.0,
+                             adaptive_max=0, recover_successes=3)
+    t = thr.GoogleWjThrottle(provider_code="google_wj", config=cfg, sleep=lambda s: None)
+    ranking = svc._run_ai_ranking(candidates, project_id=1, user_id=None, run_ai=True, throttle=t)
+    assert len(ranking["selected_product_ids"]) == 40
+    assert seen["use_cases"] and all(uc == svc.RANK_USE_CASE for uc in seen["use_cases"])
