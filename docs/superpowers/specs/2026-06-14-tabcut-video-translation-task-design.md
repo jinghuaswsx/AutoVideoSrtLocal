@@ -23,7 +23,7 @@
 ## 目标
 
 1. 每 10 分钟持续运行 Tabcut 视频中文翻译任务。
-2. 每轮最多拉取 10 个未翻译或可重试失败的视频。
+2. 每轮最多拉取 100 个未翻译或可重试失败的视频，以便快速消耗历史 backlog。
 3. 使用 OpenRouter Gemini 3.1 Flash Lite 翻译视频文案和视频关联商品标题。用户在 2026-06-14 明确指定生产模型为 `google/gemini-3.1-flash-lite`。
 4. 翻译结果持久化写回 `tabcut_videos`，以后打开视频直接读取缓存结果。
 5. 新抓到的视频和历史未翻译视频都进入同一任务池。
@@ -92,7 +92,7 @@
 - `task_code=tabcut_video_translation_tick`
 - runner：`appcore.tabcut_selection.scheduler.video_translation_tick_once`
 - schedule：每 10 分钟
-- limit：默认每轮 10 个视频
+- limit：默认每轮 100 个视频
 - log_table：`scheduled_task_runs`
 
 每轮流程：
@@ -132,4 +132,4 @@ git diff --check
 
 - 定时任务后台可看到 `tabcut_video_translation_tick`。
 - 打开 `/xuanpin/tabcut`，视频卡片 payload 中包含 `video_desc_zh`。
-- 历史未翻译视频被逐轮消耗，每轮最多 10 条。
+- 历史未翻译视频被逐轮消耗，每轮最多 100 条。

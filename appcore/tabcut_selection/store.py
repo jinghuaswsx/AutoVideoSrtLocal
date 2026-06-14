@@ -747,7 +747,7 @@ def reset_stale_running_goods_translations(
 
 def next_pending_video_translations(
     *,
-    limit: int = 10,
+    limit: int = 100,
     max_attempts: int = 3,
     query_fn: QueryFn = query,
 ) -> list[dict[str, Any]]:

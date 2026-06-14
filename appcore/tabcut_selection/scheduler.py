@@ -74,7 +74,7 @@ def goods_translation_tick_once(limit: int = 30, user_id: int | None = None) -> 
     return summary
 
 
-def video_translation_tick_once(limit: int = 10, user_id: int | None = None) -> dict[str, Any]:
+def video_translation_tick_once(limit: int = 100, user_id: int | None = None) -> dict[str, Any]:
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(VIDEO_TRANSLATION_TASK_CODE)

@@ -117,6 +117,7 @@ def test_video_translation_tick_records_scheduled_run(monkeypatch):
     from appcore.tabcut_selection import scheduler
 
     events = []
+    translate_calls = []
 
     monkeypatch.setattr(scheduler.scheduled_tasks, "start_run", lambda task_code: events.append(("start", task_code)) or 42)
     monkeypatch.setattr(
@@ -127,12 +128,13 @@ def test_video_translation_tick_records_scheduled_run(monkeypatch):
     monkeypatch.setattr(
         scheduler.video_translation,
         "translate_pending_videos",
-        lambda **kwargs: {"scanned": 1, "done": 1, "failed": 0},
+        lambda **kwargs: translate_calls.append(kwargs) or {"scanned": 1, "done": 1, "failed": 0},
     )
 
-    summary = scheduler.video_translation_tick_once(limit=10, user_id=7)
+    summary = scheduler.video_translation_tick_once(user_id=7)
 
     assert summary == {"scanned": 1, "done": 1, "failed": 0}
+    assert translate_calls == [{"limit": 100, "user_id": 7}]
     assert events[0] == ("start", "tabcut_video_translation_tick")
     assert events[1][0:2] == ("finish", 42)
     assert events[1][2]["status"] == "success"

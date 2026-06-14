@@ -58,7 +58,7 @@ def translate_video_info(
 
 def translate_pending_videos(
     *,
-    limit: int = 10,
+    limit: int = 100,
     user_id: int | None = None,
     per_item_delay_seconds: float | int = 0,
     sleep_fn: Callable[[float], None] | None = None,

@@ -498,7 +498,7 @@ def test_next_pending_video_translations_selects_untranslated_rows():
         calls.append((sql, params))
         return [{"video_id": "v1", "video_desc": "English copy"}]
 
-    rows = store.next_pending_video_translations(limit=10, query_fn=fake_query)
+    rows = store.next_pending_video_translations(query_fn=fake_query)
 
     sql, params = calls[0]
     assert rows[0]["video_id"] == "v1"
@@ -506,7 +506,7 @@ def test_next_pending_video_translations_selects_untranslated_rows():
     assert "zh_translation_status IN ('pending', 'failed')" in sql
     assert "zh_translation_attempts < %s" in sql
     assert "video_desc IS NOT NULL" in sql
-    assert params == [3, 10]
+    assert params == [3, 100]
 
 
 def test_mark_video_translation_running_increments_attempts():
