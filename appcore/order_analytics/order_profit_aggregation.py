@@ -738,7 +738,10 @@ def get_order_profit_list(
                         )
                 adjusted_rows.append(adjusted)
             rows = adjusted_rows
-    return [_format_order_row(r) for r in rows]
+    formatted = [_format_order_row(r) for r in rows]
+    from .refund_verification import apply_refund_adjustments_to_order_list
+    apply_refund_adjustments_to_order_list(formatted)
+    return formatted
 
 
 def get_order_profit_detail(dxm_package_id: str) -> dict[str, Any] | None:
