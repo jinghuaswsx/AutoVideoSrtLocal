@@ -1282,6 +1282,36 @@ def meta_ad_account_manual_sync_status(job_id: str):
     return _json_response({"ok": True, "job": job})
 
 
+def _compute_realtime_overview_cached(date_text, kwargs, *, cache_params):
+    """实时大盘 overview 的统一「缓存读→算→写」入口，route 与后台预热共用。
+
+    返回 (payload_dict, cache_state)，cache_state in {"HIT","MISS"}。
+    """
+    from appcore.order_analytics import realtime_cache
+    from appcore.order_analytics._helpers import current_meta_business_date
+
+    end_text = cache_params.get("end_date") or cache_params.get("date")
+    is_open_day = True
+    if end_text:
+        try:
+            end_d = date.fromisoformat(str(end_text))
+            is_open_day = end_d >= current_meta_business_date()
+        except ValueError:
+            is_open_day = True
+
+    cache_key = realtime_cache.make_cache_key(cache_params)
+    freshness_marker = realtime_cache.get_freshness_marker()
+    cached = realtime_cache.get(cache_key, freshness_marker, is_open_day)
+    if cached is not None:
+        return cached, "HIT"
+
+    result = oa.get_realtime_roas_overview(date_text, **kwargs)
+    result = _attach_realtime_data_quality(result)
+    safe_result = _json_safe(result)
+    realtime_cache.put(cache_key, safe_result, freshness_marker, is_open_day)
+    return safe_result, "MISS"
+
+
 @bp.route("/order-analytics/realtime-overview")
 @login_required
 @permission_required("data_analytics")
@@ -1358,39 +1388,19 @@ def realtime_overview():
             return _json_response(error="invalid_param", detail="order_page_size must be a positive integer"), 400
         kwargs["order_page_size"] = min(order_page_size, 100)
 
-    # ── 缓存层：数据 ~20 分钟更新一次，未更新期间直接返回缓存 ──
-    from appcore.order_analytics import realtime_cache
-
     cache_params = {
-        "date": date_text,
-        "start_date": start_date,
-        "end_date": end_date,
-        "include_details": include_details,
-        "include_profit_summary": include_profit_summary,
-        "product_id": kwargs.get("product_id"),
-        "site_code": site_code_text,
+        "date": date_text, "start_date": start_date, "end_date": end_date,
+        "include_details": include_details, "include_profit_summary": include_profit_summary,
+        "product_id": kwargs.get("product_id"), "site_code": site_code_text,
         "product_launch_scope": product_launch_scope,
         "product_launch_window_days": kwargs.get("product_launch_window_days"),
-        "page": kwargs.get("page"),
-        "page_size": kwargs.get("page_size"),
-        "order_page": kwargs.get("order_page"),
-        "order_page_size": kwargs.get("order_page_size"),
+        "page": kwargs.get("page"), "page_size": kwargs.get("page_size"),
+        "order_page": kwargs.get("order_page"), "order_page_size": kwargs.get("order_page_size"),
     }
-    cache_key = realtime_cache.make_cache_key(cache_params)
-    freshness_marker = realtime_cache.get_freshness_marker()
-    cached = realtime_cache.get(cache_key, freshness_marker)
-    if cached is not None:
-        resp = _json_response(cached)
-        resp.headers["X-Realtime-Cache"] = "HIT"
-        return resp
-
     try:
-        result = oa.get_realtime_roas_overview(date_text, **kwargs)
-        result = _attach_realtime_data_quality(result)
-        safe_result = _json_safe(result)
-        realtime_cache.put(cache_key, safe_result, freshness_marker)
-        resp = _json_response(safe_result)
-        resp.headers["X-Realtime-Cache"] = "MISS"
+        payload, state = _compute_realtime_overview_cached(date_text, kwargs, cache_params=cache_params)
+        resp = _json_response(payload)
+        resp.headers["X-Realtime-Cache"] = state
         return resp
     except ValueError as exc:
         return _json_response(error="invalid_date", detail=str(exc)), 400
