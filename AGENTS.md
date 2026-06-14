@@ -78,6 +78,7 @@ curl -s -o /dev/null -w "PROD HTTP %{http_code}\n" http://127.0.0.1/
 '
 ```
 验收：`active` + HTTP 200/302；404/500/000 = 失败。
+- **CC-X7 公网开发机（走隧道）**：`bash deploy/publish_ccx7.sh test|prod --confirm`（avsl 隧道 + cjh sudo，逻辑同上），见 [spec](docs/superpowers/specs/2026-06-14-ccx7-tunnel-deploy-design.md)
 ## Don't
 - 不在主工作目录改代码（除非明确 hotfix）；不调 `deploy/publish.sh`、不用 SSH 跳板、不 `gh auth login`
 - 不在 Playwright `wait_for_*` 处替换为 `time.sleep` / `cancellable_sleep`（EZ/CDP 等待事故）
