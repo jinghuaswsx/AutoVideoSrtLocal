@@ -32,7 +32,7 @@ def test_translate_video_info_invokes_openrouter_gemini_15_flash():
     use_case, kwargs = calls[0]
     assert use_case == "tabcut.translate_video_info"
     assert kwargs["provider_override"] == "openrouter"
-    assert kwargs["model_override"] == "google/gemini-1.5-flash"
+    assert kwargs["model_override"] == "google/gemini-flash-1.5"
     assert kwargs["user_id"] == 7
     assert "This rack keeps your kitchen counter organized." in kwargs["prompt"]
     assert "Kitchen Counter Organizer Rack" in kwargs["prompt"]

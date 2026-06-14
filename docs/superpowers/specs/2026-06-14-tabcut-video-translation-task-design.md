@@ -24,7 +24,7 @@
 
 1. 每 10 分钟持续运行 Tabcut 视频中文翻译任务。
 2. 每轮最多拉取 10 个未翻译或可重试失败的视频。
-3. 使用 OpenRouter `google/gemini-1.5-flash` 翻译视频文案和视频关联商品标题。
+3. 使用 OpenRouter `google/gemini-flash-1.5`（Gemini 1.5 Flash）翻译视频文案和视频关联商品标题。
 4. 翻译结果持久化写回 `tabcut_videos`，以后打开视频直接读取缓存结果。
 5. 新抓到的视频和历史未翻译视频都进入同一任务池。
 6. 任务登记到后台“定时任务”模块，运行日志进入 `scheduled_task_runs`。
@@ -64,7 +64,7 @@
 默认绑定：
 
 - provider：`openrouter`
-- model：`google/gemini-1.5-flash`
+- model：`google/gemini-flash-1.5`
 
 输入包含：
 

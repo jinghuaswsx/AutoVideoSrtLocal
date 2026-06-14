@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 TRANSLATE_USE_CASE = "tabcut.translate_video_info"
 TRANSLATE_PROVIDER = "openrouter"
-TRANSLATE_MODEL = "google/gemini-1.5-flash"
+TRANSLATE_MODEL = "google/gemini-flash-1.5"
 MAX_ATTEMPTS = 3
 
 InvokeGenerateFn = Callable[..., dict[str, Any]]

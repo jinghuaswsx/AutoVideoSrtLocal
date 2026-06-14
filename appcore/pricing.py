@@ -87,7 +87,13 @@ def compute_cost_cny(
         row = None
     
     # Defensive fallback for Gemini 1.5 Flash if database row is missing
-    if not row and "gemini-1.5-flash" in model.lower() and units_type == "tokens":
+    model_key = model.lower()
+    is_gemini_15_flash = (
+        "gemini-1.5-flash" in model_key
+        or "gemini-flash-1.5" in model_key
+    )
+
+    if not row and is_gemini_15_flash and units_type == "tokens":
         row = {
             "unit_input_cny": Decimal("0.00000051"),
             "unit_output_cny": Decimal("0.00000204"),
@@ -113,7 +119,7 @@ def compute_cost_cny(
                 return None, "unknown"
             
             # Dynamic tiered pricing logic for Gemini 1.5 Flash
-            if "gemini-1.5-flash" in model.lower():
+            if is_gemini_15_flash:
                 # Google official: prompts > 128K tokens are charged at a doubled rate
                 if input_tokens > 128000:
                     unit_input = unit_input * 2
