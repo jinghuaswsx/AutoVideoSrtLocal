@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Iterable
@@ -47,6 +49,37 @@ def _to_decimal(value: Any) -> Decimal:
     return Decimal(str(value))
 
 
+_DYNAMIC_FEE_TOGGLE_KEY = "shopify_dynamic_fee_enabled"
+_TOGGLE_CACHE_TTL = 30.0
+_toggle_lock = threading.Lock()
+_toggle_cache = {"value": None, "fetched_at": 0.0, "primed": False}
+
+
+def _read_dynamic_fee_toggle() -> str | None:
+    """读 system_settings.shopify_dynamic_fee_enabled，进程内缓存 30s。
+
+    DB 异常返回 None（回退 env/config），不抛错。热路径（每单调用），缓存避免每单查 DB。
+    """
+    now = time.monotonic()
+    with _toggle_lock:
+        if _toggle_cache["primed"] and now - _toggle_cache["fetched_at"] < _TOGGLE_CACHE_TTL:
+            return _toggle_cache["value"]
+    try:
+        from appcore.settings import get_setting
+        value = get_setting(_DYNAMIC_FEE_TOGGLE_KEY)
+    except Exception:
+        value = None
+    with _toggle_lock:
+        _toggle_cache.update(value=value, fetched_at=now, primed=True)
+    return value
+
+
+def invalidate_dynamic_fee_toggle_cache() -> None:
+    """保存设置后由路由调用，立即失效本进程缓存（其他 worker 靠 TTL 收敛）。"""
+    with _toggle_lock:
+        _toggle_cache["primed"] = False
+
+
 def _parse_effective_at() -> datetime | None:
     raw = os.getenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT")
     if raw is None:
@@ -65,6 +98,12 @@ def _parse_effective_at() -> datetime | None:
 
 
 def is_dynamic_fee_effective(order_time: datetime | None) -> bool:
+    toggle = _read_dynamic_fee_toggle()
+    if toggle == "0":
+        return False  # UI 显式关闭 → 全部策略 C
+    if toggle == "1":
+        return order_time is not None  # UI 显式开启 → 全量真实优先（忽略 env/config 日期）
+    # toggle 未设 → 回退现有 env/config effective_at 逻辑
     effective_at = _parse_effective_at()
     if effective_at is None or order_time is None:
         return False

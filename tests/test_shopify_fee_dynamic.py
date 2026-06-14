@@ -831,3 +831,61 @@ def test_resolver_falls_back_to_strategy_c(monkeypatch):
     assert result["shopify_fee_source"] == FEE_SOURCE_STRATEGY_C_FALLBACK
     assert result["shopify_fee_usd"] > 0
     assert result["shopify_fee_basis"]["fallback_reason"] == "no_actual_payment_or_dynamic_snapshot"
+
+
+def test_read_dynamic_fee_toggle_caches_and_invalidates(monkeypatch):
+    from appcore.order_analytics import shopify_fee_resolver as r
+    r.invalidate_dynamic_fee_toggle_cache()
+    try:
+        calls = {"n": 0}
+
+        def fake_get_setting(key):
+            calls["n"] += 1
+            assert key == "shopify_dynamic_fee_enabled"
+            return "0"
+
+        monkeypatch.setattr("appcore.settings.get_setting", fake_get_setting)
+        assert r._read_dynamic_fee_toggle() == "0"
+        assert r._read_dynamic_fee_toggle() == "0"  # 命中缓存
+        assert calls["n"] == 1
+        r.invalidate_dynamic_fee_toggle_cache()
+        assert r._read_dynamic_fee_toggle() == "0"  # 失效后重查
+        assert calls["n"] == 2
+    finally:
+        r.invalidate_dynamic_fee_toggle_cache()
+
+
+def test_read_dynamic_fee_toggle_db_error_returns_none(monkeypatch):
+    from appcore.order_analytics import shopify_fee_resolver as r
+    r.invalidate_dynamic_fee_toggle_cache()
+    try:
+        def boom(key):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr("appcore.settings.get_setting", boom)
+        assert r._read_dynamic_fee_toggle() is None
+    finally:
+        r.invalidate_dynamic_fee_toggle_cache()
+
+
+def test_is_dynamic_fee_effective_toggle_three_states(monkeypatch):
+    from appcore.order_analytics import shopify_fee_resolver as r
+    r.invalidate_dynamic_fee_toggle_cache()
+    try:
+        in_window = datetime(2026, 3, 1, 10, 0, 0)
+        # toggle="0" → 强制关，即使 env 设过去日
+        monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-01-01T00:00:00+08:00")
+        monkeypatch.setattr(r, "_read_dynamic_fee_toggle", lambda: "0")
+        assert r.is_dynamic_fee_effective(in_window) is False
+        # toggle="1" → 全量开，即使 env 设未来日；缺 order_time 仍保守
+        monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2099-01-01T00:00:00+08:00")
+        monkeypatch.setattr(r, "_read_dynamic_fee_toggle", lambda: "1")
+        assert r.is_dynamic_fee_effective(in_window) is True
+        assert r.is_dynamic_fee_effective(None) is False
+        # toggle 未设 → 回退 env/config effective_at
+        monkeypatch.setenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-01-01T00:00:00+08:00")
+        monkeypatch.setattr(r, "_read_dynamic_fee_toggle", lambda: None)
+        assert r.is_dynamic_fee_effective(in_window) is True
+        assert r.is_dynamic_fee_effective(datetime(2025, 12, 1, 10, 0, 0)) is False
+    finally:
+        r.invalidate_dynamic_fee_toggle_cache()
