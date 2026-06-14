@@ -1034,6 +1034,7 @@
         </div>
         ${resumeBlock}
         ${steps.length ? renderProgressSteps(steps) : ''}
+        ${renderThrottle(progress.throttle)}
         ${renderProgressLogs(progress.logs || [])}
       </section>
     `;
@@ -1065,6 +1066,23 @@
             <strong>${esc(log.message || '')}</strong>
           </div>
         `).join('')}
+      </div>
+    `;
+  }
+
+  function renderThrottle(t) {
+    if (!t || !t.enabled) return '';
+    const retry = t.retrying
+      ? `<span class="aims-throttle-retry">重试中 ${Number(t.current_retry || 0)}/${Number(t.max_retries || 0)}</span>`
+      : '';
+    const degraded = Number(t.degraded || 0)
+      ? `<span class="aims-throttle-degraded">降级 ${Number(t.degraded)}</span>` : '';
+    return `
+      <div class="aims-throttle">
+        <span class="aims-throttle-title">通道节流/重试</span>
+        <span>当前间隔 ${Number(t.current_interval || 0)}s（基线 ${Number(t.base_interval || 0)}s）</span>
+        <span>限流命中 ${Number(t.rate_limit_hits || 0)}</span>
+        ${retry}${degraded}
       </div>
     `;
   }
