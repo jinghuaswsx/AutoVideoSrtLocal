@@ -356,7 +356,8 @@ def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():
     ]
 
     with patch.object(ppa, "_load_unmatched_campaign_metrics", return_value=fake_rows), \
-         patch.object(ppa, "_load_match_map", return_value={"mystery": None, "known-rjc": 200}):
+         patch.object(ppa, "_load_match_map", return_value={"mystery": None, "known-rjc": 200}), \
+         patch.object(ppa, "_load_product_launch_dates", return_value={200: date(2026, 5, 1)}):
         result = ppa.generate_unmatched_ads_report(
             date_from=date(2026, 5, 1),
             date_to=date(2026, 5, 7),
@@ -386,6 +387,99 @@ def test_generate_unmatched_ads_report_aggregates_rows_counted_by_summary():
     assert row["last_seen"] == "2026-05-06"
     assert row["allocation_reason"] == "unmatched_product"
     assert row["allocation_label"] == "未匹配产品"
+
+
+def test_generate_unmatched_ads_report_labels_new_and_non_new_unallocated_campaigns():
+    fake_rows = [
+        {
+            "report_date": date(2026, 6, 12),
+            "ad_account_id": "act_1",
+            "ad_account_name": "newjoyloo",
+            "normalized_campaign_code": "fresh-rjc",
+            "campaign_name": "Fresh Campaign",
+            "spend_usd": Decimal("70.00"),
+            "result_count": 3,
+            "purchase_value_usd": Decimal("140.00"),
+            "allocation_reason": "matched_no_units",
+            "matched_product_id": 101,
+            "matched_product_code": "fresh-rjc",
+            "matched_product_name": "Fresh Product",
+        },
+        {
+            "report_date": date(2026, 6, 12),
+            "ad_account_id": "act_2",
+            "ad_account_name": "omurio",
+            "normalized_campaign_code": "old-rjc",
+            "campaign_name": "Old Campaign",
+            "spend_usd": Decimal("20.00"),
+            "result_count": 1,
+            "purchase_value_usd": Decimal("30.00"),
+            "allocation_reason": "matched_no_units",
+            "matched_product_id": 202,
+            "matched_product_code": "old-rjc",
+            "matched_product_name": "Old Product",
+        },
+        {
+            "report_date": date(2026, 6, 12),
+            "ad_account_id": "act_3",
+            "ad_account_name": "newjoyloo",
+            "normalized_campaign_code": "mystery",
+            "campaign_name": "Mystery Campaign",
+            "spend_usd": Decimal("10.00"),
+            "result_count": 0,
+            "purchase_value_usd": Decimal("0.00"),
+            "allocation_reason": "unmatched_product",
+        },
+    ]
+
+    def fake_query(sql, params=()):
+        if "FROM product_ad_launch_dates" in sql:
+            return [
+                {"product_id": 101, "ad_launch_date": date(2026, 6, 10)},
+                {"product_id": 202, "ad_launch_date": date(2026, 5, 20)},
+            ]
+        raise AssertionError(f"unexpected query: {sql}")
+
+    with patch("appcore.order_analytics._open_day_freshness.ensure_open_day_profit_lines_fresh"), \
+         patch.object(ppa, "_load_unmatched_campaign_metrics", return_value=fake_rows), \
+         patch.object(ppa.product_ad_launch, "beijing_today", return_value=date(2026, 6, 13)), \
+         patch.object(ppa.product_ad_launch, "seed_missing_fallback_launch_dates", return_value=0), \
+         patch.object(ppa, "query", side_effect=fake_query):
+        result = ppa.generate_unmatched_ads_report(
+            date_from=date(2026, 6, 12),
+            date_to=date(2026, 6, 12),
+        )
+
+    by_code = {row["normalized_campaign_code"]: row for row in result["unmatched"]}
+    assert by_code["fresh-rjc"]["launch_segment"] == "new_product"
+    assert by_code["fresh-rjc"]["launch_segment_label"] == "新品"
+    assert by_code["fresh-rjc"]["is_new_product"] is True
+    assert by_code["fresh-rjc"]["ad_launch_date"] == "2026-06-10"
+
+    assert by_code["old-rjc"]["launch_segment"] == "non_new_product"
+    assert by_code["old-rjc"]["launch_segment_label"] == "非新品"
+    assert by_code["old-rjc"]["is_new_product"] is False
+    assert by_code["old-rjc"]["ad_launch_date"] == "2026-05-20"
+
+    assert by_code["mystery"]["launch_segment"] == "non_new_product"
+    assert by_code["mystery"]["is_new_product"] is False
+    assert by_code["mystery"]["ad_launch_date"] is None
+
+    summary = result["unallocated_launch_segment_summary"]
+    assert summary["window_days"] == 7
+    assert summary["total_spend_usd"] == 100.0
+    assert summary["new_product"] == {
+        "label": "新品",
+        "spend_usd": 70.0,
+        "share_pct": 70.0,
+        "campaign_count": 1,
+    }
+    assert summary["non_new_product"] == {
+        "label": "非新品",
+        "spend_usd": 30.0,
+        "share_pct": 30.0,
+        "campaign_count": 2,
+    }
 
 
 def test_generate_unmatched_ads_report_uses_realtime_for_open_business_day():

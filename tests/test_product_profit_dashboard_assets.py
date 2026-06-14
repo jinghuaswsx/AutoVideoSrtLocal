@@ -200,3 +200,12 @@ def test_product_profit_unallocated_ads_copy_is_not_ambiguous():
     assert "已匹配产品但无可分摊订单" in TEMPLATE
     assert "未匹配广告</span>" not in TEMPLATE
     assert "未匹配 campaign <span" not in TEMPLATE
+
+
+def test_product_profit_unallocated_ads_show_launch_segment_summary_and_label():
+    assert 'id="ppd-ads-unmatched-launch-summary"' in TEMPLATE
+    assert "<th>新品标签</th>" in TEMPLATE
+    assert "function renderUnallocatedLaunchSegmentSummary(summary)" in TEMPLATE
+    assert "function formatLaunchSegmentLabel(row)" in TEMPLATE
+    assert "unallocated_launch_segment_summary" in TEMPLATE
+    assert "非新品 · 未匹配产品" in TEMPLATE

@@ -37,6 +37,7 @@ from typing import Any
 
 from .ad_market_country import is_single_market_country, normalize_market_country
 from .meta_ads import resolve_ad_product_match
+from . import product_ad_launch
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,109 @@ _ALLOCATION_REASON_LABELS = {
 
 def _allocation_reason_label(reason: str | None) -> str:
     return _ALLOCATION_REASON_LABELS.get((reason or "").strip(), "未分摊")
+
+
+_LAUNCH_SEGMENT_NEW = "new_product"
+_LAUNCH_SEGMENT_NON_NEW = "non_new_product"
+
+
+def _empty_launch_segment_summary(window_days: int) -> dict[str, Any]:
+    return {
+        "window_days": window_days,
+        "total_spend_usd": 0.0,
+        _LAUNCH_SEGMENT_NEW: {
+            "label": "新品",
+            "spend_usd": 0.0,
+            "share_pct": 0.0,
+            "campaign_count": 0,
+        },
+        _LAUNCH_SEGMENT_NON_NEW: {
+            "label": "非新品",
+            "spend_usd": 0.0,
+            "share_pct": 0.0,
+            "campaign_count": 0,
+        },
+    }
+
+
+def _load_product_launch_dates(product_ids: set[int]) -> dict[int, date]:
+    if not product_ids:
+        return {}
+    product_ad_launch.seed_missing_fallback_launch_dates()
+    product_list = sorted(product_ids)
+    rows = query(
+        f"SELECT product_id, ad_launch_date FROM product_ad_launch_dates "
+        f"WHERE product_id IN ({_sql_in(product_list)})",
+        tuple(product_list),
+    ) or []
+    out: dict[int, date] = {}
+    for row in rows:
+        try:
+            product_id = int(row.get("product_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        launch_date = _date_value(row.get("ad_launch_date"))
+        if product_id > 0 and launch_date:
+            out[product_id] = launch_date
+    return out
+
+
+def _attach_launch_segments_to_unmatched(
+    unmatched_rows: list[dict[str, Any]],
+    *,
+    window_days: int | None = None,
+) -> dict[str, Any]:
+    normalized_window_days = product_ad_launch.normalize_product_launch_window_days(window_days)
+    summary = _empty_launch_segment_summary(normalized_window_days)
+    product_ids = {
+        int(row["matched_product_id"])
+        for row in unmatched_rows
+        if row.get("matched_product_id") is not None
+    }
+    launch_dates = _load_product_launch_dates(product_ids)
+    today = product_ad_launch.beijing_today()
+
+    for row in unmatched_rows:
+        product_id = row.get("matched_product_id")
+        launch_date = None
+        if product_id is not None:
+            try:
+                launch_date = launch_dates.get(int(product_id))
+            except (TypeError, ValueError):
+                launch_date = None
+
+        is_new = False
+        if launch_date is not None:
+            is_new = (
+                product_ad_launch.classify_launch_date(
+                    launch_date,
+                    today=today,
+                    window_days=normalized_window_days,
+                )
+                == "new"
+            )
+
+        segment = _LAUNCH_SEGMENT_NEW if is_new else _LAUNCH_SEGMENT_NON_NEW
+        row["launch_segment"] = segment
+        row["launch_segment_label"] = "新品" if is_new else "非新品"
+        row["is_new_product"] = bool(is_new)
+        row["ad_launch_date"] = launch_date.isoformat() if launch_date else None
+        row["product_launch_window_days"] = normalized_window_days
+
+        spend = round(float(row.get("spend_usd") or 0), 2)
+        summary[segment]["spend_usd"] = round(summary[segment]["spend_usd"] + spend, 2)
+        summary[segment]["campaign_count"] += 1
+
+    total_spend = round(
+        summary[_LAUNCH_SEGMENT_NEW]["spend_usd"]
+        + summary[_LAUNCH_SEGMENT_NON_NEW]["spend_usd"],
+        2,
+    )
+    summary["total_spend_usd"] = total_spend
+    if total_spend > 0:
+        for key in (_LAUNCH_SEGMENT_NEW, _LAUNCH_SEGMENT_NON_NEW):
+            summary[key]["share_pct"] = round(summary[key]["spend_usd"] / total_spend * 100, 2)
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -831,7 +935,17 @@ def generate_unmatched_ads_report(
     ensure_open_day_profit_lines_fresh(date_from, date_to)
     rows = _load_unmatched_campaign_metrics(date_from, date_to, country)
     if not rows:
-        return {"accounts": [], "campaigns": [], "daily": [], "unmatched": []}
+        return {
+            "accounts": [],
+            "campaigns": [],
+            "daily": [],
+            "unmatched": [],
+            "allocated_ad_spend_usd": 0.0,
+            "unallocated_ad_spend_usd": 0.0,
+            "unallocated_launch_segment_summary": _empty_launch_segment_summary(
+                product_ad_launch.NEW_PRODUCT_WINDOW_DAYS
+            ),
+        }
 
     unmatched: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
@@ -905,6 +1019,7 @@ def generate_unmatched_ads_report(
         })
     unmatched_list.sort(key=lambda x: -x["spend_usd"])
     total_unmatched_spend = sum(float(item["spend_usd"] or 0) for item in unmatched_list)
+    launch_segment_summary = _attach_launch_segments_to_unmatched(unmatched_list)
 
     return {
         "accounts": [],
@@ -913,4 +1028,5 @@ def generate_unmatched_ads_report(
         "unmatched": unmatched_list,
         "allocated_ad_spend_usd": 0.0,
         "unallocated_ad_spend_usd": total_unmatched_spend,
+        "unallocated_launch_segment_summary": launch_segment_summary,
     }
