@@ -694,3 +694,49 @@ def test_list_apis_pass_include_handled(monkeypatch):
     with flask_app.test_request_context("/ad-alerts/api/high-loss-ads?include_handled=1"):
         _unwrap(route.api_high_loss_ads)()
     assert captured["high_loss_kwargs"]["include_handled"] is True
+
+
+def test_api_long_term_loss_serializes_items(monkeypatch):
+    from web.routes import ad_alerts as route
+    from flask import Flask
+    from datetime import date
+    from appcore import ad_long_term_loss
+
+    item = ad_long_term_loss.LongTermLossItem(
+        product_id=1,
+        product_code="P1",
+        product_name="品1",
+        product_main_image=None,
+        spend_7d=800.0,
+        profit_7d=-200.0,
+        loss_7d=200.0,
+        profit_30d=-50.0,
+        loss_ratio=None,
+        verdict="long_term_net_loss",
+        active_days=28,
+        consecutive_loss_days=3,
+        first_active_date="2026-05-01",
+        has_estimated_cost=True,
+        detail_url="/order-analytics?x=1",
+        action=None,
+    )
+
+    def fake_get_long_term_loss_products(**kwargs):
+        return date(2026, 6, 14), [item]
+
+    monkeypatch.setattr(
+        route.ad_long_term_loss,
+        "get_long_term_loss_products",
+        fake_get_long_term_loss_products,
+    )
+
+    flask_app = Flask(__name__)
+    with flask_app.test_request_context("/ad-alerts/api/long-term-loss?limit=10"):
+        response = _unwrap(route.api_long_term_loss)()
+
+    data = response.get_json()
+    assert data["business_date"] == "2026-06-14"
+    assert data["total"] == 1
+    assert data["estimated_product_count"] == 1
+    assert data["items"][0]["verdict"] == "long_term_net_loss"
+    assert data["items"][0]["loss_7d"] == 200.0

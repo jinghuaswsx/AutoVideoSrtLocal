@@ -17,7 +17,7 @@ from typing import Any
 from flask import Blueprint, abort, current_app, jsonify, render_template, request, url_for
 from flask_login import login_required
 
-from appcore import ad_alert_actions, ad_alerts
+from appcore import ad_alert_actions, ad_alerts, ad_long_term_loss
 import config
 from web.auth import admin_required
 
@@ -193,6 +193,29 @@ def api_high_loss_ads():
         "business_date": business_date.isoformat(),
         "items": [_high_loss_ad_item_to_dict(item) for item in items],
         "total": len(items),
+    })
+
+
+@bp.route("/api/long-term-loss")
+@login_required
+@admin_required
+def api_long_term_loss():
+    """长期亏损品 JSON API。"""
+    search = (request.args.get("q") or "").strip() or None
+    try:
+        limit = int(request.args.get("limit") or 30)
+    except (TypeError, ValueError):
+        return jsonify({"error": "invalid limit"}), 400
+    business_date, items = ad_long_term_loss.get_long_term_loss_products(
+        search=search,
+        limit=limit,
+        include_handled=_parse_include_handled(request.args.get("include_handled")),
+    )
+    return jsonify({
+        "business_date": business_date.isoformat(),
+        "items": [_long_term_loss_item_to_dict(it) for it in items],
+        "total": len(items),
+        "estimated_product_count": sum(1 for it in items if it.has_estimated_cost),
     })
 
 
@@ -498,6 +521,27 @@ def _high_loss_ad_item_to_dict(item: ad_alerts.HighLossAdItem) -> dict[str, Any]
         "action_target_key": ad_alert_actions.high_loss_target_key(
             item.ad_account_id, item.code
         ),
+    }
+
+
+def _long_term_loss_item_to_dict(item: ad_long_term_loss.LongTermLossItem) -> dict[str, Any]:
+    return {
+        "product_id": item.product_id,
+        "product_code": item.product_code,
+        "product_name": item.product_name,
+        "product_main_image": item.product_main_image,
+        "spend_7d": item.spend_7d,
+        "profit_7d": item.profit_7d,
+        "loss_7d": item.loss_7d,
+        "profit_30d": item.profit_30d,
+        "loss_ratio": item.loss_ratio,
+        "verdict": item.verdict,
+        "active_days": item.active_days,
+        "consecutive_loss_days": item.consecutive_loss_days,
+        "first_active_date": item.first_active_date,
+        "has_estimated_cost": item.has_estimated_cost,
+        "detail_url": item.detail_url,
+        "action": item.action,
     }
 
 
