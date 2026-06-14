@@ -45,7 +45,7 @@
 ### 6.1 汇率
 
 - **锚点**：`appcore/exchange_rates.py`、表 `usd_cny_daily_exchange_rates` / `usd_cny_fallback_exchange_rates`、`tools/order_profit_backfill.py`。
-- **回填历史日汇率**：新增一次性回填能力，对 2/24~今天每个缺失交易日调 frankfurter **历史端点**（`https://api.frankfurter.app/{YYYY-MM-DD}?from=USD&to=CNY`，实测可用；周末/节假日顺延最近交易日），经现有三源交叉校验（`validate_cross_rates`，diff>5% 拒绝）后 upsert 入 `usd_cny_daily_exchange_rates`。注意现有 `fetch_frankfurter_usd_cny` 用 `/latest`，需支持传入日期走历史端点。
+- **回填历史日汇率**：新增一次性回填能力，对 2/24~今天每个缺失交易日调 frankfurter **历史端点**（`https://api.frankfurter.app/{YYYY-MM-DD}?from=USD&to=CNY`，实测可用；周末/节假日顺延最近交易日）upsert 入 `usd_cny_daily_exchange_rates`。注意 `open_er_api`/`floatrates` **无历史端点**，故**历史回填走 frankfurter 单源旁路**（`validators=[]`、标 `single_source_historical`），不套用三源交叉校验；当日及之后的每日同步仍走三源 `validate_cross_rates`（diff>5% 拒绝）。现有 `fetch_frankfurter_usd_cny` 用 `/latest`，需支持传入日期走历史端点。
 - **降级链（已实现，保持）**：`get_usd_to_cny_for_date`：日汇率(`daily_archive`) → 30 天均值(`fallback_30d_average`) → 配置值 6.83(`configured_fallback`)，`source` 如实标注。
 - **全量重算**：`backfill` 在 `manual_rate=None` 模式下已按 `business_date` 调 `get_usd_to_cny_map` 取日汇率；回填后以该模式重跑历史，让 61% 固定 6.83 的行换成真实日汇率。
 - **持续**：日汇率同步任务每日跑 + 断更告警（见 §9）。
