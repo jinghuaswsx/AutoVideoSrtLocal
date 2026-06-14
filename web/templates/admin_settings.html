@@ -269,6 +269,16 @@
         <div class="field-hint">所有翻译任务共享的 ElevenLabs TTS 全局并发上限（默认 12，Business 套餐硬上限 15）。改后需 systemctl restart autovideosrt 生效。</div>
       </div>
 
+      <div class="field-group">
+        <label>手续费真实优先</label>
+        <div class="field-row">
+          <input type="checkbox" name="shopify_dynamic_fee_enabled" id="shopify_dynamic_fee_enabled"
+                 {% if shopify_dynamic_fee_enabled %}checked{% endif %}>
+          <label for="shopify_dynamic_fee_enabled" style="font-weight:normal;margin-left:6px;">启用真实优先手续费</label>
+        </div>
+        <div class="field-hint">开启：有真实 Payments 手续费用真实，缺则区域费率 / 策略 C 估算；关闭：全部回退策略 C 估算。仅影响后续计算与实时大盘未落库订单，历史已落库数字需单独跑全量重算才更新。无需重启，约 30 秒内生效。</div>
+      </div>
+
       <div class="section-divider"></div>
 
       <p style="color:#6b7280;font-size:13px;margin-bottom:16px;">按模块覆盖，留空表示使用全局默认。</p>

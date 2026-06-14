@@ -497,6 +497,17 @@ def settings():
             n = max(1, min(n, 15))
             set_setting("tts_max_concurrency", str(n))
 
+        # 手续费真实优先 toggle（checkbox：勾选才进 form）
+        fee_enabled = "1" if request.form.get("shopify_dynamic_fee_enabled") else "0"
+        set_setting("shopify_dynamic_fee_enabled", fee_enabled)
+        try:
+            from appcore.order_analytics.shopify_fee_resolver import (
+                invalidate_dynamic_fee_toggle_cache,
+            )
+            invalidate_dynamic_fee_toggle_cache()
+        except Exception:
+            pass
+
         old_default = get_retention_hours("__nonexistent__")
         old_per_type = {pt: get_retention_hours(pt) for pt in PROJECT_TYPE_LABELS}
         old_override_types = {pt for pt in PROJECT_TYPE_LABELS if has_retention_override(pt)}
@@ -551,6 +562,7 @@ def settings():
         return redirect(url_for("admin.settings", tab="general"))
 
     current = get_all_retention_settings()
+    shopify_dynamic_fee_enabled = get_setting("shopify_dynamic_fee_enabled") != "0"
     tts_concurrency_raw = get_setting("tts_max_concurrency")
     try:
         tts_concurrency = int(tts_concurrency_raw) if tts_concurrency_raw else 12
@@ -569,6 +581,7 @@ def settings():
         ad_alert_threshold=ad_alert_threshold,
         media_languages=medias.list_languages_for_admin(),
         tts_max_concurrency=tts_concurrency,
+        shopify_dynamic_fee_enabled=shopify_dynamic_fee_enabled,
         product_link_domains=product_link_domains.list_domains(include_disabled=True),
         exchange_rate_view=_load_exchange_rate_settings_view(),
         active_tab=active_tab,
