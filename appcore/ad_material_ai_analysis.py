@@ -20,6 +20,7 @@ from typing import Any, Iterable, Mapping
 from urllib.parse import quote
 
 from appcore import db, llm_client
+from appcore.ad_material_throttle import GoogleWjThrottle
 
 log = logging.getLogger(__name__)
 
@@ -468,6 +469,14 @@ def _pace_llm() -> None:
     if wait > 0:
         time.sleep(wait)
     _LAST_LLM_AT = time.monotonic()
+
+
+def _invoke_via_throttle(throttle, *, stage: str, product_id=None, **invoke_kwargs):
+    """统一经 throttle 调用 llm_client.invoke_generate；throttle 缺省时退化为直连。"""
+    call = lambda: llm_client.invoke_generate(**invoke_kwargs)
+    if throttle is None:
+        return call()
+    return throttle.guarded_invoke(call, stage=stage, product_id=product_id)
 
 
 def _snake_batches(items: list[dict], size: int = 20) -> list[list[dict]]:
@@ -1857,7 +1866,7 @@ def _fallback_ranking(candidates: list[dict], error: str | None = None) -> dict[
     }
 
 
-def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | None, run_ai: bool) -> dict[str, Any]:
+def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | None, run_ai: bool, throttle=None) -> dict[str, Any]:
     if not run_ai:
         return _fallback_ranking(candidates)
     try:
@@ -2427,6 +2436,7 @@ def _run_product_analysis(
     project_id: int,
     user_id: int | None,
     run_ai: bool,
+    throttle=None,
 ) -> dict:
     fallback = _fallback_product_analysis(product, countries, mk_materials)
     review_input = _build_material_review_input(product, local_materials, mk_materials)
@@ -4638,6 +4648,7 @@ def _run_country_reviews(
     project_id: int,
     user_id: int | None,
     run_ai: bool,
+    throttle=None,
 ) -> dict[str, dict]:
     """一次 LLM 调用评估全部目标国家；缺国/坏国/异常用确定性兜底补齐。"""
     def _fallback_for(cc: str, lang: str) -> dict:
