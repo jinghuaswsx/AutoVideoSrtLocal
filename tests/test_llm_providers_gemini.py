@@ -110,6 +110,24 @@ def test_aistudio_chat_extracts_json_schema_from_response_format():
     assert captured["response_schema"] == {"type": "object"}
 
 
+def test_aistudio_chat_converts_json_object_response_format():
+    adapter = GeminiAIStudioAdapter()
+    captured = {}
+
+    def fake_generate(self, *, model, prompt, **kwargs):
+        captured.update(kwargs)
+        return {"text": None, "json": {"ok": True}, "raw": None, "usage": {}}
+
+    with patch.object(GeminiAIStudioAdapter, "generate", fake_generate):
+        adapter.chat(
+            model="gemini-3.5-flash",
+            messages=[{"role": "user", "content": "hi"}],
+            response_format={"type": "json_object"},
+        )
+
+    assert captured["response_schema"] == {"type": "object"}
+
+
 def test_aistudio_generate_forwards_google_search_flag():
     adapter = GeminiAIStudioAdapter()
     client = Mock()

@@ -40,6 +40,15 @@
 - 历史项目如果缺少 `model_defaults`，但已有 `state_json.models` 实际运行记录，强制重新开始和后续后台链路应先从这些历史实际模型恢复项目快照；只有项目内完全没有历史模型记录时，才允许回退到当前全局默认配置。
 - 第四步旧接口 `POST /video-cover/api/<task_id>/regenerate-cover` 保留兼容，但前端可统一使用通用步骤运行接口。
 
+## 2026-06-14 步骤重选模型请求参数适配修订
+
+生产项目在第三步「文案创作」从 OpenRouter 重选为 `GOOGLEWJ / gemini-3.5-flash` 后，旧的 OpenRouter `response_format={"type":"json_object"}` 被直接传到 Vertex Gemini，导致 Vertex 把 `json_object` 当成 `generation_config.response_schema.type` 并返回 `400 INVALID_ARGUMENT`。
+
+- 步骤级重选模型后，服务端只保留业务层的“需要 JSON 输出”语义；运行时必须按当前目标 provider / adapter 重新适配请求参数。
+- OpenRouter 可以继续使用 `response_format={"type":"json_object"}`。
+- Google AI Studio / Google Vertex / GOOGLEWJ 必须把 OpenAI 风格 `json_object` 语义转换为 Gemini 支持的 JSON object schema，例如 `{"type":"object"}`，不得把 `json_object` 原样写入 Gemini `response_schema.type`。
+- 回归测试必须覆盖 `google_wj` 文案创作通道，确保步骤重选后不会复用上一个 provider 的参数结构。
+
 ## 后端设计
 
 - `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。

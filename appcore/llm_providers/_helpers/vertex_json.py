@@ -60,6 +60,8 @@ def _extract_gemini_schema(response_format: dict | None) -> dict | None:
     """把 OpenAI json_schema response_format 提取成 Gemini response_schema 需要的结构。"""
     if not response_format:
         return None
+    if response_format.get("type") == "json_object":
+        return {"type": "object"}
     schema = response_format.get("json_schema", {}).get("schema", response_format)
     return _strip_unsupported_schema(schema)
 
