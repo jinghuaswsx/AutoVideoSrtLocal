@@ -345,3 +345,35 @@ def test_order_analytics_exchange_rates_route_returns_archive_json(
         "fallback_history": [{"fallback_date": "2026-06-07", "usd_to_cny": 6.8}],
         "fallback_logic": {"calculation_method": "daily_archive_30d_average"},
     }
+
+
+def test_fetch_frankfurter_usd_cny_uses_historical_endpoint_for_date():
+    from appcore import exchange_rates
+
+    captured = {}
+
+    def fake_get_json(url):
+        captured["url"] = url
+        return {"base": "USD", "date": "2026-02-24", "rates": {"CNY": "6.8817"}}
+
+    quote = exchange_rates.fetch_frankfurter_usd_cny(
+        rate_date=date(2026, 2, 24), get_json=fake_get_json
+    )
+
+    assert captured["url"] == "https://api.frankfurter.app/2026-02-24?from=USD&to=CNY"
+    assert quote.source == "frankfurter"
+    assert quote.rate == Decimal("6.8817")
+    assert quote.source_date == date(2026, 2, 24)
+
+
+def test_fetch_frankfurter_usd_cny_uses_latest_endpoint_without_date():
+    from appcore import exchange_rates
+
+    captured = {}
+
+    def fake_get_json(url):
+        captured["url"] = url
+        return {"base": "USD", "date": "2026-06-14", "rates": {"CNY": "6.7623"}}
+
+    exchange_rates.fetch_frankfurter_usd_cny(get_json=fake_get_json)
+    assert captured["url"] == "https://api.frankfurter.app/latest?from=USD&to=CNY"

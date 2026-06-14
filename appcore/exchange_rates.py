@@ -26,7 +26,10 @@ FALLBACK_LOGIC_DESCRIPTION = (
     "最近 30 天已归档 USD/CNY 基准汇率的算术平均值；"
     "缺当天基准时优先使用该值；无样本时退回系统配置汇率"
 )
-FRANKFURTER_URL = "https://api.frankfurter.app/latest?from=USD&to=CNY"
+FRANKFURTER_LATEST_URL = "https://api.frankfurter.app/latest?from=USD&to=CNY"
+FRANKFURTER_HISTORICAL_URL = "https://api.frankfurter.app/{date}?from=USD&to=CNY"
+# 向后兼容：旧引用仍可用
+FRANKFURTER_URL = FRANKFURTER_LATEST_URL
 OPEN_ER_API_URL = "https://open.er-api.com/v6/latest/USD"
 FLOATRATES_URL = "https://www.floatrates.com/daily/usd.json"
 
@@ -117,9 +120,14 @@ def _http_get_json(url: str, *, timeout_seconds: int = 15) -> dict[str, Any]:
 
 
 def fetch_frankfurter_usd_cny(
-    *, get_json: Callable[[str], dict[str, Any]] | None = None
+    *, rate_date: date | None = None, get_json: Callable[[str], dict[str, Any]] | None = None
 ) -> RateQuote:
-    data = (get_json or _http_get_json)(FRANKFURTER_URL)
+    url = (
+        FRANKFURTER_HISTORICAL_URL.format(date=rate_date.isoformat())
+        if rate_date is not None
+        else FRANKFURTER_LATEST_URL
+    )
+    data = (get_json or _http_get_json)(url)
     base = str(data.get("base") or "").upper()
     if base != "USD":
         raise ValueError(f"frankfurter base must be USD, got {base!r}")
