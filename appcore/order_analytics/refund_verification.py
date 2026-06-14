@@ -286,6 +286,45 @@ def apply_refund_adjustments_to_details(details: list[dict[str, Any]]) -> float:
     return _apply_contra_revenue(details, deltas)
 
 
+def apply_refund_adjustments_to_order_list(rows: list[dict[str, Any]]) -> float:
+    """退款冲减：对 get_order_profit_list 格式的 rows（字段 revenue_total_usd / profit_total_usd）
+    按 dxm_package_id 应用已核验退款调整，返回总冲减营收额（USD）。
+    """
+    if not rows:
+        return 0.0
+    try:
+        deltas = _compute_contra_revenue_deltas()
+    except Exception:
+        return 0.0
+    total = 0.0
+    for row in rows:
+        pid = str(row.get("dxm_package_id") or "")
+        d = deltas.get(pid)
+        if not d:
+            continue
+        rev_deduct = d["revenue_deduct"]
+        reserve_release = d["reserve_release"]
+        row["revenue_total_usd"] = round(float(row.get("revenue_total_usd") or 0) - rev_deduct, 2)
+        row["return_reserve_total_usd"] = 0.0
+        net_impact = rev_deduct - reserve_release
+        if row.get("profit_total_usd") is not None:
+            row["profit_total_usd"] = round(float(row["profit_total_usd"]) - net_impact, 2)
+        total += rev_deduct
+    return round(total, 2)
+
+
+def compute_total_refund_deduction() -> float:
+    """返回当前有效退款核验的总冲减营收额（USD），不修改任何 details。
+
+    用于修正不走 details 路径的聚合值（如 ROAS 分子），避免对已修改的 details 重复扣减。
+    """
+    try:
+        deltas = _compute_contra_revenue_deltas()
+    except Exception:
+        return 0.0
+    return round(sum(d["revenue_deduct"] for d in deltas.values()), 2)
+
+
 def apply_refund_adjustments_to_details_aggregation(details: list[dict[str, Any]]) -> float:
     if not details:
         return 0.0

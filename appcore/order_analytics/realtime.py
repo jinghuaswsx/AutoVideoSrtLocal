@@ -639,6 +639,8 @@ def _attach_profit_details_to_order_details(
                 date_to=date_to,
                 product_id=product_id,
             )
+            from .refund_verification import apply_refund_adjustments_to_details as _apply_refund_adj
+            _apply_refund_adj(profit_details)
 
     profit_by_pkg = {r["dxm_package_id"]: r for r in profit_details}
 
@@ -1034,6 +1036,8 @@ def _get_realtime_order_profit_details(
                 date_to=target,
                 product_id=product_id,
             )
+        from .refund_verification import apply_refund_adjustments_to_details as _apply_refund_adj
+        _apply_refund_adj(details)
     return details
 
 
@@ -1265,6 +1269,8 @@ def _get_realtime_order_profit_details_for_range(
             date_to=end,
             product_id=product_id,
         )
+        from .refund_verification import apply_refund_adjustments_to_details as _apply_refund_adj
+        _apply_refund_adj(details)
     return details
 
 
@@ -4395,6 +4401,14 @@ def get_realtime_roas_overview(
     summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
     summary["meta_roas"] = _roas(summary["meta_purchase_value"], summary["ad_spend"])
     _attach_meta_purchase_fallback_summary(summary, purchase_fallback_stats)
+    # 退款冲减 ROAS 分子：summary["revenue_with_shipping"] 来自 hourly_order_stats（独立路径），
+    # 未受 details 级退款调整影响。通过 compute_total_refund_deduction() 取总退款扣减额修正。
+    from .refund_verification import compute_total_refund_deduction as _compute_refund_total
+    _refund_deducted = _compute_refund_total()
+    if _refund_deducted > 0:
+        summary["order_revenue"] = round(summary["order_revenue"] - _refund_deducted, 2)
+        summary["revenue_with_shipping"] = _revenue_with_shipping(summary["order_revenue"], summary["shipping_revenue"])
+        summary["true_roas"] = _roas(summary["revenue_with_shipping"], summary["ad_spend"])
     order_detail_total = (
         _count_realtime_order_details(
             target,
