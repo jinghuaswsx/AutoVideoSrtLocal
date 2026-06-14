@@ -56,3 +56,33 @@ def test_build_verification_rows_classifies_with_site(monkeypatch):
     assert by_order["23863"]["match_status"] == "anomaly"
     assert by_order["301"]["match_status"] == "anomaly"
     assert by_order["999"]["match_status"] == "unmatched"
+
+
+def test_create_batch(monkeypatch):
+    executed = []
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): executed.append(sql))
+    def fake_query(sql, args=()):
+        if "dianxiaomi_order_lines" in sql:
+            return [{"extended_order_id": "23863", "dxm_package_id": "P1", "site_code": "newjoy", "revenue": 100.0}]
+        if "order_profit_lines" in sql:
+            return [{"extended_order_id": "23863", "reserve": 1.0}]
+        if "LAST_INSERT_ID" in sql:
+            return [{"id": 7}]
+        return []
+    monkeypatch.setattr(oa, "query", fake_query)
+    summary = rv.create_batch(
+        refunds={"23863": 56.89}, statuses={},
+        source_files={"payments_csv": "p.csv"}, created_by="admin", site_code="newjoy",
+    )
+    assert summary["batch_id"] == 7
+    assert summary["matched_count"] == 1
+
+
+def test_apply_discard_revert(monkeypatch):
+    calls = []
+    monkeypatch.setattr(oa, "execute", lambda sql, args=(): calls.append(sql))
+    rv.apply_batch(7)
+    rv.discard_batch(8)
+    rv.revert_batch(9)
+    assert any("applied" in s and "batches" in s for s in calls)
+    assert any("discarded" in s for s in calls)

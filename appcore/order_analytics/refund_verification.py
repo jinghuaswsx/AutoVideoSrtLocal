@@ -137,3 +137,66 @@ def build_verification_rows(
             "matched_package_ids": packages, "match_status": match_status, "note": note,
         })
     return rows
+
+
+def _load_current_reserve(order_ids: list[str]) -> dict[str, float]:
+    if not order_ids:
+        return {}
+    ph = ",".join(["%s"] * len(order_ids))
+    rows = query(
+        "SELECT d.extended_order_id, SUM(p.return_reserve_usd) AS reserve "
+        "FROM order_profit_lines p JOIN dianxiaomi_order_lines d ON d.id=p.dxm_order_line_id "
+        f"WHERE d.extended_order_id IN ({ph}) GROUP BY d.extended_order_id",
+        tuple(order_ids),
+    ) or []
+    return {str(r["extended_order_id"]): float(r.get("reserve") or 0) for r in rows}
+
+
+def create_batch(*, refunds, statuses, source_files, created_by, site_code=None):
+    rows = build_verification_rows(refunds, statuses, site_code=site_code)
+    matched_ids = [r["extended_order_id"] for r in rows if r["match_status"] == "matched"]
+    reserve_map = _load_current_reserve(matched_ids)
+    matched = [r for r in rows if r["match_status"] == "matched"]
+    total_refund = round(sum(r["refund_amount_usd"] or 0 for r in matched), 4)
+    cur_reserve = round(sum(reserve_map.get(r["extended_order_id"], 0) for r in matched), 4)
+    counts = {s: sum(1 for r in rows if r["match_status"] == s)
+              for s in ("matched", "unmatched", "anomaly")}
+    execute(
+        "INSERT INTO refund_verification_batches "
+        "(status,source_files,site_code,matched_count,unmatched_count,anomaly_count,"
+        "total_refund_usd,current_reserve_usd,delta_usd,created_by) "
+        "VALUES ('pending',%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (json.dumps(source_files, ensure_ascii=False), site_code,
+         counts["matched"], counts["unmatched"], counts["anomaly"],
+         total_refund, cur_reserve, round(total_refund - cur_reserve, 4), created_by),
+    )
+    bid = int((query("SELECT LAST_INSERT_ID() AS id") or [{}])[0].get("id"))
+    for r in rows:
+        execute(
+            "INSERT INTO refund_verifications "
+            "(batch_id,extended_order_id,site_code,refund_amount_usd,refund_source,"
+            "order_financial_status,matched_package_ids,match_status,note,status) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending')",
+            (bid, r["extended_order_id"], r["site_code"], r["refund_amount_usd"],
+             r["refund_source"], r["order_financial_status"],
+             json.dumps(r["matched_package_ids"], ensure_ascii=False),
+             r["match_status"], r["note"]),
+        )
+    return {"batch_id": bid, "total_refund_usd": total_refund,
+            "current_reserve_usd": cur_reserve,
+            "delta_usd": round(total_refund - cur_reserve, 4),
+            "matched_count": counts["matched"], "unmatched_count": counts["unmatched"],
+            "anomaly_count": counts["anomaly"]}
+
+
+def apply_batch(batch_id):
+    execute("UPDATE refund_verification_batches SET status='applied',applied_at=NOW() WHERE id=%s AND status='pending'", (batch_id,))
+    execute("UPDATE refund_verifications SET status='applied' WHERE batch_id=%s", (batch_id,))
+
+def discard_batch(batch_id):
+    execute("UPDATE refund_verification_batches SET status='discarded' WHERE id=%s AND status='pending'", (batch_id,))
+    execute("UPDATE refund_verifications SET status='discarded' WHERE batch_id=%s", (batch_id,))
+
+def revert_batch(batch_id):
+    execute("UPDATE refund_verification_batches SET status='discarded' WHERE id=%s AND status='applied'", (batch_id,))
+    execute("UPDATE refund_verifications SET status='discarded' WHERE batch_id=%s", (batch_id,))
