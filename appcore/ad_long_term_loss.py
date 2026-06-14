@@ -28,6 +28,29 @@ _LTL_SETTINGS: dict[str, tuple[str, float, type]] = {
 }
 
 
+@dataclass
+class LtlVerdict:
+    alert: bool
+    verdict: str | None  # "long_term_net_loss" | "erodes_profit" | None
+    loss_7d: float
+    loss_ratio: float | None
+
+
+def judge_long_term_loss(
+    *, profit_7d: float, profit_30d: float, loss_ratio: float
+) -> LtlVerdict:
+    """对单品的窗口盈亏做判定。详见 spec「判定规则」。"""
+    if profit_7d >= 0:
+        return LtlVerdict(False, None, 0.0, None)
+    loss_7d = -profit_7d
+    if profit_30d <= 0:
+        return LtlVerdict(True, "long_term_net_loss", loss_7d, None)
+    ratio = loss_7d / profit_30d
+    if ratio > loss_ratio:
+        return LtlVerdict(True, "erodes_profit", loss_7d, ratio)
+    return LtlVerdict(False, None, loss_7d, ratio)
+
+
 def get_ltl_config() -> dict[str, float]:
     cfg: dict[str, float] = {}
     for name, (key, default, caster) in _LTL_SETTINGS.items():
