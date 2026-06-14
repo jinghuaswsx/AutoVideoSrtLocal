@@ -106,3 +106,16 @@ def test_get_actions_batches_and_maps(monkeypatch):
     assert result["123:120210"]["updated_at"] == "2026-06-12T10:00:00"
 
     assert ad_alert_actions.get_actions(ad_alert_actions.SCOPE_HIGH_LOSS, []) == {}
+
+
+def test_long_term_loss_scope_is_valid():
+    from appcore import ad_alert_actions
+
+    assert "long_term_loss" in ad_alert_actions.VALID_SCOPES
+    assert ad_alert_actions.SCOPE_LONG_TERM_LOSS == "long_term_loss"
+
+
+def test_long_term_loss_target_key_uses_product_id():
+    from appcore import ad_alert_actions
+
+    assert ad_alert_actions.long_term_loss_target_key(123) == "product:123"

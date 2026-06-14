@@ -12,7 +12,8 @@ from appcore.db import execute, query
 
 SCOPE_HIGH_LOSS = "high_loss"
 SCOPE_LANGUAGE = "language"
-VALID_SCOPES = (SCOPE_HIGH_LOSS, SCOPE_LANGUAGE)
+SCOPE_LONG_TERM_LOSS = "long_term_loss"
+VALID_SCOPES = (SCOPE_HIGH_LOSS, SCOPE_LANGUAGE, SCOPE_LONG_TERM_LOSS)
 
 ACTION_RESOLVED = "resolved"
 ACTION_IGNORED = "ignored"
@@ -29,6 +30,10 @@ _NOTE_LIMIT = 500
 def high_loss_target_key(ad_account_id: Any, code: Any) -> str:
     account = str(ad_account_id or "").strip().removeprefix("act_")
     return f"{account}:{str(code or '').strip()}"
+
+
+def long_term_loss_target_key(product_id: Any) -> str:
+    return f"product:{int(product_id)}"
 
 
 def language_target_key(product_id: Any, lang: Any) -> str:
