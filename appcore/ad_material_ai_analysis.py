@@ -8,10 +8,8 @@ from __future__ import annotations
 import json
 import logging
 import math
-import os
 import re
 import secrets
-import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -20,6 +18,7 @@ from typing import Any, Iterable, Mapping
 from urllib.parse import quote
 
 from appcore import db, llm_client
+from appcore.ad_material_throttle import GoogleWjThrottle
 
 log = logging.getLogger(__name__)
 
@@ -30,8 +29,8 @@ MODEL_ID = "gemini-3.5-flash"
 PROMPT_VERSION = "ad_material_review_v2026_06_10"
 
 _RJC_SUFFIX_RE = re.compile(r"[-_]?rjc$", re.IGNORECASE)
-_MAX_AI_CANDIDATES = 60
-_PROJECT_TOP_N = 20
+_MAX_AI_CANDIDATES = 80
+_PROJECT_TOP_N = 40
 
 TARGET_COUNTRIES: tuple[dict[str, str], ...] = (
     {"country_code": "EN", "country_name": "英语", "lang": "en", "lang_name": "英语", "tier": "source"},
@@ -63,7 +62,7 @@ _PROGRESS_LOG_LIMIT = 12
 PROGRESS_STEPS: tuple[dict[str, str], ...] = (
     {"key": "snapshot", "label": "读取数据窗口", "description": "读取产品、广告、订单、明空素材新鲜度。"},
     {"key": "candidate_score", "label": "规则预筛打分", "description": "按消耗、订单、ROAS、广告数筛选候选品。"},
-    {"key": "ai_ranking", "label": "Top 20 AI 复评", "description": "分批调用 GoogleWJ Gemini 复评候选产品。"},
+    {"key": "ai_ranking", "label": "Top 40 AI 复评", "description": "分批调用 GoogleWJ Gemini 复评候选产品。"},
     {"key": "material_context", "label": "补齐素材上下文", "description": "读取国家反馈、本地素材、明空素材和任务中心排程。"},
     {"key": "product_analysis", "label": "逐产品分析", "description": "逐个产品分析国家、素材、任务去重和补素材建议。"},
     {"key": "persist", "label": "保存结果", "description": "写入 Top 产品、AI 建议和操作入口。"},
@@ -199,6 +198,22 @@ def _progress_update(
     if project_status == "running":
         progress["runner_state"] = "running"
         progress["runner_heartbeat_at"] = now
+    return progress
+
+
+def _apply_throttle_event(progress: dict[str, Any], event: Mapping[str, Any]) -> dict[str, Any]:
+    """把 throttle 事件写入 progress：刷新 throttle 状态块，关键事件追加一条日志。"""
+    progress["throttle"] = dict(event.get("throttle") or {})
+    kind = str(event.get("kind") or "")
+    if kind in {"retry", "degraded", "recover"}:
+        logs = list(progress.get("logs") or [])
+        logs.append({
+            "time": _now_iso(),
+            "level": str(event.get("level") or "info"),
+            "message": str(event.get("message") or ""),
+        })
+        progress["logs"] = logs[-_PROGRESS_LOG_LIMIT:]
+    progress["updated_at"] = _now_iso()
     return progress
 
 
@@ -445,29 +460,16 @@ def _chunked(items: list[dict], size: int) -> Iterable[list[dict]]:
         yield items[index:index + size]
 
 
-_LAST_LLM_AT: float = 0.0
+def _invoke_via_throttle(throttle, *, stage: str, use_case_code: str, product_id=None, **invoke_kwargs):
+    """统一经 throttle 调用 llm_client.invoke_generate；throttle 缺省时退化为直连。
 
-
-def _llm_spacing_seconds() -> float:
-    raw = os.getenv("AD_MATERIAL_AI_ANALYSIS_LLM_SPACING_SECONDS", "")
-    try:
-        return float(raw) if raw.strip() else 2.0
-    except ValueError:
-        return 2.0
-
-
-def _pace_llm() -> None:
-    """逐次 LLM 调用之间保持最小间隔，避免 30 产品 × 多调用打爆 GoogleWJ 通道触发 429。"""
-    global _LAST_LLM_AT
-    spacing = _llm_spacing_seconds()
-    if spacing <= 0:
-        _LAST_LLM_AT = time.monotonic()
-        return
-    now = time.monotonic()
-    wait = spacing - (now - _LAST_LLM_AT)
-    if wait > 0:
-        time.sleep(wait)
-    _LAST_LLM_AT = time.monotonic()
+    use_case_code 按位置传给 invoke_generate，与历史直连调用签名保持一致，
+    避免破坏按位置 mock invoke_generate 的既有测试。
+    """
+    call = lambda: llm_client.invoke_generate(use_case_code, **invoke_kwargs)
+    if throttle is None:
+        return call()
+    return throttle.guarded_invoke(call, stage=stage, product_id=product_id)
 
 
 def _snake_batches(items: list[dict], size: int = 20) -> list[list[dict]]:
@@ -1857,7 +1859,7 @@ def _fallback_ranking(candidates: list[dict], error: str | None = None) -> dict[
     }
 
 
-def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | None, run_ai: bool) -> dict[str, Any]:
+def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | None, run_ai: bool, throttle=None) -> dict[str, Any]:
     if not run_ai:
         return _fallback_ranking(candidates)
     try:
@@ -1866,12 +1868,12 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
         for batch_index, batch in enumerate(_snake_batches(candidates, 20), start=1):
             payload = {
                 "batch_index": batch_index,
-                "rule": "本批最多输出 Top10，剔除高ROAS低量产品。",
+                "rule": "本批最多输出 Top14，剔除高ROAS低量产品。",
                 "products": [_rank_input(row) for row in batch],
             }
-            _pace_llm()
-            result = llm_client.invoke_generate(
-                RANK_USE_CASE,
+            result = _invoke_via_throttle(
+                throttle, stage="batch_rank",
+                use_case_code=RANK_USE_CASE,
                 prompt=_ranking_prompt(payload),
                 user_id=user_id,
                 project_id=str(project_id),
@@ -1901,12 +1903,12 @@ def _run_ai_ranking(candidates: list[dict], *, project_id: int, user_id: int | N
             return _fallback_ranking(candidates, "AI batch ranking returned empty")
         merged_candidates = score_product_rows(merged_candidates, limit=len(merged_candidates))
         final_payload = {
-            "rule": "从所有批次候选里输出最终 Top20，仍然坚持有量 + 效率。",
+            "rule": "从所有批次候选里输出最终 Top40，仍然坚持有量 + 效率。",
             "products": [_rank_input(row) for row in merged_candidates],
         }
-        _pace_llm()
-        final = llm_client.invoke_generate(
-            RANK_USE_CASE,
+        final = _invoke_via_throttle(
+            throttle, stage="final_rank",
+            use_case_code=RANK_USE_CASE,
             prompt=_ranking_prompt(final_payload),
             user_id=user_id,
             project_id=str(project_id),
@@ -2427,6 +2429,7 @@ def _run_product_analysis(
     project_id: int,
     user_id: int | None,
     run_ai: bool,
+    throttle=None,
 ) -> dict:
     fallback = _fallback_product_analysis(product, countries, mk_materials)
     review_input = _build_material_review_input(product, local_materials, mk_materials)
@@ -2443,9 +2446,9 @@ def _run_product_analysis(
         fallback["material_review_prompt_debug"] = {**prompt_debug, "mode": "deterministic_fallback"}
         return fallback
     try:
-        _pace_llm()
-        result = llm_client.invoke_generate(
-            PRODUCT_ANALYSIS_USE_CASE,
+        result = _invoke_via_throttle(
+            throttle, stage="material_review", product_id=product.get("product_id"),
+            use_case_code=PRODUCT_ANALYSIS_USE_CASE,
             prompt=_material_review_prompt(review_input),
             user_id=user_id,
             project_id=str(project_id),
@@ -3330,6 +3333,14 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
         )
         _save_progress(project_id, progress)
 
+    def _throttle_event(event: dict) -> None:
+        nonlocal progress
+        progress = _apply_throttle_event(progress, event)
+        _save_progress(project_id, progress)
+
+    provider_code = str(project_row.get("provider_code") or PROVIDER_CODE)
+    throttle = GoogleWjThrottle(provider_code=provider_code, on_event=_throttle_event)
+
     try:
         checkpoint(
             str(progress.get("current_step") or "snapshot") if progress.get("current_step") != "queued" else "snapshot",
@@ -3374,11 +3385,11 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 "ai_ranking",
                 "done",
                 max(_safe_float(progress.get("percent")), 42),
-                "复用已保存 Top 20 排名结果，不重复调用排名模型。",
+                "复用已保存 Top 40 排名结果，不重复调用排名模型。",
             )
         else:
-            checkpoint("ai_ranking", "running", 32, "调用 GoogleWJ Gemini 分批复评 Top 20。")
-            ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai)
+            checkpoint("ai_ranking", "running", 32, "调用 GoogleWJ Gemini 分批复评 Top 40。")
+            ranking = _run_ai_ranking(candidates, project_id=project_id, user_id=user_id, run_ai=run_ai, throttle=throttle)
             _save_project_ranking(project_id, ranking)
         selected = _select_products(candidates, ranking)
         checkpoint("ai_ranking", "done", 42, f"Top 产品选择完成，进入逐产品分析 {len(selected)} 个。")
@@ -3395,6 +3406,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
         existing_results = _load_existing_product_results(project_id)
         total_products = len(selected)
         for rank_no, product in enumerate(selected, start=1):
+            throttle.mark_product_boundary()
             code_key = str(product.get("product_code") or "").strip().lower()
             product_id = _safe_int(product.get("product_id"))
             product_progress = {
@@ -3446,6 +3458,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 project_id=project_id,
                 user_id=user_id,
                 run_ai=run_ai,
+                throttle=throttle,
             )
             ai_result = _decorate_ai_result_with_tasks(ai_result, countries, task_assignments)
             action_items = _build_action_items(product, ai_result, mk_materials, countries)
@@ -3467,6 +3480,7 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 local_materials=local_materials, mk_materials=mk_materials,
                 task_assignments=task_assignments,
                 project_id=project_id, user_id=user_id, run_ai=run_ai,
+                throttle=throttle,
             )
             market_expansion = _build_market_expansion_recommendations(
                 product, country_reviews, countries,
@@ -3493,13 +3507,19 @@ def _run_project_locked(project_id: int, *, user_id: int | None = None, run_ai: 
                 product_progress=product_progress,
             )
 
-        checkpoint("persist", "running", 88, "整理已落库结果，清理不在本轮 Top 20 内的旧结果。")
+        checkpoint("persist", "running", 88, "整理已落库结果，清理不在本轮 Top 40 内的旧结果。")
         _delete_unselected_product_results(project_id, product_ids)
         results.sort(key=lambda item: _safe_int(item.get("rank_no")))
 
         checkpoint("persist", "done", 94, "产品结果保存完成，开始汇总结论。")
         checkpoint("summary", "running", 96, "汇总 P0/P1、主动作和数据质量。")
         summary = _summarize_project(results, ranking, snapshot)
+        summary["throttle"] = throttle.snapshot()
+        summary["degraded_list"] = throttle.degraded_events
+        if throttle.degraded_events:
+            checkpoint("summary", "running", 97,
+                       f"完成，但 {len(throttle.degraded_events)} 个评估环节因限流降级兜底。",
+                       level="warning")
         progress = _progress_update(
             progress,
             step_key="summary",
@@ -4638,6 +4658,7 @@ def _run_country_reviews(
     project_id: int,
     user_id: int | None,
     run_ai: bool,
+    throttle=None,
 ) -> dict[str, dict]:
     """一次 LLM 调用评估全部目标国家；缺国/坏国/异常用确定性兜底补齐。"""
     def _fallback_for(cc: str, lang: str) -> dict:
@@ -4660,9 +4681,9 @@ def _run_country_reviews(
         product, eval_countries, countries_by_code, local_materials, mk_materials, task_assignments,
     )
     try:
-        _pace_llm()
-        result = llm_client.invoke_generate(
-            COUNTRY_REVIEW_USE_CASE,
+        result = _invoke_via_throttle(
+            throttle, stage="country_review", product_id=product.get("product_id"),
+            use_case_code=COUNTRY_REVIEW_USE_CASE,
             prompt=_combined_country_review_prompt(review_input),
             user_id=user_id,
             project_id=str(project_id),
