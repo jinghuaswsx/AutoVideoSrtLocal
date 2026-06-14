@@ -36,8 +36,11 @@
 ## Confirmed Decisions
 
 1. **数据源**：Payments 导出（出真实退款金额）+ 订单导出（出退款状态），两者交叉补全。Payments 是金额唯一可信来源。
-2. **核算口径**：每个订单 `max(实测退款, 该订单 1% 计提)`。1% 退化为最低退货准备金保险，对冲退款滞后与导入不全导致的利润虚高。
+2. **核算口径（v2，2026-06-14 修订）**：退款作为**营收冲减（contra-revenue）**，不是往成本里加一笔。对已核验退款的订单，把退款额直接从营收里减掉，同时取消该订单的 1% 准备金（不再重复计提）。对未核验的订单，维持原 1% 准备金不变。这样 ROAS = (冲减后营收) / 广告费，真实反映退款对投放效率的影响。
 3. **生效方式**：核验确认后才写入大盘（导入 → 展示核对 → admin 确认「应用」→ 生效），可回滚。
+4. **退款真值来源（v2 新增）**：退款金额从 `shopify_payments_transactions` 表按 `transaction_id` 去重累计（该表已有 UNIQUE KEY），而非从单次上传文件快照。导入端点先把 Payments CSV 写入该表（复用 `import_payments_csv`），再从表中按 `type IN ('refund','chargeback')` + `order_name` 聚合真值。这样无论增量还是全量导入、导几次，同一单的退款永远是所有退款交易之和，不丢、不重。
+5. **跨店隔离（v2 新增）**：关联时 `extended_order_id` 必须带 `site_code` 一起匹配，防止两个店同号订单撞车（Payments 按店导出，批次记 site_code）。
+6. **业务日归属**：退款折回下单业务日（历史天数会随退款回填而变动），不是退款发生日。
 
 ## Architecture
 
@@ -47,23 +50,27 @@
 - B 会污染店小秘原始导入数据，下次店小秘重新同步订单可能覆盖核验结果；
 - 大盘对已核算订单走的是 `return_reserve` 分支（`realtime.py:1662`），回填 `refund_amount_usd` 根本不会被读到，除非再改核算逻辑。
 
-方案 A 直接在「算 1%」那一步做 `max` 覆盖，对症、可追溯、可回滚。
+方案 A 直接在核算出口层做覆盖，对症、可追溯、可回滚。
 
 ```
 [退款核验 Tab]
    │ 上传 Payments CSV(必) + 订单 CSV(选)
    ▼
-[解析]  Payments 取 type∈{refund,chargeback} 按 order_name 聚合真实金额(负数取绝对值);
-   │     订单 CSV 取 financial_status∈{refunded,partially_refunded} 补状态
+[导入]  Payments CSV → import_payments_csv() 写入 shopify_payments_transactions（去重累计）
+   │    订单 CSV → extract_order_refund_statuses() 仅提取退款状态
    ▼
-[关联]  order_name 规整后 = dianxiaomi_order_lines.extended_order_id → 落到 dxm_package_id 集合
+[聚合]  从 shopify_payments_transactions 按 type∈{refund,chargeback} + order_name 聚合真实退款额
    ▼
-[核验批次]  pending: 展示 匹配/未匹配/异常 + 实测总额 vs 当前 1% 差额
+[关联]  order_name + site_code → dianxiaomi_order_lines.extended_order_id → dxm_package_id 集合
+   ▼
+[核验批次]  pending: 展示 匹配/未匹配/异常 + 营收冲减总额
    ▼  admin 确认「应用」
-[refund_verifications 表]  status: pending → applied (记录来源/金额/核验时间)
+[refund_verifications 表]  status: pending → applied
    ▼
-[大盘核算]  realtime.py + order_profit_aggregation.py 的 return_reserve 那步
-            经 _apply_refund_verification_adjustments 改为 max(实测, 1%);失效受影响业务日缓存
+[大盘核算]  realtime.py + order_profit_aggregation.py 出口经 _apply_refund_verification_adjustments:
+            对已核验订单：营收 -= min(退款, 营收)、return_reserve 归零、profit 连动下调
+            对未核验订单：维持原 1% 准备金不变
+            ROAS = 冲减后营收 / 广告费（自然真实化）
 ```
 
 ## Data Model
@@ -114,7 +121,7 @@
    - Payments：`type IN ('refund','chargeback')`，金额取绝对值，按 `order_name` 求和。chargeback 默认计入（导入时可关）。
    - 订单 CSV：`financial_status IN ('refunded','partially_refunded')` 的订单号，仅补状态。
    - 缺必需列（Payments 的 `Type`/`Order`/`Amount`）→ 400，列名 trim 后精确匹配。
-2. **关联**：`order_name` 去 `#`、trim 后匹配 `extended_order_id`；命中得到该订单 `dxm_package_id` 集合。匹配不上 → `unmatched`，绝不模糊匹配。
+2. **关联**：`order_name` 去 `#`、trim 后匹配 `extended_order_id`，**必须同时带 `site_code` 过滤**（v2 跨店隔离）。命中得到该订单 `dxm_package_id` 集合。匹配不上 → `unmatched`，绝不模糊匹配。
 3. **分类**
    - `matched`：Payments 有金额且关联成功。
    - `anomaly`：Shopify 显示退款但 Payments 无金额（金额留空，核算回退 1%，UI 提示补 Payments）；或退款 > 订单营收。
@@ -123,19 +130,28 @@
 5. **应用**：admin 确认 → 该批次 `pending → applied`；失效受影响业务日的 `realtime_cache`。
 6. **回滚**：`applied` 批次 → `discarded`；核算回退到该订单次新 `applied` 记录或 1%；失效相应缓存。
 
-## Reconciliation Override Mechanism
+## Reconciliation Override Mechanism（v2 修订：冲减营收）
 
-新增 `_apply_refund_verification_adjustments`，与现有 `_apply_realtime_ad_cost_adjustments`（按包裹加 delta）同构，在 `realtime.py` 与 `order_profit_aggregation.py` 两条链路出口调用：
+新增 `_apply_refund_verification_adjustments`，在 `realtime.py` 与 `order_profit_aggregation.py` 两条链路的订单明细出口调用。**与旧版的核心区别：退款不再加到成本侧（return_reserve），而是从营收侧冲减，并把 1% 准备金归零。**
 
-1. 取每个 `extended_order_id` 最新 `applied` 的 `refund_amount_usd = R`（缺金额跳过，维持 1%）。
-2. 该订单各包裹当前 1% 之和 `reserve_sum`。`R` 先经 `min(R, 订单营收)` 兜底。
-3. `effective = max(R, reserve_sum)`，`delta = effective − reserve_sum ≥ 0`。
-4. 按包裹营收比例把 `delta` 摊回各包裹 `return_reserve_usd`（营收全 0 时按包裹数均摊），`profit` / `profit_with_estimate` 同步下调。
-5. 覆盖落在**包裹所属业务日**（`return_reserve` 计提日），不是退款发生日。
+对每个已核验（`status='applied'`，`refund_amount_usd IS NOT NULL`）的订单：
 
-幂等：核算读「最新 applied」+ `max` 覆盖（非累加），重复导入/应用不叠加。
+1. 取该 `extended_order_id` 最新 `applied` 记录的 `refund_amount_usd = R`。
+2. 该订单各包裹的当前 `total_revenue`（含运费）之和 `revenue_sum`。
+3. `refund_capped = min(R, revenue_sum)`（退款不超过营收）。
+4. 按包裹营收比例，把 `refund_capped` 分摊到各包裹：
+   - 该包裹 `total_revenue -= refund_share`（冲减营收）
+   - 该包裹 `return_reserve_usd = 0`（取消 1% 准备金，不再重复计提）
+   - 该包裹 `profit` / `profit_with_estimate` 同步重算 = `冲减后营收 − 各成本`
+5. 覆盖落在**包裹所属业务日**（下单日），不是退款发生日。
 
-未核算订单（走 `refund_deduction` 分支）：同样喂实测退款取 `max`，两个分支口径统一。
+**对未核验的订单：完全不触碰，维持原 1% 准备金。**
+
+ROAS 自然真实化：`true_roas = Σ冲减后营收 / Σ广告费`，退掉的营收不再贡献 ROAS 分子。
+
+幂等：核算读「最新 applied」+ 冲减覆盖（非累加），重复导入/应用不叠加。退款真值来自 `shopify_payments_transactions` 按 `transaction_id` 去重累计，增量导入自动 upsert、不重也不丢。
+
+**跨店隔离**：聚合退款与关联订单时均带 `site_code` 过滤，防止不同店铺同号订单撞车。
 
 ## UI / Tab
 
@@ -170,8 +186,8 @@
 ## Testing Plan
 
 - 解析层：refund/chargeback 负数取绝对值并求和、`financial_status` 提取、订单号规整匹配、未匹配/异常分类、缺必需列 400。
-- 聚合层：多包裹营收比例分摊、退款>营收 min 兜底、营收 0 防除零。
-- 核算覆盖：`max(实测,1%)`、delta 摊回、profit 同步下调、幂等、revert 恢复、业务日归属正确。
+- 聚合层：多包裹营收比例分摊、退款>营收 min 兜底、营收 0 防除零。退款真值从 `shopify_payments_transactions` 累计而非单文件快照。
+- 核算覆盖：营收冲减 + 准备金归零 + profit 连动、ROAS 分子变小、幂等、revert 恢复、业务日归属正确、跨店隔离(site_code 过滤)。
 - 端点：登录/权限/CSRF/`data_quality`。
 - 回归：`tests/test_order_profit_aggregation.py`、`tests/test_product_profit_report.py`、`tests/test_order_analytics_realtime_site_filter.py`、`tests/characterization/test_order_analytics_baseline.py`。
 
