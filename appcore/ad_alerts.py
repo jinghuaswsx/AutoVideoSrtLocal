@@ -10,6 +10,7 @@ Docs anchors:
 - docs/superpowers/specs/2026-06-12-ad-alert-high-loss-ads-tab-design.md
 - docs/superpowers/specs/2026-06-12-ad-alert-review-remediation.md
 - docs/superpowers/specs/2026-06-12-ad-alert-mobile-share-link.md
+- docs/superpowers/specs/2026-06-14-ad-alert-long-term-loss-product-design.md (独立模块 appcore/ad_long_term_loss.py)
 """
 from __future__ import annotations
 
