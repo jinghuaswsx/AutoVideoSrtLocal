@@ -162,3 +162,31 @@ pytest tests/test_order_analytics_realtime_site_filter.py \
 2. **预热频率分档**：today/yesterday **15s**（配 60s TTL，保鲜 ≤1 分钟）；本周/上周/本月/上月 **600s**（配 660s TTL，数据旧 ≤10 分钟）。**年度（今年/去年）不预热**，点击时现算。
 3. **预热覆盖新品投放分析**：npl 复用 `/realtime-overview`（带 `include_details` + 分页 + scope=new/old/unmatched），cache_key 与实时大盘不同，单独预热（6 范围 × 3 scope）。总预热目标 42 个（实时大盘 24 + npl 18）。
 4. **前端加载进度指示**：加粗「加载中……」+ 实时已用秒数（每 100ms 更新），文字非浮窗、明显；实时大盘 + 新品投放分析各一个（`#realtimeLoadingIndicator` / `#nplLoadingIndicator` + `startOaLoadingTimer/stopOaLoadingTimer`）。
+
+---
+
+## 后续调整（2026-06-14 v3，二次修复"点昨天 30s 超时、数据横杠出不来"）
+
+v2 发布后用户仍报「刷新秒出，但刷新后切昨天就卡十几秒、最终"加载失败：请求超时"、数据全横杠」。
+**上服务器拿到 APScheduler 日志铁证**后，定位到 v2 自己引入的新根因——不是缓存没命中，是预热把后端压垮了：
+
+### 根因：单进程被预热重算饿死
+- `deploy/gunicorn.conf.py` 是 **`workers=1` 单进程**（有意：in-process Socket.IO / in-memory task state / 预热 APScheduler 都依赖单进程，**不能靠加 worker 摊负载**）。
+- v2 为「修缓存被动过期」加的 `force_refresh=True` 让预热**每轮重算所有到期目标**。日志铁证：
+  `run_warmup_fast skipped: maximum number of running instances reached (1)`
+  —— fast（15s 间隔）单轮 16s 跑不完、持续 skip；预热在单进程里几乎一刻不停地重算，霸占 GIL + DB 连接。
+- 用户点昨天（cold 现算仅 ~2s、多数时候命中）的请求线程**抢不到被预热占满的资源** → 拖到前端 30s 超时。GCP 直连偶尔撞空隙就秒回，故黑盒压测复现不了。
+
+### 修复：touch 续期（把"防过期"与"重算更新数据"分开）
+- `realtime_cache.touch(key, ttl)`：仅 `UPDATE expires_at`（一次轻量写），不重算 payload。
+- 预热 `_warm_one`：命中且数据未超 TTL（`_last_refresh` 记上次重算时间）→ 只 touch 续期；数据超 TTL 没重算过 / 缓存被清 → 才重算一次。
+- 预热资源占用从「持续重算 ≈100%」降到「轻量 touch + 每 TTL 一次重算」；缓存靠 touch 不被动过期，用户**永远命中、秒回**。
+- 配套：前端切换不再主动 `abort` 旧请求（避免 WebKit 连接池被 abort 污染、释放慢），靠 `requestSeq` 忽略旧批次结果。
+
+### ⚠️ 不要回退
+**严禁**把预热改回「每轮 `force_refresh` 重算」——那是 30s 超时的直接原因。预热在 `workers=1` 下必须自身轻量（touch 为主、重算为辅）。
+
+### 验证（关键教训：不能只黑盒压测）
+- **必须上服务器看 APScheduler 日志 + 进程模型**：稳定后 `run_warmup_fast` skip 从「持续」→ **0**。
+- WebKit 引擎（= iOS Chrome/Safari 同引擎）+ iPhone 视口才接近真机；chromium 复现不了 WebKit 连接行为。
+- 复测：刷新 / 点昨天 / 连续切 / 快速狂点 8 次全部 1.1–1.6s 秒回、abort 0。
