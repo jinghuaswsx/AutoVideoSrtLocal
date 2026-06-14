@@ -200,3 +200,112 @@ def discard_batch(batch_id):
 def revert_batch(batch_id):
     execute("UPDATE refund_verification_batches SET status='discarded' WHERE id=%s AND status='applied'", (batch_id,))
     execute("UPDATE refund_verifications SET status='discarded' WHERE batch_id=%s", (batch_id,))
+
+
+def load_refund_verification_adjustments() -> dict[str, float]:
+    rows = query(
+        "SELECT v.extended_order_id, v.refund_amount_usd "
+        "FROM refund_verifications v "
+        "JOIN (SELECT extended_order_id, MAX(id) AS mid FROM refund_verifications "
+        "      WHERE status='applied' AND refund_amount_usd IS NOT NULL "
+        "      GROUP BY extended_order_id) latest ON latest.mid = v.id",
+    ) or []
+    return {str(r["extended_order_id"]): float(r["refund_amount_usd"]) for r in rows}
+
+
+def _load_package_details_for_refund(order_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+    if not order_ids:
+        return {}
+    ph = ",".join(["%s"] * len(order_ids))
+    rows = query(
+        "SELECT d.extended_order_id, d.dxm_package_id, "
+        "       SUM(p.return_reserve_usd) AS reserve, SUM(p.revenue_usd) AS revenue "
+        "FROM order_profit_lines p JOIN dianxiaomi_order_lines d ON d.id=p.dxm_order_line_id "
+        f"WHERE d.extended_order_id IN ({ph}) GROUP BY d.extended_order_id, d.dxm_package_id",
+        tuple(order_ids),
+    ) or []
+    out: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        out.setdefault(str(r["extended_order_id"]), []).append(r)
+    return out
+
+
+def _compute_contra_revenue_deltas() -> dict[str, dict[str, float]]:
+    refund_map = load_refund_verification_adjustments()
+    if not refund_map:
+        return {}
+    pkg_map = _load_package_details_for_refund(list(refund_map.keys()))
+    out: dict[str, dict[str, float]] = {}
+    for oid, pkgs in pkg_map.items():
+        refund = refund_map.get(oid)
+        if refund is None:
+            continue
+        revenue_sum = sum(float(p.get("revenue") or 0) for p in pkgs)
+        refund_capped = min(refund, revenue_sum) if revenue_sum > 0 else 0.0
+        if refund_capped <= 0:
+            continue
+        for p in pkgs:
+            pid = str(p.get("dxm_package_id"))
+            rev = float(p.get("revenue") or 0)
+            share = rev / revenue_sum if revenue_sum > 0 else 1.0 / len(pkgs)
+            reserve = float(p.get("reserve") or 0)
+            out[pid] = {
+                "revenue_deduct": round(refund_capped * share, 4),
+                "reserve_release": round(reserve, 4),
+            }
+    return out
+
+
+def _apply_contra_revenue(details: list[dict[str, Any]], deltas: dict[str, dict[str, float]]) -> float:
+    total_deducted = 0.0
+    for row in details:
+        pid = str(row.get("dxm_package_id") or "")
+        d = deltas.get(pid)
+        if not d:
+            continue
+        rev_deduct = d["revenue_deduct"]
+        reserve_release = d["reserve_release"]
+        row["total_revenue"] = round(float(row.get("total_revenue") or 0) - rev_deduct, 2)
+        row["return_reserve_usd"] = 0
+        row["profit_deduction_usd"] = 0
+        net_impact = rev_deduct - reserve_release
+        for k in ("order_profit_usd", "order_profit_with_estimate_usd"):
+            if row.get(k) is not None:
+                row[k] = round(float(row.get(k) or 0) - net_impact, 2)
+        total_deducted += rev_deduct
+    return round(total_deducted, 2)
+
+
+def apply_refund_adjustments_to_details(details: list[dict[str, Any]]) -> float:
+    if not details:
+        return 0.0
+    try:
+        deltas = _compute_contra_revenue_deltas()
+    except Exception:
+        return 0.0
+    return _apply_contra_revenue(details, deltas)
+
+
+def apply_refund_adjustments_to_details_aggregation(details: list[dict[str, Any]]) -> float:
+    if not details:
+        return 0.0
+    try:
+        deltas = _compute_contra_revenue_deltas()
+    except Exception:
+        return 0.0
+    total = 0.0
+    for row in details:
+        pid = str(row.get("dxm_package_id") or "")
+        d = deltas.get(pid)
+        if not d:
+            continue
+        rev_deduct = d["revenue_deduct"]
+        reserve_release = d["reserve_release"]
+        row["total_revenue"] = round(float(row.get("total_revenue") or 0) - rev_deduct, 2)
+        row["return_reserve"] = 0
+        net_impact = rev_deduct - reserve_release
+        for k in ("profit", "profit_with_estimate"):
+            if row.get(k) is not None:
+                row[k] = round(float(row.get(k) or 0) - net_impact, 2)
+        total += rev_deduct
+    return round(total, 2)

@@ -86,3 +86,45 @@ def test_apply_discard_revert(monkeypatch):
     rv.revert_batch(9)
     assert any("applied" in s and "batches" in s for s in calls)
     assert any("discarded" in s for s in calls)
+
+
+def test_apply_refund_contra_revenue(monkeypatch):
+    def fake_query(sql, args=()):
+        if "refund_verifications" in sql:
+            return [{"extended_order_id": "23863", "refund_amount_usd": 30.0}]
+        if "order_profit_lines" in sql:
+            return [
+                {"extended_order_id": "23863", "dxm_package_id": "P1",
+                 "reserve": 0.6, "revenue": 60.0},
+                {"extended_order_id": "23863", "dxm_package_id": "P2",
+                 "reserve": 0.4, "revenue": 40.0},
+            ]
+        return []
+    monkeypatch.setattr(oa, "query", fake_query)
+    details = [
+        {"dxm_package_id": "P1", "total_revenue": 60.0,
+         "return_reserve_usd": 0.6, "profit_deduction_usd": 0.6,
+         "order_profit_usd": 40.0, "order_profit_with_estimate_usd": 38.0},
+        {"dxm_package_id": "P2", "total_revenue": 40.0,
+         "return_reserve_usd": 0.4, "profit_deduction_usd": 0.4,
+         "order_profit_usd": 25.0, "order_profit_with_estimate_usd": 23.0},
+    ]
+    total_deducted = rv.apply_refund_adjustments_to_details(details)
+    assert details[0]["total_revenue"] == 42.0
+    assert details[1]["total_revenue"] == 28.0
+    assert details[0]["return_reserve_usd"] == 0
+    assert details[1]["return_reserve_usd"] == 0
+    assert details[0]["profit_deduction_usd"] == 0
+    assert round(details[0]["order_profit_usd"], 2) == 22.6
+    assert round(total_deducted, 2) == 30.0
+
+
+def test_apply_refund_unverified_untouched():
+    details = [
+        {"dxm_package_id": "P-OTHER", "total_revenue": 100.0,
+         "return_reserve_usd": 1.0, "profit_deduction_usd": 1.0,
+         "order_profit_usd": 50.0, "order_profit_with_estimate_usd": 48.0},
+    ]
+    rv._apply_contra_revenue(details, {})
+    assert details[0]["total_revenue"] == 100.0
+    assert details[0]["return_reserve_usd"] == 1.0
