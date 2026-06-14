@@ -8158,11 +8158,9 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
   // ── 顶部卡片：按选择的时间范围聚合 ───────────────
   function loadRealtimeTopCards(requestSeq) {
     requestSeq = assignRealtimeRequestSeq('top', requestSeq);
-    if (realtimeState.topScopeControllers) {
-      realtimeState.topScopeControllers.forEach(function(c) {
-        if (c && typeof c.abort === 'function') c.abort();
-      });
-    }
+    // 不主动 abort 旧批次：abort 会污染手机浏览器连接池（Safari 对已 abort 请求的连接释放很慢，
+    // 连续切换会把同域名 6 条连接占满堵死、最终出不来数据）。改靠 requestSeq 忽略旧批次结果，
+    // 旧请求命中缓存很快自然完成、连接复用。
     var range;
     try {
       range = getRealtimeDateRange();
@@ -8749,7 +8747,8 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
   // ── 子 tab：跟随当前选择的广告系统日范围 ──
   function loadRealtimeSubTabs(requestSeq) {
     requestSeq = assignRealtimeRequestSeq('sub', requestSeq);
-    var controller = createRealtimeController('sub');
+    // 同 loadRealtimeTopCards：不 abort 旧子 Tab 请求（避免污染手机浏览器连接池），靠 requestSeq 忽略旧结果
+    var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     var hourlyBody = document.getElementById('realtimeHourlyBody');
     var orderBody = document.getElementById('realtimeOrderBody');
     var orderProfitBody = document.getElementById('realtimeOrderProfitBody');
