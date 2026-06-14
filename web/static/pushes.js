@@ -1387,9 +1387,9 @@
         `<div class="push-play-overlay"><span class="push-play-btn-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg></span></div>` +
         `</div>`
       : `<div class="thumb thumb-empty"></div>`;
-    const mainImageUrl = `/medias/cover/${it.product_id}`;
+    const mainImageUrl = `/medias/cover/${it.product_id}?thumb=1`;
     const mainImage = `<div class="main-image-wrap">` +
-                      `<img class="thumb" src="${escapeAttr(mainImageUrl)}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">` +
+                      `<img class="thumb" data-cover-src="${escapeAttr(mainImageUrl)}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">` +
                       `<div class="thumb thumb-empty" style="display:none;"></div>` +
                       `</div>`;
     const durStr = (typeof it.duration_seconds === 'number') ? it.duration_seconds.toFixed(1) + 's' : '';

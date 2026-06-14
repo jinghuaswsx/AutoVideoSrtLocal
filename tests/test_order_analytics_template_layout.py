@@ -597,6 +597,7 @@ def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
         template.index("function renderRealtimeOrders")
     ]
 
+    # 4 scope 走循环 + per-scope AbortController（allSettled 解耦，2026-06-14 切换不再主动 abort）
     assert "var scopes = ['global', 'new', 'old', 'unmatched'];" in load_block
     assert "scopes.map(function(scope)" in load_block
     assert "fetchRealtimeScopeSummary(baseParams, scope, c)" in load_block
@@ -607,6 +608,8 @@ def test_realtime_top_cards_fetch_scoped_new_old_and_unmatched_summaries():
     assert "params.set('product_launch_scope', scope);" in load_block
     assert "['new', 'old', 'unmatched'].forEach(function(scope)" in load_block
     assert "renderRealtimeScopeSummary(scope, r.data);" in load_block
+    assert "renderRealtimeScopeSummary('global', globalData);" in load_block
+    assert "product_id 为空订单同口径核算" in load_block
 
 
 def test_new_product_launch_request_includes_launch_window_days():

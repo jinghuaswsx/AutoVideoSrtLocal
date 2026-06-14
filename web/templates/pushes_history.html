@@ -1178,8 +1178,8 @@
             ? `<div class="history-video-thumb"><img src="${escapeHtml(it.cover_url)}"><a href="${escapeHtml(it.video_url)}" target="_blank" rel="noopener noreferrer" class="plan-play play-btn">▶</a></div>`
             : `<div class="history-video-thumb" style="background:#f3f4f6;"><span style="color:#9ca3af; font-size:24px;">🎞</span></div>`;
             
-          const mainImageUrl = `/medias/cover/${it.product_id}`;
-          const mainImage = `<div class="history-main-image-thumb"><img src="${escapeHtml(mainImageUrl)}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"><span style="color:#9ca3af; font-size:24px; display:none;">🖼</span></div>`;
+          const mainImageUrl = `/medias/cover/${it.product_id}?thumb=1`;
+          const mainImage = `<div class="history-main-image-thumb"><img data-cover-src="${escapeHtml(mainImageUrl)}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"><span style="color:#9ca3af; font-size:24px; display:none;">🖼</span></div>`;
             
           const textsHtml = (it.texts || []).map(t => {
             // 全量拼接文案

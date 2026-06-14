@@ -3325,7 +3325,7 @@ function tcGetProductImageSrc(it) {
     return url;
   }
   if (it.media_product_id) {
-    return `/medias/cover/${it.media_product_id}`;
+    return `/medias/cover/${it.media_product_id}?thumb=1`;
   }
   return '';
 }
@@ -3353,7 +3353,7 @@ function tcBuildTaskRowHtml(it, users) {
   const imgUrl = tcGetProductImageSrc(it);
   const imgCell = imgUrl 
     ? `<td>
-        <img src="${tcEsc(imgUrl)}" style="width:100px; height:100px; object-fit:cover; border-radius:4px; display:block; margin:0 auto;" alt="商品图" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+        <img data-cover-src="${tcEsc(imgUrl)}" style="width:100px; height:100px; object-fit:cover; border-radius:4px; display:block; margin:0 auto;" alt="商品图" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
         <div style="width:100px; height:100px; border-radius:4px; background-color:var(--tc-bg-alt, #f3f4f6); color:var(--tc-fg-muted, #9ca3af); display:none; align-items:center; justify-content:center; font-size:12px; margin:0 auto;">无图</div>
        </td>`
     : `<td>

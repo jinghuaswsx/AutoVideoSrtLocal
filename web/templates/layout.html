@@ -1802,5 +1802,59 @@
       checkModals();
     });
   </script>
+  <script>
+  /* 全局封面图懒加载：img[data-cover-src] 进视口才设 src，避免隐藏子Tab/未滚动区域的
+     产品图被一次性拉取、堵死浏览器连接和窄 SSH 隧道（实时大盘点击切换 20s 出不来数据的
+     根因之一，2026-06-14）。iOS WebKit 的 loading="lazy" 对 display:none 不拦截，
+     所以必须用 IntersectionObserver 真懒加载。配合 ?thumb=1 缩略图一起用。 */
+  (function(){
+    var SEL = 'img[data-cover-src]';
+    function load(img){
+      var src = img.getAttribute('data-cover-src');
+      if (src){ img.src = src; img.removeAttribute('data-cover-src'); }
+    }
+    function scanLoad(root){
+      root = root || document;
+      if (!root.querySelectorAll) return;
+      var list = root.querySelectorAll(SEL);
+      for (var i = 0; i < list.length; i++) load(list[i]);
+    }
+    if (!('IntersectionObserver' in window) || !('MutationObserver' in window)){
+      // 老浏览器降级：不懒加载，直接全部加载，保证能看到图
+      window.scanLazyCovers = scanLoad;
+      document.addEventListener('DOMContentLoaded', function(){ scanLoad(document); });
+      return;
+    }
+    var io = new IntersectionObserver(function(entries){
+      for (var i = 0; i < entries.length; i++){
+        if (entries[i].isIntersecting){ load(entries[i].target); io.unobserve(entries[i].target); }
+      }
+    }, { rootMargin: '300px' });
+    function observeAll(root){
+      if (!root || !root.querySelectorAll) return;
+      var list = root.querySelectorAll(SEL);
+      for (var i = 0; i < list.length; i++) io.observe(list[i]);
+    }
+    window.scanLazyCovers = observeAll;
+    var mo = new MutationObserver(function(muts){
+      for (var i = 0; i < muts.length; i++){
+        var added = muts[i].addedNodes;
+        for (var j = 0; j < added.length; j++){
+          var n = added[j];
+          if (n.nodeType !== 1) continue;
+          if (n.matches && n.matches(SEL)) io.observe(n);
+          observeAll(n);
+        }
+      }
+    });
+    document.addEventListener('DOMContentLoaded', function(){
+      var s = document.createElement('style');
+      s.textContent = SEL + '{background:#f1f1f1;}';
+      document.head.appendChild(s);
+      observeAll(document);
+      if (document.body) mo.observe(document.body, { childList: true, subtree: true });
+    });
+  })();
+  </script>
 </body>
 </html>
