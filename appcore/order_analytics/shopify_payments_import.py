@@ -133,9 +133,16 @@ def _affected_business_dates(order_names):
     return row.get("a"), row.get("b")
 
 
+_recompute_lock = threading.Lock()
+
+
 def _trigger_profit_recompute(date_from, date_to):
-    """后台重算受影响 business_date 范围，让新 payments 的真实手续费替换估算（fire-and-forget）。"""
+    """后台重算受影响 business_date 范围，让新 payments 的真实手续费替换估算（fire-and-forget）。
+    模块级 Lock 防止连续导入时并发重算产生不一致的 order_profit_runs。"""
     def _run():
+        if not _recompute_lock.acquire(blocking=False):
+            log.info("payments profit recompute skipped (another run in progress)")
+            return
         try:
             from tools.order_profit_backfill import backfill
             backfill(date_from, date_to)
@@ -143,8 +150,14 @@ def _trigger_profit_recompute(date_from, date_to):
             log.exception(
                 "payments-triggered profit recompute failed (%s ~ %s)", date_from, date_to
             )
+        finally:
+            _recompute_lock.release()
 
-    threading.Thread(target=_run, name="payments-profit-recompute", daemon=True).start()
+    threading.Thread(
+        target=_run,
+        name=f"payments-profit-recompute-{date_from}~{date_to}",
+        daemon=True,
+    ).start()
 
 
 def import_payments_csv(stream: IO[str], *, source_csv: str = "") -> dict[str, Any]:
