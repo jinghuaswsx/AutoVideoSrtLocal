@@ -860,7 +860,10 @@ def _run_cover_generation_step(
         state["result"] = next_result
         state["inputs"] = next_result.get("inputs") or {}
         _store_step_result(state, "cover_generation", next_result, {"covers": next_result.get("covers") or []})
-        state.setdefault("models", {}).update(next_result.get("models") or {})
+        result_models = next_result.get("models") if isinstance(next_result.get("models"), dict) else {}
+        cover_model = result_models.get("cover_generation") if isinstance(result_models, dict) else None
+        if isinstance(cover_model, dict):
+            state.setdefault("models", {})["cover_generation"] = cover_model
 
     def persist_partial_cover_result(partial_result: dict) -> None:
         apply_cover_result(partial_result)

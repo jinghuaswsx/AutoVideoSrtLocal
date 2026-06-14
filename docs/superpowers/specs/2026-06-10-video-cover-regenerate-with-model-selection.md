@@ -80,6 +80,15 @@
 - 统一 LLM 入口的请求日志必须记录 `thinking_budget`，方便后续在「全部报文预览」和用量日志中确认该次调用实际配置。
 - 回归测试必须覆盖产品分析调用会传入 `max_output_tokens=8192`，且 Gemini 系模型会传入 `thinking_budget=0`；Gemini adapter 测试必须覆盖 `thinking_budget` 被写入 SDK config。
 
+## 2026-06-14 封面步骤模型记录覆盖修订
+
+生产项目使用「默认配置重新开始」后，`state_json.model_defaults` 和 `state_json.step_requests.ad_copy` 均显示第三步按 `OPENROUTER / google/gemini-3.5-flash` 请求，但页面标题仍可显示 `state_json.models.ad_copy` 中遗留的 `OPENROUTER / google/gemini-3-flash-preview`。
+
+- 「默认配置重新开始」的实际执行依据必须以 `state_json.model_defaults[step]` 和本轮 `step_requests[step]` 为准；页面展示实际运行模型时不得被旧轮次 `models` 污染。
+- 第四步 `cover_generation` 复用前三步结果生成封面时，`generate_video_covers()` 返回的汇总 `result.models` 只允许更新 `models.cover_generation`。
+- 第四步不得用汇总 `result.models.product_analysis`、`result.models.video_analysis` 或 `result.models.ad_copy` 覆盖前三步已经在本轮成功时写入的实际模型记录；这些上游模型记录必须保持与对应 `step_requests` 一致。
+- 回归测试必须覆盖：当封面生成结果携带旧的上游 `models` 时，`_run_cover_generation_step()` 只刷新 `cover_generation`，并保留前三步已有模型记录。
+
 ## 后端设计
 
 - `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。

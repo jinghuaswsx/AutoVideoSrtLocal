@@ -2855,6 +2855,114 @@ def test_cover_generation_step_does_not_need_flask_context(monkeypatch, tmp_path
     assert state["step_results"]["cover_generation"]["structured_result"]["covers"][0]["object_key"]
 
 
+def test_cover_generation_step_preserves_upstream_actual_models(monkeypatch, tmp_path):
+    from web.routes import video_cover
+
+    video_path = tmp_path / "lamp.mp4"
+    video_path.write_bytes(b"video")
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(_png_bytes())
+    expected_models = {
+        "video_analysis": {
+            "provider": "google_wj",
+            "model_id": "gemini-3.5-flash",
+            "alias": "gemini_35_flash",
+        },
+        "product_analysis": {
+            "provider": "google_wj",
+            "model_id": "gemini-3.5-flash",
+            "alias": "gemini_35_flash",
+        },
+        "ad_copy": {
+            "provider": "openrouter",
+            "model_id": "google/gemini-3.5-flash",
+            "alias": "gemini_35_flash",
+        },
+    }
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(video_path),
+        "video_filename": "lamp.mp4",
+        "image_count": 1,
+        "product": {
+            "title": "Emergency Roadside Light",
+            "main_image_url": "https://cdn.example/light.png",
+            "product_image_path": str(product_image),
+        },
+        "product_analysis": '{"product_definition":"light"}',
+        "video_analysis": '{"cover_reference":"trunk scene"}',
+        "ad_copy_sets": {
+            "ad_copy_sets": [
+                {
+                    "id": 1,
+                    "angle": "场景型",
+                    "english": {
+                        "title": "Don’t Get Stuck Unprepared",
+                        "message": "Add high-visibility warning light to your trunk.",
+                        "description": "Road Trips Made Safer",
+                    },
+                    "chinese_translation": {
+                        "title": "别在紧急时毫无准备",
+                        "message": "为后备箱增加高可见警示灯。",
+                        "description": "让自驾更安全",
+                    },
+                    "usage_note": "适合后备箱场景。",
+                }
+            ]
+        },
+        "models": json.loads(json.dumps(expected_models, ensure_ascii=False)),
+    }
+
+    def fake_generate_video_covers(**kwargs):
+        return {
+            "product": state["product"],
+            "reference": {"object_key": "artifacts/video_cover/8/task-1/reference.png"},
+            "inputs": {},
+            "models": {
+                "video_analysis": {
+                    "provider": "gemini_aistudio",
+                    "model_id": "gemini-3.5-flash",
+                },
+                "product_analysis": {
+                    "provider": "openrouter",
+                    "model_id": "google/gemini-3-flash-preview",
+                },
+                "ad_copy": {
+                    "provider": "openrouter",
+                    "model_id": "google/gemini-3-flash-preview",
+                },
+                "cover_generation": {
+                    "provider": "googlewj",
+                    "model_id": "gemini-3.1-flash-image-preview",
+                    "execution_mode": "serial",
+                },
+            },
+            "image_prompts": [{"index": 1, "prompt": "cover prompt", "source_ad_copy_id": 1}],
+            "covers": [],
+        }
+
+    monkeypatch.setattr(video_cover, "generate_video_covers", fake_generate_video_covers)
+
+    video_cover._run_cover_generation_step(
+        state,
+        provider="googlewj",
+        model="gemini-3.1-flash-image-preview",
+        execution_mode="serial",
+        user_id=8,
+    )
+
+    assert state["models"]["video_analysis"] == expected_models["video_analysis"]
+    assert state["models"]["product_analysis"] == expected_models["product_analysis"]
+    assert state["models"]["ad_copy"] == expected_models["ad_copy"]
+    assert state["models"]["cover_generation"] == {
+        "provider": "googlewj",
+        "model_id": "gemini-3.1-flash-image-preview",
+        "execution_mode": "serial",
+    }
+
+
 def test_video_cover_state_endpoint_returns_urls_and_timing(authed_client_no_db, monkeypatch):
     from web.routes import video_cover
 
