@@ -35,6 +35,7 @@ from web.services.media_covers import (
     media_cover_flask_response as _media_cover_flask_response_impl,
     media_cover_object_flask_response as _media_cover_object_flask_response_impl,
     product_cover_file_flask_response as _product_cover_file_flask_response,
+    product_cover_thumb_flask_response as _product_cover_thumb_flask_response,
 )
 
 from . import bp
@@ -441,6 +442,8 @@ def cover(pid: int):
     result = _routes()._build_product_cover_file_response(pid, lang)
     if result.not_found:
         abort(404)
+    if request.args.get("thumb"):
+        return _product_cover_thumb_flask_response(result)
     return _product_cover_file_flask_response(result)
 
 

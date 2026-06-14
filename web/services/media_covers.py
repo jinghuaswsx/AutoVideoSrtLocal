@@ -172,6 +172,29 @@ def product_cover_file_flask_response(result: ProductCoverFileResponse):
     return send_file(str(result.local_path), mimetype=result.mimetype)
 
 
+# 实时大盘产品列表一次渲染上百张封面图，原图最大 7MB，经窄 SSH 隧道会把浏览器连接和
+# 隧道带宽占满、连数据请求一起拖垮（2026-06-14 实测：点击切换 20s 出不来数据，nginx
+# error log 大量 /medias/cover upstream prematurely closed）。封面显示只有 60–100px，
+# 所以提供缩略图：把已下载到本地的原图 resize 成最长边 240px 的 JPEG 并缓存复用。
+_COVER_THUMB_MAX_EDGE = 240
+
+
+def product_cover_thumb_flask_response(result: ProductCoverFileResponse):
+    """返回封面缩略图（最长边 240px）；缩略图缓存在原图同目录 *_thumb.jpg。任何失败回退原图。"""
+    orig = Path(result.local_path)
+    thumb_path = orig.with_name(orig.stem + "_thumb.jpg")
+    try:
+        if (not thumb_path.exists()) or thumb_path.stat().st_mtime < orig.stat().st_mtime:
+            from PIL import Image
+            with Image.open(orig) as im:
+                im = im.convert("RGB")
+                im.thumbnail((_COVER_THUMB_MAX_EDGE, _COVER_THUMB_MAX_EDGE), Image.Resampling.LANCZOS)
+                im.save(thumb_path, "JPEG", quality=82)
+        return send_file(str(thumb_path), mimetype="image/jpeg")
+    except Exception:
+        return send_file(str(result.local_path), mimetype=result.mimetype)
+
+
 def cache_item_cover_object(
     item_id: int,
     item: dict,
