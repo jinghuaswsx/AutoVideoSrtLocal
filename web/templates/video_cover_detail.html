@@ -196,6 +196,7 @@
     <div class="vcd-card-actions">
       <button class="btn btn-ghost" type="button" data-all-payload-preview>全部报文预览</button>
       <button class="btn btn-danger vcd-restart-btn" type="button" id="vcdRestartBtn">强制重新开始</button>
+      <button class="btn btn-primary" type="button" id="vcdDefaultConfigRestartBtn">默认配置重新开始</button>
     </div>
   </div>
   <div class="vcd-progress-toolbar">
@@ -926,6 +927,19 @@
     try { await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {image_count: selectedRestartCount()}); }
     catch (e) { errorBox.textContent = e.message || '强制重新开始失败'; }
   }
+  async function restartWithDefaultConfig() {
+    const count = selectedRestartCount();
+    if (!window.confirm(`确认默认配置重新开始？当前中间状态和结果会清空，并使用最新默认配置重新生成 ${count} 张封面图。`)) return;
+    errorBox.textContent = '';
+    try {
+      await postAction(`/video-cover/api/${encodeURIComponent(TASK_ID)}/restart`, {
+        image_count: selectedRestartCount(),
+        use_default_config: true
+      });
+    } catch (e) {
+      errorBox.textContent = e.message || '默认配置重新开始失败';
+    }
+  }
   async function runStepWithSelectedModel() {
     if (!stepProviderSelect || !stepModelSelect || !activeModelStep) return;
     stepModelSubmit.disabled = true;
@@ -1056,6 +1070,7 @@
 
     // 强制重新开始按钮
     document.getElementById('vcdRestartBtn').addEventListener('click', restart);
+    document.getElementById('vcdDefaultConfigRestartBtn').addEventListener('click', restartWithDefaultConfig);
     document.addEventListener('click', (e) => {
       const modelBtn = e.target.closest('[data-step-model-run]');
       if (modelBtn && !modelBtn.disabled) {

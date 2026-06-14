@@ -49,6 +49,17 @@
 - Google AI Studio / Google Vertex / GOOGLEWJ 必须把 OpenAI 风格 `json_object` 语义转换为 Gemini 支持的 JSON object schema，例如 `{"type":"object"}`，不得把 `json_object` 原样写入 Gemini `response_schema.type`。
 - 回归测试必须覆盖 `google_wj` 文案创作通道，确保步骤重选后不会复用上一个 provider 的参数结构。
 
+## 2026-06-14 默认配置重新开始修订
+
+用户要求在文案封面详情页项目级重跑按钮组中增加「默认配置重新开始」，用于显式丢弃当前项目旧的模型快照，并使用全局默认配置里的最新模型配置重跑全流程。
+
+- 详情页项目级重跑按钮组必须在现有重跑入口右侧增加按钮，按钮文案精确为「默认配置重新开始」。
+- 「强制重新开始」继续保留当前项目 `state_json.model_defaults`，不得读取当前全局默认配置。
+- 「默认配置重新开始」是新的显式项目级入口：服务端必须在清空中间状态前调用 `video_cover_settings.get_model_defaults()`，用最新全局默认配置覆盖当前项目 `state_json.model_defaults`。
+- 「默认配置重新开始」和「强制重新开始」一样按当前选择的 `image_count` 清空四个步骤的中间产物、请求报文、返回报文、耗时、错误和实际运行模型记录，并从 `video_analysis` 开始执行。
+- 后续四个步骤运行时必须从刚写入项目状态的最新 `state_json.model_defaults[step]` 取供应商、模型 ID 和封面执行模式，而不是继续使用项目原始保存的供应商和模型区块。
+- 回归测试必须覆盖该入口会覆盖旧项目快照、保留用户选择张数、清空旧 `models` / 结果数据，并启动第 1 步。
+
 ## 后端设计
 
 - `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。

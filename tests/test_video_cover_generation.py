@@ -1677,6 +1677,105 @@ def test_video_cover_restart_recovers_model_defaults_from_historical_models(
     assert started == [("task-1", "video_analysis", 2)]
 
 
+def test_video_cover_default_config_restart_refreshes_global_defaults_and_restarts(
+    authed_client_no_db,
+    monkeypatch,
+    tmp_path,
+):
+    from web.routes import video_cover
+
+    old_defaults = {
+        "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
+        "product_analysis": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+        "ad_copy": {"provider": "openrouter", "model_id": "anthropic/claude-sonnet-4.6"},
+        "cover_generation": {
+            "provider": "googlewj",
+            "model_id": "gemini-3-pro-image-preview",
+            "execution_mode": "serial",
+        },
+    }
+    latest_defaults = video_cover.video_cover_settings.normalize_model_defaults({
+        "video_analysis": {"provider": "google_wj", "model_id": "gemini-3.5-flash"},
+        "product_analysis": {"provider": "gemini_vertex_adc", "model_id": "gemini-3-flash-preview"},
+        "ad_copy": {"provider": "google_wj", "model_id": "gemini-3-flash-preview"},
+        "cover_generation": {
+            "provider": "local_image_2",
+            "model_id": "gpt-image-2",
+            "execution_mode": "parallel",
+        },
+    })
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(tmp_path / "lamp.mp4"),
+        "video_filename": "lamp.mp4",
+        "image_count": 1,
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "done",
+            "ad_copy": "done",
+            "cover_generation": "done",
+        },
+        "model_defaults": old_defaults,
+        "models": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
+            "cover_generation": {
+                "provider": "googlewj",
+                "model_id": "gemini-3-pro-image-preview",
+                "execution_mode": "serial",
+            },
+        },
+        "video_analysis": "old video",
+        "ad_copy_sets": {"ad_copy_sets": []},
+        "result": {"covers": [{"index": 1}]},
+        "step_results": {"ad_copy": {"structured_result": {"old": True}}},
+    }
+    row = {"id": "task-1", "user_id": 8, "state_json": json.dumps(state, ensure_ascii=False)}
+    saved = []
+    started = []
+
+    monkeypatch.setattr(
+        video_cover.video_cover_project_store,
+        "get_project",
+        lambda task_id, *, user_id, is_admin: row,
+    )
+    monkeypatch.setattr(video_cover.video_cover_settings, "get_model_defaults", lambda: latest_defaults)
+    monkeypatch.setattr(
+        video_cover,
+        "_save_state",
+        lambda task_id, next_state, *, status: saved.append(
+            {"task_id": task_id, "status": status, "state": json.loads(json.dumps(next_state, ensure_ascii=False))}
+        ),
+    )
+    monkeypatch.setattr(
+        video_cover,
+        "_start_video_cover_background",
+        lambda task_id, start_step="video_analysis", image_count=None: started.append((task_id, start_step, image_count)) or True,
+        raising=False,
+    )
+
+    resp = authed_client_no_db.post(
+        "/video-cover/api/task-1/restart",
+        json={"image_count": 3, "use_default_config": True},
+    )
+
+    assert resp.status_code == 202
+    next_state = saved[0]["state"]
+    assert next_state["model_defaults"] == latest_defaults
+    assert next_state["model_defaults"] != old_defaults
+    assert next_state["image_count"] == 3
+    assert next_state["steps"] == {
+        "video_analysis": "pending",
+        "product_analysis": "pending",
+        "ad_copy": "pending",
+        "cover_generation": "pending",
+    }
+    for key in ("models", "video_analysis", "ad_copy_sets", "result", "step_results"):
+        assert key not in next_state
+    assert started == [("task-1", "video_analysis", 3)]
+
+
 def test_video_cover_regenerate_cover_with_model_updates_snapshot_and_restarts_fourth_step(
     authed_client_no_db,
     monkeypatch,
@@ -1882,10 +1981,14 @@ def test_video_cover_detail_renders_progress_restart_and_four_process_cards(auth
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "强制重新开始" in html
+    assert "默认配置重新开始" in html
     assert "vcd-restart-btn" in html
+    assert 'id="vcdDefaultConfigRestartBtn"' in html
     assert "window.confirm" in html
     assert "selectedRestartCount()" in html
     assert "image_count: selectedRestartCount()" in html
+    assert "use_default_config: true" in html
+    assert "function restartWithDefaultConfig" in html
     assert "重选模型后生成" in html
     assert "重选模型后运行" in html
     assert 'id="vcdStepModelModal"' in html

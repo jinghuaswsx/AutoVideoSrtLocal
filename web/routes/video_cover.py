@@ -1565,6 +1565,15 @@ def _request_first_value(payload: dict, *names: str) -> str:
     return ""
 
 
+def _request_truthy_flag(payload: dict, name: str) -> bool:
+    value = payload.get(name)
+    if value is None:
+        value = request.form.get(name)
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _step_model_request_values(step: str) -> tuple[str, str, str, bool]:
     payload = _request_json_payload()
     provider = _request_first_value(
@@ -1818,7 +1827,10 @@ def api_restart_project(task_id: str):
     )
     state.setdefault("id", task_id)
     state.setdefault("type", video_cover_project_store.VIDEO_COVER_TYPE)
-    _project_model_defaults(state)
+    if _request_truthy_flag(payload, "use_default_config"):
+        state["model_defaults"] = video_cover_settings.get_model_defaults()
+    else:
+        _project_model_defaults(state)
     _clear_all_outputs(state)
     state["image_count"] = image_count
     _save_state(task_id, state, status="running")
