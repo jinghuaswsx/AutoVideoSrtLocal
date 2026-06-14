@@ -239,9 +239,84 @@ def _product_detail_url(product_id: int, start: date, end: date) -> str:
     return "/order-analytics?" + urlencode(params)
 
 
-def _attach_consecutive_loss_days(items: list["LongTermLossItem"], business_date: date, cfg: dict[str, float]) -> None:
-    """占位实现：Task 6 替换为真实逻辑（逐日利润口径连续亏损天数）。"""
-    return None
+def _load_daily_ad_spend_map(d_from: date, d_to: date) -> dict[tuple[int, date], float]:
+    rows = query(
+        """
+        SELECT COALESCE(meta_business_date, report_date) AS d, product_id,
+               COALESCE(SUM(spend_usd), 0) AS spend
+        FROM meta_ad_daily_ad_metrics
+        WHERE COALESCE(meta_business_date, report_date) BETWEEN %(d_from)s AND %(d_to)s
+          AND product_id IS NOT NULL
+        GROUP BY COALESCE(meta_business_date, report_date), product_id
+        """,
+        {"d_from": d_from, "d_to": d_to},
+    )
+    out: dict[tuple[int, date], float] = {}
+    for r in rows or []:
+        d = r.get("d")
+        pid = r.get("product_id")
+        if d is None or pid is None:
+            continue
+        if hasattr(d, "date"):
+            d = d.date()
+        out[(int(pid), d)] = _safe_float(r.get("spend"))
+    return out
+
+
+def _attach_consecutive_loss_days(
+    items: list["LongTermLossItem"], business_date: date, cfg: dict[str, float]
+) -> None:
+    if not items:
+        return
+    long_days = int(cfg["long_days"])
+    d30 = business_date - timedelta(days=long_days - 1)
+    pids = [it.product_id for it in items]
+    placeholders = ",".join(["%s"] * len(pids))
+    rows = query(
+        f"""
+        SELECT opl.product_id, dol.meta_business_date AS d,
+          SUM(opl.revenue_usd) AS revenue,
+          SUM(opl.shopify_fee_usd) AS fee,
+          SUM(opl.return_reserve_usd) AS rr,
+          SUM(CASE WHEN opl.missing_fields LIKE '%%purchase_price%%'
+                   THEN opl.revenue_usd * %s ELSE opl.purchase_usd END) AS purchase,
+          SUM(CASE WHEN opl.missing_fields LIKE '%%shipping_cost%%'
+                   THEN opl.revenue_usd * %s ELSE opl.shipping_cost_usd END) AS shipping
+        FROM order_profit_lines opl
+        JOIN dianxiaomi_order_lines dol ON dol.id = opl.dxm_order_line_id
+        WHERE opl.product_id IN ({placeholders})
+          AND dol.meta_business_date BETWEEN %s AND %s
+        GROUP BY opl.product_id, dol.meta_business_date
+        """,
+        (cfg["est_cost_rate"], cfg["est_shipping_rate"], *pids, d30, business_date),
+    )
+    order_by_pid_day: dict[int, dict[date, float]] = {}
+    for r in rows or []:
+        d = r.get("d")
+        if hasattr(d, "date"):
+            d = d.date()
+        pid = int(r["product_id"])
+        order_profit = (
+            _safe_float(r.get("revenue")) - _safe_float(r.get("fee"))
+            - _safe_float(r.get("purchase")) - _safe_float(r.get("shipping"))
+            - _safe_float(r.get("rr"))
+        )
+        order_by_pid_day.setdefault(pid, {})[d] = order_profit
+
+    ad_map = _load_daily_ad_spend_map(d30, business_date)
+    for it in items:
+        day = business_date
+        loss_days = 0
+        for _ in range(long_days):
+            order_profit = order_by_pid_day.get(it.product_id, {}).get(day)
+            if order_profit is None:
+                break
+            daily_profit = order_profit - ad_map.get((it.product_id, day), 0.0)
+            if daily_profit >= 0:
+                break
+            loss_days += 1
+            day -= timedelta(days=1)
+        it.consecutive_loss_days = loss_days
 
 
 def get_long_term_loss_products(

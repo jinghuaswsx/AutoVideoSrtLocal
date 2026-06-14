@@ -158,3 +158,28 @@ def test_get_products_filters_sorts_and_excludes_new(monkeypatch):
     assert items[0].verdict == "long_term_net_loss"
     assert items[1].verdict == "erodes_profit"
     assert items[0].loss_7d == 200.0
+
+
+def test_attach_consecutive_loss_days(monkeypatch):
+    business_date = date(2026, 6, 14)
+    cfg = ltl.get_ltl_config()
+    order_daily = [
+        {"product_id": 1, "d": date(2026, 6, 14), "revenue": 100.0, "fee": 3.0, "purchase": 10.0, "shipping": 17.0, "rr": 1.0},
+        {"product_id": 1, "d": date(2026, 6, 13), "revenue": 100.0, "fee": 3.0, "purchase": 10.0, "shipping": 17.0, "rr": 1.0},
+        {"product_id": 1, "d": date(2026, 6, 12), "revenue": 500.0, "fee": 3.0, "purchase": 10.0, "shipping": 17.0, "rr": 1.0},
+    ]
+    ad_daily = {(1, date(2026, 6, 14)): 200.0, (1, date(2026, 6, 13)): 200.0, (1, date(2026, 6, 12)): 50.0}
+
+    def fake_query(sql, params=None):
+        return order_daily if "FROM order_profit_lines" in sql else []
+    monkeypatch.setattr(ltl, "query", fake_query)
+    monkeypatch.setattr(ltl, "_load_daily_ad_spend_map", lambda d_from, d_to: ad_daily)
+
+    items = [ltl.LongTermLossItem(
+        product_id=1, product_code="P1", product_name="品1", product_main_image=None,
+        spend_7d=400.0, profit_7d=-50.0, loss_7d=50.0, profit_30d=100.0, loss_ratio=None,
+        verdict="long_term_net_loss", active_days=28, consecutive_loss_days=0,
+        first_active_date="2026-05-01", has_estimated_cost=False, detail_url="",
+    )]
+    ltl._attach_consecutive_loss_days(items, business_date, cfg)
+    assert items[0].consecutive_loss_days == 2
