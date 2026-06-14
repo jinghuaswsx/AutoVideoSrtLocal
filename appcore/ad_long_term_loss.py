@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
+from urllib.parse import urlencode
+
+from appcore import ad_alert_actions
 from appcore import settings as system_settings
 from appcore.db import query
 from appcore.order_analytics._helpers import current_meta_business_date
@@ -196,3 +199,112 @@ def _load_window_metrics(business_date: date, cfg: dict[str, float]) -> dict[int
             last_active_date=r.get("last_active_date"),
         )
     return out
+
+
+@dataclass
+class LongTermLossItem:
+    product_id: int
+    product_code: str
+    product_name: str
+    product_main_image: str | None
+    spend_7d: float
+    profit_7d: float
+    loss_7d: float
+    profit_30d: float
+    loss_ratio: float | None
+    verdict: str
+    active_days: int
+    consecutive_loss_days: int
+    first_active_date: str | None
+    has_estimated_cost: bool
+    detail_url: str
+    action: dict[str, Any] | None = None
+
+
+def _iso_date(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)[:10]
+
+
+def _product_detail_url(product_id: int, start: date, end: date) -> str:
+    params = {
+        "tab": "product-profit",
+        "product_id": str(product_id),
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+    }
+    return "/order-analytics?" + urlencode(params)
+
+
+def _attach_consecutive_loss_days(items: list["LongTermLossItem"], business_date: date, cfg: dict[str, float]) -> None:
+    """占位实现：Task 6 替换为真实逻辑（逐日利润口径连续亏损天数）。"""
+    return None
+
+
+def get_long_term_loss_products(
+    *, search: str | None = None, limit: int = 30, include_handled: bool = False
+) -> tuple[date, list[LongTermLossItem]]:
+    business_date = current_meta_business_date()
+    cfg = get_ltl_config()
+    safe_limit = max(1, min(int(limit or 30), 100))
+    d30 = business_date - timedelta(days=int(cfg["long_days"]) - 1)
+
+    metrics = _load_window_metrics(business_date, cfg)
+    search_l = (search or "").strip().lower()
+
+    candidates: list[LongTermLossItem] = []
+    for wm in metrics.values():
+        if wm.active_days < cfg["min_active_days"]:
+            continue
+        v = judge_long_term_loss(
+            profit_7d=wm.profit_7d, profit_30d=wm.profit_30d, loss_ratio=cfg["loss_ratio"]
+        )
+        if not v.alert:
+            continue
+        if wm.spend_7d < cfg["min_spend_7d"] or v.loss_7d < cfg["min_loss_7d"]:
+            continue
+        if search_l and search_l not in (wm.product_code or "").lower() and search_l not in (wm.product_name or "").lower():
+            continue
+        candidates.append(
+            LongTermLossItem(
+                product_id=wm.product_id,
+                product_code=wm.product_code or str(wm.product_id),
+                product_name=wm.product_name,
+                product_main_image=wm.product_main_image,
+                spend_7d=wm.spend_7d,
+                profit_7d=wm.profit_7d,
+                loss_7d=round(v.loss_7d, 2),
+                profit_30d=wm.profit_30d,
+                loss_ratio=round(v.loss_ratio, 4) if v.loss_ratio is not None else None,
+                verdict=v.verdict or "",
+                active_days=wm.active_days,
+                consecutive_loss_days=0,
+                first_active_date=_iso_date(wm.first_active_date),
+                has_estimated_cost=wm.has_estimated_cost,
+                detail_url=_product_detail_url(wm.product_id, d30, business_date),
+            )
+        )
+
+    candidates.sort(key=lambda it: (it.spend_7d, it.loss_7d), reverse=True)
+
+    keys = [ad_alert_actions.long_term_loss_target_key(it.product_id) for it in candidates]
+    try:
+        action_map = ad_alert_actions.get_actions(ad_alert_actions.SCOPE_LONG_TERM_LOSS, keys)
+    except Exception:
+        log.warning("long term loss action lookup failed", exc_info=True)
+        action_map = {}
+
+    kept: list[LongTermLossItem] = []
+    for it, key in zip(candidates, keys):
+        it.action = action_map.get(key)
+        if not include_handled and it.action is not None:
+            continue
+        kept.append(it)
+        if len(kept) >= safe_limit:
+            break
+
+    _attach_consecutive_loss_days(kept, business_date, cfg)
+    return business_date, kept

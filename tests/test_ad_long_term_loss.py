@@ -123,3 +123,38 @@ def test_load_window_metrics_uses_real_and_estimated_cost(monkeypatch):
     assert m100.active_days == 28
     assert m100.has_estimated_cost is False
     assert metrics[200].has_estimated_cost is True
+
+
+def _wm(pid, profit_7d, profit_30d, spend_7d, active_days, has_est=False):
+    return ltl.WindowMetric(
+        product_id=pid, product_code=f"P{pid}", product_name=f"品{pid}",
+        product_main_image=None, revenue_7d=1000.0, profit_7d=profit_7d,
+        revenue_30d=5000.0, profit_30d=profit_30d, spend_7d=spend_7d,
+        active_days=active_days, has_estimated_cost=has_est,
+        first_active_date=date(2026, 5, 1), last_active_date=date(2026, 6, 14),
+    )
+
+
+def test_get_products_filters_sorts_and_excludes_new(monkeypatch):
+    business_date = date(2026, 6, 14)
+    metrics = {
+        1: _wm(1, profit_7d=-200.0, profit_30d=-50.0, spend_7d=800.0, active_days=28),
+        2: _wm(2, profit_7d=-100.0, profit_30d=300.0, spend_7d=500.0, active_days=28),
+        3: _wm(3, profit_7d=-10.0, profit_30d=500.0, spend_7d=600.0, active_days=28),
+        4: _wm(4, profit_7d=-300.0, profit_30d=-100.0, spend_7d=900.0, active_days=3),
+        5: _wm(5, profit_7d=-25.0, profit_30d=-5.0, spend_7d=30.0, active_days=28),
+    }
+    monkeypatch.setattr(ltl, "current_meta_business_date", lambda: business_date)
+    monkeypatch.setattr(ltl, "_load_window_metrics", lambda bd, cfg: metrics)
+    monkeypatch.setattr(ltl, "_attach_consecutive_loss_days", lambda items, bd, cfg: None)
+    monkeypatch.setattr(ltl.system_settings, "get_setting", lambda key: None)
+
+    from appcore import ad_alert_actions
+    monkeypatch.setattr(ad_alert_actions, "get_actions", lambda scope, keys: {})
+
+    bd, items = ltl.get_long_term_loss_products(limit=10)
+    ids = [it.product_id for it in items]
+    assert ids == [1, 2]  # 3波动/4新品/5小额 排除；按 spend_7d 降序 1(800)>2(500)
+    assert items[0].verdict == "long_term_net_loss"
+    assert items[1].verdict == "erodes_profit"
+    assert items[0].loss_7d == 200.0
