@@ -6237,7 +6237,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
         var pids = String(row.product_id).split('/').map(function(s) { return s.trim(); }).filter(Boolean);
         if (pids.length) {
           var imgs = pids.map(function(pid) {
-            var imgTag = '<img src="/medias/cover/' + pid + '?lang=en&thumb=1" loading="lazy" decoding="async" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid var(--border-main);" alt="主图" onerror="this.style.display=\'none\';">';
+            var imgTag = '<img data-cover-src="/medias/cover/' + pid + '?lang=en&thumb=1" decoding="async" style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid var(--border-main);" alt="主图" onerror="this.style.display=\'none\';">';
             if (row.product_link) {
               return '<a href="' + escapeHtml(row.product_link) + '" target="_blank" rel="noopener noreferrer" title="跳转原站商品链接">' + imgTag + '</a>';
             } else {
@@ -9462,8 +9462,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
     
     ids.forEach(function(pid) {
       var img = document.createElement('img');
-      img.src = '/medias/cover/' + pid + '?lang=en&thumb=1';
-      img.loading = 'lazy';
+      img.setAttribute('data-cover-src', '/medias/cover/' + pid + '?lang=en&thumb=1');
       img.decoding = 'async';
       img.style.width = '100px';
       img.style.height = '100px';
@@ -10437,7 +10436,7 @@ window.orderAnalyticsSetInputValue = window.orderAnalyticsSetInputValue || funct
       return '<div class="oar-weekly-product-image-cell"><div class="oar-weekly-product-image-frame">无图</div></div>';
     }
     return '<div class="oar-weekly-product-image-cell"><div class="oar-weekly-product-image-frame">' +
-      '<img src="' + escapeHtml(src) + '" alt="' + label + '" loading="lazy" ' +
+      '<img data-cover-src="' + escapeHtml(src) + '" alt="' + label + '" ' +
       'onerror="this.remove();this.parentNode.textContent=&quot;无图&quot;;">' +
       '</div></div>';
   }
