@@ -25,7 +25,9 @@ log = logging.getLogger(__name__)
 
 
 class AvSync0615Profile(TranslateProfile):
-    code = "av_sync"
+    # Intentionally NOT globally registered — accessed via direct import from Omni0615Profile.
+    # Distinct code avoids a future accidental-registration collision with the V1 'av_sync' profile.
+    code = "av_sync_0615"
     name = "音画同步（句级）"
     post_asr_step_name = "asr_normalize"
 
