@@ -1033,8 +1033,17 @@ def _parse_ad_copy_response(response: dict[str, Any]) -> dict[str, Any]:
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise VideoCoverGenerationError("文案创作失败：模型未返回合法 JSON") from exc
+            _raise_llm_generation_error("文案创作失败：模型未返回合法 JSON", response=response, cause=exc)
     return normalize_ad_copy_payload(payload, require_five=True)
+
+
+def _raise_llm_generation_error(message: str, *, response: dict[str, Any] | None = None, cause: Exception | None = None):
+    error = VideoCoverGenerationError(message)
+    if response is not None:
+        error.llm_response = response
+    if cause is not None:
+        raise error from cause
+    raise error
 
 
 def generate_product_analysis(
@@ -1077,7 +1086,7 @@ def generate_product_analysis(
     else:
         text = str(response.get("text") or "").strip()
     if not text:
-        raise VideoCoverGenerationError("产品分析失败：模型未返回内容")
+        _raise_llm_generation_error("产品分析失败：模型未返回内容", response=response)
     return text
 
 
@@ -1137,7 +1146,7 @@ def generate_video_analysis(
     else:
         text = str(response.get("text") or "").strip()
     if not text:
-        raise VideoCoverGenerationError("视频分析失败：模型未返回内容")
+        _raise_llm_generation_error("视频分析失败：模型未返回内容", response=response)
     return text
 
 

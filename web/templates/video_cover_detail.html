@@ -121,6 +121,10 @@
 .vcd-final-cta { font-size:13px; font-weight:900; color:#0284c7; }
 .vcd-empty { color:#64748b; font-size:13px; line-height:1.6; padding:12px; border:1px dashed var(--border-main); border-radius:8px; background:#f8fafc; }
 .vcd-error { min-height:20px; color:#dc2626; font-size:13px; }
+.vcd-error-detail { display:grid; gap:10px; border:1px solid #fca5a5; border-radius:8px; background:#fff7f7; padding:12px; }
+.vcd-error-detail-title { font-size:12px; font-weight:900; color:#b91c1c; }
+.vcd-error-detail-message { font-size:13px; line-height:1.55; color:#991b1b; overflow-wrap:anywhere; }
+.vcd-error-detail-pre { max-height:320px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.55; padding:12px; border:1px solid #fecaca; border-radius:8px; background:#450a0a; color:#fee2e2; }
 .vcd-modal-backdrop { position:fixed; inset:0; z-index:1000; display:none; align-items:center; justify-content:center; background:rgba(15,23,42,.44); padding:22px; }
 .vcd-modal-backdrop.show { display:flex; }
 .vcd-modal { width:min(920px, 100%); max-height:88vh; overflow:auto; border:1px solid var(--border-main); border-radius:8px; background:var(--bg-card); box-shadow:0 18px 48px rgba(15,23,42,.24); }
@@ -664,6 +668,7 @@
       ['步骤', data.label || data.step],
       ['返回数据', data.response_data || {}],
       ['原始返回', data.raw_response || {}],
+      ['错误详情', data.error_detail || {}],
       ['模型', (((currentState.models || {})[data.step]) || {})],
       ['耗时', (((currentState.step_timing || {})[data.step]) || {})]
     ]);
@@ -681,7 +686,7 @@
     promptRequestData.innerHTML = renderRequestData(data);
     promptFullRequest.textContent = compactJson(data.full_request || {});
     promptResponseData.innerHTML = renderResponseData(data);
-    promptRawResponse.textContent = compactJson({raw_response: data.raw_response || {}, response_data: data.response_data || {}});
+    promptRawResponse.textContent = compactJson({raw_response: data.raw_response || {}, response_data: data.response_data || {}, error_detail: data.error_detail || {}});
     debugRequestUrl.value = ((data.replay || {}).default_url) || ((data.full_request || {}).url) || '';
     debugApiKey.value = ((data.replay || {}).default_api_key) || ((data.full_request || {}).api_key) || '';
     debugReplayBtn.disabled = !((data.replay || {}).supported);
@@ -695,6 +700,9 @@
   }
   function getStepResult(step) {
     return (currentState.step_results || {})[step] || {};
+  }
+  function getStepError(step) {
+    return (currentState.step_errors || {})[step] || {};
   }
   function getStructured(step) {
     return getStepResult(step).structured_result || {};
@@ -833,7 +841,18 @@
       </article>`;
     }).join('')}</div>`;
   }
+  function renderErrorDetail(step) {
+    const detail = getStepError(step);
+    const message = detail.message || ((currentState.step_messages || {})[step]) || '该步骤执行失败。';
+    const fullDetail = Object.keys(detail).length ? detail : {message};
+    return `<div class="vcd-error-detail">
+      <div class="vcd-error-detail-title">错误详情</div>
+      <div class="vcd-error-detail-message">${escapeHtml(message)}</div>
+      <pre class="vcd-error-detail-pre">${escapeHtml(compactJson(fullDetail))}</pre>
+    </div>`;
+  }
   function renderVisual(step) {
+    if (visualStatus(((currentState.steps || {})[step]) || '') === 'error') return renderErrorDetail(step);
     if (step === 'video_analysis') return renderVideoVisual();
     if (step === 'product_analysis') return renderProductVisual();
     if (step === 'ad_copy') return renderCopyVisual();
@@ -1011,7 +1030,8 @@
       timing: ((currentState.step_timing || {})[step]) || {},
       model: ((currentState.models || {})[step]) || {},
       request: ((currentState.step_requests || {})[step]) || {},
-      result: ((currentState.step_results || {})[step]) || {}
+      result: ((currentState.step_results || {})[step]) || {},
+      error_detail: ((currentState.step_errors || {})[step]) || {}
     };
   }
   function openAllPayloads() {

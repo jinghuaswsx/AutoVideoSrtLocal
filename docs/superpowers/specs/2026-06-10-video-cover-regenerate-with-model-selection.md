@@ -60,6 +60,16 @@
 - 后续四个步骤运行时必须从刚写入项目状态的最新 `state_json.model_defaults[step]` 取供应商、模型 ID 和封面执行模式，而不是继续使用项目原始保存的供应商和模型区块。
 - 回归测试必须覆盖该入口会覆盖旧项目快照、保留用户选择张数、清空旧 `models` / 结果数据，并启动第 1 步。
 
+## 2026-06-14 大模型失败详情前端展示修订
+
+生产项目在 `product_analysis` 使用 `GOOGLEWJ / gemini-3.5-flash` 时，Vertex Gemini 返回 HTTP 200 但 SDK 文本为空，后端只保存了「模型未返回内容」，页面无法看到候选、finish reason、安全反馈、用量或异常原文。
+
+- 文本步骤和封面步骤的大模型调用失败时，后端必须在 `state_json.step_errors[step]` 写入可 JSON 序列化的错误详情，至少包含 `message`、`exception_type`、`provider`、`model_id`、`usage`、`raw_response` 和 `response_text`；有 Python 异常链时保留 `cause` / `cause_type`。
+- “模型返回空内容”也属于失败详情场景：业务错误消息保持人话，但必须附带该次 LLM 调用返回的 `raw` / `usage` / `text` / `json`，避免 HTTP 200 空输出被压成无法排查的通用错误。
+- `_clear_step_outputs()`、强制重新开始和默认配置重新开始必须同步清空对应步骤及下游的 `step_errors`，避免旧错误污染重跑后的状态。
+- 详情页失败步骤的「可视化展现」区域必须直接展示错误摘要和完整错误详情；「提示词」Modal 的结果页和「全部报文预览」也必须包含同一份 `error_detail`。
+- 历史任务如果失败时尚未保存 `step_errors`，前端只能展示既有 `step_messages[step]`；新失败必须完整可见。
+
 ## 后端设计
 
 - `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。

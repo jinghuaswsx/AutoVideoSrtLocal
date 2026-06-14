@@ -953,6 +953,38 @@ def test_generate_product_analysis_does_not_send_chat_response_format(tmp_path):
     assert captured["media"] == str(product_image)
 
 
+def test_generate_product_analysis_empty_response_attaches_llm_response_details(tmp_path):
+    from appcore.video_cover_generation import VideoCoverGenerationError, generate_product_analysis
+
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg")
+    llm_response = {
+        "text": "",
+        "json": None,
+        "raw": {
+            "candidates": [
+                {
+                    "finish_reason": "SAFETY",
+                    "safety_ratings": [{"category": "HARM_CATEGORY_UNSPECIFIED", "blocked": True}],
+                }
+            ],
+            "prompt_feedback": {"block_reason": "SAFETY"},
+        },
+        "usage": {"prompt_token_count": 42, "candidates_token_count": 0},
+    }
+
+    with pytest.raises(VideoCoverGenerationError, match="模型未返回内容") as excinfo:
+        generate_product_analysis(
+            product=_FakeProduct(),
+            product_title="Portable Blender Pro",
+            main_image_url="https://cdn.example/blender.png",
+            product_image_path=product_image,
+            invoke_generate_fn=lambda use_case_code, **kwargs: llm_response,
+        )
+
+    assert getattr(excinfo.value, "llm_response") == llm_response
+
+
 def test_build_platform_prompt_uses_creative_director_inputs():
     from appcore.video_cover_generation import SOCIAL_REELS_SPEC, build_platform_prompt
 
@@ -1594,6 +1626,69 @@ def test_video_cover_background_chain_uses_project_model_default_snapshot(monkey
     ]
 
 
+def test_video_cover_background_chain_persists_llm_error_detail(monkeypatch, tmp_path):
+    from appcore.video_cover_generation import VideoCoverGenerationError
+    from web.routes import video_cover
+
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "product_url": "https://shop.example/products/lamp",
+        "video_path": str(tmp_path / "lamp.mp4"),
+        "video_filename": "lamp.mp4",
+        "steps": {
+            "video_analysis": "done",
+            "product_analysis": "pending",
+            "ad_copy": "pending",
+            "cover_generation": "pending",
+        },
+        "step_messages": {"video_analysis": "已完成"},
+        "model_defaults": {
+            "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"},
+            "product_analysis": {"provider": "google_wj", "model_id": "gemini-3.5-flash"},
+            "ad_copy": {"provider": "openrouter", "model_id": "google/gemini-3-flash-preview"},
+            "cover_generation": {"provider": "local_image_2", "model_id": "gpt-image-2", "execution_mode": "serial"},
+        },
+    }
+    row = {"id": "task-1", "user_id": 8, "state_json": json.dumps(state, ensure_ascii=False)}
+    saved = []
+    llm_response = {
+        "text": "",
+        "raw": {
+            "candidates": [{"finish_reason": "MAX_TOKENS"}],
+            "prompt_feedback": {"block_reason": ""},
+        },
+        "usage": {"prompt_token_count": 128, "candidates_token_count": 0},
+    }
+
+    monkeypatch.setattr(video_cover, "_load_project_for_background", lambda task_id: (row, state))
+    monkeypatch.setattr(
+        video_cover,
+        "_save_state",
+        lambda task_id, next_state, *, status: saved.append(
+            {"task_id": task_id, "status": status, "state": json.loads(json.dumps(next_state, ensure_ascii=False))}
+        ),
+    )
+
+    def fail_run_step(next_state, step, *, provider, model, user_id, execution_mode=None):
+        exc = VideoCoverGenerationError("产品分析失败：模型未返回内容")
+        exc.llm_response = llm_response
+        raise exc
+
+    monkeypatch.setattr(video_cover, "_run_project_step", fail_run_step)
+
+    video_cover._run_video_cover_chain("task-1", start_step="product_analysis")
+
+    failed_state = saved[-1]["state"]
+    error_detail = failed_state["step_errors"]["product_analysis"]
+    assert saved[-1]["status"] == "error"
+    assert error_detail["message"] == "产品分析失败：模型未返回内容"
+    assert error_detail["provider"] == "google_wj"
+    assert error_detail["model_id"] == "gemini-3.5-flash"
+    assert error_detail["raw_response"]["candidates"][0]["finish_reason"] == "MAX_TOKENS"
+    assert error_detail["usage"]["prompt_token_count"] == 128
+
+
 def test_video_cover_restart_recovers_model_defaults_from_historical_models(
     authed_client_no_db,
     monkeypatch,
@@ -2123,6 +2218,8 @@ def test_video_cover_prompt_modal_has_request_result_tabs_and_debug_form(authed_
     assert "完整报文" in html
     assert "返回数据" in html
     assert "返回结果报文" in html
+    assert "错误详情" in html
+    assert "error_detail" in html
     assert 'id="vcdDebugRequestUrl"' in html
     assert 'id="vcdDebugApiKey"' in html
     assert 'id="vcdDebugReplayBtn"' in html
@@ -2463,6 +2560,12 @@ def test_video_cover_step_run_with_model_updates_step_snapshot_and_restarts_from
             "ad_copy": {"elapsed_seconds": 3},
             "cover_generation": {"elapsed_seconds": 4},
         },
+        "step_errors": {
+            "video_analysis": {"message": "historical upstream note"},
+            "product_analysis": {"message": "old product error"},
+            "ad_copy": {"message": "old copy error"},
+            "cover_generation": {"message": "old cover error"},
+        },
     }
     row = {
         "id": "task-1",
@@ -2519,6 +2622,9 @@ def test_video_cover_step_run_with_model_updates_step_snapshot_and_restarts_from
     assert "product_analysis" not in next_state["step_requests"]
     assert "ad_copy" not in next_state["step_results"]
     assert "cover_generation" not in next_state["step_timing"]
+    assert next_state["step_errors"] == {
+        "video_analysis": {"message": "historical upstream note"}
+    }
     assert next_state["models"] == {
         "video_analysis": {"provider": "openrouter", "model_id": "google/gemini-3.5-flash"}
     }
@@ -2909,6 +3015,47 @@ def test_video_cover_debug_payload_returns_text_step_without_replay(monkeypatch)
     assert data["response_data"] == {"structured_marker": True}
     assert data["raw_response"] == {"raw_marker": True}
     assert data["replay"]["supported"] is False
+
+
+def test_video_cover_debug_payload_includes_error_detail(monkeypatch):
+    from web.routes import video_cover
+
+    client = _make_superadmin_client_no_db(monkeypatch)
+    state = {
+        "id": "task-1",
+        "type": "video_cover",
+        "steps": {"product_analysis": "error"},
+        "step_messages": {"product_analysis": "产品分析失败：模型未返回内容"},
+        "step_requests": {
+            "product_analysis": {
+                "provider": "google_wj",
+                "model": "gemini-3.5-flash",
+                "prompt": "analyze product",
+                "request_data": {"product_title": "Screen"},
+            }
+        },
+        "step_errors": {
+            "product_analysis": {
+                "message": "产品分析失败：模型未返回内容",
+                "exception_type": "VideoCoverGenerationError",
+                "provider": "google_wj",
+                "model_id": "gemini-3.5-flash",
+                "raw_response": {"candidates": [{"finish_reason": "SAFETY"}]},
+                "usage": {"prompt_token_count": 88},
+                "response_text": "",
+            }
+        },
+    }
+    row = {"id": "task-1", "state_json": json.dumps(state, ensure_ascii=False), "display_name": "Screen"}
+    monkeypatch.setattr(video_cover.video_cover_project_store, "get_project", lambda task_id, *, user_id, is_admin: row)
+
+    resp = client.get("/video-cover/api/task-1/debug-payload/product_analysis")
+
+    assert resp.status_code == 200
+    data = resp.get_json()["data"]
+    assert data["error_detail"]["message"] == "产品分析失败：模型未返回内容"
+    assert data["error_detail"]["raw_response"]["candidates"][0]["finish_reason"] == "SAFETY"
+    assert data["raw_response"]["candidates"][0]["finish_reason"] == "SAFETY"
 
 
 def _debug_cover_state(provider="local", model="gpt-image-2"):

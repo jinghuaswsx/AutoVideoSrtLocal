@@ -10,6 +10,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -275,7 +276,7 @@ def _clear_step_outputs(state: dict, step: str) -> None:
             state.setdefault("step_messages", {})[affected] = ""
         for key in STEP_OUTPUT_KEYS.get(affected, ()):
             state.pop(key, None)
-        for container in ("step_requests", "step_results", "step_timing", "models"):
+        for container in ("step_requests", "step_results", "step_timing", "models", "step_errors"):
             if isinstance(state.get(container), dict):
                 state[container].pop(affected, None)
 
@@ -309,6 +310,8 @@ def _mark_step_running(state: dict, step: str) -> None:
     state.setdefault("steps", {})[step] = "running"
     state.setdefault("step_messages", {})[step] = "运行中..."
     state.setdefault("step_timing", {})[step] = {"started_at": now}
+    if isinstance(state.get("step_errors"), dict):
+        state["step_errors"].pop(step, None)
 
 
 def _mark_step_done(state: dict, step: str) -> None:
@@ -329,6 +332,7 @@ def _mark_step_error(state: dict, step: str, message: str) -> None:
     timing["elapsed_seconds"] = max(0, int(round(now - started)))
     state.setdefault("steps", {})[step] = "error"
     state.setdefault("step_messages", {})[step] = message
+    state.setdefault("step_errors", {}).setdefault(step, {"message": message})
     state["error"] = message
 
 
@@ -355,6 +359,87 @@ def _store_step_result(state: dict, step: str, raw_response, structured_result) 
         "raw_response": raw_response,
         "structured_result": structured_result,
     }
+
+
+def _extract_raw_llm_response(response) -> Any:
+    if isinstance(response, dict):
+        raw = response.get("raw")
+        if raw is not None:
+            return raw
+        raw = response.get("raw_response")
+        if raw is not None:
+            return raw
+        return response
+    return response
+
+
+def _step_error_model_values(state: dict, step: str, model_default: dict | None = None) -> tuple[str, str]:
+    request_payload = _step_debug_request(state, step)
+    model_default = model_default or {}
+    provider = (
+        model_default.get("provider")
+        or request_payload.get("provider")
+        or ((state.get("models") or {}).get(step) or {}).get("provider")
+        or ""
+    )
+    model_id = (
+        model_default.get("model_id")
+        or model_default.get("model")
+        or request_payload.get("model_id")
+        or request_payload.get("model")
+        or ((state.get("models") or {}).get(step) or {}).get("model_id")
+        or ((state.get("models") or {}).get(step) or {}).get("model")
+        or ""
+    )
+    return str(provider or ""), str(model_id or "")
+
+
+def _build_step_error_detail(
+    state: dict,
+    step: str,
+    message: str,
+    *,
+    exc: BaseException | None = None,
+    model_default: dict | None = None,
+) -> dict:
+    provider, model_id = _step_error_model_values(state, step, model_default)
+    detail = {
+        "message": message,
+        "exception_type": type(exc).__name__ if exc is not None else "",
+        "provider": provider,
+        "model_id": model_id,
+    }
+    if exc is not None:
+        cause = getattr(exc, "__cause__", None)
+        if cause is not None:
+            detail["cause_type"] = type(cause).__name__
+            detail["cause"] = str(cause)
+    response = getattr(exc, "llm_response", None) if exc is not None else None
+    if response is not None:
+        if isinstance(response, dict):
+            detail["response_text"] = response.get("text") or ""
+            detail["response_json"] = _json_safe(response.get("json"))
+            detail["usage"] = _json_safe(response.get("usage") or {})
+        detail["raw_response"] = _json_safe(_extract_raw_llm_response(response))
+        detail["llm_response"] = _json_safe(response)
+    else:
+        detail["response_text"] = ""
+        detail["usage"] = {}
+        detail["raw_response"] = {}
+    return _json_safe(detail)
+
+
+def _store_step_error_detail(
+    state: dict,
+    step: str,
+    message: str,
+    *,
+    exc: BaseException | None = None,
+    model_default: dict | None = None,
+) -> dict:
+    detail = _build_step_error_detail(state, step, message, exc=exc, model_default=model_default)
+    state.setdefault("step_errors", {})[step] = detail
+    return detail
 
 
 def _strip_wrapping_tags(text: str, outer_tag: str) -> str:
@@ -916,6 +1001,7 @@ def _run_video_cover_chain(task_id: str, *, start_step: str = "video_analysis", 
     user_id = int(row.get("user_id") or state.get("user_id") or 0)
 
     for step in STEP_ORDER[_step_index(start_step):]:
+        model_default = {}
         try:
             _ensure_previous_steps_done(state, step)
             _mark_step_running(state, step)
@@ -933,11 +1019,15 @@ def _run_video_cover_chain(task_id: str, *, start_step: str = "video_analysis", 
             next_status = "done" if step == STEP_ORDER[-1] else "running"
             _save_state(task_id, state, status=next_status)
         except VideoCoverGenerationError as exc:
-            _mark_step_error(state, step, str(exc))
+            message = str(exc)
+            _store_step_error_detail(state, step, message, exc=exc, model_default=model_default)
+            _mark_step_error(state, step, message)
             _save_state(task_id, state, status="error")
             return
         except Exception as exc:
-            _mark_step_error(state, step, f"{STEP_LABELS[step]}失败：{exc}")
+            message = f"{STEP_LABELS[step]}失败：{exc}"
+            _store_step_error_detail(state, step, message, exc=exc, model_default=model_default)
+            _mark_step_error(state, step, message)
             _save_state(task_id, state, status="error")
             return
 
@@ -1255,6 +1345,11 @@ def _step_debug_result(state: dict, step: str) -> dict:
     return result_payload if isinstance(result_payload, dict) else {}
 
 
+def _step_debug_error(state: dict, step: str) -> dict:
+    error_payload = ((state.get("step_errors") or {}).get(step)) or {}
+    return error_payload if isinstance(error_payload, dict) else {}
+
+
 def _prompt_index_from_request(default: int = 1) -> int:
     raw = request.args.get("prompt_index")
     if raw is None:
@@ -1508,6 +1603,7 @@ def _build_step_debug_payload(task_id: str, state: dict, step: str, prompt_index
     view_state = _state_with_urls(task_id, state)
     request_payload = _step_debug_request(view_state, step)
     result_payload = _step_debug_result(view_state, step)
+    error_detail = _step_debug_error(view_state, step)
 
     if step == "cover_generation":
         full_request, replay = _build_cover_full_request(view_state, request_payload, prompt_index)
@@ -1516,6 +1612,10 @@ def _build_step_debug_payload(task_id: str, state: dict, step: str, prompt_index
         full_request = _build_text_full_request(request_payload)
         replay = {"supported": False, "reason": "该步骤暂不支持调试生成"}
         response_data = result_payload.get("structured_result")
+    raw_response = result_payload.get("raw_response")
+    if error_detail:
+        response_data = response_data or {"error": error_detail.get("message") or ""}
+        raw_response = raw_response or error_detail.get("raw_response") or error_detail.get("llm_response")
 
     image_prompts = request_payload.get("image_prompts")
     if not isinstance(image_prompts, list):
@@ -1532,7 +1632,8 @@ def _build_step_debug_payload(task_id: str, state: dict, step: str, prompt_index
         },
         "full_request": full_request,
         "response_data": response_data,
-        "raw_response": result_payload.get("raw_response"),
+        "raw_response": raw_response,
+        "error_detail": error_detail,
         "replay": replay,
     }
 
