@@ -1282,33 +1282,48 @@ def meta_ad_account_manual_sync_status(job_id: str):
     return _json_response({"ok": True, "job": job})
 
 
+def _overview_cache_ttl(cache_params) -> int:
+    """按日期范围决定缓存 TTL：单日今天 60s / 多日含今天 ~10min / 历史 30min。"""
+    from appcore.order_analytics import realtime_cache
+    from appcore.order_analytics._helpers import current_meta_business_date
+
+    today = current_meta_business_date()
+    end_text = cache_params.get("end_date") or cache_params.get("date")
+    start_text = cache_params.get("start_date")
+    if not end_text:
+        return realtime_cache.TTL_SINGLE_DAY_OPEN
+    try:
+        end_d = date.fromisoformat(str(end_text))
+    except (ValueError, TypeError):
+        return realtime_cache.TTL_SINGLE_DAY_OPEN
+    if end_d < today:
+        return realtime_cache.TTL_CLOSED
+    try:
+        start_d = date.fromisoformat(str(start_text)) if start_text else end_d
+    except (ValueError, TypeError):
+        start_d = end_d
+    if start_d == end_d:
+        return realtime_cache.TTL_SINGLE_DAY_OPEN
+    return realtime_cache.TTL_MULTI_DAY_OPEN
+
+
 def _compute_realtime_overview_cached(date_text, kwargs, *, cache_params):
     """实时大盘 overview 的统一「缓存读→算→写」入口，route 与后台预热共用。
 
     返回 (payload_dict, cache_state)，cache_state in {"HIT","MISS"}。
     """
     from appcore.order_analytics import realtime_cache
-    from appcore.order_analytics._helpers import current_meta_business_date
 
-    end_text = cache_params.get("end_date") or cache_params.get("date")
-    is_open_day = True
-    if end_text:
-        try:
-            end_d = date.fromisoformat(str(end_text))
-            is_open_day = end_d >= current_meta_business_date()
-        except ValueError:
-            is_open_day = True
-
+    ttl = _overview_cache_ttl(cache_params)
     cache_key = realtime_cache.make_cache_key(cache_params)
-    freshness_marker = realtime_cache.get_freshness_marker()
-    cached = realtime_cache.get(cache_key, freshness_marker, is_open_day)
+    cached = realtime_cache.get(cache_key, ttl)
     if cached is not None:
         return cached, "HIT"
 
     result = oa.get_realtime_roas_overview(date_text, **kwargs)
     result = _attach_realtime_data_quality(result)
     safe_result = _json_safe(result)
-    realtime_cache.put(cache_key, safe_result, freshness_marker, is_open_day)
+    realtime_cache.put(cache_key, safe_result, ttl)
     return safe_result, "MISS"
 
 

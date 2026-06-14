@@ -379,12 +379,13 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "code": "realtime_overview_warmup",
         "name": "实时大盘 overview 预热",
         "description": (
-            "每 15s tick，按前端 Meta 日历口径预算 today/yesterday/thisWeek/lastWeek 的 "
-            "global/new/old/unmatched 四个 scope 并写入实时缓存，使用户首次打开命中缓存秒开。"
-            "open 区间 global 45s/其余 150s，closed 区间 1200s。"
+            "每 15s tick，按前端 Meta 日历口径预热实时大盘 + 新品投放分析两个模块的 overview，"
+            "使用户首次打开命中缓存秒开。范围 today/yesterday/本周/上周/本月/上月（不含年度）；"
+            "today/yesterday 15s、周/月 600s。实时大盘 4 scope（global/new/old/unmatched）、"
+            "新品投放分析 3 scope（new/old/unmatched，带 details+分页）。"
             "Spec: docs/superpowers/specs/2026-06-14-realtime-dashboard-load-optimization-design.md"
         ),
-        "schedule": "每 15s tick（分级：open-global 45s / open-其余 150s / closed 1200s）",
+        "schedule": "每 15s tick（today/yesterday 15s；本周/上周/本月/上月 600s；不含年度）",
         "source_type": "apscheduler",
         "source_label": "Web 进程 APScheduler",
         "source_ref": "appcore/order_analytics/realtime_warmup_scheduler.py",
