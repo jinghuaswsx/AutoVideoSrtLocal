@@ -17,6 +17,7 @@ from appcore.llm_providers._helpers.gemini_calls import (
 )
 from appcore.llm_providers._helpers.vertex_json import (
     _extract_gemini_schema,
+    _response_format_requests_json,
     parse_json_content,
 )
 from appcore.llm_provider_configs import (
@@ -55,6 +56,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
                  max_output_tokens=None, thinking_budget=None,
+                 response_mime_type=None,
                  google_search=None, url_context=None, timeout_seconds=None):
         media_list = None
         if media:
@@ -69,6 +71,7 @@ class GeminiAIStudioAdapter(LLMAdapter):
             temperature=temperature,
             response_schema=response_schema,
             max_output_tokens=max_output_tokens,
+            response_mime_type=response_mime_type,
             thinking_budget=thinking_budget,
             google_search=bool(google_search),
             url_context=bool(url_context),
@@ -120,10 +123,14 @@ class GeminiAIStudioAdapter(LLMAdapter):
             else:
                 user_parts.append(str(content))
         schema = _extract_gemini_schema(response_format)
+        response_mime_type = (
+            "application/json" if _response_format_requests_json(response_format) else None
+        )
         return self.generate(
             model=model, prompt="\n\n".join(user_parts), user_id=user_id,
             system=system, response_schema=schema,
             temperature=temperature, max_output_tokens=max_tokens,
             thinking_budget=thinking_budget,
+            response_mime_type=response_mime_type,
             timeout_seconds=timeout_seconds,
         )

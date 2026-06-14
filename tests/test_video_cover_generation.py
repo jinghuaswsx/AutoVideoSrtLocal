@@ -211,7 +211,11 @@ def test_generate_video_covers_uses_product_and_video_references(tmp_path, monke
     assert analysis_calls[1]["kwargs"]["provider_override"] == "gemini_aistudio"
     assert analysis_calls[1]["kwargs"]["model_override"] == "gemini-3.5-flash"
     assert ad_copy_calls[0]["use_case_code"] == "video_cover.ad_copy"
-    assert ad_copy_calls[0]["kwargs"]["response_format"] == {"type": "json_object"}
+    assert ad_copy_calls[0]["kwargs"]["response_format"]["type"] == "json_schema"
+    assert (
+        ad_copy_calls[0]["kwargs"]["response_format"]["json_schema"]["name"]
+        == "video_cover_ad_copy"
+    )
     assert ad_copy_calls[0]["kwargs"]["provider_override"] == "openrouter"
     assert ad_copy_calls[0]["kwargs"]["model_override"] == "google/gemini-3-flash-preview"
     assert "当前日期：" in ad_copy_calls[0]["kwargs"]["messages"][1]["content"]
@@ -856,8 +860,23 @@ def test_generate_ad_copy_sets_uses_user_prompt_and_validates_json():
     assert captured["use_case_code"] == "video_cover.ad_copy"
     assert captured["provider_override"] == "gemini_aistudio"
     assert captured["model_override"] == "gemini-3-flash-preview"
-    assert captured["response_format"] == {"type": "json_object"}
-    assert captured["max_tokens"] == 8192
+    assert captured["response_format"]["type"] == "json_schema"
+    schema = captured["response_format"]["json_schema"]["schema"]
+    assert schema["required"] == ["ad_copy_sets"]
+    item_schema = schema["properties"]["ad_copy_sets"]["items"]
+    assert item_schema["required"] == [
+        "id",
+        "angle",
+        "english",
+        "chinese_translation",
+        "usage_note",
+    ]
+    assert item_schema["properties"]["english"]["required"] == [
+        "title",
+        "message",
+        "description",
+    ]
+    assert captured["max_tokens"] == 4096
     assert captured["thinking_budget"] == 0
     prompt = captured["messages"][1]["content"]
     assert "资深 Facebook / Instagram Reels 视频广告文案专家" in prompt
@@ -917,7 +936,9 @@ def test_generate_ad_copy_sets_disables_googlewj_thinking_for_gemini_35():
     assert result["ad_copy_sets"][0]["english"]["title"] == "Cooler Backseat"
     assert captured["provider_override"] == "google_wj"
     assert captured["model_override"] == "gemini-3.5-flash"
-    assert captured["max_tokens"] == 8192
+    assert captured["response_format"]["type"] == "json_schema"
+    assert captured["response_format"]["json_schema"]["name"] == "video_cover_ad_copy"
+    assert captured["max_tokens"] == 4096
     assert captured["thinking_budget"] == 0
 
 

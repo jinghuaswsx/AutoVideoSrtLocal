@@ -39,6 +39,7 @@ from appcore.llm_providers._helpers.vertex_json import (  # noqa: F401
     _GEMINI_VERTEX_UNSUPPORTED_SCHEMA_KEYS,
     _call_vertex_json,
     _extract_gemini_schema,
+    _response_format_requests_json,
     _split_oai_messages,
     _strip_unsupported_schema,
     parse_json_content,

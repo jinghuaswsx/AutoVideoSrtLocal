@@ -40,8 +40,57 @@ LOCAL_TIKTOK_COVER_2K_SIZE = "1152x2048"
 LOCAL_IMAGE_2_QUALITY = "low"
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mpeg", ".mpg", ".avi", ".webm", ".m4v"}
 PRODUCT_ANALYSIS_MAX_OUTPUT_TOKENS = 8192
-AD_COPY_MAX_TOKENS = 8192
+AD_COPY_MAX_TOKENS = 4096
 GEMINI_TEXT_PROVIDERS = {"gemini_aistudio", "gemini_vertex", "google_wj"}
+AD_COPY_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "ad_copy_sets": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "angle": {"type": "string"},
+                    "english": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "message": {"type": "string"},
+                            "description": {"type": "string"},
+                        },
+                        "required": ["title", "message", "description"],
+                    },
+                    "chinese_translation": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "message": {"type": "string"},
+                            "description": {"type": "string"},
+                        },
+                        "required": ["title", "message", "description"],
+                    },
+                    "usage_note": {"type": "string"},
+                },
+                "required": [
+                    "id",
+                    "angle",
+                    "english",
+                    "chinese_translation",
+                    "usage_note",
+                ],
+            },
+        },
+    },
+    "required": ["ad_copy_sets"],
+}
+AD_COPY_RESPONSE_FORMAT: dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "video_cover_ad_copy",
+        "schema": AD_COPY_RESPONSE_SCHEMA,
+    },
+}
 
 
 class VideoCoverGenerationError(RuntimeError):
@@ -1186,9 +1235,9 @@ def generate_ad_copy_sets(
             project_id=task_id,
             provider_override=selection.provider,
             model_override=selection.model,
-            temperature=0.4,
+            temperature=0.2,
             max_tokens=AD_COPY_MAX_TOKENS,
-            response_format={"type": "json_object"},
+            response_format=AD_COPY_RESPONSE_FORMAT,
             thinking_budget=0 if selection.provider in GEMINI_TEXT_PROVIDERS else None,
             billing_extra={"source": "video_cover"},
         )

@@ -61,9 +61,62 @@ def _extract_gemini_schema(response_format: dict | None) -> dict | None:
     if not response_format:
         return None
     if response_format.get("type") == "json_object":
-        return {"type": "object"}
+        return None
     schema = response_format.get("json_schema", {}).get("schema", response_format)
     return _strip_unsupported_schema(schema)
+
+
+def _response_format_requests_json(response_format: dict | None) -> bool:
+    if not response_format:
+        return False
+    if response_format.get("type") in {"json_object", "json_schema"}:
+        return True
+    text_format = response_format.get("text")
+    if isinstance(text_format, dict):
+        return text_format.get("mime_type") == "application/json"
+    return False
+
+
+def _enum_name(value: Any) -> str | None:
+    if value is None:
+        return None
+    return getattr(value, "name", None) or str(value)
+
+
+def _empty_response_debug(resp: Any) -> dict[str, Any]:
+    meta = getattr(resp, "usage_metadata", None)
+    usage = None
+    if meta is not None:
+        usage = {
+            "prompt_token_count": getattr(meta, "prompt_token_count", None),
+            "candidates_token_count": getattr(meta, "candidates_token_count", None),
+            "thoughts_token_count": getattr(meta, "thoughts_token_count", None),
+            "total_token_count": getattr(meta, "total_token_count", None),
+        }
+    candidates = []
+    for candidate in getattr(resp, "candidates", None) or []:
+        content = getattr(candidate, "content", None)
+        parts = getattr(content, "parts", None) if content is not None else None
+        candidates.append({
+            "finish_reason": _enum_name(getattr(candidate, "finish_reason", None)),
+            "finish_message": getattr(candidate, "finish_message", None),
+            "parts_count": len(parts or []),
+        })
+    return {"usage": usage, "candidates": candidates}
+
+
+def _raise_empty_vertex_response(resp: Any, *, model_id: str) -> None:
+    debug = _empty_response_debug(resp)
+    candidate = (debug.get("candidates") or [{}])[0]
+    usage = debug.get("usage") or {}
+    raise RuntimeError(
+        "Gemini 返回空内容"
+        f"：model={model_id}"
+        f"，finish_reason={candidate.get('finish_reason') or 'unknown'}"
+        f"，output_tokens={usage.get('candidates_token_count')}"
+        f"，prompt_tokens={usage.get('prompt_token_count')}"
+        f"，total_tokens={usage.get('total_token_count')}"
+    )
 
 
 def _split_oai_messages(messages: list[dict]) -> tuple[str, str]:
@@ -114,6 +167,7 @@ def _call_vertex_json(
 
     system_prompt, user_content = _split_oai_messages(messages)
     schema = _extract_gemini_schema(response_format)
+    wants_json = _response_format_requests_json(response_format)
 
     cfg_kwargs: dict[str, Any] = {"temperature": temperature, "max_output_tokens": max_output_tokens}
     if system_prompt:
@@ -122,8 +176,9 @@ def _call_vertex_json(
         cfg_kwargs["thinking_config"] = genai_types.ThinkingConfig(
             thinking_budget=thinking_budget,
         )
-    if schema:
+    if wants_json:
         cfg_kwargs["response_mime_type"] = "application/json"
+    if schema:
         cfg_kwargs["response_schema"] = schema
     cfg = genai_types.GenerateContentConfig(**cfg_kwargs)
 
@@ -140,6 +195,8 @@ def _call_vertex_json(
     log.info("vertex raw response (model=%s): %s", model_id, raw[:2000])
 
     parsed = getattr(resp, "parsed", None)
+    if not raw.strip() and parsed is None:
+        _raise_empty_vertex_response(resp, model_id=model_id)
     payload = parsed if isinstance(parsed, (dict, list)) else parse_json_content(raw)
 
     usage = None
@@ -160,6 +217,7 @@ __all__ = [
     "parse_json_content",
     "_strip_unsupported_schema",
     "_extract_gemini_schema",
+    "_response_format_requests_json",
     "_split_oai_messages",
     "_call_vertex_json",
 ]

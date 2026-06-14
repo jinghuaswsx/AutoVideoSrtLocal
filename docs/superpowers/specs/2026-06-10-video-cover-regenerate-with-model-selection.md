@@ -99,6 +99,16 @@
 - `video_cover.ad_copy` 的输出预算必须从 4000 提高到 8192；OpenRouter 保持兼容该更高预算，Gemini 系模型必须能在该预算下输出完整 5 组 `ad_copy_sets` JSON。
 - 回归测试必须覆盖 `generate_ad_copy_sets()` 对 `google_wj / gemini-3.5-flash` 传入 `max_tokens=8192` 和 `thinking_budget=0`，以及 Vertex chat config 写入 `thinking_config.thinking_budget`。
 
+## 2026-06-14 Gemini 文案创作 JSON Schema 修订
+
+生产复测同一项目 `85f945e6b874417891b1e992d732b7aa` 后，`ad_copy` 仍在 `GOOGLEWJ / gemini-3.5-flash` 报空 JSON。线上真实请求已包含 `thinking_budget=0`、`max_tokens=8192`，因此根因不是 thinking 参数未生效。直接用生产 prompt 和相同 Vertex 配置诊断时，SDK 返回 `finish_reason=MAX_TOKENS`、`candidates_token_count=8176`、`prompt_token_count=9135`、`content.parts=None`、`resp.text=""`；也就是说 `response_format={"type":"json_object"}` 被适配成泛型 `response_schema={"type":"object"}` 后，Gemini 在结构化输出模式中打满 token 但没有产出可用 JSON。
+
+- OpenAI 风格 `json_object` 对 Gemini 只能表示“JSON mode”，不得被适配成泛型 `response_schema={"type":"object"}`；如果没有业务显式 schema，只设置 `response_mime_type="application/json"`。
+- 固定结构业务必须提供显式 JSON schema；`video_cover.ad_copy` 必须传入包含 `ad_copy_sets`、英文三字段、中文翻译三字段和 `usage_note` 的 schema，避免 Gemini 在泛型 object 中自由扩展。
+- 显式 schema 线上诊断必须能让同一 prompt 在 `gemini-3.5-flash` 下快速返回 5 组文案，`finish_reason=STOP`，且 JSON 可被 `normalize_ad_copy_payload()` 校验。
+- `video_cover.ad_copy` 输出预算回收为 4096；该步骤的正常输出应在显式 schema 下远低于该预算，避免再次长时间打满输出 token。
+- 回归测试必须覆盖：`_extract_gemini_schema({"type":"json_object"})` 不再返回泛型 object；Gemini JSON mode 仍设置 `application/json`；`generate_ad_copy_sets()` 对 Gemini 系供应商传入显式 ad copy schema。
+
 ## 后端设计
 
 - `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。

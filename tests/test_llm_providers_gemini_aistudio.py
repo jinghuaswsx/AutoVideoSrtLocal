@@ -62,3 +62,27 @@ def test_aistudio_generate_media_schema_returns_parse_error_for_invalid_json(tmp
     assert result["json"] is None
     assert result["text"] == '{"has_text": "unterminated}'
     assert "Unterminated string" in result["json_parse_error"]
+
+
+def test_aistudio_chat_json_object_sets_json_mime_without_generic_schema():
+    resp = Mock()
+    resp.text = '{"ok": true}'
+    resp.usage_metadata.prompt_token_count = 7
+    resp.usage_metadata.candidates_token_count = 2
+    client = Mock()
+    client.models.generate_content.return_value = resp
+    adapter = GeminiAIStudioAdapter()
+
+    with patch.object(adapter, "resolve_credentials", return_value={"api_key": "key"}), \
+         patch("appcore.llm_providers.gemini_aistudio_adapter._get_client",
+               return_value=client):
+        result = adapter.chat(
+            model="gemini-3.5-flash",
+            messages=[{"role": "user", "content": "return json"}],
+            response_format={"type": "json_object"},
+        )
+
+    cfg = client.models.generate_content.call_args.kwargs["config"]
+    assert result["text"] == '{"ok": true}'
+    assert cfg.response_mime_type == "application/json"
+    assert cfg.response_schema is None

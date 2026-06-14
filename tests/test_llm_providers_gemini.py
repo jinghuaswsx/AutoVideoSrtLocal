@@ -125,7 +125,8 @@ def test_aistudio_chat_converts_json_object_response_format():
             response_format={"type": "json_object"},
         )
 
-    assert captured["response_schema"] == {"type": "object"}
+    assert captured["response_schema"] is None
+    assert captured["response_mime_type"] == "application/json"
 
 
 def test_aistudio_generate_forwards_google_search_flag():

@@ -1,4 +1,4 @@
-from pipeline.translate import _extract_gemini_schema
+from pipeline.translate import _extract_gemini_schema, _response_format_requests_json
 
 
 def test_extract_gemini_schema_strips_snake_case_additional_properties():
@@ -26,7 +26,8 @@ def test_extract_gemini_schema_strips_snake_case_additional_properties():
     assert "additional_properties" not in schema["properties"]["language"]
 
 
-def test_extract_gemini_schema_converts_openai_json_object_for_googlewj_rerun():
+def test_extract_gemini_schema_does_not_convert_json_object_to_generic_object():
     schema = _extract_gemini_schema({"type": "json_object"})
 
-    assert schema == {"type": "object"}
+    assert schema is None
+    assert _response_format_requests_json({"type": "json_object"}) is True
