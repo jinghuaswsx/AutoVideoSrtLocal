@@ -2079,16 +2079,16 @@ def manual_ad_spend_delete():
 @login_required
 @permission_required("data_analytics")
 def refund_verify_import():
-    from appcore.order_analytics.shopify_payments_import import parse_payments_csv
+    from appcore.order_analytics.shopify_payments_import import import_payments_csv
     from appcore.order_analytics import refund_verification as rv
     pay_file = request.files.get("payments_csv")
     order_file = request.files.get("orders_csv")
     if not pay_file:
         return _json_response(error="invalid_param", detail="payments_csv is required"), 400
-    refunds = rv.aggregate_payment_refunds(
-        parse_payments_csv(io.StringIO(pay_file.read().decode("utf-8-sig")),
-                           source_csv=pay_file.filename or "")
-    )
+    site_code = (request.form.get("site_code") or "").strip().lower() or None
+    import_payments_csv(io.StringIO(pay_file.read().decode("utf-8-sig")),
+                        source_csv=pay_file.filename or "")
+    refunds = rv.aggregate_refunds_from_db(site_code=site_code)
     statuses = {}
     if order_file:
         reader = csv.DictReader(io.StringIO(order_file.read().decode("utf-8-sig")))
@@ -2100,7 +2100,7 @@ def refund_verify_import():
         source_files={"payments_csv": pay_file.filename,
                       "orders_csv": getattr(order_file, "filename", None)},
         created_by=getattr(current_user, "username", None),
-        site_code=(request.form.get("site_code") or "").strip().lower() or None,
+        site_code=site_code,
     )
     return _json_response(_json_safe(summary))
 
