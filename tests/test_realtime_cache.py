@@ -1,49 +1,47 @@
-import time
-import pytest
+import json
 from appcore.order_analytics import realtime_cache
 
 
-@pytest.fixture(autouse=True)
-def _clean():
-    realtime_cache.invalidate_all()
-    yield
-    realtime_cache.invalidate_all()
+def test_put_writes_replace_with_ttl(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(realtime_cache, "execute", lambda sql, args=(): calls.update(sql=sql, args=args) or 1)
+    realtime_cache.put("k", {"v": 1}, 660)
+    assert "REPLACE INTO" in calls["sql"]
+    assert "NOW(3) + INTERVAL" in calls["sql"]
+    assert calls["args"][0] == "k"
+    assert json.loads(calls["args"][1]) == {"v": 1}
+    assert calls["args"][2] == 660
 
 
-def test_put_get_within_ttl(monkeypatch):
-    base = time.time()
-    monkeypatch.setattr(time, "time", lambda: base)
-    realtime_cache.put("k", {"v": 1}, ttl_seconds=60)
-    monkeypatch.setattr(time, "time", lambda: base + 30)
+def test_get_hit_decodes_payload(monkeypatch):
+    monkeypatch.setattr(realtime_cache, "query", lambda sql, args=(): [{"payload": '{"v": 1}'}])
     assert realtime_cache.get("k") == {"v": 1}
 
 
-def test_expires_after_ttl(monkeypatch):
-    base = time.time()
-    monkeypatch.setattr(time, "time", lambda: base)
-    realtime_cache.put("k", {"v": 1}, ttl_seconds=60)
-    monkeypatch.setattr(time, "time", lambda: base + 61)
+def test_get_miss_returns_none(monkeypatch):
+    monkeypatch.setattr(realtime_cache, "query", lambda sql, args=(): [])
     assert realtime_cache.get("k") is None
 
 
-def test_per_entry_ttl_independent(monkeypatch):
-    """每个条目带自己的 TTL，互不影响。"""
-    base = time.time()
-    monkeypatch.setattr(time, "time", lambda: base)
-    realtime_cache.put("short", {"v": 1}, ttl_seconds=60)
-    realtime_cache.put("long", {"v": 2}, ttl_seconds=660)
-    monkeypatch.setattr(time, "time", lambda: base + 120)
-    assert realtime_cache.get("short") is None
-    assert realtime_cache.get("long") == {"v": 2}
+def test_get_filters_by_expiry(monkeypatch):
+    cap = {}
+    monkeypatch.setattr(realtime_cache, "query", lambda sql, args=(): cap.update(sql=sql) or [])
+    realtime_cache.get("k")
+    assert "expires_at > NOW(3)" in cap["sql"]
 
 
-def test_closed_long_ttl_not_affected_by_global_data(monkeypatch):
-    """纯 TTL 模型：历史区间长 TTL 内稳定命中，不被任何全局数据变化误伤。"""
-    base = time.time()
-    monkeypatch.setattr(time, "time", lambda: base)
-    realtime_cache.put("hist", {"v": 1}, ttl_seconds=realtime_cache.TTL_CLOSED)
-    monkeypatch.setattr(time, "time", lambda: base + 1700)
-    assert realtime_cache.get("hist") == {"v": 1}
+def test_get_swallows_db_error(monkeypatch):
+    def boom(sql, args=()):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(realtime_cache, "query", boom)
+    assert realtime_cache.get("k") is None  # 容错：DB 故障不崩，按 MISS 处理
+
+
+def test_put_swallows_db_error(monkeypatch):
+    def boom(sql, args=()):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(realtime_cache, "execute", boom)
+    realtime_cache.put("k", {"v": 1}, 60)  # 不抛异常
 
 
 def test_ttl_constants():
@@ -52,5 +50,5 @@ def test_ttl_constants():
     assert realtime_cache.TTL_CLOSED == 1800
 
 
-def test_miss_returns_none():
-    assert realtime_cache.get("nonexistent") is None
+def test_make_cache_key_ignores_empty():
+    assert realtime_cache.make_cache_key({"a": 1, "b": None, "c": ""}) == realtime_cache.make_cache_key({"a": 1})
