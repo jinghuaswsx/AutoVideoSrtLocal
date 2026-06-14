@@ -471,3 +471,38 @@ def test_warnings_and_errors_are_separated():
     assert "b" in codes and "c" in codes
     error_codes = {item["code"] for item in payload["errors"]}
     assert "d" in error_codes
+
+
+def test_check_payments_freshness_stale_when_import_lag_exceeds_threshold(monkeypatch):
+    from datetime import date, datetime
+    from appcore.order_analytics import data_quality as dq
+
+    monkeypatch.setattr(dq, "query_one", lambda sql, args=(): {
+        "latest_import": datetime(2026, 6, 1, 10, 0, 0)
+    })
+    check = dq.check_payments_freshness(today=date(2026, 6, 14), stale_days=9)
+    assert check["code"] == "payments_freshness"
+    assert check["status"] == dq.STATUS_STALE
+    assert check["lag_days"] == 13
+
+
+def test_check_payments_freshness_ok_within_threshold(monkeypatch):
+    from datetime import date, datetime
+    from appcore.order_analytics import data_quality as dq
+
+    monkeypatch.setattr(dq, "query_one", lambda sql, args=(): {
+        "latest_import": datetime(2026, 6, 10, 10, 0, 0)
+    })
+    check = dq.check_payments_freshness(today=date(2026, 6, 14), stale_days=9)
+    assert check["status"] == dq.STATUS_OK
+
+
+def test_check_exchange_rate_freshness_stale(monkeypatch):
+    from datetime import date
+    from appcore.order_analytics import data_quality as dq
+
+    monkeypatch.setattr(dq, "query_one", lambda sql, args=(): {"latest": date(2026, 6, 9)})
+    check = dq.check_exchange_rate_freshness(today=date(2026, 6, 14), stale_days=2)
+    assert check["code"] == "exchange_rate_freshness"
+    assert check["status"] == dq.STATUS_STALE
+    assert check["lag_days"] == 5
