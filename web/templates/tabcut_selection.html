@@ -100,6 +100,7 @@ body.tabcut-video-overlay-open { overflow:hidden; }
 .tabcut-video-overlay-info.is-expanded .tabcut-video-overlay-summary { white-space:normal; overflow:visible; text-overflow:clip; }
 .tabcut-video-overlay-info.is-expanded .tabcut-video-overlay-product-image { display:block; }
 .tabcut-video-overlay-info.is-expanded .tabcut-video-overlay-details { display:grid; }
+.tabcut-video-overlay-info.is-expanded .tabcut-video-overlay-detail span { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; word-break:break-word; }
 .tabcut-video-overlay-actions { flex:0 0 auto; display:flex; align-items:center; gap:8px; pointer-events:auto; }
 .tabcut-video-overlay-download,
 .tabcut-video-overlay-close { display:inline-flex; align-items:center; justify-content:center; min-width:40px; height:40px; padding:0 12px; border:1px solid rgba(226,232,240,.45); border-radius:8px; background:rgba(15,23,42,.4); color:#fff; text-decoration:none; cursor:pointer; box-shadow:0 2px 12px rgba(15,23,42,.2); }
@@ -197,7 +198,9 @@ body.tabcut-video-overlay-open { overflow:hidden; }
     right:calc(env(safe-area-inset-right, 0px) + 10px);
   }
   .tabcut-video-overlay-info { flex-basis:auto; max-width:calc(100% - 104px); padding:8px; }
-  .tabcut-video-overlay-info.is-expanded { flex-basis:auto; max-height:min(48vh, 360px); }
+  .tabcut-video-overlay-info.is-expanded { flex-basis:auto; max-width:100%; max-height:min(62vh, 460px); padding-top:44px; }
+  /* 展开态：信息卡片占满屏幕宽度，下载/关闭按钮浮到右上角不再挤占横向空间 */
+  .tabcut-video-overlay-toolbar:has(.tabcut-video-overlay-info.is-expanded) .tabcut-video-overlay-actions { position:absolute; top:0; right:0; }
   .tabcut-video-overlay-title { font-size:12px; }
   .tabcut-video-overlay-summary,
   .tabcut-video-overlay-details { font-size:11px; }
