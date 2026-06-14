@@ -205,7 +205,7 @@ def test_tabcut_video_translation_use_case_uses_openrouter_gemini_15_flash():
 
     assert uc["module"] == "xuanpin"
     assert uc["default_provider"] == "openrouter"
-    assert uc["default_model"] == "google/gemini-flash-1.5"
+    assert uc["default_model"] == "google/gemini-2.5-flash"
     assert uc["usage_log_service"] == "openrouter"
     assert uc["units_type"] == "tokens"
 

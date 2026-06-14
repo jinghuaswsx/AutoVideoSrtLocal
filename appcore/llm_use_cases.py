@@ -851,7 +851,7 @@ USE_CASES: dict[str, UseCase] = {
         "Tabcut 视频中文信息",
         "把 Tabcut 视频文案和视频关联商品标题翻译为中文，供选品视频卡片直接展示",
         "openrouter",
-        "google/gemini-flash-1.5",
+        "google/gemini-2.5-flash",
         "openrouter",
         "tokens",
     ),

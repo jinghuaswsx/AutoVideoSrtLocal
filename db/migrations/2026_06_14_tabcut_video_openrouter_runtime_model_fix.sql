@@ -1,5 +1,5 @@
--- Fix OpenRouter Gemini Flash model slug after live smoke test.
--- OpenRouter currently has no endpoint for Gemini 1.5 Flash; use current stable Flash.
+-- Switch Tabcut video translation to a currently available OpenRouter Gemini Flash endpoint.
+-- Live smoke result: google/gemini-1.5-flash is invalid and google/gemini-flash-1.5 has no endpoints.
 -- Docs-anchor: docs/superpowers/specs/2026-06-14-tabcut-video-translation-task-design.md
 
 UPDATE llm_use_case_bindings

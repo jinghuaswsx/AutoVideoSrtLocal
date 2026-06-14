@@ -43,7 +43,7 @@ INSERT INTO llm_use_case_bindings (
 ) VALUES (
   'tabcut.translate_video_info',
   'openrouter',
-  'google/gemini-flash-1.5',
+  'google/gemini-2.5-flash',
   NULL,
   1,
   NULL
