@@ -151,3 +151,14 @@ pytest tests/test_order_analytics_realtime_site_filter.py \
 - 不做后端 4-scope 合并计算（方案 B）。
 - 不预热月度 / 年度区间，不预热带店铺/产品筛选的长尾视图。
 - 不改 30 秒前端超时值、不加自动整页重试。
+
+---
+
+## 后续调整（2026-06-14 v2，已实现并发布）
+
+按用户反馈在初版基础上调整：
+
+1. **缓存改 per-range 纯时间 TTL**（取代 is_open_day + 全局 marker）：单日今天 `TTL_SINGLE_DAY_OPEN`=60s、多日含今天（本周/本月）`TTL_MULTI_DAY_OPEN`=660s、历史 `TTL_CLOSED`=1800s。每条目带自己的 TTL，预热主动刷新，彻底消除全局 marker 误伤。
+2. **预热频率分档**：today/yesterday **15s**（配 60s TTL，保鲜 ≤1 分钟）；本周/上周/本月/上月 **600s**（配 660s TTL，数据旧 ≤10 分钟）。**年度（今年/去年）不预热**，点击时现算。
+3. **预热覆盖新品投放分析**：npl 复用 `/realtime-overview`（带 `include_details` + 分页 + scope=new/old/unmatched），cache_key 与实时大盘不同，单独预热（6 范围 × 3 scope）。总预热目标 42 个（实时大盘 24 + npl 18）。
+4. **前端加载进度指示**：加粗「加载中……」+ 实时已用秒数（每 100ms 更新），文字非浮窗、明显；实时大盘 + 新品投放分析各一个（`#realtimeLoadingIndicator` / `#nplLoadingIndicator` + `startOaLoadingTimer/stopOaLoadingTimer`）。
