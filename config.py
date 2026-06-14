@@ -77,7 +77,13 @@ SCHEDULED_TASKS_ENABLED = _env_bool("SCHEDULED_TASKS_ENABLED", True)
 
 
 class Config:
-    SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT = os.getenv("SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "")
+    # 真实优先手续费总开关：order_time >= 此刻的订单走 resolver 真实优先链路
+    # （actual_payment → dynamic_region_rate → strategy_c_fallback），缺真实数据时估算兜底。
+    # 默认设到最早订单日（2026-02-24）之前 → 全量历史纳入真实优先；线上可用同名
+    # 环境变量覆盖。spec: docs/superpowers/specs/2026-06-14-cost-accounting-real-data-first-design.md §6.2
+    SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT = os.getenv(
+        "SHOPIFY_DYNAMIC_FEE_EFFECTIVE_AT", "2026-01-01T00:00:00+08:00"
+    )
 
 
 # ---------------------------------------------------------------------------
