@@ -21,14 +21,16 @@
 ### 脚本 `deploy/publish_ccx7.sh`
 
 ```
-bash deploy/publish_ccx7.sh test             # 默认：只发测试 :8080
-bash deploy/publish_ccx7.sh prod --confirm   # 发测试→验证→再发生产 :80
-bash deploy/publish_ccx7.sh <env> --dry-run  # 只打印将执行命令，不实际跑
+bash deploy/publish_ccx7.sh test                      # 只发测试 :8080
+bash deploy/publish_ccx7.sh prod --confirm            # 两段不停：test 验证→自动发 prod :80
+bash deploy/publish_ccx7.sh prod --confirm -m "msg"   # 脏树先自动 commit 再发
+bash deploy/publish_ccx7.sh <env> ... --dry-run       # 只打印命令不执行
 ```
+**触发口令**「提交代码，合并代码到master，发布线上生产环境」=> `prod --confirm -m "<msg>"`（用户选定「两段式 + 不停直达」：test 起不来就拦在 test、不挂生产）。
 
 流程：
-1. **预检**：在仓库根；`git status` 干净（脏树中止，提示先 commit）；提示当前 HEAD 将发为 `origin/master`（不在 master 给警告，避免误发 worktree 分支）。
-2. **推送**：`GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519_autovideosrtlocal -o IdentitiesOnly=yes' git push origin HEAD:master`（deploy key 内联，**不污染全局 ssh、不改 origin**）。
+1. **提交代码**：在仓库根；工作区脏时——给了 `-m "<msg>"` 则自动 `git add -A && git commit`，否则中止提示先 commit。
+2. **合并代码到 master**：deploy key 内联 `GIT_SSH_COMMAND` 下 `git fetch origin master` → 若本地落后/分叉则 `git rebase origin/master`（冲突中止让人解决，**防止直接 push 回退他人提交**）→ `git push origin HEAD:master`。不污染全局 ssh、不改 origin。
 3. **发测试**：`ssh avsl` → `sudo git -C /opt/autovideosrt-test pull origin master --ff-only` → `sudo systemctl restart autovideosrt-test` → `sleep 4` → `systemctl is-active` + `curl http://127.0.0.1:8080/`。判定 `active` 且 HTTP ∈ {200,302}。
 4. **生产闸门**：
    - 目标 `test`：到此结束。

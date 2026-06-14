@@ -4,9 +4,15 @@
 # 是 Windows 内网开发机用的；CC-X7 在公网、只能走反向隧道、登录 cjh，故另立此脚本。
 #
 # 用法:
-#   bash deploy/publish_ccx7.sh test             # 默认：只发测试 :8080
-#   bash deploy/publish_ccx7.sh prod --confirm   # 发测试→验证→再发生产 :80
-#   bash deploy/publish_ccx7.sh <env> --dry-run  # 只打印将执行命令，不实际跑
+#   bash deploy/publish_ccx7.sh test                      # 只发测试 :8080
+#   bash deploy/publish_ccx7.sh prod --confirm            # 两段不停：test 验证→自动发 prod :80
+#   bash deploy/publish_ccx7.sh prod --confirm -m "msg"   # 工作区脏则先自动 commit 再发
+#   bash deploy/publish_ccx7.sh <env> ... --dry-run       # 只打印将执行命令，不实际跑
+#
+# 触发口令（任意会话听到都执行这个）："提交代码，合并代码到master，发布线上生产环境"
+#   => bash deploy/publish_ccx7.sh prod --confirm -m "<语义化提交信息>"
+#   脚本会：① 脏树自动 commit ② fetch+rebase 安全合并 origin/master（防回退）+ push
+#           ③ 发 test 验证 200/302 ④ 通过则自动发 prod（不中途停；test 起不来就拦在 test）
 #
 # 依赖:
 #   - ssh 别名 avsl（~/.ssh/config）= 反向隧道登录线上机 cjh（cjh 免密 sudo）
@@ -14,18 +20,21 @@
 # 设计: docs/superpowers/specs/2026-06-14-ccx7-tunnel-deploy-design.md
 set -euo pipefail
 
-ENV="${1:-test}"
-CONFIRM=0
-DRYRUN=0
-for arg in "${@:2}"; do
-  case "$arg" in
+# ---- 参数 ----
+ENV="test"
+if [[ $# -gt 0 && "$1" != -* ]]; then ENV="$1"; shift; fi
+CONFIRM=0; DRYRUN=0; COMMIT_MSG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --confirm) CONFIRM=1 ;;
     --dry-run) DRYRUN=1 ;;
-    *) echo "未知参数: $arg" >&2; exit 2 ;;
+    -m|--message) shift; COMMIT_MSG="${1:-}" ;;
+    *) echo "未知参数: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 if [[ "$ENV" != "test" && "$ENV" != "prod" ]]; then
-  echo "用法: bash deploy/publish_ccx7.sh test|prod [--confirm] [--dry-run]" >&2
+  echo "用法: bash deploy/publish_ccx7.sh test|prod [--confirm] [-m msg] [--dry-run]" >&2
   exit 2
 fi
 
@@ -64,26 +73,35 @@ deploy_remote() {
   ssh "$SSH_ALIAS" "APP_DIR='$app_dir' SVC='$svc' URL='$url' UNIT_SRC='$unit_src' bash -s" <<< "$REMOTE_DEPLOY"
 }
 
-# ---- 1. 预检 ----
 cd "$REPO_ROOT"
-log "1/4 预检 (repo=$REPO_ROOT, env=$ENV, dry-run=$DRYRUN)"
-branch="$(git rev-parse --abbrev-ref HEAD)"
-if [[ -n "$(git status --porcelain)" ]]; then
-  if [[ "$DRYRUN" == "1" ]]; then
-    log "注意(dry-run): 工作区有未提交改动，真实发布前需先 commit"
-  else
-    echo "[ERROR] 工作区有未提交改动，请先 commit 再发布：" >&2
-    git status --short >&2
-    exit 1
-  fi
-fi
-[[ "$branch" != "master" ]] && log "注意: 当前分支=$branch，将把它的 HEAD 发为 origin/master"
 
-# ---- 2. 推送 HEAD -> origin/master ----
-log "2/4 推送 HEAD -> origin/master（deploy key 内联，不动全局 ssh）"
-if [[ "$DRYRUN" == "1" ]]; then
-  echo "[dry-run] GIT_SSH_COMMAND='$GIT_PUSH_SSH' git push origin HEAD:master"
+# ---- 1. 提交代码（脏树时按 -m 自动 commit）----
+log "1/4 提交代码 (env=$ENV, dry-run=$DRYRUN, branch=$(git rev-parse --abbrev-ref HEAD))"
+if [[ -n "$(git status --porcelain)" ]]; then
+  if [[ -n "$COMMIT_MSG" ]]; then
+    log "工作区有改动，自动提交: $COMMIT_MSG"
+    if [[ "$DRYRUN" == "1" ]]; then echo "[dry-run] git add -A && git commit -m \"$COMMIT_MSG\""
+    else git add -A && git commit -q -m "$COMMIT_MSG"; fi
+  elif [[ "$DRYRUN" == "1" ]]; then
+    log "注意(dry-run): 工作区脏，真实发布需 -m '<msg>' 自动提交或先手动 commit"
+  else
+    echo "[ERROR] 工作区有未提交改动：加 -m '<msg>' 自动提交，或先手动 commit" >&2
+    git status --short >&2; exit 1
+  fi
 else
+  log "工作区干净，无需提交"
+fi
+
+# ---- 2. 合并代码到 master：fetch + rebase 防回退 + 推送 ----
+log "2/4 安全合并 origin/master 并推送（fetch+rebase 防回退）"
+if [[ "$DRYRUN" == "1" ]]; then
+  echo "[dry-run] git fetch origin master; 若落后/分叉则 git rebase origin/master; git push origin HEAD:master"
+else
+  GIT_SSH_COMMAND="$GIT_PUSH_SSH" git fetch origin master
+  if ! git merge-base --is-ancestor origin/master HEAD; then
+    log "本地落后/分叉于 origin/master，rebase 中..."
+    git rebase origin/master || { echo "[ERROR] rebase 冲突，请手动解决后重发" >&2; exit 1; }
+  fi
   GIT_SSH_COMMAND="$GIT_PUSH_SSH" git push origin HEAD:master
 fi
 
