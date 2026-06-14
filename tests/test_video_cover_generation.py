@@ -953,6 +953,35 @@ def test_generate_product_analysis_does_not_send_chat_response_format(tmp_path):
     assert captured["media"] == str(product_image)
 
 
+def test_generate_product_analysis_disables_gemini_thinking_and_uses_larger_output_budget(tmp_path):
+    from appcore.video_cover_generation import generate_product_analysis
+
+    product_image = tmp_path / "product.jpg"
+    product_image.write_bytes(b"jpg")
+    captured = {}
+
+    def fake_invoke(use_case_code: str, **kwargs):
+        captured["use_case_code"] = use_case_code
+        captured.update(kwargs)
+        return {"text": '{"product_definition":"demo"}'}
+
+    generate_product_analysis(
+        product=_FakeProduct(),
+        product_title="Portable Blender Pro",
+        main_image_url="https://cdn.example/blender.png",
+        product_image_path=product_image,
+        provider="googlewj",
+        model="gemini-3.5-flash",
+        invoke_generate_fn=fake_invoke,
+    )
+
+    assert captured["use_case_code"] == "video_cover.product_analysis"
+    assert captured["provider_override"] == "google_wj"
+    assert captured["model_override"] == "gemini-3.5-flash"
+    assert captured["max_output_tokens"] == 8192
+    assert captured["thinking_budget"] == 0
+
+
 def test_generate_product_analysis_empty_response_attaches_llm_response_details(tmp_path):
     from appcore.video_cover_generation import VideoCoverGenerationError, generate_product_analysis
 

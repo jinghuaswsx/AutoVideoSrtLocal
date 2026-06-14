@@ -155,10 +155,10 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def generate(self, *, model, prompt, user_id=None, system=None,
                  media=None, response_schema=None, temperature=None,
-                 max_output_tokens=None, google_search=None, url_context=None,
-                 timeout_seconds=None):
+                 max_output_tokens=None, thinking_budget=None,
+                 google_search=None, url_context=None, timeout_seconds=None):
         media_list = _normalize_media(media)
-        if media_list or google_search or url_context:
+        if media_list or google_search or url_context or thinking_budget is not None:
             return self._generate_with_media(
                 model=model,
                 prompt=prompt,
@@ -168,6 +168,7 @@ class GeminiVertexAdapter(LLMAdapter):
                 response_schema=response_schema,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
+                thinking_budget=thinking_budget,
                 google_search=google_search,
                 url_context=url_context,
                 timeout_seconds=timeout_seconds,
@@ -191,8 +192,8 @@ class GeminiVertexAdapter(LLMAdapter):
 
     def _generate_with_media(self, *, model, prompt, user_id=None, system=None,
                              media=None, response_schema=None, temperature=None,
-                             max_output_tokens=None, google_search=None, url_context=None,
-                             timeout_seconds=None):
+                             max_output_tokens=None, thinking_budget=None,
+                             google_search=None, url_context=None, timeout_seconds=None):
         # 直接调 gemini_calls helper + SDK；不再 from appcore import gemini，
         # 避免业务模块对 adapter 形成反向依赖（B-1/B-2 收尾的关键约束）。
         creds = self.resolve_credentials(user_id, media_kind="image" if media else "text")
@@ -203,6 +204,7 @@ class GeminiVertexAdapter(LLMAdapter):
             temperature=temperature,
             response_schema=response_schema,
             max_output_tokens=max_output_tokens,
+            thinking_budget=thinking_budget,
             google_search=google_search,
             url_context=url_context,
             timeout_seconds=timeout_seconds,
@@ -258,5 +260,4 @@ class GeminiVertexAdapter(LLMAdapter):
 
 class GoogleWJVertexAdapter(GeminiVertexAdapter):
     provider_code = "google_wj"
-
 

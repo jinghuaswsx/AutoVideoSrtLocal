@@ -258,6 +258,7 @@ def invoke_generate(
     response_schema: dict | None = None,
     temperature: float | None = None,
     max_output_tokens: int | None = None,
+    thinking_budget: int | None = None,
     provider_override: str | None = None,
     model_override: str | None = None,
     google_search: bool | None = None,
@@ -293,6 +294,8 @@ def invoke_generate(
         req_payload["temperature"] = temperature
     if max_output_tokens is not None:
         req_payload["max_output_tokens"] = max_output_tokens
+    if thinking_budget is not None:
+        req_payload["thinking_budget"] = thinking_budget
     if response_schema:
         req_payload["response_schema"] = response_schema
     if google_search is not None:
@@ -314,6 +317,7 @@ def invoke_generate(
             response_schema=response_schema,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            thinking_budget=thinking_budget,
             google_search=google_search,
             url_context=url_context,
             timeout_seconds=timeout_seconds,

@@ -124,6 +124,7 @@ def _build_config(
     temperature: float | None,
     response_schema: dict | None,
     max_output_tokens: int | None,
+    thinking_budget: int | None = None,
     google_search: bool | None = None,
     url_context: bool | None = None,
     timeout_seconds: float | None = None,
@@ -135,6 +136,10 @@ def _build_config(
         kwargs["temperature"] = temperature
     if max_output_tokens is not None:
         kwargs["max_output_tokens"] = max_output_tokens
+    if thinking_budget is not None:
+        kwargs["thinking_config"] = genai_types.ThinkingConfig(
+            thinking_budget=thinking_budget,
+        )
     if response_schema is not None:
         kwargs["response_mime_type"] = "application/json"
         if google_search:

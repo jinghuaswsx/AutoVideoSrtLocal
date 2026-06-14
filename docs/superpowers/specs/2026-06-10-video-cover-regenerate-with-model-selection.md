@@ -70,6 +70,16 @@
 - 详情页失败步骤的「可视化展现」区域必须直接展示错误摘要和完整错误详情；「提示词」Modal 的结果页和「全部报文预览」也必须包含同一份 `error_detail`。
 - 历史任务如果失败时尚未保存 `step_errors`，前端只能展示既有 `step_messages[step]`；新失败必须完整可见。
 
+## 2026-06-14 Gemini thinking 预算修订
+
+同一生产项目在 `product_analysis` 使用 `GOOGLEWJ / gemini-3.5-flash` 继续重跑时，前端错误详情显示 Vertex Gemini 候选 `finish_reason=MAX_TOKENS`，`usage_metadata.thoughts_token_count` 接近业务层传入的 `max_output_tokens=3600`，正文候选 token 极少，导致 SDK `resp.text` 为空并触发「模型未返回内容」。
+
+- 文案封面产品分析是信息抽取和营销判断任务，不需要模型消耗大量 hidden thinking；Google AI Studio / Google Vertex / GOOGLEWJ 多模态生成请求必须支持按业务传入 `thinking_budget`，并映射为 Gemini SDK `GenerateContentConfig.thinking_config.thinking_budget`。
+- `video_cover.product_analysis` 使用 Gemini 系供应商（`gemini_aistudio`、`gemini_vertex`、`google_wj`）时，必须显式传入 `thinking_budget=0`，避免 hidden thinking 挤占正文输出预算。
+- `video_cover.product_analysis` 的正文输出预算必须从 3600 提高到 8192；其他 provider 可沿用该更高预算，避免产品分析报告被正常截断。
+- 统一 LLM 入口的请求日志必须记录 `thinking_budget`，方便后续在「全部报文预览」和用量日志中确认该次调用实际配置。
+- 回归测试必须覆盖产品分析调用会传入 `max_output_tokens=8192`，且 Gemini 系模型会传入 `thinking_budget=0`；Gemini adapter 测试必须覆盖 `thinking_budget` 被写入 SDK config。
+
 ## 后端设计
 
 - `appcore.video_cover_generation.COVER_MODEL_OPTIONS` 增加 `googlewj` 供应商，展示名为 `GOOGLEWJ`。

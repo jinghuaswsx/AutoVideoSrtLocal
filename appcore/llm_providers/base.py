@@ -45,6 +45,7 @@ class LLMAdapter(ABC):
         response_schema: dict | None = None,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        thinking_budget: int | None = None,
         google_search: bool | None = None,
         url_context: bool | None = None,
         timeout_seconds: float | None = None,

@@ -94,6 +94,39 @@ def test_vertex_generate_supports_media_with_schema(tmp_path):
     assert client.models.generate_content.call_args.kwargs["model"] == "gemini-3.1-flash-lite-preview"
 
 
+def test_vertex_generate_media_applies_thinking_budget(tmp_path):
+    image_path = tmp_path / "source.jpg"
+    image_path.write_bytes(b"fake-image")
+    resp = Mock()
+    resp.text = "product analysis"
+    resp.usage_metadata.prompt_token_count = 7
+    resp.usage_metadata.candidates_token_count = 3
+    client = Mock()
+    client.models.generate_content.return_value = resp
+    adapter = GeminiVertexAdapter()
+
+    with patch.object(adapter, "resolve_credentials",
+                      return_value={"api_key": "key", "project": "proj", "location": "us-central1"}), \
+         patch("appcore.llm_providers.gemini_vertex_adapter._get_client",
+               return_value=client), \
+         patch("appcore.llm_providers.gemini_vertex_adapter.genai_types.Part.from_bytes",
+               return_value="image-part"), \
+         patch("appcore.llm_providers.gemini_vertex_adapter.genai_types.Part.from_text",
+               return_value="text-part"):
+        result = adapter.generate(
+            model="gemini-3.5-flash",
+            prompt="analyze",
+            media=[image_path],
+            max_output_tokens=8192,
+            thinking_budget=0,
+        )
+
+    cfg = client.models.generate_content.call_args.kwargs["config"]
+    assert result["text"] == "product analysis"
+    assert cfg.max_output_tokens == 8192
+    assert cfg.thinking_config.thinking_budget == 0
+
+
 def test_vertex_generate_media_schema_parses_markdown_wrapped_json(tmp_path):
     image_path = tmp_path / "source.jpg"
     image_path.write_bytes(b"fake-image")
@@ -181,6 +214,5 @@ def test_vertex_generate_composes_messages_with_system():
     messages = m.call_args[0][0]
     assert messages[0] == {"role": "system", "content": "sys-turn"}
     assert messages[1] == {"role": "user", "content": "user-turn"}
-
 
 
