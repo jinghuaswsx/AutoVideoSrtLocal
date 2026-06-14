@@ -375,6 +375,23 @@ TASK_DEFINITIONS: dict[str, TaskDefinition] = {
         "deployment": "线上已启用",
         "log_table": "meta_ad_realtime_import_runs",
     },
+    "realtime_overview_warmup": {
+        "code": "realtime_overview_warmup",
+        "name": "实时大盘 overview 预热",
+        "description": (
+            "每 15s tick，按前端 Meta 日历口径预算 today/yesterday/thisWeek/lastWeek 的 "
+            "global/new/old/unmatched 四个 scope 并写入实时缓存，使用户首次打开命中缓存秒开。"
+            "open 区间 global 45s/其余 150s，closed 区间 1200s。"
+            "Spec: docs/superpowers/specs/2026-06-14-realtime-dashboard-load-optimization-design.md"
+        ),
+        "schedule": "每 15s tick（分级：open-global 45s / open-其余 150s / closed 1200s）",
+        "source_type": "apscheduler",
+        "source_label": "Web 进程 APScheduler",
+        "source_ref": "appcore/order_analytics/realtime_warmup_scheduler.py",
+        "runner": "appcore/order_analytics/realtime_warmup.py::run_warmup_tick",
+        "deployment": "随 Web 进程启动",
+        "log_table": "scheduled_task_runs",
+    },
     "meta_daily_final": {
         "code": "meta_daily_final",
         "name": "Meta 收盘日数据",
