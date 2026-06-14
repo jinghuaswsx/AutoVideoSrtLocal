@@ -14,6 +14,7 @@ _KNOWN_PROJECT_TYPES = {
     "multi_translate",
     "omni_translate",
     "omni_translate_v2",
+    "omni_translate_0615",
     "dialogue_translate",
 }
 
