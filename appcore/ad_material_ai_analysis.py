@@ -460,9 +460,13 @@ def _chunked(items: list[dict], size: int) -> Iterable[list[dict]]:
         yield items[index:index + size]
 
 
-def _invoke_via_throttle(throttle, *, stage: str, product_id=None, **invoke_kwargs):
-    """统一经 throttle 调用 llm_client.invoke_generate；throttle 缺省时退化为直连。"""
-    call = lambda: llm_client.invoke_generate(**invoke_kwargs)
+def _invoke_via_throttle(throttle, *, stage: str, use_case_code: str, product_id=None, **invoke_kwargs):
+    """统一经 throttle 调用 llm_client.invoke_generate；throttle 缺省时退化为直连。
+
+    use_case_code 按位置传给 invoke_generate，与历史直连调用签名保持一致，
+    避免破坏按位置 mock invoke_generate 的既有测试。
+    """
+    call = lambda: llm_client.invoke_generate(use_case_code, **invoke_kwargs)
     if throttle is None:
         return call()
     return throttle.guarded_invoke(call, stage=stage, product_id=product_id)
