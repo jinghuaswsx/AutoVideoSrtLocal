@@ -3024,7 +3024,7 @@ def test_realtime_range_loading_uses_abortable_request_sequence(authed_client_no
     subtab_end = body.index("function renderRealtimeOrders(rows)", subtab_start)
     subtab_js = body[subtab_start:subtab_end]
     assert "requestSeq = assignRealtimeRequestSeq('sub', requestSeq);" in subtab_js
-    assert "var controller = createRealtimeController('sub');" in subtab_js
+    assert "var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;" in subtab_js
     assert "fetchRealtimeJson(url, controller)" in subtab_js
     assert "if (!isRealtimeRequestCurrent('sub', requestSeq)) return;" in subtab_js
     assert "if (isRealtimeAbortError(err) || !isRealtimeRequestCurrent('sub', requestSeq)) return;" in subtab_js
