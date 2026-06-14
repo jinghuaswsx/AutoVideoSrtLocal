@@ -82,17 +82,45 @@ def test_run_slow_covers_rest(monkeypatch):
     assert len(calls) == len(m.SLOW_TARGETS)
 
 
-def test_warm_one_forces_refresh(monkeypatch):
+def test_warm_one_recomputes_when_stale(monkeypatch):
     import appcore.order_analytics.realtime_warmup as m
-    captured = {}
+    from appcore.order_analytics import realtime_cache
+    compute_calls = []
 
     def fake_compute(date_text, kwargs, *, cache_params, force_refresh=False):
-        captured["force_refresh"] = force_refresh
+        compute_calls.append(force_refresh)
 
     monkeypatch.setattr(m, "current_meta_business_date", lambda: date(2026, 6, 13))
     monkeypatch.setattr("web.routes.order_analytics._compute_realtime_overview_cached", fake_compute)
-    m._warm_one(m.WARMUP_TARGETS[0])
-    assert captured["force_refresh"] is True
+    monkeypatch.setattr(realtime_cache, "touch", lambda key, ttl: True)
+    monkeypatch.setattr(m, "_now", lambda: 10000.0)
+    m._last_refresh.clear()
+    target = next(t for t in m.WARMUP_TARGETS
+                  if t.module == "realtime" and t.scope == "global" and t.range_name == "today")
+    m._last_refresh[(target.range_name, target.module, target.scope)] = 0.0  # 很久没重算 → 陈旧
+    m._warm_one(target)
+    assert compute_calls == [True]  # 陈旧 → 强制重算更新数据
+
+
+def test_warm_one_touches_when_fresh(monkeypatch):
+    import appcore.order_analytics.realtime_warmup as m
+    from appcore.order_analytics import realtime_cache
+    compute_calls = []
+    touch_calls = []
+
+    def fake_compute(date_text, kwargs, *, cache_params, force_refresh=False):
+        compute_calls.append(force_refresh)
+
+    monkeypatch.setattr(m, "current_meta_business_date", lambda: date(2026, 6, 13))
+    monkeypatch.setattr("web.routes.order_analytics._compute_realtime_overview_cached", fake_compute)
+    monkeypatch.setattr(realtime_cache, "touch", lambda key, ttl: touch_calls.append(key) or True)
+    monkeypatch.setattr(m, "_now", lambda: 10000.0)
+    m._last_refresh.clear()
+    target = next(t for t in m.WARMUP_TARGETS
+                  if t.module == "realtime" and t.scope == "global" and t.range_name == "today")
+    m._last_refresh[(target.range_name, target.module, target.scope)] = 9990.0  # 10s 前刚重算，TTL 60s → 未陈旧
+    m._warm_one(target)
+    assert touch_calls and not compute_calls  # 只 touch 续期，不重算、不占资源
 
 
 def test_npl_warm_params_have_details_and_paging(monkeypatch):

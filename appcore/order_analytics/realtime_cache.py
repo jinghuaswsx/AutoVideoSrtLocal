@@ -77,6 +77,25 @@ def put(key: str, result: Any, ttl_seconds: float = _DEFAULT_TTL) -> None:
         log.warning("realtime cache put failed key=%s", key, exc_info=True)
 
 
+def touch(key: str, ttl_seconds: float = _DEFAULT_TTL) -> bool:
+    """仅续期（延长 expires_at），不重算 payload；命中续期返回 True，缓存不存在返回 False。
+
+    预热专用，把"防过期"与"重算更新数据"彻底分开：数据还新时只 touch 续期（一次轻量
+    UPDATE）。否则每轮预热都强制重算（force_refresh），在 workers=1 单进程里持续霸占
+    GIL + DB 连接，把用户请求饿死到 30s 超时——2026-06-14 实测坐实的事故根因
+    （APScheduler 日志 run_warmup_fast "maximum number of running instances reached"）。
+    """
+    try:
+        affected = execute(
+            f"UPDATE {_TABLE} SET expires_at = NOW(3) + INTERVAL %s SECOND WHERE cache_key=%s",
+            (int(ttl_seconds), key),
+        )
+        return bool(affected)
+    except Exception:
+        log.debug("realtime cache touch failed key=%s", key, exc_info=True)
+        return False
+
+
 def prune_expired() -> int:
     """删除已过期行，防止表膨胀。返回删除行数。"""
     try:

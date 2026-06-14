@@ -44,6 +44,28 @@ def test_put_swallows_db_error(monkeypatch):
     realtime_cache.put("k", {"v": 1}, 60)  # 不抛异常
 
 
+def test_touch_extends_expiry(monkeypatch):
+    cap = {}
+    monkeypatch.setattr(realtime_cache, "execute",
+                        lambda sql, args=(): cap.update(sql=sql, args=args) or 1)
+    assert realtime_cache.touch("k", 660) is True  # 命中续期
+    assert "UPDATE" in cap["sql"] and "expires_at = NOW(3) + INTERVAL" in cap["sql"]
+    assert "payload" not in cap["sql"]  # 只续期 expires_at，不重写数据（轻量）
+    assert cap["args"] == (660, "k")
+
+
+def test_touch_missing_returns_false(monkeypatch):
+    monkeypatch.setattr(realtime_cache, "execute", lambda sql, args=(): 0)  # 无此行
+    assert realtime_cache.touch("k", 60) is False  # 缓存不存在 → 调用方回落到重算
+
+
+def test_touch_swallows_db_error(monkeypatch):
+    def boom(sql, args=()):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(realtime_cache, "execute", boom)
+    assert realtime_cache.touch("k", 60) is False  # 容错：DB 故障返回 False，不崩
+
+
 def test_ttl_constants():
     assert realtime_cache.TTL_SINGLE_DAY_OPEN == 60
     assert realtime_cache.TTL_MULTI_DAY_OPEN == 660

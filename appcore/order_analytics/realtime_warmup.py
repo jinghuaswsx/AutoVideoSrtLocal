@@ -1,11 +1,18 @@
-"""实时大盘 + 新品投放分析 overview 后台预热（快/慢双线 + 强制刷新续期）。
+"""实时大盘 + 新品投放分析 overview 后台预热（touch 续期 + 陈旧才重算 + 快/慢双线）。
 
-两层关键设计（2026-06-14 修复，实测坐实）：
-1. **强制刷新（force_refresh=True）**：预热必须重算并写回、刷新 expires_at；否则命中
-   旧缓存就跳过、不续期，缓存到 TTL 被动过期，过期窗口用户请求 MISS、现算十几秒。
-2. **快/慢分离**：今天/昨天实时大盘（60s TTL）走快线 ``run_warmup_fast``（15s，独立调度），
-   不被周月整月聚合、npl 带明细这些十几秒的重现算串行阻塞；周月 + npl 走慢线
-   ``run_warmup_slow``（300s）。否则单串行轮要几分钟，今天/昨天等不到续期就过期了。
+核心设计（2026-06-14 二次修复，实测坐实「点昨天 30s 超时、出不来数据」事故）：
+1. **touch 续期，陈旧才重算**：命中且数据未超 TTL → 只 ``realtime_cache.touch`` 续期
+   （一次轻量 UPDATE，不重算）；数据超 TTL 没重算过、或缓存被清 → 才重算一次。
+   把"防过期"与"重算更新数据"分开。
+   —— 上一版每轮都 ``force_refresh`` 重算，fast 单轮 16s > 15s 间隔，预热在
+   ``workers=1`` 单进程里几乎一刻不停地重算、霸占 GIL + DB，把用户请求饿死到 30s 超时
+   （APScheduler 日志：run_warmup_fast "maximum number of running instances reached"）。
+2. **快/慢分离**：今天/昨天实时大盘走快线 ``run_warmup_fast``（15s），周月 + npl + 子Tab
+   走慢线 ``run_warmup_slow``（30s），互不阻塞。
+
+为什么不靠加 worker 进程摊负载：``deploy/gunicorn.conf.py`` 的 ``workers=1`` 是有意的
+（in-process Socket.IO rooms / in-memory task state / 本预热 APScheduler 都依赖单进程）。
+所以预热必须自身轻量。
 
 range 解析与前端 orderAnalyticsMetaCalendar 逐字一致（周一起算；月度同前端）。
 
@@ -92,6 +99,8 @@ FAST_TARGETS = [t for t in WARMUP_TARGETS
 SLOW_TARGETS = [t for t in WARMUP_TARGETS if t not in FAST_TARGETS]
 
 _last_run: dict[tuple[str, str, str], float] = {}
+# 上次"重算"时间（touch 续期不更新它），决定数据是否陈旧到该重算。与 _last_run（调度节流）分开。
+_last_refresh: dict[tuple[str, str, str], float] = {}
 _lock = threading.Lock()
 
 
@@ -107,7 +116,7 @@ def _due(targets: list[WarmupTarget], now: float) -> list[WarmupTarget]:
 
 
 def _warm_one(target: WarmupTarget) -> None:
-    """对单个目标强制重算并写入与 route 完全一致的 cache_key（force_refresh）。"""
+    """对单个目标：命中且数据未陈旧 → touch 续期；陈旧/缺失 → 重算。cache_key 与 route 逐字一致。"""
     from web.routes.order_analytics import _compute_realtime_overview_cached
 
     today = current_meta_business_date()
@@ -161,7 +170,19 @@ def _warm_one(target: WarmupTarget) -> None:
             "product_launch_scope": scope, "product_launch_window_days": window,
             "page": None, "page_size": None, "order_page": None, "order_page_size": None,
         }
-    _compute_realtime_overview_cached(None, kwargs, cache_params=cache_params, force_refresh=True)
+    from web.routes.order_analytics import _overview_cache_ttl
+    from appcore.order_analytics import realtime_cache
+
+    cache_key = realtime_cache.make_cache_key(cache_params)
+    ttl = _overview_cache_ttl(cache_params)
+    key_t = (target.range_name, target.module, target.scope)
+    # 数据超过 TTL 没重算过、或缓存已被清 → 重算更新（force）；否则只 touch 续期
+    # （一次轻量 UPDATE，不重算、不占 GIL/DB）。这样预热"防过期"几乎零成本、
+    # "重算更新"降到每 TTL 一次，不再每轮重算把单进程 worker 拖到用户请求 30s 超时。
+    stale = (_now() - _last_refresh.get(key_t, 0.0)) >= ttl
+    if stale or not realtime_cache.touch(cache_key, ttl):
+        _compute_realtime_overview_cached(None, kwargs, cache_params=cache_params, force_refresh=True)
+        _last_refresh[key_t] = _now()
 
 
 def _run(targets: list[WarmupTarget]) -> None:
