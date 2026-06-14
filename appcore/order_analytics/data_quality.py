@@ -802,6 +802,54 @@ def check_derived_profit_freshness(
     }
 
 
+PAYMENTS_STALE_DAYS = 9          # 每周手动导一次，超过约 9 天未导入即告警
+EXCHANGE_RATE_STALE_DAYS = 2     # 日汇率应每日同步
+
+
+def check_payments_freshness(*, today: date | None = None, stale_days: int = PAYMENTS_STALE_DAYS) -> dict:
+    """Shopify Payments 断更监控：用 imported_at（transaction_date 当前全 NULL）。"""
+    today = today or current_meta_business_date()
+    try:
+        row = query_one(
+            "SELECT MAX(imported_at) AS latest_import FROM shopify_payments_transactions"
+        ) or {}
+    except Exception as exc:  # noqa: BLE001
+        return {"code": "payments_freshness", "status": STATUS_WARNING,
+                "message": f"payments 水位查询失败：{exc}"}
+    latest = _ensure_naive(row.get("latest_import"))
+    if latest is None:
+        return {"code": "payments_freshness", "status": STATUS_WARNING,
+                "message": "无 Shopify Payments 数据，手续费全部走估算"}
+    lag_days = (today - latest.date()).days
+    if lag_days > stale_days:
+        return {"code": "payments_freshness", "status": STATUS_STALE, "lag_days": lag_days,
+                "latest_import_at": _isoformat(latest),
+                "message": f"Shopify Payments 已 {lag_days} 天未导入，请上传最新 Payments/Transactions CSV"}
+    return {"code": "payments_freshness", "status": STATUS_OK, "lag_days": lag_days,
+            "latest_import_at": _isoformat(latest), "message": "payments 数据新鲜"}
+
+
+def check_exchange_rate_freshness(*, today: date | None = None, stale_days: int = EXCHANGE_RATE_STALE_DAYS) -> dict:
+    """日汇率断更监控：usd_cny_daily_exchange_rates 最新 rate_date 距今天数。"""
+    today = today or current_meta_business_date()
+    try:
+        row = query_one("SELECT MAX(rate_date) AS latest FROM usd_cny_daily_exchange_rates") or {}
+    except Exception as exc:  # noqa: BLE001
+        return {"code": "exchange_rate_freshness", "status": STATUS_WARNING,
+                "message": f"汇率水位查询失败：{exc}"}
+    latest = _date_from_value(row.get("latest"))
+    if latest is None:
+        return {"code": "exchange_rate_freshness", "status": STATUS_WARNING,
+                "message": "无日汇率数据，采购/物流换算走配置 fallback"}
+    lag_days = (today - latest).days
+    if lag_days > stale_days:
+        return {"code": "exchange_rate_freshness", "status": STATUS_STALE, "lag_days": lag_days,
+                "latest_rate_date": latest.isoformat(),
+                "message": f"日汇率最新 {latest.isoformat()}，距今 {lag_days} 天未同步"}
+    return {"code": "exchange_rate_freshness", "status": STATUS_OK, "lag_days": lag_days,
+            "latest_rate_date": latest.isoformat(), "message": "日汇率新鲜"}
+
+
 # ── 高层 helpers：为各页面构造 data_quality ─────────────────
 
 
@@ -837,6 +885,8 @@ def build_for_order_profit(
             business_date_to=date_to,
         )
     )
+    checks.append(check_payments_freshness())
+    checks.append(check_exchange_rate_freshness())
     return build_data_quality(
         business_date_from=date_from,
         business_date_to=date_to,
@@ -998,11 +1048,18 @@ def run_recent_inspection(*, lookback_days: int = 7, today: date | None = None) 
             "checks": [recon, freshness, uniqueness],
         })
 
+    payments_check = check_payments_freshness(today=today)
+    exchange_check = check_exchange_rate_freshness(today=today)
+    for extra in (payments_check, exchange_check):
+        if _STATUS_RANK.get(extra.get("status"), 0) > _STATUS_RANK.get(overall_status, 0):
+            overall_status = extra["status"]
+
     return {
         "generated_at": _now_iso(),
         "lookback_days": lookback_days,
         "status": overall_status,
         "days": days,
+        "freshness": [payments_check, exchange_check],
     }
 
 

@@ -80,6 +80,7 @@ def test_import_payments_csv_writes_transaction_date_and_refreshes_snapshots(mon
 
     monkeypatch.setattr(payments_import, "execute", fake_execute)
     monkeypatch.setattr(payments_import, "refresh_fee_rate_snapshots", fake_refresh)
+    monkeypatch.setattr(payments_import, "query_one", lambda sql, args=(): {"a": None, "b": None})
 
     csv_data = "\n".join(
         [
@@ -116,6 +117,7 @@ def test_import_payments_csv_keeps_insert_success_when_snapshot_refresh_fails(mo
 
     monkeypatch.setattr(payments_import, "execute", fake_execute)
     monkeypatch.setattr(payments_import, "refresh_fee_rate_snapshots", fake_refresh)
+    monkeypatch.setattr(payments_import, "query_one", lambda sql, args=(): {"a": None, "b": None})
 
     csv_data = "\n".join(
         [
@@ -134,3 +136,52 @@ def test_import_payments_csv_keeps_insert_success_when_snapshot_refresh_fails(mo
     assert result["fee_rate_snapshots"]["saved"] == 0
     assert result["fee_rate_snapshots"]["refresh_failed"] is True
     assert "refresh boom" in result["fee_rate_snapshots"]["error"]
+
+
+def test_import_payments_triggers_recompute_for_affected_business_dates(monkeypatch):
+    import io
+    from datetime import date
+    from appcore.order_analytics import shopify_payments_import as mod
+
+    monkeypatch.setattr(mod, "parse_payments_csv", lambda stream, source_csv="": [
+        {"transaction_id": "t1", "transaction_date": "2026-03-01", "payout_id": "p1",
+         "type": "charge", "order_name": "#3001", "presentment_currency": "EUR",
+         "amount_usd": 40.0, "fee_usd": 2.5, "net_usd": 37.5, "card_brand": "visa",
+         "inferred_card_origin": "DE", "inferred_tier": "B", "matches_standard": 1,
+         "source_csv": "newjoyloo__x.csv", "raw_row_json": "{}"},
+    ])
+    monkeypatch.setattr(mod, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(mod, "refresh_fee_rate_snapshots", lambda **k: {"saved": 1})
+    monkeypatch.setattr(mod, "query_one", lambda sql, args=(): {"a": date(2026, 2, 24), "b": date(2026, 6, 1)})
+
+    triggered = {}
+    monkeypatch.setattr(mod, "_trigger_profit_recompute", lambda f, t: triggered.update(f=f, t=t))
+
+    stats = mod.import_payments_csv(io.StringIO("x"), source_csv="newjoyloo__x.csv")
+
+    assert stats["affected_business_dates"] == {"from": "2026-02-24", "to": "2026-06-01"}
+    assert triggered == {"f": date(2026, 2, 24), "t": date(2026, 6, 1)}
+
+
+def test_import_payments_no_recompute_when_no_matching_orders(monkeypatch):
+    import io
+    from appcore.order_analytics import shopify_payments_import as mod
+
+    monkeypatch.setattr(mod, "parse_payments_csv", lambda stream, source_csv="": [
+        {"transaction_id": "t9", "transaction_date": "2026-03-01", "payout_id": "p",
+         "type": "charge", "order_name": "#9999", "presentment_currency": "USD",
+         "amount_usd": 10.0, "fee_usd": 0.6, "net_usd": 9.4, "card_brand": "visa",
+         "inferred_card_origin": "US", "inferred_tier": "A", "matches_standard": 1,
+         "source_csv": "newjoyloo__x.csv", "raw_row_json": "{}"},
+    ])
+    monkeypatch.setattr(mod, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(mod, "refresh_fee_rate_snapshots", lambda **k: {"saved": 0})
+    monkeypatch.setattr(mod, "query_one", lambda sql, args=(): {"a": None, "b": None})
+
+    calls = []
+    monkeypatch.setattr(mod, "_trigger_profit_recompute", lambda f, t: calls.append((f, t)))
+
+    stats = mod.import_payments_csv(io.StringIO("x"), source_csv="newjoyloo__x.csv")
+
+    assert stats["affected_business_dates"] == {"from": None, "to": None}
+    assert calls == []

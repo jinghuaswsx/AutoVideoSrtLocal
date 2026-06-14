@@ -26,7 +26,10 @@ FALLBACK_LOGIC_DESCRIPTION = (
     "最近 30 天已归档 USD/CNY 基准汇率的算术平均值；"
     "缺当天基准时优先使用该值；无样本时退回系统配置汇率"
 )
-FRANKFURTER_URL = "https://api.frankfurter.app/latest?from=USD&to=CNY"
+FRANKFURTER_LATEST_URL = "https://api.frankfurter.app/latest?from=USD&to=CNY"
+FRANKFURTER_HISTORICAL_URL = "https://api.frankfurter.app/{date}?from=USD&to=CNY"
+# 向后兼容：旧引用仍可用
+FRANKFURTER_URL = FRANKFURTER_LATEST_URL
 OPEN_ER_API_URL = "https://open.er-api.com/v6/latest/USD"
 FLOATRATES_URL = "https://www.floatrates.com/daily/usd.json"
 
@@ -117,9 +120,14 @@ def _http_get_json(url: str, *, timeout_seconds: int = 15) -> dict[str, Any]:
 
 
 def fetch_frankfurter_usd_cny(
-    *, get_json: Callable[[str], dict[str, Any]] | None = None
+    *, rate_date: date | None = None, get_json: Callable[[str], dict[str, Any]] | None = None
 ) -> RateQuote:
-    data = (get_json or _http_get_json)(FRANKFURTER_URL)
+    url = (
+        FRANKFURTER_HISTORICAL_URL.format(date=rate_date.isoformat())
+        if rate_date is not None
+        else FRANKFURTER_LATEST_URL
+    )
+    data = (get_json or _http_get_json)(url)
     base = str(data.get("base") or "").upper()
     if base != "USD":
         raise ValueError(f"frankfurter base must be USD, got {base!r}")
@@ -331,6 +339,36 @@ def sync_usd_cny_daily_rate(
         "rate_date": effective_date.isoformat(),
         "usd_to_cny": float(_q6(primary.rate)),
         **summary,
+        "row_id": row_id,
+    }
+
+
+def backfill_usd_cny_daily_rate(
+    *,
+    rate_date: date,
+    fetcher: Callable[[date], RateQuote] | None = None,
+    source_run_id: int | None = None,
+) -> dict[str, Any]:
+    """单源历史回填：open_er_api / floatrates 无历史端点，三源交叉校验不适用于历史日期，
+    故仅用 frankfurter 历史值写入，validators 置空、max_diff=0，标注 single_source_historical。
+    写入同一张 usd_cny_daily_exchange_rates，下游按 daily_archive 读取。
+    """
+    fetch = fetcher or (lambda d: fetch_frankfurter_usd_cny(rate_date=d))
+    primary = fetch(rate_date)
+    row_id = _upsert_validated_rate(
+        rate_date=rate_date,
+        primary=primary,
+        validators=[],
+        max_relative_diff=Decimal("0"),
+        tolerance_ratio=DEFAULT_TOLERANCE_RATIO,
+        source_run_id=source_run_id,
+    )
+    return {
+        "rate_date": rate_date.isoformat(),
+        "usd_to_cny": float(_q6(primary.rate)),
+        "primary": primary.as_summary(),
+        "validators": [],
+        "sample_status": "single_source_historical",
         "row_id": row_id,
     }
 

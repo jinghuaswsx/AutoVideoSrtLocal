@@ -1040,6 +1040,38 @@ def _load_sync_account_totals(
     return totals
 
 
+def _query_shopify_fee_source_breakdown(date_from: date, date_to: date) -> dict[str, Any]:
+    """按 shopify_fee_source 拆分真实(actual_payment) vs 估算(其余)。"""
+    rows = query(
+        "SELECT COALESCE(p.shopify_fee_source, 'legacy') AS src, "
+        "       COUNT(*) AS n, COALESCE(SUM(p.shopify_fee_usd), 0) AS fee "
+        "FROM order_profit_lines p "
+        "JOIN dianxiaomi_order_lines d ON d.id = p.dxm_order_line_id "
+        "WHERE d.meta_business_date BETWEEN %s AND %s "
+        "GROUP BY src",
+        (date_from, date_to),
+    ) or []
+    actual = {"lines": 0, "amount_usd": 0.0}
+    est_lines = 0
+    est_amount = 0.0
+    by_source: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        src = str(row.get("src") or "legacy")
+        lines = int(row.get("n") or 0)
+        amount = round(float(row.get("fee") or 0), 2)
+        by_source[src] = {"lines": lines, "amount_usd": amount}
+        if src == "actual_payment":
+            actual = {"lines": lines, "amount_usd": amount}
+        else:
+            est_lines += lines
+            est_amount += amount
+    return {
+        "actual_payment": actual,
+        "estimated": {"lines": est_lines, "amount_usd": round(est_amount, 2)},
+        "by_source": by_source,
+    }
+
+
 def get_order_profit_status_summary(
     *,
     date_from: date,
@@ -1221,12 +1253,16 @@ def get_order_profit_status_summary(
     estimated_shipping = summary["incomplete"]["shipping_cost_estimate"] or _sum_summary(
         summary, "shipping_fallback_estimated"
     )
+    _fee_breakdown = _query_shopify_fee_source_breakdown(date_from, date_to)
     estimate_marks = {
         "shopify_fee": {
-            "estimated": True,
+            "estimated": _fee_breakdown["estimated"]["lines"] > 0,
             "amount_usd": _round_money(_sum_summary(summary, "shopify_fee")),
             "lines": line_count,
-            "label": "策略 C 估算",
+            "label": "手续费（真实优先）",
+            "actual_payment": _fee_breakdown["actual_payment"],
+            "estimated_breakdown": _fee_breakdown["estimated"],
+            "by_source": _fee_breakdown["by_source"],
         },
         "purchase_fallback": {
             "estimated": True,
