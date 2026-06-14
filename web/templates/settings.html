@@ -32,8 +32,8 @@
 .service-tag.orange { background:var(--settings-warning-bg); color:var(--settings-warning-fg); }
 .service-tag.green { background:var(--settings-success-bg); color:var(--settings-success-fg); }
 label { display:block; color:var(--settings-fg-muted); font-size:12px; font-weight:600; text-transform:uppercase; margin-bottom:6px; margin-top:14px; }
-input[type=text], input[type=password], select { width:100%; background:var(--settings-surface-muted); border:1.5px solid var(--settings-border); border-radius:10px; color:var(--settings-fg); padding:10px 12px; font-size:14px; font-family:inherit; outline:none; transition:border-color 120ms, box-shadow 120ms, background-color 120ms; }
-input[type=text]:focus, input[type=password]:focus, select:focus { border-color:var(--settings-accent); box-shadow:0 0 0 3px oklch(56% 0.16 230 / 0.18); background:var(--settings-surface); }
+input[type=text], input[type=password], input[type=number], select { width:100%; background:var(--settings-surface-muted); border:1.5px solid var(--settings-border); border-radius:10px; color:var(--settings-fg); padding:10px 12px; font-size:14px; font-family:inherit; outline:none; transition:border-color 120ms, box-shadow 120ms, background-color 120ms; }
+input[type=text]:focus, input[type=password]:focus, input[type=number]:focus, select:focus { border-color:var(--settings-accent); box-shadow:0 0 0 3px oklch(56% 0.16 230 / 0.18); background:var(--settings-surface); }
 .settings-copy-wrap { display:flex; gap:8px; align-items:center; width:100%; }
 .settings-copy-wrap input[type=text], .settings-copy-wrap input[type=number], .settings-copy-wrap select, .settings-copy-wrap textarea { flex:1; min-width:0; }
 .settings-copy-btn { flex:0 0 auto; height:36px; padding:0 12px; border-radius:8px; border:1px solid var(--settings-border-strong); background:var(--settings-surface); color:var(--settings-fg-muted); font-size:12px; font-weight:600; cursor:pointer; transition:background-color 120ms, border-color 120ms, color 120ms; }
@@ -127,6 +127,8 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
      class="settings-tab {{ 'active' if active_tab == 'audio_separation' }}">人声分离</a>
   <a href="{{ url_for('settings.index', tab='omni_preset') }}"
      class="settings-tab {{ 'active' if active_tab == 'omni_preset' }}">视频翻译设置</a>
+  <a href="{{ url_for('settings.index', tab='system') }}"
+     class="settings-tab {{ 'active' if active_tab == 'system' }}">系统设置</a>
   {% endif %}
 </div>
 
@@ -581,6 +583,42 @@ input[type=text]:focus, input[type=password]:focus, select:focus { border-color:
   } | tojson }}
 </script>
 <script src="{{ url_for('static', filename='admin_pricing.js') }}"></script>
+{% endif %}
+
+{# ═════════════════════════════════════════════════════════════
+   Tab · 系统设置（superadmin-only）
+   运行时参数保存在 system_settings；定时任务下一轮读取最新值。
+   ═════════════════════════════════════════════════════════════ #}
+{% if can_manage_pricing and active_tab == 'system' %}
+<form method="post" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="system">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:12px">
+    <h1 style="font-size:20px;font-weight:700;color:var(--settings-fg);margin:0">系统设置</h1>
+    <button class="btn btn-primary save-btn" type="submit" style="margin:0">保存</button>
+  </div>
+
+  <div class="settings-card">
+    <h2>Tabcut 选品中心</h2>
+    <p class="step-desc">保存后不需要重启服务，下一轮定时任务会读取最新值。</p>
+
+    <label for="tabcut_video_translation_batch_size">视频翻译每轮任务数</label>
+    <input type="number"
+           id="tabcut_video_translation_batch_size"
+           name="tabcut_video_translation_batch_size"
+           min="{{ system_settings_view.tabcut_video_translation_batch_size_min }}"
+           max="{{ system_settings_view.tabcut_video_translation_batch_size_max }}"
+           step="1"
+           value="{{ system_settings_view.tabcut_video_translation_batch_size }}">
+    <p class="hint">
+      作用于 <code>tabcut_video_translation_tick</code>，当前每 10 分钟运行一次。
+      默认 250；允许范围
+      {{ system_settings_view.tabcut_video_translation_batch_size_min }} -
+      {{ system_settings_view.tabcut_video_translation_batch_size_max }}。
+    </p>
+  </div>
+</form>
 {% endif %}
 
 {# ═════════════════════════════════════════════════════════════

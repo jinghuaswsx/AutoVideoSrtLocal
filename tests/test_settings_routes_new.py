@@ -367,6 +367,43 @@ def test_settings_get_renders_gpt_5_5_translate_option(admin_no_db_client):
     assert "GPT-5.5" in body
 
 
+def test_settings_get_renders_system_runtime_settings(admin_no_db_client):
+    with patch("web.routes.settings.get_all", return_value={}), \
+         patch("web.routes.settings._provider_rows_by_group",
+               return_value=_fake_provider_groups([])), \
+         patch("web.routes.settings.llm_bindings.list_all", return_value=[]), \
+         patch("web.routes.settings.get_image_translate_channel", return_value="aistudio"), \
+         patch(
+             "web.routes.settings.settings_store.get_tabcut_video_translation_batch_size",
+             return_value=320,
+         ):
+        resp = admin_no_db_client.get("/settings?tab=system")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "系统设置" in body
+    assert "视频翻译每轮任务数" in body
+    assert 'name="tabcut_video_translation_batch_size"' in body
+    assert 'value="320"' in body
+    assert "tabcut_video_translation_tick" in body
+
+
+def test_settings_post_system_updates_tabcut_video_translation_batch_size(admin_no_db_client):
+    saved = []
+    with patch(
+        "web.routes.settings.settings_store.set_tabcut_video_translation_batch_size",
+        side_effect=lambda value: saved.append(value) or 320,
+    ):
+        resp = admin_no_db_client.post("/settings", data={
+            "tab": "system",
+            "tabcut_video_translation_batch_size": "320",
+        })
+
+    assert resp.status_code in (302, 303)
+    assert resp.headers["Location"].endswith("/settings?tab=system")
+    assert saved == ["320"]
+
+
 # ---------------------------------------------------------------------------
 # GET /settings?tab=providers —— 供应商凭据不回显
 # ---------------------------------------------------------------------------

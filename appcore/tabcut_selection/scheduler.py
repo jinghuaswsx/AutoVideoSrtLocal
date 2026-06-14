@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from appcore import scheduled_tasks
+from appcore import scheduled_tasks, settings as settings_store
 from appcore.tabcut_selection import goods_translation, video_localization, video_translation
 
 log = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ def goods_translation_tick_once(limit: int = 30, user_id: int | None = None) -> 
     return summary
 
 
-def video_translation_tick_once(limit: int = 100, user_id: int | None = None) -> dict[str, Any]:
+def video_translation_tick_once(limit: int | None = None, user_id: int | None = None) -> dict[str, Any]:
     run_id = None
     try:
         run_id = scheduled_tasks.start_run(VIDEO_TRANSLATION_TASK_CODE)
@@ -82,7 +82,11 @@ def video_translation_tick_once(limit: int = 100, user_id: int | None = None) ->
         log.debug("Tabcut video translation scheduled run start failed", exc_info=True)
 
     try:
-        summary = video_translation.translate_pending_videos(limit=limit, user_id=user_id)
+        batch_limit = (
+            settings_store.get_tabcut_video_translation_batch_size()
+            if limit is None else limit
+        )
+        summary = video_translation.translate_pending_videos(limit=batch_limit, user_id=user_id)
     except Exception as exc:
         if run_id:
             scheduled_tasks.finish_run(

@@ -343,6 +343,8 @@ def index():
             _handle_audio_separation_post()
         elif tab == "omni_preset":
             _handle_omni_preset_post()
+        elif tab == "system":
+            _handle_system_settings_post()
         else:
             _handle_providers_post()  # tab=providers 或兼容老表单
         flash("配置已保存")
@@ -395,6 +397,7 @@ def index():
         allowed_tabs.add("browser_credentials")
         allowed_tabs.add("audio_separation")
         allowed_tabs.add("omni_preset")
+        allowed_tabs.add("system")
     if active_tab not in allowed_tabs:
         active_tab = "providers"
 
@@ -470,6 +473,17 @@ def index():
         asr_routing_provider_options=asr_routing_config.list_available_providers(),
         audio_separation=audio_separation_view,
         english_redub_voice_match_strategy=english_redub_settings.get_voice_match_strategy(),
+        system_settings_view={
+            "tabcut_video_translation_batch_size": (
+                settings_store.get_tabcut_video_translation_batch_size()
+            ),
+            "tabcut_video_translation_batch_size_min": (
+                settings_store.TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_MIN
+            ),
+            "tabcut_video_translation_batch_size_max": (
+                settings_store.TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_MAX
+            ),
+        },
     )
 
 
@@ -769,6 +783,15 @@ def _handle_omni_preset_post() -> None:
     )
     english_redub_settings.set_voice_match_strategy(
         request.form.get("english_redub_voice_match_strategy")
+    )
+
+
+def _handle_system_settings_post() -> None:
+    """System runtime knobs stored in system_settings and read live by schedulers."""
+    if not getattr(current_user, "is_admin", False):
+        return
+    settings_store.set_tabcut_video_translation_batch_size(
+        request.form.get("tabcut_video_translation_batch_size")
     )
 
 

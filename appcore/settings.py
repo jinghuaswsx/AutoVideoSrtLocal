@@ -25,6 +25,10 @@ PROJECT_TYPE_LABELS: dict[str, str] = {
 }
 
 _HARDCODE_DEFAULT_HOURS = 168
+TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_KEY = "tabcut_video_translation_batch_size"
+TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_DEFAULT = 250
+TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_MIN = 1
+TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_MAX = 500
 
 
 def _parse_positive_hours(raw: str | None) -> int | None:
@@ -67,6 +71,42 @@ def set_setting(key: str, value: str) -> None:
 
 def delete_setting(key: str) -> int:
     return _execute("DELETE FROM system_settings WHERE `key` = %s", (key,))
+
+
+def _parse_bounded_int(
+    raw: str | int | None,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    if value < minimum:
+        return default
+    return min(value, maximum)
+
+
+def get_tabcut_video_translation_batch_size() -> int:
+    return _parse_bounded_int(
+        get_setting(TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_KEY),
+        default=TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_DEFAULT,
+        minimum=TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_MIN,
+        maximum=TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_MAX,
+    )
+
+
+def set_tabcut_video_translation_batch_size(raw: str | int | None) -> int:
+    value = _parse_bounded_int(
+        raw,
+        default=TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_DEFAULT,
+        minimum=TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_MIN,
+        maximum=TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_MAX,
+    )
+    set_setting(TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_KEY, str(value))
+    return value
 
 
 def _serialize_ai_model_price_row(row: dict) -> dict:

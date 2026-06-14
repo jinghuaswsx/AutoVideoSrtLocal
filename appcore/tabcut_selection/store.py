@@ -747,11 +747,11 @@ def reset_stale_running_goods_translations(
 
 def next_pending_video_translations(
     *,
-    limit: int = 100,
+    limit: int = 250,
     max_attempts: int = 3,
     query_fn: QueryFn = query,
 ) -> list[dict[str, Any]]:
-    safe_limit = max(1, min(100, int(limit)))
+    safe_limit = max(1, min(500, int(limit)))
     safe_attempts = max(1, int(max_attempts))
     return query_fn(
         """

@@ -156,6 +156,17 @@ def test_tabcut_video_openrouter_user_requested_gemini31_flash_lite_fix_updates_
     assert "'google/gemini-3.1-flash-lite'" in sql
 
 
+def test_tabcut_video_translation_batch_size_setting_migration_seeds_default():
+    sql = (
+        ROOT / "db" / "migrations" / "2026_06_14_tabcut_video_translation_batch_size_setting.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "Docs-anchor: docs/superpowers/specs/2026-06-14-tabcut-video-translation-task-design.md" in sql
+    assert "INSERT IGNORE INTO system_settings" in sql
+    assert "'tabcut_video_translation_batch_size'" in sql
+    assert "'250'" in sql
+
+
 def test_tabcut_daily_selection_registered():
     from appcore import scheduled_tasks
 

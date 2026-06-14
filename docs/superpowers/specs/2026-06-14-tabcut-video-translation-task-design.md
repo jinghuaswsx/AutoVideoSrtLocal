@@ -23,7 +23,8 @@
 ## 目标
 
 1. 每 10 分钟持续运行 Tabcut 视频中文翻译任务。
-2. 每轮最多拉取 100 个未翻译或可重试失败的视频，以便快速消耗历史 backlog。
+2. 每轮默认拉取 250 个未翻译或可重试失败的视频，以便快速消耗历史 backlog。
+   该值由超级管理员在 `/settings?tab=system` 调整，下一轮定时任务读取最新值。
 3. 使用 OpenRouter Gemini 3.1 Flash Lite 翻译视频文案和视频关联商品标题。用户在 2026-06-14 明确指定生产模型为 `google/gemini-3.1-flash-lite`。
 4. 翻译结果持久化写回 `tabcut_videos`，以后打开视频直接读取缓存结果。
 5. 新抓到的视频和历史未翻译视频都进入同一任务池。
@@ -92,17 +93,18 @@
 - `task_code=tabcut_video_translation_tick`
 - runner：`appcore.tabcut_selection.scheduler.video_translation_tick_once`
 - schedule：每 10 分钟
-- limit：默认每轮 100 个视频
+- limit：默认每轮 250 个视频，读取 `system_settings.tabcut_video_translation_batch_size`
 - log_table：`scheduled_task_runs`
 
 每轮流程：
 
 1. 把超过 1 小时的 `running` 视频重置为 `failed`，避免进程中断永久卡住。
-2. 读取 `zh_translation_status IN ('pending','failed')` 且 attempts < 3 的视频。
-3. 标记 running 并 attempts + 1。
-4. 调用 OpenRouter Gemini 3.1 Flash Lite 翻译文本。
-5. 成功写回中文字段并标记 `done`。
-6. 失败写入 `failed + error`，遇到全局 provider 配置/额度错误时停止本轮。
+2. 从 `system_settings.tabcut_video_translation_batch_size` 读取本轮批量，默认 250，运行保护上限 500。
+3. 读取 `zh_translation_status IN ('pending','failed')` 且 attempts < 3 的视频。
+4. 标记 running 并 attempts + 1。
+5. 调用 OpenRouter Gemini 3.1 Flash Lite 翻译文本。
+6. 成功写回中文字段并标记 `done`。
+7. 失败写入 `failed + error`，遇到全局 provider 配置/额度错误时停止本轮。
 
 ## API 与展示
 
@@ -122,9 +124,9 @@
 自动化：
 
 ```bash
-pytest tests/test_tabcut_video_translation.py tests/test_tabcut_selection_store.py tests/test_tabcut_selection_schema.py tests/test_appcore_scheduled_tasks.py tests/test_llm_use_cases_registry.py -q
+pytest tests/test_tabcut_video_translation.py tests/test_tabcut_selection_store.py tests/test_tabcut_selection_schema.py tests/test_appcore_scheduled_tasks.py tests/test_settings.py tests/test_settings_routes_new.py tests/test_llm_use_cases_registry.py -q
 python3 scripts/pytest_related.py --base origin/master --run
-python3 -m compileall appcore/tabcut_selection appcore/llm_use_cases.py -q
+python3 -m compileall appcore/tabcut_selection appcore/settings.py web/routes/settings.py appcore/llm_use_cases.py -q
 git diff --check
 ```
 
@@ -132,4 +134,5 @@ git diff --check
 
 - 定时任务后台可看到 `tabcut_video_translation_tick`。
 - 打开 `/xuanpin/tabcut`，视频卡片 payload 中包含 `video_desc_zh`。
-- 历史未翻译视频被逐轮消耗，每轮最多 100 条。
+- 历史未翻译视频被逐轮消耗，默认每轮最多 250 条。
+- 超级管理员在 `/settings?tab=system` 修改每轮任务数后，下一轮 `tabcut_video_translation_tick` 使用新值。

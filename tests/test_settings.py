@@ -84,6 +84,56 @@ def test_set_setting(monkeypatch):
     assert calls[0] == ("foo", "bar")
 
 
+def test_get_tabcut_video_translation_batch_size_default(monkeypatch):
+    import appcore.settings as settings
+
+    monkeypatch.setattr(settings, "get_setting", lambda key: None)
+
+    assert settings.get_tabcut_video_translation_batch_size() == 250
+
+
+def test_get_tabcut_video_translation_batch_size_uses_valid_setting(monkeypatch):
+    import appcore.settings as settings
+
+    monkeypatch.setattr(settings, "get_setting", lambda key: "333")
+
+    assert settings.get_tabcut_video_translation_batch_size() == 333
+
+
+def test_get_tabcut_video_translation_batch_size_ignores_invalid_values(monkeypatch):
+    import appcore.settings as settings
+
+    monkeypatch.setattr(settings, "get_setting", lambda key: "0")
+    assert settings.get_tabcut_video_translation_batch_size() == 250
+
+    monkeypatch.setattr(settings, "get_setting", lambda key: "not-a-number")
+    assert settings.get_tabcut_video_translation_batch_size() == 250
+
+
+def test_get_tabcut_video_translation_batch_size_clamps_to_runtime_cap(monkeypatch):
+    import appcore.settings as settings
+
+    monkeypatch.setattr(settings, "get_setting", lambda key: "999")
+
+    assert settings.get_tabcut_video_translation_batch_size() == 500
+
+
+def test_set_tabcut_video_translation_batch_size_persists_sanitized_value(monkeypatch):
+    import appcore.settings as settings
+
+    calls = []
+    monkeypatch.setattr(
+        settings,
+        "set_setting",
+        lambda key, value: calls.append((key, value)),
+    )
+
+    result = settings.set_tabcut_video_translation_batch_size("333")
+
+    assert result == 333
+    assert calls == [(settings.TABCUT_VIDEO_TRANSLATION_BATCH_SIZE_KEY, "333")]
+
+
 def test_delete_setting_deletes_key(monkeypatch):
     import appcore.settings as settings
 

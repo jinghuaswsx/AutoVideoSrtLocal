@@ -506,7 +506,19 @@ def test_next_pending_video_translations_selects_untranslated_rows():
     assert "zh_translation_status IN ('pending', 'failed')" in sql
     assert "zh_translation_attempts < %s" in sql
     assert "video_desc IS NOT NULL" in sql
-    assert params == [3, 100]
+    assert params == [3, 250]
+
+
+def test_next_pending_video_translations_caps_large_runtime_limit():
+    calls = []
+
+    def fake_query(sql, params=()):
+        calls.append((sql, params))
+        return []
+
+    store.next_pending_video_translations(limit=999, query_fn=fake_query)
+
+    assert calls[0][1] == [3, 500]
 
 
 def test_mark_video_translation_running_increments_attempts():
