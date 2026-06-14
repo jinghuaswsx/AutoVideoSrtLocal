@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 # ── 可调参数 ──────────────────────────────────────────
 _MIN_RECHECK_SECONDS = 60      # 60 秒内不检查新鲜度
 _MAX_AGE_SECONDS = 1800        # 30 分钟硬过期
+_CLOSED_TTL_SECONDS = 1800     # 收盘区间纯时间 TTL（30 分钟），不受全局 marker 影响
 _MAX_ENTRIES = 200             # 最多缓存条目数，防内存膨胀
 
 # ── 内部存储 ──────────────────────────────────────────
@@ -111,10 +112,13 @@ def get_freshness_marker() -> str:
     return marker
 
 
-def get(key: str, freshness_marker: str) -> Any | None:
+def get(key: str, freshness_marker: str, is_open_day: bool = True) -> Any | None:
     """从缓存读取结果。
 
-    返回 None 表示缓存未命中或已过期，调用方需重新计算。
+    is_open_day=False（收盘区间）：纯时间 TTL，不与全局 marker 比较，
+    避免历史缓存被「今天的新订单」误伤。
+    is_open_day=True（含今天）：60s 短窗口 + marker 新鲜度检查。
+    返回 None 表示未命中或已过期。
     """
     with _lock:
         entry = _store.get(key)
@@ -123,42 +127,39 @@ def get(key: str, freshness_marker: str) -> Any | None:
         store_time, stored_marker, result = entry
         age = time.time() - store_time
 
-        # 硬 TTL
+        if not is_open_day:
+            if age > _CLOSED_TTL_SECONDS:
+                del _store[key]
+                log.debug("cache EXPIRED (closed TTL) key=%s age=%.0fs", key, age)
+                return None
+            log.debug("cache HIT (closed) key=%s age=%.0fs", key, age)
+            return result
+
+        # open day：硬 TTL
         if age > _MAX_AGE_SECONDS:
             del _store[key]
             log.debug("cache EXPIRED (hard TTL) key=%s age=%.0fs", key, age)
             return None
-
-        # 短窗口保护：60 秒内直接返回
+        # 短窗口保护
         if age <= _MIN_RECHECK_SECONDS:
             log.debug("cache HIT (fast path) key=%s age=%.0fs", key, age)
             return result
-
-        # 新鲜度检查：数据没变则继续复用
+        # 新鲜度检查
         if stored_marker and stored_marker == freshness_marker:
-            log.debug(
-                "cache HIT (freshness ok) key=%s age=%.0fs",
-                key, age,
-            )
+            log.debug("cache HIT (freshness ok) key=%s age=%.0fs", key, age)
             return result
-
-        # 新鲜度变了，失效
         del _store[key]
-        log.debug(
-            "cache INVALIDATED (data changed) key=%s age=%.0fs",
-            key, age,
-        )
+        log.debug("cache INVALIDATED (data changed) key=%s age=%.0fs", key, age)
         return None
 
 
-def put(key: str, result: Any, freshness_marker: str) -> None:
-    """将计算结果写入缓存。"""
+def put(key: str, result: Any, freshness_marker: str, is_open_day: bool = True) -> None:
+    """将计算结果写入缓存。is_open_day 仅由读取方使用，此处只存储。"""
     with _lock:
         _store[key] = (time.time(), freshness_marker, result)
-        # 懒清理：超过 MAX_ENTRIES 时淘汰最旧条目
         if len(_store) > _MAX_ENTRIES:
             _prune_oldest_locked()
-        log.debug("cache PUT key=%s entries=%d", key, len(_store))
+        log.debug("cache PUT key=%s entries=%d open=%s", key, len(_store), is_open_day)
 
 
 def invalidate_all() -> None:
